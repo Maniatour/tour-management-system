@@ -164,7 +164,8 @@ export default function GuideTeamChatPage() {
           offlineGuideCache: true as const,
         }
       : {}),
-    dependencies: [user?.email, isSimulating, simulatedUser?.email]
+    dependencies: [user?.email, isSimulating, simulatedUser?.email],
+    defaultToEmptyArray: true,
   })
 
   // 메시지 로딩

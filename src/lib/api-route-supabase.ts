@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createSupabaseClientWithToken, supabase } from '@/lib/supabase'
 import { createClient } from '@/lib/supabase/server'
 import type { Database } from '@/lib/database.types'
+import { readAuthAccessTokenFromRequest } from '@/lib/authSessionCookie'
 
 /**
  * App Router API: 쿠키 세션(@supabase/ssr)이 없을 때(예: localStorage 전용 mock 세션)에도
@@ -22,21 +23,19 @@ export async function getSupabaseForApiRoute(
     return null
   }
 
-  const authHeader = request.headers.get('authorization')
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.slice(7).trim()
-    if (token) {
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser(token)
-      if (!error && user) {
-        return createSupabaseClientWithToken(token)
-      }
-      // localStorage JWT가 만료·불일치여도 SSR 쿠키 세션이 있으면 사용
-      const cookieClient = await resolveCookieAuth()
-      if (cookieClient) return cookieClient
+  const bearerToken = readAuthAccessTokenFromRequest(request)
+
+  if (bearerToken) {
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser(bearerToken)
+    if (!error && user) {
+      return createSupabaseClientWithToken(bearerToken)
     }
+    // localStorage JWT가 만료·불일치여도 SSR 쿠키 세션이 있으면 사용
+    const cookieClient = await resolveCookieAuth()
+    if (cookieClient) return cookieClient
   }
 
   const cookieClient = await resolveCookieAuth()

@@ -20,10 +20,14 @@ import {
 } from '@/lib/supabase'
 import { persistSupabaseSessionToStorage } from '@/lib/authStorage'
 import { AuthUser } from '@/lib/auth'
-import { UserRole, getUserRole, UserPermissions, hasPermission } from '@/lib/roles'
+import { UserRole, getUserRole, UserPermissions, hasPermission, ROLE_PERMISSIONS } from '@/lib/roles'
 import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
 import { isSuperAdminEmail } from '@/lib/superAdmin'
 import { scheduleDeferredWork } from '@/lib/scheduleDeferredWork'
+import { fetchAuthTeamMemberRow } from '@/lib/authTeamRoleLookup'
+import { syncAuthSessionCookieFromStorage } from '@/lib/authSessionCookie'
+import { isStaffTeamRole, readTeamClaimsFromAccessToken } from '@/lib/authJwtRoleClaims'
+import { upgradeSessionForTeamRoleClaims, accessTokenNeedsTeamRoleUpgrade } from '@/lib/authJwtTeamRoleUpgrade'
 import {
   clearSimulationBrowserStorage,
   getPublicSupabaseUrl,
@@ -50,8 +54,8 @@ function authUserFromSupabaseSessionUser(sessionUser: User): AuthUser {
 }
 
 /** GoTrue SIGNED_OUT·429 후에도 저장된 access JWT로 UI 복구용 */
-function authUserFromStoredAccessToken(): AuthUser | null {
-  const accessToken = getStoredAccessTokenIfValid(60)
+function authUserFromStoredAccessToken(minTtlSec = 60): AuthUser | null {
+  const accessToken = getStoredAccessTokenIfValid(minTtlSec)
   if (!accessToken) return null
   try {
     const payload = JSON.parse(atob(accessToken.split('.')[1])) as {
@@ -86,69 +90,29 @@ function authUserFromStoredAccessToken(): AuthUser | null {
 }
 
 /** 모바일에서 GoTrue getSession이 무한 대기하는 경우 방지 */
-const AUTH_SESSION_BUDGET_MS = 20_000
-const AUTH_SESSION_RETRY_MS = 12_000
-const AUTH_BOOTSTRAP_FAILSAFE_MS = 45_000
+const AUTH_SESSION_BUDGET_MS = 8_000
+const AUTH_SESSION_RETRY_MS = 6_000
+const AUTH_BOOTSTRAP_FAILSAFE_MS = 30_000
 const ROLE_CHECK_DEDUPE_WAIT_MS = 12_000
-const TEAM_QUERY_TIMEOUT_MS = 15_000
-const INITIAL_AUTH_DELAY_MS = 2_000
+const INITIAL_AUTH_DELAY_MS = 300
 
-type TeamRoleRow = {
-  name_ko: string | null
-  email: string
-  position: string | null
-  is_active: boolean | null
+type CheckUserRoleOptions = {
+  /** 캐시 복원 후 UI를 막지 않고 역할만 재검증 */
+  background?: boolean
+  /** JWT fast-path 건너뛰고 team RPC로 강제 재검증 */
+  forceRpc?: boolean
 }
 
-/** team SELECT 실패(RLS·JWT 지연) 시 DEFINER RPC 로 역할 확인 */
-async function fetchTeamRoleRow(normalizedEmail: string): Promise<TeamRoleRow | null> {
-  if (!supabase) return null
+function permissionsForRole(role: UserRole): UserPermissions {
+  return ROLE_PERMISSIONS[role]
+}
 
-  const { data: directData, error: directError } = await supabase
-    .from('team')
-    .select('name_ko, email, position, is_active')
-    .ilike('email', normalizedEmail)
-    .or('is_active.is.null,is_active.eq.true')
-    .maybeSingle()
-
-  if (directData && !directError) {
-    return directData as TeamRoleRow
-  }
-
-  try {
-    const { data: rpcRows, error: rpcError } = await supabase.rpc('get_team_member_info', {
-      p_email: normalizedEmail,
-    })
-    const row = (rpcRows as Record<string, unknown>[] | null)?.[0]
-    if (!rpcError && row) {
-      return {
-        email: String(row.email ?? normalizedEmail),
-        name_ko: (row.name_ko as string | null) ?? null,
-        position: (row.position as string | null) ?? null,
-        is_active: (row.is_active as boolean | null) ?? true,
-      }
-    }
-  } catch (rpcErr) {
-    console.warn('AuthContext: get_team_member_info RPC failed:', rpcErr)
-  }
-
-  try {
-    const { data: isMember, error: memberError } = await supabase.rpc('is_team_member', {
-      p_email: normalizedEmail,
-    })
-    if (!memberError && isMember === true) {
-      return {
-        email: normalizedEmail,
-        name_ko: null,
-        position: 'op',
-        is_active: true,
-      }
-    }
-  } catch (memberErr) {
-    console.warn('AuthContext: is_team_member RPC failed:', memberErr)
-  }
-
-  return null
+function readJwtTeamClaimsForEmail(normalizedEmail: string) {
+  const token = getStoredAccessTokenIfValid(0)
+  if (!token) return null
+  const claims = readTeamClaimsFromAccessToken(token)
+  if (!claims || claims.email !== normalizedEmail) return null
+  return claims
 }
 
 async function getSupabaseSessionBounded(budgetMs: number): Promise<Session | null> {
@@ -216,6 +180,16 @@ interface SimulatedUser {
 export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 const AUTH_SNAPSHOT_KEY = 'tms-auth-snapshot-v1'
+const AUTH_ROLE_CACHE_KEY = 'tms-auth-role-cache-v1'
+const AUTH_ROLE_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+
+function hasPersistedAuthSession(): boolean {
+  if (typeof window === 'undefined') return false
+  return !!(
+    getStoredAccessTokenIfValid(0) ||
+    localStorage.getItem('sb-refresh-token')?.trim()
+  )
+}
 
 type AuthSnapshot = {
   user: AuthUser | null
@@ -232,6 +206,49 @@ function clearAuthSnapshot() {
   if (typeof window === 'undefined') return
   try {
     sessionStorage.removeItem(AUTH_SNAPSHOT_KEY)
+    localStorage.removeItem(AUTH_ROLE_CACHE_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
+type AuthRoleCache = {
+  email: string
+  userRole: UserRole
+  userPosition: string | null
+  permissions: UserPermissions | null
+  updatedAt: number
+}
+
+function readAuthRoleCache(normalizedEmail: string): AuthRoleCache | null {
+  if (typeof window === 'undefined' || !normalizedEmail) return null
+  try {
+    const raw = localStorage.getItem(AUTH_ROLE_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as AuthRoleCache
+    if (!parsed?.email || parsed.userRole == null) return null
+    if (parsed.email.trim().toLowerCase() !== normalizedEmail) return null
+    if (Date.now() - parsed.updatedAt > AUTH_ROLE_CACHE_MAX_AGE_MS) return null
+    if (parsed.userRole === 'customer') return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function writeAuthRoleCache(snapshot: AuthSnapshot) {
+  if (typeof window === 'undefined') return
+  const email = snapshot.user?.email?.trim()
+  if (!email || snapshot.userRole == null || snapshot.userRole === 'customer') return
+  try {
+    const cache: AuthRoleCache = {
+      email: email.toLowerCase(),
+      userRole: snapshot.userRole,
+      userPosition: snapshot.userPosition,
+      permissions: snapshot.permissions,
+      updatedAt: Date.now(),
+    }
+    localStorage.setItem(AUTH_ROLE_CACHE_KEY, JSON.stringify(cache))
   } catch {
     /* ignore */
   }
@@ -249,18 +266,108 @@ function readAuthSnapshot(): AuthSnapshot | null {
       return parsed
     }
 
-    const hydrated = authUserFromStoredAccessToken()
-    const snapshotEmail = parsed.user?.email?.trim().toLowerCase()
-    const hydratedEmail = hydrated?.email?.trim().toLowerCase()
-    if (!hydrated || !snapshotEmail || snapshotEmail !== hydratedEmail) {
+    if (!hasPersistedAuthSession()) {
       clearAuthSnapshot()
       return null
     }
-    if (parsed.userRole == null) return null
-    return parsed
+
+    const snapshotEmail = parsed.user?.email?.trim().toLowerCase()
+    if (!snapshotEmail) {
+      clearAuthSnapshot()
+      return null
+    }
+
+    const hydrated = authUserFromStoredAccessToken(0)
+    const hydratedEmail = hydrated?.email?.trim().toLowerCase()
+    const emailMatches = !!hydratedEmail && hydratedEmail === snapshotEmail
+    const hasRefreshToken = !!localStorage.getItem('sb-refresh-token')?.trim()
+
+    if (!emailMatches) {
+      if (!hasRefreshToken) {
+        clearAuthSnapshot()
+        return null
+      }
+      const roleCache = readAuthRoleCache(snapshotEmail)
+      if (!roleCache) {
+        clearAuthSnapshot()
+        return null
+      }
+      if (parsed.userRole == null) return null
+      return {
+        ...parsed,
+        user: parsed.user,
+        authUser: parsed.authUser ?? parsed.user,
+        userRole: parsed.userRole ?? roleCache.userRole,
+        userPosition: parsed.userPosition ?? roleCache.userPosition,
+        permissions: parsed.permissions ?? roleCache.permissions,
+      }
+    }
+
+    if (parsed.userRole == null) {
+      const roleCache = readAuthRoleCache(snapshotEmail)
+      if (!roleCache) return null
+      return {
+        ...parsed,
+        user: hydrated ?? parsed.user,
+        authUser: hydrated ?? parsed.authUser ?? parsed.user,
+        userRole: roleCache.userRole,
+        userPosition: roleCache.userPosition,
+        permissions: roleCache.permissions,
+      }
+    }
+
+    return {
+      ...parsed,
+      user: hydrated ?? parsed.user,
+      authUser: hydrated ?? parsed.authUser ?? parsed.user,
+    }
   } catch {
     clearAuthSnapshot()
     return null
+  }
+}
+
+function readAuthFromRoleCacheOnly(): AuthSnapshot | null {
+  if (typeof window === 'undefined' || !hasPersistedAuthSession()) return null
+
+  const hydrated = authUserFromStoredAccessToken(0)
+  const cachedEmail = hydrated?.email?.trim().toLowerCase()
+
+  let roleCache = cachedEmail ? readAuthRoleCache(cachedEmail) : null
+  if (!roleCache) {
+    try {
+      const raw = localStorage.getItem(AUTH_ROLE_CACHE_KEY)
+      if (!raw || !localStorage.getItem('sb-refresh-token')?.trim()) return null
+      const parsed = JSON.parse(raw) as AuthRoleCache
+      if (!parsed?.email || parsed.userRole == null || parsed.userRole === 'customer') return null
+      if (Date.now() - parsed.updatedAt > AUTH_ROLE_CACHE_MAX_AGE_MS) return null
+      roleCache = parsed
+    } catch {
+      return null
+    }
+  }
+
+  const email = (hydrated?.email ?? roleCache.email).trim().toLowerCase()
+  if (!email || roleCache.email.trim().toLowerCase() !== email) return null
+
+  const restoredUser: AuthUser =
+    hydrated ??
+    ({
+      id: email,
+      email,
+      name: email.split('@')[0] || 'User',
+      created_at: new Date(roleCache.updatedAt).toISOString(),
+    } satisfies AuthUser)
+
+  return {
+    user: restoredUser,
+    authUser: restoredUser,
+    userRole: roleCache.userRole,
+    userPosition: roleCache.userPosition,
+    permissions: roleCache.permissions,
+    isInitialized: true,
+    isSimulating: false,
+    simulatedUser: null,
   }
 }
 
@@ -268,6 +375,7 @@ function writeAuthSnapshot(snapshot: AuthSnapshot) {
   if (typeof window === 'undefined') return
   try {
     sessionStorage.setItem(AUTH_SNAPSHOT_KEY, JSON.stringify(snapshot))
+    writeAuthRoleCache(snapshot)
   } catch {
     /* ignore */
   }
@@ -318,7 +426,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // hydration 직후·첫 페인트 전에 스냅샷 복원 (서버 HTML과 클라이언트 첫 렌더 일치)
   useLayoutEffect(() => {
-    const snapshot = readAuthSnapshot()
+    syncAuthSessionCookieFromStorage()
+    const snapshot = readAuthSnapshot() ?? readAuthFromRoleCacheOnly()
     if (!snapshot) return
 
     setUser(snapshot.user)
@@ -408,7 +517,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   // 사용자 역할 및 권한 확인
-  const checkUserRole = useCallback(async (email: string): Promise<void> => {
+  const checkUserRole = useCallback(async (email: string, options?: CheckUserRoleOptions): Promise<void> => {
+    const background = options?.background === true
+    const forceRpc = options?.forceRpc === true
     if (!email) {
       console.log('AuthContext: No email provided, setting customer role')
       setUserRole('customer')
@@ -473,24 +584,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           const normalizedEmail = email.toLowerCase()
 
+          if (!forceRpc) {
+            const jwtClaims = readJwtTeamClaimsForEmail(normalizedEmail)
+            if (jwtClaims?.teamRole) {
+              const role = jwtClaims.teamRole
+              const position = jwtClaims.teamPosition
+
+              setUserPosition(position)
+              setUserRole(role)
+              setPermissions(permissionsForRole(role))
+
+              if (jwtClaims.teamNameKo) {
+                setAuthUser((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        name: jwtClaims.teamNameKo as string,
+                      }
+                    : null
+                )
+              }
+
+              setLoading(false)
+              setIsInitialized(true)
+
+              console.log('AuthContext: Role applied from JWT claims:', role, 'for:', email)
+
+              if (!background) {
+                scheduleDeferredWork(() => {
+                  void checkUserRole(email, { background: true, forceRpc: true }).catch(() => {})
+                })
+              }
+
+              resolve()
+              return
+            }
+          }
+
           if (isSuperAdminEmail(normalizedEmail)) {
             console.log('AuthContext: Super admin detected, setting admin role')
             setUserRole('admin')
             setUserPosition(null)
-            setPermissions({
-              canViewAdmin: true,
-              canManageProducts: true,
-              canManageCustomers: true,
-              canManageReservations: true,
-              canManageTours: true,
-              canManageTeam: true,
-              canViewSchedule: true,
-              canManageBookings: true,
-              canViewAuditLogs: true,
-              canManageChannels: true,
-              canManageOptions: true,
-              canViewFinance: true,
-            })
+            setPermissions(permissionsForRole('admin'))
             setLoading(false)
             setIsInitialized(true)
             resolve()
@@ -498,102 +633,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
 
           try {
-            const MAX_TEAM_ATTEMPTS = 3
+            const teamData = await fetchAuthTeamMemberRow(normalizedEmail)
 
-            let teamData: {
-              name_ko: string | null
-              email: string
-              position: string | null
-              is_active: boolean | null
-            } | null = null
-            let error: { message?: string; code?: string } | null = null
-
-            for (let attempt = 0; attempt < MAX_TEAM_ATTEMPTS; attempt++) {
-              try {
-                if (attempt > 0) {
-                  await getSupabaseSessionBounded(2000)
-                  if (isAuthRefreshRateLimited()) {
-                    await new Promise((r) => setTimeout(r, 1500))
-                  } else {
-                    await new Promise((r) => setTimeout(r, 400 * attempt))
+            console.log('AuthContext: Team role lookup result:', {
+              hasData: !!teamData,
+              teamData: teamData
+                ? {
+                    name_ko: teamData.name_ko,
+                    position: teamData.position,
+                    is_active: teamData.is_active,
                   }
-                }
+                : null,
+              email,
+              background,
+            })
 
-                const queryPromise = fetchTeamRoleRow(normalizedEmail)
-
-                const timeoutPromise = new Promise<never>((_, toReject) =>
-                  setTimeout(() => toReject(new Error('Query timeout')), TEAM_QUERY_TIMEOUT_MS)
-                )
-
-                teamData = (await Promise.race([queryPromise, timeoutPromise])) as typeof teamData
-                error = null
-                break
-              } catch (attemptErr) {
+            if (!teamData) {
+              if (background && userRoleRef.current && userRoleRef.current !== 'customer') {
                 console.warn(
-                  `AuthContext: Team query attempt ${attempt + 1}/${MAX_TEAM_ATTEMPTS} failed:`,
-                  attemptErr
+                  'AuthContext: Background role revalidation empty — keeping cached role for:',
+                  email
                 )
-                if (attempt < MAX_TEAM_ATTEMPTS - 1) {
-                  await new Promise((r) => setTimeout(r, 400 * (attempt + 1)))
-                  continue
-                }
-                teamData = null
-                error = { message: 'Query timeout', code: 'TIMEOUT' }
+                resolve()
+                return
               }
             }
 
-            console.log('AuthContext: Team query result:', {
-              hasData: !!teamData,
-              error: error?.message,
-              errorCode: error?.code,
-              teamData:
-                teamData && !error
-                  ? {
-                      name_ko: (teamData as Record<string, unknown>).name_ko,
-                      position: (teamData as Record<string, unknown>).position,
-                      is_active: (teamData as Record<string, unknown>).is_active,
-                    }
-                  : null,
-              rawTeamData: teamData,
-              email: email,
-            })
-
-            if (error && error.code !== 'PGRST116') {
-              console.error('AuthContext: Error fetching team data:', error)
-            }
-
-            const role = getUserRole(
-              email,
-              teamData && !error ? (teamData as Record<string, unknown>) : undefined
-            )
-            const position =
-              teamData && !error
-                ? ((teamData as Record<string, unknown>).position as string | null)
-                : null
+            const role = getUserRole(email, teamData ?? undefined)
+            const position = teamData?.position ?? null
 
             setUserPosition(position)
 
-            const userPermissions = {
-              canViewAdmin: hasPermission(role, 'canViewAdmin'),
-              canManageProducts: hasPermission(role, 'canManageProducts'),
-              canManageCustomers: hasPermission(role, 'canManageCustomers'),
-              canManageReservations: hasPermission(role, 'canManageReservations'),
-              canManageTours: hasPermission(role, 'canManageTours'),
-              canManageTeam: hasPermission(role, 'canManageTeam'),
-              canViewSchedule: hasPermission(role, 'canViewSchedule'),
-              canManageBookings: hasPermission(role, 'canManageBookings'),
-              canViewAuditLogs: hasPermission(role, 'canViewAuditLogs'),
-              canManageChannels: hasPermission(role, 'canManageChannels'),
-              canManageOptions: hasPermission(role, 'canManageOptions'),
-              canViewFinance: hasPermission(role, 'canViewFinance'),
-            }
+            const userPermissions = permissionsForRole(role)
 
-            if (teamData && !error && (teamData as Record<string, unknown>).name_ko) {
+            if (teamData?.name_ko) {
               setAuthUser((prev) =>
                 prev
                   ? {
                       ...prev,
-                      name: (teamData as Record<string, unknown>).name_ko as string,
+                      name: teamData.name_ko as string,
                     }
                   : null
               )
@@ -606,6 +684,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             console.log('AuthContext: User role set successfully:', role, 'for user:', email)
           } catch (teamErr) {
+            if (background && userRoleRef.current && userRoleRef.current !== 'customer') {
+              console.warn('AuthContext: Background role revalidation failed, keeping cached role:', teamErr)
+              resolve()
+              return
+            }
             console.warn('AuthContext: Team query failed, using customer role:', teamErr)
             setUserRole('customer')
             setUserPosition(null)
@@ -638,6 +721,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  /** JWT + 역할 캐시(또는 슈퍼관리자)로 UI를 즉시 열고, 역할은 백그라운드 재검증 */
+  const bootstrapFromCachedRole = useCallback(
+    (authUserData: AuthUser): boolean => {
+      const email = authUserData.email.trim().toLowerCase()
+      if (!email) return false
+
+      const applyStaffBootstrap = (role: UserRole, position: string | null, nameKo?: string | null) => {
+        setUser(authUserData)
+        setAuthUser(
+          nameKo
+            ? {
+                ...authUserData,
+                name: nameKo,
+              }
+            : authUserData
+        )
+        setUserRole(role)
+        setUserPosition(position)
+        setPermissions(permissionsForRole(role))
+        setLoading(false)
+        setIsInitialized(true)
+        const token = getStoredAccessTokenIfValid(0)
+        if (token) {
+          updateSupabaseToken(token)
+        }
+        void refreshTokenIfNeeded()
+        scheduleDeferredWork(() => {
+          void checkUserRole(authUserData.email, { background: true, forceRpc: true }).catch((error) => {
+            console.warn('AuthContext: Background role revalidation after cache bootstrap failed:', error)
+          })
+        })
+      }
+
+      const jwtClaims = readJwtTeamClaimsForEmail(email)
+      if (jwtClaims && isStaffTeamRole(jwtClaims.teamRole)) {
+        applyStaffBootstrap(jwtClaims.teamRole, jwtClaims.teamPosition, jwtClaims.teamNameKo)
+        return true
+      }
+
+      if (isSuperAdminEmail(email)) {
+        applyStaffBootstrap('admin', null)
+        return true
+      }
+
+      const roleCache = readAuthRoleCache(email)
+      if (!roleCache) return false
+
+      applyStaffBootstrap(roleCache.userRole, roleCache.userPosition)
+      return true
+    },
+    [checkUserRole, refreshTokenIfNeeded]
+  )
+
   const hydrateAuthFromStoredAccessToken = useCallback(
     (reason: string): boolean => {
       const accessToken = getStoredAccessTokenIfValid(30)
@@ -659,6 +795,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsInitialized(true)
         return true
       }
+      if (bootstrapFromCachedRole(hydrated)) {
+        return true
+      }
       void checkUserRole(hydrated.email).catch((error) => {
         console.error('AuthContext: Team membership check failed after JWT hydrate:', error)
         setUserRole('customer')
@@ -669,7 +808,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
       return true
     },
-    [checkUserRole]
+    [checkUserRole, bootstrapFromCachedRole]
   )
 
   const recoverAuthSession = useCallback(async () => {
@@ -736,6 +875,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(true)
       }
       const authUserData = authUserFromSupabaseSessionUser(session.user)
+      if (bootstrapFromCachedRole(authUserData)) {
+        return
+      }
       setUser(authUserData)
       setAuthUser(authUserData)
       await checkUserRole(email)
@@ -745,7 +887,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false)
       }
     }
-  }, [hydrateAuthFromStoredAccessToken, isSimulating, simulatedUser, checkUserRole])
+  }, [hydrateAuthFromStoredAccessToken, isSimulating, simulatedUser, checkUserRole, bootstrapFromCachedRole])
 
   // 시뮬레이션 정보 복원 (클라이언트에서만 실행, SSR 호환성)
   useEffect(() => {
@@ -993,6 +1135,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       restoredFromSnapshotRef.current = false
       setLoading(false)
       console.log('AuthContext: Restored from snapshot, skipping heavy bootstrap')
+      void (async () => {
+        const upgraded = await upgradeSessionForTeamRoleClaims()
+        void refreshTokenIfNeeded()
+        const emailForRevalidate = userRef.current?.email?.trim()
+        if (!emailForRevalidate) return
+        if (upgraded) {
+          void checkUserRole(emailForRevalidate).catch((error) => {
+            console.warn('AuthContext: Role sync after JWT upgrade failed:', error)
+          })
+          return
+        }
+        scheduleDeferredWork(() => {
+          void checkUserRole(emailForRevalidate, { background: true, forceRpc: true }).catch((error) => {
+            console.warn('AuthContext: Background role revalidation failed:', error)
+          })
+        })
+      })()
     } else {
       console.log('AuthContext: Initializing authentication...')
     }
@@ -1032,6 +1191,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const checkStoredTokens = async () => {
       try {
         syncCustomTokensFromGoTrueStorage()
+        await upgradeSessionForTeamRoleClaims()
+
+        const coldCacheUser = readAuthFromRoleCacheOnly()?.user
+        if (coldCacheUser && bootstrapFromCachedRole(coldCacheUser)) {
+          return
+        }
+
+        const hydratedEarly = authUserFromStoredAccessToken(0)
+        if (hydratedEarly?.email && hasPersistedAuthSession()) {
+          if (bootstrapFromCachedRole(hydratedEarly)) {
+            return
+          }
+        }
 
         const accessToken = localStorage.getItem('sb-access-token')
         const expiresAt = localStorage.getItem('sb-expires-at')
@@ -1086,8 +1258,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 
                 console.log('AuthContext: Mock session created, updating Supabase token')
                 
-                // Supabase 클라이언트에 토큰 설정
                 updateSupabaseToken(validAccessToken)
+
+                if (bootstrapFromCachedRole(authUserData)) {
+                  return
+                }
 
                 // 갱신은 네트워크 지연·504에 막히지 않도록 백그라운드만 수행 — 역할 확인·UI는 바로 진행
                 if (tokenExpiry <= now + 300 && canAttemptProactiveRefresh()) {
@@ -1181,17 +1356,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(authUserData)
             setAuthUser(authUserData)
             
-            // 토큰을 localStorage에 저장
             localStorage.setItem('sb-access-token', session.access_token)
             localStorage.setItem('sb-refresh-token', session.refresh_token)
             const tokenExpiry = session.expires_at || Math.floor(Date.now() / 1000) + (7 * 24 * 3600)
             localStorage.setItem('sb-expires-at', tokenExpiry.toString())
             
-            // Supabase 클라이언트에 토큰 설정
             updateSupabaseToken(session.access_token)
             
-            // 사용자 역할 확인
             if (session.user.email) {
+              if (bootstrapFromCachedRole(authUserData)) {
+                return
+              }
               checkUserRole(session.user.email).catch(error => {
                 console.error('AuthContext: Team membership check failed:', error)
                 setUserRole('customer')
@@ -1261,6 +1436,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setUser(authUserData)
                 setAuthUser(authUserData)
                 updateSupabaseToken(accessToken)
+
+                if (bootstrapFromCachedRole(authUserData)) {
+                  return
+                }
                 
                 checkUserRole(mockUser.email || '').catch(error => {
                   console.error('AuthContext: Team membership check failed:', error)
@@ -1467,7 +1646,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           
           persistSupabaseSessionToStorage(session)
 
-          // Supabase User를 AuthUser로 변환
           const authUserData: AuthUser = {
             id: session.user.id,
             email: session.user.email,
@@ -1481,6 +1659,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           
           setUser(authUserData)
           setAuthUser(authUserData)
+
+          const jwtClaims = readTeamClaimsFromAccessToken(session.access_token)
+          if (jwtClaims && jwtClaims.email === session.user.email.trim().toLowerCase()) {
+            setUserRole(jwtClaims.teamRole)
+            setUserPosition(jwtClaims.teamPosition)
+            setPermissions(permissionsForRole(jwtClaims.teamRole))
+            if (jwtClaims.teamNameKo) {
+              setAuthUser((prev) =>
+                prev ? { ...prev, name: jwtClaims.teamNameKo as string } : prev
+              )
+            }
+            setLoading(false)
+            setIsInitialized(true)
+          }
         } else if (event === 'INITIAL_SESSION') {
           // 초기 세션 처리
           console.log('AuthContext: INITIAL_SESSION event received')
@@ -1498,6 +1690,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               const synced = authUserFromSupabaseSessionUser(session.user)
               setUser(synced)
               setAuthUser(synced)
+              if (accessTokenNeedsTeamRoleUpgrade(session.access_token)) {
+                void upgradeSessionForTeamRoleClaims().then((upgraded) => {
+                  if (upgraded) void checkUserRole(initEmail).catch(() => {})
+                })
+              }
               return
             }
 
@@ -1537,7 +1734,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (delayedAuthTimer) clearTimeout(delayedAuthTimer)
       subscription.unsubscribe()
     }
-  }, [checkUserRole, hydrateAuthFromStoredAccessToken, isSimulating, simulatedUser])
+  }, [checkUserRole, hydrateAuthFromStoredAccessToken, isSimulating, simulatedUser, refreshTokenIfNeeded, bootstrapFromCachedRole])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !isInitialized) return
@@ -1609,6 +1806,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         Number.isFinite(expSec) &&
         expSec > nowSec + 120
       ) {
+        scheduleDeferredWork(() => {
+          const email = userRef.current?.email?.trim()
+          if (email && userRoleRef.current && userRoleRef.current !== 'customer') {
+            void checkUserRole(email, { background: true, forceRpc: true }).catch(() => {})
+          }
+        })
         return
       }
 

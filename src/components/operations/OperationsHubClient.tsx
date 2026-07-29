@@ -10,6 +10,7 @@ import {
   FileText,
   GraduationCap,
   History,
+  KeyRound,
   ListChecks,
   Loader2,
   Pencil,
@@ -69,6 +70,7 @@ import {
   type HubEntry,
   type KnowledgeArticleRow,
 } from '@/lib/operationsHub'
+import { filterHubEntries, knowledgeArticleBodySearchBlob, sopDocumentPlainTextBlob } from '@/lib/hubArticleSearch'
 import {
   coerceKnowledgeArticleRow,
   emptyKnowledgeArticleForm,
@@ -79,6 +81,9 @@ import {
 import { deleteKnowledgeArticle, saveKnowledgeArticle } from '@/lib/knowledgeArticleCrud'
 import { migrateHubDocDataImages } from '@/lib/hubManualImageUpload'
 import LegalPagesHubPanel from '@/components/operations/LegalPagesHubPanel'
+import { AdminWorkCredentialVaultPanel } from '@/components/admin/work/AdminWorkCredentialVaultPanel'
+import { HubDocumentsSearchField } from '@/components/team-board/HubDocumentsSearchField'
+import { canAccessStaffCredentialVault } from '@/lib/staffCredentialVault'
 import { cn } from '@/lib/utils'
 
 type Props = {
@@ -94,13 +99,15 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   const viewLang: SopEditLocale = locale === 'en' ? 'en' : 'ko'
   const isEn = viewLang === 'en'
 
-  const { authUser, userRole, loading, isInitialized } = useAuth()
+  const { authUser, userRole, userPosition, loading, isInitialized } = useAuth()
   const [canManage, setCanManage] = useState(false)
   const [teamPosition, setTeamPosition] = useState<string | null>(null)
   const [articles, setArticles] = useState<KnowledgeArticleRow[]>([])
+  const [sopDoc, setSopDoc] = useState<SopDocument | null>(null)
   const [sopSections, setSopSections] = useState<ReturnType<typeof sopSectionsToHubEntries>>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loadingData, setLoadingData] = useState(true)
+  const [hubSearchQuery, setHubSearchQuery] = useState('')
 
   const [readArticle, setReadArticle] = useState<KnowledgeArticleRow | null>(null)
   const [readEditDoc, setReadEditDoc] = useState<SopDocument | null>(null)
@@ -154,6 +161,7 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   const [printPreviewOpen, setPrintPreviewOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [bulkImportOpen, setBulkImportOpen] = useState(false)
+  const [credentialVaultOpen, setCredentialVaultOpen] = useState(false)
   const [bodyViewMode, setBodyViewMode] = useState<'structure' | 'raw'>('structure')
   const [sourceRawEditing, setSourceRawEditing] = useState(false)
   const previewA4Ref = useRef<HTMLDivElement | null>(null)
@@ -200,6 +208,16 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
 
   const hubBase = `/${locale}/${basePath}/operations-hub`
   const adminCrud = enableAdminCrud && canManage
+  const canVault = useMemo(
+    () =>
+      basePath === 'admin' &&
+      canAccessStaffCredentialVault({
+        userRole,
+        userPosition,
+        authUserEmail: authUser?.email,
+      }),
+    [authUser?.email, basePath, userPosition, userRole]
+  )
 
   const reloadArticles = useCallback(async (): Promise<KnowledgeArticleRow[]> => {
     if (!authUser?.email) return []
@@ -468,8 +486,10 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
 
     if (!sopErr && sopRow?.body_structure) {
       const doc = parseSopDocumentJson(sopRow.body_structure)
+      setSopDoc(doc)
       setSopSections(doc ? sopSectionsToHubEntries(doc.sections) : [])
     } else {
+      setSopDoc(null)
       setSopSections([])
     }
 
@@ -499,7 +519,32 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     return mergeHubEntries(articleEntries, sopEntries)
   }, [adminCrud, hubArticles, position, sopSections])
 
-  const grouped = useMemo(() => groupHubEntriesByCategory(visibleEntries), [visibleEntries])
+  const hubEntryBodySearchMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const row of articles) {
+      map.set(row.id, knowledgeArticleBodySearchBlob(row))
+    }
+    if (sopDoc) {
+      for (const section of sopDoc.sections) {
+        map.set(
+          `sop-sec-${section.id}`,
+          sopDocumentPlainTextBlob({
+            title_ko: sopDoc.title_ko,
+            title_en: sopDoc.title_en,
+            sections: [section],
+          })
+        )
+      }
+    }
+    return map
+  }, [articles, sopDoc])
+
+  const filteredEntries = useMemo(
+    () => filterHubEntries(visibleEntries, hubSearchQuery, viewLang, hubEntryBodySearchMap),
+    [visibleEntries, hubSearchQuery, viewLang, hubEntryBodySearchMap]
+  )
+
+  const grouped = useMemo(() => groupHubEntriesByCategory(filteredEntries), [filteredEntries])
 
   const unpublishedSlugs = useMemo(
     () => new Set(articles.filter((a) => !a.is_published).map((a) => a.slug)),
@@ -795,17 +840,32 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
                 : '워크플로, 시스템 사용법, 트레이닝·인수인계용 매뉴얼 모음입니다.'}
             </p>
           </div>
-          {adminCrud ? (
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" size="sm" onClick={openEditNew}>
-                <Plus className="mr-1 h-4 w-4" />
-                {isEn ? 'New' : '새 문서'}
+          {canVault || adminCrud ? (
+          <div className="flex flex-wrap gap-2">
+            {canVault ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setCredentialVaultOpen(true)}
+              >
+                <KeyRound className="mr-1 h-4 w-4" />
+                {isEn ? 'Password management' : '패스워드 관리'}
               </Button>
-              <Button type="button" size="sm" variant="outline" onClick={() => setLegalPagesOpen(true)}>
-                <FileText className="mr-1 h-4 w-4" />
-                {isEn ? 'Legal & policies' : '법적 고지 · 정책'}
-              </Button>
-            </div>
+            ) : null}
+            {adminCrud ? (
+              <>
+                <Button type="button" size="sm" onClick={openEditNew}>
+                  <Plus className="mr-1 h-4 w-4" />
+                  {isEn ? 'New' : '새 문서'}
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => setLegalPagesOpen(true)}>
+                  <FileText className="mr-1 h-4 w-4" />
+                  {isEn ? 'Legal & policies' : '법적 고지 · 정책'}
+                </Button>
+              </>
+            ) : null}
+          </div>
           ) : null}
         </div>
 
@@ -845,23 +905,50 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
             desc={isEn ? 'First-week roadmap' : '1주차 로드맵'}
             onClick={() => openReadBySlug('onboarding-week-1')}
           />
+          {canVault ? (
+            <QuickAction
+              icon={KeyRound}
+              title={isEn ? 'Password management' : '패스워드 관리'}
+              desc={isEn ? 'OTA & site login vault' : 'OTA·사이트 로그인 금고'}
+              onClick={() => setCredentialVaultOpen(true)}
+            />
+          ) : null}
         </div>
 
         {loadError ? <p className="mb-4 text-sm text-amber-700">{loadError}</p> : null}
+
+        <div className="mb-6">
+          <HubDocumentsSearchField
+            locale={locale}
+            value={hubSearchQuery}
+            onChange={setHubSearchQuery}
+          />
+          {hubSearchQuery.trim() ? (
+            <p className="mt-2 text-xs text-gray-500">
+              {isEn
+                ? `${filteredEntries.length} document${filteredEntries.length === 1 ? '' : 's'} found`
+                : `${filteredEntries.length}개 문서`}
+            </p>
+          ) : null}
+        </div>
 
         {grouped.length === 0 ? (
           <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8 text-center">
             <BookOpen className="mx-auto mb-3 h-10 w-10 text-gray-400" />
             <p className="text-gray-700">
-              {adminCrud && articles.length > 0
+              {hubSearchQuery.trim()
                 ? isEn
-                  ? 'No documents match your role filter. Adjust target roles or check drafts below after saving.'
-                  : '표시 조건에 맞는 문서가 없습니다. 대상 직책 설정을 확인하거나 저장 후 초안을 확인해 주세요.'
-                : isEn
-                  ? 'No published documents yet.'
-                  : '게시된 운영 문서가 아직 없습니다.'}
+                  ? 'No documents match your search.'
+                  : '검색 결과가 없습니다.'
+                : adminCrud && articles.length > 0
+                  ? isEn
+                    ? 'No documents match your role filter. Adjust target roles or check drafts below after saving.'
+                    : '표시 조건에 맞는 문서가 없습니다. 대상 직책 설정을 확인하거나 저장 후 초안을 확인해 주세요.'
+                  : isEn
+                    ? 'No published documents yet.'
+                    : '게시된 운영 문서가 아직 없습니다.'}
             </p>
-            {adminCrud ? (
+            {adminCrud && !hubSearchQuery.trim() ? (
               <Button type="button" className="mt-4" size="sm" onClick={openEditNew}>
                 <Plus className="mr-1 h-4 w-4" />
                 {isEn ? 'Create first document' : '첫 문서 만들기'}
@@ -1444,6 +1531,24 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
           locale={locale}
           isEn={isEn}
         />
+      ) : null}
+
+      {canVault ? (
+        <Dialog open={credentialVaultOpen} onOpenChange={setCredentialVaultOpen}>
+          <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-hidden">
+            <DialogHeader>
+              <DialogTitle>{isEn ? 'Password management' : '패스워드 관리'}</DialogTitle>
+            </DialogHeader>
+            <p className="text-xs text-muted-foreground">
+              {isEn
+                ? 'Super & managers only · all access is logged'
+                : 'Super·매니저 전용 · 열람 기록이 저장됩니다'}
+            </p>
+            <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-1">
+              <AdminWorkCredentialVaultPanel locale={locale} active={credentialVaultOpen} />
+            </div>
+          </DialogContent>
+        </Dialog>
       ) : null}
 
       <SopPrintPreviewFloatingPanel

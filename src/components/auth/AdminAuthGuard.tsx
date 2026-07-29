@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useAuthOptional } from '@/contexts/AuthContext'
+import AdminAuthLoadingShell from '@/components/auth/AdminAuthLoadingShell'
 
 const AUTH_GUARD_FAILSAFE_MS = 45_000
 
@@ -14,14 +15,7 @@ interface AdminAuthGuardProps {
 type AuthState = NonNullable<ReturnType<typeof useAuthOptional>>
 
 function AdminAuthLoadingScreen() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <div className="mx-auto h-32 w-32 animate-spin rounded-full border-b-2 border-primary" />
-        <p className="mt-4 text-gray-600">인증 확인 중...</p>
-      </div>
-    </div>
-  )
+  return <AdminAuthLoadingShell />
 }
 
 function AdminAuthGuardContent({
@@ -32,18 +26,14 @@ function AdminAuthGuardContent({
   const { user, userRole, userPosition, loading, isInitialized, isSimulating, simulatedUser } = auth
   const router = useRouter()
   const pathname = usePathname()
-  const redirectToPath = pathname && pathname !== `/${locale}/auth` ? pathname : `/${locale}`
+  const redirectToPath = pathname && pathname !== `/${locale}/auth` ? pathname : `/${locale}/admin`
+  const authLoginPath = `/${locale}/auth?redirectTo=${encodeURIComponent(redirectToPath)}`
 
   const currentUser = isSimulating && simulatedUser ? simulatedUser : user
   const currentUserRole = isSimulating && simulatedUser ? simulatedUser.role : userRole
   const currentUserPosition = isSimulating && simulatedUser ? simulatedUser.position : userPosition
 
-  const [mounted, setMounted] = useState(false)
   const [authTimedOut, setAuthTimedOut] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
 
   useEffect(() => {
     if (!loading && isInitialized) {
@@ -69,7 +59,7 @@ function AdminAuthGuardContent({
     if (loading || !isInitialized) return
 
     if (!currentUser) {
-      router.replace(`/${locale}`)
+      router.replace(authLoginPath)
       return
     }
 
@@ -86,13 +76,27 @@ function AdminAuthGuardContent({
       router.replace(`/${locale}/guide`)
       return
     }
-  }, [currentUser, currentUserRole, currentUserPosition, isInitialized, loading, router, locale, redirectToPath])
+  }, [
+    currentUser,
+    currentUserRole,
+    currentUserPosition,
+    isInitialized,
+    loading,
+    router,
+    locale,
+    authLoginPath,
+  ])
+
+  const hasVerifiedAdminSession =
+    isInitialized &&
+    !!currentUser?.email &&
+    currentUserRole !== null &&
+    currentUserRole !== 'customer'
 
   const showBlockingAuth =
-    !mounted ||
-    (!authTimedOut &&
-      !(currentUser?.email && currentUserRole !== null && isInitialized) &&
-      (!isInitialized || (loading && !user) || (loading && userRole === null && !isSimulating)))
+    !authTimedOut &&
+    !hasVerifiedAdminSession &&
+    (!isInitialized || (loading && !user) || (loading && userRole === null && !isSimulating))
 
   if (showBlockingAuth) {
     return <AdminAuthLoadingScreen />
@@ -112,7 +116,7 @@ function AdminAuthGuardContent({
           </p>
           <button
             type="button"
-            onClick={() => router.push(`/${locale}/auth?redirectTo=${encodeURIComponent(redirectToPath)}`)}
+            onClick={() => router.push(authLoginPath)}
             className="bg-primary text-primary-foreground px-6 py-2 rounded-lg hover:bg-primary/90"
           >
             {'\uB85C\uADF8\uC778 \uD398\uC774\uC9C0\uB85C \uC774\uB3D9'}
@@ -131,7 +135,7 @@ function AdminAuthGuardContent({
             {'\uC774 \uD398\uC774\uC9C0\uC5D0 \uC811\uADFC\uD558\uB824\uBA74 \uB85C\uADF8\uC778\uD574\uC57C \uD569\uB2C8\uB2E4.'}
           </p>
           <button
-            onClick={() => router.push(`/${locale}/auth`)}
+            onClick={() => router.push(authLoginPath)}
             className="bg-primary text-primary-foreground px-6 py-2 rounded-lg hover:bg-primary/90"
           >
             {'\uB85C\uADF8\uC778 \uD398\uC774\uC9C0\uB85C \uC774\uB3D9'}
@@ -150,7 +154,7 @@ function AdminAuthGuardContent({
             {'\uC774 \uD398\uC774\uC9C0\uC5D0 \uC811\uADFC\uD558\uB824\uBA74 \uD300 \uBA64\uBC84\uC5EC\uC57C \uD569\uB2C8\uB2E4.'}
           </p>
           <button
-            onClick={() => router.push(`/${locale}/auth?redirectTo=${encodeURIComponent(redirectToPath)}`)}
+            onClick={() => router.push(authLoginPath)}
             className="bg-primary text-primary-foreground px-6 py-2 rounded-lg hover:bg-primary/90"
           >
             {'\uB85C\uADF8\uC778 \uD398\uC774\uC9C0\uB85C \uC774\uB3D9'}

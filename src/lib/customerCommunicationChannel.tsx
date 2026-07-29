@@ -49,8 +49,8 @@ export function reservationUsesPlatformMessagingChannel(
 }
 
 export type ResolveCustomerCommunicationChannelOpts = {
-  channelId?: string | null
-  channelName?: string | null
+  channelId?: string | null | undefined
+  channelName?: string | null | undefined
 }
 
 /** DB 값이 없을 때 예약 채널에 따라 표시·기본 소통 채널 결정 */

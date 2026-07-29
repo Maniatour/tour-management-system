@@ -3,7 +3,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { X, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { fetchReservationOptionLinesBatch } from '@/lib/reservationOptionsForEmail'
+import { fetchReservationOptionLinesBatch, type ReservationOptionLineBilingual } from '@/lib/reservationOptionsForEmail'
 import { getBalanceAmountForDisplay } from '@/utils/reservationPricingBalance'
 import {
   buildBalanceEnvelopeBreakdownLines,
@@ -25,9 +25,64 @@ const BALANCE_BLOCK_LEFT_MM = 42
 const BALANCE_BLOCK_TOP_MM = 10
 const BALANCE_BLOCK_WIDTH_MM = 176
 
-const ENVELOPE_IMAGE_URL = {
+const ENVELOPE_IMAGE_PATH = {
   tip: (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_TIP_ENVELOPE_IMAGE_URL) || '/tip-envelope-image.png',
   balance: (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BALANCE_ENVELOPE_IMAGE_URL) || '/balance-envelope-image.png',
+}
+
+function resolveEnvelopeImageUrl(pathOrUrl: string): string {
+  const raw = (pathOrUrl || '').trim()
+  if (!raw) return raw
+  if (/^https?:\/\//i.test(raw) || raw.startsWith('data:') || raw.startsWith('blob:')) return raw
+  if (typeof window === 'undefined') return raw.startsWith('/') ? raw : `/${raw}`
+  const path = raw.startsWith('/') ? raw : `/${raw}`
+  return `${window.location.origin}${path}`
+}
+
+/** Balance 잔액·내역 계산에 필요한 pricing 컬럼만 조회 */
+const ENVELOPE_PRICING_SELECT = [
+  'reservation_id',
+  'balance_amount',
+  'deposit_amount',
+  'currency',
+  'not_included_price',
+  'pricing_adults',
+  'product_price_total',
+  'adult_product_price',
+  'child_product_price',
+  'infant_product_price',
+  'coupon_discount',
+  'additional_discount',
+  'option_total',
+  'required_option_total',
+  'choices_total',
+  'additional_cost',
+  'tax',
+  'card_fee',
+  'prepayment_cost',
+  'prepayment_tip',
+  'refund_amount',
+  'private_tour_additional_cost',
+  'total_price',
+].join(', ')
+
+type EnvelopeReservationRow = {
+  id: string
+  customer_id?: string | null
+  adults?: number
+  child?: number
+  infant?: number
+  total_people?: number
+  status?: string | null
+}
+
+function customerForReservation(
+  rez: EnvelopeReservationRow,
+  customerMap: Map<string, { name: string; language: string | null }>
+): { name: string; language: string | null } | null {
+  const customerId = rez.customer_id?.trim()
+  if (!customerId) return null
+  return customerMap.get(customerId) ?? null
 }
 
 const LABELS = {
@@ -174,12 +229,14 @@ function getPrintStyles(): string {
     .bg-white { background-color: #fff !important; }
     .overflow-visible { overflow: visible !important; }
     .envelope-sheet, .envelope-sheet * { font-family: Arial, Helvetica, sans-serif !important; }
-    .envelope-sheet { width: ${ENVELOPE_WIDTH_MM}mm !important; height: ${ENVELOPE_HEIGHT_MM}mm !important; margin: 0 !important; padding: 0 !important; page-break-after: always !important; page-break-inside: avoid !important; overflow: visible !important; }
+    .envelope-sheet { width: ${ENVELOPE_WIDTH_MM}mm !important; height: ${ENVELOPE_HEIGHT_MM}mm !important; margin: 0 !important; padding: 0 !important; page-break-after: always !important; page-break-inside: avoid !important; overflow: visible !important; position: relative !important; }
     .envelope-sheet:last-child { page-break-after: auto !important; }
+    .envelope-bg-image { position: absolute !important; top: 0 !important; right: 0 !important; bottom: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; object-fit: contain !important; object-position: center !important; z-index: 0 !important; pointer-events: none !important; display: block !important; }
     @page { size: ${ENVELOPE_WIDTH_MM}mm ${ENVELOPE_HEIGHT_MM}mm; margin: 0 !important; }
     @media print {
       html, body { width: ${ENVELOPE_WIDTH_MM}mm !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
-      body, body *, .envelope-sheet, .envelope-sheet * { font-family: Arial, Helvetica, sans-serif !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+      body, body *, .envelope-sheet, .envelope-sheet * { font-family: Arial, Helvetica, sans-serif !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+      .envelope-bg-image { visibility: visible !important; opacity: 1 !important; display: block !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
       .envelope-balance-block { left: ${BALANCE_BLOCK_LEFT_MM}mm !important; top: ${BALANCE_BLOCK_TOP_MM}mm !important; width: ${BALANCE_BLOCK_WIDTH_MM}mm !important; min-width: ${BALANCE_BLOCK_WIDTH_MM}mm !important; transform: rotate(90deg) scale(var(--env-balance-scale, 1)) !important; transform-origin: left top !important; }
     }
   `
@@ -208,9 +265,16 @@ export default function TourEnvelopeModal({
   const [selectedReservationIds, setSelectedReservationIds] = useState<Set<string>>(new Set())
 
   const L = locale === 'ko' ? LABELS.ko : LABELS.en
-  const envelopeImageUrl = ENVELOPE_IMAGE_URL[variant]
+  const envelopeImageUrl = resolveEnvelopeImageUrl(ENVELOPE_IMAGE_PATH[variant])
   const displayRows = variant === 'balance' ? rows.filter((r) => r.balanceAmount > 0) : rows
   const hasBalanceRows = variant === 'balance' && displayRows.length === 0 && !loading && !error && rows.length > 0
+
+  useEffect(() => {
+    if (!isOpen) return
+    const img = new Image()
+    img.decoding = 'async'
+    img.src = envelopeImageUrl
+  }, [isOpen, envelopeImageUrl])
 
   useEffect(() => {
     if (!isOpen || !reservationIds.length) {
@@ -218,116 +282,128 @@ export default function TourEnvelopeModal({
       setError(null)
       return
     }
+    let cancelled = false
     const load = async () => {
       setLoading(true)
       setError(null)
       try {
         const ids = [...new Set(reservationIds.filter(Boolean))]
         if (ids.length === 0) {
-          setRows([])
-          setLoading(false)
+          if (!cancelled) setRows([])
           return
         }
+
         const { data: rezList, error: rezErr } = await supabase
           .from('reservations')
           .select('id, customer_id, adults, child, infant, total_people, status')
           .in('id', ids)
+
+        if (cancelled) return
         if (rezErr || !rezList?.length) {
           setError('Reservation not found')
-          setLoading(false)
           return
         }
+
         const customerIds = [
           ...new Set(
-            (rezList as { customer_id?: string }[])
+            (rezList as EnvelopeReservationRow[])
               .map((r) => r.customer_id)
-              .filter((id): id is string => Boolean(id))
+              .filter((id): id is string => Boolean(id && String(id).trim()))
           ),
         ]
-        const { data: customersData } = await supabase
-          .from('customers')
-          .select('id, name, language')
-          .in('id', customerIds)
-        const customerById = new Map<string, { name: string; language: string | null }>()
-        if (customersData) {
-          customersData.forEach((c: { id: string; name?: string; language?: string | null }) => {
-            customerById.set(c.id, { name: c.name ?? '', language: c.language ?? null })
-          })
+        const customerMap = new Map<string, { name: string; language: string | null }>()
+        if (customerIds.length > 0) {
+          const { data: customersData, error: custErr } = await supabase
+            .from('customers')
+            .select('id, name, language')
+            .in('id', customerIds)
+          if (cancelled) return
+          if (custErr) {
+            setError('Customer not found')
+            return
+          }
+          for (const row of customersData || []) {
+            customerMap.set(row.id, {
+              name: row.name ?? '',
+              language: row.language ?? null,
+            })
+          }
         }
-        type RezRow = {
-          id: string
-          customer_id?: string
-          adults?: number
-          child?: number
-          infant?: number
-          total_people?: number
-          status?: string | null
-        }
-        const rezById = new Map<string, RezRow>()
-        rezList.forEach((r) => rezById.set((r as RezRow).id, r as RezRow))
 
-        const { data: sessionData } = await supabase.auth.getSession()
-        const token = sessionData?.session?.access_token
+        const rezById = new Map<string, EnvelopeReservationRow>()
+        for (const r of rezList as EnvelopeReservationRow[]) {
+          rezById.set(r.id, r)
+        }
+
+        const needsBalanceData = variant === 'balance'
+        const [
+          pricingResult,
+          optionLinesByResId,
+          payResult,
+          rcResult,
+        ] = await Promise.all([
+          needsBalanceData
+            ? supabase.from('reservation_pricing').select(ENVELOPE_PRICING_SELECT).in('reservation_id', ids)
+            : Promise.resolve({ data: null as unknown[] | null, error: null }),
+          needsBalanceData ? fetchReservationOptionLinesBatch(supabase, ids) : Promise.resolve(new Map()),
+          needsBalanceData
+            ? supabase
+                .from('payment_records')
+                .select('reservation_id, amount, payment_status')
+                .in('reservation_id', ids)
+            : Promise.resolve({ data: null as unknown[] | null, error: null }),
+          needsBalanceData
+            ? supabase
+                .from('reservation_customers')
+                .select('reservation_id, resident_status')
+                .in('reservation_id', ids)
+            : Promise.resolve({ data: null as unknown[] | null, error: null }),
+        ])
+
+        if (cancelled) return
+
         const pricingByResId = new Map<string, Record<string, unknown> | null>()
-        if (token) {
-          const res = await fetch(`/api/reservation-pricing?reservation_ids=${encodeURIComponent(ids.join(','))}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          })
-          if (res.ok) {
-            const json = await res.json()
-            const items = json.items as
-              | Array<{ reservation_id: string; pricing: Record<string, unknown> | null }>
-              | undefined
-            if (Array.isArray(items)) {
-              items.forEach(({ reservation_id, pricing }) => {
-                pricingByResId.set(
-                  reservation_id,
-                  pricing && typeof pricing === 'object' ? pricing : null
-                )
-              })
+        if (needsBalanceData && !pricingResult.error) {
+          for (const row of (pricingResult.data || []) as Array<{ reservation_id: string }>) {
+            pricingByResId.set(row.reservation_id, row as Record<string, unknown>)
+          }
+        }
+
+        const optionsTotalByResId = new Map<string, number | null>()
+        if (needsBalanceData) {
+          for (const id of ids) {
+            const lines = optionLinesByResId.get(id) || []
+            if (!lines.length) {
+              optionsTotalByResId.set(id, null)
+            } else {
+              const sum = lines.reduce(
+                (s: number, o: { lineTotal?: number | null }) => s + (Number(o.lineTotal) || 0),
+                0
+              )
+              optionsTotalByResId.set(id, sum)
             }
           }
         }
 
-        const optionLinesByResId = await fetchReservationOptionLinesBatch(supabase, ids)
-
-        const optionsTotalByResId = new Map<string, number | null>()
-        for (const id of ids) {
-          const lines = optionLinesByResId.get(id) || []
-          if (!lines.length) {
-            optionsTotalByResId.set(id, null)
-          } else {
-            const sum = lines.reduce((s, o) => s + (Number(o.lineTotal) || 0), 0)
-            optionsTotalByResId.set(id, sum)
-          }
-        }
-
-        const { data: payRows } = await supabase
-          .from('payment_records')
-          .select('reservation_id, amount, payment_status')
-          .in('reservation_id', ids)
-
-        const { data: rcRows } = await supabase
-          .from('reservation_customers')
-          .select('reservation_id, resident_status')
-          .in('reservation_id', ids)
-
         const residentsByResId = new Map<string, Array<{ resident_status?: string | null }>>()
-        for (const r of rcRows || []) {
-          const row = r as { reservation_id: string; resident_status?: string | null }
-          const list = residentsByResId.get(row.reservation_id) || []
-          list.push({ resident_status: row.resident_status ?? null })
-          residentsByResId.set(row.reservation_id, list)
+        for (const r of (rcResult.data || []) as Array<{ reservation_id: string; resident_status?: string | null }>) {
+          const list = residentsByResId.get(r.reservation_id) || []
+          list.push({ resident_status: r.resident_status ?? null })
+          residentsByResId.set(r.reservation_id, list)
         }
+
         const paymentsByResId = new Map<string, Array<{ payment_status: string; amount: number }>>()
-        for (const r of payRows || []) {
-          const row = r as { reservation_id: string; amount?: unknown; payment_status?: string | null }
-          const list = paymentsByResId.get(row.reservation_id) || []
+        for (const r of (payResult.data || []) as Array<{
+          reservation_id: string
+          amount?: unknown
+          payment_status?: string | null
+        }>) {
+          const list = paymentsByResId.get(r.reservation_id) || []
           list.push({
-            payment_status: row.payment_status || '',
-            amount: Number(row.amount) || 0,
+            payment_status: r.payment_status || '',
+            amount: Number(r.amount) || 0,
           })
-          paymentsByResId.set(row.reservation_id, list)
+          paymentsByResId.set(r.reservation_id, list)
         }
 
         const results: EnvelopeRow[] = ids.map((id) => {
@@ -342,22 +418,24 @@ export default function TourEnvelopeModal({
               balanceLines: [],
             }
           }
-          const customer = rez.customer_id ? customerById.get(rez.customer_id) : null
+          const customer = customerForReservation(rez, customerMap)
           const pricing = pricingByResId.get(id) ?? null
           const optionsSum = optionsTotalByResId.get(id) ?? null
-          const balanceAmount = getBalanceAmountForDisplay(
-            pricing,
-            optionsSum,
-            {
-              adults: rez.adults ?? null,
-              child: rez.child ?? null,
-              infant: rez.infant ?? null,
-            },
-            {
-              paymentRecords: paymentsByResId.get(id) ?? [],
-              reservationStatus: rez.status ?? null,
-            }
-          )
+          const balanceAmount = needsBalanceData
+            ? getBalanceAmountForDisplay(
+                pricing,
+                optionsSum,
+                {
+                  adults: rez.adults ?? null,
+                  child: rez.child ?? null,
+                  infant: rez.infant ?? null,
+                },
+                {
+                  paymentRecords: paymentsByResId.get(id) ?? [],
+                  reservationStatus: rez.status ?? null,
+                }
+              )
+            : 0
           const currency =
             pricing && typeof (pricing as { currency?: unknown }).currency === 'string'
               ? ((pricing as { currency: string }).currency || 'USD')
@@ -376,7 +454,7 @@ export default function TourEnvelopeModal({
               : rez.adults ?? 0
           const notIncludedPerPerson = Number(p?.not_included_price) || 0
           const residentCounts = countResidentLinesFromCustomers(residentsByResId.get(id))
-          const reservationOptions = (optionLinesByResId.get(id) || []).map((o) => ({
+          const reservationOptions = (optionLinesByResId.get(id) || []).map((o: ReservationOptionLineBilingual) => ({
             labelKo: o.labelKo,
             labelEn: o.labelEn,
             unitPrice: o.unitPrice,
@@ -384,7 +462,7 @@ export default function TourEnvelopeModal({
             subtotal: o.lineTotal,
           }))
           const balanceLines =
-            variant === 'balance' && balanceAmount > 0.005
+            needsBalanceData && balanceAmount > 0.005
               ? buildBalanceEnvelopeBreakdownLines({
                   balanceAmount,
                   notIncludedPerPerson,
@@ -404,6 +482,8 @@ export default function TourEnvelopeModal({
             balanceLines,
           }
         })
+
+        if (cancelled) return
         setRows(results)
         if (variant === 'balance') {
           setSelectedReservationIds(new Set(results.filter((r) => r.balanceAmount > 0).map((r) => r.reservationId)))
@@ -411,15 +491,52 @@ export default function TourEnvelopeModal({
           setSelectedReservationIds(new Set(results.map((r) => r.reservationId)))
         }
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to load')
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load')
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
     load()
+    return () => {
+      cancelled = true
+    }
   }, [isOpen, reservationIds.join(','), variant])
 
-  const handlePrint = () => {
+  const waitForDocumentImages = (doc: Document, timeoutMs = 2500): Promise<void> =>
+    new Promise((resolve) => {
+      const images = Array.from(doc.querySelectorAll('img'))
+      if (images.length === 0) {
+        resolve()
+        return
+      }
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        resolve()
+      }
+      const timer = window.setTimeout(finish, timeoutMs)
+      let pending = 0
+      for (const img of images) {
+        if (img.complete && img.naturalWidth > 0) continue
+        pending += 1
+        const done = () => {
+          pending -= 1
+          if (pending <= 0) {
+            window.clearTimeout(timer)
+            finish()
+          }
+        }
+        img.addEventListener('load', done, { once: true })
+        img.addEventListener('error', done, { once: true })
+      }
+      if (pending === 0) {
+        window.clearTimeout(timer)
+        finish()
+      }
+    })
+
+  const handlePrint = async () => {
     const target = document.getElementById('envelope-batch-print')
     if (!target) return
     const clone = target.cloneNode(true) as HTMLElement
@@ -427,6 +544,11 @@ export default function TourEnvelopeModal({
     clone.style.border = 'none'
     clone.style.boxShadow = 'none'
     clone.removeAttribute('id')
+
+    clone.querySelectorAll('img').forEach((img) => {
+      const src = img.getAttribute('src')
+      if (src) img.setAttribute('src', resolveEnvelopeImageUrl(src))
+    })
 
     const iframe = document.createElement('iframe')
     iframe.title = 'Envelope Print'
@@ -437,24 +559,29 @@ export default function TourEnvelopeModal({
       document.body.removeChild(iframe)
       return
     }
+
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
     iframeDoc.open()
     iframeDoc.write(`
-      <!DOCTYPE html><html><head><meta charset="utf-8"><title>Tour Envelope</title>
+      <!DOCTYPE html><html><head><meta charset="utf-8"><base href="${origin}/"><title>Tour Envelope</title>
       <style>${getPrintStyles()}</style>
       </head><body>${clone.outerHTML}</body></html>`)
     iframeDoc.close()
 
     const printWin = iframe.contentWindow
-    if (printWin) {
-      printWin.onload = () => {
-        printWin.focus()
-        setTimeout(() => {
-          printWin.print()
-          document.body.removeChild(iframe)
-        }, 250)
-      }
-    } else {
+    if (!printWin) {
       document.body.removeChild(iframe)
+      return
+    }
+
+    try {
+      await waitForDocumentImages(iframeDoc)
+      printWin.focus()
+      printWin.print()
+    } finally {
+      window.setTimeout(() => {
+        if (iframe.parentNode) document.body.removeChild(iframe)
+      }, 500)
     }
   }
 
@@ -574,8 +701,9 @@ export default function TourEnvelopeModal({
                         <img
                           src={envelopeImageUrl}
                           alt=""
-                          className="absolute inset-0 w-full h-full object-contain object-center z-0 pointer-events-none"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                          className="envelope-bg-image absolute inset-0 w-full h-full object-contain object-center z-0 pointer-events-none"
+                          loading="eager"
+                          decoding="sync"
                         />
                       )}
                       {variant === 'balance' && balanceLayout ? (

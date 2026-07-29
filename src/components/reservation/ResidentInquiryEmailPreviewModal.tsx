@@ -1,10 +1,9 @@
 'use client'
 
 import { useMemo, useState, useCallback, useEffect } from 'react'
-import { X, Eye, Loader2, Send, Copy, Check, Pencil, RotateCcw } from 'lucide-react'
+import { X, Eye, Loader2, Send, Copy, Check, Pencil } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
 import {
-  builtinResidentInquiryBodyHtml,
   extractResidentInquiryEmailBodyFromDocument,
   getBuiltinResidentInquiryEmailTemplate,
   mergeResidentInquiryEmailDocumentFromBody,
@@ -14,12 +13,12 @@ import {
 import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
 import {
   residentInquiryEmailTourKindFromProduct,
-  residentInquiryEmailTourKindToApiParam,
   type ResidentInquiryEmailTourKind,
 } from '@/lib/residentInquiryTourKind'
-import { supabase } from '@/lib/supabase'
-import LazyResidentInquiryEmailBodyRichEditor from '@/components/reservation/LazyResidentInquiryEmailBodyRichEditor'
+import { defaultStaffOutreachTemplateName } from '@/lib/staffOutreachMessageTemplates'
 import EmailPreviewBodyPanel from '@/components/reservation/EmailPreviewBodyPanel'
+import StaffOutreachMessageTemplatePanel from '@/components/reservation/StaffOutreachMessageTemplatePanel'
+import { useStaffOutreachMessageTemplates } from '@/hooks/useStaffOutreachMessageTemplates'
 
 export interface ResidentInquiryEmailPreviewModalProps {
   isOpen: boolean
@@ -76,16 +75,55 @@ export default function ResidentInquiryEmailPreviewModal({
     if (isOpen) setEditorTourKind(reservationTourKind)
   }, [isOpen, reservationTourKind])
 
-  const [subjectTpl, setSubjectTpl] = useState('')
-  /** 카드 안쪽 본문 HTML(리치 텍스트). 저장 시 셸과 합쳐 전체 문서로 보냄 */
-  const [bodyHtml, setBodyHtml] = useState('')
-  const [templateEditorNonce, setTemplateEditorNonce] = useState(0)
-  const [templateLoading, setTemplateLoading] = useState(false)
-  const [savedInDb, setSavedInDb] = useState(false)
+  const getBuiltin = useCallback(() => {
+    const b = getBuiltinResidentInquiryEmailTemplate(emailLocale, editorTourKind)
+    return {
+      name: defaultStaffOutreachTemplateName(emailLocale),
+      subject: b.subject,
+      body: b.html,
+    }
+  }, [emailLocale, editorTourKind])
+
+  const prepareBodyForEditor = useCallback(
+    (stored: string) =>
+      extractResidentInquiryEmailBodyFromDocument(stored, emailLocale, editorTourKind),
+    [emailLocale, editorTourKind]
+  )
+
+  const prepareBodyForSave = useCallback(
+    (editor: string) => mergeResidentInquiryEmailDocumentFromBody(emailLocale, editor),
+    [emailLocale]
+  )
+
+  const templateManager = useStaffOutreachMessageTemplates({
+    scope: 'resident_inquiry',
+    locale: emailLocale,
+    channel: 'email',
+    variant: editorTourKind,
+    isOpen,
+    showSubject: true,
+    getBuiltin,
+    prepareBodyForEditor,
+    prepareBodyForSave,
+    loadFailedMessage: t('residentInquiryTemplateLoadFailed'),
+    saveFailedMessage: t('residentInquiryTemplateSaveFailed'),
+    deleteFailedMessage: t('residentInquiryTemplateResetFailed'),
+    savedMessage: t('residentInquiryTemplateSaved'),
+    deletedMessage: t('staffOutreachTemplateDeleted'),
+    addedMessage: t('staffOutreachTemplateAdded'),
+  })
+
+  const { subjectTpl, bodyTpl: bodyHtml, loading: templateLoading, savedInDb } = templateManager
+
   const [editMode, setEditMode] = useState(false)
-  const [savingTemplate, setSavingTemplate] = useState(false)
-  const [resettingTemplate, setResettingTemplate] = useState(false)
-  const [templateNotice, setTemplateNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isOpen) {
+      setEditMode(false)
+      setCopied(false)
+      setCopiedLink(false)
+    }
+  }, [isOpen])
   /** HTML 복사·수동 발송용 — 미리보기 열릴 때 예약별 개인 링크 생성 */
   const [guestLinkUrl, setGuestLinkUrl] = useState<string | null>(null)
   const [guestLinkLoading, setGuestLinkLoading] = useState(false)
@@ -129,61 +167,6 @@ export default function ResidentInquiryEmailPreviewModal({
       cancelled = true
     }
   }, [isOpen, reservationId, emailLocale, t])
-
-  useEffect(() => {
-    if (!isOpen) {
-      setEditMode(false)
-      setTemplateNotice(null)
-      setCopied(false)
-      setCopiedLink(false)
-      return
-    }
-    let cancelled = false
-    ;(async () => {
-      setTemplateLoading(true)
-      setTemplateNotice(null)
-      try {
-        const tk = residentInquiryEmailTourKindToApiParam(editorTourKind)
-        const res = await fetch(`/api/resident-inquiry-email-template?locale=${emailLocale}&tour_kind=${tk}`)
-        const data = (await res.json()) as {
-          subject_template?: string
-          html_template?: string
-          saved_in_db?: boolean
-        }
-        if (cancelled) return
-        if (!res.ok || !data.subject_template?.trim() || !data.html_template?.trim()) {
-          const b = getBuiltinResidentInquiryEmailTemplate(emailLocale, editorTourKind)
-          setSubjectTpl(b.subject)
-          setBodyHtml(builtinResidentInquiryBodyHtml(emailLocale, editorTourKind))
-          setTemplateEditorNonce((n) => n + 1)
-          setSavedInDb(false)
-          setTemplateNotice(t('residentInquiryTemplateLoadFailed'))
-          return
-        }
-        setSubjectTpl(data.subject_template)
-        setBodyHtml(
-          extractResidentInquiryEmailBodyFromDocument(data.html_template, emailLocale, editorTourKind)
-        )
-        setTemplateEditorNonce((n) => n + 1)
-        setSavedInDb(!!data.saved_in_db)
-      } catch {
-        if (!cancelled) {
-          const b = getBuiltinResidentInquiryEmailTemplate(emailLocale, editorTourKind)
-          setSubjectTpl(b.subject)
-          setBodyHtml(builtinResidentInquiryBodyHtml(emailLocale, editorTourKind))
-          setTemplateEditorNonce((n) => n + 1)
-          setSavedInDb(false)
-          setTemplateNotice(t('residentInquiryTemplateLoadFailed'))
-        }
-      } finally {
-        if (!cancelled) setTemplateLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- t stable; keys: isOpen, emailLocale, editorTourKind
-  }, [isOpen, emailLocale, editorTourKind])
 
   const mergedHtmlTpl = useMemo(
     () => mergeResidentInquiryEmailDocumentFromBody(emailLocale, bodyHtml),
@@ -251,64 +234,6 @@ export default function ResidentInquiryEmailPreviewModal({
       alert(uiLocale === 'en' ? 'Failed to copy link.' : '링크 복사에 실패했습니다.')
     }
   }, [guestLinkUrl, guestLinkError, t, uiLocale])
-
-  const handleSaveTemplate = async () => {
-    setSavingTemplate(true)
-    setTemplateNotice(null)
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      const res = await fetch('/api/resident-inquiry-email-template', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locale: emailLocale,
-          tour_kind: editorTourKind,
-          subject_template: subjectTpl,
-          html_template: mergeResidentInquiryEmailDocumentFromBody(emailLocale, bodyHtml),
-          updated_by: user?.email ?? null,
-        }),
-      })
-      const data = (await res.json()) as { error?: string }
-      if (!res.ok) {
-        setTemplateNotice(data.error || t('residentInquiryTemplateSaveFailed'))
-        return
-      }
-      setSavedInDb(true)
-      setTemplateNotice(t('residentInquiryTemplateSaved'))
-      setTimeout(() => setTemplateNotice(null), 3200)
-    } catch {
-      setTemplateNotice(t('residentInquiryTemplateSaveFailed'))
-    } finally {
-      setSavingTemplate(false)
-    }
-  }
-
-  const handleResetTemplate = async () => {
-    setResettingTemplate(true)
-    setTemplateNotice(null)
-    try {
-      const tk = residentInquiryEmailTourKindToApiParam(editorTourKind)
-      const res = await fetch(`/api/resident-inquiry-email-template?locale=${emailLocale}&tour_kind=${tk}`, {
-        method: 'DELETE',
-      })
-      const data = (await res.json()) as { error?: string }
-      if (!res.ok) {
-        setTemplateNotice(data.error || t('residentInquiryTemplateResetFailed'))
-        return
-      }
-      const b = getBuiltinResidentInquiryEmailTemplate(emailLocale, editorTourKind)
-      setSubjectTpl(b.subject)
-      setBodyHtml(builtinResidentInquiryBodyHtml(emailLocale, editorTourKind))
-      setTemplateEditorNonce((n) => n + 1)
-      setSavedInDb(false)
-    } catch {
-      setTemplateNotice(t('residentInquiryTemplateResetFailed'))
-    } finally {
-      setResettingTemplate(false)
-    }
-  }
 
   const handleSend = async () => {
     setSending(true)
@@ -432,36 +357,6 @@ export default function ResidentInquiryEmailPreviewModal({
             <Pencil className="h-3.5 w-3.5" />
             {editMode ? t('residentInquiryDoneEditing') : t('residentInquiryEditTemplate')}
           </button>
-          {editMode && (
-            <>
-              <button
-                type="button"
-                onClick={() => void handleSaveTemplate()}
-                disabled={savingTemplate || previewBlocked}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-800 hover:bg-teal-100 disabled:opacity-50"
-              >
-                {savingTemplate ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Check className="h-3.5 w-3.5" />
-                )}
-                {savingTemplate ? t('residentInquiryTemplateSaving') : t('residentInquirySaveTemplate')}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleResetTemplate()}
-                disabled={resettingTemplate || previewBlocked}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
-              >
-                {resettingTemplate ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RotateCcw className="h-3.5 w-3.5" />
-                )}
-                {t('residentInquiryResetTemplate')}
-              </button>
-            </>
-          )}
           <span
             className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
               savedInDb ? 'bg-teal-100 text-teal-800' : 'bg-gray-200 text-gray-700'
@@ -477,11 +372,6 @@ export default function ResidentInquiryEmailPreviewModal({
               {tRes('messages.noCustomerEmail')}
             </div>
           ) : null}
-          {templateNotice && (
-            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-              {templateNotice}
-            </div>
-          )}
           {guestLinkError && (
             <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
               {guestLinkError}
@@ -495,30 +385,16 @@ export default function ResidentInquiryEmailPreviewModal({
             </div>
           )}
 
-          {editMode && (
-            <div className="mb-4 space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <p className="text-xs text-gray-600">{t('residentInquiryPlaceholderHint')}</p>
-              <p className="text-xs text-gray-500">{t('residentInquiryTemplateShellNote')}</p>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
-                  {t('residentInquiryTemplateBodyField')}
-                </label>
-                {templateLoading ? (
-                  <div className="flex min-h-[260px] items-center justify-center rounded border border-gray-200 bg-white">
-                    <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
-                  </div>
-                ) : (
-                  <LazyResidentInquiryEmailBodyRichEditor
-                    key={templateEditorNonce}
-                    value={bodyHtml}
-                    onChange={setBodyHtml}
-                    disabled={templateLoading}
-                    uiLocale={uiLocale}
-                  />
-                )}
-              </div>
-            </div>
-          )}
+          <StaffOutreachMessageTemplatePanel
+            channel="email"
+            uiLocale={uiLocale}
+            editMode={editMode}
+            showSubject
+            placeholderHint={t('residentInquiryPlaceholderHint')}
+            shellNote={t('residentInquiryTemplateShellNote')}
+            accentClass="teal"
+            templateManager={templateManager}
+          />
 
           <div className="mb-4 space-y-1 rounded-lg border border-teal-100 bg-teal-50/80 p-3 text-sm text-gray-800">
             <div>

@@ -6,11 +6,12 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
-import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { fetchApiWithAuth, resolveAccessTokenForApi } from '@/lib/api-client-bearer'
 import {
   KOVEgAS_OPERATOR_ID,
   KOVEgAS_OPERATOR_SLUG,
@@ -105,35 +106,57 @@ export function OperatorProvider({ children }: { children: React.ReactNode }) {
     []
   )
   const [loading, setLoading] = useState(true)
+  const refreshGenRef = useRef(0)
+  const lastAppliedOperatorIdRef = useRef<string | null>(null)
+  const applySessionInflightRef = useRef<Map<string, Promise<void>>>(new Map())
 
   const applyOperatorSession = useCallback(async (operatorId: string) => {
-    try {
-      await supabase.rpc('set_current_operator_id', {
-        p_operator_id: operatorId,
-      })
-    } catch {
-      // RPC unavailable until migration applied
+    const inflight = applySessionInflightRef.current.get(operatorId)
+    if (inflight) return inflight
+
+    if (lastAppliedOperatorIdRef.current === operatorId) {
+      return
     }
-    // Phase 6d.0: optional JWT app_metadata.operator_id when SAAS_STAFF_TENANT_LOCK on
-    try {
-      const res = await fetchApiWithAuth('/api/admin/operators/active-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ operatorId }),
-      })
-      const json = (await res.json().catch(() => ({}))) as {
-        lockEnabled?: boolean
-        skipped?: boolean
+
+    const promise = (async () => {
+      const token = await resolveAccessTokenForApi()
+      if (!token) return
+
+      try {
+        await supabase.rpc('set_current_operator_id', {
+          p_operator_id: operatorId,
+        })
+      } catch {
+        // RPC unavailable until migration applied
       }
-      if (res.ok && json.lockEnabled && !json.skipped) {
-        await supabase.auth.refreshSession()
+
+      try {
+        const res = await fetchApiWithAuth('/api/admin/operators/active-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ operatorId }),
+        })
+        const json = (await res.json().catch(() => ({}))) as {
+          lockEnabled?: boolean
+          skipped?: boolean
+        }
+        if (res.ok && json.lockEnabled && !json.skipped) {
+          await supabase.auth.refreshSession()
+        }
+        lastAppliedOperatorIdRef.current = operatorId
+      } catch {
+        // lock off or API unavailable — safe no-op
       }
-    } catch {
-      // lock off or API unavailable — safe no-op
-    }
+    })().finally(() => {
+      applySessionInflightRef.current.delete(operatorId)
+    })
+
+    applySessionInflightRef.current.set(operatorId, promise)
+    return promise
   }, [])
 
   const refresh = useCallback(async () => {
+    const gen = ++refreshGenRef.current
     setLoading(true)
     try {
       let memberships: OperatorMemberRecord[] = []
@@ -240,18 +263,23 @@ export function OperatorProvider({ children }: { children: React.ReactNode }) {
           ? FALLBACK_OPERATOR
           : { ...FALLBACK_OPERATOR, id: resolvedOperatorId })
 
+      if (gen !== refreshGenRef.current) return
+
       setOperator(opRecord)
       setMembership(nextMembership)
       writeStoredActiveOperatorId(resolvedOperatorId)
       writeActiveOperatorCookie(resolvedOperatorId)
       await applyOperatorSession(resolvedOperatorId)
     } finally {
-      setLoading(false)
+      if (gen === refreshGenRef.current) {
+        setLoading(false)
+      }
     }
   }, [user?.email, user?.id, applyOperatorSession])
 
   const setActiveOperatorId = useCallback(
     async (nextId: string) => {
+      lastAppliedOperatorIdRef.current = null
       writeStoredActiveOperatorId(nextId)
       await refresh()
     },

@@ -2,14 +2,12 @@ const OAUTH_CALLBACK_LOCALE_KEY = 'oauth_callback_locale'
 
 /**
  * OAuth redirectTo·비밀번호 재설정 등에 쓸 앱 origin.
- * 배포 사이트에서는 브라우저 origin을 우선하고, 로컬에서만 env(Vercel/ SITE_URL)를 참고한다.
+ * 브라우저에서는 항상 현재 origin(로컬·프리뷰·프로덕션)을 사용한다.
+ * SSR/서버에서는 NEXT_PUBLIC_SITE_URL → VERCEL_URL → localhost 순으로 fallback.
  */
 export function getAppOrigin(): string {
   if (typeof window !== 'undefined') {
-    const { hostname, origin } = window.location
-    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-      return origin
-    }
+    return window.location.origin
   }
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim()
@@ -23,17 +21,25 @@ export function getAppOrigin(): string {
     return `https://${host}`
   }
 
-  if (typeof window !== 'undefined') {
-    return window.location.origin
-  }
-
   return 'http://localhost:3000'
 }
 
-/** Supabase Redirect URLs와 정확히 맞추기: /{locale}/auth/callback (쿼리 없음) */
-export function getOAuthCallbackRedirectUrl(locale: string): string {
+/** Supabase Redirect URLs와 정확히 맞추기: /{locale}/auth/callback */
+export function getOAuthCallbackRedirectUrl(
+  locale: string,
+  postAuthPath?: string | null
+): string {
   const loc = locale === 'en' || locale === 'ko' ? locale : 'ko'
-  return `${getAppOrigin()}/${loc}/auth/callback`
+  const base = `${getAppOrigin()}/${loc}/auth/callback`
+  if (
+    postAuthPath &&
+    postAuthPath.startsWith('/') &&
+    !postAuthPath.includes('undefined') &&
+    !postAuthPath.includes('/auth')
+  ) {
+    return `${base}?redirectTo=${encodeURIComponent(postAuthPath)}`
+  }
+  return base
 }
 
 export function stashOAuthCallbackLocale(locale: string): void {

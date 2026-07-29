@@ -1,6 +1,28 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { RESERVATION_LIST_SELECT } from '@/lib/reservationListSelect'
+import {
+  buildAdminReservationListPageCacheKey,
+  hasAdminReservationListNextPage,
+  readAdminReservationListPageCache,
+  writeAdminReservationListPageCache,
+} from '@/lib/adminReservationListPageCache'
+import {
+  buildAdminReservationCardWeekCacheKey,
+  readAdminReservationCardWeekCache,
+  writeAdminReservationCardWeekCache,
+} from '@/lib/adminReservationCardWeekCache'
+import {
+  buildAdminReservationCalendarCacheKey,
+  readAdminReservationCalendarCache,
+  writeAdminReservationCalendarCache,
+} from '@/lib/adminReservationCalendarCache'
+import {
+  browserLocalCalendarViewWindow,
+  browserLocalCreatedAtGteIsoForRecentCalendarDays,
+} from '@/lib/browserLocalWeek'
+import { writeAdminReservationPricingMemory } from '@/lib/adminReservationPricingMemoryCache'
+import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
 
 function qIdent(s: string): string {
   return String(s).replace(/"/g, '""')
@@ -33,6 +55,11 @@ export const ADMIN_RESERVATION_CARD_WEEK_RECENT_REGISTERED_DAYS = 7
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+/** 마이그레이션 미적용 시 RPC 재시도 폭주 방지 */
+let searchLookupRpcMissing = false
+let cardWeekActivityRpcMissing = false
+let cardWeekActivityCountRpcMissing = false
 
 function isProbableUuid(s: string): boolean {
   return UUID_RE.test(s.trim())
@@ -94,7 +121,7 @@ export type FetchAdminReservationListArgs = {
   /** false면 count 생략(운영 큐 2페이지 이후 등) */
   includeExactCount?: boolean
   /** Active SaaS tenant — defaults to Kovegas when omitted */
-  operatorId?: string | null
+  operatorId?: string | null | undefined
 }
 
 function collectIds(rows: unknown): string[] {
@@ -131,10 +158,130 @@ async function safeSelectIds(
   }
 }
 
+function isSearchLookupRpcUnavailable(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false
+  const code = String(err.code ?? '')
+  const msg = (err.message ?? '').toLowerCase()
+  return (
+    code === 'PGRST202' ||
+    code === '42883' ||
+    (msg.includes('function') && msg.includes('does not exist')) ||
+    msg.includes('admin_reservation_search_lookup_ids')
+  )
+}
+
+function parseSearchLookupRpcPayload(data: unknown): {
+  customerIds: string[]
+  productIds: string[]
+  channelIds: string[]
+} | null {
+  if (!data || typeof data !== 'object') return null
+  const row = data as {
+    customer_ids?: unknown
+    product_ids?: unknown
+    channel_ids?: unknown
+  }
+  const asIds = (v: unknown): string[] => {
+    if (!Array.isArray(v)) return []
+    return [...new Set(v.map((x) => String(x ?? '').trim()).filter(Boolean))]
+  }
+  return {
+    customerIds: asIds(row.customer_ids),
+    productIds: asIds(row.product_ids),
+    channelIds: asIds(row.channel_ids),
+  }
+}
+
+async function fetchSearchLookupIdsViaRpc(
+  supabase: SupabaseClient,
+  term: string,
+  operatorId?: string | null | undefined
+): Promise<{
+  customerIds: string[]
+  productIds: string[]
+  channelIds: string[]
+} | null> {
+  if (searchLookupRpcMissing) return null
+  const opId = resolveOperatorId(operatorId)
+  const { data, error } = await supabase.rpc('admin_reservation_search_lookup_ids', {
+    p_operator_id: opId,
+    p_term: term,
+    p_limit: 500,
+  })
+  if (error) {
+    if (isSearchLookupRpcUnavailable(error)) {
+      searchLookupRpcMissing = true
+      return null
+    }
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[admin reservation search] lookup RPC failed:', error.message || error)
+    }
+    return null
+  }
+  return parseSearchLookupRpcPayload(data)
+}
+
+async function fetchSearchLookupIdsViaTables(
+  supabase: SupabaseClient,
+  term: string,
+  operatorId: string
+): Promise<{ customerIds: string[]; productIds: string[]; channelIds: string[] }> {
+  const q = ilikeQuoted(term)
+  const lookupLimit = 500
+  const likePat = `%${term.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
+  const customerOr = `name.ilike.${q},special_requests.ilike.${q},email.ilike.${q},phone.ilike.${q},emergency_contact.ilike.${q}`
+
+  const [cidsActive, productIds, channelIds] = await Promise.all([
+    safeSelectIds('customers(active)', () =>
+      supabase
+        .from('customers')
+        .select('id')
+        .eq('operator_id', operatorId)
+        .or(customerOr)
+        .eq('archive', false)
+        .limit(lookupLimit)
+    ),
+    safeSelectIds('products', () =>
+      supabase
+        .from('products')
+        .select('id')
+        .eq('operator_id', operatorId)
+        .or(
+          `name.ilike.${q},name_ko.ilike.${q},name_en.ilike.${q},product_code.ilike.${q},customer_name_ko.ilike.${q},customer_name_en.ilike.${q}`
+        )
+        .limit(lookupLimit)
+    ),
+    safeSelectIds('channels', () =>
+      supabase
+        .from('channels')
+        .select('id')
+        .eq('operator_id', operatorId)
+        .ilike('name', likePat)
+        .limit(lookupLimit)
+    ),
+  ])
+
+  /** 보관 고객: 활성 매칭이 없을 때만 id 조회(보관 행 스캔·IN 크기 절약). */
+  const customerIds =
+    cidsActive.length > 0
+      ? cidsActive
+      : await safeSelectIds('customers(archive)', () =>
+          supabase
+            .from('customers')
+            .select('id')
+            .eq('operator_id', operatorId)
+            .or(customerOr)
+            .eq('archive', true)
+            .limit(lookupLimit)
+        )
+
+  return { customerIds, productIds, channelIds }
+}
+
 async function buildSearchOrClause(
   supabase: SupabaseClient,
   term: string,
-  operatorId?: string | null
+  operatorId?: string | null | undefined
 ): Promise<string | null> {
   const t = term.trim()
   if (!t) return null
@@ -174,58 +321,13 @@ async function buildSearchOrClause(
   const skipAuxLookups = t.length === 1 && /^[\x00-\x7F]$/.test(t)
 
   if (!skipAuxLookups) {
-    const lookupLimit = 500
-    const likePat = `%${t.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
+    const viaRpc = await fetchSearchLookupIdsViaRpc(supabase, t, operatorId)
+    const { customerIds, productIds, channelIds } =
+      viaRpc ?? (await fetchSearchLookupIdsViaTables(supabase, t, opId))
 
-    const customerOr = `name.ilike.${q},special_requests.ilike.${q},email.ilike.${q},phone.ilike.${q},emergency_contact.ilike.${q}`
-
-    const [cidsActive, pids, chids] = await Promise.all([
-      safeSelectIds('customers(active)', () =>
-        supabase
-          .from('customers')
-          .select('id')
-          .eq('operator_id', opId)
-          .or(customerOr)
-          .eq('archive', false)
-          .limit(lookupLimit)
-      ),
-      safeSelectIds('products', () =>
-        supabase
-          .from('products')
-          .select('id')
-          .eq('operator_id', opId)
-          .or(
-            `name.ilike.${q},name_ko.ilike.${q},name_en.ilike.${q},product_code.ilike.${q},customer_name_ko.ilike.${q},customer_name_en.ilike.${q}`
-          )
-          .limit(lookupLimit)
-      ),
-      safeSelectIds('channels', () =>
-        supabase
-          .from('channels')
-          .select('id')
-          .eq('operator_id', opId)
-          .ilike('name', likePat)
-          .limit(lookupLimit)
-      ),
-    ])
-
-    /** 보관 고객: 활성 매칭이 없을 때만 id 조회(보관 행 스캔·IN 크기 절약). 동일 문자열에 활성+보관이 같이 맞으면 보관 쪽 예약은 이 경로로는 안 잡힐 수 있음. */
-    const cids =
-      cidsActive.length > 0
-        ? cidsActive
-        : await safeSelectIds('customers(archive)', () =>
-            supabase
-              .from('customers')
-              .select('id')
-              .eq('operator_id', opId)
-              .or(customerOr)
-              .eq('archive', true)
-              .limit(lookupLimit)
-          )
-
-    if (cids.length) parts.push(`customer_id.in.(${cids.join(',')})`)
-    if (pids.length) parts.push(`product_id.in.(${pids.join(',')})`)
-    if (chids.length) parts.push(`channel_id.in.(${chids.join(',')})`)
+    if (customerIds.length) parts.push(`customer_id.in.(${customerIds.join(',')})`)
+    if (productIds.length) parts.push(`product_id.in.(${productIds.join(',')})`)
+    if (channelIds.length) parts.push(`channel_id.in.(${channelIds.join(',')})`)
   }
 
   return parts.join(',')
@@ -308,10 +410,11 @@ function buildAdminReservationListQuery(
   const reservationCountMode = searchActive ? ('planned' as const) : ('exact' as const)
 
   let selectFields = args.selectFieldsOverride ?? RESERVATION_LIST_SELECT
-  if (args.sortBy === 'customer_name') {
-    selectFields = `${RESERVATION_LIST_SELECT}, customers(name)`
-  } else if (args.sortBy === 'product_name') {
+  // remote DB에 reservations→customers FK 없음 — customers embed/정렬 참조 불가
+  if (args.sortBy === 'product_name') {
     selectFields = `${RESERVATION_LIST_SELECT}, products(name, name_ko, name_en)`
+  } else if (args.sortBy === 'customer_name') {
+    selectFields = RESERVATION_LIST_SELECT
   }
 
   let q = includeExactCount
@@ -340,8 +443,9 @@ function buildAdminReservationListQuery(
       q = q.order('tour_date', { ascending: asc, nullsFirst: false }).order('id', { ascending: asc })
       break
     case 'customer_name':
+      // reservations→customers FK 없음 — referencedTable 정렬 불가, created_at으로 대체
       q = q
-        .order('name', { ascending: asc, referencedTable: 'customers' })
+        .order('created_at', { ascending: asc, nullsFirst: false })
         .order('id', { ascending: asc })
       break
     case 'product_name':
@@ -362,6 +466,7 @@ function buildAdminReservationListQuery(
 
 /**
  * `card-week` 활동 구간(및 동일 필터)에 해당하는 예약 행 수. 단계 로드 진행률 total에 사용.
+ * 검색어 없을 때는 UNION count RPC를 우선 사용(OR head count보다 planner 친화적).
  */
 export async function fetchAdminReservationListActivityWindowRowCount(
   supabase: SupabaseClient,
@@ -371,8 +476,43 @@ export async function fetchAdminReservationListActivityWindowRowCount(
     if (args.mode !== 'card-week' || !args.activityRangeStartIso || !args.activityRangeEndIso) {
       return { count: null, error: null }
     }
-    const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm, args.operatorId)
+
     const searchActive = args.debouncedSearchTerm.trim().length > 0
+    if (!searchActive && !cardWeekActivityCountRpcMissing) {
+      const opId = resolveOperatorId(args.operatorId)
+      const { data, error } = await supabase.rpc('admin_reservation_card_week_activity_count', {
+        p_operator_id: opId,
+        p_range_start: args.activityRangeStartIso,
+        p_range_end: args.activityRangeEndIso,
+        p_status: args.selectedStatus || 'all',
+        p_channel_id:
+          args.selectedChannel && args.selectedChannel !== 'all' ? args.selectedChannel : null,
+        p_tour_date_start: args.dateRange.start || null,
+        p_tour_date_end: args.dateRange.end || null,
+        p_customer_id: args.customerIdFromUrl,
+      })
+      if (!error) {
+        const n = typeof data === 'number' ? data : Number(data)
+        if (Number.isFinite(n)) {
+          return { count: Math.max(0, Math.trunc(n)), error: null }
+        }
+      } else {
+        const code = String(error.code ?? '')
+        const msg = (error.message ?? '').toLowerCase()
+        if (
+          code === 'PGRST202' ||
+          code === '42883' ||
+          (msg.includes('function') && msg.includes('does not exist')) ||
+          msg.includes('admin_reservation_card_week_activity_count')
+        ) {
+          cardWeekActivityCountRpcMissing = true
+        } else {
+          return { count: null, error: error as Error }
+        }
+      }
+    }
+
+    const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm, args.operatorId)
     const countMode = searchActive ? ('planned' as const) : ('exact' as const)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let q: any = supabase.from('reservations').select('id', { count: countMode, head: true })
@@ -466,6 +606,142 @@ export async function fetchAdminReservationList(
     return { data: (data || []) as unknown as Record<string, unknown>[], count: count ?? null, error: null }
   } catch (e) {
     return { data: null, count: null, error: e instanceof Error ? e : new Error(String(e)) }
+  }
+}
+
+/**
+ * 목록/카드 플랫: 이전·다음 페이지를 백그라운드로 받아 sessionStorage에 채운다.
+ * 페이지 전환 시 캐시 hit로 즉시 paint + pricing 메모리 warm.
+ */
+export async function prefetchAdminReservationListAdjacentPage(
+  supabase: SupabaseClient,
+  args: {
+    operatorId?: string | null | undefined
+    page: number
+    pageSize: number
+    selectedStatus: string
+    selectedChannel: string
+    dateRange: { start: string; end: string }
+    customerIdFromUrl: string | null
+    debouncedSearchTerm: string
+    sortBy?: AdminReservationListSort
+    sortOrder?: 'asc' | 'desc'
+    count: number | null
+    loadedRowCount: number
+  }
+): Promise<void> {
+  const sortBy = args.sortBy ?? 'created_at'
+  const sortOrder = args.sortOrder ?? 'desc'
+  const targets: number[] = []
+
+  if (args.page > 1) targets.push(args.page - 1)
+  if (
+    hasAdminReservationListNextPage({
+      page: args.page,
+      pageSize: args.pageSize,
+      count: args.count,
+      loadedRowCount: args.loadedRowCount,
+    })
+  ) {
+    targets.push(args.page + 1)
+  }
+
+  await Promise.all(
+    targets.map(async (page) => {
+      const cacheKey = buildAdminReservationListPageCacheKey({
+        operatorId: args.operatorId,
+        page,
+        pageSize: args.pageSize,
+        selectedStatus: args.selectedStatus,
+        selectedChannel: args.selectedChannel,
+        dateRange: args.dateRange,
+        customerIdFromUrl: args.customerIdFromUrl,
+        debouncedSearchTerm: args.debouncedSearchTerm,
+        sortBy,
+        sortOrder,
+      })
+      if (readAdminReservationListPageCache(cacheKey)) return
+
+      const { data, count, error } = await fetchAdminReservationList(supabase, {
+        mode: 'card-flat',
+        page,
+        pageSize: args.pageSize,
+        selectedStatus: args.selectedStatus,
+        selectedChannel: args.selectedChannel,
+        dateRange: args.dateRange,
+        customerIdFromUrl: args.customerIdFromUrl,
+        debouncedSearchTerm: args.debouncedSearchTerm,
+        sortBy,
+        sortOrder,
+        operatorId: args.operatorId,
+      })
+      if (error || !data) return
+      writeAdminReservationListPageCache(cacheKey, {
+        data,
+        count: count ?? args.count,
+      })
+      void warmAdjacentPagePricingMemory(supabase, data as Record<string, unknown>[])
+    })
+  )
+}
+
+async function warmAdjacentPagePricingMemory(
+  supabase: SupabaseClient,
+  rows: Record<string, unknown>[]
+): Promise<void> {
+  const ids = [
+    ...new Set(
+      rows
+        .map((r) => (r && typeof r === 'object' && 'id' in r ? String((r as { id: unknown }).id ?? '').trim() : ''))
+        .filter(Boolean)
+    ),
+  ].slice(0, 80)
+  if (ids.length === 0) return
+  try {
+    const { data, error } = await supabase
+      .from('reservation_pricing')
+      .select(
+        'reservation_id, id, total_price, balance_amount, deposit_amount, adult_product_price, child_product_price, infant_product_price, product_price_total, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, option_total, choices_total, not_included_price, private_tour_additional_cost, refund_amount, commission_percent, commission_amount, commission_base_price, channel_settlement_amount'
+      )
+      .in('reservation_id', ids)
+    if (error || !data) return
+    const map = new Map<string, ReservationPricingMapValue>()
+    for (const p of data as Record<string, unknown>[]) {
+      const rid = String(p.reservation_id ?? '').trim()
+      if (!rid) continue
+      map.set(rid, {
+        ...(p.id != null ? { id: String(p.id) } : {}),
+        total_price: Number(p.total_price ?? 0) || 0,
+        balance_amount: Number(p.balance_amount ?? 0) || 0,
+        adult_product_price: Number(p.adult_product_price ?? 0) || 0,
+        child_product_price: Number(p.child_product_price ?? 0) || 0,
+        infant_product_price: Number(p.infant_product_price ?? 0) || 0,
+        product_price_total: Number(p.product_price_total ?? 0) || 0,
+        required_option_total: Number(p.required_option_total ?? 0) || 0,
+        subtotal: Number(p.subtotal ?? 0) || 0,
+        coupon_code: p.coupon_code != null ? String(p.coupon_code) : null,
+        coupon_discount: Number(p.coupon_discount ?? 0) || 0,
+        additional_discount: Number(p.additional_discount ?? 0) || 0,
+        additional_cost: Number(p.additional_cost ?? 0) || 0,
+        card_fee: Number(p.card_fee ?? 0) || 0,
+        tax: Number(p.tax ?? 0) || 0,
+        prepayment_cost: Number(p.prepayment_cost ?? 0) || 0,
+        prepayment_tip: Number(p.prepayment_tip ?? 0) || 0,
+        option_total: Number(p.option_total ?? 0) || 0,
+        choices_total: Number(p.choices_total ?? 0) || 0,
+        not_included_price: Number(p.not_included_price ?? 0) || 0,
+        private_tour_additional_cost: Number(p.private_tour_additional_cost ?? 0) || 0,
+        refund_amount: Number(p.refund_amount ?? 0) || 0,
+        commission_amount: Number(p.commission_amount ?? 0) || 0,
+        commission_base_price: Number(p.commission_base_price ?? 0) || 0,
+        channel_settlement_amount: Number(p.channel_settlement_amount ?? 0) || 0,
+        deposit_amount: Number(p.deposit_amount ?? 0) || 0,
+        currency: 'USD',
+      })
+    }
+    if (map.size > 0) writeAdminReservationPricingMemory(map)
+  } catch {
+    /* ignore warm failures */
   }
 }
 
@@ -626,9 +902,164 @@ export type CardWeekProgressiveHandlers = {
   onProgress?: (info: { loaded: number; total: number | null }) => void
 }
 
+function isCardWeekActivityRpcUnavailable(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false
+  const code = String(err.code ?? '')
+  const msg = (err.message ?? '').toLowerCase()
+  return (
+    code === 'PGRST202' ||
+    code === '42883' ||
+    (msg.includes('function') && msg.includes('does not exist')) ||
+    msg.includes('admin_reservation_card_week_activity_ids')
+  )
+}
+
+function parseCardWeekActivityIdRows(data: unknown): string[] {
+  if (!Array.isArray(data)) return []
+  const out: string[] = []
+  for (const row of data) {
+    if (!row || typeof row !== 'object') continue
+    const id = 'id' in row ? String((row as { id: unknown }).id ?? '').trim() : ''
+    if (id) out.push(id)
+  }
+  return out
+}
+
+async function fetchCardWeekRowsByOrderedIds(
+  supabase: SupabaseClient,
+  args: Omit<FetchAdminReservationListArgs, 'onCardWeekFetchProgress'>,
+  ids: string[]
+): Promise<{ rows: Record<string, unknown>[]; error: Error | null }> {
+  if (ids.length === 0) return { rows: [], error: null }
+  const opId = resolveOperatorId(args.operatorId)
+  const selectFields = args.selectFieldsOverride ?? RESERVATION_LIST_SELECT
+  const { data, error } = await supabase
+    .from('reservations')
+    .select(selectFields)
+    .eq('operator_id', opId)
+    .in('id', ids)
+  if (error) return { rows: [], error: error as Error }
+  const byId = new Map<string, Record<string, unknown>>()
+  for (const row of (data || []) as unknown as Record<string, unknown>[]) {
+    const id = String(row.id ?? '')
+    if (id) byId.set(id, row)
+  }
+  const rows: Record<string, unknown>[] = []
+  for (const id of ids) {
+    const row = byId.get(id)
+    if (row) rows.push(row)
+  }
+  return { rows, error: null }
+}
+
+/**
+ * 검색어 없을 때: UNION RPC로 활동 구간 id를 받은 뒤 상세 행을 `.in(id)`로 로드.
+ * RPC 미적용·오류 시 null → 호출부가 PostgREST OR 경로로 폴백.
+ */
+async function fetchAdminReservationListCardWeekProgressiveViaActivityRpc(
+  supabase: SupabaseClient,
+  args: Omit<FetchAdminReservationListArgs, 'onCardWeekFetchProgress'>,
+  handlers: CardWeekProgressiveHandlers
+): Promise<{ error: Error | null; loadedRowCount: number } | null> {
+  if (cardWeekActivityRpcMissing) return null
+  if (args.debouncedSearchTerm.trim()) return null
+  if (!args.activityRangeStartIso || !args.activityRangeEndIso) return null
+
+  const opId = resolveOperatorId(args.operatorId)
+  const chunk = ADMIN_RESERVATION_CARD_WEEK_CHUNK_SIZE
+  const merged: Record<string, unknown>[] = []
+  let offset = 0
+  let chunkIndex = 0
+  const maxChunks = 400
+  let firstChunkDone = false
+
+  for (;;) {
+    if (chunkIndex >= maxChunks) {
+      return {
+        error: new Error(`[admin reservations] card-week activity rpc chunk limit exceeded`),
+        loadedRowCount: merged.length,
+      }
+    }
+    chunkIndex += 1
+
+    const { data, error } = await supabase.rpc('admin_reservation_card_week_activity_ids', {
+      p_operator_id: opId,
+      p_range_start: args.activityRangeStartIso,
+      p_range_end: args.activityRangeEndIso,
+      p_status: args.selectedStatus || 'all',
+      p_channel_id:
+        args.selectedChannel && args.selectedChannel !== 'all' ? args.selectedChannel : null,
+      p_tour_date_start: args.dateRange.start || null,
+      p_tour_date_end: args.dateRange.end || null,
+      p_customer_id: args.customerIdFromUrl,
+      p_tier: args.cardWeekLoadTier ?? null,
+      p_recent_created_gte: args.cardWeekRecentCreatedGteIso ?? null,
+      p_legacy_tour_date_cutoff: ADMIN_RESERVATION_LEGACY_TOUR_DATE_CUTOFF_YMD,
+      p_limit: chunk,
+      p_offset: offset,
+    })
+
+    if (error) {
+      if (isCardWeekActivityRpcUnavailable(error)) {
+        cardWeekActivityRpcMissing = true
+        return null
+      }
+      return { error: error as Error, loadedRowCount: merged.length }
+    }
+
+    const ids = parseCardWeekActivityIdRows(data)
+    if (ids.length === 0) {
+      if (!firstChunkDone) {
+        try {
+          const keep = await handlers.onFirstChunk({ rows: [], totalCount: 0 })
+          if (keep === false) return { error: null, loadedRowCount: 0 }
+        } catch (e) {
+          return { error: e instanceof Error ? e : new Error(String(e)), loadedRowCount: 0 }
+        }
+      }
+      break
+    }
+
+    const { rows: batch, error: rowsError } = await fetchCardWeekRowsByOrderedIds(supabase, args, ids)
+    if (rowsError) return { error: rowsError, loadedRowCount: merged.length }
+
+    merged.push(...batch)
+    // exact total은 별도 count RPC 없이 null — 진행률은 loaded만 갱신
+    handlers.onProgress?.({ loaded: merged.length, total: null })
+
+    try {
+      if (!firstChunkDone) {
+        firstChunkDone = true
+        const keep = await handlers.onFirstChunk({ rows: batch, totalCount: null })
+        if (keep === false) return { error: null, loadedRowCount: merged.length }
+      } else {
+        const keep = await handlers.onAdditionalChunk?.({
+          rows: batch,
+          mergedLoaded: merged.length,
+          totalCount: null,
+        })
+        if (keep === false) break
+      }
+    } catch (e) {
+      if (!firstChunkDone) {
+        return { error: e instanceof Error ? e : new Error(String(e)), loadedRowCount: merged.length }
+      }
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[admin reservations] card-week activity rpc merge failed:', e)
+      }
+      break
+    }
+
+    if (ids.length < chunk) break
+    offset += chunk
+  }
+
+  return { error: null, loadedRowCount: merged.length }
+}
+
 /**
  * `card-week`: 첫 청크만 먼저 콜백으로 넘긴 뒤, 동일 쿼리로 나머지 청크를 이어 받는다.
- * (날짜 그룹 뷰에서 초기 표시 지연을 줄이기 위함)
+ * 검색어 없을 때는 UNION activity RPC를 우선 시도하고, 미적용 시 PostgREST OR로 폴백한다.
  */
 export async function fetchAdminReservationListCardWeekProgressive(
   supabase: SupabaseClient,
@@ -636,6 +1067,13 @@ export async function fetchAdminReservationListCardWeekProgressive(
   handlers: CardWeekProgressiveHandlers
 ): Promise<{ error: Error | null; loadedRowCount: number }> {
   try {
+    const viaRpc = await fetchAdminReservationListCardWeekProgressiveViaActivityRpc(
+      supabase,
+      args,
+      handlers
+    )
+    if (viaRpc) return viaRpc
+
     const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm, args.operatorId)
     const chunk = ADMIN_RESERVATION_CARD_WEEK_CHUNK_SIZE
     const merged: Record<string, unknown>[] = []
@@ -706,5 +1144,250 @@ export async function fetchAdminReservationListCardWeekProgressive(
     return { error: null, loadedRowCount: merged.length }
   } catch (e) {
     return { error: e instanceof Error ? e : new Error(String(e)), loadedRowCount: 0 }
+  }
+}
+
+export type CalendarProgressiveHandlers = {
+  onFirstChunk: (p: {
+    rows: Record<string, unknown>[]
+    totalCount: number | null
+  }) => boolean | void | Promise<boolean | void>
+  onAdditionalChunk?: (p: {
+    rows: Record<string, unknown>[]
+    mergedLoaded: number
+    totalCount: number | null
+  }) => boolean | void | Promise<boolean | void>
+  onProgress?: (info: { loaded: number; total: number | null }) => void
+}
+
+/**
+ * `calendar`: 첫 청크 paint 후 나머지를 이어 받는다 (월 전량 대기 제거).
+ */
+export async function fetchAdminReservationListCalendarProgressive(
+  supabase: SupabaseClient,
+  args: Omit<FetchAdminReservationListArgs, 'onCalendarFetchProgress' | 'mode'> & {
+    mode?: 'calendar'
+  },
+  handlers: CalendarProgressiveHandlers
+): Promise<{ error: Error | null; loadedRowCount: number }> {
+  try {
+    const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm, args.operatorId)
+    const chunk = ADMIN_RESERVATION_CALENDAR_CHUNK_SIZE
+    const calArgs: FetchAdminReservationListArgs = { ...args, mode: 'calendar' }
+    const merged: Record<string, unknown>[] = []
+    let totalCount: number | null = null
+    let offset = 0
+    let chunkIndex = 0
+    const maxChunks = 400
+
+    for (;;) {
+      if (chunkIndex >= maxChunks) {
+        return {
+          error: new Error(
+            `[admin reservations] calendar chunk limit exceeded (${maxChunks * chunk} rows)`
+          ),
+          loadedRowCount: merged.length,
+        }
+      }
+      chunkIndex += 1
+
+      const q = buildAdminReservationListQuery(supabase, calArgs, searchOr, {
+        includeExactCount: offset === 0,
+      })
+      const { data, error, count } = await q.range(offset, offset + chunk - 1)
+      if (error) {
+        return { error: error as Error, loadedRowCount: merged.length }
+      }
+      const batch = (data || []) as unknown as Record<string, unknown>[]
+
+      if (offset === 0) {
+        totalCount = count ?? null
+        merged.push(...batch)
+        handlers.onProgress?.({ loaded: merged.length, total: totalCount })
+        try {
+          const keep = await handlers.onFirstChunk({ rows: batch, totalCount })
+          if (keep === false) {
+            return { error: null, loadedRowCount: merged.length }
+          }
+        } catch (e) {
+          return { error: e instanceof Error ? e : new Error(String(e)), loadedRowCount: merged.length }
+        }
+      } else {
+        merged.push(...batch)
+        handlers.onProgress?.({ loaded: merged.length, total: totalCount })
+        try {
+          const keep = await handlers.onAdditionalChunk?.({
+            rows: batch,
+            mergedLoaded: merged.length,
+            totalCount,
+          })
+          if (keep === false) {
+            break
+          }
+        } catch (e) {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('[admin reservations] calendar incremental merge failed:', e)
+          }
+          break
+        }
+      }
+
+      if (batch.length < chunk) {
+        break
+      }
+      if (totalCount != null && merged.length >= totalCount) {
+        break
+      }
+      offset += chunk
+    }
+
+    return { error: null, loadedRowCount: merged.length }
+  } catch (e) {
+    return { error: e instanceof Error ? e : new Error(String(e)), loadedRowCount: 0 }
+  }
+}
+
+/**
+ * 인접 주(±1)의 첫 청크만 받아 sessionStorage에 채워 주 전환 시 즉시 paint.
+ */
+export async function prefetchAdminReservationCardWeekAdjacentSnapshots(
+  supabase: SupabaseClient,
+  args: {
+    operatorId?: string | null | undefined
+    currentWeekOffset: number
+    selectedStatus: string
+    selectedChannel: string
+    dateRange: { start: string; end: string }
+    customerIdFromUrl: string | null
+    debouncedSearchTerm: string
+    sortBy: AdminReservationListSort
+    sortOrder: 'asc' | 'desc'
+    weekRangeForOffset: (weekOffset: number) => {
+      rangeStartIso: string
+      rangeEndIso: string
+    }
+  }
+): Promise<void> {
+  const offsets = [args.currentWeekOffset - 1, args.currentWeekOffset + 1]
+  const recentGteIso = browserLocalCreatedAtGteIsoForRecentCalendarDays(
+    ADMIN_RESERVATION_CARD_WEEK_RECENT_REGISTERED_DAYS
+  )
+
+  for (const weekOffset of offsets) {
+    const cacheKey = buildAdminReservationCardWeekCacheKey({
+      operatorId: args.operatorId,
+      weekOffset,
+      selectedStatus: args.selectedStatus,
+      selectedChannel: args.selectedChannel,
+      dateRange: args.dateRange,
+      customerIdFromUrl: args.customerIdFromUrl,
+      debouncedSearchTerm: args.debouncedSearchTerm,
+    })
+    if (readAdminReservationCardWeekCache(cacheKey)) continue
+
+    const wr = args.weekRangeForOffset(weekOffset)
+    const cardArgs: Omit<FetchAdminReservationListArgs, 'onCardWeekFetchProgress'> = {
+      mode: 'card-week',
+      page: 1,
+      pageSize: 20,
+      selectedStatus: args.selectedStatus,
+      selectedChannel: args.selectedChannel,
+      dateRange: args.dateRange,
+      customerIdFromUrl: args.customerIdFromUrl,
+      debouncedSearchTerm: args.debouncedSearchTerm,
+      sortBy: args.sortBy,
+      sortOrder: args.sortOrder,
+      operatorId: args.operatorId,
+      activityRangeStartIso: wr.rangeStartIso,
+      activityRangeEndIso: wr.rangeEndIso,
+      cardWeekLoadTier: 'tier1_recent_modern',
+      cardWeekRecentCreatedGteIso: recentGteIso,
+      includeExactCount: false,
+    }
+
+    const { count } = await fetchAdminReservationListActivityWindowRowCount(supabase, cardArgs)
+    const holder = { snapshot: null as Record<string, unknown>[] | null }
+    await fetchAdminReservationListCardWeekProgressive(supabase, cardArgs, {
+      onFirstChunk: ({ rows }) => {
+        holder.snapshot = rows as Record<string, unknown>[]
+        return false
+      },
+    })
+    if (holder.snapshot !== null) {
+      writeAdminReservationCardWeekCache(cacheKey, {
+        data: holder.snapshot,
+        count: count ?? holder.snapshot.length,
+      })
+      void warmAdjacentPagePricingMemory(supabase, holder.snapshot)
+    }
+  }
+}
+
+/**
+ * 인접 월(±1)의 첫 청크만 받아 sessionStorage에 채워 월 전환 시 즉시 paint.
+ */
+export async function prefetchAdminReservationCalendarAdjacentSnapshots(
+  supabase: SupabaseClient,
+  args: {
+    operatorId?: string | null | undefined
+    currentMonthOffset: number
+    selectedStatus: string
+    selectedChannel: string
+    dateRange: { start: string; end: string }
+    customerIdFromUrl: string | null
+    debouncedSearchTerm: string
+    sortBy: AdminReservationListSort
+    sortOrder: 'asc' | 'desc'
+  }
+): Promise<void> {
+  const offsets = [args.currentMonthOffset - 1, args.currentMonthOffset + 1]
+
+  for (const monthOffset of offsets) {
+    const cacheKey = buildAdminReservationCalendarCacheKey({
+      operatorId: args.operatorId,
+      monthOffset,
+      selectedStatus: args.selectedStatus,
+      selectedChannel: args.selectedChannel,
+      dateRange: args.dateRange,
+      customerIdFromUrl: args.customerIdFromUrl,
+      debouncedSearchTerm: args.debouncedSearchTerm,
+    })
+    if (readAdminReservationCalendarCache(cacheKey)) continue
+
+    const calWindow = browserLocalCalendarViewWindow(monthOffset)
+    const calArgs = {
+      mode: 'calendar' as const,
+      page: 1,
+      pageSize: 20,
+      selectedStatus: args.selectedStatus,
+      selectedChannel: args.selectedChannel,
+      dateRange: args.dateRange,
+      customerIdFromUrl: args.customerIdFromUrl,
+      debouncedSearchTerm: args.debouncedSearchTerm,
+      sortBy: args.sortBy,
+      sortOrder: args.sortOrder,
+      operatorId: args.operatorId,
+      calendarTourDateStart: calWindow.startYmd,
+      calendarTourDateEnd: calWindow.endYmd,
+      calendarCreatedStartIso: calWindow.rangeStartIso,
+      calendarCreatedEndIso: calWindow.rangeEndIso,
+      includeExactCount: false,
+    }
+
+    const holder = { snapshot: null as Record<string, unknown>[] | null, totalCount: null as number | null }
+    await fetchAdminReservationListCalendarProgressive(supabase, calArgs, {
+      onFirstChunk: ({ rows, totalCount: tc }) => {
+        holder.snapshot = rows as Record<string, unknown>[]
+        holder.totalCount = tc
+        return false
+      },
+    })
+    if (holder.snapshot !== null) {
+      writeAdminReservationCalendarCache(cacheKey, {
+        data: holder.snapshot,
+        count: holder.totalCount ?? holder.snapshot.length,
+      })
+      void warmAdjacentPagePricingMemory(supabase, holder.snapshot)
+    }
   }
 }

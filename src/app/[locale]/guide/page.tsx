@@ -332,6 +332,7 @@ export default function GuideDashboard() {
           offlineGuideCache: true as const,
         }
       : {}),
+    defaultToEmptyArray: true,
   })
 
   // 투어 채팅방 데이터 로딩
@@ -469,6 +470,7 @@ export default function GuideDashboard() {
           offlineGuideCache: true as const,
         }
       : {}),
+    defaultToEmptyArray: true,
   })
 
   // 메시지 로딩

@@ -4244,10 +4244,13 @@ export type Database = {
       }
       op_todos: {
         Row: {
+          action_config: Json
+          action_type: string
           assigned_to: string | null
           category: string
           completed: boolean
           completed_at: string | null
+          on_hold: boolean
           created_at: string
           created_by: string
           department: string
@@ -4265,10 +4268,13 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          action_config?: Json
+          action_type?: string
           assigned_to?: string | null
           category: string
           completed?: boolean
           completed_at?: string | null
+          on_hold?: boolean
           created_at?: string
           created_by: string
           department?: string
@@ -4286,10 +4292,13 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          action_config?: Json
+          action_type?: string
           assigned_to?: string | null
           category?: string
           completed?: boolean
           completed_at?: string | null
+          on_hold?: boolean
           created_at?: string
           created_by?: string
           department?: string
@@ -11952,6 +11961,163 @@ export type Database = {
         }
         Relationships: []
       }
+      guide_schedule_confirm_popups: {
+        Row: {
+          id: string
+          tour_id: string
+          recipient_email: string
+          recipient_role: string
+          title: string
+          site_message_body: string
+          sms_body: string
+          first_pickup_time: string | null
+          office_arrival_time: string | null
+          sent_by: string | null
+          sms_status: string | null
+          sms_twilio_sid: string | null
+          sms_error: string | null
+          acknowledged_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          tour_id: string
+          recipient_email: string
+          recipient_role?: string
+          title: string
+          site_message_body: string
+          sms_body: string
+          first_pickup_time?: string | null
+          office_arrival_time?: string | null
+          sent_by?: string | null
+          sms_status?: string | null
+          sms_twilio_sid?: string | null
+          sms_error?: string | null
+          acknowledged_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          tour_id?: string
+          recipient_email?: string
+          recipient_role?: string
+          title?: string
+          site_message_body?: string
+          sms_body?: string
+          first_pickup_time?: string | null
+          office_arrival_time?: string | null
+          sent_by?: string | null
+          sms_status?: string | null
+          sms_twilio_sid?: string | null
+          sms_error?: string | null
+          acknowledged_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'guide_schedule_confirm_popups_tour_id_fkey'
+            columns: ['tour_id']
+            isOneToOne: false
+            referencedRelation: 'tours'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      staff_site_alerts: {
+        Row: {
+          id: string
+          title_ko: string
+          title_en: string
+          body_ko: string
+          body_en: string
+          target_positions: string[]
+          target_individuals: string[]
+          linked_hub_article_ids: string[]
+          requires_signature: boolean
+          sent_as_super: boolean
+          sent_by_email: string
+          sent_by_name: string | null
+          display_sender_name: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          title_ko: string
+          title_en: string
+          body_ko: string
+          body_en: string
+          target_positions?: string[]
+          target_individuals?: string[]
+          linked_hub_article_ids?: string[]
+          requires_signature?: boolean
+          sent_as_super?: boolean
+          sent_by_email: string
+          sent_by_name?: string | null
+          display_sender_name: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          title_ko?: string
+          title_en?: string
+          body_ko?: string
+          body_en?: string
+          target_positions?: string[]
+          target_individuals?: string[]
+          linked_hub_article_ids?: string[]
+          requires_signature?: boolean
+          sent_as_super?: boolean
+          sent_by_email?: string
+          sent_by_name?: string | null
+          display_sender_name?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      staff_site_alert_recipients: {
+        Row: {
+          id: string
+          alert_id: string
+          recipient_email: string
+          recipient_user_id: string | null
+          recipient_position: string | null
+          acknowledged_at: string | null
+          signature_text: string | null
+          signed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          alert_id: string
+          recipient_email: string
+          recipient_user_id?: string | null
+          recipient_position?: string | null
+          acknowledged_at?: string | null
+          signature_text?: string | null
+          signed_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          alert_id?: string
+          recipient_email?: string
+          recipient_user_id?: string | null
+          recipient_position?: string | null
+          acknowledged_at?: string | null
+          signature_text?: string | null
+          signed_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'staff_site_alert_recipients_alert_id_fkey'
+            columns: ['alert_id']
+            isOneToOne: false
+            referencedRelation: 'staff_site_alerts'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
     Views: {
       audit_logs_view: {
@@ -12722,7 +12888,12 @@ export type Database = {
           is_active: boolean
           name_en: string
           name_ko: string
+          position: string
         }[]
+      }
+      resolve_auth_team_member: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
       }
       get_team_members_info: {
         Args: { p_emails: string[] }
@@ -12765,10 +12936,46 @@ export type Database = {
       is_super_admin: { Args: { p_email?: string }; Returns: boolean }
       is_team_member: { Args: { p_email: string }; Returns: boolean }
       apply_due_op_todo_resets: { Args: never; Returns: Json }
+      get_team_board_bootstrap: {
+        Args: {
+          p_op_todos_limit?: number
+          p_announcements_limit?: number
+          p_tasks_limit?: number
+          p_issues_limit?: number
+          p_include_op_todos?: boolean
+          p_include_work?: boolean
+          p_include_issues?: boolean
+          p_op_todo_departments?: string[] | null
+        }
+        Returns: Json
+      }
+      get_team_board_work_badge_counts: { Args: never; Returns: Json }
+      get_op_todo_pending_count: {
+        Args: {
+          p_departments?: string[] | null
+          p_exclude_on_hold?: boolean
+        }
+        Returns: number
+      }
       manual_reset_todos: { Args: { category_name: string }; Returns: string }
       op_todo_notify_handle_complete: {
         Args: { p_next_notify_at: string | null; p_todo_id: string }
         Returns: undefined
+      }
+      op_todo_toggle_completion: {
+        Args: {
+          p_completed: boolean
+          p_next_notify_at?: string | null
+          p_todo_id: string
+        }
+        Returns: Json
+      }
+      op_todo_set_on_hold: {
+        Args: {
+          p_on_hold: boolean
+          p_todo_id: string
+        }
+        Returns: Json
       }
       map_product_id: { Args: { old_product_id: string }; Returns: string }
       migrate_choices_pricing_keys: {

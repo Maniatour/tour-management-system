@@ -14,6 +14,13 @@ interface UseOptimizedDataOptions<T> {
   cacheKey?: string
   cacheTime?: number
   enabled?: boolean
+  /**
+   * `data`가 아직 null일 때 반환할 기본값.
+   * `const { data: items = [] }` 는 null에는 적용되지 않으므로 placeholderData 를 쓰세요.
+   */
+  placeholderData?: T
+  /** 배열 fetch 전용 — `placeholderData: []` 와 동일 (타입 단언 생략용) */
+  defaultToEmptyArray?: boolean
   /** `/(ko|en)/guide` 전용: 마지막 성공 응답을 IndexedDB에 저장하고, 오프라인일 때 복원 */
   offlineGuideCache?: boolean
   /**
@@ -43,12 +50,30 @@ const inflight = new Map<string, Promise<unknown>>()
  */
 const EMPTY_EFFECT_DEPS: readonly unknown[] = []
 
+/** defaultToEmptyArray 시 매 렌더 새 [] 참조를 반환하지 않도록 고정 */
+const STABLE_EMPTY_ARRAY: readonly unknown[] = []
+
+function serializeEffectDependencies(deps: readonly unknown[]): string {
+  if (deps.length === 0) return ''
+  try {
+    return JSON.stringify(deps)
+  } catch {
+    return deps.map((dep) => String(dep)).join('\0')
+  }
+}
+
+function commitDataIfChanged<T>(prev: T | null, next: T): T | null {
+  return Object.is(prev, next) ? prev : next
+}
+
 export function useOptimizedData<T>({
   fetchFn,
   dependencies,
   cacheKey,
   cacheTime = 5 * 60 * 1000, // 5분
   enabled = true,
+  placeholderData,
+  defaultToEmptyArray = false,
   staleWhileRevalidate = true,
   offlineGuideCache = false,
 }: UseOptimizedDataOptions<T>) {
@@ -62,6 +87,7 @@ export function useOptimizedData<T>({
   fetchFnRef.current = fetchFn
 
   const extraDeps = dependencies === undefined || dependencies.length === 0 ? EMPTY_EFFECT_DEPS : dependencies
+  const dependencySignature = serializeEffectDependencies(extraDeps)
 
   const fetchData = useCallback(async () => {
     if (!enabled) {
@@ -75,7 +101,7 @@ export function useOptimizedData<T>({
       try {
         const snap = await loadGuideSnapshot(cacheKey)
         if (snap !== undefined && isMountedRef.current) {
-          setData(snap as T)
+          setData((prev) => commitDataIfChanged(prev, snap as T))
           setLoading(false)
           return
         }
@@ -95,7 +121,7 @@ export function useOptimizedData<T>({
       if (isFresh) {
         // 신선한 캐시 — 즉시 표시 후 종료
         if (isMountedRef.current) {
-          setData(cached.data as T)
+          setData((prev) => commitDataIfChanged(prev, cached.data as T))
           setLoading(false)
         }
         return
@@ -103,7 +129,7 @@ export function useOptimizedData<T>({
       if (staleWhileRevalidate) {
         // 오래된 캐시지만 즉시 표시 + 아래에서 백그라운드 갱신 진행
         if (isMountedRef.current) {
-          setData(cached.data as T)
+          setData((prev) => commitDataIfChanged(prev, cached.data as T))
           setLoading(false)
         }
       }
@@ -114,9 +140,14 @@ export function useOptimizedData<T>({
       try {
         const result = (await inflight.get(cacheKey)) as T
         if (!isMountedRef.current) return
-        setData(result)
+        setData((prev) => commitDataIfChanged(prev, result))
       } catch {
         // 메인 발사처에서 에러 처리됨
+      } finally {
+        // Strict Mode 이중 마운트에서 waiter가 loading=true에 남는 것 방지
+        if (isMountedRef.current) {
+          setLoading(false)
+        }
       }
       return
     }
@@ -136,7 +167,7 @@ export function useOptimizedData<T>({
 
       if (!isMountedRef.current) return
 
-      setData(result)
+      setData((prev) => commitDataIfChanged(prev, result))
 
       if (cacheKey) {
         cache.set(cacheKey, {
@@ -181,8 +212,7 @@ export function useOptimizedData<T>({
     return () => {
       isMountedRef.current = false
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- extraDeps 는 호출부가 넘긴 외부 의존성 시그니처
-  }, [fetchData, ...extraDeps])
+  }, [fetchData, dependencySignature])
 
   // 캐시 무효화 함수
   const invalidateCache = useCallback(() => {
@@ -205,8 +235,20 @@ export function useOptimizedData<T>({
     return fetchData()
   }, [invalidateCache, fetchData])
 
+  const resolvedData = (() => {
+    const fallback =
+      placeholderData !== undefined
+        ? placeholderData
+        : defaultToEmptyArray
+          ? (STABLE_EMPTY_ARRAY as T)
+          : undefined
+    return fallback !== undefined ? ((data ?? fallback) as T) : data
+  })()
+
   return {
-    data,
+    data: resolvedData,
+    /** fetch 전·실패 시 원본 (placeholder 미적용) */
+    rawData: data,
     loading,
     error,
     refetch,

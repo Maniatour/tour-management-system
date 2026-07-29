@@ -109,6 +109,71 @@ export interface UpdateReservationResult {
   error?: string
 }
 
+/** 예약 상품·투어일만 변경 (투어 배정 정리 + 투어 자동 생성) */
+export async function updateReservationTourSlot(
+  reservationId: string,
+  patch: { tourDate?: string | null; productId?: string | null }
+): Promise<UpdateReservationResult> {
+  try {
+    const rid = String(reservationId ?? '').trim()
+    if (!rid) return { success: false, error: '예약 ID가 없습니다.' }
+    if (patch.tourDate === undefined && patch.productId === undefined) {
+      return { success: false, error: '변경할 항목이 없습니다.' }
+    }
+
+    const { data: existingReservation, error: existingErr } = await supabase
+      .from('reservations')
+      .select('product_id, tour_date, is_private_tour')
+      .eq('id', rid)
+      .maybeSingle()
+
+    if (existingErr || !existingReservation) {
+      return { success: false, error: existingErr?.message || '예약을 찾을 수 없습니다.' }
+    }
+
+    const oldP = String((existingReservation as { product_id?: string | null }).product_id ?? '').trim()
+    const oldD = normalizeTourDateForSlot((existingReservation as { tour_date?: string | null }).tour_date)
+    const newP =
+      patch.productId !== undefined
+        ? String(patch.productId ?? '').trim()
+        : oldP
+    const newD =
+      patch.tourDate !== undefined ? normalizeTourDateForSlot(patch.tourDate) : oldD
+
+    if (!newP) return { success: false, error: '상품이 필요합니다.' }
+    if (!newD) return { success: false, error: '투어 날짜가 필요합니다.' }
+
+    const slotChanged = oldP !== newP || oldD !== newD
+    if (!slotChanged) {
+      return { success: true }
+    }
+
+    await removeReservationFromToursNotMatchingSlot(rid, newP, newD)
+
+    const { error } = await supabase.from('reservations').update({
+      ...(patch.productId !== undefined ? { product_id: newP } : {}),
+      ...(patch.tourDate !== undefined ? { tour_date: newD } : {}),
+      tour_id: null,
+    }).eq('id', rid)
+    if (error) {
+      return { success: false, error: error.message }
+    }
+
+    try {
+      const isPrivateTour = !!(existingReservation as { is_private_tour?: boolean | null })
+        .is_private_tour
+      await autoCreateOrUpdateTour(newP, newD, rid, isPrivateTour)
+    } catch {
+      // 예약 변경은 성공으로 처리
+    }
+
+    return { success: true }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
+    return { success: false, error: message }
+  }
+}
+
 /** ReservationForm onSubmit payload → `updateReservation` 인자 (가격·환불 포함) */
 export function toReservationUpdatePayload(
   payload: Omit<Reservation, 'id'> & Partial<ReservationUpdatePayload>

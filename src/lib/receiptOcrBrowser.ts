@@ -7,8 +7,24 @@ import {
   configureReceiptOcrWorker,
   preprocessReceiptSourceToPngBlob,
   preprocessReceiptSourceToPngBlobBinarized,
+  type ReceiptOcrRotationDegrees,
 } from '@/lib/receiptOcrPreprocess'
-import { finalizeReceiptOcrText, mergeReceiptOcrTextsSmart, receiptOcrHasCoreFields } from '@/lib/receiptOcrCleanup'
+import {
+  finalizeReceiptOcrText,
+  mergeReceiptOcrTextsSmart,
+  receiptOcrHasCoreFields,
+  receiptOcrHasUsableExtraction,
+  scoreReceiptOcrOverall,
+} from '@/lib/receiptOcrCleanup'
+
+export type ReceiptOcrRunOptions = {
+  /** OCR 전 이미지 회전 (세로 촬영·뒤집힌 영수증) */
+  rotationDegrees?: ReceiptOcrRotationDegrees
+  /** 1차 결과에 핵심 필드가 있어도 이진화 2-pass 병합 강제 */
+  forceDualPass?: boolean
+  /** 결과가 약하면 90°·270° 회전도 시도해 최고 점수 채택 */
+  tryAlternateRotations?: boolean
+}
 
 async function decodeSourceFromBuffer(data: ArrayBuffer, mimeType: string): Promise<CanvasImageSource> {
   const type = mimeType?.startsWith('image/') ? mimeType : 'image/jpeg'
@@ -47,36 +63,65 @@ export async function decodeReceiptImageToPngBlob(data: ArrayBuffer, mimeType: s
   }
 }
 
+async function recognizeReceiptFromSource(
+  source: CanvasImageSource,
+  rotationDegrees: ReceiptOcrRotationDegrees,
+  forceDualPass: boolean
+): Promise<string> {
+  const [normalizedBlob, binarizedBlob] = await Promise.all([
+    preprocessReceiptSourceToPngBlob(source, rotationDegrees),
+    preprocessReceiptSourceToPngBlobBinarized(source, rotationDegrees),
+  ])
+  const { createWorker } = await import('tesseract.js')
+  const worker = await createWorker('eng')
+  try {
+    await configureReceiptOcrWorker(worker)
+    const recognizeBlob = async (blob: Blob) => {
+      const {
+        data: { text },
+      } = await worker.recognize(blob)
+      return text || ''
+    }
+    const normalizedText = await recognizeBlob(normalizedBlob)
+    let merged = normalizedText
+    if (forceDualPass || !receiptOcrHasCoreFields(normalizedText)) {
+      const binarizedText = await recognizeBlob(binarizedBlob)
+      merged = mergeReceiptOcrTextsSmart(normalizedText, binarizedText)
+    }
+    return finalizeReceiptOcrText(merged)
+  } finally {
+    await worker.terminate()
+  }
+}
+
 export async function runReceiptOcrFromImageBuffer(
   data: ArrayBuffer,
-  mimeType: string
-): Promise<{ text: string }> {
+  mimeType: string,
+  options: ReceiptOcrRunOptions = {}
+): Promise<{ text: string; rotationUsed: ReceiptOcrRotationDegrees }> {
+  const rotationDegrees = options.rotationDegrees ?? 0
+  const forceDualPass = options.forceDualPass ?? false
   const source = await decodeSourceFromBuffer(data, mimeType)
   try {
-    const [normalizedBlob, binarizedBlob] = await Promise.all([
-      preprocessReceiptSourceToPngBlob(source),
-      preprocessReceiptSourceToPngBlobBinarized(source),
-    ])
-    const { createWorker } = await import('tesseract.js')
-    const worker = await createWorker('eng')
-    try {
-      await configureReceiptOcrWorker(worker)
-      const recognizeBlob = async (blob: Blob) => {
-        const {
-          data: { text },
-        } = await worker.recognize(blob)
-        return text || ''
+    let bestText = await recognizeReceiptFromSource(source, rotationDegrees, forceDualPass)
+    let bestRotation = rotationDegrees
+
+    if (
+      options.tryAlternateRotations &&
+      !receiptOcrHasUsableExtraction(bestText)
+    ) {
+      const alternates: ReceiptOcrRotationDegrees[] = [90, 270, 180]
+      for (const alt of alternates) {
+        if (alt === rotationDegrees) continue
+        const candidate = await recognizeReceiptFromSource(source, alt, true)
+        if (scoreReceiptOcrOverall(candidate) > scoreReceiptOcrOverall(bestText)) {
+          bestText = candidate
+          bestRotation = alt
+        }
       }
-      const normalizedText = await recognizeBlob(normalizedBlob)
-      let merged = normalizedText
-      if (!receiptOcrHasCoreFields(normalizedText)) {
-        const binarizedText = await recognizeBlob(binarizedBlob)
-        merged = mergeReceiptOcrTextsSmart(normalizedText, binarizedText)
-      }
-      return { text: finalizeReceiptOcrText(merged) }
-    } finally {
-      await worker.terminate()
     }
+
+    return { text: bestText, rotationUsed: bestRotation }
   } finally {
     if (source instanceof ImageBitmap) source.close()
   }

@@ -9022,6 +9022,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             <TourDetailModalContent
               tourId={tourDetailModal.tourId}
               refreshNonce={tourDetailIframeReloadNonce}
+              onNavigateToTour={(nextTourId) =>
+                setTourDetailModal((prev) => (prev ? { ...prev, tourId: nextTourId } : null))
+              }
             />
           ) : null}
         </DialogContent>

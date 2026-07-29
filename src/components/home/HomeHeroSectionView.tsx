@@ -48,6 +48,7 @@ export default function HomeHeroSectionView({ variant, locale, t }: Props) {
             alt={t('homeManiaTourHeroTitle')}
             fill
             priority
+            loading="eager"
             sizes="100vw"
             className="kv-hero-bg object-cover"
           />

@@ -196,7 +196,12 @@ function TourStatisticsTourDetailModal({
   productName: string
   locale: string
 }) {
-  const href = tourId ? `/${locale}/admin/tours/${tourId}` : ''
+  const [displayTourId, setDisplayTourId] = useState(tourId)
+  useEffect(() => {
+    setDisplayTourId(tourId)
+  }, [tourId])
+
+  const href = displayTourId ? `/${locale}/admin/tours/${displayTourId}` : ''
 
   return (
     <Dialog modal={false} open={open} onOpenChange={onOpenChange}>
@@ -220,9 +225,9 @@ function TourStatisticsTourDetailModal({
             </a>
           ) : null}
         </DialogHeader>
-        {tourId ? (
+        {displayTourId ? (
           <div className="flex min-h-0 flex-1 flex-col bg-white">
-            <TourDetailModalContent tourId={tourId} />
+            <TourDetailModalContent tourId={displayTourId} onNavigateToTour={setDisplayTourId} />
           </div>
         ) : null}
       </DialogContent>

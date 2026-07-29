@@ -25,6 +25,208 @@ const RESIDENT_LINE_LABELS: Record<ResidentLineKey, { ko: string; en: string }> 
 
 export type ResidentStatusCounts = Partial<Record<ResidentLineKey, number>>
 
+type BalanceEnvelopeCandidate = BalanceEnvelopeLine & {
+  source: 'resident' | 'not_included' | 'option'
+}
+
+const BALANCE_MATCH_EPS = 0.02
+
+function nearlyEqualUsd(a: number, b: number): boolean {
+  return Math.abs(roundUsd2(a) - roundUsd2(b)) <= BALANCE_MATCH_EPS
+}
+
+function classifyOptionResidentLineKey(labelKo: string, labelEn: string): ResidentLineKey | null {
+  const blob = `${labelKo || ''} ${labelEn || ''}`.toLowerCase()
+  if (/패스\s*구매|pass\s*purchase/.test(blob)) return 'non_resident_purchase_pass'
+  if ((/패스|pass/.test(blob) && /비|non/.test(blob)) || /with\s*pass/.test(blob)) {
+    return 'non_resident_with_pass'
+  }
+  if (/16|미성년|under\s*16/.test(blob)) return 'non_resident_under_16'
+  if (/비\s*거주|비거주|non[-\s]?resident/.test(blob)) return 'non_resident'
+  return null
+}
+
+function isNonResidentFeeOptionLabel(labelKo: string, labelEn: string): boolean {
+  return classifyOptionResidentLineKey(labelKo, labelEn) !== null
+}
+
+function optionLineFromInput(
+  opt: BalanceEnvelopeOptionInput,
+  balanceAmount: number
+): BalanceEnvelopeLine {
+  const qty = Math.max(1, Math.floor(Number(opt.qty) || 0))
+  const storedSubtotal = roundUsd2(Number(opt.subtotal) || 0)
+  const residentKey = classifyOptionResidentLineKey(opt.labelKo, opt.labelEn)
+
+  if (residentKey && residentKey !== 'undecided' && residentKey !== 'us_resident') {
+    const expectedSubtotal = residentLineDefaultAmountUsd(residentKey, qty)
+    if (nearlyEqualUsd(balanceAmount, expectedSubtotal)) {
+      const unit = RESIDENT_LINE_USD_PER_UNIT[residentKey] ?? roundUsd2(expectedSubtotal / qty)
+      return {
+        labelKo: opt.labelKo || RESIDENT_LINE_LABELS[residentKey].ko,
+        labelEn: opt.labelEn || RESIDENT_LINE_LABELS[residentKey].en,
+        unitPrice: unit,
+        qty,
+        subtotal: expectedSubtotal,
+      }
+    }
+  }
+
+  const unitPrice =
+    qty > 0 && storedSubtotal > 0
+      ? roundUsd2(storedSubtotal / qty)
+      : roundUsd2(Number(opt.unitPrice) || 0)
+
+  return {
+    labelKo: opt.labelKo || opt.labelEn,
+    labelEn: opt.labelEn || opt.labelKo,
+    unitPrice,
+    qty,
+    subtotal: storedSubtotal,
+  }
+}
+
+function findExactSumSubsetIndices(
+  items: Array<{ subtotal: number }>,
+  target: number
+): number[] | null {
+  const n = items.length
+  if (n === 0) return null
+
+  let best: number[] | null = null
+  let bestScore = Number.POSITIVE_INFINITY
+
+  for (let mask = 1; mask < 1 << n; mask++) {
+    const indices: number[] = []
+    let sum = 0
+    for (let i = 0; i < n; i++) {
+      if (mask & (1 << i)) {
+        indices.push(i)
+        sum += items[i].subtotal
+      }
+    }
+    if (!nearlyEqualUsd(sum, target)) continue
+
+    const score = indices.length * 1000 - Math.max(...indices.map((i) => items[i].subtotal))
+    if (score < bestScore) {
+      bestScore = score
+      best = indices
+    }
+  }
+
+  return best
+}
+
+function findAllExactSumSubsets(candidates: BalanceEnvelopeCandidate[], target: number): BalanceEnvelopeCandidate[][] {
+  const n = candidates.length
+  const subsets: BalanceEnvelopeCandidate[][] = []
+
+  for (let mask = 1; mask < 1 << n; mask++) {
+    const subset: BalanceEnvelopeCandidate[] = []
+    let sum = 0
+    for (let i = 0; i < n; i++) {
+      if (mask & (1 << i)) {
+        subset.push(candidates[i])
+        sum += candidates[i].subtotal
+      }
+    }
+    if (nearlyEqualUsd(sum, target)) subsets.push(subset)
+  }
+
+  return subsets
+}
+
+function scoreBalanceSubset(subset: BalanceEnvelopeCandidate[]): number {
+  const lineCount = subset.length
+  const maxSubtotal = Math.max(...subset.map((l) => l.subtotal), 0)
+  const optionLines = subset.filter((l) => l.source === 'option').length
+  const residentLines = subset.filter((l) => l.source === 'resident' || l.source === 'not_included').length
+  const singleOptionExact =
+    subset.length === 1 && subset[0].source === 'option' ? -50000 : 0
+
+  return (
+    lineCount * 100000 -
+    maxSubtotal * 100 -
+    residentLines * 1000 +
+    optionLines * 10 +
+    singleOptionExact
+  )
+}
+
+function pickBestMatchingLines(
+  candidates: BalanceEnvelopeCandidate[],
+  target: number
+): BalanceEnvelopeLine[] {
+  if (target < 0.005) return []
+
+  const optionCandidates = candidates.filter((c) => c.source === 'option')
+  for (const c of optionCandidates) {
+    if (nearlyEqualUsd(c.subtotal, target)) {
+      return [stripCandidateSource(c)]
+    }
+  }
+
+  const residentCandidates = candidates.filter((c) => c.source === 'resident' || c.source === 'not_included')
+  for (const c of residentCandidates) {
+    if (nearlyEqualUsd(c.subtotal, target)) {
+      return [stripCandidateSource(c)]
+    }
+  }
+
+  const exactSubsets = findAllExactSumSubsets(candidates, target)
+  if (exactSubsets.length > 0) {
+    exactSubsets.sort((a, b) => scoreBalanceSubset(a) - scoreBalanceSubset(b))
+    return exactSubsets[0].map(stripCandidateSource)
+  }
+
+  const optionOnlySubsets = findAllExactSumSubsets(optionCandidates, target)
+  if (optionOnlySubsets.length > 0) {
+    optionOnlySubsets.sort((a, b) => scoreBalanceSubset(a) - scoreBalanceSubset(b))
+    return optionOnlySubsets[0].map(stripCandidateSource)
+  }
+
+  const residentOnlySubsets = findAllExactSumSubsets(residentCandidates, target)
+  if (residentOnlySubsets.length > 0) {
+    residentOnlySubsets.sort((a, b) => scoreBalanceSubset(a) - scoreBalanceSubset(b))
+    return residentOnlySubsets[0].map(stripCandidateSource)
+  }
+
+  return [
+    {
+      labelKo: '잔액',
+      labelEn: 'Balance',
+      unitPrice: target,
+      qty: 1,
+      subtotal: target,
+    },
+  ]
+}
+
+function stripCandidateSource(line: BalanceEnvelopeCandidate): BalanceEnvelopeLine {
+  return {
+    labelKo: line.labelKo,
+    labelEn: line.labelEn,
+    unitPrice: line.unitPrice,
+    qty: line.qty,
+    subtotal: line.subtotal,
+  }
+}
+
+function excludePrepaidOptionLines(
+  optionLines: BalanceEnvelopeCandidate[],
+  target: number
+): BalanceEnvelopeCandidate[] {
+  const optionSum = roundUsd2(optionLines.reduce((s, l) => s + l.subtotal, 0))
+  const prepaid = roundUsd2(optionSum - target)
+  if (prepaid < BALANCE_MATCH_EPS) return optionLines
+
+  const excludeIndices = findExactSumSubsetIndices(optionLines, prepaid)
+  if (!excludeIndices?.length) return optionLines
+
+  const excludeSet = new Set(excludeIndices)
+  return optionLines.filter((_, i) => !excludeSet.has(i))
+}
+
 /** reservation_customers 행 → 거주 라인별 인원 */
 export function countResidentLinesFromCustomers(
   rows: Array<{ resident_status?: string | null }> | null | undefined
@@ -94,6 +296,9 @@ export function buildBalanceEnvelopeBreakdownLines(input: {
     reservationOptions,
   } = input
 
+  const target = roundUsd2(Math.max(0, balanceAmount))
+  if (target < 0.005) return []
+
   const amounts = residentAmountsFromCounts(residentCounts, residentStatusAmounts)
   const { baseUsd } = splitNotIncludedForDisplay(
     0,
@@ -105,7 +310,7 @@ export function buildBalanceEnvelopeBreakdownLines(input: {
     amounts as Record<string, number>
   )
 
-  const lines: BalanceEnvelopeLine[] = []
+  const candidates: BalanceEnvelopeCandidate[] = []
 
   for (const key of RESIDENT_FEE_SUM_KEYS) {
     const qty = Math.max(0, Math.floor(Number(residentCounts[key]) || 0))
@@ -113,16 +318,15 @@ export function buildBalanceEnvelopeBreakdownLines(input: {
     if (qty <= 0 || subtotal < 0.005) continue
     const defaultUnit = RESIDENT_LINE_USD_PER_UNIT[key] ?? 0
     const unitPrice =
-      qty > 0 && subtotal > 0
-        ? roundUsd2(subtotal / qty)
-        : defaultUnit
+      qty > 0 && subtotal > 0 ? roundUsd2(subtotal / qty) : defaultUnit
     const labels = RESIDENT_LINE_LABELS[key]
-    lines.push({
+    candidates.push({
       labelKo: labels.ko,
       labelEn: labels.en,
       unitPrice,
       qty,
       subtotal,
+      source: 'resident',
     })
   }
 
@@ -132,61 +336,42 @@ export function buildBalanceEnvelopeBreakdownLines(input: {
       notIncludedPerPerson > 0.005
         ? roundUsd2(notIncludedPerPerson)
         : roundUsd2(baseUsd / billingPax)
-    lines.push({
+    candidates.push({
       labelKo: '미포함 (입장권)',
       labelEn: 'Not included price (Entrance Fee)',
       unitPrice: perPerson,
       qty: billingPax,
       subtotal: roundUsd2(baseUsd),
+      source: 'not_included',
     })
   } else if (baseUsd > 0.005) {
-    lines.push({
+    candidates.push({
       labelKo: '미포함 (입장권)',
       labelEn: 'Not included price (Entrance Fee)',
       unitPrice: roundUsd2(baseUsd),
       qty: 1,
       subtotal: roundUsd2(baseUsd),
+      source: 'not_included',
     })
   }
 
+  const hasResidentFeeLine = candidates.some((c) => c.source === 'resident')
+
+  let optionCandidates: BalanceEnvelopeCandidate[] = []
   for (const opt of reservationOptions || []) {
-    const subtotal = roundUsd2(Number(opt.subtotal) || 0)
-    if (subtotal < 0.005) continue
-    const qty = Math.max(1, Math.floor(Number(opt.qty) || 0))
-    const unitPrice =
-      qty > 0 && subtotal > 0
-        ? roundUsd2(subtotal / qty)
-        : roundUsd2(Number(opt.unitPrice) || 0)
-    lines.push({
-      labelKo: opt.labelKo || opt.labelEn,
-      labelEn: opt.labelEn || opt.labelKo,
-      unitPrice,
-      qty,
-      subtotal,
-    })
-  }
+    const line = optionLineFromInput(opt, target)
+    if (line.subtotal < 0.005) continue
 
-  const partsSum = roundUsd2(lines.reduce((s, l) => s + l.subtotal, 0))
-  const target = roundUsd2(Math.max(0, balanceAmount))
-  const gap = roundUsd2(target - partsSum)
-
-  if (gap > 0.02) {
-    lines.push({
-      labelKo: '기타',
-      labelEn: 'other',
-      unitPrice: gap,
-      qty: 1,
-      subtotal: gap,
-    })
-  } else if (gap < -0.02 && lines.length > 0) {
-    const last = lines[lines.length - 1]
-    last.subtotal = roundUsd2(Math.max(0, last.subtotal + gap))
-    if (last.qty > 0) {
-      last.unitPrice = roundUsd2(last.subtotal / last.qty)
+    if (hasResidentFeeLine && isNonResidentFeeOptionLabel(line.labelKo, line.labelEn)) {
+      continue
     }
+
+    optionCandidates.push({ ...line, source: 'option' })
   }
 
-  return lines
+  optionCandidates = excludePrepaidOptionLines(optionCandidates, target)
+
+  return pickBestMatchingLines([...candidates, ...optionCandidates], target)
 }
 
 export function formatBalanceEnvelopeLine(

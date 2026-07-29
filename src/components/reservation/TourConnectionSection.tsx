@@ -690,7 +690,10 @@ export default function TourConnectionSection({
                 </div>
               </div>
               <div className="min-h-0 flex-1 bg-gray-50">
-                <TourDetailModalContent tourId={tourDetailModalTourId} />
+                <TourDetailModalContent
+                  tourId={tourDetailModalTourId}
+                  onNavigateToTour={setTourDetailModalTourId}
+                />
               </div>
             </div>
           </div>,

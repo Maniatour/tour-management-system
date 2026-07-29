@@ -1,4 +1,8 @@
-/** 예약 목록·운영 큐: mapRawToReservation 에 필요한 컬럼만 + 채널명 embed */
+/** 예약 목록·운영 큐: mapRawToReservation 에 필요한 컬럼만 + 채널명 embed.
+ * `customers(...)` embed는 remote에 reservations→customers FK가 없어 PGRST200 — 사용 금지.
+ * 고객명은 loadCustomersByIds(namesOnly)로 별도 조회.
+ * `choices` JSON은 payload가 커서 제외 — 카드는 `/choices/batch` prefetch·coalesce로 채움.
+ */
 export const RESERVATION_LIST_SELECT = [
   'id',
   'customer_id',
@@ -25,7 +29,6 @@ export const RESERVATION_LIST_SELECT = [
   'amount_audited_by',
   'selected_options',
   'selected_option_prices',
-  'choices',
   'customer_communication_channel',
 ].join(',') + ',channels(name)'
 

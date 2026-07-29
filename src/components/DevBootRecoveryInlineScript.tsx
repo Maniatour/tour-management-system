@@ -1,5 +1,3 @@
-import Script from 'next/script'
-
 /** next dev: React 번들 로드 전 SW·chunk 오류 1회 복구 (layout.tsx 전용) */
 export const DEV_BOOT_RECOVERY_INLINE_SCRIPT = `
 (function () {
@@ -51,8 +49,9 @@ export function DevBootRecoveryInlineScript() {
   if (process.env.NODE_ENV !== 'development') return null
 
   return (
-    <Script id="tms-dev-boot-recovery" strategy="beforeInteractive">
-      {DEV_BOOT_RECOVERY_INLINE_SCRIPT}
-    </Script>
+    <script
+      id="tms-dev-boot-recovery"
+      dangerouslySetInnerHTML={{ __html: DEV_BOOT_RECOVERY_INLINE_SCRIPT }}
+    />
   )
 }

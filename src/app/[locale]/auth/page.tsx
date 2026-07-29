@@ -94,6 +94,7 @@ export default function AuthPage() {
           <LoginForm
             onSuccess={handleSuccess}
             onSwitchToSignUp={() => setMode('signup')}
+            redirectTo={redirectToParam}
           />
         )
       case 'signup':

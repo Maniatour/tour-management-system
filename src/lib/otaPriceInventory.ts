@@ -186,6 +186,9 @@ export function abbreviateKlookVariantLabel(
   variantKey: string,
   variantLabel: string
 ): string {
+  const key = (variantKey || 'default').trim().toLowerCase()
+  if (key === 'default') return ''
+
   const label = `${variantLabel} ${variantKey}`.toLowerCase()
   if (/korean|한국/.test(label)) return '🇰🇷'
   if (/all.?inclusive|올인|전체\s*포함/.test(label)) return '✅'

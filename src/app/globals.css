@@ -396,6 +396,11 @@
     .admin-main-shell.admin-main-shell--collapsed {
       padding-left: var(--app-sidebar-width-collapsed);
     }
+
+    html.admin-todo-docked .admin-main-shell {
+      padding-right: var(--admin-todo-dock-width, 380px);
+      transition: padding-left 300ms ease, padding-right 300ms ease;
+    }
   }
 
 }

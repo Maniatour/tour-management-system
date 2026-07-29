@@ -1,0 +1,156 @@
+'use client'
+
+import { useCallback, useEffect, useState } from 'react'
+import { Bell, Check, Loader2 } from 'lucide-react'
+import {
+  detectGuidePreferredLanguage,
+  type SupportedLocale,
+} from '@/lib/guideLanguageDetection'
+import {
+  guideScheduleConfirmPopupConfirmLabel,
+  guideScheduleConfirmPopupOfficeLine,
+} from '@/lib/guideScheduleConfirmMessage'
+import { supabase } from '@/lib/supabase'
+
+type PopupRow = {
+  id: string
+  title: string
+  site_message_body: string
+  tour_id: string
+  first_pickup_time: string | null
+  office_arrival_time: string | null
+  created_at: string
+}
+
+type GuideScheduleConfirmPopupLayerProps = {
+  userEmail: string | null | undefined
+}
+
+export function GuideScheduleConfirmPopupLayer({ userEmail }: GuideScheduleConfirmPopupLayerProps) {
+  const [queue, setQueue] = useState<PopupRow[]>([])
+  const [acknowledging, setAcknowledging] = useState(false)
+  const [guideLocale, setGuideLocale] = useState<SupportedLocale>('ko')
+
+  const emailKey = (userEmail || '').toLowerCase()
+
+  useEffect(() => {
+    if (!emailKey) {
+      setGuideLocale('ko')
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase
+        .from('team')
+        .select('languages')
+        .ilike('email', userEmail || '')
+        .maybeSingle()
+      if (cancelled) return
+      setGuideLocale(detectGuidePreferredLanguage(data, userEmail || undefined))
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [userEmail, emailKey])
+
+  const loadPending = useCallback(async () => {
+    if (!emailKey) {
+      setQueue([])
+      return
+    }
+    try {
+      const { data, error } = await supabase
+        .from('guide_schedule_confirm_popups')
+        .select('id, title, site_message_body, tour_id, first_pickup_time, office_arrival_time, created_at')
+        .ilike('recipient_email', emailKey)
+        .is('acknowledged_at', null)
+        .order('created_at', { ascending: true })
+        .limit(5)
+
+      if (error) {
+        console.error('GuideScheduleConfirmPopupLayer', error)
+        return
+      }
+      setQueue((data || []) as PopupRow[])
+    } catch (e) {
+      console.error('GuideScheduleConfirmPopupLayer', e)
+    }
+  }, [emailKey])
+
+  useEffect(() => {
+    void loadPending()
+    const interval = window.setInterval(() => void loadPending(), 60000)
+    return () => window.clearInterval(interval)
+  }, [loadPending])
+
+  const current = queue[0] ?? null
+
+  const handleAcknowledge = async () => {
+    if (!current) return
+    setAcknowledging(true)
+    try {
+      const { error } = await supabase
+        .from('guide_schedule_confirm_popups')
+        .update({ acknowledged_at: new Date().toISOString() })
+        .eq('id', current.id)
+
+      if (error) throw error
+      setQueue((prev) => prev.filter((p) => p.id !== current.id))
+    } catch (e) {
+      console.error('GuideScheduleConfirmPopupLayer ack', e)
+      alert(
+        guideLocale === 'ko'
+          ? '확인 처리에 실패했습니다.'
+          : guideLocale === 'ja'
+            ? '確認の処理に失敗しました。'
+            : guideLocale === 'zh'
+              ? '确认失败。'
+              : 'Failed to confirm.'
+      )
+    } finally {
+      setAcknowledging(false)
+    }
+  }
+
+  if (!emailKey || !current) return null
+
+  return (
+    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center gap-2 border-b px-5 py-4">
+          <Bell className="h-5 w-5 text-primary" />
+          <h2 className="text-lg font-semibold text-gray-900">{current.title}</h2>
+        </div>
+        <div className="space-y-3 px-5 py-4">
+          <pre className="whitespace-pre-wrap text-sm leading-relaxed text-gray-800">
+            {current.site_message_body}
+          </pre>
+          {current.office_arrival_time ? (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
+              {guideScheduleConfirmPopupOfficeLine(
+                guideLocale,
+                current.office_arrival_time,
+                current.first_pickup_time
+              )}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex justify-end border-t px-5 py-4">
+          <button
+            type="button"
+            disabled={acknowledging}
+            onClick={() => void handleAcknowledge()}
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {acknowledging ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Check className="h-4 w-4" />
+            )}
+            {guideScheduleConfirmPopupConfirmLabel(guideLocale)}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

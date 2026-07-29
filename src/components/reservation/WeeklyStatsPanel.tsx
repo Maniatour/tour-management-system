@@ -44,8 +44,8 @@ export type WeeklyRegCancelDayRow = {
   cancelledPeople: number
   cancelledCount: number
   /**
-   * 7일: 올해(로컬) 1/1~어제 각 달력일 순(등록−취소) 인원을 요일별로 모은 뒤, 그 요일이 나온 날 수로 나눈 일평균.
-   * 월간: 표시 연도 기준 등록 인원만의 요일별 일평균. 연간: 월별 일평균 등록(별 필드).
+   * 7일: 올해(로컬) 1/1~어제 일별 순예약(등록−취소)을 요일별로 모은 뒤 일평균.
+   * 월간: 표시 연도 기준 순예약 요일별 일평균. 연간: 월별 일평균 순예약(별 필드).
    */
   avgLineRegistered?: number
   /** 예약건 기준 평균선 */

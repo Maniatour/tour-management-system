@@ -102,6 +102,8 @@ export function binarizeReceiptImageData(imageData: ImageData): void {
   }
 }
 
+export type ReceiptOcrRotationDegrees = 0 | 90 | 180 | 270
+
 function getDrawSize(source: CanvasImageSource): { w: number; h: number } {
   if (source instanceof ImageBitmap) {
     return { w: source.width, h: source.height }
@@ -110,11 +112,46 @@ function getDrawSize(source: CanvasImageSource): { w: number; h: number } {
   return { w: el.naturalWidth || el.width, h: el.naturalHeight || el.height }
 }
 
+/** OCR 전 회전(세로 촬영·뒤집힌 영수증 대응) */
+export function rotateReceiptCanvasSource(
+  source: CanvasImageSource,
+  rotationDegrees: ReceiptOcrRotationDegrees
+): HTMLCanvasElement {
+  const { w, h } = getDrawSize(source)
+  if (!w || !h) {
+    throw new Error('Invalid image dimensions')
+  }
+  if (rotationDegrees === 0) {
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas 2D context not available')
+    ctx.drawImage(source, 0, 0, w, h)
+    return canvas
+  }
+
+  const swap = rotationDegrees === 90 || rotationDegrees === 270
+  const canvas = document.createElement('canvas')
+  canvas.width = swap ? h : w
+  canvas.height = swap ? w : h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas 2D context not available')
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.translate(canvas.width / 2, canvas.height / 2)
+  ctx.rotate((rotationDegrees * Math.PI) / 180)
+  ctx.drawImage(source, -w / 2, -h / 2, w, h)
+  return canvas
+}
+
 function drawPreprocessedCanvas(
   source: CanvasImageSource,
-  mode: 'normalize' | 'binarize'
+  mode: 'normalize' | 'binarize',
+  rotationDegrees: ReceiptOcrRotationDegrees = 0
 ): HTMLCanvasElement {
-  let { w, h } = getDrawSize(source)
+  const rotated = rotationDegrees === 0 ? source : rotateReceiptCanvasSource(source, rotationDegrees)
+  let { w, h } = getDrawSize(rotated)
   if (!w || !h) {
     throw new Error('Invalid image dimensions')
   }
@@ -129,7 +166,7 @@ function drawPreprocessedCanvas(
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, cw, ch)
   ctx.imageSmoothingEnabled = false
-  ctx.drawImage(source, 0, 0, cw, ch)
+  ctx.drawImage(rotated, 0, 0, cw, ch)
   const imageData = ctx.getImageData(0, 0, cw, ch)
   if (mode === 'binarize') {
     binarizeReceiptImageData(imageData)
@@ -153,13 +190,19 @@ function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   })
 }
 
-/** 브라우저: 디코드 → 확대·정규화 → PNG Blob */
-export async function preprocessReceiptSourceToPngBlob(source: CanvasImageSource): Promise<Blob> {
-  return canvasToPngBlob(drawPreprocessedCanvas(source, 'normalize'))
+/** 브라우저: 디코드 → (선택) 회전 → 확대·정규화 → PNG Blob */
+export async function preprocessReceiptSourceToPngBlob(
+  source: CanvasImageSource,
+  rotationDegrees: ReceiptOcrRotationDegrees = 0
+): Promise<Blob> {
+  return canvasToPngBlob(drawPreprocessedCanvas(source, 'normalize', rotationDegrees))
 }
 
-export async function preprocessReceiptSourceToPngBlobBinarized(source: CanvasImageSource): Promise<Blob> {
-  return canvasToPngBlob(drawPreprocessedCanvas(source, 'binarize'))
+export async function preprocessReceiptSourceToPngBlobBinarized(
+  source: CanvasImageSource,
+  rotationDegrees: ReceiptOcrRotationDegrees = 0
+): Promise<Blob> {
+  return canvasToPngBlob(drawPreprocessedCanvas(source, 'binarize', rotationDegrees))
 }
 
 export function mergeReceiptOcrTexts(primary: string, secondary: string): string {

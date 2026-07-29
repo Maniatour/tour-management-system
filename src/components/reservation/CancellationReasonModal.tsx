@@ -32,8 +32,8 @@ export default function CancellationReasonModal({
   const presets = useMemo(
     () =>
       isEn
-        ? ['No Show', 'Canceled by customer', 'Rebooking', 'Not recruited', 'Weather', 'Schedule conflict', 'Duplicate booking', 'Price / Policy', 'Other']
-        : ['No Show', '고객 취소', '재예약', '미모집', '날씨', '일정 변경', '중복 예약', '가격/정책', '기타'],
+        ? ['No Show', 'No response after cancel', 'Rebooking', 'Not recruited', 'Weather', 'Schedule conflict', 'Duplicate booking', 'Price / Policy', 'Other']
+        : ['No Show', '취소 후 무 응답', '재예약', '미모집', '날씨', '일정 변경', '중복 예약', '가격/정책', '기타'],
     [isEn]
   )
 

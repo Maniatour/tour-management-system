@@ -232,7 +232,7 @@ const TourCourseCard = ({
 
 export default function GuideTourCoursesPage() {
   // 최적화된 투어 코스 데이터 로딩
-  const { data: tourCourses = [], loading: coursesLoading } = useOptimizedData<TourCourse[]>({
+  const { data: tourCourses, loading: coursesLoading } = useOptimizedData<TourCourse[]>({
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('tour_courses')
@@ -255,10 +255,11 @@ export default function GuideTourCoursesPage() {
     cacheKey: 'guide-tour-courses-list',
     cacheTime: 5 * 60 * 1000, // 5분 캐시
     offlineGuideCache: true,
+    defaultToEmptyArray: true,
   })
 
   // 최적화된 상품 데이터 로딩
-  const { data: products = [], loading: productsLoading } = useOptimizedData({
+  const { data: products, loading: productsLoading } = useOptimizedData({
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('products')
@@ -276,6 +277,7 @@ export default function GuideTourCoursesPage() {
     cacheKey: 'guide-tour-courses-products',
     cacheTime: 10 * 60 * 1000, // 10분 캐시
     offlineGuideCache: true,
+    defaultToEmptyArray: true,
   })
 
   // 상태 관리

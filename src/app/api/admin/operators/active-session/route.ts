@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireStaffApiAuth } from '@/lib/api-security'
 import { supabaseAdmin } from '@/lib/supabase'
-import { createServerSupabase } from '@/lib/supabase-server'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { isStaffTenantLockEnabled } from '@/lib/operators/staffTenantLock'
 import { isValidOperatorIdFormat } from '@/lib/operators/activeOperatorCookie'
@@ -51,11 +50,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unknown operator' }, { status: 400 })
   }
 
-  const serverSb = await createServerSupabase()
-  const {
-    data: { user },
-    error: userErr,
-  } = await serverSb.auth.getUser()
+  const { data: userData, error: userErr } = await supabaseAdmin.auth.admin.getUserById(
+    auth.userId
+  )
+  const user = userData?.user
 
   if (userErr || !user?.id) {
     return NextResponse.json({ error: 'User session required for JWT stamp' }, { status: 401 })
@@ -94,10 +92,16 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response
 
   const lockEnabled = isStaffTenantLockEnabled()
-  const serverSb = await createServerSupabase()
-  const {
-    data: { user },
-  } = await serverSb.auth.getUser()
+  if (!supabaseAdmin) {
+    return NextResponse.json({
+      ok: true,
+      lockEnabled,
+      jwtOperatorId: null,
+      detail: 'supabaseAdmin unavailable',
+    })
+  }
+  const { data: userData } = await supabaseAdmin.auth.admin.getUserById(auth.userId)
+  const user = userData?.user
 
   const claim =
     user?.app_metadata && typeof user.app_metadata === 'object'

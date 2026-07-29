@@ -21,6 +21,7 @@ export {
   persistSupabaseSessionToStorage,
   syncCustomTokensFromGoTrueStorage,
 } from './authStorage'
+import { syncAuthSessionCookie } from './authSessionCookie'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -533,6 +534,13 @@ export const updateSupabaseToken = (
   }
 
   const expSec = decodeJwtExpSec(accessToken)
+  const expiresAtRaw = localStorage.getItem('sb-expires-at')
+  const storedExp = expiresAtRaw ? parseInt(expiresAtRaw, 10) : NaN
+  const cookieExp =
+    expSec ??
+    (Number.isFinite(storedExp) ? storedExp : Math.floor(Date.now() / 1000) + 3600)
+  syncAuthSessionCookie(accessToken, cookieExp)
+
   const nowSec = Math.floor(Date.now() / 1000)
   const stillValid = expSec != null && expSec > nowSec + 120
 

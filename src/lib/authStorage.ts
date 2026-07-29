@@ -1,4 +1,5 @@
 import type { Session } from '@supabase/supabase-js'
+import { clearAuthSessionCookie, syncAuthSessionCookie } from '@/lib/authSessionCookie'
 
 const ACCESS_KEY = 'sb-access-token'
 const REFRESH_KEY = 'sb-refresh-token'
@@ -27,6 +28,7 @@ export function persistSupabaseSessionToStorage(session: Session): void {
   localStorage.setItem(REFRESH_KEY, session.refresh_token)
   const tokenExpiry = session.expires_at || Math.floor(Date.now() / 1000) + 7 * 24 * 3600
   localStorage.setItem(EXPIRES_KEY, tokenExpiry.toString())
+  syncAuthSessionCookie(session.access_token, tokenExpiry)
 }
 
 /** 커스텀 sb-* 토큰 + GoTrue 기본 storage 정리 */
@@ -35,6 +37,7 @@ export function clearStoredAuthTokens(): void {
   localStorage.removeItem(ACCESS_KEY)
   localStorage.removeItem(REFRESH_KEY)
   localStorage.removeItem(EXPIRES_KEY)
+  clearAuthSessionCookie()
   const goTrueKey = getSupabaseGoTrueStorageKey()
   if (goTrueKey) {
     localStorage.removeItem(goTrueKey)

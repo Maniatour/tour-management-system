@@ -63,6 +63,8 @@ export default function HomeFaqSectionView({
                   src={MANIATOUR_CTA_IMAGE}
                   alt={t('homeCtaManiaTourImageAlt')}
                   fill
+                  priority
+                  loading="eager"
                   sizes="(max-width: 1024px) 100vw, 560px"
                   className="kv-cta-banner-image object-cover"
                 />

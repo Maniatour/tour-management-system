@@ -16,9 +16,10 @@ const createLoginSchema = (t: (key: string) => string) => z.object({
 interface LoginFormProps {
   onSuccess?: () => void
   onSwitchToSignUp?: () => void
+  redirectTo?: string
 }
 
-export default function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
+export default function LoginForm({ onSuccess, onSwitchToSignUp, redirectTo }: LoginFormProps) {
   const t = useTranslations()
   const locale = useLocale()
   const [showPassword, setShowPassword] = useState(false)
@@ -60,7 +61,7 @@ export default function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProp
     setError(null)
 
     try {
-      const result = await signInWithGoogle(locale)
+      const result = await signInWithGoogle(locale, redirectTo)
       
       if (result.error) {
         setError(result.error.message)

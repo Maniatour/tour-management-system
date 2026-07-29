@@ -286,13 +286,11 @@ export default function ProductDetailDateTravelersPickers({
                 max={ageLimits.maxParticipants}
                 value={draftCounts.infants}
                 onChange={(value) => updateDraft('infants', value)}
-                badge={t('infantFreeBadge')}
               />
 
               <button type="button" onClick={applyTravelers} className="booking-picker-apply-btn">
                 {t('applyTravelers')}
               </button>
-              <p className="mt-2 text-center text-[11px] text-[#9ca3af]">{t('infantDiscountNote')}</p>
             </div>
           ) : null}
         </div>

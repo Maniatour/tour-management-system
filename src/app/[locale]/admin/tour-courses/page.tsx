@@ -164,7 +164,8 @@ export default function TourCoursesPage() {
       if (error) throw error
       return (data || []) as TourCourse[]
     },
-    cacheKey: 'tour_courses'
+    cacheKey: 'tour_courses',
+    defaultToEmptyArray: true,
   })
 
   const { 
@@ -179,7 +180,8 @@ export default function TourCoursesPage() {
       if (error) throw error
       return (data || []) as TourCourseCategory[]
     },
-    cacheKey: 'tour_course_categories'
+    cacheKey: 'tour_course_categories',
+    defaultToEmptyArray: true,
   })
 
   // 선택된 코스의 사진 가져오기

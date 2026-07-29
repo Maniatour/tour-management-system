@@ -1,5 +1,5 @@
-import { supabase, supabaseAdmin } from '@/lib/supabase'
 import type { ResidentInquiryEmailTourKind } from '@/lib/residentInquiryTourKind'
+import { fetchPrimaryStaffOutreachMessageTemplateFromDb } from '@/lib/staffOutreachMessageTemplateDb'
 
 export type ResidentInquiryEmailTemplateRow = {
   locale: 'ko' | 'en'
@@ -14,22 +14,17 @@ export async function fetchResidentInquiryEmailTemplateFromDb(
   locale: 'ko' | 'en',
   tourKind: ResidentInquiryEmailTourKind = 'day_tour'
 ): Promise<{ subject_template: string; html_template: string } | null> {
-  const db = supabaseAdmin ?? supabase
-  const { data, error } = await db
-    .from('resident_inquiry_email_templates')
-    .select('subject_template,html_template')
-    .eq('locale', locale)
-    .eq('tour_kind', tourKind)
-    .maybeSingle()
-
-  if (error) {
-    console.error('fetchResidentInquiryEmailTemplateFromDb:', error)
-    return null
+  const row = await fetchPrimaryStaffOutreachMessageTemplateFromDb(
+    'resident_inquiry',
+    locale,
+    'email',
+    tourKind
+  )
+  if (!row?.body_template) return null
+  const subject = String(row.subject_template ?? '').trim()
+  if (!subject) return null
+  return {
+    subject_template: subject,
+    html_template: row.body_template,
   }
-  if (!data) return null
-  const row = data as { subject_template?: string; html_template?: string }
-  const st = String(row.subject_template ?? '').trim()
-  const ht = String(row.html_template ?? '').trim()
-  if (!st || !ht) return null
-  return { subject_template: st, html_template: ht }
 }

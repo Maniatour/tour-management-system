@@ -6,9 +6,13 @@ import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTranslations } from 'next-intl'
-import { CheckCircle, Circle, AlertCircle, MessageSquare, Plus, Calendar, User, Clock } from 'lucide-react'
+import { CheckCircle, Circle, AlertCircle, MessageSquare, Plus, Calendar, User, Clock, Link2 } from 'lucide-react'
 import { OpTodoNotificationLayer } from '@/components/team-board/OpTodoNotificationLayer'
 import { audiencesForTeamMember } from '@/lib/opTodoSchedule'
+import { fetchGuideOpTodos } from '@/lib/opTodoGuideFetch'
+import { toggleOpTodoCompletion } from '@/lib/opTodoToggleCompletion'
+import { opTodoHasAction, useOpTodoActionClick } from '@/hooks/useOpTodoActionClick'
+import type { OpTodoWithAction } from '@/lib/opTodoAction'
 
 type Todo = Database['public']['Tables']['op_todos']['Row']
 type Announcement = Database['public']['Tables']['team_announcements']['Row']
@@ -66,6 +70,19 @@ export default function GuideTeamBoard() {
   const [selectedTaskIndividuals, setSelectedTaskIndividuals] = useState<string[]>([])
   const [activePositionTab, setActivePositionTab] = useState<string>('Office Manager')
 
+  const openTodoAction = useOpTodoActionClick('guide')
+
+  const loadGuideOpTodos = async (email: string) => {
+    const { data: me } = await supabase
+      .from('team')
+      .select('position')
+      .eq('email', email)
+      .maybeSingle()
+
+    const audiences = audiencesForTeamMember(me?.position ?? null)
+    return fetchGuideOpTodos<Todo>(supabase, email, audiences)
+  }
+
   useEffect(() => {
     loadTeamBoardData()
     loadTeamMembers()
@@ -105,18 +122,12 @@ export default function GuideTeamBoard() {
         console.warn('apply_due_op_todo_resets skipped:', resetErr)
       }
 
-      // 할 일 목록 로드 (가이드 담당자만)
-      const { data: todosData, error: todosError } = await supabase
-        .from('op_todos')
-        .select('*')
-        .eq('assigned_to', currentUserEmail)
-        .order('created_at', { ascending: false })
-        .limit(20)
-
-      if (todosError) {
+      // 할 일: 부서 공통 체크리스트 + 레거시 개별 할당
+      try {
+        const todosData = await loadGuideOpTodos(currentUserEmail)
+        setTodos(todosData)
+      } catch (todosError) {
         console.error('Error loading todos:', todosError)
-      } else {
-        setTodos(todosData || [])
       }
 
       // 전달사항 로드 (해당 팀원에게 전달된 것들)
@@ -167,25 +178,28 @@ export default function GuideTeamBoard() {
   // 할 일 완료 처리
   const handleTodoComplete = async (todoId: string, completed: boolean) => {
     try {
-      const { error } = await supabase
-        .from('op_todos')
-        .update({ 
-          completed: completed,
-          completed_at: completed ? new Date().toISOString() : null
-        })
-        .eq('id', todoId)
+      const todo = todos.find((t) => t.id === todoId)
+      if (!todo) return
+
+      const { data, error } = await toggleOpTodoCompletion(todo as OpTodoWithAction, completed)
 
       if (error) {
         console.error('Error updating todo:', error)
         return
       }
 
-      // 로컬 상태 업데이트
-      setTodos(prev => prev.map(todo => 
-        todo.id === todoId 
-          ? { ...todo, completed: completed, completed_at: completed ? new Date().toISOString() : null }
-          : todo
-      ))
+      setTodos((prev) =>
+        prev.map((t) =>
+          t.id === todoId
+            ? {
+                ...t,
+                completed: data?.completed ?? completed,
+                completed_at: data?.completed_at ?? (completed ? new Date().toISOString() : null),
+                next_notify_at: data?.next_notify_at ?? t.next_notify_at,
+              }
+            : t
+        )
+      )
     } catch (error) {
       console.error('Error updating todo:', error)
     }
@@ -320,21 +334,22 @@ export default function GuideTeamBoard() {
     return audiencesForTeamMember(row?.position ?? null)
   }, [teamMembers, currentUserEmail])
 
-  const reloadAssignedTodos = async () => {
+  const reloadOpTodos = async () => {
     if (!currentUserEmail) return
-    const { data, error } = await supabase
-      .from('op_todos')
-      .select('*')
-      .eq('assigned_to', currentUserEmail)
-      .order('created_at', { ascending: false })
-      .limit(20)
-    if (!error && data) setTodos(data)
+    try {
+      const data = await loadGuideOpTodos(currentUserEmail)
+      setTodos(data)
+    } catch (error) {
+      console.error('Error reloading todos:', error)
+    }
   }
 
   const getCategoryColor = (category: string) => {
     switch (category) {
       case 'daily':
         return 'text-primary bg-primary/10'
+      case 'weekly':
+        return 'text-slate-700 bg-slate-100'
       case 'monthly':
         return 'text-purple-600 bg-purple-100'
       case 'yearly':
@@ -348,6 +363,8 @@ export default function GuideTeamBoard() {
     switch (category) {
       case 'daily':
         return getText('일일', 'Daily')
+      case 'weekly':
+        return getText('주간', 'Weekly')
       case 'monthly':
         return getText('월간', 'Monthly')
       case 'yearly':
@@ -386,7 +403,7 @@ export default function GuideTeamBoard() {
           supabase={supabase}
           userEmail={currentUserEmail}
           audiences={checklistNotifyAudiences}
-          onRefresh={() => void reloadAssignedTodos()}
+          onRefresh={() => void reloadOpTodos()}
         />
       ) : null}
       {/* 헤더 */}
@@ -456,7 +473,10 @@ export default function GuideTeamBoard() {
 
               {todos.length > 0 ? (
                 <div className="space-y-3">
-                  {todos.map((todo) => (
+                  {todos.map((todo) => {
+                    const hasAction = opTodoHasAction(todo as OpTodoWithAction)
+
+                    return (
                     <div
                       key={todo.id}
                       className={`border rounded-lg p-4 hover:bg-gray-50 transition-colors ${
@@ -465,8 +485,10 @@ export default function GuideTeamBoard() {
                     >
                       <div className="flex items-start space-x-3">
                         <button
+                          type="button"
                           onClick={() => handleTodoComplete(todo.id, !todo.completed)}
                           className="mt-1"
+                          aria-label={todo.completed ? getText('완료 취소', 'Undo') : getText('완료', 'Complete')}
                         >
                           {todo.completed ? (
                             <CheckCircle className="w-5 h-5 text-green-600" />
@@ -477,11 +499,25 @@ export default function GuideTeamBoard() {
                         
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center space-x-2 mb-1">
-                            <h3 className={`font-medium ${
-                              todo.completed ? 'text-gray-500 line-through' : 'text-gray-900'
-                            }`}>
-                              {todo.title}
-                            </h3>
+                            {hasAction ? (
+                              <button
+                                type="button"
+                                onClick={() => openTodoAction(todo as OpTodoWithAction)}
+                                className={`inline-flex items-center gap-1 font-medium text-left hover:text-primary ${
+                                  todo.completed ? 'text-gray-500 line-through' : 'text-gray-900'
+                                }`}
+                                title={getText('연결 열기', 'Open link')}
+                              >
+                                {todo.title}
+                                <Link2 className="w-3.5 h-3.5 shrink-0 text-primary" aria-hidden />
+                              </button>
+                            ) : (
+                              <h3 className={`font-medium ${
+                                todo.completed ? 'text-gray-500 line-through' : 'text-gray-900'
+                              }`}>
+                                {todo.title}
+                              </h3>
+                            )}
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${getCategoryColor(todo.category || 'daily')}`}>
                               {getCategoryText(todo.category || 'daily')}
                             </span>
@@ -519,7 +555,8 @@ export default function GuideTeamBoard() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               ) : (
                 <div className="text-center text-gray-500 py-8">

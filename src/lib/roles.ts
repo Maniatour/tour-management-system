@@ -101,7 +101,7 @@ const OFFICE_STAFF_POSITIONS = new Set([
 
 export function getUserRole(
   email: string,
-  teamData?: { position?: string; is_active?: boolean | null }
+  teamData?: { position?: string | null; is_active?: boolean | null }
 ): UserRole {
   // 슈퍼관리자 이메일은 team 데이터와 무관하게 무조건 관리자
   const normalizedEmail = (email || '').toLowerCase()

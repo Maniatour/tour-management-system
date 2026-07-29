@@ -5,6 +5,7 @@ import {
   applySecurityHeaders,
   handleApiSecurity,
 } from '@/lib/middleware-api-security'
+import { handleAdminRouteAuth } from '@/lib/middleware-admin-auth'
 import {
   isSafePwaStartPath,
   PWA_START_PATH_COOKIE,
@@ -161,6 +162,13 @@ export async function middleware(req: NextRequest) {
   if (response.status >= 300 && response.status < 400) {
     return applySecurityHeaders(
       withPublicOperator(response, null, resolvedPublicOperator)
+    )
+  }
+
+  const adminAuthRedirect = handleAdminRouteAuth(req)
+  if (adminAuthRedirect) {
+    return applySecurityHeaders(
+      withPublicOperator(adminAuthRedirect, null, resolvedPublicOperator)
     )
   }
 

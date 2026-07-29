@@ -117,6 +117,7 @@ export default function TourCoursesPage() {
       return (data || []) as TourCourse[]
     },
     cacheKey: 'tour_courses',
+    defaultToEmptyArray: true,
   })
 
   const { data: categories } = useOptimizedData<TourCourseCategory[]>({
@@ -129,6 +130,7 @@ export default function TourCoursesPage() {
       return (data || []) as TourCourseCategory[]
     },
     cacheKey: 'tour_course_categories',
+    defaultToEmptyArray: true,
   })
 
   const startEdit = (course: TourCourse) => {

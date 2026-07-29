@@ -1,10 +1,18 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { MessageSquare, PhoneForwarded, Globe, Loader2, Mail } from 'lucide-react'
+import { MessageSquare, PhoneForwarded, Globe, Loader2, Mail, MessagesSquare } from 'lucide-react'
 import CancellationFollowUpMessagePreviewModal from '@/components/reservation/CancellationFollowUpMessagePreviewModal'
 import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
+import { CustomerFollowUpResponseModal } from '@/components/reservation/CustomerFollowUpResponseModal'
+import { CancelRebookingFollowUpStepBar } from '@/components/reservation/CancelRebookingFollowUpStepBar'
 import type { CancellationFollowUpMessageKind } from '@/lib/cancellationFollowUpMessage'
+import { cancelRebookingFollowUpCardCopy } from '@/lib/cancelRebookingFollowUpCardCopy'
+import {
+  buildCustomerResponseContactContent,
+  uploadCustomerResponseImages,
+  type CustomerFollowUpResponseSubmitPayload,
+} from '@/lib/customerFollowUpResponseAssets'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
@@ -32,10 +40,11 @@ export type CancelledSimpleCardFollowUpStripProps = {
     kind: CancelFollowUpManualKind,
     action: 'mark' | 'clear'
   ) => void | Promise<void>
-  /** 사유 저장 후 부모가 뱃지 등을 다시 불러오도록 */
   onReasonSaved?: () => void
-  /** 부모가 이미 알고 있는 취소 사유(있으면 버튼 강조 생략) */
   knownCancellationReason?: string | null
+  knownHasCustomerResponse?: boolean
+  onCustomerResponseSaved?: () => void
+  showWorkflowStepBar?: boolean
 }
 
 export default function CancelledSimpleCardFollowUpStrip({
@@ -56,15 +65,20 @@ export default function CancelledSimpleCardFollowUpStrip({
   onCancelFollowUpManualChange,
   onReasonSaved,
   knownCancellationReason,
+  knownHasCustomerResponse = false,
+  onCustomerResponseSaved,
+  showWorkflowStepBar = true,
 }: CancelledSimpleCardFollowUpStripProps) {
   const t = useTranslations('reservations.followUpPipeline')
   const tc = useTranslations('reservations.card')
   const locale = useLocale()
+  const cardCopy = cancelRebookingFollowUpCardCopy(locale)
   const { user } = useAuth()
   const userEmail = user?.email?.trim() || null
 
   const fu = snapshot?.cancelFollowUpManual ?? false
   const re = snapshot?.cancelRebookingOutreachManual ?? false
+  const noticeComplete = fu && re
 
   const [reasonOpen, setReasonOpen] = useState(false)
   const [reasonDraft, setReasonDraft] = useState('')
@@ -76,6 +90,10 @@ export default function CancelledSimpleCardFollowUpStrip({
   const [messagePreviewOpen, setMessagePreviewOpen] = useState(false)
   const [messagePreviewKind, setMessagePreviewKind] =
     useState<CancellationFollowUpMessageKind>('follow_up')
+  const [responseOpen, setResponseOpen] = useState(false)
+  const [responseDraft, setResponseDraft] = useState('')
+  const [responseSaving, setResponseSaving] = useState(false)
+  const [hasCustomerResponse, setHasCustomerResponse] = useState(knownHasCustomerResponse)
 
   const loadReason = useCallback(async () => {
     if (!reservationId) return
@@ -110,47 +128,133 @@ export default function CancelledSimpleCardFollowUpStrip({
     }
   }, [reservationId])
 
+  const loadCustomerResponse = useCallback(async () => {
+    if (!reservationId) return
+    const { data, error } = await fromUntypedTable(supabase, 'reservation_follow_ups')
+      .select('content')
+      .eq('reservation_id', reservationId)
+      .eq('type', 'contact')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (error) {
+      console.error('customer response fetch:', error)
+      return
+    }
+    const content = String((data as { content?: string | null } | null)?.content ?? '').trim()
+    setResponseDraft(content)
+    setHasCustomerResponse(Boolean(content))
+  }, [reservationId])
+
   useEffect(() => {
     void loadReason()
-  }, [loadReason])
+    void loadCustomerResponse()
+  }, [loadReason, loadCustomerResponse])
+
+  useEffect(() => {
+    setHasCustomerResponse(knownHasCustomerResponse)
+  }, [knownHasCustomerResponse])
 
   useEffect(() => {
     if (!reasonOpen) return
     void loadReason()
   }, [reasonOpen, loadReason])
 
-  const saveReason = async (reason: string) => {
+  useEffect(() => {
+    if (!responseOpen) return
+    void loadCustomerResponse()
+    void loadReason()
+  }, [responseOpen, loadCustomerResponse, loadReason])
+
+  const saveCancellationReason = async (reason: string, options?: { skipGuards?: boolean }) => {
     if (!userEmail) {
       alert(tc('cancellationReasonNeedLogin'))
-      return
+      return false
     }
+    if (!options?.skipGuards) {
+      if (!noticeComplete) {
+        alert(cardCopy.reasonBlockedNoFollowUp)
+        return false
+      }
+      if (!hasCustomerResponse) {
+        alert(cardCopy.reasonBlockedNoCustomerResponse)
+        return false
+      }
+    }
+    const trimmed = reason.trim()
+    if (!trimmed) return false
+
+    if (reasonRowId) {
+      const { error } = await fromUntypedTable(supabase, 'reservation_follow_ups')
+        .update({ content: trimmed })
+        .eq('id', reasonRowId)
+      if (error) throw error
+    } else {
+      const { error } = await fromUntypedTable(supabase, 'reservation_follow_ups').insert({
+        reservation_id: reservationId,
+        type: 'cancellation_reason',
+        content: trimmed,
+        created_by: userEmail,
+      })
+      if (error) throw error
+    }
+    await loadReason()
+    onReasonSaved?.()
+    return true
+  }
+
+  const saveReason = async (reason: string) => {
     setReasonSaving(true)
     try {
-      const trimmed = reason.trim()
-      if (reasonRowId) {
-        const { error } = await fromUntypedTable(supabase, 'reservation_follow_ups')
-          .update({ content: trimmed || null })
-          .eq('id', reasonRowId)
-        if (error) throw error
-      } else {
-        const { error } = await fromUntypedTable(supabase, 'reservation_follow_ups').insert({
-          reservation_id: reservationId,
-          type: 'cancellation_reason',
-          content: trimmed || null,
-          created_by: userEmail,
-        })
-        if (error) throw error
+      const saved = await saveCancellationReason(reason)
+      if (saved) {
+        setReasonOpen(false)
       }
-      await loadReason()
-      if (trimmed) {
-        onReasonSaved?.()
-      }
-      setReasonOpen(false)
     } catch (e) {
       console.error(e)
       alert(tc('cancellationReasonSaveFailed'))
     } finally {
       setReasonSaving(false)
+    }
+  }
+
+  const saveCustomerResponse = async ({
+    text,
+    images,
+    cancellationReason,
+  }: CustomerFollowUpResponseSubmitPayload) => {
+    if (!userEmail) {
+      alert(tc('cancellationReasonNeedLogin'))
+      return
+    }
+    const trimmedText = text.trim()
+    if (!trimmedText && images.length === 0) return
+
+    setResponseSaving(true)
+    try {
+      const uploadedImages = await uploadCustomerResponseImages(reservationId, images, locale)
+      const content = buildCustomerResponseContactContent(trimmedText, uploadedImages, locale)
+      const { error } = await fromUntypedTable(supabase, 'reservation_follow_ups').insert({
+        reservation_id: reservationId,
+        type: 'contact',
+        content,
+        created_by: userEmail,
+      })
+      if (error) throw error
+      setHasCustomerResponse(true)
+      setResponseDraft(content)
+
+      if (cancellationReason?.trim()) {
+        await saveCancellationReason(cancellationReason, { skipGuards: true })
+      }
+
+      onCustomerResponseSaved?.()
+      setResponseOpen(false)
+    } catch (e) {
+      console.error(e)
+      alert(e instanceof Error ? e.message : cardCopy.customerResponseSaveFailed)
+    } finally {
+      setResponseSaving(false)
     }
   }
 
@@ -175,70 +279,103 @@ export default function CancelledSimpleCardFollowUpStrip({
     }
   }
 
+  const reasonBlockedTitle = !noticeComplete
+    ? cardCopy.reasonBlockedNoFollowUp
+    : !hasCustomerResponse
+      ? cardCopy.reasonBlockedNoCustomerResponse
+      : tc('cancellationReasonButtonTitle')
+
   return (
     <>
-      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-        <span className="hidden min-[380px]:inline text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-          {tc('cancelAfterProcessShort')}
-        </span>
-        <button
-          type="button"
-          title={tc('cancelFollowUpMessagePreviewTitle')}
-          aria-label={tc('cancelFollowUpMessagePreviewTitle')}
-          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100"
-          onClick={(e) => {
-            e.stopPropagation()
-            setMessagePreviewKind('follow_up')
-            setMessagePreviewOpen(true)
-          }}
-        >
-          <Mail className="h-3 w-3" aria-hidden />
-        </button>
-        <button
-          type="button"
-          disabled={reasonLoading}
-          title={tc('cancellationReasonButtonTitle')}
-          aria-label={tc('cancellationReasonButtonTitle')}
-          className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border transition-colors disabled:opacity-50 ${
-            hasCancellationReason
-              ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-              : 'border-amber-300 bg-amber-50 text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100'
-          }`}
-          onClick={(e) => {
-            e.stopPropagation()
-            setReasonOpen(true)
-          }}
-        >
-          {reasonLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageSquare className="h-3 w-3" />}
-        </button>
-        <button
-          type="button"
-          disabled={toggleSaving || !onCancelFollowUpManualChange}
-          title={t('cancelFollowUpIconTitle')}
-          aria-label={t('cancelFollowUpIconTitle')}
-          aria-pressed={fu}
-          className={btnClass(fu)}
-          onClick={(e) => {
-            e.stopPropagation()
-            void fireToggle('cancel_follow_up', fu ? 'clear' : 'mark')
-          }}
-        >
-          <PhoneForwarded className="h-3 w-3" aria-hidden />
-        </button>
-        <button
-          type="button"
-          disabled={toggleSaving || !onCancelFollowUpManualChange}
-          title={t('cancelRebookingIconTitle')}
-          aria-label={t('cancelRebookingIconTitle')}
-          aria-pressed={re}
-          className={btnClass(re)}
-          onClick={(e) => {
-            e.stopPropagation()
-            void fireToggle('cancel_rebooking', re ? 'clear' : 'mark')
-          }}
-        >
-          <Globe className="h-3 w-3" aria-hidden />
-        </button>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        {showWorkflowStepBar ? (
+          <CancelRebookingFollowUpStepBar
+            locale={locale}
+            snapshot={snapshot}
+            cancellationReason={knownCancellationReason ?? reasonDraft}
+            hasCustomerResponse={hasCustomerResponse}
+            compact
+          />
+        ) : null}
+        <div className="flex shrink-0 items-center justify-between gap-2">
+          <button
+            type="button"
+            title={tc('cancelFollowUpMessagePreviewTitle')}
+            aria-label={tc('cancelFollowUpMessagePreviewTitle')}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100"
+            onClick={(e) => {
+              e.stopPropagation()
+              setMessagePreviewKind('follow_up')
+              setMessagePreviewOpen(true)
+            }}
+          >
+            <Mail className="h-3 w-3" aria-hidden />
+          </button>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+            <button
+              type="button"
+              disabled={toggleSaving || !onCancelFollowUpManualChange}
+              title={t('cancelFollowUpIconTitle')}
+              aria-label={t('cancelFollowUpIconTitle')}
+              aria-pressed={fu}
+              className={btnClass(fu)}
+              onClick={(e) => {
+                e.stopPropagation()
+                void fireToggle('cancel_follow_up', fu ? 'clear' : 'mark')
+              }}
+            >
+              <PhoneForwarded className="h-3 w-3" aria-hidden />
+            </button>
+            <button
+              type="button"
+              disabled={toggleSaving || !onCancelFollowUpManualChange}
+              title={t('cancelRebookingIconTitle')}
+              aria-label={t('cancelRebookingIconTitle')}
+              aria-pressed={re}
+              className={btnClass(re)}
+              onClick={(e) => {
+                e.stopPropagation()
+                void fireToggle('cancel_rebooking', re ? 'clear' : 'mark')
+              }}
+            >
+              <Globe className="h-3 w-3" aria-hidden />
+            </button>
+            <button
+              type="button"
+              title={cardCopy.customerResponseButtonTitle}
+              aria-label={cardCopy.customerResponseButtonTitle}
+              className={btnClass(hasCustomerResponse)}
+              onClick={(e) => {
+                e.stopPropagation()
+                setResponseOpen(true)
+              }}
+            >
+              <MessagesSquare className="h-3 w-3" aria-hidden />
+            </button>
+            <button
+              type="button"
+              disabled={reasonLoading || (!noticeComplete && !hasCancellationReason)}
+              title={reasonBlockedTitle}
+              aria-label={reasonBlockedTitle}
+              className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border transition-colors disabled:opacity-50 ${
+                hasCancellationReason
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                  : 'border-amber-300 bg-amber-50 text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100'
+              }`}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (!noticeComplete && !hasCancellationReason) return
+                setReasonOpen(true)
+              }}
+            >
+              {reasonLoading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <MessageSquare className="h-3 w-3" />
+              )}
+            </button>
+          </div>
+        </div>
       </div>
 
       <CancellationFollowUpMessagePreviewModal
@@ -268,6 +405,16 @@ export default function CancelledSimpleCardFollowUpStrip({
         saving={reasonSaving}
         onClose={() => setReasonOpen(false)}
         onSubmit={saveReason}
+      />
+
+      <CustomerFollowUpResponseModal
+        isOpen={responseOpen}
+        locale={locale}
+        initialValue={responseDraft}
+        initialCancellationReason={knownCancellationReason ?? reasonDraft}
+        saving={responseSaving}
+        onClose={() => setResponseOpen(false)}
+        onSubmit={saveCustomerResponse}
       />
     </>
   )

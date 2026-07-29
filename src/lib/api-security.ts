@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { createServerSupabase } from '@/lib/supabase-server'
+import { createSupabaseClientWithToken } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
 import { applyActiveOperatorSession } from '@/lib/operators/applyActiveOperatorSession'
+import { readAuthAccessTokenFromRequest } from '@/lib/authSessionCookie'
 
 const STAFF_EMAIL_WHITELIST = new Set(['info@maniatour.com', 'wooyong.shim09@gmail.com'])
 
@@ -63,32 +65,29 @@ async function isActiveStaff(
   return !error && !!data
 }
 
-/** 스태프 전용 API — Bearer 또는 쿠키 세션 */
+/** 스태프 전용 API — Bearer / tms-auth-access 쿠키 / SSR 쿠키 세션 */
 export async function requireStaffApiAuth(request: NextRequest): Promise<
-  | { ok: true; userEmail: string }
+  | { ok: true; userEmail: string; userId: string; staffClient: SupabaseClient<Database> }
   | { ok: false; response: NextResponse }
 > {
-  const authHeader = request.headers.get('Authorization')
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null
+  const token = readAuthAccessTokenFromRequest(request)
 
   let userEmail: string | undefined
+  let userId: string | undefined
   let staffClient: SupabaseClient<Database> | undefined
 
   if (token) {
-    const supabase = createClient<Database>(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        global: { headers: { Authorization: `Bearer ${token}` } },
-      }
-    )
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser(token)
-    if (!error && user?.email) {
+    } = await createClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    ).auth.getUser(token)
+    if (!error && user?.email && user.id) {
       userEmail = user.email
-      staffClient = supabase
+      userId = user.id
+      staffClient = createSupabaseClientWithToken(token)
     }
   }
 
@@ -97,13 +96,14 @@ export async function requireStaffApiAuth(request: NextRequest): Promise<
     const {
       data: { session },
     } = await serverSb.auth.getSession()
-    if (session?.user?.email) {
+    if (session?.user?.email && session.user.id) {
       userEmail = session.user.email
+      userId = session.user.id
       staffClient = serverSb
     }
   }
 
-  if (!userEmail || !staffClient) {
+  if (!userEmail || !userId || !staffClient) {
     return {
       ok: false,
       response: NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 }),
@@ -121,5 +121,5 @@ export async function requireStaffApiAuth(request: NextRequest): Promise<
   // Phase 6c.9: request-scoped active operator GUC (prep; no staff RLS lock-down yet)
   await applyActiveOperatorSession(staffClient, request)
 
-  return { ok: true, userEmail }
+  return { ok: true, userEmail, userId, staffClient }
 }

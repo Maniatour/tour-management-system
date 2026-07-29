@@ -20,6 +20,8 @@ import TourReceiptModal from '@/components/TourReceiptModal'
 import MedicalReportWarningModal from '@/components/MedicalReportWarningModal'
 import GuideDocumentUploadModal from '@/components/GuideDocumentUploadModal'
 import GuideTourChatNotificationModal from '@/components/guide/GuideTourChatNotificationModal'
+import { GuideScheduleConfirmPopupLayer } from '@/components/guide/GuideScheduleConfirmPopupLayer'
+import { StaffSiteAlertPopupLayer } from '@/components/admin/staff-site-alert/StaffSiteAlertPopupLayer'
 import VoiceCallCrossTabListener from '@/components/guide/VoiceCallCrossTabListener'
 import GuideOfflineBanner from '@/components/guide/GuideOfflineBanner'
 import { supabase } from '@/lib/supabase'
@@ -619,6 +621,15 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
           : user?.email
             ? { userEmail: user.email }
             : {})}
+        locale={locale === 'en' ? 'en' : 'ko'}
+      />
+
+      <GuideScheduleConfirmPopupLayer
+        userEmail={isSimulating && simulatedUser ? simulatedUser.email : user?.email}
+      />
+
+      <StaffSiteAlertPopupLayer
+        userEmail={isSimulating && simulatedUser ? simulatedUser.email : user?.email}
         locale={locale === 'en' ? 'en' : 'ko'}
       />
 

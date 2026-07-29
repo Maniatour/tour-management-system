@@ -75,7 +75,10 @@ export async function signInWithEmail({ email, password }: SignInData) {
 }
 
 // 구글 로그인
-export async function signInWithGoogle(locale: string = 'ko') {
+export async function signInWithGoogle(
+  locale: string = 'ko',
+  postAuthPath?: string | null
+) {
   // 클라이언트 사이드에서만 실행되도록 체크
   if (typeof window === 'undefined') {
     return { 
@@ -101,7 +104,7 @@ export async function signInWithGoogle(locale: string = 'ko') {
 
     // Supabase Redirect URLs는 경로까지 정확히 일치해야 함 (예: /ko/auth/callback).
     stashOAuthCallbackLocale(locale)
-    const redirectTo = getOAuthCallbackRedirectUrl(locale)
+    const redirectTo = getOAuthCallbackRedirectUrl(locale, postAuthPath)
 
     console.log('Starting Google sign in...', {
       origin,

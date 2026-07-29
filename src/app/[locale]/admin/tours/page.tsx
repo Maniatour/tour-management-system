@@ -389,6 +389,7 @@ export default function AdminTours() {
     cacheTime: 2 * 60 * 1000, // 2분 캐시 — SWR(stale-while-revalidate) 기본 활성
     enabled: toursQueryEnabled,
     dependencies: [toursQueryEnabled, activeOperatorId],
+    defaultToEmptyArray: true,
   })
 
   const { data: employeesData, loading: employeesLoading } = useOptimizedData({
@@ -409,7 +410,8 @@ export default function AdminTours() {
       return activeEmployees
     },
     cacheKey: 'employees',
-    cacheTime: 30 * 60 * 1000 // 30분 캐시 — 팀 마스터는 거의 변하지 않음, SWR 로 자동 갱신
+    cacheTime: 30 * 60 * 1000, // 30분 캐시 — 팀 마스터는 거의 변하지 않음, SWR 로 자동 갱신
+    defaultToEmptyArray: true,
   })
 
   const { data: productsData, loading: productsLoading } = useOptimizedData<{
@@ -434,11 +436,12 @@ export default function AdminTours() {
     cacheKey: `products:${activeOperatorId}`,
     cacheTime: 30 * 60 * 1000, // 30분 캐시 — 상품 마스터, SWR 로 자동 갱신
     dependencies: [activeOperatorId],
+    defaultToEmptyArray: true,
   })
 
   const activeProductsForNewTourModal = useMemo(
     () =>
-      (productsData ?? []).filter((p) => String(p.status || '').toLowerCase() !== 'inactive'),
+      productsData?.filter((p) => String(p.status || '').toLowerCase() !== 'inactive') ?? [],
     [productsData]
   )
 
@@ -1583,7 +1586,13 @@ export default function AdminTours() {
             ) : null}
           </DialogHeader>
           {tourDetailModal?.tourId ? (
-            <TourDetailModalContent tourId={tourDetailModal.tourId} refreshNonce={tourDetailRefreshNonce} />
+            <TourDetailModalContent
+              tourId={tourDetailModal.tourId}
+              refreshNonce={tourDetailRefreshNonce}
+              onNavigateToTour={(nextTourId) =>
+                setTourDetailModal((prev) => (prev ? { ...prev, tourId: nextTourId } : null))
+              }
+            />
           ) : null}
         </DialogContent>
       </Dialog>

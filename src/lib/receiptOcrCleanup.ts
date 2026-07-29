@@ -185,6 +185,31 @@ export function mergeReceiptOcrTextsSmart(primary: string, secondary: string): s
   return `${dedupeSimilarLines(picked).join('\n')}\n`
 }
 
+/** OCR 결과 품질 점수 — 금액·날짜·유의미한 줄 수를 종합 */
+export function scoreReceiptOcrOverall(text: string): number {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  if (lines.length === 0) return 0
+
+  let score = 0
+  if (/\$\s*\d+\.\d{2}\b/.test(text)) score += 40
+  if (/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(text)) score += 20
+  if (/\b(total|amount|credit|visa|mastercard|approved|invoice)\b/i.test(text)) score += 15
+
+  let goodLines = 0
+  for (const line of lines) {
+    if (scoreReceiptOcrLine(line) >= 12) goodLines += 1
+  }
+  score += Math.min(goodLines * 4, 40)
+  return score
+}
+
+export function receiptOcrHasUsableExtraction(text: string): boolean {
+  return scoreReceiptOcrOverall(text) >= 45
+}
+
 export function finalizeReceiptOcrText(text: string): string {
   let lines = text
     .split(/\r?\n/)

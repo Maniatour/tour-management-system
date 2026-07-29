@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useEffect } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { X, Mail, ClipboardCheck, Plane, MapPin, XCircle, PhoneForwarded, Globe } from 'lucide-react'
 import type { Reservation, Customer } from '@/types/reservation'
@@ -48,6 +48,8 @@ export interface ReservationFollowUpQueueModalProps {
   ) => void | Promise<void>
   /** 취소 사유 — 재예약 건은 취소 Follow-up 탭에서 제외 */
   cancellationReasonByReservationId?: ReadonlyMap<string, string>
+  /** Todo·딥링크 등에서 열 때 초기 탭 */
+  initialTab?: FollowUpQueueTabId
 }
 
 function tabFilter(
@@ -158,11 +160,17 @@ export default function ReservationFollowUpQueueModal({
   renderSimpleReservationCard,
   onCancelFollowUpManualChange,
   cancellationReasonByReservationId,
+  initialTab = 'confirm',
 }: ReservationFollowUpQueueModalProps) {
   const tp = useTranslations('reservations.followUpPipeline')
   const uiLocale = useLocale()
-  const [tab, setTab] = useState<FollowUpQueueTabId>('confirm')
+  const [tab, setTab] = useState<FollowUpQueueTabId>(initialTab)
   const [savingCancelId, setSavingCancelId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    setTab(initialTab)
+  }, [isOpen, initialTab])
 
   const tabs = useMemo(
     () =>

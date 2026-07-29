@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
-import { Plus, Upload, X, Check, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Package, Camera, ZoomIn, ZoomOut, ListOrdered, type LucideIcon } from 'lucide-react'
+import { Plus, Upload, X, Check, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Package, Camera, ZoomIn, ZoomOut, ListOrdered, RotateCcw, RotateCw, Sparkles, type LucideIcon } from 'lucide-react'
 import ExpenseVendorManagerModal from '@/components/expense/ExpenseVendorManagerModal'
 import { supabase } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
@@ -33,6 +33,7 @@ import { ensureFreshAuthSessionForUpload } from '@/lib/uploadClient'
 import { ensureImageFitsMaxBytes, RECEIPT_COMPRESS_FAILED } from '@/lib/imageUtils'
 import { TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR } from '@/lib/tourExpenseConstants'
 import { runReceiptOcrFromImageBuffer } from '@/lib/receiptOcrBrowser'
+import type { ReceiptOcrRotationDegrees } from '@/lib/receiptOcrPreprocess'
 import { buildReceiptOcrCandidates, type ReceiptOcrCandidates as ReceiptOcrParseCandidates } from '@/lib/receiptOcrParse'
 import {
   resolvePaidForFromOcrCandidate,
@@ -146,6 +147,10 @@ interface TourExpenseManagerProps {
   tourAssistantFee?: number | null
   /** 부모의 최신 투어 상태 (취소 여부 정산 반영·DB 재로드용; 없으면 loadTourData 결과만 사용) */
   tourStatus?: string | null
+  /** Todo 정산 등: 단일 지출만 수정 UI로 연다 */
+  embedSingleExpenseId?: string | null
+  onEmbedClose?: () => void
+  onEmbedUpdated?: () => void
 }
 
 export default function TourExpenseManager({ 
@@ -159,7 +164,10 @@ export default function TourExpenseManager({
   onExpenseUpdated,
   tourGuideFee,
   tourAssistantFee,
-  tourStatus
+  tourStatus,
+  embedSingleExpenseId,
+  onEmbedClose,
+  onEmbedUpdated,
 }: TourExpenseManagerProps) {
   const t = useTranslations('tours.tourExpense')
   const locale = useLocale()
@@ -212,7 +220,10 @@ export default function TourExpenseManager({
   const expenseModalBackdropSuppressedUntilRef = useRef(0)
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; expenseId: string; paidFor: string } | null>(null)
   const [receiptViewerZoom, setReceiptViewerZoom] = useState(1)
+  const embedEditOpenedRef = useRef(false)
   const [formReceiptZoom, setFormReceiptZoom] = useState(1)
+  const [formReceiptRotation, setFormReceiptRotation] = useState<ReceiptOcrRotationDegrees>(0)
+  const [formInlineOcrOpen, setFormInlineOcrOpen] = useState(false)
   const [vendorManagerOpen, setVendorManagerOpen] = useState(false)
   const [ocrReview, setOcrReview] = useState<{
     /** 신규·수정 입력폼에서 업로드 직후 OCR이면 반영 시 편집 중 지출로 바꾸지 않음 */
@@ -522,11 +533,7 @@ export default function TourExpenseManager({
           text,
           candidates: buildReceiptOcrCandidates(text, { runtime: rt }),
         }
-        setViewingReceipt({
-          imageUrl,
-          expenseId: '__ocr_draft__',
-          paidFor: getExpensePaidForLabel(receiptOnlyPaidFor),
-        })
+        setFormInlineOcrOpen(true)
         setOcrReview(buildOcrReviewFromResult(stub, ocrResult, 'add_form'))
       } catch (e) {
         console.warn('Receipt OCR after upload failed:', e)
@@ -1456,6 +1463,17 @@ export default function TourExpenseManager({
         )
       )
       onExpenseUpdated?.()
+      if (editingExpense?.id === expenseId) {
+        onEmbedUpdated?.()
+        setEditingExpense(null)
+        setShowAddForm(false)
+        setShowMoreCategories(false)
+        setReimbursementSectionOpen(false)
+        setPaymentMethodTab('own')
+        if (embedSingleExpenseId) {
+          onEmbedClose?.()
+        }
+      }
     } catch (error) {
       console.error('Error updating status:', error)
       alert('상태 업데이트 중 오류가 발생했습니다.')
@@ -1507,24 +1525,47 @@ export default function TourExpenseManager({
         Boolean(String(expense.reimbursement_note ?? '').trim())
     )
     setFormReceiptZoom(1)
+    setFormReceiptRotation(0)
+    setFormInlineOcrOpen(false)
     setShowAddForm(true)
   }
 
-  const handleRunReceiptOcr = async (expense: TourExpense) => {
+  const buildExpenseFromFormData = useCallback((): TourExpense => {
+    if (editingExpense) return editingExpense
+    return buildOcrStubExpense(formData.image_url, formData.file_path)
+  }, [editingExpense, formData.image_url, formData.file_path, buildOcrStubExpense])
+
+  const executeReceiptOcr = async (
+    expense: TourExpense,
+    opts: {
+      display: 'inline_form' | 'receipt_modal'
+      applyTarget: 'edit_expense' | 'add_form'
+      enhanced?: boolean
+      rotationDegrees?: ReceiptOcrRotationDegrees
+    }
+  ) => {
     const imageUrl = expense.image_url?.trim()
     if (!imageUrl) {
       alert(t('receiptOcrNoImage'))
       return
     }
 
+    const loadingId =
+      opts.display === 'inline_form'
+        ? '__draft__'
+        : expense.id
     const controller = new AbortController()
     const ocrFetchMs = 150_000
     const timeoutId = window.setTimeout(() => controller.abort(), ocrFetchMs)
 
     try {
-      setOcrLoadingExpenseId(expense.id)
+      setOcrLoadingExpenseId(loadingId)
       const { buffer, mime } = await loadReceiptImageBytesForOcr(expense, controller.signal)
-      const { text } = await runReceiptOcrFromImageBuffer(buffer, mime)
+      const { text, rotationUsed } = await runReceiptOcrFromImageBuffer(buffer, mime, {
+        rotationDegrees: opts.rotationDegrees ?? formReceiptRotation,
+        forceDualPass: Boolean(opts.enhanced),
+        tryAlternateRotations: Boolean(opts.enhanced),
+      })
       const rt = await fetchReceiptOcrParseRuntime(supabase)
       const ocrResult: ReceiptOcrResult = {
         text,
@@ -1533,15 +1574,25 @@ export default function TourExpenseManager({
 
       let review: NonNullable<typeof ocrReview>
       try {
-        review = buildOcrReviewFromResult(expense, ocrResult, 'edit_expense')
+        review = buildOcrReviewFromResult(expense, ocrResult, opts.applyTarget)
       } catch (buildErr) {
         console.error('Receipt OCR build review error:', buildErr)
         throw new Error(buildErr instanceof Error ? buildErr.message : t('receiptOcrFailed'))
       }
+
+      if (opts.display === 'inline_form') {
+        if (rotationUsed !== formReceiptRotation) {
+          setFormReceiptRotation(rotationUsed)
+        }
+        setFormInlineOcrOpen(true)
+        setOcrReview(review)
+        return
+      }
+
       setViewingReceipt({
         imageUrl,
         expenseId: expense.id,
-        paidFor: getExpensePaidForLabel(expense.paid_for),
+        paidFor: getExpensePaidForLabel(expense.paid_for || receiptOnlyPaidFor),
       })
       setOcrReview(review)
     } catch (error) {
@@ -1555,6 +1606,27 @@ export default function TourExpenseManager({
       window.clearTimeout(timeoutId)
       setOcrLoadingExpenseId(null)
     }
+  }
+
+  const handleRunFormReceiptOcr = (enhanced = false) => {
+    if (!formData.image_url?.trim()) {
+      alert(t('receiptOcrNoImage'))
+      return
+    }
+    const expense = buildExpenseFromFormData()
+    void executeReceiptOcr(expense, {
+      display: 'inline_form',
+      applyTarget: editingExpense ? 'edit_expense' : 'add_form',
+      enhanced,
+      rotationDegrees: formReceiptRotation,
+    })
+  }
+
+  const handleRunReceiptOcr = async (expense: TourExpense) => {
+    await executeReceiptOcr(expense, {
+      display: 'receipt_modal',
+      applyTarget: 'edit_expense',
+    })
   }
 
   const handleApplyOcrToForm = () => {
@@ -1599,6 +1671,7 @@ export default function TourExpenseManager({
       setShowCustomPaidFor(Boolean(finalPaidFor && !isPaidForInOptions))
       setShowMoreCategories(false)
       setReimbursementSectionOpen(false)
+      setFormInlineOcrOpen(false)
       setOcrReview(null)
       setViewingReceipt(null)
       return
@@ -1643,6 +1716,7 @@ export default function TourExpenseManager({
     )
     setFormReceiptZoom(1)
     setShowAddForm(true)
+    setFormInlineOcrOpen(false)
     setOcrReview(null)
     setViewingReceipt(null)
   }
@@ -1685,6 +1759,9 @@ export default function TourExpenseManager({
     setShowAddForm(false)
     setShowMoreCategories(false)
     setReimbursementSectionOpen(false)
+    setFormReceiptRotation(0)
+    setFormInlineOcrOpen(false)
+    setOcrReview(null)
     setFormData({
       paid_to: '',
       paid_for: '',
@@ -1700,25 +1777,28 @@ export default function TourExpenseManager({
       reimbursement_note: ''
     })
     setPaymentMethodTab('own')
+    if (embedSingleExpenseId) {
+      onEmbedClose?.()
+    }
   }
 
   // 지출 수정 저장
-  const handleUpdateExpense = async () => {
-    if (!editingExpense) return
+  const buildExpenseEditUpdatePayload = (): Record<string, unknown> | null => {
+    if (!editingExpense) return null
 
     if (!formData.paid_for && !formData.custom_paid_for) {
       alert(t('fillRequiredFields'))
-      return
+      return null
     }
 
     if (!formData.amount) {
       alert(t('fillRequiredFields'))
-      return
+      return null
     }
 
     if (!formData.payment_method?.trim()) {
       alert(t('paymentMethodRequired'))
-      return
+      return null
     }
 
     const amountNum = parseFloat(formData.amount)
@@ -1727,75 +1807,130 @@ export default function TourExpenseManager({
       : 0
     if (!Number.isFinite(reimbNum) || reimbNum < 0) {
       alert(t('reimbursementInvalidNonNegative'))
-      return
+      return null
     }
     if (amountNum > 0 && reimbNum > amountNum + 0.001) {
       alert(t('reimbursementExceedsAmount'))
-      return
+      return null
     }
 
-    try {
-      // 지급 대상 값 확인
-      const finalPaidTo = formData.custom_paid_to || formData.paid_to || null
-      console.log('지급 대상 값 확인 (수정):', {
-        custom_paid_to: formData.custom_paid_to,
-        paid_to: formData.paid_to,
-        finalPaidTo: finalPaidTo,
-        showCustomPaidTo: showCustomPaidTo
-      })
+    const finalPaidTo = formData.custom_paid_to || formData.paid_to || null
+    const reimbursedOnVal = formData.reimbursed_on?.trim() || null
+    const reimbPayload =
+      amountNum > 0 && reimbursementSectionOpen
+        ? {
+            reimbursed_amount: reimbNum,
+            reimbursed_on: reimbursedOnVal,
+            reimbursement_note: formData.reimbursement_note?.trim() || null,
+          }
+        : {
+            reimbursed_amount: 0,
+            reimbursed_on: null,
+            reimbursement_note: null,
+          }
 
-      const reimbursedOnVal = formData.reimbursed_on?.trim() || null
-      const reimbPayload =
-        amountNum > 0 && reimbursementSectionOpen
-          ? {
-              reimbursed_amount: reimbNum,
-              reimbursed_on: reimbursedOnVal,
-              reimbursement_note: formData.reimbursement_note?.trim() || null
-            }
-          : {
-              reimbursed_amount: 0,
-              reimbursed_on: null,
-              reimbursement_note: null
-            }
+    return {
+      paid_to: finalPaidTo,
+      paid_for: formData.custom_paid_for || formData.paid_for,
+      amount: amountNum,
+      payment_method: formData.payment_method || null,
+      note: formData.note || null,
+      image_url: formData.image_url || null,
+      file_path: formData.file_path || null,
+      updated_at: new Date().toISOString(),
+      ...reimbPayload,
+    }
+  }
+
+  const handleUpdateExpense = async () => {
+    if (!editingExpense) return
+
+    const payload = buildExpenseEditUpdatePayload()
+    if (!payload) return
+
+    try {
+      const { error } = await supabase
+        .from('tour_expenses')
+        .update(payload as never)
+        .eq('id', editingExpense.id)
+
+      if (error) throw error
+
+      const amountNum = payload.amount as number
+      const finalPaidTo = payload.paid_to as string | null
+      const reimbPayload = {
+        reimbursed_amount: payload.reimbursed_amount as number,
+        reimbursed_on: payload.reimbursed_on as string | null,
+        reimbursement_note: payload.reimbursement_note as string | null,
+      }
+
+      setExpenses((prev) =>
+        prev.map((expense) =>
+          expense.id === editingExpense.id
+            ? {
+                ...expense,
+                paid_to: finalPaidTo ?? expense.paid_to,
+                paid_for: payload.paid_for as string,
+                amount: amountNum,
+                payment_method: payload.payment_method as string | null,
+                note: payload.note as string | null,
+                ...reimbPayload,
+              }
+            : expense
+        )
+      )
+
+      handleCancelEdit()
+      onExpenseUpdated?.()
+      onEmbedUpdated?.()
+    } catch (error) {
+      console.error('Error updating expense:', error)
+      alert('지출 수정 중 오류가 발생했습니다.')
+    }
+  }
+
+  const handleSaveAndApproveExpense = async () => {
+    if (!editingExpense) return
+
+    const payload = buildExpenseEditUpdatePayload()
+    if (!payload) return
+
+    try {
+      const effectiveSubmittedBy = await resolveSubmitterEmail()
+      if (!effectiveSubmittedBy) {
+        alert(t('submitterEmailRequired'))
+        return
+      }
 
       const { error } = await supabase
         .from('tour_expenses')
         .update({
-          paid_to: finalPaidTo,
-          paid_for: formData.custom_paid_for || formData.paid_for,
-          amount: amountNum,
-          payment_method: formData.payment_method || null,
-          note: formData.note || null,
-          image_url: formData.image_url || null,
-          file_path: formData.file_path || null,
-          updated_at: new Date().toISOString(),
-          ...reimbPayload
+          ...payload,
+          status: 'approved',
+          checked_by: effectiveSubmittedBy,
+          checked_on: new Date().toISOString(),
         } as never)
         .eq('id', editingExpense.id)
 
       if (error) throw error
 
-      // 로컬 상태 업데이트
-      setExpenses(prev => prev.map(expense => 
-        expense.id === editingExpense.id 
-          ? {
-              ...expense,
-              paid_to: finalPaidTo ?? expense.paid_to,
-              paid_for: formData.custom_paid_for || formData.paid_for,
-              amount: amountNum,
-              payment_method: formData.payment_method || null,
-              note: formData.note || null,
-              ...reimbPayload
-            }
-          : expense
-      ))
-
-      handleCancelEdit()
       onExpenseUpdated?.()
+      onEmbedUpdated?.()
+      handleCancelEdit()
     } catch (error) {
-      console.error('Error updating expense:', error)
-      alert('지출 수정 중 오류가 발생했습니다.')
+      console.error('Error saving and approving expense:', error)
+      alert('지출 저장·승인 중 오류가 발생했습니다.')
     }
+  }
+
+  const handleRejectEditingExpense = async () => {
+    if (!editingExpense) return
+    await handleStatusUpdate(editingExpense.id, 'rejected')
+  }
+
+  const handleDeleteEditingExpense = async () => {
+    if (!editingExpense) return
+    await handleDeleteExpense(editingExpense.id)
   }
 
   // 지출 삭제
@@ -1812,6 +1947,10 @@ export default function TourExpenseManager({
 
       setExpenses(prev => prev.filter(expense => expense.id !== expenseId))
       onExpenseUpdated?.()
+      onEmbedUpdated?.()
+      if (embedSingleExpenseId) {
+        onEmbedClose?.()
+      }
     } catch (error) {
       console.error('Error deleting expense:', error)
       alert(t('deleteError'))
@@ -2162,8 +2301,18 @@ export default function TourExpenseManager({
     }
   }, [reservations, loadReservationPricing, loadReservationExpenses])
 
+  useEffect(() => {
+    if (!embedSingleExpenseId || embedEditOpenedRef.current || loading) return
+    const expense = expenses.find((row) => row.id === embedSingleExpenseId)
+    if (!expense) return
+    embedEditOpenedRef.current = true
+    handleEditExpense(expense)
+  }, [embedSingleExpenseId, expenses, loading])
+
   return (
     <div className="space-y-4">
+      {!embedSingleExpenseId ? (
+      <>
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900">{t('title')}</h3>
         <div className="flex items-center space-x-2">
@@ -2729,6 +2878,9 @@ export default function TourExpenseManager({
           <p>{t('noExpenses')}</p>
         </div>
       )}
+
+      </>
+      ) : null}
 
       {/* 영수증 보기 + OCR 추출(오른쪽) — 단일 모달 */}
       {expenseModalPortalReady &&
@@ -3539,6 +3691,53 @@ export default function TourExpenseManager({
                     >
                       {t('receiptViewerZoomReset')}
                     </button>
+                    {formData.image_url && canRunReceiptOcr ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setFormReceiptRotation(
+                              (r) => ((r + 270) % 360) as ReceiptOcrRotationDegrees
+                            )
+                          }
+                          className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+                          title={t('receiptOcrRotateLeft')}
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setFormReceiptRotation(
+                              (r) => ((r + 90) % 360) as ReceiptOcrRotationDegrees
+                            )
+                          }
+                          className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+                          title={t('receiptOcrRotateRight')}
+                        >
+                          <RotateCw className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRunFormReceiptOcr(false)}
+                          disabled={ocrLoadingExpenseId === '__draft__'}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
+                          title={t('receiptOcrAction')}
+                        >
+                          {ocrLoadingExpenseId === '__draft__' ? '…' : t('receiptOcrFormRunAction')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRunFormReceiptOcr(true)}
+                          disabled={ocrLoadingExpenseId === '__draft__'}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-purple-300 bg-purple-50 text-purple-800 hover:bg-purple-100 disabled:opacity-50"
+                          title={t('receiptOcrEnhancedAction')}
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          {t('receiptOcrEnhancedActionShort')}
+                        </button>
+                      </>
+                    ) : null}
                     {formData.image_url ? (
                       <a
                         href={formData.image_url}
@@ -3575,7 +3774,7 @@ export default function TourExpenseManager({
                     onClick={(e) => e.stopPropagation()}
                   >
                     {formData.image_url ? (
-                      <div className="relative">
+                      <div className="relative flex items-center justify-center min-h-[180px]">
                         <img
                           src={formData.image_url}
                           alt={t('receipt')}
@@ -3583,6 +3782,8 @@ export default function TourExpenseManager({
                             width: `${100 * formReceiptZoom}%`,
                             maxWidth: 'none',
                             height: 'auto',
+                            transform: `rotate(${formReceiptRotation}deg)`,
+                            transformOrigin: 'center center',
                           }}
                           className="rounded-lg shadow-md block"
                           onError={(e) => {
@@ -3688,6 +3889,143 @@ export default function TourExpenseManager({
                 {/* 오른쪽: 지출 입력 폼 */}
                 <div className="flex flex-col flex-1 min-w-0 min-h-[36vh] lg:max-h-[calc(92vh-5.5rem)] bg-white">
                   <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-4 min-h-0">
+              {formInlineOcrOpen && ocrReview && showAddForm ? (
+                <div className="rounded-xl border border-purple-200 bg-purple-50/60 p-4 space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h4 className="text-sm font-semibold text-purple-950">{t('receiptOcrReviewTitle')}</h4>
+                      <p className="text-xs text-purple-900/80 mt-0.5 leading-relaxed">
+                        {t('receiptOcrFormInlineHint')}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormInlineOcrOpen(false)
+                        setOcrReview(null)
+                      }}
+                      className="text-gray-500 hover:text-gray-700 shrink-0"
+                      aria-label={t('cancel')}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">{t('paidTo')}</label>
+                      <input
+                        type="text"
+                        value={ocrReview.draft.custom_paid_to || ocrReview.draft.paid_to}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setOcrReview((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  draft: {
+                                    ...prev.draft,
+                                    paid_to: paidToOptions.includes(v) ? v : '',
+                                    custom_paid_to: paidToOptions.includes(v) ? '' : v,
+                                  },
+                                }
+                              : prev
+                          )
+                        }}
+                        className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">{t('paidFor')}</label>
+                      <input
+                        type="text"
+                        value={ocrReview.draft.custom_paid_for || ocrReview.draft.paid_for}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setOcrReview((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  draft: {
+                                    ...prev.draft,
+                                    paid_for: categories.some((c) => c.name === v) ? v : '',
+                                    custom_paid_for: categories.some((c) => c.name === v) ? '' : v,
+                                  },
+                                }
+                              : prev
+                          )
+                        }}
+                        className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">{t('amount')} (USD)</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={ocrReview.draft.amount}
+                        onChange={(e) =>
+                          setOcrReview((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  draft: {
+                                    ...prev.draft,
+                                    amount: normalizeDecimalTyping(e.target.value),
+                                  },
+                                }
+                              : prev
+                          )
+                        }
+                        className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">{t('receiptOcrDateLabel')}</label>
+                      <input
+                        type="date"
+                        value={ocrReview.draft.date}
+                        onChange={(e) =>
+                          setOcrReview((prev) =>
+                            prev
+                              ? { ...prev, draft: { ...prev.draft, date: e.target.value } }
+                              : prev
+                          )
+                        }
+                        className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                  </div>
+                  <details className="rounded-lg border border-purple-100 bg-white/80 p-2">
+                    <summary className="cursor-pointer text-xs font-medium text-purple-900 px-1 py-1">
+                      {t('receiptOcrRawText')}
+                    </summary>
+                    <textarea
+                      value={ocrReview.result.text}
+                      readOnly
+                      rows={5}
+                      className="mt-2 w-full rounded border border-gray-200 bg-white p-2 text-xs text-gray-600 font-mono"
+                    />
+                  </details>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => handleRunFormReceiptOcr(true)}
+                      disabled={ocrLoadingExpenseId === '__draft__'}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-purple-300 bg-white text-purple-800 hover:bg-purple-50 disabled:opacity-50"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      {t('receiptOcrEnhancedAction')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplyOcrToForm}
+                      className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+                    >
+                      {t('receiptOcrApplyToForm')}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               {/* 결제처와 결제내용을 같은 줄에 배치 */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -4092,28 +4430,62 @@ export default function TourExpenseManager({
               )}
                   </div>
 
-                  <div className="flex space-x-3 p-4 border-t border-gray-100 bg-white shrink-0">
-                    <button
-                      type="button"
-                      onClick={editingExpense ? handleCancelEdit : () => {
-                        setShowAddForm(false)
-                        setShowMoreCategories(false)
-                        setPaymentMethodTab('own')
-                      }}
-                      className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-                    >
-                      {t('cancel')}
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={uploading}
-                      className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
-                    >
-                      {uploading 
-                        ? (editingExpense ? '수정 중...' : t('buttons.registering'))
-                        : (editingExpense ? '수정' : t('buttons.register'))
-                      }
-                    </button>
+                  <div className="flex flex-col gap-2 p-4 border-t border-gray-100 bg-white shrink-0 sm:flex-row sm:items-center sm:justify-between">
+                    {editingExpense ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteEditingExpense()}
+                        disabled={uploading}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        {locale === 'ko' ? '삭제' : 'Delete'}
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                    <div className="flex flex-wrap gap-2 sm:justify-end">
+                      <button
+                        type="button"
+                        onClick={editingExpense ? handleCancelEdit : () => {
+                          setShowAddForm(false)
+                          setShowMoreCategories(false)
+                          setPaymentMethodTab('own')
+                        }}
+                        className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 sm:flex-none"
+                      >
+                        {t('cancel')}
+                      </button>
+                      {editingExpense && editingExpense.status === 'pending' ? (
+                        <button
+                          type="button"
+                          disabled={uploading}
+                          onClick={() => void handleRejectEditingExpense()}
+                          className="flex-1 px-4 py-2 rounded-lg border border-red-200 bg-red-50 text-red-800 hover:bg-red-100 disabled:opacity-50 sm:flex-none"
+                        >
+                          {locale === 'ko' ? '반려' : 'Reject'}
+                        </button>
+                      ) : null}
+                      <button
+                        type="submit"
+                        disabled={uploading}
+                        className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 sm:flex-none"
+                      >
+                        {uploading
+                          ? (editingExpense ? '수정 중...' : t('buttons.registering'))
+                          : (editingExpense ? '수정' : t('buttons.register'))}
+                      </button>
+                      {editingExpense && editingExpense.status === 'pending' ? (
+                        <button
+                          type="button"
+                          disabled={uploading}
+                          onClick={() => void handleSaveAndApproveExpense()}
+                          className="flex-1 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 sm:flex-none"
+                        >
+                          {locale === 'ko' ? '저장 후 승인' : 'Save & approve'}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               </div>

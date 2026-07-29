@@ -507,7 +507,7 @@ export default function AdminReports() {
             reservations={reservations}
             products={products ?? []}
             channels={channels ?? []}
-            customers={customers}
+            customers={customers ?? []}
             reservationsAggregateReady={reservationsAggregateReady}
           />
         )}
@@ -518,7 +518,7 @@ export default function AdminReports() {
             reservations={reservations}
             products={products ?? []}
             channels={channels ?? []}
-            customers={customers}
+            customers={customers ?? []}
             reservationsAggregateReady={reservationsAggregateReady}
           />
         )}

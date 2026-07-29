@@ -100,3 +100,15 @@ export function audiencesForTeamMember(position: string | null): ('office' | 'gu
   }
   return [...set]
 }
+
+export const OP_TODO_DEPARTMENTS = ['office', 'guide', 'common'] as const
+export type OpTodoDepartment = (typeof OP_TODO_DEPARTMENTS)[number]
+
+/** Super 등 전체 조회 시 모든 부서, 그 외는 position 기반 audiences */
+export function opTodoAudiencesForUser(
+  position: string | null,
+  options?: { viewAll?: boolean }
+): OpTodoDepartment[] {
+  if (options?.viewAll) return [...OP_TODO_DEPARTMENTS]
+  return audiencesForTeamMember(position)
+}

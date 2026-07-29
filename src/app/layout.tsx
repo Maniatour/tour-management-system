@@ -19,6 +19,7 @@ import LazySopComplianceGate from "@/components/layout/LazySopComplianceGate";
 import DevServiceWorkerCleanup from "@/components/DevServiceWorkerCleanup";
 import DevBootRecovery from "@/components/DevBootRecovery";
 import { DevBootRecoveryInlineScript } from "@/components/DevBootRecoveryInlineScript";
+import AuthSessionCookieInlineScript from "@/components/AuthSessionCookieInlineScript";
 import RouteTransitionProgress from "@/components/RouteTransitionProgress";
 import { cn } from "@/lib/utils";
 
@@ -115,6 +116,7 @@ export default function RootLayout({
   return (
     <html lang="ko" className={cn(inter.className, "font-sans", customerPageFontVariables)}>
       <body className={cn(inter.className, 'antialiased')}>
+        <AuthSessionCookieInlineScript />
         <DevBootRecoveryInlineScript />
         <AbortErrorHandler />
         {process.env.NODE_ENV === "development" ? (

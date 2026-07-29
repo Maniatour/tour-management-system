@@ -146,7 +146,7 @@ export default function AdminCustomers() {
   const activeOperatorId = resolveOperatorId(operatorId)
   
   // 최적화된 고객 데이터 로딩
-  const { data: customers = [], loading: customersLoading, refetch: refetchCustomers } = useOptimizedData({
+  const { data: customers, loading: customersLoading, refetch: refetchCustomers } = useOptimizedData({
     fetchFn: async () => {
       let allCustomers: Customer[] = []
       let hasMore = true
@@ -186,10 +186,11 @@ export default function AdminCustomers() {
     cacheKey: `customers:${activeOperatorId}`,
     cacheTime: 5 * 60 * 1000, // 5분 캐시
     dependencies: [activeOperatorId],
+    defaultToEmptyArray: true,
   })
 
   // 최적화된 채널 데이터 로딩
-  const { data: channels = [], loading: channelsLoading } = useOptimizedData({
+  const { data: channels, loading: channelsLoading } = useOptimizedData({
     fetchFn: async () => {
       const { data, error } = await withOperatorId(
         supabase.from('channels').select('id, name, type, favicon_url').order('name', { ascending: true }),
@@ -206,10 +207,11 @@ export default function AdminCustomers() {
     cacheKey: `channels:${activeOperatorId}`,
     cacheTime: 10 * 60 * 1000, // 10분 캐시 (채널은 자주 변경되지 않음)
     dependencies: [activeOperatorId],
+    defaultToEmptyArray: true,
   })
 
   // 최적화된 상품 데이터 로딩
-  const { data: products = [], loading: productsLoading } = useOptimizedData({
+  const { data: products, loading: productsLoading } = useOptimizedData({
     fetchFn: async () => {
       const { data, error } = await withOperatorId(
         supabase
@@ -229,10 +231,11 @@ export default function AdminCustomers() {
     cacheKey: `products:${activeOperatorId}`,
     cacheTime: 10 * 60 * 1000, // 10분 캐시
     dependencies: [activeOperatorId],
+    defaultToEmptyArray: true,
   })
 
   // 예약 폼에 필요한 추가 데이터들
-  const { data: productOptions = [], loading: productOptionsLoading } = useOptimizedData({
+  const { data: productOptions, loading: productOptionsLoading } = useOptimizedData({
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('product_options')
@@ -247,10 +250,11 @@ export default function AdminCustomers() {
       return data || []
     },
     cacheKey: 'product_options',
-    cacheTime: 10 * 60 * 1000
+    cacheTime: 10 * 60 * 1000,
+    defaultToEmptyArray: true,
   })
 
-  const { data: options = [], loading: optionsLoading } = useOptimizedData({
+  const { data: options, loading: optionsLoading } = useOptimizedData({
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('options')
@@ -265,10 +269,11 @@ export default function AdminCustomers() {
       return data || []
     },
     cacheKey: 'options',
-    cacheTime: 10 * 60 * 1000
+    cacheTime: 10 * 60 * 1000,
+    defaultToEmptyArray: true,
   })
 
-  const { data: pickupHotels = [], loading: pickupHotelsLoading } = useOptimizedData({
+  const { data: pickupHotels, loading: pickupHotelsLoading } = useOptimizedData({
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('pickup_hotels')
@@ -285,10 +290,11 @@ export default function AdminCustomers() {
       return data || []
     },
     cacheKey: 'pickup_hotels',
-    cacheTime: 10 * 60 * 1000
+    cacheTime: 10 * 60 * 1000,
+    defaultToEmptyArray: true,
   })
 
-  const { data: coupons = [], loading: couponsLoading } = useOptimizedData({
+  const { data: coupons, loading: couponsLoading } = useOptimizedData({
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('coupons')
@@ -304,7 +310,8 @@ export default function AdminCustomers() {
       return data || []
     },
     cacheKey: 'coupons',
-    cacheTime: 5 * 60 * 1000
+    cacheTime: 5 * 60 * 1000,
+    defaultToEmptyArray: true,
   })
 
   const loading = customersLoading || channelsLoading || productsLoading || productOptionsLoading || optionsLoading || pickupHotelsLoading || couponsLoading

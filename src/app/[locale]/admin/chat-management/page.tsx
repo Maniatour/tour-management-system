@@ -1115,7 +1115,8 @@ export default function ChatManagementPage() {
       return roomsWithUnreadCount as unknown as ChatRoom[]
     },
     cacheKey: 'chat-rooms',
-    cacheTime: 30 * 1000 // 30초 캐시 (투어 정보가 자주 변경되므로 짧은 캐시)
+    cacheTime: 30 * 1000, // 30초 캐시 (투어 정보가 자주 변경되므로 짧은 캐시)
+    defaultToEmptyArray: true,
   })
   
   // 번역 관련 상태

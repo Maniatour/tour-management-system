@@ -695,7 +695,7 @@ export default function ReservationFollowUpSection({
   const CANCELLATION_REASON_PRESETS = isEn
     ? [
         'No Show',
-        'Canceled by customer',
+        'No response after cancel',
         'Rebooking',
         'Not recruited',
         'Closed out',
@@ -705,7 +705,7 @@ export default function ReservationFollowUpSection({
         'Price / Policy',
         'Other',
       ]
-    : ['No Show', '고객 취소', '재예약', '미모집', '마감', '날씨', '일정 변경', '중복 예약', '가격/정책', '기타']
+    : ['No Show', '취소 후 무 응답', '재예약', '미모집', '마감', '날씨', '일정 변경', '중복 예약', '가격/정책', '기타']
 
   const saveCancellationReasonWithValue = async (value: string) => {
     if (!reservationId || !userEmail) return

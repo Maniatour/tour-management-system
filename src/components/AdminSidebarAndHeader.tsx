@@ -78,6 +78,13 @@ const ScheduleDisplayHeaderButton = dynamic(
   () => import('./schedule/ScheduleDisplayHeaderButton'),
   { ssr: false, loading: () => null }
 )
+const StaffSiteAlertHeaderButton = dynamic(
+  () =>
+    import('./admin/staff-site-alert/StaffSiteAlertHeaderButton').then((m) => ({
+      default: m.StaffSiteAlertHeaderButton,
+    })),
+  { ssr: false, loading: () => null }
+)
 
 /** 요청 중단(AbortError) 여부 확인 — 로그 생략용 */
 function isAbortError(err: unknown): boolean {
@@ -437,8 +444,14 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
 
   const handleLogout = async () => {
     try {
+      const returnPath =
+        pathname && pathname.startsWith(`/${locale}/admin`)
+          ? pathname
+          : `/${locale}/admin`
       await signOut()
-      router.push(`/${locale}/auth`)
+      router.push(
+        `/${locale}/auth?redirectTo=${encodeURIComponent(returnPath)}`
+      )
     } catch (error) {
       console.error('로그아웃 중 오류가 발생했습니다:', error)
     }
@@ -851,6 +864,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                       </span>
                     )}
                   </div>
+
+                  <StaffSiteAlertHeaderButton locale={locale} />
                 </div>
               )}
               
@@ -1227,7 +1242,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
 
       {/* 메인 콘텐츠 - 헤더 높이만큼 상단 여백, 모바일 푸터 높이만큼 하단 여백 */}
       <div
-        className={`admin-main-shell pt-[var(--header-height)] transition-[padding-left] duration-300 ${
+        className={`admin-main-shell pt-[var(--header-height)] transition-[padding-left,padding-right] duration-300 ${
           sidebarCollapsed ? 'admin-main-shell--collapsed' : ''
         }`}
       >

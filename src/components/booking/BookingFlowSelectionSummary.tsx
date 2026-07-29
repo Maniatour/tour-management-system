@@ -448,7 +448,6 @@ export default function BookingFlowSelectionSummary({
             max={ageLimits.maxParticipants}
             value={draftCounts.infants}
             onChange={(value) => updateDraft('infants', value)}
-            badge={t('infantFreeBadge')}
           />
           <button
             type="button"

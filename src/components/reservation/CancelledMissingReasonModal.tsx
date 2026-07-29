@@ -41,6 +41,12 @@ export default function CancelledMissingReasonModal({
   onCustomersLoaded,
   renderSimpleReservationCard,
 }: CancelledMissingReasonModalProps) {
+  const closeIfQueueEmpty = useCallback(
+    (unionCount: number) => {
+      if (unionCount <= 0) onClose()
+    },
+    [onClose]
+  )
   const t = useTranslations('reservations.cancelReasonQueue')
   const supabase = createClientSupabase()
 
@@ -52,13 +58,23 @@ export default function CancelledMissingReasonModal({
   const [queueCustomers, setQueueCustomers] = useState<Customer[]>([])
   const onDataLoadedRef = useRef(onDataLoaded)
   const onCustomersLoadedRef = useRef(onCustomersLoaded)
+  const productMapRef = useRef(productMap)
+  const tourMapRef = useRef(tourMap)
   onDataLoadedRef.current = onDataLoaded
   onCustomersLoadedRef.current = onCustomersLoaded
+  productMapRef.current = productMap
+  tourMapRef.current = tourMap
+  /** isOpen당 1회만 fetch — productMap 참조 변경으로 load가 재생성돼도 중복 로딩 방지 */
+  const loadedForOpenRef = useRef(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await fetchCancelledMissingReasonQueueData(supabase, productMap, tourMap)
+      const data = await fetchCancelledMissingReasonQueueData(
+        supabase,
+        productMapRef.current,
+        tourMapRef.current
+      )
       setNeedsFollowUpIds(data.needsFollowUpIds)
       setAwaitingReasonIds(data.awaitingReasonIds)
       setReservations(data.reservations)
@@ -69,6 +85,10 @@ export default function CancelledMissingReasonModal({
         needsFollowUpCount: data.needsFollowUpCount,
         awaitingReasonCount: data.awaitingReasonCount,
       })
+      if (data.unionCount <= 0) {
+        closeIfQueueEmpty(data.unionCount)
+        return
+      }
       if (data.needsFollowUpCount === 0 && data.awaitingReasonCount > 0) {
         setTab('awaiting_reason')
       } else if (data.needsFollowUpCount > 0) {
@@ -77,10 +97,15 @@ export default function CancelledMissingReasonModal({
     } finally {
       setLoading(false)
     }
-  }, [supabase, productMap, tourMap])
+  }, [supabase, closeIfQueueEmpty])
 
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) {
+      loadedForOpenRef.current = false
+      return
+    }
+    if (loadedForOpenRef.current) return
+    loadedForOpenRef.current = true
     void load()
   }, [isOpen, load])
 
@@ -116,19 +141,20 @@ export default function CancelledMissingReasonModal({
     setNeedsFollowUpIds(nextNeedsFollowUp)
     setAwaitingReasonIds(nextAwaitingReason)
     setReservations((prev) => prev.filter((r) => String(r.id) !== id))
+    const nextUnionCount = nextNeedsFollowUp.length + nextAwaitingReason.length
     onDataLoadedRef.current?.({
-      unionCount: nextNeedsFollowUp.length + nextAwaitingReason.length,
+      unionCount: nextUnionCount,
       needsFollowUpCount: nextNeedsFollowUp.length,
       awaitingReasonCount: nextAwaitingReason.length,
     })
     onQueueChanged?.()
+    closeIfQueueEmpty(nextUnionCount)
   }
 
   if (!isOpen) return null
 
   const workflowSteps = [
-    { key: 'intake', label: t('workflowIntake'), Icon: ClipboardList },
-    { key: 'follow_up', label: t('workflowFollowUp'), Icon: PhoneForwarded },
+    { key: 'notice', label: t('workflowNotice'), Icon: PhoneForwarded },
     { key: 'response', label: t('workflowResponse'), Icon: MessageSquare },
     { key: 'reason', label: t('workflowReason'), Icon: ClipboardList },
   ] as const

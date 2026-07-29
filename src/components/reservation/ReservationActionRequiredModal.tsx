@@ -143,6 +143,8 @@ export interface ReservationActionRequiredModalProps {
   tourIdByReservationId?: Map<string, string>
   reshowPickupSummaryRequest?: { reservationId: string; nonce: number } | null
   onReshowPickupSummaryConsumed?: () => void
+  /** Todo·딥링크 등에서 열 때 초기 탭 */
+  initialTab?: ActionRequiredTabId
 }
 
 const TABS: { id: ActionRequiredTabId; labelKey: string; icon: React.ElementType }[] = [
@@ -199,10 +201,11 @@ export default function ReservationActionRequiredModal({
   sendingEmail,
   tourIdByReservationId,
   reshowPickupSummaryRequest = null,
-  onReshowPickupSummaryConsumed
+  onReshowPickupSummaryConsumed,
+  initialTab = 'status',
 }: ReservationActionRequiredModalProps) {
   const t = useTranslations('reservations')
-  const [activeTab, setActiveTab] = useState<ActionRequiredTabId>('status')
+  const [activeTab, setActiveTab] = useState<ActionRequiredTabId>(initialTab)
   const [pricingSubTab, setPricingSubTab] = useState<PricingSubTabId>('noPrice')
   const [balanceSubTab, setBalanceSubTab] = useState<BalanceSubTabId>('unpaid')
   const [balanceTotalFilter, setBalanceTotalFilter] = useState<BalanceTotalFilterId>('all')
@@ -248,6 +251,11 @@ export default function ReservationActionRequiredModal({
     setPage(1)
     setTourDateTableSort(null)
   }, [activeTab, pricingSubTab, balanceSubTab, balanceTotalFilter])
+
+  useEffect(() => {
+    if (!isOpen) return
+    setActiveTab(initialTab)
+  }, [isOpen, initialTab])
 
   useEffect(() => {
     setPage(1)

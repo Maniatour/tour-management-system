@@ -93,6 +93,7 @@ export default function GuideTours({}: GuideToursProps) {
           offlineGuideCache: true as const,
         }
       : {}),
+    defaultToEmptyArray: true,
   })
 
   const { data: employeesData, loading: employeesLoading } = useOptimizedData({
@@ -115,6 +116,7 @@ export default function GuideTours({}: GuideToursProps) {
     cacheKey: 'guide-tours-employees',
     cacheTime: 10 * 60 * 1000, // 10분 캐시
     offlineGuideCache: true,
+    defaultToEmptyArray: true,
   })
 
   const { data: productsData, loading: productsLoading } = useOptimizedData({
@@ -130,6 +132,7 @@ export default function GuideTours({}: GuideToursProps) {
     cacheKey: 'guide-tours-products-slim',
     cacheTime: 10 * 60 * 1000, // 10분 캐시
     offlineGuideCache: true,
+    defaultToEmptyArray: true,
   })
 
   // 통합 로딩 상태

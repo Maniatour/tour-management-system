@@ -47,6 +47,7 @@ import {
   fetchCancelledMissingReasonQueueMeta,
   isCancelledMissingReasonAutoOpenDismissedToday,
 } from '@/lib/cancelledMissingReasonQueue'
+import { dispatchCancelRebookingFollowUpRefresh } from '@/lib/cancelRebookingFollowUpRefresh'
 import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
 import {
   resolveReservationEmailIsEnglish,
@@ -83,14 +84,36 @@ import { useAwayOtherUserChangesNotifier } from '@/hooks/useAwayOtherUserChanges
 import {
   fetchAdminReservationList,
   fetchAdminReservationListCardWeekProgressive,
+  fetchAdminReservationListCalendarProgressive,
   fetchAdminReservationListAllFlatProgressive,
   fetchAdminReservationListActivityWindowRowCount,
+  prefetchAdminReservationListAdjacentPage,
+  prefetchAdminReservationCardWeekAdjacentSnapshots,
+  prefetchAdminReservationCalendarAdjacentSnapshots,
   ADMIN_RESERVATION_CARD_WEEK_RECENT_REGISTERED_DAYS,
 } from '@/lib/adminReservationListFetch'
+import { createAdminListHydrationBatch } from '@/lib/adminReservationListHydrationBatch'
+import {
+  buildAdminReservationListPageCacheKey,
+  readAdminReservationListPageCache,
+  writeAdminReservationListPageCache,
+} from '@/lib/adminReservationListPageCache'
 import {
   createChoicesBatchFetcher,
+  createChoicesCoalescingGetter,
   prefetchAdminReservationCardSideData,
 } from '@/lib/adminReservationCardPrefetch'
+import { seedChoicesCacheRefFromMemory } from '@/lib/adminReservationChoicesMemoryCache'
+import {
+  buildAdminReservationCardWeekCacheKey,
+  readAdminReservationCardWeekCache,
+  writeAdminReservationCardWeekCache,
+} from '@/lib/adminReservationCardWeekCache'
+import {
+  buildAdminReservationCalendarCacheKey,
+  readAdminReservationCalendarCache,
+  writeAdminReservationCalendarCache,
+} from '@/lib/adminReservationCalendarCache'
 import { RESERVATION_LIST_SELECT } from '@/lib/reservationListSelect'
 import {
   fetchOperationalQueueCandidateIds,
@@ -98,7 +121,29 @@ import {
   operationalQueueHasReservations,
   pickReservationsForOperationalQueue,
 } from '@/lib/operationalQueueFetch'
-import { computeStatisticsCoreActivityIsoRange, computeStatisticsYtdExtensionIsoRange } from '@/lib/adminReservationStatsRange'
+import { computeStatisticsCoreActivityIsoRange } from '@/lib/adminReservationStatsRange'
+import {
+  buildAdminReservationStatsCoreCacheKey,
+  readAdminReservationStatsCoreCache,
+  writeAdminReservationStatsCoreCache,
+} from '@/lib/adminReservationStatsCoreCache'
+import { prefetchAdminReservationStatsCoreAdjacent, warmAdminReservationStatsCoreCaches } from '@/lib/adminReservationStatsCorePrefetch'
+import { invalidateAdminReservationViewCaches } from '@/lib/adminReservationViewCacheInvalidate'
+import {
+  buildAdminOperationalQueueCacheKey,
+  readAdminOperationalQueueCache,
+  writeAdminOperationalQueueCache,
+} from '@/lib/adminOperationalQueueCache'
+import { fetchAdminRegCancelYtdWeekdayAvg, type YtdWeekdayAvgBuckets } from '@/lib/adminRegCancelYtdWeekdayAvg'
+import {
+  computeAvgDailyNetByMonthForCalendarYear,
+  computeAvgDailyNetByWeekdayForYears,
+} from '@/lib/regCancelNetWeekdayAvg'
+import {
+  fetchAdminRegCancelWeekDailyRegistered,
+  prefetchAdminRegCancelWeekDailyRegisteredAdjacent,
+  type WeekDailyRegisteredRollup,
+} from '@/lib/adminRegCancelWeekDailyRegistered'
 import { RESERVATION_STATS_SELECT } from '@/lib/reservationListSelect'
 import {
   browserLocalInclusiveDateKeys,
@@ -251,68 +296,6 @@ function localWeekdayIndexFromYmd(ymd: string): number {
   return new Date(y, m - 1, d, 12, 0, 0, 0).getDay()
 }
 
-type RegCancelChartMetricMode = 'people' | 'bookings'
-
-function regCancelChartIncrementForReservation(
-  r: Reservation,
-  mode: RegCancelChartMetricMode
-): number {
-  return mode === 'people'
-    ? getReservationPartySize(r as unknown as Record<string, unknown>)
-    : 1
-}
-
-/** 로드된 예약 기준: `allowedYears`에 속한 연도의 날만 사용, 요일별 일합 평균 */
-function computeAvgDailyRegisteredByWeekdayForYears(
-  reservations: Reservation[],
-  allowedYears: Set<number>,
-  mode: RegCancelChartMetricMode = 'people'
-): number[] {
-  const daily = new Map<string, number>()
-  for (const r of reservations) {
-    const k = isoToLocalCalendarDateKey(r.addedTime)
-    if (!k || k.length < 10) continue
-    const y = parseInt(k.slice(0, 4), 10)
-    if (!allowedYears.has(y)) continue
-    const p = regCancelChartIncrementForReservation(r, mode)
-    daily.set(k, (daily.get(k) ?? 0) + p)
-  }
-  const buckets: number[][] = Array.from({ length: 7 }, () => [])
-  for (const [ymd, total] of daily) {
-    const y = parseInt(ymd.slice(0, 4), 10)
-    if (!allowedYears.has(y)) continue
-    buckets[localWeekdayIndexFromYmd(ymd)].push(total)
-  }
-  return buckets.map((arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0))
-}
-
-/** 연도 Y: 각 달 m에 대해 (그 달 1~말일 일별 등록 합, 미등록일 0) / 말일 수 */
-function computeAvgDailyRegisteredByMonthForCalendarYear(
-  reservations: Reservation[],
-  year: number,
-  mode: RegCancelChartMetricMode = 'people'
-): number[] {
-  const daily = new Map<string, number>()
-  for (const r of reservations) {
-    const k = isoToLocalCalendarDateKey(r.addedTime)
-    if (!k || k.length < 10) continue
-    if (parseInt(k.slice(0, 4), 10) !== year) continue
-    const p = regCancelChartIncrementForReservation(r, mode)
-    daily.set(k, (daily.get(k) ?? 0) + p)
-  }
-  const out: number[] = new Array(13).fill(0)
-  for (let m = 1; m <= 12; m++) {
-    const dim = new Date(year, m, 0).getDate()
-    let sum = 0
-    for (let d = 1; d <= dim; d++) {
-      const ymd = `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-      sum += daily.get(ymd) ?? 0
-    }
-    out[m] = dim > 0 ? sum / dim : 0
-  }
-  return out
-}
-
 /** 그룹 날짜 기준: 해당일 등록(addedTime) vs 해당일 수정(updated_at) — 당일 등록 건은 등록에만 포함하고 상태변경에선 제외(중복 방지) */
 function splitReservationsByActivityForDate(date: string, reservations: Reservation[]) {
   const registration: Reservation[] = []
@@ -355,39 +338,6 @@ function computeSimpleCardStatusAuditPlan(
   return { contentKey, needsNetworkFetch }
 }
 
-/**
- * 올해 1/1 ~ `throughYmd`까지 요일별 **등록** 일평균(7요소).
- * 평균선은 등록만 사용하므로 0 미만이 되지 않는다.
- */
-function computeYtdAvgDailyRegisteredByWeekdayForLocalYear(
-  reservations: Reservation[],
-  year: number,
-  throughYmd: string,
-  mode: RegCancelChartMetricMode = 'people'
-): number[] {
-  const throughYear = parseInt(throughYmd.slice(0, 4), 10)
-  if (!Number.isFinite(year) || year > throughYear) {
-    return Array.from({ length: 7 }, () => 0)
-  }
-  const startYmd = `${year}-01-01`
-  const endYmd = year < throughYear ? `${year}-12-31` : throughYmd
-  if (startYmd > endYmd) return Array.from({ length: 7 }, () => 0)
-
-  const daily = new Map<string, number>()
-  for (const r of reservations) {
-    const k = isoToLocalCalendarDateKey(r.addedTime)
-    if (!k || k.length < 10 || k < startYmd || k > endYmd) continue
-    if (parseInt(k.slice(0, 4), 10) !== year) continue
-    const p = regCancelChartIncrementForReservation(r, mode)
-    daily.set(k, (daily.get(k) ?? 0) + p)
-  }
-  const buckets: number[][] = Array.from({ length: 7 }, () => [])
-  for (const [ymd, total] of daily) {
-    buckets[localWeekdayIndexFromYmd(ymd)].push(total)
-  }
-  return buckets.map((arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0))
-}
-
 function reservationTouchesActivityIsoRange(
   r: Reservation,
   rangeStartIso: string,
@@ -398,16 +348,6 @@ function reservationTouchesActivityIsoRange(
   const updated = String(r.updated_at ?? '').trim()
   if (updated && updated >= rangeStartIso && updated <= rangeEndIso) return true
   return false
-}
-
-/** 심플 카드 상태변경 소그룹: 대기중→취소(영·미 철자)만 기본 펼침 대상 */
-function isPendingToCancelledTransitionBucket(bucketKey: string): boolean {
-  if (bucketKey === '__unknown__') return false
-  const sep = bucketKey.indexOf('\0')
-  if (sep === -1) return false
-  const from = bucketKey.slice(0, sep).toLowerCase()
-  const to = bucketKey.slice(sep + 1).toLowerCase()
-  return from === 'pending' && (to === 'cancelled' || to === 'canceled')
 }
 
 export default function AdminReservations() {
@@ -479,99 +419,44 @@ export default function AdminReservations() {
     }
   }>>>(new Map())
 
-  // 목록 prefetch 캐시 우선 — 카드마다 GET /choices 를 치지 않음
-  const getSelectedChoicesFromNewSystem = useCallback(async (reservationId: string, isRetry = false) => {
-    if (!reservationId?.trim()) {
-      return []
-    }
+  const getChoicesCoalesced = useMemo(
+    () => createChoicesCoalescingGetter(fetchChoicesBatch, choicesCacheRef),
+    [fetchChoicesBatch]
+  )
 
-    if (choicesCacheRef.current.has(reservationId)) {
-      return choicesCacheRef.current.get(reservationId) ?? []
-    }
-
-    const unwrap = <T,>(raw: T | T[] | null | undefined): T | null => {
-      if (raw == null) return null
-      return Array.isArray(raw) ? (raw[0] ?? null) : raw
-    }
-
-    const run = async () => {
-      const response = await fetchApiWithAuth(
-        `/api/reservations/${encodeURIComponent(reservationId)}/choices`,
-        { cache: 'no-store' }
-      )
-      if (!response.ok) {
-        const body = await response.json().catch(() => null) as { error?: string } | null
-        throw new Error(body?.error || `예약 초이스 조회 실패 (${response.status})`)
-      }
-      const body = await response.json() as { choices?: Array<Record<string, unknown>> }
-      return body.choices ?? []
-    }
-
-    try {
-      const rows = await run()
-      // PostgREST가 embed를 배열로 줄 수 있어 정규화
-      return (rows as Array<Record<string, unknown>>).map((row) => {
-        const co = unwrap(row.choice_options as Record<string, unknown> | Record<string, unknown>[] | null)
-        const pc = unwrap(row.product_choices as Record<string, unknown> | Record<string, unknown>[] | null)
-        return {
-          choice_id: row.choice_id,
-          option_id: row.option_id,
-          quantity: row.quantity,
-          option_key: row.option_key ?? co?.option_key ?? null,
-          choice_options: co
-            ? {
-                option_key: co.option_key ?? row.option_key ?? null,
-                option_name: co.option_name ?? null,
-                option_name_ko: co.option_name_ko ?? null,
-                internal_name: co.internal_name ?? null,
-                badge_icon_url: co.badge_icon_url ?? null,
-              }
-            : null,
-          product_choices: pc ? { choice_group_ko: pc.choice_group_ko ?? null } : null,
-        }
-      })
-    } catch (error) {
-      // AbortError ???: Error ?????? ??? Supabase? ????? { message, code, details } ?? ?? ??
-      const msg = typeof (error as { message?: string })?.message === 'string' ? (error as { message: string }).message : (error instanceof Error ? error.message : '')
-      const isAbortError =
-        (error instanceof Error && (error.name === 'AbortError' || error.message.includes('aborted') || error.message.includes('signal is aborted'))) ||
-        (msg && (msg.includes('AbortError') || msg.includes('aborted') || msg.includes('signal is aborted')))
-
-      if (isAbortError && !isRetry) {
-        // ??? ??? ??? ??????? AbortError?????? ?????
-        await new Promise((r) => setTimeout(r, 100))
-        return getSelectedChoicesFromNewSystem(reservationId, true)
-      }
-
-      if (isAbortError) {
-        // ??????????AbortError???? ??? ???? ?? (??? ???/?? ??? ???????? ???????)
+  // 목록 prefetch 캐시 우선 — 미스 시 debounce 배치 (개별 GET /choices 금지)
+  const getSelectedChoicesFromNewSystem = useCallback(
+    async (reservationId: string) => {
+      if (!reservationId?.trim()) return []
+      try {
+        return await getChoicesCoalesced(reservationId)
+      } catch (error) {
+        const msg =
+          typeof (error as { message?: string })?.message === 'string'
+            ? (error as { message: string }).message
+            : error instanceof Error
+              ? error.message
+              : ''
+        const isAbortError =
+          (error instanceof Error &&
+            (error.name === 'AbortError' ||
+              error.message.includes('aborted') ||
+              error.message.includes('signal is aborted'))) ||
+          (msg &&
+            (msg.includes('AbortError') ||
+              msg.includes('aborted') ||
+              msg.includes('signal is aborted')))
+        if (isAbortError) return []
+        console.error('Error fetching reservation choices:', {
+          reservationId,
+          message: msg || undefined,
+          raw: error,
+        })
         return []
       }
-
-      const err = error as { message?: string; code?: string | number; details?: string; hint?: string }
-      const errMsg =
-        (typeof err?.message === 'string' && err.message.trim()) ||
-        (error instanceof Error ? error.message : '')
-      const code =
-        typeof err?.code === 'string'
-          ? err.code.trim() || undefined
-          : err?.code != null
-            ? String(err.code)
-            : undefined
-      const details =
-        (typeof err?.details === 'string' && err.details.trim()) ||
-        (typeof err?.hint === 'string' && err.hint.trim()) ||
-        undefined
-      console.error('Error fetching reservation choices:', {
-        reservationId,
-        message: errMsg || undefined,
-        code,
-        details,
-        raw: error,
-      })
-      return []
-    }
-  }, [])
+    },
+    [getChoicesCoalesced]
+  )
 
   // ReservationCardItem?? null?????????????? choices ??
   const getSelectedChoicesNormalized = useCallback(async (reservationId: string) => {
@@ -656,7 +541,6 @@ export default function AdminReservations() {
     reservationPricingMap: hookReservationPricingMap,
     reservationOptionsPresenceByReservationId: hookReservationOptionsPresenceByReservationId,
     toursMap: hookToursMap,
-    loading,
     loadingProgress,
     reservationsAggregateReady,
     replaceReservationsFromQueryResult,
@@ -664,6 +548,7 @@ export default function AdminReservations() {
     patchReservationInList,
     refreshReservationPricingForIds,
     refreshReservationOptionsPresenceForIds,
+    refreshToursMapForReservationIds,
     refreshCustomers,
     mergeCustomers,
     hydrateAdminListRawRows,
@@ -671,7 +556,13 @@ export default function AdminReservations() {
     disableReservationsAutoLoad: true,
     customersByReservationIds: true,
     deferFormCatalogs: true,
+    productsSelectLite: true,
+    customersSelectLite: true,
   })
+
+  /** 목록 재조회 시 stale-while-revalidate — 기존 카드가 있으면 전체 로딩 스피너 생략 */
+  const reservationsListRef = useRef<Reservation[]>([])
+  reservationsListRef.current = reservations
 
   // 채널 favicon 워밍업 — 카드/배지 첫 페인트 시 깜빡임 제거
   const channelFaviconUrls = useMemo(
@@ -706,8 +597,12 @@ export default function AdminReservations() {
   const [weeklyStatsModalOpen, setWeeklyStatsModalOpen] = useState(false)
   const [statisticsReservations, setStatisticsReservations] = useState<Reservation[]>([])
   const [statisticsReservationsLoading, setStatisticsReservationsLoading] = useState(false)
-  /** YTD 평균선 2차 로드(7일 탭) — 차트·요약 표시는 코어 완료 후 가능 */
+  /** YTD 요일 평균선 — 서버 RPC 집계(7일 탭) */
+  const [ytdWeekdayAvgRpc, setYtdWeekdayAvgRpc] = useState<YtdWeekdayAvgBuckets | null>(null)
   const [statisticsYtdExtensionLoading, setStatisticsYtdExtensionLoading] = useState(false)
+  const ytdWeekdayAvgFetchGenRef = useRef(0)
+  const [weekRegRollupByYmd, setWeekRegRollupByYmd] = useState<WeekDailyRegisteredRollup | null>(null)
+  const weekRegRollupFetchGenRef = useRef(0)
   const statisticsFetchGenRef = useRef(0)
   /** 차트·평균선: 통계·감사 확정 전 중간 집계(예: YTD 평균 -135) 깜빡임 방지 */
   const regCancelChartStableRowsRef = useRef<
@@ -902,6 +797,36 @@ export default function AdminReservations() {
   )
 
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
+  /**
+   * 상태·채널·투어일 필터: UI는 즉시 반영, 목록 fetch만 debounce.
+   * 연속 클릭 시 중간 요청을 줄인다.
+   */
+  const [listQueryFilters, setListQueryFilters] = useState({
+    selectedStatus,
+    selectedChannel,
+    dateRange: { start: dateRange.start, end: dateRange.end },
+  })
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setListQueryFilters((prev) => {
+        if (
+          prev.selectedStatus === selectedStatus &&
+          prev.selectedChannel === selectedChannel &&
+          prev.dateRange.start === dateRange.start &&
+          prev.dateRange.end === dateRange.end
+        ) {
+          return prev
+        }
+        return {
+          selectedStatus,
+          selectedChannel,
+          dateRange: { start: dateRange.start, end: dateRange.end },
+        }
+      })
+    }, 180)
+    return () => window.clearTimeout(timer)
+  }, [selectedStatus, selectedChannel, dateRange.start, dateRange.end])
+
   /** 라우트·스토리지 복원 직후 한 번만: 저장된 검색어 → 실제 목록 쿼리에 반영 (이후에는 검색 버튼으로만 적용) */
   const reservationSearchHydratedRef = useRef(false)
   useLayoutEffect(() => {
@@ -986,7 +911,10 @@ export default function AdminReservations() {
     needsFollowUp: 0,
     awaitingReason: 0,
   })
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  /** 세션당 자동 오픈 1회 — listReady 깜빡임·메타 이중 fetch로 모달이 두 번 뜨는 것 방지 */
+  const cancelReasonAutoOpenAttemptedRef = useRef(false)
+  /** 날짜 그룹 헤더(하루 통계·상품/채널/상태 breakdown): 키 없음 = 접힘 — 로드 시 펼쳤다 접히는 깜빡임 방지 */
+  const [expandedDateGroups, setExpandedDateGroups] = useState<Set<string>>(new Set())
   const [simpleCardStatusTransitionMap, setSimpleCardStatusTransitionMap] = useState<
     Record<string, { from: string; to: string }>
   >({})
@@ -1019,7 +947,7 @@ export default function AdminReservations() {
   const lastRegCancelChartAuditFetchedSignatureRef = useRef<string | null>(null)
   /**
    * 심플 카드 아코디언: 맵에만 사용자 오버라이드 저장.
-   * 키 없음 → defaultOpen (등록·상태변경 상위=열림, 소그룹=대기→취소만 열림·그 외=접힘).
+   * 키 없음 → defaultOpen (등록 상위 그룹 기본 펼침, 상태변경·소그룹 기본 접힘).
    */
   const [simpleCardAccordionOverride, setSimpleCardAccordionOverride] = useState<Map<string, boolean>>(
     () => new Map()
@@ -1049,7 +977,7 @@ export default function AdminReservations() {
 
   // ?? ???/???????? - useCallback??? ????????
   const toggleGroupCollapse = useCallback((date: string) => {
-    setCollapsedGroups(prev => {
+    setExpandedDateGroups((prev) => {
       const newSet = new Set(prev)
       if (newSet.has(date)) {
         newSet.delete(date)
@@ -1083,18 +1011,21 @@ export default function AdminReservations() {
 
   useEffect(() => {
     if (!operationalListReadyForBadge) return
-    void refreshCancelReasonQueueStats()
-  }, [operationalListReadyForBadge, refreshCancelReasonQueueStats])
-
-  useEffect(() => {
-    if (!operationalListReadyForBadge) return
-    if (isCancelledMissingReasonAutoOpenDismissedToday()) return
     void refreshCancelReasonQueueStats().then((meta) => {
-      if (meta.unionCount > 0) {
+      if (cancelReasonAutoOpenAttemptedRef.current) return
+      cancelReasonAutoOpenAttemptedRef.current = true
+      if (isCancelledMissingReasonAutoOpenDismissedToday()) return
+      // Follow-up 필요 건만 자동 오픈 — 사유 입력 대기만 있을 때는 열지 않음
+      if (meta.needsFollowUpCount > 0) {
         setCancelReasonQueueOpen(true)
       }
     })
   }, [operationalListReadyForBadge, refreshCancelReasonQueueStats])
+
+  const handleOpenCancelReasonQueue = useCallback(() => {
+    if (cancelReasonQueueStats.union <= 0) return
+    setCancelReasonQueueOpen(true)
+  }, [cancelReasonQueueStats.union])
 
   /** 운영 큐 모달이 열려 있고 전역 스냅샷이 있으면 투어 요약 맵을 전 예약 기준으로 계산 */
   const reservationsForTourInfo = useMemo(() => {
@@ -2036,6 +1967,7 @@ export default function AdminReservations() {
     followUpVisibleBucketsRef.current.clear()
     followUpRenderedIdsRef.current = []
     setFollowUpPriorityReservationIds([])
+    toursHydrateAttemptedRef.current.clear()
   }, [
     cardsWeekPage,
     viewMode,
@@ -2203,6 +2135,7 @@ export default function AdminReservations() {
       )
       setFollowUpPipelineManualRefresh((n) => n + 1)
       void refreshCancelReasonQueueStats()
+      dispatchCancelRebookingFollowUpRefresh()
     },
     [locale, patchCancelManualFlags, refreshCancelReasonQueueStats]
   )
@@ -2258,34 +2191,6 @@ export default function AdminReservations() {
     [locale]
   )
 
-  const applyReservationListSideDataPrefetch = useCallback(async (rows: Record<string, unknown>[] | null) => {
-    const ids = (rows || [])
-      .map((r) =>
-        r && typeof r === 'object' && 'id' in r ? String((r as { id: unknown }).id ?? '').trim() : ''
-      )
-      .filter(Boolean)
-    if (ids.length === 0) {
-      setResidentCustomerBatchMap(new Map())
-      return
-    }
-    try {
-      const m = await prefetchAdminReservationCardSideData(
-        supabase,
-        ids,
-        choicesCacheRef,
-        fetchChoicesBatch
-      )
-      setResidentCustomerBatchMap(m)
-    } catch (e) {
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('[admin reservations] card side prefetch failed:', e)
-      }
-      const fallback = new Map<string, { resident_status: string | null }[]>()
-      for (const id of ids) fallback.set(id, [])
-      setResidentCustomerBatchMap(fallback)
-    }
-  }, [fetchChoicesBatch])
-
   const mergeReservationListSideDataPrefetch = useCallback(async (rows: Record<string, unknown>[] | null) => {
     const ids = (rows || [])
       .map((r) =>
@@ -2308,6 +2213,219 @@ export default function AdminReservations() {
     }
   }, [fetchChoicesBatch])
 
+  /** skipHeavySideMaps 이후에도 pricing 재조회 폭주를 막기 위한 시도 집합 */
+  const pricingHydrateAttemptedRef = useRef(new Set<string>())
+  /** skipHeavySideMaps 이후 tours 맵 보완 시도 집합 */
+  const toursHydrateAttemptedRef = useRef(new Set<string>())
+
+  /** 첫 paint 직후: 가상화 onRendered 전에 pricing/choices hydrate를 시드하고 side prefetch는 비차단 */
+  const seedFirstPaintSideHydrate = useCallback(
+    (rows: Record<string, unknown>[]) => {
+      const ids = rows
+        .map((r) =>
+          r && typeof r === 'object' && 'id' in r ? String((r as { id: unknown }).id ?? '').trim() : ''
+        )
+        .filter(Boolean)
+        .slice(0, 48)
+      if (ids.length === 0) return
+      seedChoicesCacheRefFromMemory(ids, choicesCacheRef)
+      handleFollowUpRenderedReservationIds('first-paint-seed', ids)
+      void mergeReservationListSideDataPrefetch(rows.slice(0, 80))
+    },
+    [handleFollowUpRenderedReservationIds, mergeReservationListSideDataPrefetch]
+  )
+
+  useEffect(() => {
+    hookReservationPricingMap.forEach((_, id) => {
+      pricingHydrateAttemptedRef.current.add(id)
+    })
+  }, [hookReservationPricingMap])
+
+  /**
+   * 가상화로 화면에 올라온 카드: 초이스 + pricing + options presence 누락분만 배치 보완
+   * (백그라운드 청크는 skipHeavySideMaps로 행만 먼저 붙임)
+   */
+  useEffect(() => {
+    if (followUpPriorityReservationIds.length === 0) return
+    if (serverListLoading || adminListChunkProgress) return
+    const missingChoices = followUpPriorityReservationIds.filter(
+      (id) => !choicesCacheRef.current.has(id)
+    )
+    const missingPricing = followUpPriorityReservationIds.filter(
+      (id) => !pricingHydrateAttemptedRef.current.has(id)
+    )
+    const missingOptions = followUpPriorityReservationIds.filter(
+      (id) => !hookReservationOptionsPresenceByReservationId.has(id)
+    )
+    const missingTours = followUpPriorityReservationIds.filter(
+      (id) => !toursHydrateAttemptedRef.current.has(id)
+    )
+    if (
+      missingChoices.length === 0 &&
+      missingPricing.length === 0 &&
+      missingOptions.length === 0 &&
+      missingTours.length === 0
+    ) {
+      return
+    }
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const tasks: Promise<unknown>[] = []
+          if (missingChoices.length > 0) {
+            tasks.push(
+              prefetchAdminReservationCardSideData(
+                supabase,
+                missingChoices,
+                choicesCacheRef,
+                fetchChoicesBatch
+              ).then((m) => {
+                if (!cancelled) {
+                  setResidentCustomerBatchMap((prev) => new Map([...prev, ...m]))
+                }
+              })
+            )
+          }
+          if (missingPricing.length > 0) {
+            for (const id of missingPricing) {
+              pricingHydrateAttemptedRef.current.add(id)
+            }
+            tasks.push(refreshReservationPricingForIds(missingPricing))
+          }
+          if (missingOptions.length > 0) {
+            tasks.push(refreshReservationOptionsPresenceForIds(missingOptions))
+          }
+          if (missingTours.length > 0) {
+            for (const id of missingTours) {
+              toursHydrateAttemptedRef.current.add(id)
+            }
+            tasks.push(refreshToursMapForReservationIds(missingTours))
+          }
+          await Promise.all(tasks)
+        } catch (e) {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('[admin reservations] visible card side hydrate failed:', e)
+          }
+        }
+      })()
+    }, 80)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [
+    followUpPriorityReservationIds,
+    serverListLoading,
+    adminListChunkProgress,
+    fetchChoicesBatch,
+    hookReservationOptionsPresenceByReservationId,
+    refreshReservationPricingForIds,
+    refreshReservationOptionsPresenceForIds,
+    refreshToursMapForReservationIds,
+  ])
+
+  /**
+   * card-week/calendar: 가시 카드 외 행도 idle에 pricing/options를 채워
+   * 스크롤 시 가격 깜빡임을 줄인다.
+   */
+  useEffect(() => {
+    const usesDeferredSideMaps =
+      viewMode === 'calendar' || (viewMode !== 'list' && groupByDate)
+    if (!usesDeferredSideMaps || serverListLoading) return
+
+    let cancelled = false
+    let idleHandle: number | null = null
+    let timeoutHandle: number | null = null
+
+    const schedule = (fn: () => void) => {
+      const w = window as Window & {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+        cancelIdleCallback?: (id: number) => void
+      }
+      if (typeof w.requestIdleCallback === 'function') {
+        idleHandle = w.requestIdleCallback(fn, { timeout: 1200 })
+      } else {
+        timeoutHandle = window.setTimeout(fn, 250)
+      }
+    }
+
+    const tick = () => {
+      if (cancelled) return
+      if (serverListLoading || adminListChunkProgress) {
+        schedule(tick)
+        return
+      }
+      const missingPricing = reservations
+        .map((r) => r.id)
+        .filter((id) => id && !pricingHydrateAttemptedRef.current.has(id))
+        .slice(0, 80)
+      const missingOptions = reservations
+        .map((r) => r.id)
+        .filter((id) => id && !hookReservationOptionsPresenceByReservationId.has(id))
+        .slice(0, 80)
+      const missingTours = reservations
+        .map((r) => r.id)
+        .filter((id) => id && !toursHydrateAttemptedRef.current.has(id))
+        .slice(0, 80)
+      if (
+        missingPricing.length === 0 &&
+        missingOptions.length === 0 &&
+        missingTours.length === 0
+      ) {
+        return
+      }
+
+      void (async () => {
+        try {
+          const tasks: Promise<unknown>[] = []
+          if (missingPricing.length > 0) {
+            for (const id of missingPricing) {
+              pricingHydrateAttemptedRef.current.add(id)
+            }
+            tasks.push(refreshReservationPricingForIds(missingPricing))
+          }
+          if (missingOptions.length > 0) {
+            tasks.push(refreshReservationOptionsPresenceForIds(missingOptions))
+          }
+          if (missingTours.length > 0) {
+            for (const id of missingTours) {
+              toursHydrateAttemptedRef.current.add(id)
+            }
+            tasks.push(refreshToursMapForReservationIds(missingTours))
+          }
+          await Promise.all(tasks)
+        } catch (e) {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('[admin reservations] idle side hydrate failed:', e)
+          }
+        }
+        if (!cancelled) schedule(tick)
+      })()
+    }
+
+    schedule(tick)
+
+    return () => {
+      cancelled = true
+      const w = window as Window & { cancelIdleCallback?: (id: number) => void }
+      if (idleHandle != null && typeof w.cancelIdleCallback === 'function') {
+        w.cancelIdleCallback(idleHandle)
+      }
+      if (timeoutHandle != null) window.clearTimeout(timeoutHandle)
+    }
+  }, [
+    reservations,
+    serverListLoading,
+    adminListChunkProgress,
+    viewMode,
+    groupByDate,
+    hookReservationOptionsPresenceByReservationId,
+    refreshReservationPricingForIds,
+    refreshReservationOptionsPresenceForIds,
+    refreshToursMapForReservationIds,
+  ])
+
   const reservationsPageLoadingProgress = useMemo(() => {
     if (adminListChunkProgress) {
       const t = adminListChunkProgress.total ?? adminListChunkProgress.loaded
@@ -2322,18 +2440,50 @@ export default function AdminReservations() {
   const loadAdminReservationList = useCallback(async () => {
     adminCardWeekFetchGenRef.current += 1
     const fetchGen = adminCardWeekFetchGenRef.current
-    setServerListLoading(true)
+    pricingHydrateAttemptedRef.current.clear()
+    toursHydrateAttemptedRef.current.clear()
+    if (reservationsListRef.current.length === 0) {
+      setServerListLoading(true)
+    }
     setAdminListChunkProgress(null)
+    const selectedStatus = listQueryFilters.selectedStatus
+    const selectedChannel = listQueryFilters.selectedChannel
+    const dateRange = listQueryFilters.dateRange
     try {
       const cardsWR = browserLocalWeekRangeFromOffset(cardsWeekPage)
-      /** 카드 주간(7일)만 — 통계·YTD 구간은 `loadStatisticsReservations`에서 별도 로드 */
+      /** 카드 주간(7일)만 — 통계 코어 구간은 `loadStatisticsReservations`, YTD 평균선은 RPC */
       const rangeStartIso = cardsWR.rangeStartIso
       const rangeEndIso = cardsWR.rangeEndIso
 
       if (viewMode === 'calendar') {
         const calWindow = browserLocalCalendarViewWindow(calendarMonthOffset)
-        const { data, count, error } = await fetchAdminReservationList(supabase, {
-          mode: 'calendar',
+        const calCacheKey = buildAdminReservationCalendarCacheKey({
+          operatorId,
+          monthOffset: calendarMonthOffset,
+          selectedStatus,
+          selectedChannel,
+          dateRange,
+          customerIdFromUrl,
+          debouncedSearchTerm,
+        })
+        const cachedCal = readAdminReservationCalendarCache(calCacheKey)
+        if (cachedCal) {
+          seedFirstPaintSideHydrate(cachedCal.data)
+          if (fetchGen !== adminCardWeekFetchGenRef.current) return
+          await replaceReservationsFromQueryResultRef.current(cachedCal.data, {
+            skipLoadingFlags: true,
+            skipHeavySideMaps: true,
+            listProgress: {
+              current: cachedCal.data.length,
+              total: cachedCal.count,
+            },
+          })
+          setServerListTotal(cachedCal.count ?? cachedCal.data.length)
+          setServerListLoading(false)
+        }
+
+        const calArgs = {
+          mode: 'calendar' as const,
           page: 1,
           pageSize: 20,
           selectedStatus,
@@ -2348,21 +2498,119 @@ export default function AdminReservations() {
           calendarTourDateEnd: calWindow.endYmd,
           calendarCreatedStartIso: calWindow.rangeStartIso,
           calendarCreatedEndIso: calWindow.rangeEndIso,
-          onCalendarFetchProgress: ({ loaded, total }) => {
-            if (fetchGen === adminCardWeekFetchGenRef.current) {
-              setAdminListChunkProgress({ loaded, total })
-            }
+        }
+        let firstPaintDone = !!cachedCal
+        const hydrationBatch = createAdminListHydrationBatch({
+          isCurrent: () => fetchGen === adminCardWeekFetchGenRef.current,
+          mergePrefetch: async (rows) => {
+            void mergeReservationListSideDataPrefetch(rows)
+          },
+          mergeHydrate: async (rows, listProgress) => {
+            await mergeMoreReservationsFromQueryResultRef.current(rows, {
+              skipLoadingFlags: true,
+              skipHeavySideMaps: true,
+              listProgress,
+            })
+            setServerListTotal(listProgress.total ?? listProgress.current)
           },
         })
-        if (error) throw error
-        if (fetchGen !== adminCardWeekFetchGenRef.current) return
-        await applyReservationListSideDataPrefetch((data || []) as Record<string, unknown>[])
-        await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
-        setServerListTotal(count ?? 0)
+        try {
+          const { error: progError, loadedRowCount } = await fetchAdminReservationListCalendarProgressive(
+            supabase,
+            calArgs,
+            {
+              onProgress: ({ loaded, total }) => {
+                if (fetchGen !== adminCardWeekFetchGenRef.current) return
+                setAdminListChunkProgress({ loaded, total })
+              },
+              onFirstChunk: async ({ rows, totalCount }) => {
+                if (fetchGen !== adminCardWeekFetchGenRef.current) return false
+                if (rows.length === 0) {
+                  if (!firstPaintDone) {
+                    await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
+                    setResidentCustomerBatchMap(new Map())
+                    setServerListTotal(totalCount ?? 0)
+                    setServerListLoading(false)
+                    firstPaintDone = true
+                  }
+                  return true
+                }
+                seedFirstPaintSideHydrate(rows)
+                await replaceReservationsFromQueryResultRef.current(rows, {
+                  skipLoadingFlags: true,
+                  skipHeavySideMaps: true,
+                  listProgress: { current: rows.length, total: totalCount },
+                })
+                setServerListTotal(totalCount ?? rows.length)
+                setServerListLoading(false)
+                firstPaintDone = true
+                writeAdminReservationCalendarCache(calCacheKey, {
+                  data: rows,
+                  count: totalCount ?? rows.length,
+                })
+                return true
+              },
+              onAdditionalChunk: async ({ rows, mergedLoaded, totalCount }) => {
+                if (fetchGen !== adminCardWeekFetchGenRef.current) return false
+                if (rows.length === 0) return true
+                await hydrationBatch.enqueue(rows, {
+                  current: mergedLoaded,
+                  total: totalCount,
+                })
+                return true
+              },
+            }
+          )
+          await hydrationBatch.flush()
+          if (progError) throw progError
+          if (!firstPaintDone) {
+            setServerListTotal(loadedRowCount)
+            setServerListLoading(false)
+          }
+        } finally {
+          await hydrationBatch.flush()
+          hydrationBatch.dispose()
+        }
+
+        void prefetchAdminReservationCalendarAdjacentSnapshots(supabase, {
+          operatorId,
+          currentMonthOffset: calendarMonthOffset,
+          selectedStatus,
+          selectedChannel,
+          dateRange,
+          customerIdFromUrl,
+          debouncedSearchTerm,
+          sortBy,
+          sortOrder,
+        })
         return
       }
 
       if (viewMode === 'list') {
+        const listCacheKey = buildAdminReservationListPageCacheKey({
+          operatorId,
+          page: currentPage,
+          pageSize: itemsPerPage,
+          selectedStatus,
+          selectedChannel,
+          dateRange,
+          customerIdFromUrl,
+          debouncedSearchTerm,
+          sortBy: 'created_at',
+          sortOrder: 'desc',
+        })
+        const cachedPage = readAdminReservationListPageCache(listCacheKey)
+        if (cachedPage) {
+          seedFirstPaintSideHydrate(cachedPage.data)
+          if (fetchGen !== adminCardWeekFetchGenRef.current) return
+          await replaceReservationsFromQueryResultRef.current(cachedPage.data, {
+            skipLoadingFlags: true,
+            skipHeavySideMaps: true,
+          })
+          setServerListTotal(cachedPage.count ?? cachedPage.data.length)
+          setServerListLoading(false)
+        }
+
         const { data, count, error } = await fetchAdminReservationList(supabase, {
           mode: 'card-flat',
           page: currentPage,
@@ -2377,9 +2625,32 @@ export default function AdminReservations() {
           operatorId,
         })
         if (error) throw error
-        await applyReservationListSideDataPrefetch((data || []) as Record<string, unknown>[])
-        await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
+        if (fetchGen !== adminCardWeekFetchGenRef.current) return
+        const rows = (data || []) as Record<string, unknown>[]
+        writeAdminReservationListPageCache(listCacheKey, {
+          data: rows,
+          count: count ?? null,
+        })
+        seedFirstPaintSideHydrate(rows)
+        await replaceReservationsFromQueryResultRef.current(rows, {
+          skipLoadingFlags: true,
+          skipHeavySideMaps: true,
+        })
         setServerListTotal(count ?? 0)
+        void prefetchAdminReservationListAdjacentPage(supabase, {
+          operatorId,
+          page: currentPage,
+          pageSize: itemsPerPage,
+          selectedStatus,
+          selectedChannel,
+          dateRange,
+          customerIdFromUrl,
+          debouncedSearchTerm,
+          sortBy: 'created_at',
+          sortOrder: 'desc',
+          count: count ?? null,
+          loadedRowCount: rows.length,
+        })
         return
       }
 
@@ -2403,138 +2674,304 @@ export default function AdminReservations() {
         const recentGteIso = browserLocalCreatedAtGteIsoForRecentCalendarDays(
           ADMIN_RESERVATION_CARD_WEEK_RECENT_REGISTERED_DAYS
         )
-        const { count: windowRowCount, error: countErr } =
-          await fetchAdminReservationListActivityWindowRowCount(supabase, cardArgs)
-        if (countErr) throw countErr
-        const totalForProgress = windowRowCount
+        const weekCacheKey = buildAdminReservationCardWeekCacheKey({
+          operatorId,
+          weekOffset: cardsWeekPage,
+          selectedStatus,
+          selectedChannel,
+          dateRange,
+          customerIdFromUrl,
+          debouncedSearchTerm,
+        })
+        const cachedWeek = readAdminReservationCardWeekCache(weekCacheKey)
+        if (cachedWeek) {
+          seedFirstPaintSideHydrate(cachedWeek.data)
+          if (fetchGen !== adminCardWeekFetchGenRef.current) return
+          await replaceReservationsFromQueryResultRef.current(cachedWeek.data, {
+            skipLoadingFlags: true,
+            skipHeavySideMaps: true,
+            listProgress: {
+              current: cachedWeek.data.length,
+              total: cachedWeek.count,
+            },
+          })
+          setServerListTotal(cachedWeek.count ?? cachedWeek.data.length)
+          setServerListLoading(false)
+        }
+
+        let totalForProgress: number | null = cachedWeek?.count ?? null
+        const countPromise = fetchAdminReservationListActivityWindowRowCount(supabase, cardArgs).then(
+          (result) => {
+            if (fetchGen !== adminCardWeekFetchGenRef.current) return result
+            if (!result.error && result.count != null) {
+              totalForProgress = result.count
+              setAdminListChunkProgress((prev) =>
+                prev
+                  ? { loaded: prev.loaded, total: result.count ?? prev.loaded }
+                  : null
+              )
+              setServerListTotal((prev) => (prev > 0 ? prev : result.count ?? prev))
+            }
+            return result
+          }
+        )
 
         let tierBaseLoaded = 0
-        let firstPaintDone = false
+        let firstPaintDone = !!cachedWeek
+        const hydrationBatch = createAdminListHydrationBatch({
+          isCurrent: () => fetchGen === adminCardWeekFetchGenRef.current,
+          // choices/고객 prefetch는 본문 완료를 막지 않음 (flush가 끝나야 finally가 돈다)
+          mergePrefetch: async (rows) => {
+            void mergeReservationListSideDataPrefetch(rows)
+          },
+          mergeHydrate: async (rows, listProgress) => {
+            await mergeMoreReservationsFromQueryResultRef.current(rows, {
+              skipLoadingFlags: true,
+              skipHeavySideMaps: true,
+              listProgress,
+            })
+            setServerListTotal(totalForProgress ?? listProgress.total ?? listProgress.current)
+          },
+        })
 
-        for (const tier of ['tier1_recent_modern', 'tier2_older_modern', 'tier3_legacy_tour'] as const) {
-          const tierArgs = {
-            ...cardArgs,
-            cardWeekLoadTier: tier,
-            ...(tier === 'tier3_legacy_tour' ? {} : { cardWeekRecentCreatedGteIso: recentGteIso }),
-          }
-          const { error: progError, loadedRowCount } = await fetchAdminReservationListCardWeekProgressive(
-            supabase,
-            tierArgs,
-            {
-              onProgress: (info) => {
-                if (fetchGen !== adminCardWeekFetchGenRef.current) return
-                setAdminListChunkProgress({
-                  loaded: tierBaseLoaded + info.loaded,
-                  total: totalForProgress ?? tierBaseLoaded + info.loaded,
-                })
-              },
-              onFirstChunk: async ({ rows, totalCount: tierTotal }) => {
-                if (fetchGen !== adminCardWeekFetchGenRef.current) return false
-                if (rows.length === 0) {
-                  if (!firstPaintDone && (totalForProgress ?? 0) === 0) {
-                    await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
-                    setResidentCustomerBatchMap(new Map())
-                    setServerListTotal(0)
+        try {
+          for (const tier of ['tier1_recent_modern', 'tier2_older_modern', 'tier3_legacy_tour'] as const) {
+            const tierArgs = {
+              ...cardArgs,
+              cardWeekLoadTier: tier,
+              ...(tier === 'tier3_legacy_tour' ? {} : { cardWeekRecentCreatedGteIso: recentGteIso }),
+            }
+            const { error: progError, loadedRowCount } = await fetchAdminReservationListCardWeekProgressive(
+              supabase,
+              tierArgs,
+              {
+                onProgress: (info) => {
+                  if (fetchGen !== adminCardWeekFetchGenRef.current) return
+                  setAdminListChunkProgress({
+                    loaded: tierBaseLoaded + info.loaded,
+                    total: totalForProgress ?? tierBaseLoaded + info.loaded,
+                  })
+                },
+                onFirstChunk: async ({ rows, totalCount: tierTotal }) => {
+                  if (fetchGen !== adminCardWeekFetchGenRef.current) return false
+                  if (rows.length === 0) {
+                    // tier1·2가 비어 있어도 tier3에 데이터가 있을 수 있음 — 조기 빈 목록 방지
+                    const resolvedTotal = totalForProgress ?? tierTotal ?? 0
+                    if (
+                      !firstPaintDone &&
+                      tier === 'tier3_legacy_tour' &&
+                      resolvedTotal === 0
+                    ) {
+                      await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
+                      setResidentCustomerBatchMap(new Map())
+                      setServerListTotal(0)
+                      setServerListLoading(false)
+                      firstPaintDone = true
+                    }
+                    return true
+                  }
+                  if (!firstPaintDone) {
+                    seedFirstPaintSideHydrate(rows)
+                    await replaceReservationsFromQueryResultRef.current(rows, {
+                      skipLoadingFlags: true,
+                      skipHeavySideMaps: true,
+                      listProgress: {
+                        current: tierBaseLoaded + rows.length,
+                        total: totalForProgress ?? tierTotal,
+                      },
+                    })
+                    setServerListTotal(totalForProgress ?? tierTotal ?? rows.length)
                     setServerListLoading(false)
                     firstPaintDone = true
+                    writeAdminReservationCardWeekCache(weekCacheKey, {
+                      data: rows,
+                      count: totalForProgress ?? tierTotal ?? rows.length,
+                    })
+                  } else if (cachedWeek && tier === 'tier1_recent_modern') {
+                    // 캐시로 이미 paint — 첫 청크는 최신으로 교체
+                    seedFirstPaintSideHydrate(rows)
+                    await replaceReservationsFromQueryResultRef.current(rows, {
+                      skipLoadingFlags: true,
+                      skipHeavySideMaps: true,
+                      listProgress: {
+                        current: tierBaseLoaded + rows.length,
+                        total: totalForProgress ?? tierTotal,
+                      },
+                    })
+                    setServerListTotal(totalForProgress ?? tierTotal ?? rows.length)
+                    writeAdminReservationCardWeekCache(weekCacheKey, {
+                      data: rows,
+                      count: totalForProgress ?? tierTotal ?? rows.length,
+                    })
+                  } else {
+                    await hydrationBatch.enqueue(rows, {
+                      current: tierBaseLoaded + rows.length,
+                      total: totalForProgress ?? tierTotal,
+                    })
                   }
                   return true
-                }
-                if (!firstPaintDone) {
-                  // 초이스 캐시를 paint 전에 채워 카드별 GET /choices N+1 을 막음
-                  await applyReservationListSideDataPrefetch(rows)
-                  await replaceReservationsFromQueryResultRef.current(rows, {
-                    skipLoadingFlags: true,
-                    listProgress: {
-                      current: tierBaseLoaded + rows.length,
-                      total: totalForProgress ?? tierTotal,
-                    },
-                  })
-                  setServerListTotal(totalForProgress ?? tierTotal ?? rows.length)
-                  setServerListLoading(false)
-                  firstPaintDone = true
-                } else {
-                  await mergeReservationListSideDataPrefetch(rows)
-                  await mergeMoreReservationsFromQueryResultRef.current(rows, {
-                    skipLoadingFlags: true,
-                    listProgress: {
-                      current: tierBaseLoaded + rows.length,
-                      total: totalForProgress ?? tierTotal,
-                    },
-                  })
-                  setServerListTotal(totalForProgress ?? tierTotal ?? tierBaseLoaded + rows.length)
-                }
-                return true
-              },
-              onAdditionalChunk: async ({ rows, mergedLoaded, totalCount: tierTotal }) => {
-                if (fetchGen !== adminCardWeekFetchGenRef.current) return false
-                if (rows.length === 0) return true
-                await mergeReservationListSideDataPrefetch(rows)
-                await mergeMoreReservationsFromQueryResultRef.current(rows, {
-                  skipLoadingFlags: true,
-                  listProgress: {
+                },
+                onAdditionalChunk: async ({ rows, mergedLoaded, totalCount: tierTotal }) => {
+                  if (fetchGen !== adminCardWeekFetchGenRef.current) return false
+                  if (rows.length === 0) return true
+                  await hydrationBatch.enqueue(rows, {
                     current: tierBaseLoaded + mergedLoaded,
                     total: totalForProgress ?? tierTotal,
-                  },
-                })
-                setServerListTotal(totalForProgress ?? tierTotal ?? tierBaseLoaded + mergedLoaded)
-                return true
-              },
-            }
-          )
-          tierBaseLoaded += loadedRowCount ?? 0
-          if (progError) throw progError
+                  })
+                  return true
+                },
+              }
+            )
+            await hydrationBatch.flush()
+            tierBaseLoaded += loadedRowCount ?? 0
+            if (progError) throw progError
+          }
+        } finally {
+          await hydrationBatch.flush()
+          hydrationBatch.dispose()
         }
+
+        // count RPC/head count가 지연·중단돼도 본문 finally가 막히지 않게 비동기로만 반영
+        void countPromise.then((result) => {
+          if (fetchGen !== adminCardWeekFetchGenRef.current) return
+          if (result.error) {
+            if (process.env.NODE_ENV === 'development') {
+              console.warn('[admin reservations] activity window count failed:', result.error)
+            }
+            return
+          }
+          if (result.count != null) {
+            setServerListTotal(result.count)
+          }
+        })
 
         if (!firstPaintDone) {
           await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
           setResidentCustomerBatchMap(new Map())
-          setServerListTotal(totalForProgress ?? 0)
+          setServerListTotal(totalForProgress ?? tierBaseLoaded)
           setServerListLoading(false)
         }
+
+        void prefetchAdminReservationCardWeekAdjacentSnapshots(supabase, {
+          operatorId,
+          currentWeekOffset: cardsWeekPage,
+          selectedStatus,
+          selectedChannel,
+          dateRange,
+          customerIdFromUrl,
+          debouncedSearchTerm,
+          sortBy,
+          sortOrder,
+          weekRangeForOffset: browserLocalWeekRangeFromOffset,
+        })
       } else if (cardArgs.mode === 'card-week') {
-        const { error: progError } = await fetchAdminReservationListCardWeekProgressive(supabase, cardArgs, {
-          onProgress: (info) => {
-            if (fetchGen !== adminCardWeekFetchGenRef.current) return
-            setAdminListChunkProgress({ loaded: info.loaded, total: info.total })
+        const hydrationBatch = createAdminListHydrationBatch({
+          isCurrent: () => fetchGen === adminCardWeekFetchGenRef.current,
+          mergePrefetch: async (rows) => {
+            void mergeReservationListSideDataPrefetch(rows)
           },
-          onFirstChunk: async ({ rows, totalCount }) => {
-            if (fetchGen !== adminCardWeekFetchGenRef.current) return false
-            if (rows.length === 0) {
-              await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
-              setResidentCustomerBatchMap(new Map())
-              setServerListTotal(totalCount ?? 0)
-              setServerListLoading(false)
-              return true
-            }
-            await applyReservationListSideDataPrefetch(rows)
-            await replaceReservationsFromQueryResultRef.current(rows, {
-              skipLoadingFlags: true,
-              listProgress: { current: rows.length, total: totalCount },
-            })
-            setServerListTotal(totalCount ?? rows.length)
-            setServerListLoading(false)
-            return true
-          },
-          onAdditionalChunk: async ({ rows, mergedLoaded, totalCount }) => {
-            if (fetchGen !== adminCardWeekFetchGenRef.current) return false
-            if (rows.length === 0) return true
-            await mergeReservationListSideDataPrefetch(rows)
+          mergeHydrate: async (rows, listProgress) => {
             await mergeMoreReservationsFromQueryResultRef.current(rows, {
               skipLoadingFlags: true,
-              listProgress: { current: mergedLoaded, total: totalCount },
+              skipHeavySideMaps: true,
+              listProgress,
             })
-            setServerListTotal(totalCount ?? mergedLoaded)
-            return true
+            setServerListTotal(listProgress.total ?? listProgress.current)
           },
         })
-        if (progError) throw progError
+        try {
+          const { error: progError } = await fetchAdminReservationListCardWeekProgressive(supabase, cardArgs, {
+            onProgress: (info) => {
+              if (fetchGen !== adminCardWeekFetchGenRef.current) return
+              setAdminListChunkProgress({ loaded: info.loaded, total: info.total })
+            },
+            onFirstChunk: async ({ rows, totalCount }) => {
+              if (fetchGen !== adminCardWeekFetchGenRef.current) return false
+              if (rows.length === 0) {
+                await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
+                setResidentCustomerBatchMap(new Map())
+                setServerListTotal(totalCount ?? 0)
+                setServerListLoading(false)
+                return true
+              }
+              seedFirstPaintSideHydrate(rows)
+              await replaceReservationsFromQueryResultRef.current(rows, {
+                skipLoadingFlags: true,
+                skipHeavySideMaps: true,
+                listProgress: { current: rows.length, total: totalCount },
+              })
+              setServerListTotal(totalCount ?? rows.length)
+              setServerListLoading(false)
+              return true
+            },
+            onAdditionalChunk: async ({ rows, mergedLoaded, totalCount }) => {
+              if (fetchGen !== adminCardWeekFetchGenRef.current) return false
+              if (rows.length === 0) return true
+              await hydrationBatch.enqueue(rows, {
+                current: mergedLoaded,
+                total: totalCount,
+              })
+              return true
+            },
+          })
+          if (progError) throw progError
+        } finally {
+          await hydrationBatch.flush()
+          hydrationBatch.dispose()
+        }
       } else {
+        const flatCacheKey = buildAdminReservationListPageCacheKey({
+          operatorId,
+          page: currentPage,
+          pageSize: itemsPerPage,
+          selectedStatus,
+          selectedChannel,
+          dateRange,
+          customerIdFromUrl,
+          debouncedSearchTerm,
+          sortBy,
+          sortOrder,
+        })
+        const cachedFlat = readAdminReservationListPageCache(flatCacheKey)
+        if (cachedFlat) {
+          seedFirstPaintSideHydrate(cachedFlat.data)
+          if (fetchGen !== adminCardWeekFetchGenRef.current) return
+          await replaceReservationsFromQueryResultRef.current(cachedFlat.data, {
+            skipLoadingFlags: true,
+            skipHeavySideMaps: true,
+          })
+          setServerListTotal(cachedFlat.count ?? cachedFlat.data.length)
+          setServerListLoading(false)
+        }
+
         const { data, count, error } = await fetchAdminReservationList(supabase, cardArgs)
         if (error) throw error
-        await applyReservationListSideDataPrefetch((data || []) as Record<string, unknown>[])
-        await replaceReservationsFromQueryResultRef.current(data || [], { skipLoadingFlags: true })
+        if (fetchGen !== adminCardWeekFetchGenRef.current) return
+        const rows = (data || []) as Record<string, unknown>[]
+        writeAdminReservationListPageCache(flatCacheKey, {
+          data: rows,
+          count: count ?? null,
+        })
+        seedFirstPaintSideHydrate(rows)
+        await replaceReservationsFromQueryResultRef.current(rows, {
+          skipLoadingFlags: true,
+          skipHeavySideMaps: true,
+        })
         setServerListTotal(count ?? 0)
+        void prefetchAdminReservationListAdjacentPage(supabase, {
+          operatorId,
+          page: currentPage,
+          pageSize: itemsPerPage,
+          selectedStatus,
+          selectedChannel,
+          dateRange,
+          customerIdFromUrl,
+          debouncedSearchTerm,
+          sortBy,
+          sortOrder,
+          count: count ?? null,
+          loadedRowCount: rows.length,
+        })
       }
     } catch (e) {
       // Strict Mode·탭 전환·필터 변경 등으로 이전 요청이 Abort된 경우 — 목록을 비우지 않고 무시
@@ -2562,17 +2999,15 @@ export default function AdminReservations() {
     groupByDate,
     currentPage,
     itemsPerPage,
-    selectedStatus,
-    selectedChannel,
-    dateRange,
+    listQueryFilters,
     customerIdFromUrl,
     debouncedSearchTerm,
     sortBy,
     sortOrder,
     calendarMonthOffset,
     operatorId,
-    applyReservationListSideDataPrefetch,
     mergeReservationListSideDataPrefetch,
+    seedFirstPaintSideHydrate,
   ])
 
   const mapStatisticsRawRows = useCallback((rows: Record<string, unknown>[]) => {
@@ -2591,14 +3026,36 @@ export default function AdminReservations() {
   const loadStatisticsReservations = useCallback(async () => {
     if (!weeklyStatsModalOpen || !groupByDate || viewMode === 'list' || viewMode === 'calendar') {
       setStatisticsReservationsLoading(false)
-      setStatisticsYtdExtensionLoading(false)
       return
     }
 
     statisticsFetchGenRef.current += 1
     const fetchGen = statisticsFetchGenRef.current
-    setStatisticsReservations([])
-    setStatisticsReservationsLoading(true)
+
+    const coreRange = computeStatisticsCoreActivityIsoRange({
+      statisticsWeekOffset,
+      regCancelGranularity,
+      regCancelMonthOffset,
+      regCancelYearOffset,
+    })
+    const statsCacheKey = buildAdminReservationStatsCoreCacheKey({
+      operatorId,
+      rangeStartIso: coreRange.rangeStartIso,
+      rangeEndIso: coreRange.rangeEndIso,
+      selectedStatus,
+      selectedChannel,
+      dateRange,
+      customerIdFromUrl,
+      debouncedSearchTerm,
+    })
+    const cachedStatsRows = readAdminReservationStatsCoreCache(statsCacheKey)
+    if (cachedStatsRows && cachedStatsRows.length > 0) {
+      setStatisticsReservations(mapStatisticsRawRows(cachedStatsRows))
+      setStatisticsReservationsLoading(false)
+    } else {
+      setStatisticsReservations([])
+      setStatisticsReservationsLoading(true)
+    }
 
     const statsBaseArgs = {
       mode: 'card-week' as const,
@@ -2616,6 +3073,8 @@ export default function AdminReservations() {
       includeExactCount: false,
     }
 
+    const accumulatedRaw: Record<string, unknown>[] = []
+
     const runProgressiveFetch = async (
       rangeStartIso: string,
       rangeEndIso: string,
@@ -2631,11 +3090,13 @@ export default function AdminReservations() {
         {
           onFirstChunk: async ({ rows }) => {
             if (fetchGen !== statisticsFetchGenRef.current) return false
+            accumulatedRaw.push(...rows)
             onChunk(mapStatisticsRawRows(rows))
             return true
           },
           onAdditionalChunk: async ({ rows }) => {
             if (fetchGen !== statisticsFetchGenRef.current) return false
+            accumulatedRaw.push(...rows)
             onChunk(mapStatisticsRawRows(rows))
             return true
           },
@@ -2644,57 +3105,40 @@ export default function AdminReservations() {
       if (error) throw error
     }
 
-    const needYtdExtension = regCancelGranularity === 'week'
-    if (needYtdExtension) {
-      setStatisticsYtdExtensionLoading(true)
-    } else {
-      setStatisticsYtdExtensionLoading(false)
-    }
-
     try {
-      const coreRange = computeStatisticsCoreActivityIsoRange({
+      // 캐시로 이미 그린 경우: 네트워크 첫 청크로 교체한 뒤 추가 청크는 병합
+      let replacedFromNetwork = false
+      const mergeOrReplace = (incoming: Reservation[]) => {
+        if (!replacedFromNetwork) {
+          replacedFromNetwork = true
+          setStatisticsReservations(incoming)
+          return
+        }
+        mergeStatisticsReservations(incoming)
+      }
+
+      await runProgressiveFetch(
+        coreRange.rangeStartIso,
+        coreRange.rangeEndIso,
+        mergeOrReplace
+      )
+      if (fetchGen !== statisticsFetchGenRef.current) return
+      writeAdminReservationStatsCoreCache(statsCacheKey, accumulatedRaw)
+      setStatisticsReservationsLoading(false)
+      void prefetchAdminReservationStatsCoreAdjacent(supabase, {
+        operatorId,
         statisticsWeekOffset,
         regCancelGranularity,
         regCancelMonthOffset,
         regCancelYearOffset,
+        selectedStatus,
+        selectedChannel,
+        dateRange,
+        customerIdFromUrl,
+        debouncedSearchTerm,
+        sortBy,
+        sortOrder,
       })
-
-      const coreFetch = runProgressiveFetch(
-        coreRange.rangeStartIso,
-        coreRange.rangeEndIso,
-        mergeStatisticsReservations
-      )
-
-      const ytdFetch = needYtdExtension
-        ? (() => {
-            const ytdRange = computeStatisticsYtdExtensionIsoRange()
-            return runProgressiveFetch(
-              ytdRange.rangeStartIso,
-              ytdRange.rangeEndIso,
-              mergeStatisticsReservations
-            )
-          })()
-        : null
-
-      await coreFetch
-      if (fetchGen !== statisticsFetchGenRef.current) return
-      setStatisticsReservationsLoading(false)
-
-      if (ytdFetch) {
-        void ytdFetch
-          .catch((e) => {
-            if (!isAbortLikeError(e) && process.env.NODE_ENV === 'development') {
-              console.warn('[admin reservations] statistics YTD extension failed:', e)
-            }
-          })
-          .finally(() => {
-            if (fetchGen === statisticsFetchGenRef.current) {
-              setStatisticsYtdExtensionLoading(false)
-            }
-          })
-      } else {
-        setStatisticsYtdExtensionLoading(false)
-      }
     } catch (e) {
       if (isAbortLikeError(e)) return
       const msg =
@@ -2704,9 +3148,8 @@ export default function AdminReservations() {
         console.warn('[admin reservations] statistics reservations load failed:', e)
       }
       if (fetchGen === statisticsFetchGenRef.current) {
-        setStatisticsReservations([])
+        if (!cachedStatsRows) setStatisticsReservations([])
         setStatisticsReservationsLoading(false)
-        setStatisticsYtdExtensionLoading(false)
       }
     }
   }, [
@@ -2729,18 +3172,168 @@ export default function AdminReservations() {
     mergeStatisticsReservations,
   ])
 
+  const ytdWeekdayAvgScopeKey = useMemo(() => {
+    if (!weeklyStatsModalOpen || regCancelGranularity !== 'week') return null
+    if (!groupByDate || viewMode === 'list' || viewMode === 'calendar') return null
+    return [
+      selectedStatus,
+      selectedChannel,
+      `${dateRange.start}\u0001${dateRange.end}`,
+      debouncedSearchTerm,
+      customerIdFromUrl ?? '',
+      operatorId ?? '',
+      browserLocalTodayYmd().slice(0, 4),
+      browserLocalYesterdayYmd(),
+    ].join('\u001f')
+  }, [
+    weeklyStatsModalOpen,
+    regCancelGranularity,
+    groupByDate,
+    viewMode,
+    selectedStatus,
+    selectedChannel,
+    dateRange.start,
+    dateRange.end,
+    debouncedSearchTerm,
+    customerIdFromUrl,
+    operatorId,
+  ])
+
+  useEffect(() => {
+    const scope = ytdWeekdayAvgScopeKey
+    if (!scope) {
+      setYtdWeekdayAvgRpc(null)
+      setStatisticsYtdExtensionLoading(false)
+      return
+    }
+
+    const gen = ++ytdWeekdayAvgFetchGenRef.current
+    setStatisticsYtdExtensionLoading(true)
+
+    void fetchAdminRegCancelYtdWeekdayAvg(supabase, {
+      selectedStatus,
+      selectedChannel,
+      dateRange,
+      customerIdFromUrl,
+      debouncedSearchTerm,
+      operatorId,
+    }).then(({ data, error, usedRpc }) => {
+      if (gen !== ytdWeekdayAvgFetchGenRef.current) return
+      if (error && process.env.NODE_ENV === 'development') {
+        console.warn('[admin reservations] YTD weekday avg RPC failed:', error)
+      }
+      if (!usedRpc && process.env.NODE_ENV === 'development') {
+        console.warn(
+          '[admin reservations] admin_reg_cancel_ytd_weekday_avg RPC unavailable — apply migration for YTD average line'
+        )
+      }
+      setYtdWeekdayAvgRpc(data)
+      setStatisticsYtdExtensionLoading(false)
+    })
+
+    return () => {
+      ytdWeekdayAvgFetchGenRef.current += 1
+    }
+  }, [
+    ytdWeekdayAvgScopeKey,
+    selectedStatus,
+    selectedChannel,
+    dateRange,
+    customerIdFromUrl,
+    debouncedSearchTerm,
+    operatorId,
+  ])
+
+  const weekRegRollupRange = useMemo(() => {
+    if (!weeklyStatsModalOpen || regCancelGranularity !== 'week') return null
+    if (!groupByDate || viewMode === 'list' || viewMode === 'calendar') return null
+    return browserLocalWeekRangeFromOffset(statisticsWeekOffset)
+  }, [
+    weeklyStatsModalOpen,
+    regCancelGranularity,
+    groupByDate,
+    viewMode,
+    statisticsWeekOffset,
+  ])
+
+  useEffect(() => {
+    const range = weekRegRollupRange
+    if (!range) {
+      setWeekRegRollupByYmd(null)
+      return
+    }
+
+    const gen = ++weekRegRollupFetchGenRef.current
+    void fetchAdminRegCancelWeekDailyRegistered(supabase, {
+      operatorId,
+      startYmd: range.startYmd,
+      endYmd: range.endYmd,
+      selectedStatus,
+      selectedChannel,
+      dateRange,
+      customerIdFromUrl,
+      debouncedSearchTerm,
+    }).then(({ data, usedRpc }) => {
+      if (gen !== weekRegRollupFetchGenRef.current) return
+      if (!usedRpc && process.env.NODE_ENV === 'development') {
+        console.warn(
+          '[admin reservations] admin_reg_cancel_week_daily_registered RPC unavailable — using reservation scan for registrations'
+        )
+      }
+      setWeekRegRollupByYmd(data.size > 0 ? data : null)
+      void prefetchAdminRegCancelWeekDailyRegisteredAdjacent(supabase, {
+        operatorId,
+        currentWeekOffset: statisticsWeekOffset,
+        selectedStatus,
+        selectedChannel,
+        dateRange,
+        customerIdFromUrl,
+        debouncedSearchTerm,
+      })
+    })
+
+    return () => {
+      weekRegRollupFetchGenRef.current += 1
+    }
+  }, [
+    weekRegRollupRange,
+    operatorId,
+    statisticsWeekOffset,
+    selectedStatus,
+    selectedChannel,
+    dateRange,
+    customerIdFromUrl,
+    debouncedSearchTerm,
+  ])
+
   const loadOperationalQueueSnapshot = useCallback(async () => {
     if (operationalQueueInFlightRef.current) return
     operationalQueueInFlightRef.current = true
     const gen = ++operationalQueueFetchGenRef.current
     setOperationalQueueLoading(true)
 
+    const opQueueCacheKey = buildAdminOperationalQueueCacheKey({
+      operatorId,
+      customerIdFromUrl,
+    })
+    const cachedOpQueue = readAdminOperationalQueueCache(opQueueCacheKey)
+    if (cachedOpQueue?.reservations?.length) {
+      setOperationalQueueSnapshot(cachedOpQueue)
+      setOperationalQueueLoading(false)
+    }
+
+    let replacedFromNetwork = false
     const applyHydratedChunk = async (rows: Record<string, unknown>[]) => {
       if (gen !== operationalQueueFetchGenRef.current) return false
       if (rows.length === 0) return true
       const hydrated = await hydrateAdminListRawRows(rows)
       if (gen !== operationalQueueFetchGenRef.current) return false
-      setOperationalQueueSnapshot((prev) => mergeAdminListHydratedSnapshots(prev, hydrated))
+      if (!replacedFromNetwork) {
+        replacedFromNetwork = true
+        setOperationalQueueSnapshot(hydrated)
+      } else {
+        setOperationalQueueSnapshot((prev) => mergeAdminListHydratedSnapshots(prev, hydrated))
+      }
       return true
     }
 
@@ -2754,7 +3347,9 @@ export default function AdminReservations() {
           if (ca !== cb) return cb.localeCompare(ca)
           return String(b.id).localeCompare(String(a.id))
         })
-        return { ...prev, reservations }
+        const next = { ...prev, reservations }
+        writeAdminOperationalQueueCache(opQueueCacheKey, next)
+        return next
       })
     }
 
@@ -2797,7 +3392,7 @@ export default function AdminReservations() {
     } catch (e) {
       if (gen !== operationalQueueFetchGenRef.current) return
       console.error(`loadOperationalQueueSnapshot: ${describeError(e)}`, serializeError(e))
-      setOperationalQueueSnapshot(null)
+      if (!cachedOpQueue) setOperationalQueueSnapshot(null)
     } finally {
       operationalQueueInFlightRef.current = false
       if (gen === operationalQueueFetchGenRef.current) {
@@ -2854,6 +3449,7 @@ export default function AdminReservations() {
   }, [customerIdFromUrl, operatorId])
 
   const refreshReservations = useCallback(async () => {
+    invalidateAdminReservationViewCaches()
     setOperationalQueueSnapshot(null)
     clearOperationalBadgeSnapshot()
     operationalQueueFetchGenRef.current += 1
@@ -2871,6 +3467,146 @@ export default function AdminReservations() {
     weeklyStatsModalOpen,
     ensureOperationalQueueSnapshot,
     clearOperationalBadgeSnapshot,
+  ])
+
+  /** 카드 주간뷰: 목록이 안정되면 통계 코어를 idle에 미리 채워 모달 오픈을 빠르게 */
+  useEffect(() => {
+    if (!reservationListUiHydrated) return
+    if (viewMode === 'list' || viewMode === 'calendar' || !groupByDate) return
+    if (weeklyStatsModalOpen) return
+    if (serverListLoading || adminListChunkProgress) return
+
+    let cancelled = false
+    let idleHandle: number | null = null
+    let timeoutHandle: number | null = null
+
+    const run = () => {
+      if (cancelled) return
+      void warmAdminReservationStatsCoreCaches(supabase, {
+        operatorId,
+        statisticsWeekOffset,
+        regCancelGranularity,
+        regCancelMonthOffset,
+        regCancelYearOffset,
+        selectedStatus,
+        selectedChannel,
+        dateRange,
+        customerIdFromUrl,
+        debouncedSearchTerm,
+        sortBy,
+        sortOrder,
+      }).catch((e) => {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('[admin reservations] stats core idle warm failed:', e)
+        }
+      })
+      // 필터 대응 주간 등록 차트도 idle에 미리 채움 (모달 오픈 시 즉시)
+      const wr = browserLocalWeekRangeFromOffset(statisticsWeekOffset)
+      void fetchAdminRegCancelWeekDailyRegistered(supabase, {
+        operatorId,
+        startYmd: wr.startYmd,
+        endYmd: wr.endYmd,
+        selectedStatus,
+        selectedChannel,
+        dateRange,
+        customerIdFromUrl,
+        debouncedSearchTerm,
+      })
+        .then(() =>
+          prefetchAdminRegCancelWeekDailyRegisteredAdjacent(supabase, {
+            operatorId,
+            currentWeekOffset: statisticsWeekOffset,
+            selectedStatus,
+            selectedChannel,
+            dateRange,
+            customerIdFromUrl,
+            debouncedSearchTerm,
+          })
+        )
+        .catch((e) => {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('[admin reservations] week daily reg idle warm failed:', e)
+          }
+        })
+    }
+
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+      cancelIdleCallback?: (id: number) => void
+    }
+    if (typeof w.requestIdleCallback === 'function') {
+      idleHandle = w.requestIdleCallback(run, { timeout: 2500 })
+    } else {
+      timeoutHandle = window.setTimeout(run, 600)
+    }
+
+    return () => {
+      cancelled = true
+      if (idleHandle != null && typeof w.cancelIdleCallback === 'function') {
+        w.cancelIdleCallback(idleHandle)
+      }
+      if (timeoutHandle != null) window.clearTimeout(timeoutHandle)
+    }
+  }, [
+    reservationListUiHydrated,
+    viewMode,
+    groupByDate,
+    weeklyStatsModalOpen,
+    serverListLoading,
+    adminListChunkProgress,
+    operatorId,
+    statisticsWeekOffset,
+    regCancelGranularity,
+    regCancelMonthOffset,
+    regCancelYearOffset,
+    selectedStatus,
+    selectedChannel,
+    dateRange,
+    customerIdFromUrl,
+    debouncedSearchTerm,
+    sortBy,
+    sortOrder,
+  ])
+
+  /** 모든 뷰: 목록 안정 후 운영 큐를 idle soft prefetch (카드 주간 통계 warm과 별도) */
+  useEffect(() => {
+    if (!reservationListUiHydrated) return
+    if (serverListLoading || adminListChunkProgress) return
+    if (showActionRequiredModal || followUpQueueModalOpen) return
+
+    let cancelled = false
+    let idleHandle: number | null = null
+    let timeoutHandle: number | null = null
+
+    const run = () => {
+      if (cancelled) return
+      prefetchOperationalQueueSnapshot()
+    }
+
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+      cancelIdleCallback?: (id: number) => void
+    }
+    if (typeof w.requestIdleCallback === 'function') {
+      idleHandle = w.requestIdleCallback(run, { timeout: 3500 })
+    } else {
+      timeoutHandle = window.setTimeout(run, 900)
+    }
+
+    return () => {
+      cancelled = true
+      if (idleHandle != null && typeof w.cancelIdleCallback === 'function') {
+        w.cancelIdleCallback(idleHandle)
+      }
+      if (timeoutHandle != null) window.clearTimeout(timeoutHandle)
+    }
+  }, [
+    reservationListUiHydrated,
+    serverListLoading,
+    adminListChunkProgress,
+    showActionRequiredModal,
+    followUpQueueModalOpen,
+    prefetchOperationalQueueSnapshot,
   ])
 
   useLayoutEffect(() => {
@@ -3080,6 +3816,9 @@ export default function AdminReservations() {
     const isCancelledLike = (status: string | undefined) =>
       isReservationCancelledStatus(status) || isReservationDeletedStatus(status)
 
+    const useWeekRegRollup =
+      regCancelGranularity === 'week' && weekRegRollupByYmd != null && weekRegRollupByYmd.size > 0
+
     const aggregateIntoKeys = (keys: string[], keyFromCreated: (ck: string) => string | null, keyFromUpdated: (uk: string) => string | null) => {
       const rowByKey = new Map<string, Row>()
       const rows: Row[] = []
@@ -3096,18 +3835,31 @@ export default function AdminReservations() {
         rows.push(row)
         rowByKey.set(k, row)
       }
+      if (useWeekRegRollup && weekRegRollupByYmd) {
+        for (const k of keys) {
+          const rollup = weekRegRollupByYmd.get(k)
+          if (!rollup) continue
+          const row = rowByKey.get(k)
+          if (row) {
+            row.registeredPeople = rollup.registeredPeople
+            row.registeredCount = rollup.registeredCount
+          }
+        }
+      }
       for (const r of statisticsReservations) {
         const p = getReservationPartySize(r as unknown as Record<string, unknown>)
         const id = String(r.id ?? '').trim()
         const isRebookingCancel = isRebookingReservationByReasonMap(id, cancellationReasonByReservationId)
-        const createdKey = isoToLocalCalendarDateKey(r.addedTime)
-        if (createdKey) {
-          const bk = keyFromCreated(createdKey)
-          if (bk) {
-            const row = rowByKey.get(bk)
-            if (row) {
-              row.registeredCount += 1
-              row.registeredPeople += p
+        if (!useWeekRegRollup) {
+          const createdKey = isoToLocalCalendarDateKey(r.addedTime)
+          if (createdKey) {
+            const bk = keyFromCreated(createdKey)
+            if (bk) {
+              const row = rowByKey.get(bk)
+              if (row) {
+                row.registeredCount += 1
+                row.registeredPeople += p
+              }
             }
           }
         }
@@ -3179,43 +3931,44 @@ export default function AdminReservations() {
     let monthDailyAvgSameYear: number[] | null = null
     let monthDailyAvgSameYearCount: number[] | null = null
 
+    const netAvgArgs = {
+      auditRowsByRecordId: regCancelChartAuditReady ? regCancelChartAuditRowsByRecordId : undefined,
+      cancellationReasonById: cancellationReasonByReservationId,
+      useAuditCancel: Boolean(groupByDate && regCancelChartAuditReady),
+    }
+
     if (regCancelGranularity === 'week') {
-      const todayYmd = browserLocalTodayYmd()
-      const yesterdayYmd = browserLocalYesterdayYmd()
-      const chartYear = parseInt(todayYmd.slice(0, 4), 10)
-      if (!statisticsYtdExtensionLoading) {
-        wdAvg = computeYtdAvgDailyRegisteredByWeekdayForLocalYear(
-          statisticsReservations,
-          chartYear,
-          yesterdayYmd,
-          'people'
-        )
-        wdAvgCount = computeYtdAvgDailyRegisteredByWeekdayForLocalYear(
-          statisticsReservations,
-          chartYear,
-          yesterdayYmd,
-          'bookings'
-        )
+      if (ytdWeekdayAvgRpc) {
+        wdAvg = ytdWeekdayAvgRpc.people
+        wdAvgCount = ytdWeekdayAvgRpc.bookings
       }
     } else if (regCancelGranularity === 'month') {
       const { startYmd } = browserLocalCalendarMonthWindow(regCancelMonthOffset)
       const y = parseInt(startYmd.slice(0, 4), 10)
-      wdAvg = computeAvgDailyRegisteredByWeekdayForYears(statisticsReservations, new Set([y]), 'people')
-      wdAvgCount = computeAvgDailyRegisteredByWeekdayForYears(statisticsReservations, new Set([y]), 'bookings')
+      wdAvg = computeAvgDailyNetByWeekdayForYears(statisticsReservations, new Set([y]), {
+        ...netAvgArgs,
+        mode: 'people',
+      })
+      wdAvgCount = computeAvgDailyNetByWeekdayForYears(statisticsReservations, new Set([y]), {
+        ...netAvgArgs,
+        mode: 'bookings',
+      })
     } else {
       const chartYear = parseInt(
         browserLocalCalendarYearWindow(regCancelYearOffset).startYmd.slice(0, 4),
         10
       )
-      monthDailyAvgSameYear = computeAvgDailyRegisteredByMonthForCalendarYear(
+      monthDailyAvgSameYear = computeAvgDailyNetByMonthForCalendarYear(statisticsReservations, chartYear, {
+        ...netAvgArgs,
+        mode: 'people',
+      })
+      monthDailyAvgSameYearCount = computeAvgDailyNetByMonthForCalendarYear(
         statisticsReservations,
         chartYear,
-        'people'
-      )
-      monthDailyAvgSameYearCount = computeAvgDailyRegisteredByMonthForCalendarYear(
-        statisticsReservations,
-        chartYear,
-        'bookings'
+        {
+          ...netAvgArgs,
+          mode: 'bookings',
+        }
       )
     }
 
@@ -3242,9 +3995,11 @@ export default function AdminReservations() {
     regCancelMonthOffset,
     regCancelYearOffset,
     groupByDate,
-    statisticsYtdExtensionLoading,
+    ytdWeekdayAvgRpc,
+    weekRegRollupByYmd,
     regCancelChartAuditRowsByRecordId,
     cancellationReasonByReservationId,
+    regCancelChartAuditReady,
   ])
 
   const regCancelChartRows = useMemo(() => {
@@ -3283,38 +4038,20 @@ export default function AdminReservations() {
     return formatBrowserLocalYmdRangeDisplay(startYmd, endYmd, localeTag)
   }, [locale, regCancelGranularity, statisticsWeekOffset, regCancelMonthOffset, regCancelYearOffset])
 
-  /** 날짜 그룹 보기: 현재 목록의 각 날짜를 접힌 상태로 맞춤. `prev`에 과거 날짜 키만 남으면 매번 새 Set을 반환해 무한 렌더가 나지 않도록 정리한다. */
+  /** 날짜 그룹 보기: 목록에서 사라진 날짜만 펼침 상태에서 제거 (기본은 접힘 유지). */
   useEffect(() => {
-    if (groupByDate && groupedReservations && Object.keys(groupedReservations).length > 0) {
-      const allDates = Object.keys(groupedReservations)
-      const allDatesSet = new Set(allDates)
-      setCollapsedGroups((prev) => {
-        let next: Set<string> = prev
-        for (const p of prev) {
-          if (!allDatesSet.has(p)) {
-            if (next === prev) next = new Set(prev)
-            next.delete(p)
-          }
+    if (!groupByDate || !groupedReservations || Object.keys(groupedReservations).length === 0) return
+    const allDatesSet = new Set(Object.keys(groupedReservations))
+    setExpandedDateGroups((prev) => {
+      let next: Set<string> = prev
+      for (const p of prev) {
+        if (!allDatesSet.has(p)) {
+          if (next === prev) next = new Set(prev)
+          next.delete(p)
         }
-        const allCollapsed = allDates.every((date) => next.has(date))
-        if (allCollapsed && next.size === allDates.length) {
-          return next === prev ? prev : next
-        }
-        const newSet = new Set(next)
-        for (const date of allDates) newSet.add(date)
-        if (newSet.size === prev.size) {
-          let sameAsPrev = true
-          for (const x of newSet) {
-            if (!prev.has(x)) {
-              sameAsPrev = false
-              break
-            }
-          }
-          if (sameAsPrev) return prev
-        }
-        return newSet
-      })
-    }
+      }
+      return next === prev ? prev : next
+    })
   }, [groupedReservations, groupByDate])
 
   /** 참조가 아닌 감사 대상 식별 — 목록이 같은 내용으로 자주 갱신돼도 로딩 문구가 깜빡이지 않게 함 */
@@ -4993,14 +5730,21 @@ export default function AdminReservations() {
 
   const reservationFormCatalogOptions: Option[] = (catalogOptions || []) as Option[]
 
-  /** 헤더·필터는 유지하고, 스토리지 복원·카탈로그·목록 구간은 본문만 로딩 */
+  /** 헤더·필터는 유지하고, UI 복원·서버 목록만 본문 로딩에 반영.
+   * products/channels(listCatalogLoading)는 카드에 상품명·채널명을 채우지만,
+   * 카탈로그가 지연/멈춘 경우에도 예약 카드는 보여야 한다. */
   const calendarListLoading = serverListLoading || !!adminListChunkProgress
+  const hasReservationListPaintData = reservations.length > 0
+  const listContentStillPending =
+    serverListLoading ||
+    !!adminListChunkProgress ||
+    (serverListTotal > 0 && filteredReservations.length === 0)
   const showMainBodyLoading =
-    !reservationListUiHydrated || loading || (serverListLoading && viewMode !== 'calendar')
-  const mainBodyLoadingHeadline =
-    !reservationListUiHydrated || loading
-      ? t('loadingReservationData')
-      : t('loadingReservationList')
+    !reservationListUiHydrated ||
+    (serverListLoading && !hasReservationListPaintData && viewMode !== 'calendar')
+  const mainBodyLoadingHeadline = !reservationListUiHydrated
+    ? t('loadingReservationData')
+    : t('loadingReservationList')
 
   // Header/Filters 핸들러 — useCallback 으로 안정 참조를 만들어 React.memo 효과를 살린다.
   const handleHeaderSearchChange = useCallback(
@@ -5205,7 +5949,7 @@ export default function AdminReservations() {
         onOpenDeletedReservations={handleOpenDeletedReservations}
         onOpenFollowUpQueue={handleOpenFollowUpQueue}
         followUpQueueCount={headerFollowUpQueueCount}
-        onOpenCancelReasonQueue={() => setCancelReasonQueueOpen(true)}
+        onOpenCancelReasonQueue={handleOpenCancelReasonQueue}
         cancelReasonQueueCount={cancelReasonQueueStats.union}
         onPrefetchOperationalQueue={prefetchOperationalQueueSnapshot}
         {...(viewMode !== 'list' && (groupByDate || debouncedSearchTerm.trim().length > 0)
@@ -5452,16 +6196,29 @@ export default function AdminReservations() {
           /* ????*/
           <>
             {filteredReservations.length === 0 ? (
-              /* ?????? ??? ????? ??? */
-              <ReservationsEmptyState
-                hasSearchTerm={debouncedSearchTerm.trim().length > 0}
-                searchTerm={debouncedSearchTerm}
-                hasDateRange={!!(dateRange.start && dateRange.end)}
-                dateRangeStart={dateRange.start}
-                dateRangeEnd={dateRange.end}
-                onClearSearch={handleClearSearch}
-                variant="grid"
-              />
+              listContentStillPending ? (
+                <div className="rounded-lg border border-gray-200 bg-white p-8 shadow-sm sm:p-12">
+                  <div className="mx-auto max-w-md text-center">
+                    <div className="mx-auto h-10 w-10 animate-spin rounded-full border-b-2 border-primary" />
+                    <p className="mt-3 text-sm font-medium text-gray-700">{t('loadingReservationList')}</p>
+                    {adminListChunkProgress && (
+                      <p className="mt-2 text-xs text-gray-500 tabular-nums">
+                        {adminListChunkProgress.loaded} / {adminListChunkProgress.total ?? adminListChunkProgress.loaded}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <ReservationsEmptyState
+                  hasSearchTerm={debouncedSearchTerm.trim().length > 0}
+                  searchTerm={debouncedSearchTerm}
+                  hasDateRange={!!(dateRange.start && dateRange.end)}
+                  dateRangeStart={dateRange.start}
+                  dateRangeEnd={dateRange.end}
+                  onClearSearch={handleClearSearch}
+                  variant="grid"
+                />
+              )
             ) : groupByDate && viewMode !== 'list' ? (
           /* ?????????? ????*/
           <div className="space-y-8">
@@ -5564,7 +6321,7 @@ export default function AdminReservations() {
                     <DateGroupHeader
                       date={date}
                       reservations={dayReservations}
-                      isCollapsed={collapsedGroups.has(date)}
+                      isCollapsed={!expandedDateGroups.has(date)}
                       onToggleCollapse={handleToggleCollapse}
                       customers={(customers as Array<{ id: string; name?: string }>) || []}
                       products={(products as Array<{ id: string; name: string }>) || []}
@@ -5582,8 +6339,7 @@ export default function AdminReservations() {
                           const accRegKey = `${date}|simple-acc-reg`
                           const accStatusKey = `${date}|simple-acc-status`
                           const defaultRegOpen = true
-                          /** 상태변경 상위도 기본 펼침 → 안에서 대기중→취소 소그룹만 기본 펼침, 그 외 소그룹은 기본 접힘. */
-                          const defaultStatusOpen = true
+                          const defaultStatusOpen = false
                           const regOpen = resolveSimpleCardAccordionOpen(accRegKey, defaultRegOpen)
                           const statusOpen = resolveSimpleCardAccordionOpen(accStatusKey, defaultStatusOpen)
                           const regPeopleTotal = regList.reduce(
@@ -5676,7 +6432,7 @@ export default function AdminReservations() {
                                       ) : simpleCardStatusSubgroups ? (
                                         simpleCardStatusSubgroups.map((g, subIdx) => {
                                           const subKey = `${date}|simple-acc-status-sub|${subIdx}`
-                                          const defaultSubOpen = isPendingToCancelledTransitionBucket(g.bucketKey)
+                                          const defaultSubOpen = false
                                           const subOpen = resolveSimpleCardAccordionOpen(subKey, defaultSubOpen)
                                           const subPeopleTotal = g.items.reduce(
                                             (sum, r) =>
@@ -6404,7 +7160,10 @@ export default function AdminReservations() {
                 </div>
               </div>
               <div className="min-h-0 flex-1 bg-gray-50">
-                <TourDetailModalContent tourId={tourDetailModalTourId} />
+                <TourDetailModalContent
+                  tourId={tourDetailModalTourId}
+                  onNavigateToTour={setTourDetailModalTourId}
+                />
               </div>
             </div>
           </div>,

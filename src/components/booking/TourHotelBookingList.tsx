@@ -2350,7 +2350,12 @@ export default function TourHotelBookingList() {
                 </div>
               </div>
               <div className="min-h-0 flex-1 bg-gray-50">
-                <TourDetailModalContent tourId={tourDetailModal.tourId} />
+                <TourDetailModalContent
+                  tourId={tourDetailModal.tourId}
+                  onNavigateToTour={(nextTourId) =>
+                    setTourDetailModal((prev) => (prev ? { ...prev, tourId: nextTourId } : null))
+                  }
+                />
               </div>
             </div>
           </div>,

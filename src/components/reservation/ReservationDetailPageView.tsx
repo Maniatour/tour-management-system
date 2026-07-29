@@ -26,11 +26,15 @@ async function fetchReservationById(reservationId: string): Promise<Reservation 
 export function ReservationDetailPageView({
   reservationId,
   modalLightLoad = false,
+  layout = 'page',
   onCancel,
+  onSaved,
 }: {
   reservationId: string
   modalLightLoad?: boolean
+  layout?: 'modal' | 'page'
   onCancel?: () => void
+  onSaved?: () => void
 }) {
   const t = useTranslations('reservations')
   const locale = useLocale()
@@ -108,12 +112,13 @@ export function ReservationDetailPageView({
 
         alert(t('messages.reservationUpdated'))
         if (tourCreated) setTourCreated(false)
+        onSaved?.()
       } catch (e) {
         console.error(e)
         alert(t('messages.reservationUpdateError') + (e instanceof Error ? e.message : ''))
       }
     },
-    [reservation, refreshReservations, tourCreated, t]
+    [reservation, refreshReservations, tourCreated, t, onSaved]
   )
 
   const handleCancel = useCallback(() => {
@@ -179,7 +184,7 @@ export function ReservationDetailPageView({
           onCancel={handleCancel}
           onDelete={handleDelete}
           onRefreshCustomers={refreshCustomers}
-          layout="page"
+          layout={layout}
           allowPastDateEdit={isSuper || !!reservation}
           followUpPipelineSnapshotRefreshToken={followUpFormPipelineRefresh}
           titleAction={
@@ -232,6 +237,7 @@ export function ReservationDetailPageView({
     t,
     isSuper,
     followUpFormPipelineRefresh,
+    layout,
   ])
 
   return (

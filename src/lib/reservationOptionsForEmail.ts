@@ -123,29 +123,31 @@ async function loadOptionsNameMap(
     {}
   if (optionIds.length === 0) return optionsMap
 
-  const { data: opts } = await client
-    .from('options')
-    .select('id, name, name_ko, name_en')
-    .in('id', optionIds)
-  for (const o of opts || []) {
-    if (o?.id != null) optionsMap[String(o.id)] = o as typeof optionsMap[string]
+  const legacyIds = optionIds.filter((id) => !isOptionIdUuidLike(id))
+  const uuidIds = optionIds.filter((id) => isOptionIdUuidLike(id))
+
+  const [optsResult, productOptsResult] = await Promise.all([
+    legacyIds.length > 0
+      ? client.from('options').select('id, name, name_ko, name_en').in('id', legacyIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; name?: string | null; name_ko?: string | null; name_en?: string | null }> }),
+    uuidIds.length > 0
+      ? client.from('product_options').select('id, name').in('id', uuidIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; name?: string | null }> }),
+  ])
+
+  for (const o of optsResult.data || []) {
+    if (o?.id != null) optionsMap[String(o.id)] = o
   }
-  const missing = optionIds.filter((id) => !optionsMap[id])
-  for (const id of missing) {
-    if (!isOptionIdUuidLike(id)) {
-      optionsMap[id] = { name: id, name_ko: id, name_en: id }
-    }
+  for (const id of legacyIds) {
+    if (!optionsMap[id]) optionsMap[id] = { name: id, name_ko: id, name_en: id }
   }
-  const missingUuids = missing.filter((id) => isOptionIdUuidLike(id) && !optionsMap[id])
-  if (missingUuids.length > 0) {
-    const { data: po } = await client.from('product_options').select('id, name').in('id', missingUuids)
-    for (const o of po || []) {
-      if (o?.id != null) optionsMap[String(o.id)] = { name: (o as { name?: string }).name ?? null }
-    }
-    for (const id of missingUuids) {
-      if (!optionsMap[id]) optionsMap[id] = { name: id, name_ko: id, name_en: id }
-    }
+  for (const o of productOptsResult.data || []) {
+    if (o?.id != null) optionsMap[String(o.id)] = { name: (o as { name?: string }).name ?? null }
   }
+  for (const id of uuidIds) {
+    if (!optionsMap[id]) optionsMap[id] = { name: id, name_ko: id, name_en: id }
+  }
+
   return optionsMap
 }
 

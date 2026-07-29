@@ -1277,7 +1277,11 @@ export function ToursNeedCheckModal({
           </div>
           {showTourDetailEmbed && previewTourId ? (
             <div className="min-h-0 flex-1 flex flex-col overflow-hidden bg-gray-50">
-              <TourDetailModalContent tourId={previewTourId} refreshNonce={tourDetailPreviewNonce} />
+              <TourDetailModalContent
+                tourId={previewTourId}
+                refreshNonce={tourDetailPreviewNonce}
+                onNavigateToTour={setPreviewTourId}
+              />
             </div>
           ) : showReservationIframe && reservationPreviewSrc ? (
             <iframe

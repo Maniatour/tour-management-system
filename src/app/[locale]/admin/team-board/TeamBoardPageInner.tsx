@@ -6,9 +6,139 @@ import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { useTranslations } from 'next-intl'
-import { Check, Edit, Loader2, MessageCircle, Pin, PinOff, Plus, Trash2, X } from 'lucide-react'
-import { OpTodoNotificationLayer } from '@/components/team-board/OpTodoNotificationLayer'
-import { audiencesForTeamMember, computeNextNotifyAtIso } from '@/lib/opTodoSchedule'
+import { useParams, useRouter } from 'next/navigation'
+import { Check, Circle, Edit, Link2, Loader2, MessageCircle, Pin, PinOff, Plus, Trash2, X, BookOpen } from 'lucide-react'
+import { TeamBoardTodoManagePanel } from '@/components/team-board/TeamBoardTodoManagePanel'
+import { HubArticleManualLinkField } from '@/components/team-board/HubArticleManualLinkField'
+import { useTeamBoardManualOptional } from '@/contexts/TeamBoardManualContext'
+import { OP_TODO_REFRESH_EVENT } from '@/lib/opTodoRefresh'
+import { toggleOpTodoCompletion } from '@/lib/opTodoToggleCompletion'
+import { opTodoHasAction, useOpTodoActionClick } from '@/hooks/useOpTodoActionClick'
+import { TourEnvelopePrintPanel } from '@/components/admin/todo/TourEnvelopePrintPanel'
+import { PickupNotificationPanel } from '@/components/admin/todo/PickupNotificationPanel'
+import { GuideScheduleConfirmPanel } from '@/components/admin/todo/GuideScheduleConfirmPanel'
+import { CustomerInfoReviewPanel } from '@/components/admin/todo/CustomerInfoReviewPanel'
+import { CancelRebookingFollowUpPanel } from '@/components/admin/todo/CancelRebookingFollowUpPanel'
+import { PendingCustomerManagementPanel } from '@/components/admin/todo/PendingCustomerManagementPanel'
+import { OtaClosurePanel } from '@/components/admin/todo/OtaClosurePanel'
+import { TourHotelManagementPanel } from '@/components/admin/todo/TourHotelManagementPanel'
+import { TourHotelPriceCheckPanel } from '@/components/admin/todo/TourHotelPriceCheckPanel'
+import { TourSettlementPanel } from '@/components/admin/todo/TourSettlementPanel'
+import { ReservationAgencyManagementPanel } from '@/components/admin/todo/ReservationAgencyManagementPanel'
+import { AntelopeCanyonBookingPanel } from '@/components/admin/todo/AntelopeCanyonBookingPanel'
+import { AdminTodoListManualButton } from '@/components/admin/todo/AdminTodoListManualModal'
+import {
+  TourQuickPrintHost,
+  type TourQuickPrintKind,
+  type TourQuickPrintRequest,
+} from '@/components/admin/todo/TourQuickPrintHost'
+import {
+  TourPickupNotificationHost,
+  type TourPickupNotificationKind,
+  type TourPickupNotificationRequest,
+} from '@/components/admin/todo/TourPickupNotificationHost'
+import {
+  shouldHideTodoChipForEnvelopePrintPanel,
+  findTourEnvelopePrintLinkedTodo,
+  readTourEnvelopePrintLocalCompleted,
+  tourEnvelopePrintTargetDate,
+  tourEnvelopePrintTodoFormSeed,
+} from '@/lib/tourEnvelopePrintTodo'
+import {
+  shouldHideTodoChipForPickupNotificationPanel,
+  findPickupNotificationLinkedTodo,
+  readPickupNotificationLocalCompleted,
+  pickupNotificationCompletionDateKey,
+  pickupNotificationTodoFormSeed,
+} from '@/lib/pickupNotificationTodo'
+import {
+  shouldHideTodoChipForGuideScheduleConfirmPanel,
+  findGuideScheduleConfirmLinkedTodo,
+  readGuideScheduleConfirmLocalCompleted,
+  guideScheduleConfirmCompletionDateKey,
+  guideScheduleConfirmTodoFormSeed,
+} from '@/lib/guideScheduleConfirmTodo'
+import {
+  shouldHideTodoChipForCustomerInfoReviewPanel,
+  findCustomerInfoReviewLinkedTodo,
+  readCustomerInfoReviewLocalCompleted,
+  customerInfoReviewCompletionDateKey,
+  customerInfoReviewTodoFormSeed,
+} from '@/lib/customerInfoReviewTodo'
+import {
+  shouldHideTodoChipForCancelRebookingFollowUpPanel,
+  findCancelRebookingFollowUpLinkedTodo,
+  readCancelRebookingFollowUpLocalCompleted,
+  cancelRebookingFollowUpCompletionDateKey,
+  cancelRebookingFollowUpTodoFormSeed,
+} from '@/lib/cancelRebookingFollowUpTodo'
+import { dispatchCancelRebookingFollowUpRefresh } from '@/lib/cancelRebookingFollowUpRefresh'
+import {
+  shouldHideTodoChipForPendingCustomerManagementPanel,
+  findPendingCustomerManagementLinkedTodo,
+  readPendingCustomerManagementLocalCompleted,
+  pendingCustomerManagementCompletionDateKey,
+  pendingCustomerManagementTodoFormSeed,
+} from '@/lib/pendingCustomerManagementTodo'
+import { upsertReservationCancelFollowUpManual } from '@/lib/reservationCancelFollowUpManual'
+import type { CancelFollowUpManualKind } from '@/components/reservation/ReservationFollowUpQueueModal'
+import {
+  shouldHideTodoChipForOtaClosurePanel,
+  findOtaClosureLinkedTodo,
+  readOtaClosureLocalCompleted,
+  otaClosureCompletionDateKey,
+  otaClosureTodoFormSeed,
+} from '@/lib/otaClosureTodo'
+import {
+  shouldHideTodoChipForTourHotelManagementPanel,
+  findTourHotelManagementLinkedTodo,
+  readTourHotelManagementLocalCompleted,
+  tourHotelManagementCompletionDateKey,
+  tourHotelManagementTodoFormSeed,
+} from '@/lib/tourHotelManagementTodo'
+import {
+  shouldHideTodoChipForTourHotelPriceCheckPanel,
+  findTourHotelPriceCheckLinkedTodo,
+  readTourHotelPriceCheckLocalCompleted,
+  tourHotelPriceCheckCompletionDateKey,
+  tourHotelPriceCheckTodoFormSeed,
+} from '@/lib/tourHotelPriceCheckTodo'
+import {
+  shouldHideTodoChipForTourSettlementPanel,
+  findTourSettlementLinkedTodo,
+  readTourSettlementLocalCompleted,
+  tourSettlementCompletionDateKey,
+  tourSettlementTodoFormSeed,
+} from '@/lib/tourSettlementTodo'
+import {
+  shouldHideTodoChipForReservationAgencyManagementPanel,
+  findReservationAgencyManagementLinkedTodo,
+  readReservationAgencyManagementLocalCompleted,
+  reservationAgencyManagementCompletionDateKey,
+  reservationAgencyManagementTodoFormSeed,
+} from '@/lib/reservationAgencyManagementTodo'
+import {
+  shouldHideTodoChipForAntelopeCanyonBookingPanel,
+  findAntelopeCanyonBookingLinkedTodo,
+  readAntelopeCanyonBookingLocalCompleted,
+  antelopeCanyonBookingCompletionDateKey,
+  antelopeCanyonBookingTodoFormSeed,
+} from '@/lib/antelopeCanyonBookingTodo'
+import type { OpTodoFormValues } from '@/components/admin/todo/OpTodoFormFields'
+import {
+  readTeamBoardPrimaryCache,
+  readTeamBoardWorkCache,
+} from '@/lib/teamBoard/teamBoardDataCache'
+import {
+  fetchOpTodosOnly,
+  fetchTeamBoardBootstrap,
+  runOpTodoResetsIfDue,
+  TB_STATUS_LOGS_LIMIT,
+} from '@/lib/teamBoard/teamBoardFetch'
+import { resolveOpTodoDepartmentFilter } from '@/lib/teamBoard/opTodoDepartmentFilter'
+import { useDeferredPanelMount } from '@/hooks/useDeferredPanelMount'
+import { useInViewport } from '@/hooks/useInViewport'
+import { TodoPanelMountSkeleton } from '@/components/team-board/TodoPanelMountSkeleton'
 
 type Announcement = {
   id: string
@@ -27,6 +157,7 @@ type Announcement = {
   created_by: string
   created_at: string
   updated_at: string
+  linked_hub_article_id?: string | null
 }
 
 
@@ -57,6 +188,9 @@ type OpTodo = {
   notify_day_of_month?: number | null
   notify_month?: number | null
   next_notify_at?: string | null
+  action_type?: string | null
+  action_config?: Record<string, unknown> | null
+  linked_hub_article_id?: string | null
 }
 
 
@@ -91,6 +225,7 @@ type Task = {
   deleted_by: string | null
   created_at: string
   updated_at: string
+  linked_hub_article_id?: string | null
 }
 
 type TodoClickLog = {
@@ -150,21 +285,6 @@ function isMissingSupabaseRelationError(err: unknown): boolean {
 }
 
 /** 초기 로드 페이로드·쿼리 시간 절감용 (필요 시 상향) */
-const TB_OP_TODOS_LIMIT = 400
-const TB_ANNOUNCEMENTS_LIMIT = 80
-const TB_TASKS_LIMIT = 120
-const TB_ISSUES_LIMIT = 120
-const TB_ACKS_LIMIT = 4000
-const TB_STATUS_LOGS_LIMIT = 250
-
-const TB_OP_TODO_COLUMNS =
-  'id,title,description,scope,category,department,assigned_to,due_date,completed,completed_at,created_by,created_at,updated_at,notify_enabled,notify_time,notify_weekday,notify_day_of_month,notify_month,next_notify_at'
-
-const TB_TASK_COLUMNS =
-  'id,title,description,due_date,priority,status,created_by,assigned_to,target_positions,target_individuals,tags,is_deleted,deleted_at,deleted_by,created_at,updated_at'
-
-const TB_ISSUE_COLUMNS =
-  'id,title,description,status,priority,reported_by,is_deleted,deleted_at,deleted_by,created_at,updated_at'
 
 const POSITION_OPTIONS = [
   { value: 'manager', label: '매니저' },
@@ -243,6 +363,10 @@ const normalizePosition = (position: string | null | undefined): string => {
 
 export default function TeamBoardPageInner() {
   const { authUser, userRole, userPosition } = useAuth()
+  const manualCtx = useTeamBoardManualOptional()
+  const params = useParams()
+  const router = useRouter()
+  const uiLocale = typeof params?.locale === 'string' ? params.locale : 'ko'
   // supabase 클라이언트는 AuthContext에서 관리됨
   
   // useTranslations 훅을 조건부로 사용
@@ -266,64 +390,26 @@ export default function TeamBoardPageInner() {
       return fallbacks[key] || key
     }
   }
-  const [loading, setLoading] = useState(true)
-  const [announcements, setAnnouncements] = useState<Announcement[]>([])
-  const [acksByAnnouncement, setAcksByAnnouncement] = useState<Record<string, Acknowledgment[]>>({})
+  const primaryCache = typeof window !== 'undefined' ? readTeamBoardPrimaryCache() : null
+  const workCache = typeof window !== 'undefined' ? readTeamBoardWorkCache() : null
+  const [loading, setLoading] = useState(() => !primaryCache)
+  const [announcements, setAnnouncements] = useState<Announcement[]>(() => workCache?.announcements ?? [])
+  const [acksByAnnouncement, setAcksByAnnouncement] = useState<Record<string, Acknowledgment[]>>(
+    () => workCache?.acksByAnnouncement ?? {}
+  )
   const [showNewAnnouncement, setShowNewAnnouncement] = useState(false)
-  const [newAnnouncement, setNewAnnouncement] = useState({ title: '', content: '', recipients: [] as string[], priority: 'normal' as 'low'|'normal'|'high'|'urgent', tags: '' , target_positions: [] as string[] })
+  const [newAnnouncement, setNewAnnouncement] = useState({ title: '', content: '', recipients: [] as string[], priority: 'normal' as 'low'|'normal'|'high'|'urgent', tags: '' , target_positions: [] as string[], linked_hub_article_id: null as string | null })
   const [submitting, setSubmitting] = useState(false)
   const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null)
-  const [editAnnouncement, setEditAnnouncement] = useState({ title: '', content: '', recipients: [] as string[], priority: 'normal' as 'low'|'normal'|'high'|'urgent', tags: '' , target_positions: [] as string[] })
+  const [editAnnouncement, setEditAnnouncement] = useState({ title: '', content: '', recipients: [] as string[], priority: 'normal' as 'low'|'normal'|'high'|'urgent', tags: '' , target_positions: [] as string[], linked_hub_article_id: null as string | null })
 
-  const [opTodos, setOpTodos] = useState<OpTodo[]>([])
+  const [opTodos, setOpTodos] = useState<OpTodo[]>(() => primaryCache?.opTodos ?? [])
   const [showNewTodoModal, setShowNewTodoModal] = useState(false)
-  const [newTodo, setNewTodo] = useState<{
-    title: string
-    description: string
-    scope: 'common' | 'individual'
-    category: 'daily' | 'weekly' | 'monthly' | 'yearly'
-    department: 'office' | 'guide' | 'common'
-    assigned_to: string
-    notify_enabled: boolean
-    notify_time: string
-    notify_weekday: number
-    notify_day_of_month: number
-    notify_month: number
-  }>({
-    title: '',
-    description: '',
-    scope: 'common',
-    category: 'daily',
-    department: 'common',
-    assigned_to: '',
-    notify_enabled: false,
-    notify_time: '09:00',
-    notify_weekday: 1,
-    notify_day_of_month: 1,
-    notify_month: 1,
-  })
-  
-  // 기존 항목 수정을 위한 상태
-  const [editingTodo, setEditingTodo] = useState<OpTodo | null>(null)
-  const [editTodoForm, setEditTodoForm] = useState<{
-    title: string
-    category: 'daily' | 'weekly' | 'monthly' | 'yearly'
-    department: 'office' | 'guide' | 'common'
-    notify_enabled: boolean
-    notify_time: string
-    notify_weekday: number
-    notify_day_of_month: number
-    notify_month: number
-  }>({
-    title: '',
-    category: 'daily',
-    department: 'common',
-    notify_enabled: false,
-    notify_time: '09:00',
-    notify_weekday: 1,
-    notify_day_of_month: 1,
-    notify_month: 1,
-  })
+  const [showTodoCreateModal, setShowTodoCreateModal] = useState(false)
+  const [editTodoId, setEditTodoId] = useState<string | null>(null)
+  const [todoCreateFormSeed, setTodoCreateFormSeed] = useState<Partial<OpTodoFormValues> | null>(null)
+  const [tourQuickPrint, setTourQuickPrint] = useState<TourQuickPrintRequest>(null)
+  const [tourPickupNotification, setTourPickupNotification] = useState<TourPickupNotificationRequest>(null)
   
   // 클릭 기록을 위한 상태 (현재 사용되지 않음)
   // const [clickLogs, setClickLogs] = useState<Record<string, { user: string; timestamp: string; action: 'completed' | 'uncompleted' }[]>>({})
@@ -379,6 +465,140 @@ export default function TeamBoardPageInner() {
     await loadCategoryHistory(category)
   }
 
+  const handleEditEnvelopePrintTodo = () => {
+    const linked = findTourEnvelopePrintLinkedTodo(opTodos)
+    if (linked) {
+      setEditTodoId(linked.id)
+      return
+    }
+    setTodoCreateFormSeed(tourEnvelopePrintTodoFormSeed(uiLocale))
+    setShowTodoCreateModal(true)
+  }
+
+  const handleEditPickupNotificationTodo = () => {
+    const linked = findPickupNotificationLinkedTodo(opTodos)
+    if (linked) {
+      setEditTodoId(linked.id)
+      return
+    }
+    setTodoCreateFormSeed(pickupNotificationTodoFormSeed(uiLocale))
+    setShowTodoCreateModal(true)
+  }
+
+  const handleEditGuideScheduleConfirmTodo = () => {
+    const linked = findGuideScheduleConfirmLinkedTodo(opTodos)
+    if (linked) {
+      setEditTodoId(linked.id)
+      return
+    }
+    setTodoCreateFormSeed(guideScheduleConfirmTodoFormSeed(uiLocale))
+    setShowTodoCreateModal(true)
+  }
+
+  const handleEditCustomerInfoReviewTodo = () => {
+    const linked = findCustomerInfoReviewLinkedTodo(opTodos)
+    if (linked) {
+      setEditTodoId(linked.id)
+      return
+    }
+    setTodoCreateFormSeed(customerInfoReviewTodoFormSeed(uiLocale))
+    setShowTodoCreateModal(true)
+  }
+
+  const handleEditCancelRebookingFollowUpTodo = () => {
+    const linked = findCancelRebookingFollowUpLinkedTodo(opTodos)
+    if (linked) {
+      setEditTodoId(linked.id)
+      return
+    }
+    setTodoCreateFormSeed(cancelRebookingFollowUpTodoFormSeed(uiLocale))
+    setShowTodoCreateModal(true)
+  }
+
+  const handleEditPendingCustomerManagementTodo = () => {
+    const linked = findPendingCustomerManagementLinkedTodo(opTodos)
+    if (linked) {
+      setEditTodoId(linked.id)
+      return
+    }
+    setTodoCreateFormSeed(pendingCustomerManagementTodoFormSeed(uiLocale))
+    setShowTodoCreateModal(true)
+  }
+
+  const handleCancelFollowUpManualChange = async (
+    reservationId: string,
+    kind: CancelFollowUpManualKind,
+    action: 'mark' | 'clear'
+  ) => {
+    try {
+      await upsertReservationCancelFollowUpManual(supabase, reservationId, kind, action)
+      dispatchCancelRebookingFollowUpRefresh()
+    } catch (e) {
+      console.error(e)
+      alert('저장에 실패했습니다.')
+    }
+  }
+
+  const handleEditOtaClosureTodo = () => {
+    const linked = findOtaClosureLinkedTodo(opTodos)
+    if (linked) {
+      setEditTodoId(linked.id)
+      return
+    }
+    setTodoCreateFormSeed(otaClosureTodoFormSeed(uiLocale))
+    setShowTodoCreateModal(true)
+  }
+
+  const handleEditTourHotelManagementTodo = () => {
+    const linked = findTourHotelManagementLinkedTodo(opTodos)
+    if (linked) {
+      setEditTodoId(linked.id)
+      return
+    }
+    setTodoCreateFormSeed(tourHotelManagementTodoFormSeed(uiLocale))
+    setShowTodoCreateModal(true)
+  }
+
+  const handleEditTourHotelPriceCheckTodo = () => {
+    const linked = findTourHotelPriceCheckLinkedTodo(opTodos)
+    if (linked) {
+      setEditTodoId(linked.id)
+      return
+    }
+    setTodoCreateFormSeed(tourHotelPriceCheckTodoFormSeed(uiLocale))
+    setShowTodoCreateModal(true)
+  }
+
+  const handleEditTourSettlementTodo = () => {
+    const linked = findTourSettlementLinkedTodo(opTodos)
+    if (linked) {
+      setEditTodoId(linked.id)
+      return
+    }
+    setTodoCreateFormSeed(tourSettlementTodoFormSeed(uiLocale))
+    setShowTodoCreateModal(true)
+  }
+
+  const handleEditReservationAgencyManagementTodo = () => {
+    const linked = findReservationAgencyManagementLinkedTodo(opTodos)
+    if (linked) {
+      setEditTodoId(linked.id)
+      return
+    }
+    setTodoCreateFormSeed(reservationAgencyManagementTodoFormSeed(uiLocale))
+    setShowTodoCreateModal(true)
+  }
+
+  const handleEditAntelopeCanyonBookingTodo = () => {
+    const linked = findAntelopeCanyonBookingLinkedTodo(opTodos)
+    if (linked) {
+      setEditTodoId(linked.id)
+      return
+    }
+    setTodoCreateFormSeed(antelopeCanyonBookingTodoFormSeed(uiLocale))
+    setShowTodoCreateModal(true)
+  }
+
   const toggleTaskSection = (section: string) => {
     setExpandedTaskSections(prev => ({
       ...prev,
@@ -429,7 +649,7 @@ export default function TeamBoardPageInner() {
   const [workModalType, setWorkModalType] = useState<'issue' | null>(null)
 
   // 업무 관리 관련 상태
-  const [tasks, setTasks] = useState<Task[]>([])
+  const [tasks, setTasks] = useState<Task[]>(() => workCache?.tasks ?? [])
   const [showNewTaskModal, setShowNewTaskModal] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [showArchivedModal, setShowArchivedModal] = useState(false)
@@ -442,12 +662,15 @@ export default function TeamBoardPageInner() {
     assigned_to: '',
     target_positions: [] as string[],
     target_individuals: [] as string[],
-    tags: [] as string[]
+    tags: [] as string[],
+    linked_hub_article_id: null as string | null,
   })
   const [taskRecipientMode, setTaskRecipientMode] = useState<'individual' | 'group'>('individual')
   const [selectedTaskPositions, setSelectedTaskPositions] = useState<string[]>([])
   const [selectedTaskIndividuals, setSelectedTaskIndividuals] = useState<string[]>([])
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>(
+    () => primaryCache?.teamMembers ?? workCache?.teamMembers ?? []
+  )
   const [boardComments, setBoardComments] = useState<TeamBoardComment[]>([])
   const [statusLogs, setStatusLogs] = useState<TeamBoardStatusLog[]>([])
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({})
@@ -481,6 +704,14 @@ export default function TeamBoardPageInner() {
   const isAdminByPosition = ['admin', 'manager'].includes(normalizedPosition)
   const isSuperAdminByEmail = !!authUser?.email && superAdminEmails.includes(authUser.email.toLowerCase())
   const isAdminUser = isSuperAdminByEmail || isAdminByRole || isAdminByPosition || hasAdminPermission(authUser?.permissions)
+  const opTodoDepartments = useMemo(
+    () =>
+      resolveOpTodoDepartmentFilter({
+        viewAll: isAdminUser,
+        userPosition: userPosition ?? null,
+      }),
+    [isAdminUser, userPosition]
+  )
   const activeTasks = tasks.filter(task => !task.is_deleted && task.status !== 'completed' && task.status !== 'cancelled')
   const archivedTasks = tasks.filter(task => !!task.is_deleted || task.status === 'completed' || task.status === 'cancelled')
   const activeAnnouncements = announcements.filter(announcement => !announcement.is_deleted && !announcement.is_archived)
@@ -537,94 +768,38 @@ export default function TeamBoardPageInner() {
   }
 
   const fetchAll = async () => {
+    const hadPrimaryCache = Boolean(readTeamBoardPrimaryCache())
     try {
-      setLoading(true)
-      // 주기가 지난 완료 항목 자동 리셋 (Las Vegas 03:00 기준)
-      try {
-        await supabase.rpc('apply_due_op_todo_resets')
-      } catch (resetErr) {
-        console.warn('apply_due_op_todo_resets skipped:', resetErr)
-      }
-      // 1차: ToDo + 팀(가벼운 select) 병렬 — 둘 중 느린 쪽만큼만 대기 후 스피너 종료
-      const [{ data: opTodos }, { data: team }] = await Promise.all([
-        supabase
-          .from('op_todos')
-          .select(TB_OP_TODO_COLUMNS)
-          .order('created_at', { ascending: false })
-          .limit(TB_OP_TODOS_LIMIT),
-        supabase
-          .from('team')
-          .select('email, name_ko, position, is_active')
-          .eq('is_active', true)
-          .order('name_ko'),
-      ])
-      setOpTodos((opTodos || []) as OpTodo[])
-      setTeamMembers((team || []) as unknown as TeamMember[])
+      if (!hadPrimaryCache) setLoading(true)
+      void runOpTodoResetsIfDue()
+      const bootstrap = await fetchTeamBoardBootstrap({ opTodoDepartments })
+      setOpTodos(bootstrap.primary.opTodos as OpTodo[])
+      setTeamMembers(bootstrap.primary.teamMembers as unknown as TeamMember[])
+      setAnnouncements(bootstrap.work.announcements as Announcement[])
+      setAcksByAnnouncement(bootstrap.work.acksByAnnouncement)
+      setTasks(bootstrap.work.tasks as unknown as Task[])
+      setIssues(bootstrap.issues as unknown as Issue[])
     } finally {
       setLoading(false)
     }
 
-    // 댓글·활동 로그는 공지 배치와 동시에 시작 (idle 지연 없음)
     void loadTeamBoardSecondary()
-
-    // 2차: 공지·ack·이슈·업무 (팀은 이미 반영됨)
-    void (async () => {
-      try {
-        const [{ data: anns }, { data: acks }, { data: iss }, { data: tks }] = await Promise.all([
-          fromUntypedTable(supabase, 'team_announcements')
-            .select(
-              'id,title,content,is_pinned,recipients,target_positions,priority,tags,due_by,is_archived,is_deleted,deleted_at,deleted_by,created_by,created_at,updated_at'
-            )
-            .order('is_pinned', { ascending: false })
-            .order('created_at', { ascending: false })
-            .limit(TB_ANNOUNCEMENTS_LIMIT),
-          supabase
-            .from('team_announcement_acknowledgments')
-            .select('id, announcement_id, ack_by, ack_at')
-            .limit(TB_ACKS_LIMIT),
-          supabase
-            .from('issues')
-            .select(TB_ISSUE_COLUMNS)
-            .order('updated_at', { ascending: false, nullsFirst: false })
-            .limit(TB_ISSUES_LIMIT),
-          supabase
-            .from('tasks')
-            .select(TB_TASK_COLUMNS)
-            .order('updated_at', { ascending: false, nullsFirst: false })
-            .limit(TB_TASKS_LIMIT),
-        ])
-
-        setAnnouncements((anns || []) as Announcement[])
-
-        const aMap: Record<string, Acknowledgment[]> = {}
-        ;(acks as Acknowledgment[] || []).forEach((a) => {
-          const key = a.announcement_id
-          aMap[key] = aMap[key] || []
-          aMap[key].push(a)
-        })
-        setAcksByAnnouncement(aMap)
-
-        setIssues((iss || []) as unknown as Issue[])
-        setTasks((tks || []) as unknown as Task[])
-      } catch (e) {
-        console.error('team-board secondary batch', e)
-      }
-    })()
   }
 
   const refreshOpTodosOnly = async () => {
-    const { data, error } = await supabase
-      .from('op_todos')
-      .select(TB_OP_TODO_COLUMNS)
-      .order('created_at', { ascending: false })
-      .limit(TB_OP_TODOS_LIMIT)
-    if (!error) setOpTodos((data || []) as OpTodo[])
+    try {
+      const data = await fetchOpTodosOnly({ opTodoDepartments })
+      setOpTodos(data as OpTodo[])
+    } catch (e) {
+      console.error('refreshOpTodosOnly', e)
+    }
   }
 
-  const checklistNotifyAudiences = useMemo(() => {
-    const row = teamMembers.find((m) => (m.email || '').toLowerCase() === (authUser?.email || '').toLowerCase())
-    return audiencesForTeamMember(row?.position ?? null)
-  }, [teamMembers, authUser?.email])
+  useEffect(() => {
+    const onRefresh = () => void refreshOpTodosOnly()
+    window.addEventListener(OP_TODO_REFRESH_EVENT, onRefresh)
+    return () => window.removeEventListener(OP_TODO_REFRESH_EVENT, onRefresh)
+  }, [])
 
   const getCommentKey = (targetType: TeamBoardComment['target_type'], targetId: string) => `${targetType}:${targetId}`
 
@@ -756,14 +931,15 @@ export default function TeamBoardPageInner() {
           recipients: finalIndividuals.length > 0 ? finalIndividuals : null,
           target_positions: taskRecipientMode === 'group' ? selectedTaskPositions : null,
           priority: newAnnouncement.priority,
-          tags: newAnnouncement.tags ? newAnnouncement.tags.split(',').map(t => t.trim()).filter(Boolean) : []
+          tags: newAnnouncement.tags ? newAnnouncement.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+          linked_hub_article_id: newAnnouncement.linked_hub_article_id,
         }] as any) // eslint-disable-line @typescript-eslint/no-explicit-any
         .select()
         .single()
       if (error) throw error
       setAnnouncements([data as Announcement, ...announcements])
       setShowNewAnnouncement(false)
-      setNewAnnouncement({ title: '', content: '', recipients: [], priority: 'normal', tags: '', target_positions: [] })
+      setNewAnnouncement({ title: '', content: '', recipients: [], priority: 'normal', tags: '', target_positions: [], linked_hub_article_id: null })
       setSelectedTaskPositions([])
       setSelectedTaskIndividuals([])
       setActivePositionTab('manager')
@@ -831,7 +1007,8 @@ export default function TeamBoardPageInner() {
       recipients: announcement.recipients || [],
       priority: announcement.priority || 'normal',
       tags: announcement.tags ? announcement.tags.join(', ') : '',
-      target_positions: announcement.target_positions || []
+      target_positions: announcement.target_positions || [],
+      linked_hub_article_id: announcement.linked_hub_article_id ?? null,
     })
     setSelectedTaskPositions(announcement.target_positions || [])
     setSelectedTaskIndividuals(announcement.recipients || [])
@@ -840,7 +1017,7 @@ export default function TeamBoardPageInner() {
 
   const cancelEditAnnouncement = () => {
     setEditingAnnouncement(null)
-    setEditAnnouncement({ title: '', content: '', recipients: [], priority: 'normal', tags: '', target_positions: [] })
+    setEditAnnouncement({ title: '', content: '', recipients: [], priority: 'normal', tags: '', target_positions: [], linked_hub_article_id: null })
     setSelectedTaskPositions([])
     setSelectedTaskIndividuals([])
     setTaskRecipientMode('individual')
@@ -866,7 +1043,8 @@ export default function TeamBoardPageInner() {
           recipients: finalIndividuals.length > 0 ? finalIndividuals : null,
           target_positions: taskRecipientMode === 'group' ? selectedTaskPositions : null,
           priority: editAnnouncement.priority,
-          tags: editAnnouncement.tags ? editAnnouncement.tags.split(',').map(t => t.trim()).filter(Boolean) : []
+          tags: editAnnouncement.tags ? editAnnouncement.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+          linked_hub_article_id: editAnnouncement.linked_hub_article_id,
         } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
         .eq('id', editingAnnouncement.id!)
         .select()
@@ -938,6 +1116,7 @@ export default function TeamBoardPageInner() {
       target_positions: [],
       target_individuals: [],
       tags: [],
+      linked_hub_article_id: null,
     })
     setSelectedTaskPositions([])
     setSelectedTaskIndividuals([])
@@ -964,6 +1143,7 @@ export default function TeamBoardPageInner() {
       target_positions: positions,
       target_individuals: individuals,
       tags: task.tags || [],
+      linked_hub_article_id: task.linked_hub_article_id ?? null,
     })
     if (positions.length > 0) {
       setTaskRecipientMode('group')
@@ -977,196 +1157,6 @@ export default function TeamBoardPageInner() {
   }
 
 
-
-  const createTodo = async () => {
-    if (!newTodo.title.trim() || !authUser?.email) return
-    
-    // 세션 상태 확인
-    const { data: { session } } = await supabase.auth.getSession()
-    console.log('createTodo - Session check:', {
-      hasSession: !!session,
-      hasUser: !!session?.user,
-      email: session?.user?.email,
-      authUserEmail: authUser.email,
-      accessToken: session?.access_token ? 'present' : 'missing',
-      refreshToken: session?.refresh_token ? 'present' : 'missing',
-      expiresAt: session?.expires_at,
-      tokenType: session?.token_type
-    })
-    
-    // 세션이 없으면 에러
-    if (!session || !session.user) {
-      console.error('No valid session found for database operation')
-      
-      // localStorage에서 세션 복원 시도
-      const storedSession = localStorage.getItem('auth_session')
-      if (storedSession) {
-        try {
-          const sessionData = JSON.parse(storedSession)
-          if (sessionData.session) {
-            console.log('createTodo: Attempting to restore session from localStorage...')
-            const { error } = await supabase.auth.setSession(sessionData.session)
-            if (error) {
-              console.error('createTodo: Failed to restore session:', error)
-              alert('세션이 만료되었습니다. 다시 로그인해주세요.')
-              return
-            } else {
-              console.log('createTodo: Session restored successfully, retrying...')
-              // 세션 복원 후 재시도
-              return createTodo()
-            }
-          }
-        } catch (error) {
-          console.error('Error parsing stored session:', error)
-        }
-      }
-      
-      alert('세션이 만료되었습니다. 다시 로그인해주세요.')
-      return
-    }
-    
-    try {
-      const schedule = newTodo.notify_enabled
-        ? {
-            category: newTodo.category,
-            notifyTime: newTodo.notify_time,
-            notifyWeekday: newTodo.notify_weekday,
-            notifyDayOfMonth: newTodo.notify_day_of_month,
-            notifyMonth: newTodo.notify_month,
-          }
-        : null
-      const nextNotify = schedule ? computeNextNotifyAtIso(schedule) : null
-      const payload = {
-        title: newTodo.title.trim(),
-        description: null,
-        scope: 'common' as const,
-        category: newTodo.category,
-        department: newTodo.department,
-        assigned_to: null,
-        created_by: authUser.email,
-        notify_enabled: !!newTodo.notify_enabled,
-        notify_time: newTodo.notify_enabled ? newTodo.notify_time : null,
-        notify_weekday: newTodo.notify_enabled && newTodo.category === 'weekly' ? newTodo.notify_weekday : null,
-        notify_day_of_month:
-          newTodo.notify_enabled && (newTodo.category === 'monthly' || newTodo.category === 'yearly')
-            ? newTodo.notify_day_of_month
-            : null,
-        notify_month: newTodo.notify_enabled && newTodo.category === 'yearly' ? newTodo.notify_month : null,
-        next_notify_at: nextNotify,
-      }
-      const { data, error } = await supabase
-        .from('op_todos')
-        .insert([payload] as any) // eslint-disable-line @typescript-eslint/no-explicit-any
-        .select()
-        .single()
-      if (error) throw error
-      setOpTodos(prev => [data as OpTodo, ...prev])
-      setNewTodo({
-        title: '',
-        description: '',
-        scope: 'common',
-        category: 'daily',
-        department: 'common',
-        assigned_to: '',
-        notify_enabled: false,
-        notify_time: '09:00',
-        notify_weekday: 1,
-        notify_day_of_month: 1,
-        notify_month: 1,
-      })
-    } catch (e) {
-      console.error(e)
-      alert('ToDo 생성 중 오류가 발생했습니다.')
-    }
-  }
-
-  const deleteTodo = async (id: string) => {
-    if (!confirm('정말로 이 항목을 삭제하시겠습니까?')) return
-    try {
-      const { error } = await supabase
-        .from('op_todos')
-        .delete()
-        .eq('id', id)
-      if (error) throw error
-      setOpTodos(prev => prev.filter(todo => todo.id !== id))
-    } catch (e) {
-      console.error(e)
-      alert('ToDo 삭제 중 오류가 발생했습니다.')
-    }
-  }
-
-  // 기존 항목 수정을 위한 함수들
-  const startEditTodo = (todo: OpTodo) => {
-    setEditingTodo(todo)
-    setEditTodoForm({
-      title: todo.title,
-      category: todo.category,
-      department: todo.department,
-      notify_enabled: !!todo.notify_enabled,
-      notify_time: todo.notify_time || '09:00',
-      notify_weekday: todo.notify_weekday ?? 1,
-      notify_day_of_month: todo.notify_day_of_month ?? 1,
-      notify_month: todo.notify_month ?? 1,
-    })
-  }
-
-  const cancelEditTodo = () => {
-    setEditingTodo(null)
-    setEditTodoForm({
-      title: '',
-      category: 'daily',
-      department: 'common',
-      notify_enabled: false,
-      notify_time: '09:00',
-      notify_weekday: 1,
-      notify_day_of_month: 1,
-      notify_month: 1,
-    })
-  }
-
-  const updateTodo = async () => {
-    if (!editingTodo || !editTodoForm.title.trim()) return
-    
-    try {
-      const schedule = editTodoForm.notify_enabled
-        ? {
-            category: editTodoForm.category,
-            notifyTime: editTodoForm.notify_time,
-            notifyWeekday: editTodoForm.notify_weekday,
-            notifyDayOfMonth: editTodoForm.notify_day_of_month,
-            notifyMonth: editTodoForm.notify_month,
-          }
-        : null
-      const nextNotify = schedule ? computeNextNotifyAtIso(schedule) : null
-      const { data, error } = await supabase
-        .from('op_todos')
-        .update({
-          title: editTodoForm.title.trim(),
-          category: editTodoForm.category,
-          department: editTodoForm.department,
-          notify_enabled: editTodoForm.notify_enabled,
-          notify_time: editTodoForm.notify_enabled ? editTodoForm.notify_time : null,
-          notify_weekday:
-            editTodoForm.notify_enabled && editTodoForm.category === 'weekly' ? editTodoForm.notify_weekday : null,
-          notify_day_of_month:
-            editTodoForm.notify_enabled && (editTodoForm.category === 'monthly' || editTodoForm.category === 'yearly')
-              ? editTodoForm.notify_day_of_month
-              : null,
-          notify_month: editTodoForm.notify_enabled && editTodoForm.category === 'yearly' ? editTodoForm.notify_month : null,
-          next_notify_at: editTodoForm.notify_enabled ? nextNotify : null,
-        } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
-        .eq('id', editingTodo.id!)
-        .select()
-        .single()
-      
-      if (error) throw error
-      setOpTodos(prev => prev.map(todo => todo.id === editingTodo.id! ? (data as OpTodo) : todo))
-      cancelEditTodo()
-    } catch (e) {
-      console.error(e)
-      alert('ToDo 수정 중 오류가 발생했습니다.')
-    }
-  }
 
 
   const createTask = async () => {
@@ -1192,6 +1182,7 @@ export default function TeamBoardPageInner() {
         target_individuals: finalIndividuals.length > 0 ? finalIndividuals : null,
         tags: newTask.tags,
         created_by: authUser.email,
+        linked_hub_article_id: newTask.linked_hub_article_id,
       }
       const { data, error } = await supabase
         .from('tasks')
@@ -1232,6 +1223,7 @@ export default function TeamBoardPageInner() {
         target_individuals: finalIndividuals.length > 0 ? finalIndividuals : null,
         tags: newTask.tags,
         updated_at: new Date().toISOString(),
+        linked_hub_article_id: newTask.linked_hub_article_id,
       }
       const { data, error } = await supabase
         .from('tasks')
@@ -1523,14 +1515,6 @@ export default function TeamBoardPageInner() {
   return (
     <ProtectedRoute requiredPermission="canViewAdmin">
       <div className="space-y-6">
-        {authUser?.email ? (
-          <OpTodoNotificationLayer
-            supabase={supabase}
-            userEmail={authUser.email}
-            audiences={checklistNotifyAudiences}
-            onRefresh={() => void refreshOpTodosOnly()}
-          />
-        ) : null}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">업무 관리</h1>
           <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-600 shrink-0">
@@ -1572,75 +1556,61 @@ export default function TeamBoardPageInner() {
               selectedDepartment={selectedDepartment}
               onDepartmentChange={setSelectedDepartment}
               onManageNotifications={() => setShowNewTodoModal(true)}
-              onAddTodo={() => {
-                setNewTodo({
-                  ...newTodo,
-                  category: 'daily',
-                  scope: 'individual',
-                  department: 'common',
-                  assigned_to: authUser?.email || '',
-                  notify_enabled: false,
-                  notify_time: '09:00',
-                  notify_weekday: 1,
-                  notify_day_of_month: 1,
-                  notify_month: 1,
-                })
-                setShowNewTodoModal(true)
-              }}
+              onAddTodo={() => setShowTodoCreateModal(true)}
+              onEditTodo={(todo) => setEditTodoId(todo.id)}
+              onEditEnvelopePrintTodo={handleEditEnvelopePrintTodo}
+              onEditPickupNotificationTodo={handleEditPickupNotificationTodo}
+              onEditGuideScheduleConfirmTodo={handleEditGuideScheduleConfirmTodo}
+              onEditCustomerInfoReviewTodo={handleEditCustomerInfoReviewTodo}
+              onEditCancelRebookingFollowUpTodo={handleEditCancelRebookingFollowUpTodo}
+              onEditPendingCustomerManagementTodo={handleEditPendingCustomerManagementTodo}
+              onCancelFollowUpManualChange={handleCancelFollowUpManualChange}
+              onOpenReservation={(reservationId) =>
+                router.push(`/${uiLocale}/admin/reservations/${reservationId}`)
+              }
+              onEditOtaClosureTodo={handleEditOtaClosureTodo}
+              onEditTourHotelManagementTodo={handleEditTourHotelManagementTodo}
+              onEditTourHotelPriceCheckTodo={handleEditTourHotelPriceCheckTodo}
+              onEditTourSettlementTodo={handleEditTourSettlementTodo}
+              onEditReservationAgencyManagementTodo={handleEditReservationAgencyManagementTodo}
+              onEditAntelopeCanyonBookingTodo={handleEditAntelopeCanyonBookingTodo}
+              onOpenTourDetail={(tourId) => router.push(`/${uiLocale}/admin/tours/${tourId}`)}
+              onQuickPrint={(tourId, kind) => setTourQuickPrint({ tourId, kind })}
+              onPickupAction={(tourId, kind) => setTourPickupNotification({ tourId, kind })}
+              locale={uiLocale}
               toggleTodoCompletion={async (id: string, is_completed: boolean) => {
-                console.log('ChecklistPanel toggleTodoCompletion called with:', { id, is_completed })
-                if (!authUser?.email) {
-                  console.log('No authUser email in ChecklistPanel')
-                  return
-                }
-                
+                if (!authUser?.email) return
+
+                const todo = opTodos.find((t) => t.id === id)
+                if (!todo) return
+
                 setSubmitting(true)
                 try {
-                  console.log('Updating todo in database...')
-                  // ToDo 상태 업데이트
-                  const { error } = await supabase
-                    .from('op_todos')
-                    .update({ completed: is_completed, completed_at: is_completed ? new Date().toISOString() : null } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
-                    .eq('id', id)
-                  
-                if (error) {
-                  console.error('Error toggling todo completion:', error)
-                  alert('Failed to toggle todo completion.')
+                  const { data, error } = await toggleOpTodoCompletion(todo, is_completed)
+
+                  if (error) {
+                    console.error('Error toggling todo completion:', error)
+                    alert('체크리스트 완료 처리에 실패했습니다.')
                     return
                   }
-                  console.log('Todo updated successfully in database')
 
-                  // 클릭 기록을 데이터베이스에 저장
-                  const { error: logError } = await supabase
-                    .from('todo_click_logs')
-                    .insert([{
-                      todo_id: id,
-                      user_email: authUser.email,
-                      action: is_completed ? 'completed' : 'uncompleted'
-                    }] as any) // eslint-disable-line @typescript-eslint/no-explicit-any
-                  
-                  if (logError) {
-                    console.error('Failed to save click log:', logError)
-                  }
-
-                  // 로컬 상태 업데이트
-                  // const logEntry = {
-                  //   user: authUser.email,
-                  //   timestamp: new Date().toISOString(),
-                  //   action: is_completed ? 'completed' : 'uncompleted' as 'completed' | 'uncompleted'
-                  // }
-                  
-                  // setClickLogs(prev => ({
-                  //   ...prev,
-                  //   [id]: [...(prev[id] || []), logEntry]
-                  // }))
-                  
-                  setOpTodos(prev => prev.map(todo => (todo.id === id ? { ...todo, completed: is_completed } : todo)))
+                  setOpTodos((prev) =>
+                    prev.map((t) =>
+                      t.id === id
+                        ? {
+                            ...t,
+                            completed: data?.completed ?? is_completed,
+                            completed_at: data?.completed_at ?? (is_completed ? new Date().toISOString() : null),
+                            next_notify_at: data?.next_notify_at ?? t.next_notify_at ?? null,
+                          }
+                        : t
+                    )
+                  )
                 } catch (e) {
                   console.error('Error in toggleTodoCompletion:', e)
-                  alert('Failed to toggle todo completion.')
+                  alert('체크리스트 완료 처리에 실패했습니다.')
                 } finally {
-                setSubmitting(false)
+                  setSubmitting(false)
                 }
               }}
               openHistoryModal={openHistoryModal}
@@ -1706,7 +1676,9 @@ export default function TeamBoardPageInner() {
                         ) : (
                           activeTasks
                             .filter(task => task.status === status)
-                            .map(task => (
+                            .map(task => {
+                              const hasManual = !!task.linked_hub_article_id?.trim()
+                              return (
                               <div
                                 key={task.id}
                                 className={`bg-white p-2 border rounded-md shadow-sm ${getTaskPriorityBorderClass(task.priority)}`}
@@ -1721,9 +1693,23 @@ export default function TeamBoardPageInner() {
                                         </span>
                                       )
                                     })()}
-                                    <span className={`text-sm truncate ${task.status === 'completed' ? 'line-through text-gray-500' : ''}`}>
-                                      {task.title}
-                                    </span>
+                                    {hasManual ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => manualCtx?.openManual(task.linked_hub_article_id)}
+                                        className={`inline-flex min-w-0 items-center gap-1 text-sm truncate hover:text-primary ${
+                                          task.status === 'completed' ? 'line-through text-gray-500' : ''
+                                        }`}
+                                        title="메뉴얼 보기"
+                                      >
+                                        <span className="truncate">{task.title}</span>
+                                        <BookOpen className="h-3 w-3 shrink-0 text-indigo-600" aria-hidden />
+                                      </button>
+                                    ) : (
+                                      <span className={`text-sm truncate ${task.status === 'completed' ? 'line-through text-gray-500' : ''}`}>
+                                        {task.title}
+                                      </span>
+                                    )}
                                   </div>
                                   <div className="flex items-center gap-1 shrink-0">
                                     {canEditTask(task) && (
@@ -1803,7 +1789,8 @@ export default function TeamBoardPageInner() {
                                   </p>
                                 )}
                               </div>
-                            ))
+                            )
+                          })
                         )}
                       </div>
                     )}
@@ -1853,18 +1840,32 @@ export default function TeamBoardPageInner() {
                       }).map(a => {
                         const acks = acksByAnnouncement[a.id] || []
                         const mineAck = !!acks.find(x => (x.ack_by || '').toLowerCase() === authUser?.email?.toLowerCase())
+                        const hasManual = !!a.linked_hub_article_id?.trim()
                         return (
                           <li key={a.id} className="border rounded-md p-3">
                             <div className="flex items-start justify-between">
                               <div className="flex-1">
-                                <div className="flex items-center space-x-2">
-                                  {a.is_pinned && <span className="inline-flex items-center text-amber-600 text-xs font-semibold">PIN</span>}
-                                  <h3 className="text-base font-semibold">{a.title}</h3>
-                                  {a.priority && a.priority !== 'normal' && (
-                                    <span className={`text-xs px-2 py-0.5 rounded-full ${a.priority==='urgent'?'bg-red-600 text-white':a.priority==='high'?'bg-red-100 text-red-700':'bg-gray-100 text-gray-600'}`}>{a.priority}</span>
-                                  )}
-                                </div>
-                                <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">{a.content}</p>
+                                <button
+                                  type="button"
+                                  disabled={!hasManual}
+                                  onClick={() => hasManual && manualCtx?.openManual(a.linked_hub_article_id)}
+                                  className={`w-full text-left ${hasManual ? 'group cursor-pointer' : 'cursor-default'}`}
+                                >
+                                  <div className="flex items-center space-x-2">
+                                    {a.is_pinned && <span className="inline-flex items-center text-amber-600 text-xs font-semibold">PIN</span>}
+                                    <h3 className={`text-base font-semibold ${hasManual ? 'group-hover:text-primary' : ''}`}>{a.title}</h3>
+                                    {hasManual && (
+                                      <span className="inline-flex items-center gap-0.5 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-800">
+                                        <BookOpen className="h-2.5 w-2.5" />
+                                        메뉴얼
+                                      </span>
+                                    )}
+                                    {a.priority && a.priority !== 'normal' && (
+                                      <span className={`text-xs px-2 py-0.5 rounded-full ${a.priority==='urgent'?'bg-red-600 text-white':a.priority==='high'?'bg-red-100 text-red-700':'bg-gray-100 text-gray-600'}`}>{a.priority}</span>
+                                    )}
+                                  </div>
+                                  <p className={`mt-1 text-sm text-gray-700 whitespace-pre-wrap ${hasManual ? 'group-hover:text-gray-900' : ''}`}>{a.content}</p>
+                                </button>
                                 {/* 날짜 | 작성자 배지 > 대상 배지들 */}
                                 <div className="mt-2 text-xs text-gray-500 flex items-center flex-wrap gap-1">
                                   <span>{new Date(a.created_at).toLocaleString()} |</span>
@@ -1981,18 +1982,32 @@ export default function TeamBoardPageInner() {
                         }).map(a => {
                           const acks = acksByAnnouncement[a.id] || []
                           const mineAck = !!acks.find(x => (x.ack_by || '').toLowerCase() === authUser?.email?.toLowerCase())
+                          const hasManual = !!a.linked_hub_article_id?.trim()
                           return (
                             <li key={a.id} className="border rounded-md p-3 bg-gray-50">
                               <div className="flex items-start justify-between">
                                 <div className="flex-1">
-                                  <div className="flex items-center space-x-2">
-                                    {a.is_pinned && <span className="inline-flex items-center text-amber-600 text-xs font-semibold">PIN</span>}
-                                    <h3 className="text-base font-semibold text-gray-600">{a.title}</h3>
-                                    {a.priority && a.priority !== 'normal' && (
-                                      <span className={`text-xs px-2 py-0.5 rounded-full ${a.priority==='urgent'?'bg-red-600 text-white':a.priority==='high'?'bg-red-100 text-red-700':'bg-gray-100 text-gray-600'}`}>{a.priority}</span>
-                                    )}
-                                  </div>
-                                  <p className="mt-1 text-sm text-gray-600 whitespace-pre-wrap">{a.content}</p>
+                                  <button
+                                    type="button"
+                                    disabled={!hasManual}
+                                    onClick={() => hasManual && manualCtx?.openManual(a.linked_hub_article_id)}
+                                    className={`w-full text-left ${hasManual ? 'group cursor-pointer' : 'cursor-default'}`}
+                                  >
+                                    <div className="flex items-center space-x-2">
+                                      {a.is_pinned && <span className="inline-flex items-center text-amber-600 text-xs font-semibold">PIN</span>}
+                                      <h3 className={`text-base font-semibold text-gray-600 ${hasManual ? 'group-hover:text-primary' : ''}`}>{a.title}</h3>
+                                      {hasManual && (
+                                        <span className="inline-flex items-center gap-0.5 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-800">
+                                          <BookOpen className="h-2.5 w-2.5" />
+                                          메뉴얼
+                                        </span>
+                                      )}
+                                      {a.priority && a.priority !== 'normal' && (
+                                        <span className={`text-xs px-2 py-0.5 rounded-full ${a.priority==='urgent'?'bg-red-600 text-white':a.priority==='high'?'bg-red-100 text-red-700':'bg-gray-100 text-gray-600'}`}>{a.priority}</span>
+                                      )}
+                                    </div>
+                                    <p className={`mt-1 text-sm text-gray-600 whitespace-pre-wrap ${hasManual ? 'group-hover:text-gray-800' : ''}`}>{a.content}</p>
+                                  </button>
                                   {/* 날짜 | 작성자 배지 > 대상 배지들 */}
                                   <div className="mt-2 text-xs text-gray-500 flex items-center flex-wrap gap-1">
                                     <span>{new Date(a.created_at).toLocaleString()} |</span>
@@ -2197,6 +2212,14 @@ export default function TeamBoardPageInner() {
                       />
                     </div>
                   </div>
+
+                  <HubArticleManualLinkField
+                    locale={uiLocale}
+                    value={editAnnouncement.linked_hub_article_id}
+                    onChange={(linked_hub_article_id) => setEditAnnouncement({ ...editAnnouncement, linked_hub_article_id })}
+                    hubArticles={manualCtx?.hubArticles ?? []}
+                    loading={manualCtx?.hubArticlesLoading ?? false}
+                  />
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">전달 대상</label>
@@ -2426,6 +2449,14 @@ export default function TeamBoardPageInner() {
                       />
                     </div>
                   </div>
+
+                  <HubArticleManualLinkField
+                    locale={uiLocale}
+                    value={newAnnouncement.linked_hub_article_id}
+                    onChange={(linked_hub_article_id) => setNewAnnouncement({ ...newAnnouncement, linked_hub_article_id })}
+                    hubArticles={manualCtx?.hubArticles ?? []}
+                    loading={manualCtx?.hubArticlesLoading ?? false}
+                  />
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">전달 대상</label>
@@ -2596,395 +2627,31 @@ export default function TeamBoardPageInner() {
           </div>
         )}
 
-        {/* Todo / Notification Modal */}
-        {showNewTodoModal && (
-          <Modal onClose={() => setShowNewTodoModal(false)}>
-            <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h3 className="text-lg font-semibold">Todo / Notification 관리</h3>
-                <p className="mt-1 text-sm text-gray-500">
-                  전체 Todo를 테이블에서 확인하고 알림 발송 여부, 반복 날짜, 시간을 바로 수정합니다.
-                </p>
-              </div>
-              <div className="text-xs text-gray-500">
-                총 {opTodos.length}개 / 알림 {opTodos.filter(todo => todo.notify_enabled).length}개
-              </div>
-            </div>
-            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-6">
-              {/* 기존 항목 테이블 관리 */}
-              <div>
-                <h4 className="font-medium mb-3">전체 Todo List</h4>
-                <div className="overflow-x-auto rounded-lg border">
-                  <table className="min-w-[980px] w-full divide-y divide-gray-200 text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Todo</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">부서</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">반복</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">알림 보내기</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">날짜/요일</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">시간(KST)</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">다음 알림</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">관리</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 bg-white">
-                      {opTodos.length === 0 ? (
-                        <tr>
-                          <td colSpan={8} className="px-3 py-8 text-center text-sm text-gray-500">
-                            등록된 Todo가 없습니다.
-                          </td>
-                        </tr>
-                      ) : (
-                        opTodos.map(todo => {
-                          const isEditing = editingTodo?.id === todo.id
-                          const category = isEditing ? editTodoForm.category : todo.category
-                          const notifyEnabled = isEditing ? editTodoForm.notify_enabled : !!todo.notify_enabled
-                          const nextNotifyLabel = todo.next_notify_at
-                            ? new Date(todo.next_notify_at).toLocaleString('ko-KR')
-                            : '-'
-                          return (
-                            <tr key={todo.id} className={todo.completed ? 'bg-gray-50' : undefined}>
-                              <td className="px-3 py-2 align-top">
-                                {isEditing ? (
-                                  <input
-                                    value={editTodoForm.title}
-                                    onChange={e => setEditTodoForm({ ...editTodoForm, title: e.target.value })}
-                                    className="w-56 rounded border border-gray-300 px-2 py-1 text-sm"
-                                    placeholder="Todo 제목"
-                                  />
-                                ) : (
-                                  <div>
-                                    <div className={`font-medium ${todo.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
-                                      {todo.title}
-                                    </div>
-                                    <div className="mt-1 text-xs text-gray-400">
-                                      작성: {new Date(todo.created_at).toLocaleDateString('ko-KR')}
-                                    </div>
-                                  </div>
-                                )}
-                              </td>
-                              <td className="px-3 py-2 align-top">
-                                {isEditing ? (
-                                  <select
-                                    value={editTodoForm.department}
-                                    onChange={e => setEditTodoForm({ ...editTodoForm, department: e.target.value as 'office' | 'guide' | 'common' })}
-                                    className="rounded border border-gray-300 px-2 py-1 text-sm"
-                                  >
-                                    <option value="office">Office</option>
-                                    <option value="guide">Guide</option>
-                                    <option value="common">공통</option>
-                                  </select>
-                                ) : (
-                                  <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700">
-                                    {todo.department === 'office' ? 'Office' : todo.department === 'guide' ? 'Guide' : '공통'}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2 align-top">
-                                {isEditing ? (
-                                  <select
-                                    value={editTodoForm.category}
-                                    onChange={e => setEditTodoForm({ ...editTodoForm, category: e.target.value as 'daily' | 'weekly' | 'monthly' | 'yearly' })}
-                                    className="rounded border border-gray-300 px-2 py-1 text-sm"
-                                  >
-                                    <option value="daily">일일</option>
-                                    <option value="weekly">주간</option>
-                                    <option value="monthly">월간</option>
-                                    <option value="yearly">연간</option>
-                                  </select>
-                                ) : (
-                                  <span className="rounded bg-primary/5 px-2 py-1 text-xs text-primary">
-                                    {todo.category === 'daily' ? '일일' : todo.category === 'weekly' ? '주간' : todo.category === 'monthly' ? '월간' : '연간'}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2 align-top">
-                                {isEditing ? (
-                                  <label className="inline-flex items-center gap-2">
-                                    <input
-                                      type="checkbox"
-                                      checked={editTodoForm.notify_enabled}
-                                      onChange={e => setEditTodoForm({ ...editTodoForm, notify_enabled: e.target.checked })}
-                                      className="rounded border-gray-300"
-                                    />
-                                    <span className="text-xs text-gray-700">사용</span>
-                                  </label>
-                                ) : (
-                                  <span className={`rounded px-2 py-1 text-xs ${todo.notify_enabled ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-500'}`}>
-                                    {todo.notify_enabled ? '보냄' : '안 보냄'}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2 align-top">
-                                {isEditing && notifyEnabled ? (
-                                  <div className="flex items-center gap-2">
-                                    {category === 'weekly' ? (
-                                      <select
-                                        value={editTodoForm.notify_weekday}
-                                        onChange={e => setEditTodoForm({ ...editTodoForm, notify_weekday: parseInt(e.target.value, 10) })}
-                                        className="rounded border border-gray-300 px-2 py-1 text-sm"
-                                      >
-                                        {['일', '월', '화', '수', '목', '금', '토'].map((label, i) => (
-                                          <option key={label} value={i}>{label}요일</option>
-                                        ))}
-                                      </select>
-                                    ) : null}
-                                    {category === 'monthly' || category === 'yearly' ? (
-                                      <input
-                                        type="number"
-                                        min={1}
-                                        max={31}
-                                        value={editTodoForm.notify_day_of_month}
-                                        onChange={e =>
-                                          setEditTodoForm({
-                                            ...editTodoForm,
-                                            notify_day_of_month: Math.min(31, Math.max(1, parseInt(e.target.value, 10) || 1)),
-                                          })
-                                        }
-                                        className="w-20 rounded border border-gray-300 px-2 py-1 text-sm"
-                                        title="일"
-                                      />
-                                    ) : null}
-                                    {category === 'yearly' ? (
-                                      <select
-                                        value={editTodoForm.notify_month}
-                                        onChange={e => setEditTodoForm({ ...editTodoForm, notify_month: parseInt(e.target.value, 10) })}
-                                        className="rounded border border-gray-300 px-2 py-1 text-sm"
-                                      >
-                                        {Array.from({ length: 12 }, (_, i) => (
-                                          <option key={i + 1} value={i + 1}>{i + 1}월</option>
-                                        ))}
-                                      </select>
-                                    ) : null}
-                                    {category === 'daily' ? <span className="text-xs text-gray-500">매일</span> : null}
-                                  </div>
-                                ) : (
-                                  <span className="text-xs text-gray-500">
-                                    {!notifyEnabled
-                                      ? '-'
-                                      : category === 'daily'
-                                      ? '매일'
-                                      : category === 'weekly'
-                                      ? `${['일', '월', '화', '수', '목', '금', '토'][todo.notify_weekday ?? 1]}요일`
-                                      : category === 'monthly'
-                                      ? `매월 ${todo.notify_day_of_month ?? 1}일`
-                                      : `${todo.notify_month ?? 1}월 ${todo.notify_day_of_month ?? 1}일`}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2 align-top">
-                                {isEditing && notifyEnabled ? (
-                                  <input
-                                    type="time"
-                                    value={editTodoForm.notify_time}
-                                    onChange={e => setEditTodoForm({ ...editTodoForm, notify_time: e.target.value })}
-                                    className="rounded border border-gray-300 px-2 py-1 text-sm"
-                                  />
-                                ) : (
-                                  <span className="text-xs text-gray-600">{notifyEnabled ? todo.notify_time || '09:00' : '-'}</span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2 align-top text-xs text-gray-500">
-                                {nextNotifyLabel}
-                              </td>
-                              <td className="px-3 py-2 align-top">
-                                <div className="flex justify-end gap-2">
-                                  {isEditing ? (
-                                    <>
-                                      <button
-                                        onClick={updateTodo}
-                                        disabled={submitting}
-                                        className="rounded bg-green-600 px-2 py-1 text-xs text-white hover:bg-green-700 disabled:opacity-50"
-                                      >
-                                        저장
-                                      </button>
-                                      <button
-                                        onClick={cancelEditTodo}
-                                        className="rounded bg-gray-500 px-2 py-1 text-xs text-white hover:bg-gray-600"
-                                      >
-                                        취소
-                                      </button>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <button
-                                        onClick={() => startEditTodo(todo)}
-                                        className="rounded border px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                                      >
-                                        수정
-                                      </button>
-                                      <button
-                                        onClick={() => deleteTodo(todo.id)}
-                                        className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700"
-                                      >
-                                        삭제
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          )
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+        <TeamBoardTodoManagePanel
+          locale={uiLocale}
+          manageOpen={showNewTodoModal}
+          onManageClose={() => setShowNewTodoModal(false)}
+          createOpen={showTodoCreateModal}
+          onCreateOpenChange={setShowTodoCreateModal}
+          opTodos={opTodos}
+          onTodosChange={setOpTodos}
+          authEmail={authUser?.email}
+          editTodoId={editTodoId}
+          onEditTodoIdChange={setEditTodoId}
+          createFormSeed={todoCreateFormSeed}
+          onCreateFormSeedApplied={() => setTodoCreateFormSeed(null)}
+        />
 
-              {/* 새 항목 추가 */}
-              <div>
-                <h4 className="font-medium mb-3">새 항목 추가</h4>
-                <div className="space-y-3">
-                  <input 
-                    value={newTodo.title} 
-                    onChange={e => setNewTodo({ ...newTodo, title: e.target.value })} 
-                    placeholder="체크리스트 항목을 입력하세요" 
-                    className="w-full px-3 py-2 border rounded-md"
-                  />
-                  
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">부서</label>
-                    <div className="flex space-x-2">
-                      {['office', 'guide', 'common'].map(dept => (
-                        <button
-                          key={dept}
-                          onClick={() => setNewTodo({ ...newTodo, department: dept as 'office' | 'guide' | 'common' })}
-                          className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                            newTodo.department === dept
-                              ? 'bg-green-600 text-white'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          {dept === 'office' ? 'Office' : 
-                           dept === 'guide' ? 'Guide' : '공통'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">기간</label>
-                    <div className="flex space-x-2">
-                      {['daily', 'weekly', 'monthly', 'yearly'].map(period => (
-                        <button
-                          key={period}
-                          onClick={() => setNewTodo({ ...newTodo, category: period as 'daily' | 'weekly' | 'monthly' | 'yearly' })}
-                          className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                            newTodo.category === period
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          {period === 'daily' ? '일일' : 
-                           period === 'weekly' ? '주간' :
-                           period === 'monthly' ? '월간' : '연간'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 rounded-lg border border-dashed border-amber-200 bg-amber-50/50 p-3">
-                    <label className="flex items-center gap-2 text-sm font-medium cursor-pointer text-gray-800">
-                      <input
-                        type="checkbox"
-                        checked={newTodo.notify_enabled}
-                        onChange={(e) => setNewTodo({ ...newTodo, notify_enabled: e.target.checked })}
-                      />
-                      알림 보내기
-                    </label>
-                    <p className="text-xs text-gray-600 leading-relaxed">
-                      켜면 설정한 시각(한국 기준)에 해당 부서에 맞는 팀원 화면에 알림 모달이 뜹니다. 일일은 매일, 주간은 매주 같은 요일, 월간·연간은 같은 날짜에 반복됩니다.
-                    </p>
-                    {newTodo.notify_enabled ? (
-                      <div className="space-y-3 pt-1">
-                        <div>
-                          <label className="text-xs font-medium text-gray-700">알림 시각</label>
-                          <input
-                            type="time"
-                            value={newTodo.notify_time}
-                            onChange={(e) => setNewTodo({ ...newTodo, notify_time: e.target.value })}
-                            className="mt-1 w-full rounded-md border border-gray-300 px-2 py-2 text-sm"
-                          />
-                        </div>
-                        {newTodo.category === 'weekly' ? (
-                          <div>
-                            <label className="text-xs font-medium text-gray-700">요일</label>
-                            <select
-                              value={newTodo.notify_weekday}
-                              onChange={(e) =>
-                                setNewTodo({ ...newTodo, notify_weekday: parseInt(e.target.value, 10) })
-                              }
-                              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-2 text-sm"
-                            >
-                              {['일', '월', '화', '수', '목', '금', '토'].map((label, i) => (
-                                <option key={label} value={i}>
-                                  {label}요일
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        ) : null}
-                        {newTodo.category === 'monthly' || newTodo.category === 'yearly' ? (
-                          <div>
-                            <label className="text-xs font-medium text-gray-700">매월 몇 일</label>
-                            <input
-                              type="number"
-                              min={1}
-                              max={31}
-                              value={newTodo.notify_day_of_month}
-                              onChange={(e) =>
-                                setNewTodo({
-                                  ...newTodo,
-                                  notify_day_of_month: Math.min(31, Math.max(1, parseInt(e.target.value, 10) || 1)),
-                                })
-                              }
-                              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-2 text-sm"
-                            />
-                          </div>
-                        ) : null}
-                        {newTodo.category === 'yearly' ? (
-                          <div>
-                            <label className="text-xs font-medium text-gray-700">월</label>
-                            <select
-                              value={newTodo.notify_month}
-                              onChange={(e) =>
-                                setNewTodo({ ...newTodo, notify_month: parseInt(e.target.value, 10) })
-                              }
-                              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-2 text-sm"
-                            >
-                              {Array.from({ length: 12 }, (_, i) => (
-                                <option key={i + 1} value={i + 1}>
-                                  {i + 1}월
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="flex justify-end space-x-2 pt-4">
-                    <button 
-                      onClick={() => setShowNewTodoModal(false)} 
-                      className="px-4 py-2 border rounded-md hover:bg-gray-50"
-                    >
-                      취소
-                    </button>
-                    <button 
-                      onClick={createTodo} 
-                      className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-                    >
-                      추가
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Modal>
-        )}
+        <TourQuickPrintHost
+          locale={uiLocale}
+          request={tourQuickPrint}
+          onClose={() => setTourQuickPrint(null)}
+        />
+        <TourPickupNotificationHost
+          locale={uiLocale}
+          request={tourPickupNotification}
+          onClose={() => setTourPickupNotification(null)}
+        />
 
         {/* Issue Modal */}
         {showWorkModal && workModalType === 'issue' && (
@@ -3166,6 +2833,15 @@ export default function TeamBoardPageInner() {
                     )}
                   </div>
                   
+                  <HubArticleManualLinkField
+                    locale={uiLocale}
+                    value={newTask.linked_hub_article_id}
+                    onChange={(linked_hub_article_id) => setNewTask({ ...newTask, linked_hub_article_id })}
+                    hubArticles={manualCtx?.hubArticles ?? []}
+                    loading={manualCtx?.hubArticlesLoading ?? false}
+                    compact
+                  />
+
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1">전달 대상</label>
                     <div className="space-y-2">
@@ -3591,15 +3267,310 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
 
 
 
-function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAddTodo, onManageNotifications, toggleTodoCompletion, openHistoryModal }: { 
+function DeferredDailyPanel({
+  panelIndex,
+  className = '',
+  children,
+}: {
+  panelIndex: number
+  className?: string
+  children: (queryEnabled: boolean) => React.ReactNode
+}) {
+  const mounted = useDeferredPanelMount(panelIndex)
+  const { ref, inViewport } = useInViewport({ enabled: mounted, rootMargin: '280px 0px' })
+  const queryEnabled = mounted && inViewport
+
+  if (!mounted) {
+    return (
+      <div className={className}>
+        <TodoPanelMountSkeleton />
+      </div>
+    )
+  }
+
+  return (
+    <div ref={ref} className={className}>
+      {children(queryEnabled)}
+    </div>
+  )
+}
+
+function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAddTodo, onManageNotifications, onEditTodo, onEditEnvelopePrintTodo, onEditPickupNotificationTodo, onEditGuideScheduleConfirmTodo, onEditCustomerInfoReviewTodo, onEditCancelRebookingFollowUpTodo, onEditPendingCustomerManagementTodo, onCancelFollowUpManualChange, onOpenReservation, onEditOtaClosureTodo, onEditTourHotelManagementTodo, onEditTourHotelPriceCheckTodo, onEditTourSettlementTodo, onEditReservationAgencyManagementTodo, onEditAntelopeCanyonBookingTodo, onOpenTourDetail, onQuickPrint, onPickupAction, locale, toggleTodoCompletion, openHistoryModal }: { 
   opTodos: OpTodo[]; 
   selectedDepartment: 'all' | 'office' | 'guide' | 'common';
   onDepartmentChange: (department: 'all' | 'office' | 'guide' | 'common') => void;
   onAddTodo: () => void; 
   onManageNotifications: () => void;
+  onEditTodo: (todo: OpTodo) => void;
+  onEditEnvelopePrintTodo: () => void;
+  onEditPickupNotificationTodo: () => void;
+  onEditGuideScheduleConfirmTodo: () => void;
+  onEditCustomerInfoReviewTodo: () => void;
+  onEditCancelRebookingFollowUpTodo: () => void;
+  onEditPendingCustomerManagementTodo: () => void;
+  onCancelFollowUpManualChange: (
+    reservationId: string,
+    kind: CancelFollowUpManualKind,
+    action: 'mark' | 'clear'
+  ) => void | Promise<void>;
+  onOpenReservation: (reservationId: string) => void;
+  onEditOtaClosureTodo: () => void;
+  onEditTourHotelManagementTodo: () => void;
+  onEditTourHotelPriceCheckTodo: () => void;
+  onEditTourSettlementTodo: () => void;
+  onEditReservationAgencyManagementTodo: () => void;
+  onEditAntelopeCanyonBookingTodo: () => void;
+  onOpenTourDetail: (tourId: string) => void;
+  onQuickPrint: (tourId: string, kind: TourQuickPrintKind) => void;
+  onPickupAction: (tourId: string, kind: TourPickupNotificationKind) => void;
+  locale: string;
   toggleTodoCompletion: (id: string, is_completed: boolean) => Promise<void>;
   openHistoryModal: (category: 'daily' | 'weekly' | 'monthly' | 'yearly') => void;
 }) {
+  const openTodoAction = useOpTodoActionClick('admin')
+  const manualCtx = useTeamBoardManualOptional()
+  const envelopeTargetDate = useMemo(() => tourEnvelopePrintTargetDate(), [])
+  const linkedEnvelopeTodo = useMemo(() => findTourEnvelopePrintLinkedTodo(opTodos), [opTodos])
+  const [envelopeLocalCompleted, setEnvelopeLocalCompleted] = useState(() =>
+    readTourEnvelopePrintLocalCompleted(envelopeTargetDate)
+  )
+  const envelopeCompleted = linkedEnvelopeTodo?.completed ?? envelopeLocalCompleted
+
+  useEffect(() => {
+    setEnvelopeLocalCompleted(readTourEnvelopePrintLocalCompleted(envelopeTargetDate))
+  }, [envelopeTargetDate])
+
+  useEffect(() => {
+    if (linkedEnvelopeTodo) {
+      setEnvelopeLocalCompleted(linkedEnvelopeTodo.completed)
+    }
+  }, [linkedEnvelopeTodo?.id, linkedEnvelopeTodo?.completed])
+
+  const pickupCompletionDateKey = useMemo(() => pickupNotificationCompletionDateKey(), [])
+  const linkedPickupTodo = useMemo(() => findPickupNotificationLinkedTodo(opTodos), [opTodos])
+  const [pickupLocalCompleted, setPickupLocalCompleted] = useState(() =>
+    readPickupNotificationLocalCompleted(pickupCompletionDateKey)
+  )
+  const pickupCompleted = linkedPickupTodo?.completed ?? pickupLocalCompleted
+
+  useEffect(() => {
+    setPickupLocalCompleted(readPickupNotificationLocalCompleted(pickupCompletionDateKey))
+  }, [pickupCompletionDateKey])
+
+  useEffect(() => {
+    if (linkedPickupTodo) {
+      setPickupLocalCompleted(linkedPickupTodo.completed)
+    }
+  }, [linkedPickupTodo?.id, linkedPickupTodo?.completed])
+
+  const guideConfirmCompletionDateKey = useMemo(() => guideScheduleConfirmCompletionDateKey(), [])
+  const linkedGuideConfirmTodo = useMemo(() => findGuideScheduleConfirmLinkedTodo(opTodos), [opTodos])
+  const [guideConfirmLocalCompleted, setGuideConfirmLocalCompleted] = useState(() =>
+    readGuideScheduleConfirmLocalCompleted(guideConfirmCompletionDateKey)
+  )
+  const guideConfirmCompleted = linkedGuideConfirmTodo?.completed ?? guideConfirmLocalCompleted
+
+  useEffect(() => {
+    setGuideConfirmLocalCompleted(readGuideScheduleConfirmLocalCompleted(guideConfirmCompletionDateKey))
+  }, [guideConfirmCompletionDateKey])
+
+  useEffect(() => {
+    if (linkedGuideConfirmTodo) {
+      setGuideConfirmLocalCompleted(linkedGuideConfirmTodo.completed)
+    }
+  }, [linkedGuideConfirmTodo?.id, linkedGuideConfirmTodo?.completed])
+
+  const customerInfoReviewDateKey = useMemo(() => customerInfoReviewCompletionDateKey(), [])
+  const linkedCustomerInfoReviewTodo = useMemo(
+    () => findCustomerInfoReviewLinkedTodo(opTodos),
+    [opTodos]
+  )
+  const [customerInfoReviewLocalCompleted, setCustomerInfoReviewLocalCompleted] = useState(() =>
+    readCustomerInfoReviewLocalCompleted(customerInfoReviewDateKey)
+  )
+  const customerInfoReviewCompleted =
+    linkedCustomerInfoReviewTodo?.completed ?? customerInfoReviewLocalCompleted
+
+  useEffect(() => {
+    setCustomerInfoReviewLocalCompleted(readCustomerInfoReviewLocalCompleted(customerInfoReviewDateKey))
+  }, [customerInfoReviewDateKey])
+
+  useEffect(() => {
+    if (linkedCustomerInfoReviewTodo) {
+      setCustomerInfoReviewLocalCompleted(linkedCustomerInfoReviewTodo.completed)
+    }
+  }, [linkedCustomerInfoReviewTodo?.id, linkedCustomerInfoReviewTodo?.completed])
+
+  const cancelRebookingDateKey = useMemo(() => cancelRebookingFollowUpCompletionDateKey(), [])
+  const linkedCancelRebookingTodo = useMemo(
+    () => findCancelRebookingFollowUpLinkedTodo(opTodos),
+    [opTodos]
+  )
+  const [cancelRebookingLocalCompleted, setCancelRebookingLocalCompleted] = useState(() =>
+    readCancelRebookingFollowUpLocalCompleted(cancelRebookingDateKey)
+  )
+  const cancelRebookingCompleted =
+    linkedCancelRebookingTodo?.completed ?? cancelRebookingLocalCompleted
+
+  useEffect(() => {
+    setCancelRebookingLocalCompleted(readCancelRebookingFollowUpLocalCompleted(cancelRebookingDateKey))
+  }, [cancelRebookingDateKey])
+
+  useEffect(() => {
+    if (linkedCancelRebookingTodo) {
+      setCancelRebookingLocalCompleted(linkedCancelRebookingTodo.completed)
+    }
+  }, [linkedCancelRebookingTodo?.id, linkedCancelRebookingTodo?.completed])
+
+  const pendingCustomerDateKey = useMemo(() => pendingCustomerManagementCompletionDateKey(), [])
+  const linkedPendingCustomerTodo = useMemo(
+    () => findPendingCustomerManagementLinkedTodo(opTodos),
+    [opTodos]
+  )
+  const [pendingCustomerLocalCompleted, setPendingCustomerLocalCompleted] = useState(() =>
+    readPendingCustomerManagementLocalCompleted(pendingCustomerDateKey)
+  )
+  const pendingCustomerCompleted =
+    linkedPendingCustomerTodo?.completed ?? pendingCustomerLocalCompleted
+
+  useEffect(() => {
+    setPendingCustomerLocalCompleted(readPendingCustomerManagementLocalCompleted(pendingCustomerDateKey))
+  }, [pendingCustomerDateKey])
+
+  useEffect(() => {
+    if (linkedPendingCustomerTodo) {
+      setPendingCustomerLocalCompleted(linkedPendingCustomerTodo.completed)
+    }
+  }, [linkedPendingCustomerTodo?.id, linkedPendingCustomerTodo?.completed])
+
+  const otaClosureDateKey = useMemo(() => otaClosureCompletionDateKey(), [])
+  const linkedOtaClosureTodo = useMemo(() => findOtaClosureLinkedTodo(opTodos), [opTodos])
+  const [otaClosureLocalCompleted, setOtaClosureLocalCompleted] = useState(() =>
+    readOtaClosureLocalCompleted(otaClosureDateKey)
+  )
+  const otaClosureCompleted = linkedOtaClosureTodo?.completed ?? otaClosureLocalCompleted
+
+  useEffect(() => {
+    setOtaClosureLocalCompleted(readOtaClosureLocalCompleted(otaClosureDateKey))
+  }, [otaClosureDateKey])
+
+  useEffect(() => {
+    if (linkedOtaClosureTodo) {
+      setOtaClosureLocalCompleted(linkedOtaClosureTodo.completed)
+    }
+  }, [linkedOtaClosureTodo?.id, linkedOtaClosureTodo?.completed])
+
+  const tourHotelManagementDateKey = useMemo(() => tourHotelManagementCompletionDateKey(), [])
+  const linkedTourHotelManagementTodo = useMemo(
+    () => findTourHotelManagementLinkedTodo(opTodos),
+    [opTodos]
+  )
+  const [tourHotelManagementLocalCompleted, setTourHotelManagementLocalCompleted] = useState(() =>
+    readTourHotelManagementLocalCompleted(tourHotelManagementDateKey)
+  )
+  const tourHotelManagementCompleted =
+    linkedTourHotelManagementTodo?.completed ?? tourHotelManagementLocalCompleted
+
+  useEffect(() => {
+    setTourHotelManagementLocalCompleted(readTourHotelManagementLocalCompleted(tourHotelManagementDateKey))
+  }, [tourHotelManagementDateKey])
+
+  useEffect(() => {
+    if (linkedTourHotelManagementTodo) {
+      setTourHotelManagementLocalCompleted(linkedTourHotelManagementTodo.completed)
+    }
+  }, [linkedTourHotelManagementTodo?.id, linkedTourHotelManagementTodo?.completed])
+
+  const tourHotelPriceCheckDateKey = useMemo(() => tourHotelPriceCheckCompletionDateKey(), [])
+  const linkedTourHotelPriceCheckTodo = useMemo(
+    () => findTourHotelPriceCheckLinkedTodo(opTodos),
+    [opTodos]
+  )
+  const [tourHotelPriceCheckLocalCompleted, setTourHotelPriceCheckLocalCompleted] = useState(() =>
+    readTourHotelPriceCheckLocalCompleted(tourHotelPriceCheckDateKey)
+  )
+  const tourHotelPriceCheckCompleted =
+    linkedTourHotelPriceCheckTodo?.completed ?? tourHotelPriceCheckLocalCompleted
+
+  useEffect(() => {
+    setTourHotelPriceCheckLocalCompleted(readTourHotelPriceCheckLocalCompleted(tourHotelPriceCheckDateKey))
+  }, [tourHotelPriceCheckDateKey])
+
+  useEffect(() => {
+    if (linkedTourHotelPriceCheckTodo) {
+      setTourHotelPriceCheckLocalCompleted(linkedTourHotelPriceCheckTodo.completed)
+    }
+  }, [linkedTourHotelPriceCheckTodo?.id, linkedTourHotelPriceCheckTodo?.completed])
+
+  const tourSettlementDateKey = useMemo(() => tourSettlementCompletionDateKey(), [])
+  const linkedTourSettlementTodo = useMemo(
+    () => findTourSettlementLinkedTodo(opTodos),
+    [opTodos]
+  )
+  const [tourSettlementLocalCompleted, setTourSettlementLocalCompleted] = useState(() =>
+    readTourSettlementLocalCompleted(tourSettlementDateKey)
+  )
+  const tourSettlementCompleted =
+    linkedTourSettlementTodo?.completed ?? tourSettlementLocalCompleted
+
+  useEffect(() => {
+    setTourSettlementLocalCompleted(readTourSettlementLocalCompleted(tourSettlementDateKey))
+  }, [tourSettlementDateKey])
+
+  useEffect(() => {
+    if (linkedTourSettlementTodo) {
+      setTourSettlementLocalCompleted(linkedTourSettlementTodo.completed)
+    }
+  }, [linkedTourSettlementTodo?.id, linkedTourSettlementTodo?.completed])
+
+  const reservationAgencyManagementDateKey = useMemo(
+    () => reservationAgencyManagementCompletionDateKey(),
+    []
+  )
+  const linkedReservationAgencyManagementTodo = useMemo(
+    () => findReservationAgencyManagementLinkedTodo(opTodos),
+    [opTodos]
+  )
+  const [reservationAgencyManagementLocalCompleted, setReservationAgencyManagementLocalCompleted] =
+    useState(() => readReservationAgencyManagementLocalCompleted(reservationAgencyManagementDateKey))
+  const reservationAgencyManagementCompleted =
+    linkedReservationAgencyManagementTodo?.completed ?? reservationAgencyManagementLocalCompleted
+
+  useEffect(() => {
+    setReservationAgencyManagementLocalCompleted(
+      readReservationAgencyManagementLocalCompleted(reservationAgencyManagementDateKey)
+    )
+  }, [reservationAgencyManagementDateKey])
+
+  useEffect(() => {
+    if (linkedReservationAgencyManagementTodo) {
+      setReservationAgencyManagementLocalCompleted(linkedReservationAgencyManagementTodo.completed)
+    }
+  }, [linkedReservationAgencyManagementTodo?.id, linkedReservationAgencyManagementTodo?.completed])
+
+  const antelopeCanyonBookingDateKey = useMemo(() => antelopeCanyonBookingCompletionDateKey(), [])
+  const linkedAntelopeCanyonBookingTodo = useMemo(
+    () => findAntelopeCanyonBookingLinkedTodo(opTodos),
+    [opTodos]
+  )
+  const [antelopeCanyonBookingLocalCompleted, setAntelopeCanyonBookingLocalCompleted] = useState(
+    () => readAntelopeCanyonBookingLocalCompleted(antelopeCanyonBookingDateKey)
+  )
+  const antelopeCanyonBookingCompleted =
+    linkedAntelopeCanyonBookingTodo?.completed ?? antelopeCanyonBookingLocalCompleted
+
+  useEffect(() => {
+    setAntelopeCanyonBookingLocalCompleted(
+      readAntelopeCanyonBookingLocalCompleted(antelopeCanyonBookingDateKey)
+    )
+  }, [antelopeCanyonBookingDateKey])
+
+  useEffect(() => {
+    if (linkedAntelopeCanyonBookingTodo) {
+      setAntelopeCanyonBookingLocalCompleted(linkedAntelopeCanyonBookingTodo.completed)
+    }
+  }, [linkedAntelopeCanyonBookingTodo?.id, linkedAntelopeCanyonBookingTodo?.completed])
+
   // useTranslations 훅을 조건부로 사용
   let t: (key: string) => string
   try {
@@ -3618,10 +3589,27 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
     }
   }
 
-  // department 필터링된 todos
+  // department 필터링된 todos (고정 패널과 중복되는 DB 항목 제외)
   const filteredTodos = useMemo(() => {
-    if (selectedDepartment === 'all') return opTodos
-    return opTodos.filter(todo => todo.department === selectedDepartment)
+    const base =
+      selectedDepartment === 'all'
+        ? opTodos
+        : opTodos.filter((todo) => todo.department === selectedDepartment)
+    return base.filter(
+      (todo) =>
+        !shouldHideTodoChipForEnvelopePrintPanel(todo) &&
+        !shouldHideTodoChipForPickupNotificationPanel(todo) &&
+        !shouldHideTodoChipForGuideScheduleConfirmPanel(todo) &&
+        !shouldHideTodoChipForCustomerInfoReviewPanel(todo) &&
+        !shouldHideTodoChipForCancelRebookingFollowUpPanel(todo) &&
+        !shouldHideTodoChipForPendingCustomerManagementPanel(todo) &&
+        !shouldHideTodoChipForOtaClosurePanel(todo) &&
+        !shouldHideTodoChipForTourHotelManagementPanel(todo) &&
+        !shouldHideTodoChipForTourHotelPriceCheckPanel(todo) &&
+        !shouldHideTodoChipForTourSettlementPanel(todo) &&
+        !shouldHideTodoChipForReservationAgencyManagementPanel(todo) &&
+        !shouldHideTodoChipForAntelopeCanyonBookingPanel(todo)
+    )
   }, [opTodos, selectedDepartment])
 
   const completionPercentage = useMemo(() => {
@@ -3654,11 +3642,499 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
     yearly:  { cardBg: 'bg-purple-50', cardBorder: 'border-purple-200', barBg: 'bg-purple-100', barFill: 'bg-purple-500', badge: 'bg-purple-100 text-purple-700' },
   }
 
+  const dailyCollageItemClass = 'mb-2 w-full break-inside-avoid'
+
+  const renderCategoryCard = (
+    category: 'daily' | 'weekly' | 'monthly' | 'yearly',
+    className = ''
+  ) => {
+    const categoryTodos = filteredTodos.filter((todo) => todo.category === category)
+    const now = new Date()
+    const colors = colorByCategory[category]
+    const headerLabel =
+      category === 'daily'
+        ? formatDailyLabel(now)
+        : category === 'weekly'
+          ? formatWeeklyRange(now)
+          : category === 'monthly'
+            ? formatMonthlyLabel(now)
+            : formatYearlyLabel(now)
+
+    const completedCount = categoryTodos.filter((t) => t.completed).length
+    const percent =
+      categoryTodos.length === 0 ? 0 : Math.round((completedCount / categoryTodos.length) * 100)
+
+    return (
+      <div
+        key={category}
+        className={`rounded-lg border p-3 ${colors.cardBg} ${colors.cardBorder} ${className}`}
+      >
+        <div className="mb-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h5 className="text-sm font-medium">
+              {category === 'daily'
+                ? '일일'
+                : category === 'weekly'
+                  ? '주간'
+                  : category === 'monthly'
+                    ? '월간'
+                    : '연간'}
+            </h5>
+            <span className={`rounded px-2 py-0.5 text-xs ${colors.badge}`}>{headerLabel}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">{percent}%</span>
+            <button
+              onClick={() => openHistoryModal(category)}
+              className="rounded p-1 text-gray-500 transition-colors hover:bg-muted/50 hover:text-primary"
+              title="히스토리 보기"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className={`h-1.5 w-full rounded ${colors.barBg}`}>
+          <div className={`h-1.5 rounded ${colors.barFill}`} style={{ width: `${percent}%` }} />
+        </div>
+
+        <div
+          className={
+            category === 'daily'
+              ? 'mt-2 columns-1 gap-2 md:columns-2 lg:columns-3'
+              : 'mt-2 flex flex-wrap gap-1'
+          }
+        >
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={0} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
+                  envelopeCompleted
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <TourEnvelopePrintPanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  onQuickPrint={onQuickPrint}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setEnvelopeLocalCompleted}
+                  onEditRequest={onEditEnvelopePrintTodo}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={1} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
+                  pickupCompleted ? 'border-emerald-300 bg-emerald-50' : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <PickupNotificationPanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setPickupLocalCompleted}
+                  onPickupAction={onPickupAction}
+                  onEditRequest={onEditPickupNotificationTodo}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={2} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
+                  guideConfirmCompleted
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <GuideScheduleConfirmPanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setGuideConfirmLocalCompleted}
+                  onEditRequest={onEditGuideScheduleConfirmTodo}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={3} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
+                  customerInfoReviewCompleted
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <CustomerInfoReviewPanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setCustomerInfoReviewLocalCompleted}
+                  onEditRequest={onEditCustomerInfoReviewTodo}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={4} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
+                  cancelRebookingCompleted
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <CancelRebookingFollowUpPanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setCancelRebookingLocalCompleted}
+                  onEditRequest={onEditCancelRebookingFollowUpTodo}
+                  onOpenReservation={onOpenReservation}
+                  onCancelFollowUpManualChange={onCancelFollowUpManualChange}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={5} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
+                  pendingCustomerCompleted
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <PendingCustomerManagementPanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setPendingCustomerLocalCompleted}
+                  onEditRequest={onEditPendingCustomerManagementTodo}
+                  onOpenReservation={onOpenReservation}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={6} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
+                  otaClosureCompleted ? 'border-emerald-300 bg-emerald-50' : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <OtaClosurePanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setOtaClosureLocalCompleted}
+                  onEditRequest={onEditOtaClosureTodo}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={7} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
+                  tourHotelManagementCompleted
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <TourHotelManagementPanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setTourHotelManagementLocalCompleted}
+                  onEditRequest={onEditTourHotelManagementTodo}
+                  onOpenTourDetail={onOpenTourDetail}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={8} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
+                  tourHotelPriceCheckCompleted
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <TourHotelPriceCheckPanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setTourHotelPriceCheckLocalCompleted}
+                  onEditRequest={onEditTourHotelPriceCheckTodo}
+                  onOpenTourDetail={onOpenTourDetail}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={9} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
+                  tourSettlementCompleted
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <TourSettlementPanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setTourSettlementLocalCompleted}
+                  onEditRequest={onEditTourSettlementTodo}
+                  onOpenTourDetail={onOpenTourDetail}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={10} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
+                  reservationAgencyManagementCompleted
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <ReservationAgencyManagementPanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setReservationAgencyManagementLocalCompleted}
+                  onEditRequest={onEditReservationAgencyManagementTodo}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={11} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
+                  antelopeCanyonBookingCompleted
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <AntelopeCanyonBookingPanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setAntelopeCanyonBookingLocalCompleted}
+                  onEditRequest={onEditAntelopeCanyonBookingTodo}
+                  onOpenTourDetail={onOpenTourDetail}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {categoryTodos.length === 0 ? (
+            category === 'daily' ? null : (
+              <div className="w-full rounded border-2 border-dashed border-gray-200 py-4 text-center text-xs text-gray-500">
+                항목 없음
+              </div>
+            )
+          ) : (
+            categoryTodos.map((todo) => {
+              const hasManual = !!todo.linked_hub_article_id?.trim()
+              const hasAction = opTodoHasAction(todo)
+              const hasLink = hasManual || hasAction
+
+              return (
+                <div
+                  key={todo.id}
+                  className={
+                    category === 'daily'
+                      ? `${dailyCollageItemClass} min-w-0`
+                      : 'inline-flex'
+                  }
+                  title="우클릭: 수정"
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onEditTodo(todo)
+                  }}
+                >
+                  {hasLink ? (
+                    <div
+                      className={`items-stretch overflow-hidden rounded border text-xs ${
+                        category === 'daily' ? 'flex w-full' : 'inline-flex'
+                      } ${
+                        todo.completed
+                          ? 'border-emerald-300 bg-emerald-50'
+                          : 'border-gray-300 bg-white'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => void toggleTodoCompletion(todo.id, !todo.completed)}
+                        className="flex shrink-0 items-center px-1.5 text-gray-500 hover:bg-gray-100"
+                        title="완료 토글"
+                        aria-label={todo.completed ? '완료 취소' : '완료'}
+                      >
+                        {todo.completed ? (
+                          <Check className="h-3 w-3 text-emerald-600" />
+                        ) : (
+                          <Circle className="h-3 w-3" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (hasManual) {
+                            manualCtx?.openManual(todo.linked_hub_article_id)
+                            return
+                          }
+                          if (hasAction) openTodoAction(todo)
+                        }}
+                        className={`inline-flex items-center gap-1 px-2 py-1 hover:bg-gray-50 ${
+                          category === 'daily' ? 'min-w-0 flex-1' : ''
+                        } ${
+                          todo.completed ? 'text-emerald-700 line-through' : 'text-gray-700'
+                        }`}
+                        title={hasManual ? '메뉴얼 보기' : '연결 열기'}
+                      >
+                        {todo.title}
+                        {hasManual ? (
+                          <BookOpen className="h-3 w-3 shrink-0 text-indigo-600" aria-hidden />
+                        ) : (
+                          <Link2 className="h-3 w-3 shrink-0 text-primary" aria-hidden />
+                        )}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void toggleTodoCompletion(todo.id, !todo.completed)}
+                      className={`rounded border px-2 py-1 text-xs ${
+                        category === 'daily' ? 'w-full text-left' : ''
+                      } ${
+                        todo.completed
+                          ? 'border-emerald-300 bg-emerald-50 text-emerald-700 line-through'
+                          : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      {todo.title}
+                    </button>
+                  )}
+                </div>
+              )
+            })
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <section className="bg-white rounded-lg shadow border p-4 xl:col-span-3">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">Todo List</h2>
-        <div className="flex items-center space-x-3">
+      <div className="flex items-center justify-between mb-4 gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="text-lg font-semibold">Todo List</h2>
+          <AdminTodoListManualButton locale={locale} />
+        </div>
+        <div className="flex items-center space-x-3 shrink-0">
           {/* Department 필터 */}
           <select
             value={selectedDepartment}
@@ -3689,74 +4165,13 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {(['daily', 'weekly', 'monthly', 'yearly'] as const).map(category => {
-          const categoryTodos = filteredTodos.filter(todo => todo.category === category)
-          const now = new Date()
-          const colors = colorByCategory[category]
-          const headerLabel = category === 'daily'
-            ? formatDailyLabel(now)
-            : category === 'weekly'
-            ? formatWeeklyRange(now)
-            : category === 'monthly'
-            ? formatMonthlyLabel(now)
-            : formatYearlyLabel(now)
-
-          const completedCount = categoryTodos.filter(t => t.completed).length
-          const percent = categoryTodos.length === 0 ? 0 : Math.round((completedCount / categoryTodos.length) * 100)
-
-          return (
-            <div key={category} className={`rounded-lg p-3 border ${colors.cardBg} ${colors.cardBorder}`}>
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <h5 className="font-medium text-sm">
-                    {category === 'daily' ? '일일' : category === 'weekly' ? '주간' : category === 'monthly' ? '월간' : '연간'}
-                  </h5>
-                  <span className={`text-xs px-2 py-0.5 rounded ${colors.badge}`}>{headerLabel}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500">{percent}%</span>
-                  <button
-                    onClick={() => openHistoryModal(category)}
-                    className="p-1 text-gray-500 hover:text-primary hover:bg-muted/50 rounded transition-colors"
-                    title="히스토리 보기"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              <div className={`w-full h-1.5 rounded ${colors.barBg}`}>
-                <div className={`h-1.5 rounded ${colors.barFill}`} style={{ width: `${percent}%` }} />
-              </div>
-
-              <div className="flex flex-wrap gap-1 mt-2">
-                {categoryTodos.length === 0 ? (
-                  <div className="text-xs text-gray-500 text-center py-4 border-2 border-dashed border-gray-200 rounded w-full">
-                    항목 없음
-                  </div>
-                ) : (
-                  categoryTodos.map(todo => (
-                    <div key={todo.id} className="inline-block">
-                      <button
-                        onClick={() => toggleTodoCompletion(todo.id, !todo.completed)}
-                        className={`px-2 py-1 text-xs rounded border ${
-                          todo.completed
-                            ? 'bg-emerald-50 border-emerald-300 text-emerald-700 line-through'
-                            : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                        }`}
-                      >
-                        {todo.title}
-                      </button>
-                    </div>
-          ))
-        )}
-              </div>
-            </div>
-          )
-        })}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+        {renderCategoryCard('daily', 'lg:col-span-3')}
+        <div className="flex flex-col gap-4 lg:col-span-1">
+          {renderCategoryCard('weekly')}
+          {renderCategoryCard('monthly')}
+          {renderCategoryCard('yearly')}
+        </div>
       </div>
     </section>
   )

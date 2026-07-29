@@ -3529,7 +3529,12 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
           </DialogHeader>
           {tourDetailModal?.tourId ? (
             <div className="flex min-h-0 flex-1 flex-col bg-white">
-              <TourDetailModalContent tourId={tourDetailModal.tourId} />
+              <TourDetailModalContent
+                tourId={tourDetailModal.tourId}
+                onNavigateToTour={(nextTourId) =>
+                  setTourDetailModal((prev) => (prev ? { ...prev, tourId: nextTourId } : null))
+                }
+              />
             </div>
           ) : null}
         </DialogContent>

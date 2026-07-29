@@ -115,7 +115,8 @@ export default function ConsultationManagementPage() {
       return data || []
     },
     cacheKey: 'consultation_categories',
-    dependencies: []
+    dependencies: [],
+    defaultToEmptyArray: true,
   })
 
   const { data: templates, refetch: refetchTemplates, invalidateCache: invalidateTemplatesCache } = useOptimizedData<ConsultationTemplateWithRelations[]>({
@@ -136,7 +137,8 @@ export default function ConsultationManagementPage() {
       return (data || []) as ConsultationTemplateWithRelations[]
     },
     cacheKey: 'consultation_templates',
-    dependencies: []
+    dependencies: [],
+    defaultToEmptyArray: true,
   })
 
   const { data: products } = useOptimizedData({
@@ -153,7 +155,8 @@ export default function ConsultationManagementPage() {
       return data || []
     },
     cacheKey: 'products_active',
-    dependencies: []
+    dependencies: [],
+    defaultToEmptyArray: true,
   })
 
   const { data: channels } = useOptimizedData({
@@ -169,7 +172,8 @@ export default function ConsultationManagementPage() {
       return data || []
     },
     cacheKey: 'channels_active',
-    dependencies: []
+    dependencies: [],
+    defaultToEmptyArray: true,
   })
 
   // Workflow data loading (temporarily disabled)
@@ -201,7 +205,8 @@ export default function ConsultationManagementPage() {
       }
     },
     cacheKey: 'consultation_workflows',
-    dependencies: []
+    dependencies: [],
+    defaultToEmptyArray: true,
   })
 
   // Workflow step data loading (temporarily disabled)
@@ -235,7 +240,8 @@ export default function ConsultationManagementPage() {
       }
     },
     cacheKey: 'consultation_workflow_steps',
-    dependencies: []
+    dependencies: [],
+    defaultToEmptyArray: true,
   })
 
   // 상품 그룹화 함수

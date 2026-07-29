@@ -5,7 +5,7 @@ export type TravelerCounts = {
 }
 
 export const DEFAULT_TRAVELER_COUNTS: TravelerCounts = {
-  adults: 2,
+  adults: 1,
   children: 0,
   infants: 0,
 }

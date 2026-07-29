@@ -13,7 +13,7 @@ import {
 import { canonicalReservationIdKey, normalizeReservationIds } from '@/utils/tourUtils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 
-export type { TourChoiceCounts }
+export type { TourChoiceCounts, ReservationChoiceRow }
 
 export function isTicketBookingEaCountingStatus(status: string | null | undefined): boolean {
   const s = String(status || '').toLowerCase()

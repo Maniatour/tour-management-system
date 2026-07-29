@@ -1201,7 +1201,7 @@ export default function CompanyExpenseDuplicateCheckModal({
           </DialogHeader>
           {tourDetailModalId ? (
             <div className="flex min-h-0 flex-1 flex-col bg-white">
-              <TourDetailModalContent tourId={tourDetailModalId} />
+              <TourDetailModalContent tourId={tourDetailModalId} onNavigateToTour={setTourDetailModalId} />
             </div>
           ) : null}
         </DialogContent>

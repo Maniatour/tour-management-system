@@ -1,10 +1,9 @@
 'use client'
 
 import { useMemo, useState, useCallback, useEffect } from 'react'
-import { X, Eye, Loader2, Copy, Check, Pencil, RotateCcw, Mail, MessageSquare } from 'lucide-react'
+import { X, Eye, Loader2, Copy, Check, Pencil, Mail, MessageSquare } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
 import {
-  builtinCancellationFollowUpEmailBodyHtml,
   extractCancellationFollowUpEmailBodyFromDocument,
   getBuiltinCancellationFollowUpTemplate,
   mergeCancellationFollowUpEmailDocumentFromBody,
@@ -13,6 +12,7 @@ import {
   type CancellationFollowUpMessageKind,
   type CancellationFollowUpMessageLocale,
 } from '@/lib/cancellationFollowUpMessage'
+import { defaultStaffOutreachTemplateName } from '@/lib/staffOutreachMessageTemplates'
 import {
   buildCustomerRebookingUrlFromReservation,
   formatRebookingCouponValidUntil,
@@ -29,8 +29,9 @@ import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
 import { getProductNameForLocale } from '@/utils/reservationUtils'
 import { supabase } from '@/lib/supabase'
-import LazyResidentInquiryEmailBodyRichEditor from '@/components/reservation/LazyResidentInquiryEmailBodyRichEditor'
 import EmailPreviewBodyPanel from '@/components/reservation/EmailPreviewBodyPanel'
+import StaffOutreachMessageTemplatePanel from '@/components/reservation/StaffOutreachMessageTemplatePanel'
+import { useStaffOutreachMessageTemplates } from '@/hooks/useStaffOutreachMessageTemplates'
 
 export interface CancellationFollowUpMessagePreviewModalProps {
   isOpen: boolean
@@ -87,20 +88,62 @@ export default function CancellationFollowUpMessagePreviewModal({
 
   const [channel, setChannel] = useState<CancellationFollowUpMessageChannel>('email')
   const [messageKind, setMessageKind] = useState<CancellationFollowUpMessageKind>(initialMessageKind)
+  const [editMode, setEditMode] = useState(false)
 
   useEffect(() => {
     if (isOpen) setMessageKind(initialMessageKind)
   }, [isOpen, initialMessageKind])
 
-  const [subjectTpl, setSubjectTpl] = useState('')
-  const [bodyTpl, setBodyTpl] = useState('')
-  const [templateEditorNonce, setTemplateEditorNonce] = useState(0)
-  const [templateLoading, setTemplateLoading] = useState(false)
-  const [savedInDb, setSavedInDb] = useState(false)
-  const [editMode, setEditMode] = useState(false)
-  const [savingTemplate, setSavingTemplate] = useState(false)
-  const [resettingTemplate, setResettingTemplate] = useState(false)
-  const [templateNotice, setTemplateNotice] = useState<string | null>(null)
+  const getBuiltin = useCallback(() => {
+    const b = getBuiltinCancellationFollowUpTemplate(emailLocale, channel, messageKind)
+    return {
+      name: defaultStaffOutreachTemplateName(emailLocale),
+      subject: b.subject,
+      body: b.body,
+    }
+  }, [emailLocale, channel, messageKind])
+
+  const prepareBodyForEditor = useCallback(
+    (stored: string) =>
+      channel === 'email'
+        ? extractCancellationFollowUpEmailBodyFromDocument(stored, emailLocale, messageKind)
+        : stored,
+    [channel, emailLocale, messageKind]
+  )
+
+  const prepareBodyForSave = useCallback(
+    (editor: string) =>
+      channel === 'email'
+        ? mergeCancellationFollowUpEmailDocumentFromBody(emailLocale, editor)
+        : editor,
+    [channel, emailLocale]
+  )
+
+  const templateManager = useStaffOutreachMessageTemplates({
+    scope: 'cancellation_follow_up',
+    locale: emailLocale,
+    channel,
+    variant: messageKind,
+    isOpen,
+    showSubject: channel === 'email',
+    getBuiltin,
+    prepareBodyForEditor,
+    prepareBodyForSave,
+    loadFailedMessage: t('cancelFollowUpTemplateLoadFailed'),
+    saveFailedMessage: t('cancelFollowUpTemplateSaveFailed'),
+    deleteFailedMessage: t('cancelFollowUpTemplateResetFailed'),
+    savedMessage: t('cancelFollowUpTemplateSaved'),
+    deletedMessage: t('staffOutreachTemplateDeleted'),
+    addedMessage: t('staffOutreachTemplateAdded'),
+  })
+
+  const { subjectTpl, bodyTpl, loading: templateLoading, savedInDb } = templateManager
+
+  useEffect(() => {
+    if (!isOpen) {
+      setEditMode(false)
+    }
+  }, [isOpen])
   const [choiceRows, setChoiceRows] = useState<ReservationChoiceRowForRebooking[]>([])
   const [couponValidUntilIso, setCouponValidUntilIso] = useState<string | null>(null)
   const [priceComparison, setPriceComparison] = useState<RebookingPriceComparisonResult | null>(null)
@@ -196,80 +239,6 @@ export default function CancellationFollowUpMessagePreviewModal({
       cancelled = true
     }
   }, [isOpen, messageKind, reservationId, channelName])
-
-  useEffect(() => {
-    if (!isOpen) {
-      setEditMode(false)
-      setTemplateNotice(null)
-      return
-    }
-    let cancelled = false
-    ;(async () => {
-      setTemplateLoading(true)
-      setTemplateNotice(null)
-      try {
-        const res = await fetch(
-          `/api/cancellation-follow-up-message-template?locale=${emailLocale}&channel=${channel}&message_kind=${messageKind}`
-        )
-        const data = (await res.json()) as {
-          subject_template?: string
-          body_template?: string
-          saved_in_db?: boolean
-        }
-        if (cancelled) return
-        if (!res.ok || !data.body_template?.trim()) {
-          const b = getBuiltinCancellationFollowUpTemplate(emailLocale, channel, messageKind)
-          setSubjectTpl(b.subject)
-          if (channel === 'email') {
-            setBodyTpl(
-              extractCancellationFollowUpEmailBodyFromDocument(b.body, emailLocale, messageKind)
-            )
-          } else {
-            setBodyTpl(b.body)
-          }
-          setTemplateEditorNonce((n) => n + 1)
-          setSavedInDb(false)
-          setTemplateNotice(t('cancelFollowUpTemplateLoadFailed'))
-          return
-        }
-        setSubjectTpl(data.subject_template ?? '')
-        if (channel === 'email') {
-          setBodyTpl(
-            extractCancellationFollowUpEmailBodyFromDocument(
-              data.body_template,
-              emailLocale,
-              messageKind
-            )
-          )
-        } else {
-          setBodyTpl(data.body_template)
-        }
-        setTemplateEditorNonce((n) => n + 1)
-        setSavedInDb(!!data.saved_in_db)
-      } catch {
-        if (!cancelled) {
-          const b = getBuiltinCancellationFollowUpTemplate(emailLocale, channel, messageKind)
-          setSubjectTpl(b.subject)
-          if (channel === 'email') {
-            setBodyTpl(
-              extractCancellationFollowUpEmailBodyFromDocument(b.body, emailLocale, messageKind)
-            )
-          } else {
-            setBodyTpl(b.body)
-          }
-          setTemplateEditorNonce((n) => n + 1)
-          setSavedInDb(false)
-          setTemplateNotice(t('cancelFollowUpTemplateLoadFailed'))
-        }
-      } finally {
-        if (!cancelled) setTemplateLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- t stable
-  }, [isOpen, emailLocale, channel, messageKind])
 
   const mergedEmailHtmlTpl = useMemo(() => {
     if (channel !== 'email') return bodyTpl
@@ -385,75 +354,6 @@ export default function CancellationFollowUpMessagePreviewModal({
     }
   }, [channel, messageContent, uiLocale])
 
-  const handleSaveTemplate = async () => {
-    setSavingTemplate(true)
-    setTemplateNotice(null)
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      const bodyToSave =
-        channel === 'email'
-          ? mergeCancellationFollowUpEmailDocumentFromBody(emailLocale, bodyTpl)
-          : bodyTpl
-      const res = await fetch('/api/cancellation-follow-up-message-template', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locale: emailLocale,
-          channel,
-          message_kind: messageKind,
-          subject_template: channel === 'email' ? subjectTpl : null,
-          body_template: bodyToSave,
-          updated_by: user?.email ?? null,
-        }),
-      })
-      const data = (await res.json()) as { error?: string }
-      if (!res.ok) {
-        setTemplateNotice(data.error || t('cancelFollowUpTemplateSaveFailed'))
-        return
-      }
-      setSavedInDb(true)
-      setTemplateNotice(t('cancelFollowUpTemplateSaved'))
-      setTimeout(() => setTemplateNotice(null), 3200)
-    } catch {
-      setTemplateNotice(t('cancelFollowUpTemplateSaveFailed'))
-    } finally {
-      setSavingTemplate(false)
-    }
-  }
-
-  const handleResetTemplate = async () => {
-    setResettingTemplate(true)
-    setTemplateNotice(null)
-    try {
-      const res = await fetch(
-        `/api/cancellation-follow-up-message-template?locale=${emailLocale}&channel=${channel}&message_kind=${messageKind}`,
-        { method: 'DELETE' }
-      )
-      const data = (await res.json()) as { error?: string }
-      if (!res.ok) {
-        setTemplateNotice(data.error || t('cancelFollowUpTemplateResetFailed'))
-        return
-      }
-      const b = getBuiltinCancellationFollowUpTemplate(emailLocale, channel, messageKind)
-      setSubjectTpl(b.subject)
-      if (channel === 'email') {
-        setBodyTpl(builtinCancellationFollowUpEmailBodyHtml(emailLocale, messageKind))
-      } else {
-        setBodyTpl(b.body)
-      }
-      setTemplateEditorNonce((n) => n + 1)
-      setSavedInDb(false)
-      setTemplateNotice(t('cancelFollowUpTemplateResetDone'))
-      setTimeout(() => setTemplateNotice(null), 3200)
-    } catch {
-      setTemplateNotice(t('cancelFollowUpTemplateResetFailed'))
-    } finally {
-      setResettingTemplate(false)
-    }
-  }
-
   if (!isOpen) return null
 
   const previewBlocked = templateLoading || !bodyTpl.trim()
@@ -560,36 +460,6 @@ export default function CancellationFollowUpMessagePreviewModal({
             <Pencil className="h-3.5 w-3.5" />
             {editMode ? t('cancelFollowUpDoneEditing') : t('cancelFollowUpEditTemplate')}
           </button>
-          {editMode && (
-            <>
-              <button
-                type="button"
-                onClick={() => void handleSaveTemplate()}
-                disabled={savingTemplate || previewBlocked}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-800 hover:bg-violet-100 disabled:opacity-50"
-              >
-                {savingTemplate ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Check className="h-3.5 w-3.5" />
-                )}
-                {savingTemplate ? t('cancelFollowUpTemplateSaving') : t('cancelFollowUpSaveTemplate')}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleResetTemplate()}
-                disabled={resettingTemplate || previewBlocked}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
-              >
-                {resettingTemplate ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RotateCcw className="h-3.5 w-3.5" />
-                )}
-                {t('cancelFollowUpResetTemplate')}
-              </button>
-            </>
-          )}
           <span
             className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
               savedInDb ? 'bg-violet-100 text-violet-800' : 'bg-gray-200 text-gray-700'
@@ -600,63 +470,16 @@ export default function CancellationFollowUpMessagePreviewModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
-          {templateNotice && (
-            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-              {templateNotice}
-            </div>
-          )}
-
-          {editMode && (
-            <div className="mb-4 space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <p className="text-xs text-gray-600">{t('cancelFollowUpPlaceholderHint')}</p>
-              {channel === 'email' && (
-                <p className="text-xs text-gray-500">{t('cancelFollowUpTemplateShellNote')}</p>
-              )}
-              {channel === 'email' && (
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">
-                    {t('cancelFollowUpTemplateSubjectField')}
-                  </label>
-                  <input
-                    type="text"
-                    value={subjectTpl}
-                    onChange={(e) => setSubjectTpl(e.target.value)}
-                    disabled={templateLoading}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-violet-500"
-                  />
-                </div>
-              )}
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
-                  {channel === 'email'
-                    ? t('cancelFollowUpTemplateBodyField')
-                    : t('cancelFollowUpTemplateSmsField')}
-                </label>
-                {templateLoading ? (
-                  <div className="flex min-h-[200px] items-center justify-center rounded border border-gray-200 bg-white">
-                    <Loader2 className="h-8 w-8 animate-spin text-violet-600" />
-                  </div>
-                ) : channel === 'email' ? (
-                  <LazyResidentInquiryEmailBodyRichEditor
-                    key={templateEditorNonce}
-                    value={bodyTpl}
-                    onChange={setBodyTpl}
-                    disabled={templateLoading}
-                    uiLocale={uiLocale}
-                  />
-                ) : (
-                  <textarea
-                    key={templateEditorNonce}
-                    value={bodyTpl}
-                    onChange={(e) => setBodyTpl(e.target.value)}
-                    rows={6}
-                    disabled={templateLoading}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-transparent focus:ring-2 focus:ring-violet-500"
-                  />
-                )}
-              </div>
-            </div>
-          )}
+          <StaffOutreachMessageTemplatePanel
+            channel={channel}
+            uiLocale={uiLocale}
+            editMode={editMode}
+            showSubject={channel === 'email'}
+            placeholderHint={t('cancelFollowUpPlaceholderHint')}
+            {...(channel === 'email' ? { shellNote: t('cancelFollowUpTemplateShellNote') } : {})}
+            accentClass="violet"
+            templateManager={templateManager}
+          />
 
           <div className="mb-4 space-y-1 rounded-lg border border-violet-100 bg-violet-50/80 p-3 text-sm text-gray-800">
             {channel === 'email' && (

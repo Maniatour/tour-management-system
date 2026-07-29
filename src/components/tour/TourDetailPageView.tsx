@@ -156,9 +156,12 @@ const TourHotelBookingFormAny = TourHotelBookingForm as any
 export function TourDetailPageView({
   tourId,
   modalLightLoad = false,
+  onNavigateToTour: onNavigateToTourProp,
 }: {
   tourId: string
   modalLightLoad?: boolean
+  /** 모달 내 투어 이동 시 콜백. 없으면 전체 페이지로 라우팅 */
+  onNavigateToTour?: (tourId: string) => void
 }) {
   const router = useRouter()
   const locale = useLocale()
@@ -2302,8 +2305,12 @@ export function TourDetailPageView({
               onAssignReservation={handleAssignReservation}
               onUnassignReservation={handleUnassignReservation}
               onStatusChange={handleReservationStatusChange}
-              onNavigateToTour={(tourId: string) => {
-                router.push(`/${locale}/admin/tours/${tourId}`)
+              onNavigateToTour={(targetTourId: string) => {
+                if (onNavigateToTourProp) {
+                  onNavigateToTourProp(targetTourId)
+                  return
+                }
+                router.push(`/${locale}/admin/tours/${targetTourId}`)
               }}
               onEditPickupTime={handleEditReservationClick}
               onEditPickupHotel={handleEditReservationClick}

@@ -213,7 +213,8 @@ export default function TeamChatPage() {
         throw error
       }
     },
-    dependencies: [user?.email]
+    dependencies: [user?.email],
+    defaultToEmptyArray: true,
   })
 
   // 메시지 로딩
@@ -309,7 +310,8 @@ export default function TeamChatPage() {
         // 에러가 발생해도 빈 배열을 반환하여 앱이 중단되지 않도록 함
         return []
       }
-    }
+    },
+    defaultToEmptyArray: true,
   })
 
   // 팀원을 position별로 그룹화

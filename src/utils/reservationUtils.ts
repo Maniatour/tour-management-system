@@ -147,6 +147,23 @@ export const getProductName = (productId: string, products: Product[] | null) =>
   return products?.find(p => p.id === productId)?.name || 'Unknown'
 }
 
+/** 관리자·업무 카드용 — 고객용 이름 없이 내부용(name → name_ko → name_en)만 */
+export const getProductInternalName = (
+  productId: string,
+  products: Array<{
+    id: string
+    name?: string | null
+    name_ko?: string | null
+    name_en?: string | null
+  }> | null
+) => {
+  const product = products?.find((p) => p.id === productId)
+  if (!product) return '—'
+  const pick = (v: string | null | undefined) =>
+    v != null && String(v).trim() !== '' ? String(v).trim() : ''
+  return pick(product.name) || pick(product.name_ko) || pick(product.name_en) || '—'
+}
+
 // 상품 이름 가져오기 (locale에 따라 고객용·내부용 이름 우선순위 적용)
 export const getProductNameForLocale = (
   productId: string,
@@ -198,6 +215,29 @@ export function parseEmbeddedChannelNameFromReservationRow(item: Record<string, 
     return n != null && String(n).trim() !== '' ? String(n).trim() : undefined
   }
   return undefined
+}
+
+/** 목록 SELECT `customers(id,name)` embed → 카드 표시용 최소 고객 행 */
+export function extractEmbeddedCustomersFromReservationRows(
+  rows: Record<string, unknown>[]
+): Array<{ id: string; name: string }> {
+  const out: Array<{ id: string; name: string }> = []
+  const seen = new Set<string>()
+  for (const row of rows) {
+    const raw = row.customers
+    if (raw == null) continue
+    const obj = (Array.isArray(raw) ? raw[0] : raw) as
+      | { id?: unknown; name?: unknown }
+      | null
+      | undefined
+    if (!obj || typeof obj !== 'object') continue
+    const id = String(obj.id ?? row.customer_id ?? '').trim()
+    const name = String(obj.name ?? '').trim()
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    out.push({ id, name })
+  }
+  return out
 }
 
 // 채널 이름 가져오기 (id, name만 있으면 동작)

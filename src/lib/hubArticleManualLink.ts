@@ -1,14 +1,16 @@
 import { supabase } from '@/lib/supabase'
 import {
   articleBodyToDocument,
+  HUB_CATEGORIES,
   hubCategoryLabel,
   normalizeBodyLayout,
+  normalizeHubCategory,
   type KnowledgeArticleRow,
   type KnowledgeBodyLayout,
 } from '@/lib/operationsHub'
 import { coerceKnowledgeArticleRow } from '@/lib/knowledgeArticleForm'
 import { KNOWLEDGE_ARTICLE_SELECT } from '@/lib/knowledgeArticleForm'
-import type { SopDocument, SopEditLocale, OperationsHubCategory } from '@/types/sopStructure'
+import type { OperationsHubCategory, SopDocument, SopEditLocale } from '@/types/sopStructure'
 import { sopText } from '@/types/sopStructure'
 
 export type HubArticleLinkOption = {
@@ -18,10 +20,14 @@ export type HubArticleLinkOption = {
   title_en: string
   hub_category: OperationsHubCategory
   is_published: boolean
+  summary_ko?: string
+  summary_en?: string
+  /** 본문·메뉴얼 평문 (검색용, 클라이언트에서 생성) */
+  body_search_text?: string
 }
 
 const HUB_ARTICLE_LINK_SELECT =
-  'id, slug, title_ko, title_en, hub_category, is_published, sort_order' as const
+  'id, slug, title_ko, title_en, summary_ko, summary_en, hub_category, is_published, sort_order' as const
 
 export function hubArticleLinkLabel(
   article: Pick<HubArticleLinkOption, 'id' | 'slug' | 'title_ko' | 'title_en'>,
@@ -39,6 +45,25 @@ export function hubArticleLinkMeta(
   return `${cat}${draft}`
 }
 
+/** 운영 허브 카테고리별 그룹 (빈 카테고리 제외) */
+export function groupHubArticleLinksByCategory(
+  articles: HubArticleLinkOption[],
+  lang: SopEditLocale
+): Array<{ category: OperationsHubCategory; label: string; articles: HubArticleLinkOption[] }> {
+  const byCategory = new Map<OperationsHubCategory, HubArticleLinkOption[]>()
+  for (const article of articles) {
+    const list = byCategory.get(article.hub_category) ?? []
+    list.push(article)
+    byCategory.set(article.hub_category, list)
+  }
+
+  return HUB_CATEGORIES.map((cat) => ({
+    category: cat.id,
+    label: lang === 'en' ? cat.title_en : cat.title_ko,
+    articles: [...(byCategory.get(cat.id) ?? [])].sort((a, b) => a.slug.localeCompare(b.slug)),
+  })).filter((group) => group.articles.length > 0)
+}
+
 export async function fetchHubArticlesForManualLink(): Promise<HubArticleLinkOption[]> {
   const { data, error } = await supabase
     .from('company_knowledge_articles')
@@ -46,16 +71,32 @@ export async function fetchHubArticlesForManualLink(): Promise<HubArticleLinkOpt
     .order('sort_order')
     .order('slug')
 
-  if (error || !data) return []
+  if (error) {
+    console.error('fetchHubArticlesForManualLink', error)
+    return []
+  }
+  if (!data) return []
 
-  return (data as HubArticleLinkOption[]).map((row) => ({
-    id: row.id,
-    slug: row.slug,
-    title_ko: row.title_ko,
-    title_en: row.title_en,
-    hub_category: row.hub_category,
-    is_published: row.is_published,
-  }))
+  const out: HubArticleLinkOption[] = []
+  for (const row of data as KnowledgeArticleRow[]) {
+    try {
+      const coerced = coerceKnowledgeArticleRow(row)
+      out.push({
+        id: coerced.id,
+        slug: coerced.slug,
+        title_ko: coerced.title_ko,
+        title_en: coerced.title_en,
+        hub_category: normalizeHubCategory(coerced.hub_category),
+        is_published: coerced.is_published,
+        summary_ko: coerced.summary_ko,
+        summary_en: coerced.summary_en,
+        body_search_text: [coerced.summary_ko, coerced.summary_en].filter(Boolean).join(' '),
+      })
+    } catch (e) {
+      console.error('fetchHubArticlesForManualLink: skip row', row?.id, e)
+    }
+  }
+  return out
 }
 
 export async function fetchHubArticleDocumentById(
