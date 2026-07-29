@@ -23,11 +23,16 @@ import {
 import {
   buildTourHighlightItems,
   DEFAULT_TOUR_HIGHLIGHT_ICONS,
+  emptyTourHighlightItemVisibility,
+  filterVisibleTourHighlightItems,
+  mergeTourHighlightVisibilityDefaults,
   parseTourHighlightIcons,
   parseTourHighlightLabels,
+  parseTourHighlightVisibility,
   resolveTourHighlightIconComponent,
   serializeTourHighlightIcons,
   serializeTourHighlightLabels,
+  serializeTourHighlightVisibility,
   TOUR_HIGHLIGHT_ICON_OPTIONS,
   TOUR_HIGHLIGHT_ITEM_IDS,
   TOUR_HIGHLIGHT_ITEM_LABELS,
@@ -88,6 +93,7 @@ const HIGHLIGHT_SLOT_LABELS: Record<TourHighlightSloganKey, string> = {
 
 type HighlightSloganForm = Record<TourHighlightSloganKey, string>
 type HighlightSloganVisibility = Record<TourHighlightSloganKey, boolean>
+type HighlightItemVisibility = Record<TourHighlightItemId, boolean>
 
 function emptyHighlightSloganForm(): HighlightSloganForm {
   return { slogan3: '', slogan4: '', slogan5: '' }
@@ -182,12 +188,17 @@ export default function CustomerPageDetailHighlightsEmbed({
     {}
   )
   const [highlightLabels, setHighlightLabels] = useState<TourHighlightLabelStore>({})
+  const [highlightItemVisibility, setHighlightItemVisibility] = useState<HighlightItemVisibility>(
+    emptyTourHighlightItemVisibility
+  )
   const [initialHighlightIconsSnapshot, setInitialHighlightIconsSnapshot] = useState<string | null>(
     null
   )
   const [initialHighlightLabelsSnapshot, setInitialHighlightLabelsSnapshot] = useState<string | null>(
     null
   )
+  const [initialHighlightItemVisibilitySnapshot, setInitialHighlightItemVisibilitySnapshot] =
+    useState<string | null>(null)
 
   useEffect(() => {
     setEditLocale(normalizeAdminEditLocale(localeProp ?? 'ko'))
@@ -241,24 +252,35 @@ export default function CustomerPageDetailHighlightsEmbed({
       editLocale
     )
 
-    return buildTourHighlightItems({
-      durationLabel,
-      groupSize: groupSizeLabel,
-      categoryLabel,
-      locationLine,
-      languageChips,
-      departureArrivalLabel,
-      trustLicensedOperator:
-        highlightLabels.trustLicensedOperator?.[editLocale]?.trim() ||
-        tProductDetail('trustLicensedOperator'),
-      trustSmallGroup:
-        highlightLabels.trustSmallGroup?.[editLocale]?.trim() || tProductDetail('trustSmallGroup'),
-      trustFreeCancellation:
-        highlightLabels.trustFreeCancellation?.[editLocale]?.trim() ||
-        tProductDetail('trustFreeCancellation'),
-      icons: highlightIcons,
-    })
-  }, [form, highlightIcons, highlightLabels, isEnglish, editLocale, tProductDetail])
+    return filterVisibleTourHighlightItems(
+      buildTourHighlightItems({
+        durationLabel,
+        groupSize: groupSizeLabel,
+        categoryLabel,
+        locationLine,
+        languageChips,
+        departureArrivalLabel,
+        trustLicensedOperator:
+          highlightLabels.trustLicensedOperator?.[editLocale]?.trim() ||
+          tProductDetail('trustLicensedOperator'),
+        trustSmallGroup:
+          highlightLabels.trustSmallGroup?.[editLocale]?.trim() || tProductDetail('trustSmallGroup'),
+        trustFreeCancellation:
+          highlightLabels.trustFreeCancellation?.[editLocale]?.trim() ||
+          tProductDetail('trustFreeCancellation'),
+        icons: highlightIcons,
+      }),
+      highlightItemVisibility
+    )
+  }, [
+    form,
+    highlightIcons,
+    highlightItemVisibility,
+    highlightLabels,
+    isEnglish,
+    editLocale,
+    tProductDetail,
+  ])
 
   const filteredSubCategories = useMemo(() => {
     const selected = categories.find((c) => c.value === form.category)
@@ -340,6 +362,9 @@ export default function CustomerPageDetailHighlightsEmbed({
       }
       const nextIcons = parseTourHighlightIcons(row.tour_highlight_icons)
       const nextLabels = parseTourHighlightLabels(row.tour_highlight_labels)
+      const nextItemVisibility = mergeTourHighlightVisibilityDefaults(
+        parseTourHighlightVisibility(row.tour_highlight_visibility)
+      )
 
       setCategories(
         (categoriesRes.data ?? []).map((c: { id: string; name: string }) => ({
@@ -361,6 +386,8 @@ export default function CustomerPageDetailHighlightsEmbed({
       setInitialHighlightIconsSnapshot(JSON.stringify(nextIcons))
       setHighlightLabels(nextLabels)
       setInitialHighlightLabelsSnapshot(JSON.stringify(nextLabels))
+      setHighlightItemVisibility(nextItemVisibility)
+      setInitialHighlightItemVisibilitySnapshot(JSON.stringify(nextItemVisibility))
 
       const nextHighlightSlogans = emptyHighlightSloganForm()
       const nextHighlightVisibility = emptyHighlightSloganVisibility()
@@ -404,15 +431,27 @@ export default function CustomerPageDetailHighlightsEmbed({
       mode === 'icon-grid' &&
       initialHighlightLabelsSnapshot != null &&
       JSON.stringify(highlightLabels) !== initialHighlightLabelsSnapshot
-    onDirtyChange(formDirty || Boolean(highlightDirty) || Boolean(iconDirty) || Boolean(labelDirty))
+    const itemVisibilityDirty =
+      mode === 'icon-grid' &&
+      initialHighlightItemVisibilitySnapshot != null &&
+      JSON.stringify(highlightItemVisibility) !== initialHighlightItemVisibilitySnapshot
+    onDirtyChange(
+      formDirty ||
+        Boolean(highlightDirty) ||
+        Boolean(iconDirty) ||
+        Boolean(labelDirty) ||
+        Boolean(itemVisibilityDirty)
+    )
   }, [
     form,
     highlightIcons,
+    highlightItemVisibility,
     highlightLabels,
     highlightSlogans,
     highlightVisibility,
     initialForm,
     initialHighlightIconsSnapshot,
+    initialHighlightItemVisibilitySnapshot,
     initialHighlightLabelsSnapshot,
     initialHighlightSnapshot,
     mode,
@@ -473,6 +512,7 @@ export default function CustomerPageDetailHighlightsEmbed({
           form.languages.length > 0 ? mergeTourLanguageList([], form.languages) : null,
         tour_highlight_icons: serializeTourHighlightIcons(highlightIcons),
         tour_highlight_labels: serializeTourHighlightLabels(highlightLabels),
+        tour_highlight_visibility: serializeTourHighlightVisibility(highlightItemVisibility),
       }
       if (form.category.trim()) {
         update.category = form.category.trim()
@@ -514,6 +554,7 @@ export default function CustomerPageDetailHighlightsEmbed({
       } else {
         setInitialHighlightIconsSnapshot(JSON.stringify(highlightIcons))
         setInitialHighlightLabelsSnapshot(JSON.stringify(highlightLabels))
+        setInitialHighlightItemVisibilitySnapshot(JSON.stringify(highlightItemVisibility))
       }
 
       setInitialForm(form)
@@ -529,11 +570,14 @@ export default function CustomerPageDetailHighlightsEmbed({
 
   const renderItemEditor = (item: TourHighlightDisplayItem) => {
     const iconKey = highlightIcons[item.id] ?? DEFAULT_TOUR_HIGHLIGHT_ICONS[item.id]
+    const isVisible = highlightItemVisibility[item.id]
 
     return (
       <div
         key={item.id}
-        className="space-y-3 rounded-lg border border-border/60 bg-muted/10 p-3"
+        className={`space-y-3 rounded-lg border p-3 ${
+          isVisible ? 'border-border/60 bg-muted/10' : 'border-dashed border-border/80 bg-muted/5 opacity-90'
+        }`}
       >
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
@@ -548,6 +592,17 @@ export default function CustomerPageDetailHighlightsEmbed({
               )}
             </p>
           </div>
+          <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={isVisible}
+              onChange={(e) =>
+                setHighlightItemVisibility((prev) => ({ ...prev, [item.id]: e.target.checked }))
+              }
+              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-ring"
+            />
+            고객 페이지 표시
+          </label>
         </div>
 
         <div>

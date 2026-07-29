@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Image from 'next/image'
-import { Grid2x2, Heart, Mountain, Share2, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Grid2x2, Heart, Mountain, Share2, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import type { ProductMedia, TourCoursePhoto } from '@/components/product/productDetailTypes'
 import { buildProductGalleryImages } from '@/lib/productDetailGalleryImages'
@@ -25,6 +26,7 @@ export default function ProductDetailAirbnbGallery({
   const { isMdDownLayout } = useCustomerPageLayoutMode()
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
+  const [mounted, setMounted] = useState(false)
 
   const images = buildProductGalleryImages(productMedia, tourCoursePhotos)
   const gridImages = images.slice(0, 5)
@@ -33,6 +35,53 @@ export default function ProductDetailAirbnbGallery({
     setActiveIndex(index)
     setLightboxOpen(true)
   }
+
+  const closeLightbox = useCallback(() => {
+    setLightboxOpen(false)
+  }, [])
+
+  const goToPrev = useCallback(() => {
+    setActiveIndex((index) => (index - 1 + images.length) % images.length)
+  }, [images.length])
+
+  const goToNext = useCallback(() => {
+    setActiveIndex((index) => (index + 1) % images.length)
+  }, [images.length])
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (!lightboxOpen) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeLightbox()
+        return
+      }
+
+      if (images.length <= 1) return
+
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        goToPrev()
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        goToNext()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+      document.body.style.overflow = previousOverflow
+    }
+  }, [closeLightbox, goToNext, goToPrev, images.length, lightboxOpen])
 
   if (images.length === 0) {
     return (
@@ -122,55 +171,97 @@ export default function ProductDetailAirbnbGallery({
         ) : null}
       </div>
 
-      {lightboxOpen ? (
-        <div className="airbnb-detail-lightbox" role="dialog" aria-modal="true">
-          <button
-            type="button"
-            className="airbnb-detail-lightbox-close"
-            onClick={() => setLightboxOpen(false)}
-            aria-label={isEnglish ? 'Close' : '닫기'}
-          >
-            <X className="h-5 w-5" />
-          </button>
-          <div className="airbnb-detail-lightbox-actions">
-            <button type="button" aria-label={t('share')} className="airbnb-detail-action-btn">
-              <Share2 className="h-4 w-4" />
-            </button>
-            <button type="button" aria-label={t('save')} className="airbnb-detail-action-btn">
-              <Heart className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="airbnb-detail-lightbox-main">
-            <Image
-              src={images[activeIndex].file_url}
-              alt={images[activeIndex].alt_text || displayName}
-              fill
-              sizes="100vw"
-              className="object-contain"
-            />
-          </div>
-          {images.length > 1 ? (
-            <div className="airbnb-detail-lightbox-thumbs">
-              {images.map((image, index) => (
-                <button
-                  key={image.id}
-                  type="button"
-                  className={`airbnb-detail-lightbox-thumb ${activeIndex === index ? 'is-active' : ''}`}
-                  onClick={() => setActiveIndex(index)}
-                >
-                  <Image
-                    src={image.file_url}
-                    alt={image.alt_text || image.file_name}
-                    fill
-                    sizes="80px"
-                    className="object-cover"
-                  />
+      {lightboxOpen && mounted
+        ? createPortal(
+            <div
+              className="airbnb-detail-lightbox"
+              role="dialog"
+              aria-modal="true"
+              aria-label={isEnglish ? 'Photo gallery' : '사진 갤러리'}
+            >
+              <button
+                type="button"
+                className="airbnb-detail-lightbox-close"
+                onClick={closeLightbox}
+                aria-label={isEnglish ? 'Close' : '닫기'}
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <div className="airbnb-detail-lightbox-actions">
+                <button type="button" aria-label={t('share')} className="airbnb-detail-action-btn">
+                  <Share2 className="h-4 w-4" />
                 </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+                <button type="button" aria-label={t('save')} className="airbnb-detail-action-btn">
+                  <Heart className="h-4 w-4" />
+                </button>
+              </div>
+
+              {images.length > 1 ? (
+                <>
+                  <button
+                    type="button"
+                    className="airbnb-detail-lightbox-nav airbnb-detail-lightbox-nav--prev"
+                    onClick={goToPrev}
+                    aria-label={isEnglish ? 'Previous photo' : '이전 사진'}
+                  >
+                    <ChevronLeft className="h-6 w-6 sm:h-7 sm:w-7" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    className="airbnb-detail-lightbox-nav airbnb-detail-lightbox-nav--next"
+                    onClick={goToNext}
+                    aria-label={isEnglish ? 'Next photo' : '다음 사진'}
+                  >
+                    <ChevronRight className="h-6 w-6 sm:h-7 sm:w-7" aria-hidden />
+                  </button>
+                  <p className="airbnb-detail-lightbox-counter" aria-live="polite">
+                    {activeIndex + 1} / {images.length}
+                  </p>
+                </>
+              ) : null}
+
+              <div className="airbnb-detail-lightbox-main">
+                <Image
+                  key={images[activeIndex].id}
+                  src={images[activeIndex].file_url}
+                  alt={images[activeIndex].alt_text || displayName}
+                  fill
+                  sizes="100vw"
+                  className="object-contain"
+                  priority
+                />
+              </div>
+
+              {images.length > 1 ? (
+                <div className="airbnb-detail-lightbox-thumbs">
+                  {images.map((image, index) => (
+                    <button
+                      key={image.id}
+                      type="button"
+                      className={`airbnb-detail-lightbox-thumb ${activeIndex === index ? 'is-active' : ''}`}
+                      onClick={() => setActiveIndex(index)}
+                      aria-label={
+                        isEnglish
+                          ? `View photo ${index + 1} of ${images.length}`
+                          : `사진 ${index + 1} / ${images.length} 보기`
+                      }
+                      aria-current={activeIndex === index ? 'true' : undefined}
+                    >
+                      <Image
+                        src={image.file_url}
+                        alt={image.alt_text || image.file_name}
+                        fill
+                        sizes="80px"
+                        className="object-cover"
+                      />
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>,
+            document.body
+          )
+        : null}
     </>
   )
 }

@@ -32,6 +32,7 @@ import {
   normalizeChoicesPricingForMode,
   parseChoicePricingMode,
   resolveChoiceFinalPrices,
+  hasMeaningfulChoicesPricing,
 } from '@/lib/choicePricingMode';
 import { ChoiceOptionUnitPricingPanel, type OptionUnitPrice } from './dynamic-pricing/ChoiceOptionUnitPricingPanel';
 
@@ -2031,6 +2032,11 @@ export default function DynamicPricingManager({
     const hasChoicePrices = choiceCombinations.some(choice => 
       choice.adult_price > 0 || choice.child_price > 0 || choice.infant_price > 0
     );
+    // 단일가 + 초이스별 가격 설정(absolute)은 choices_pricing.ota_sale_price에 저장됨
+    const hasChoicesPricingInput = hasMeaningfulChoicesPricing(
+      pricingConfig.choices_pricing,
+      choicePricingMode === 'base_plus' ? optionsPricing : undefined
+    );
     
     // 초이스가 없을 때 OTA 판매가나 불포함 금액이 있는지 확인
     const noChoiceData = (pricingConfig.choices_pricing as any)?.['no_choice'] || {};
@@ -2044,7 +2050,7 @@ export default function DynamicPricingManager({
     const hasNotIncludedPrice = ((pricingConfig as any)?.not_included_price || 0) > 0;
     
     const canSaveResult = hasSelectedDates && hasSelectedChannels && 
-                          (hasValidPrices || hasChoicePrices || hasNoChoicePrice || hasNotIncludedPrice);
+                          (hasValidPrices || hasChoicePrices || hasChoicesPricingInput || hasNoChoicePrice || hasNotIncludedPrice);
     
     // 디버깅: canSave 변경 시에만 로그 출력 (불필요한 중복 로그 제거)
     // console.log('canSave 계산:', {
@@ -2067,7 +2073,7 @@ export default function DynamicPricingManager({
     // });
     
     return canSaveResult;
-  }, [selectedDates, selectedChannelType, selectedChannel, pricingConfig, choiceCombinations]);
+  }, [selectedDates, selectedChannelType, selectedChannel, pricingConfig, choiceCombinations, choicePricingMode, optionsPricing]);
 
   // 채널 편집 핸들러
   const handleChannelEdit = useCallback(async (channelId: string) => {

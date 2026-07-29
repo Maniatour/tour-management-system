@@ -20,8 +20,10 @@ import { formatProductDepartureArrivalHighlight } from '@/lib/productDetailDispl
 import { buildTourLanguageHighlightChips } from '@/lib/tourHighlightLanguages'
 import {
   buildTourHighlightItems,
+  filterVisibleTourHighlightItems,
   parseTourHighlightIcons,
   parseTourHighlightLabels,
+  parseTourHighlightVisibility,
   resolveTourHighlightIconComponent,
   resolveTourHighlightLabel,
 } from '@/lib/tourHighlightIcons'
@@ -105,37 +107,43 @@ export default function ProductDetailAirbnbBody({
   const highlightLabels = parseTourHighlightLabels(
     (product as { tour_highlight_labels?: unknown }).tour_highlight_labels
   )
+  const highlightVisibility = parseTourHighlightVisibility(
+    (product as { tour_highlight_visibility?: unknown }).tour_highlight_visibility
+  )
 
   const languageChips = buildTourLanguageHighlightChips(product.languages, locale)
   const departureArrivalLabel = formatProductDepartureArrivalHighlight(product, locale)
 
-  const highlightItems = buildTourHighlightItems({
-    durationLabel,
-    groupSize: groupSize ?? null,
-    categoryLabel,
-    locationLine,
-    languageChips,
-    departureArrivalLabel,
-    trustLicensedOperator: resolveTourHighlightLabel(
-      highlightLabels,
-      'trustLicensedOperator',
-      locale,
-      t('trustLicensedOperator')
-    ),
-    trustSmallGroup: resolveTourHighlightLabel(
-      highlightLabels,
-      'trustSmallGroup',
-      locale,
-      t('trustSmallGroup')
-    ),
-    trustFreeCancellation: resolveTourHighlightLabel(
-      highlightLabels,
-      'trustFreeCancellation',
-      locale,
-      t('trustFreeCancellation')
-    ),
-    icons: highlightIcons,
-  })
+  const highlightItems = filterVisibleTourHighlightItems(
+    buildTourHighlightItems({
+      durationLabel,
+      groupSize: groupSize ?? null,
+      categoryLabel,
+      locationLine,
+      languageChips,
+      departureArrivalLabel,
+      trustLicensedOperator: resolveTourHighlightLabel(
+        highlightLabels,
+        'trustLicensedOperator',
+        locale,
+        t('trustLicensedOperator')
+      ),
+      trustSmallGroup: resolveTourHighlightLabel(
+        highlightLabels,
+        'trustSmallGroup',
+        locale,
+        t('trustSmallGroup')
+      ),
+      trustFreeCancellation: resolveTourHighlightLabel(
+        highlightLabels,
+        'trustFreeCancellation',
+        locale,
+        t('trustFreeCancellation')
+      ),
+      icons: highlightIcons,
+    }),
+    highlightVisibility
+  )
 
   const tourHighlightsTitle = resolveProductDetailSectionTitle(
     'slogan3',

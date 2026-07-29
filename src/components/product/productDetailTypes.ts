@@ -33,6 +33,7 @@ export type Product = {
   group_size: string | null
   tour_highlight_icons?: Record<string, string> | null
   tour_highlight_labels?: Record<string, Record<string, string>> | null
+  tour_highlight_visibility?: Record<string, boolean> | null
   adult_age: number | null
   child_age_min: number | null
   child_age_max: number | null

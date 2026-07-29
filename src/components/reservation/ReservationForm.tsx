@@ -1060,6 +1060,12 @@ export default function ReservationForm({
 
   const applyResidentParticipantPatch = useCallback(
     (patch: Record<string, unknown>) => {
+      setPricingFieldsFromDb((prev) => ({
+        ...prev,
+        onSiteBalanceAmount: false,
+        balanceAmount: false,
+        totalPrice: false,
+      }))
       setFormData((prev) => {
         const merged = { ...prev, ...patch } as typeof formData
         if (patch.residentStatusAmounts && typeof patch.residentStatusAmounts === 'object') {
@@ -6341,7 +6347,19 @@ export default function ReservationForm({
           </div>
         </div>
 
-        <form id="reservation-edit-form" ref={reservationFormRef} onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <form
+          id="reservation-edit-form"
+          ref={reservationFormRef}
+          onSubmit={handleSubmit}
+          onKeyDown={(e) => {
+            if (!isModal || e.key !== 'Enter') return
+            const target = e.target as HTMLElement
+            if (target.tagName === 'TEXTAREA') return
+            if (target.tagName === 'BUTTON' && (target as HTMLButtonElement).type === 'submit') return
+            e.preventDefault()
+          }}
+          className="flex-1 min-h-0 flex flex-col overflow-hidden"
+        >
           <div className={`flex-1 min-h-0 overflow-x-hidden p-3 sm:p-0 sm:space-y-6 ${isModal ? 'overflow-y-auto' : 'lg:overflow-hidden lg:flex lg:flex-col lg:min-h-0'} ${isModal ? '' : 'lg:pb-0'} pb-2`}>
           <div className={`grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-4 lg:grid-rows-1 lg:min-h-0 ${isModal ? 'lg:h-auto' : 'lg:flex-1 lg:h-[calc(100vh-var(--header-height,4rem)-6rem)] lg:max-h-[calc(100vh-var(--header-height,4rem)-6rem)]'}`}>
             {/* 1열: 고객 정보 + Follow up */}

@@ -145,7 +145,6 @@ import {
   defaultFloatingPanelPosition,
   fabBottomCss,
   setAdminTodoDockLayoutActive,
-  suggestFloatingPanelSize,
   ADMIN_FLOATING_FAB_Z_CLASS,
   type FloatingPanelSize,
 } from '@/lib/adminFloatingFabLayout'
@@ -162,8 +161,17 @@ import {
 import type { ActionRequiredTabId } from '@/components/reservation/ReservationActionRequiredModal'
 import type { FollowUpQueueTabId } from '@/components/reservation/ReservationFollowUpQueueModal'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { ResizableDialogContent } from '@/components/ui/ResizableDialogContent'
 import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
 import { useAdminTodoQueueData } from '@/hooks/useAdminTodoQueueData'
+import {
+  ADMIN_TODO_WIDGET_STORAGE_KEY,
+  readAdminTodoWidgetDocked,
+  readAdminTodoWidgetMinimized,
+  readAdminTodoWidgetPanelOpen,
+  writeAdminTodoWidgetDocked,
+  writeAdminTodoWidgetMinimized,
+} from '@/lib/adminTodoWidgetPersistence'
 import { useReservationFollowUpSnapshots } from '@/hooks/useReservationFollowUpSnapshots'
 import { pickReservationsForOperationalQueue } from '@/lib/operationalQueueFetch'
 import { getGroupColorClassesForReservations } from '@/utils/groupColors'
@@ -191,7 +199,8 @@ function panelVisibleInTab(tab: TodoListTab, completed: boolean, linkedOnHold: b
   return todoMatchesListTab(tab, completed, linkedOnHold)
 }
 
-const STORAGE_KEY = 'adminTodoWidget'
+const STORAGE_KEY = ADMIN_TODO_WIDGET_STORAGE_KEY
+const TOUR_HOTEL_DETAIL_MODAL_RECT_KEY = 'admin-todo-tour-hotel-detail-modal-rect'
 const HEADER_HEIGHT = 50
 const FAB_STACK_INDEX = 0
 const DEFAULT_SIZE: FloatingPanelSize = { width: 380, height: 520 }
@@ -291,12 +300,7 @@ function readSavedPosition(size: FloatingPanelSize): { x: number; y: number } {
 }
 
 function readSavedDocked(): boolean {
-  if (typeof window === 'undefined') return false
-  try {
-    return localStorage.getItem(`${STORAGE_KEY}.docked`) === '1'
-  } catch {
-    return false
-  }
+  return readAdminTodoWidgetDocked()
 }
 
 type AdminTodoFloatingWidgetProps = {
@@ -314,7 +318,9 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
   const isMobile = useAdminMobileViewport()
 
   const [pendingCount, setPendingCount] = useState(0)
-  const [isMinimized, setIsMinimized] = useState(false)
+  const [isMinimized, setIsMinimized] = useState(() =>
+    readAdminTodoWidgetPanelOpen() ? readAdminTodoWidgetMinimized() : false
+  )
   const [isDocked, setIsDocked] = useState(() => readSavedDocked())
   const [isDragging, setIsDragging] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
@@ -324,7 +330,7 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
   const floatPositionRef = useRef<{ x: number; y: number } | null>(null)
   const lastUpdateRef = useRef(0)
 
-  const [position, setPosition] = useState(() => readSavedPosition(DEFAULT_SIZE))
+  const [position, setPosition] = useState(() => readSavedPosition(readSavedSize()))
 
   const [size, setSize] = useState<FloatingPanelSize>(readSavedSize)
 
@@ -1281,11 +1287,16 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
   useEffect(() => {
     if (typeof window === 'undefined') return
     try {
-      localStorage.setItem(`${STORAGE_KEY}.docked`, isDocked ? '1' : '0')
+      writeAdminTodoWidgetDocked(isDocked)
     } catch {
       /* ignore */
     }
   }, [isDocked])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    writeAdminTodoWidgetMinimized(isMinimized)
+  }, [isMinimized])
 
   useEffect(() => {
     if (typeof document === 'undefined') return
@@ -1660,20 +1671,17 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
   const openWidget = () => {
     setPanelOpen(true)
     setIsMinimized(false)
-    const nextSize = suggestFloatingPanelSize(MIN_SIZE, size, FAB_STACK_INDEX)
-    setSize((prev) =>
-      isDocked && !isMobile
-        ? { ...prev, width: clampDockedFloatingPanelWidth(prev.width, MIN_SIZE.width) }
-        : nextSize
-    )
-    if (!isDocked || isMobile) {
-      setPosition(
-        defaultFloatingPanelPosition(nextSize, {
-          stackIndex: FAB_STACK_INDEX,
-          headerHeight: HEADER_HEIGHT,
-        })
-      )
+    const savedSize = readSavedSize()
+    if (isDocked && !isMobile) {
+      setSize((prev) => ({
+        ...prev,
+        width: clampDockedFloatingPanelWidth(savedSize.width, MIN_SIZE.width),
+        height: savedSize.height,
+      }))
+      return
     }
+    setSize(savedSize)
+    setPosition(readSavedPosition(savedSize))
   }
 
   const closeWidget = () => {
@@ -1850,17 +1858,21 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
         open={Boolean(tourHotelDetailModalId)}
         onOpenChange={(open) => !open && setTourHotelDetailModalId(null)}
       >
-        <DialogContent className="flex h-[min(92vh,900px)] max-w-6xl flex-col gap-0 overflow-hidden p-0">
-          <DialogTitle className="sr-only">
-            {isKo ? '투어 상세' : 'Tour detail'}
-          </DialogTitle>
+        <ResizableDialogContent
+          storageKey={TOUR_HOTEL_DETAIL_MODAL_RECT_KEY}
+          defaultWidth={1280}
+          defaultHeight={900}
+          stackLevel="elevated"
+          accessibilityTitle={isKo ? '투어 상세' : 'Tour detail'}
+          className="flex flex-col gap-0 overflow-hidden"
+        >
           {tourHotelDetailModalId ? (
             <TourDetailModalContent
               tourId={tourHotelDetailModalId}
               onNavigateToTour={setTourHotelDetailModalId}
             />
           ) : null}
-        </DialogContent>
+        </ResizableDialogContent>
       </Dialog>
     </>
   )

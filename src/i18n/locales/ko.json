@@ -1579,6 +1579,8 @@
       "close": "닫기",
       "save": "저장",
       "saveBasePrice": "기본 가격 저장",
+      "saveHomepageBasePrice": "홈페이지 기본가 저장",
+      "homepageBasePriceHint": "상품 기본가·홈페이지 가격 타입(단일/분리)입니다. 저장 후 날짜·채널별 판매가는 아래 동적 가격 설정에서 「가격 규칙 저장」으로 관리하세요.",
       "basicValidation": "상품명, 카테고리, 서브카테고리를 입력해 주세요.",
       "tourValidation": "총 투어 시간과 최대 참가자를 올바르게 입력해 주세요.",
       "saveFailed": "저장 중 오류가 발생했습니다. 다시 시도해 주세요.",

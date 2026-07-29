@@ -154,6 +154,43 @@ export function expandOptionsPricingToChoicesPricing(
 /**
  * 저장 전 choices_pricing을 모드에 맞게 정규화
  */
+type ChoicePricingEntry = Record<string, number | undefined>;
+
+/** 동적 가격 저장 가능 여부: choices_pricing / options_pricing에 의미 있는 값이 있는지 */
+export function hasMeaningfulChoicesPricing(
+  choicesPricing: unknown,
+  optionsPricing?: Record<string, ChoicePricingEntry>
+): boolean {
+  if (optionsPricing && typeof optionsPricing === 'object') {
+    const hasOptionPrices = Object.values(optionsPricing).some((opt) => {
+      if (!opt || typeof opt !== 'object') return false;
+      return (
+        (opt.adult_price ?? 0) !== 0 ||
+        (opt.child_price ?? 0) !== 0 ||
+        (opt.infant_price ?? 0) !== 0
+      );
+    });
+    if (hasOptionPrices) return true;
+  }
+
+  if (!choicesPricing || typeof choicesPricing !== 'object') return false;
+
+  return Object.values(choicesPricing as Record<string, unknown>).some((raw) => {
+    if (!raw || typeof raw !== 'object') return false;
+    const d = raw as ChoicePricingEntry;
+    return (
+      (d.ota_sale_price ?? 0) > 0 ||
+      (d.adult_price ?? d.adult ?? 0) !== 0 ||
+      (d.child_price ?? d.child ?? 0) !== 0 ||
+      (d.infant_price ?? d.infant ?? 0) !== 0 ||
+      (d.not_included_price ?? 0) !== 0 ||
+      (d.not_included_price_adult ?? 0) !== 0 ||
+      (d.not_included_price_child ?? 0) !== 0 ||
+      (d.not_included_price_infant ?? 0) !== 0
+    );
+  });
+}
+
 export function normalizeChoicesPricingForMode(
   choicesPricing: Record<string, Record<string, unknown>>,
   mode: ChoicePricingMode,

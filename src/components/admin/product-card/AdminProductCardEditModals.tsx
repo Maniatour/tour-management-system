@@ -395,7 +395,9 @@ export default function AdminProductCardEditModals({
       if (updateError) throw updateError
 
       onSaved(product.id, updates as Partial<Product>)
-      onClose()
+      if (section !== 'pricing') {
+        onClose()
+      }
     } catch (saveError) {
       console.error('카드뷰 상품 수정 오류:', saveError)
       setError(t('saveFailed'))
@@ -485,33 +487,40 @@ export default function AdminProductCardEditModals({
   const pricingBody = (
     <div className="space-y-6">
       <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
-        <div className="mb-4 flex flex-wrap items-center gap-4">
-          <span className="text-sm font-medium text-gray-700">{tBasic('homepagePricingType')}</span>
-          <label className="inline-flex items-center gap-2 text-sm">
-            <input
-              type="radio"
-              name="homepagePricingType"
-              checked={pricingForm.homepagePricingType === 'separate'}
-              onChange={() => setPricingForm((prev) => ({ ...prev, homepagePricingType: 'separate' }))}
-            />
-            {tBasic('separatePricing')}
-          </label>
-          <label className="inline-flex items-center gap-2 text-sm">
-            <input
-              type="radio"
-              name="homepagePricingType"
-              checked={pricingForm.homepagePricingType === 'single'}
-              onChange={() =>
-                setPricingForm((prev) => ({
-                  ...prev,
-                  homepagePricingType: 'single',
-                  childBasePrice: prev.adultBasePrice,
-                  infantBasePrice: prev.adultBasePrice,
-                }))
-              }
-            />
-            {tBasic('singlePricing')}
-          </label>
+        <p className="mb-3 text-xs text-muted-foreground">{t('homepageBasePriceHint')}</p>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-4">
+            <span className="text-sm font-medium text-gray-700">{tBasic('homepagePricingType')}</span>
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="homepagePricingType"
+                checked={pricingForm.homepagePricingType === 'separate'}
+                onChange={() => setPricingForm((prev) => ({ ...prev, homepagePricingType: 'separate' }))}
+              />
+              {tBasic('separatePricing')}
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="homepagePricingType"
+                checked={pricingForm.homepagePricingType === 'single'}
+                onChange={() =>
+                  setPricingForm((prev) => ({
+                    ...prev,
+                    homepagePricingType: 'single',
+                    childBasePrice: prev.adultBasePrice,
+                    infantBasePrice: prev.adultBasePrice,
+                  }))
+                }
+              />
+              {tBasic('singlePricing')}
+            </label>
+          </div>
+          <Button type="button" onClick={handleSave} disabled={saving} className="shrink-0">
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            {t('saveBasePrice')}
+          </Button>
         </div>
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label={tBasic('adult')}>
@@ -575,18 +584,6 @@ export default function AdminProductCardEditModals({
     </div>
   )
 
-  const pricingFooter = (
-    <DialogFooter className="shrink-0 gap-2 border-t px-4 py-3 sm:gap-0 sm:px-5">
-      <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-        {t('close')}
-      </Button>
-      <Button type="button" onClick={handleSave} disabled={saving}>
-        {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-        {t('saveBasePrice')}
-      </Button>
-    </DialogFooter>
-  )
-
   return (
     <Dialog open={section != null} onOpenChange={handleDialogOpenChange}>
       {section === 'pricing' ? (
@@ -603,7 +600,6 @@ export default function AdminProductCardEditModals({
             {pricingBody}
             {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
           </div>
-          {pricingFooter}
         </ResizableDialogContent>
       ) : (
       <DialogContent

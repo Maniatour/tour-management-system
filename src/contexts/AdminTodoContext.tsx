@@ -3,6 +3,10 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import type { OpTodoActionConfig, OpTodoActionType, OpTodoWithAction } from '@/lib/opTodoAction'
 import { normalizeOpTodoActionType, parseOpTodoActionConfig } from '@/lib/opTodoAction'
+import {
+  readAdminTodoWidgetPanelOpen,
+  writeAdminTodoWidgetPanelOpen,
+} from '@/lib/adminTodoWidgetPersistence'
 
 export type AdminTodoActiveAction = {
   todoId: string
@@ -22,8 +26,13 @@ type AdminTodoContextValue = {
 const AdminTodoContext = createContext<AdminTodoContextValue | null>(null)
 
 export function AdminTodoProvider({ children }: { children: React.ReactNode }) {
-  const [panelOpen, setPanelOpen] = useState(false)
+  const [panelOpen, setPanelOpenState] = useState(() => readAdminTodoWidgetPanelOpen())
   const [activeAction, setActiveAction] = useState<AdminTodoActiveAction | null>(null)
+
+  const setPanelOpen = useCallback((open: boolean) => {
+    setPanelOpenState(open)
+    writeAdminTodoWidgetPanelOpen(open)
+  }, [])
 
   const openTodoAction = useCallback((todo: OpTodoWithAction) => {
     const actionType = normalizeOpTodoActionType(todo.action_type)

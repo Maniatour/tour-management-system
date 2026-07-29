@@ -1570,6 +1570,8 @@
       "close": "Close",
       "save": "Save",
       "saveBasePrice": "Save base price",
+      "saveHomepageBasePrice": "Save homepage base price",
+      "homepageBasePriceHint": "Product base price and homepage pricing type (single/separate). After saving, manage date- and channel-specific prices below with “Save Price Rules”.",
       "basicValidation": "Please enter product name, category, and sub-category.",
       "tourValidation": "Please enter valid tour duration and max participants.",
       "saveFailed": "Could not save changes. Please try again."

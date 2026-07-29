@@ -290,6 +290,60 @@ export function serializeTourHighlightLabels(
   return result
 }
 
+/** item id → false 이면 고객 페이지에서 숨김 (키 없음 = 표시) */
+export type TourHighlightVisibilityStore = Partial<Record<TourHighlightItemId, boolean>>
+
+export function emptyTourHighlightItemVisibility(): Record<TourHighlightItemId, boolean> {
+  return Object.fromEntries(
+    TOUR_HIGHLIGHT_ITEM_IDS.map((id) => [id, true])
+  ) as Record<TourHighlightItemId, boolean>
+}
+
+export function parseTourHighlightVisibility(raw: unknown): TourHighlightVisibilityStore {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const result: TourHighlightVisibilityStore = {}
+  for (const id of TOUR_HIGHLIGHT_ITEM_IDS) {
+    if ((raw as Record<string, unknown>)[id] === false) {
+      result[id] = false
+    }
+  }
+  return result
+}
+
+export function mergeTourHighlightVisibilityDefaults(
+  raw: TourHighlightVisibilityStore
+): Record<TourHighlightItemId, boolean> {
+  const result = emptyTourHighlightItemVisibility()
+  for (const id of TOUR_HIGHLIGHT_ITEM_IDS) {
+    if (raw[id] === false) result[id] = false
+  }
+  return result
+}
+
+export function serializeTourHighlightVisibility(
+  visibility: Partial<Record<TourHighlightItemId, boolean>>
+): Record<string, boolean> {
+  const result: Record<string, boolean> = {}
+  for (const id of TOUR_HIGHLIGHT_ITEM_IDS) {
+    if (visibility[id] === false) result[id] = false
+  }
+  return result
+}
+
+export function readTourHighlightItemVisibility(
+  visibility: TourHighlightVisibilityStore | null | undefined,
+  itemId: TourHighlightItemId
+): boolean {
+  return visibility?.[itemId] !== false
+}
+
+export function filterVisibleTourHighlightItems(
+  items: TourHighlightDisplayItem[],
+  visibility: TourHighlightVisibilityStore | null | undefined
+): TourHighlightDisplayItem[] {
+  return items.filter((item) => readTourHighlightItemVisibility(visibility, item.id))
+}
+
 export function resolveTourHighlightLabel(
   labels: TourHighlightLabelStore | null | undefined,
   itemId: TourHighlightItemId,

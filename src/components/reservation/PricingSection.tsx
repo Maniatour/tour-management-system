@@ -840,6 +840,9 @@ export default function PricingSection({
     const stored = formData.onSiteBalanceAmount
     if (stored === undefined || stored === null) return defaultBalance
     if (pricingFieldsFromDb.onSiteBalanceAmount) {
+      if (Math.abs(defaultBalance - Number(stored)) > 0.01) {
+        return defaultBalance
+      }
       return roundUsd2(Number(stored))
     }
     if (stored === 0 && defaultBalance > 0.01) return defaultBalance
@@ -1017,6 +1020,7 @@ export default function PricingSection({
     refundedFromRecords: number
     manualRefundPricing: number
     notIncludedPrice: number
+    residentFeesUsd: number
     pricingAdults: number
     child: number
     infant: number
@@ -1044,6 +1048,8 @@ export default function PricingSection({
 
     const notIncludedPrice = notIncludedBreakdown.totalUsd
 
+    const residentFeesUsd = notIncludedBreakdown.residentFeesUsd
+
     const currentDeps: BalanceDeps = {
       totalCustomerPayment: roundUsd2(totalCustomerPayment),
       depositAmount: formData.depositAmount,
@@ -1051,6 +1057,7 @@ export default function PricingSection({
       refundedFromRecords: refundedAmount,
       manualRefundPricing: manualRef,
       notIncludedPrice,
+      residentFeesUsd,
       pricingAdults: formData.pricingAdults,
       child: formData.child,
       infant: formData.infant,
@@ -1065,6 +1072,7 @@ export default function PricingSection({
       Math.abs(prev.refundedFromRecords - currentDeps.refundedFromRecords) > 0.01 ||
       Math.abs(prev.manualRefundPricing - currentDeps.manualRefundPricing) > 0.01 ||
       Math.abs(prev.notIncludedPrice - currentDeps.notIncludedPrice) > 0.01 ||
+      Math.abs(prev.residentFeesUsd - currentDeps.residentFeesUsd) > 0.01 ||
       prev.pricingAdults !== currentDeps.pricingAdults ||
       prev.child !== currentDeps.child ||
       prev.infant !== currentDeps.infant
@@ -1074,6 +1082,10 @@ export default function PricingSection({
     const stored = formData.onSiteBalanceAmount
     const currentBalance = stored ?? 0
     const balanceDifference = Math.abs(currentBalance - calculatedBalance)
+
+    if (balanceDifference > 0.01 && pricingFieldsFromDb.onSiteBalanceAmount) {
+      markPricingEdited('onSiteBalanceAmount', 'balanceAmount')
+    }
 
     const shouldWrite =
       stored === undefined ||
@@ -1108,10 +1120,13 @@ export default function PricingSection({
     formData.totalPrice,
     (formData as { status?: string }).status,
     notIncludedBreakdown.totalUsd,
+    notIncludedBreakdown.residentFeesUsd,
+    formData.residentStatusAmounts,
     setFormData,
     productSalePriceCommitTick,
     depositAmountNetOfPartnerReturnedOverlap,
     pricingFieldsFromDb.onSiteBalanceAmount,
+    markPricingEdited,
   ])
 
   // depositAmount를 할인 후 상품가격으로 자동 업데이트 (상품 가격이나 쿠폰 변경 시)
