@@ -101,7 +101,7 @@ import {
   type TicketBookingStatusFilterKey,
 } from '@/lib/ticketBookingStatusFilter';
 import TicketBookingLinkTourModal from './TicketBookingLinkTourModal';
-import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent';
+import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog';
 import {
   getCancelDeadlineDays,
   getCancelDueDateForTicketBooking,
@@ -8210,52 +8210,29 @@ export default function TicketBookingList() {
       )}
 
       {/* 투어 상세 (달력·테이블에서 투어 클릭 시) */}
-      {tourDetailModalTourId && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-0"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="ticket-tour-detail-modal-title"
-          onClick={() => setTourDetailModalTourId(null)}
-        >
-          <div
-            className="flex h-[90vh] w-[90vw] max-h-[90vh] max-w-[90vw] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
-              <h3 id="ticket-tour-detail-modal-title" className="text-lg font-semibold text-gray-900 truncate pr-2">
-                투어 상세
-              </h3>
-              <div className="flex shrink-0 items-center gap-2">
-                <a
-                  href={`/${locale}/admin/tours/${tourDetailModalTourId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
-                >
-                  새 탭에서 열기
-                </a>
-                <button
-                  type="button"
-                  onClick={() => setTourDetailModalTourId(null)}
-                  className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
-                  aria-label="닫기"
-                >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div className="min-h-0 flex-1 bg-gray-50">
-              <TourDetailModalContent
-                tourId={tourDetailModalTourId}
-                onNavigateToTour={setTourDetailModalTourId}
-              />
-            </div>
+      <TourDetailResizableDialog
+        open={Boolean(tourDetailModalTourId)}
+        onOpenChange={(open) => !open && setTourDetailModalTourId(null)}
+        tourId={tourDetailModalTourId}
+        onNavigateToTour={setTourDetailModalTourId}
+        stackLevel="elevated"
+        accessibilityTitle="투어 상세"
+        header={
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-lg font-semibold text-gray-900 truncate pr-2">투어 상세</h3>
+            {tourDetailModalTourId ? (
+              <a
+                href={`/${locale}/admin/tours/${tourDetailModalTourId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
+              >
+                새 탭에서 열기
+              </a>
+            ) : null}
           </div>
-        </div>
-      )}
+        }
+      />
     </div>
   );
 }

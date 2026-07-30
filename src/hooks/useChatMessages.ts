@@ -24,6 +24,7 @@ export function useChatMessages({
   const [sending, setSending] = useState(false)
   const messagesRef = useRef<ChatMessage[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesScrollRef = useRef<HTMLDivElement>(null)
   const guideEmailRef = useRef<string | undefined>(guideEmail)
   const customerNameRef = useRef<string | undefined>(customerName)
 
@@ -40,11 +41,18 @@ export function useChatMessages({
   }, [customerName])
 
   const scrollToBottom = useCallback((instant = false) => {
-    if (instant) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
-    } else {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const container = messagesScrollRef.current
+    if (container) {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: instant ? 'auto' : 'smooth',
+      })
+      return
     }
+    messagesEndRef.current?.scrollIntoView({
+      behavior: instant ? 'auto' : 'smooth',
+      block: 'nearest',
+    })
   }, [])
 
   const loadMessages = useCallback(
@@ -76,7 +84,7 @@ export function useChatMessages({
 
           setMessages(sortedMessages)
           setTimeout(() => {
-            messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+            scrollToBottom(true)
           }, 50)
           return
         }
@@ -92,7 +100,7 @@ export function useChatMessages({
         const sortedMessages = ((data || []).reverse()) as unknown as ChatMessage[]
         setMessages(sortedMessages)
         setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+          scrollToBottom(true)
         }, 50)
       } catch (error) {
         console.error('Error loading messages:', error)
@@ -219,6 +227,7 @@ export function useChatMessages({
     loadMessages,
     scrollToBottom,
     messagesEndRef,
+    messagesScrollRef,
     messagesRef
   }
 }

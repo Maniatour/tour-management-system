@@ -298,16 +298,89 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
     residentStatusCounts.nonResidentUnder16 +
     residentStatusCounts.passCoveredCount
 
+  const residentStatusTooltipLines = (() => {
+    const rows = prefetchedResidentCustomerRows
+
+    let usResident = 0
+    let nonResident = 0
+    let nonResidentUnder16 = 0
+    let nonResidentWithPass = 0
+
+    if (rows?.length) {
+      for (const rc of rows) {
+        if (rc.resident_status === 'us_resident') usResident++
+        else if (rc.resident_status === 'non_resident') nonResident++
+        else if (rc.resident_status === 'non_resident_under_16') nonResidentUnder16++
+        else if (rc.resident_status === 'non_resident_with_pass') nonResidentWithPass++
+      }
+    }
+
+    const statusTotal =
+      usResident +
+      nonResident +
+      nonResidentUnder16 +
+      computePassCoveredCount(
+        nonResidentWithPass,
+        usResident,
+        nonResident,
+        nonResidentUnder16,
+        totalPeople
+      )
+    const isIncomplete = totalPeople > 0 && statusTotal !== totalPeople
+
+    if (!rows?.length || isIncomplete || residentStatus === null) {
+      return [t('residentStatusSetup')]
+    }
+
+    const lines: string[] = []
+    if (usResident > 0) {
+      lines.push(`${t('statusUsResident')}: ${usResident}${isKo ? '명' : ''}`)
+    }
+    if (nonResident > 0) {
+      lines.push(`${t('statusNonResident')}: ${nonResident}${isKo ? '명' : ''}`)
+    }
+    if (nonResidentUnder16 > 0) {
+      lines.push(
+        `${isKo ? '비거주자 (16세 이하)' : 'Non-resident (under 16)'}: ${nonResidentUnder16}${isKo ? '명' : ''}`
+      )
+    }
+    if (nonResidentWithPass > 0) {
+      lines.push(`${t('statusNonResidentWithPass')}: ${nonResidentWithPass}${isKo ? '명' : ''}`)
+    }
+
+    return lines
+  })()
+
   return (
     <>
       <span
-        className={compact ? 'inline-flex h-4 w-4 shrink-0 items-center justify-center' : 'ml-2 flex-shrink-0'}
+        className={
+          compact
+            ? 'group relative inline-flex h-4 w-4 shrink-0 items-center justify-center'
+            : 'group relative ml-2 flex-shrink-0'
+        }
+        aria-label={residentStatusTooltipLines.join(', ')}
         onClick={(e) => {
           e.stopPropagation()
           void handleOpenModal()
         }}
       >
         {getStatusIcon()}
+        {residentStatusTooltipLines.length > 0 ? (
+          <span
+            role="tooltip"
+            className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-max max-w-[220px] -translate-x-1/2 rounded-lg bg-gray-900 px-2.5 py-2 text-left text-[11px] leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:block group-hover:opacity-100 group-focus-visible:block group-focus-visible:opacity-100"
+          >
+            {residentStatusTooltipLines.map((line) => (
+              <span key={line} className="block whitespace-nowrap">
+                {line}
+              </span>
+            ))}
+            <span
+              className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-4 border-t-4 border-x-transparent border-t-gray-900"
+            />
+          </span>
+        ) : null}
       </span>
 
       {showModal && (
@@ -338,76 +411,80 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 text-xs text-gray-500 font-medium">
-                <div className="flex-1 min-w-0">{isKo ? '구분' : 'Category'}</div>
-                <div className="w-16 shrink-0 text-center">{isKo ? '수량' : 'Qty'}</div>
-                <div className="w-20 shrink-0 text-center">{isKo ? '금액($)' : 'Amount ($)'}</div>
-              </div>
-
-              {RESIDENT_MODAL_ROWS.map((row) => (
-                <div key={row.lineKey}>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    <span className="inline-flex items-center">
-                      <span className={`w-3 h-3 rounded-full mr-2 ${row.dotClass}`} />
-                      {isKo ? row.labelKo : row.labelEn}
-                      {row.amountHint ? (
-                        <span className="text-gray-400 ml-1 text-xs">
-                          ({isKo ? '패스 장수' : row.amountHint})
-                        </span>
-                      ) : null}
-                    </span>
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={residentStatusCounts[row.countField]}
-                      onChange={(e) => {
-                        const newCount = Math.max(0, Number(e.target.value) || 0)
-                        const nextCounts = { ...residentStatusCounts, [row.countField]: newCount }
-                        const actualPassCovered = calculateActualPassCovered(
-                          nextCounts.nonResidentWithPass,
-                          nextCounts.usResident,
-                          nextCounts.nonResident,
-                          nextCounts.nonResidentUnder16
-                        )
-                        const lineAmount = residentLineDefaultAmountUsd(row.lineKey, newCount)
-                        setResidentStatusCounts({
-                          ...nextCounts,
-                          passCoveredCount: actualPassCovered,
-                        })
-                        setResidentStatusAmounts((prev) => ({
-                          ...prev,
-                          [row.lineKey]: lineAmount,
-                        }))
-                      }}
-                      min="0"
-                      className="w-16 shrink-0 px-1.5 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring text-sm text-center"
-                    />
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      value={amounts[row.lineKey] ?? 0}
-                      onChange={(e) => {
-                        const v = e.target.value === '' ? 0 : Number(e.target.value)
-                        const num = Number.isFinite(v) ? v : 0
-                        setResidentStatusAmounts((prev) => ({
-                          ...prev,
-                          [row.lineKey]: num,
-                        }))
-                      }}
-                      className="w-20 shrink-0 px-1.5 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 text-sm text-center"
-                    />
-                  </div>
-                  {row.lineKey === 'non_resident_with_pass' ? (
-                    <p className="text-xs text-gray-500 mt-1">
-                      {isKo
-                        ? `패스 ${residentStatusCounts.nonResidentWithPass}장 = ${residentStatusCounts.passCoveredCount}인 커버`
-                        : `${residentStatusCounts.nonResidentWithPass} passes = covers ${residentStatusCounts.passCoveredCount} people`}
-                    </p>
-                  ) : null}
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-2 text-xs text-gray-500 font-medium">
+                  <div className="flex-1 min-w-0">{isKo ? '구분' : 'Category'}</div>
+                  <div className="w-16 shrink-0 text-center">{isKo ? '수량' : 'Qty'}</div>
+                  <div className="w-20 shrink-0 text-center">{isKo ? '금액($)' : 'Amount ($)'}</div>
                 </div>
-              ))}
+
+                {RESIDENT_MODAL_ROWS.map((row) => (
+                  <div key={row.lineKey}>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0 text-sm font-medium text-gray-700">
+                        <span className="inline-flex items-center gap-1.5 leading-snug">
+                          <span className={`w-3 h-3 shrink-0 rounded-full ${row.dotClass}`} />
+                          <span className="break-words">
+                            {isKo ? row.labelKo : row.labelEn}
+                            {row.amountHint ? (
+                              <span className="ml-1 text-xs font-normal text-gray-400">
+                                ({isKo ? '패스 장수' : row.amountHint})
+                              </span>
+                            ) : null}
+                          </span>
+                        </span>
+                      </div>
+                      <input
+                        type="number"
+                        value={residentStatusCounts[row.countField]}
+                        onChange={(e) => {
+                          const newCount = Math.max(0, Number(e.target.value) || 0)
+                          const nextCounts = { ...residentStatusCounts, [row.countField]: newCount }
+                          const actualPassCovered = calculateActualPassCovered(
+                            nextCounts.nonResidentWithPass,
+                            nextCounts.usResident,
+                            nextCounts.nonResident,
+                            nextCounts.nonResidentUnder16
+                          )
+                          const lineAmount = residentLineDefaultAmountUsd(row.lineKey, newCount)
+                          setResidentStatusCounts({
+                            ...nextCounts,
+                            passCoveredCount: actualPassCovered,
+                          })
+                          setResidentStatusAmounts((prev) => ({
+                            ...prev,
+                            [row.lineKey]: lineAmount,
+                          }))
+                        }}
+                        min="0"
+                        className="w-16 shrink-0 px-1.5 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring text-sm text-center"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={amounts[row.lineKey] ?? 0}
+                        onChange={(e) => {
+                          const v = e.target.value === '' ? 0 : Number(e.target.value)
+                          const num = Number.isFinite(v) ? v : 0
+                          setResidentStatusAmounts((prev) => ({
+                            ...prev,
+                            [row.lineKey]: num,
+                          }))
+                        }}
+                        className="w-20 shrink-0 px-1.5 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 text-sm text-center"
+                      />
+                    </div>
+                    {row.lineKey === 'non_resident_with_pass' ? (
+                      <p className="mt-1 text-xs text-gray-500">
+                        {isKo
+                          ? `패스 ${residentStatusCounts.nonResidentWithPass}장 = ${residentStatusCounts.passCoveredCount}인 커버`
+                          : `${residentStatusCounts.nonResidentWithPass} passes = covers ${residentStatusCounts.passCoveredCount} people`}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
 
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                 <div className="text-sm text-gray-700">

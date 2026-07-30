@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { ChevronDown, ChevronUp, MapPin, Map, Users, Home, Plane, PlaneTakeoff, HelpCircle, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, MapPin, Map, Users, Home, Plane, PlaneTakeoff, HelpCircle, X, Sparkles, Mail } from 'lucide-react'
 import { FaEnvelope, FaEye, FaCheckCircle, FaExclamationCircle, FaTimesCircle, FaPaperPlane } from 'react-icons/fa'
 import { useTranslations, useLocale } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
+import { useTourDetailSectionChrome } from './TourDetailModalChromeContext'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import ReactCountryFlag from 'react-country-flag'
 import {
@@ -19,6 +20,7 @@ import {
   type PickupGroupPresetWithReps,
 } from '@/lib/pickupGroupPreset'
 import { getPickupHotelNameById } from '@/lib/effectivePickupHotel'
+import { getPickupHotelPrimaryName } from '@/utils/pickupHotelUtils'
 import { SearchablePickupHotelSelect } from '@/components/SearchablePickupHotelSelect'
 import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
 
@@ -37,6 +39,7 @@ interface PickupScheduleProps {
   pickupHotels: Array<{
     id: string
     hotel: string
+    internal_name?: string | null
     pick_up_location?: string
     google_maps_link?: string
     group_number?: number | null
@@ -96,6 +99,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
   onGroupModeOverrideChange,
   onGroupRepresentativeOverrideChange,
 }) => {
+  const chrome = useTourDetailSectionChrome()
   const t = useTranslations('tours.pickupSchedule')
   const tCommon = useTranslations('common')
   const locale = useLocale()
@@ -616,7 +620,9 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
       const sortedReservations = [...reservations].sort(sortByPickupTime)
       // 픽업 호텔 ID로 정보 조회 (예약에 저장된 실제 픽업 장소 사용)
       const hotelInfo = pickupHotels.find((h) => h.id === pickupHotelId)
-      const hotelName = hotelInfo ? hotelInfo.hotel : getPickupHotelNameOnly(pickupHotelId)
+      const hotelName = hotelInfo
+        ? getPickupHotelPrimaryName(hotelInfo)
+        : getPickupHotelNameOnly(pickupHotelId)
       
       const totalPeople = sortedReservations.reduce((sum: number, res) => {
         const adults = res.adults || 0
@@ -664,7 +670,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
               )}
               <span className="text-sm font-medium text-primary">{earliestTime}</span>
               <span className="text-gray-300">|</span>
-              <span className="font-medium text-sm">{hotelName}</span>
+              <span className={`font-medium truncate min-w-0 max-w-[min(180px,45vw)] ${chrome.compact ? 'text-xs' : 'text-sm'}`} title={hotelName}>{hotelName}</span>
               <span className="flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary rounded-full text-xs font-medium">
                 <Users size={14} />
                 <span>{totalPeople}</span>
@@ -686,8 +692,8 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
               )}
             </div>
           </div>
-          {hotelInfo && cardMode !== 'representative' && (
-            <div className="text-xs text-gray-500 mb-2">
+          {hotelInfo && cardMode !== 'representative' && hotelInfo.pick_up_location && (
+            <div className={`${chrome.bodyMuted} mb-2 truncate`} title={hotelInfo.pick_up_location}>
               {hotelInfo.pick_up_location}
             </div>
           )}
@@ -741,8 +747,9 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                           title={t('requestedPickupHotel')}
                         >
                           ({t('requestedHotelShort')}:{' '}
-                          {getPickupHotelNameById(reservation.pickup_hotel, pickupHotels) ||
-                            getPickupHotelNameOnly(reservation.pickup_hotel || '')}
+                          {getPickupHotelNameById(reservation.pickup_hotel, pickupHotels, {
+                            preferInternalName: true,
+                          }) || getPickupHotelNameOnly(reservation.pickup_hotel || '')}
                           )
                         </span>
                       )}
@@ -808,6 +815,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                     <SearchablePickupHotelSelect
                       hotels={groupHotelsForSelect}
                       value={groupRepHotelId}
+                      preferInternalName
                       disabled={
                         groupRepSaving === cardMainGroup || representativePickupToggleDisabled
                       }
@@ -831,7 +839,9 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                     }`}
                   >
                     {groupRepHotelId
-                      ? formatPickupHotelDisplayLine(groupRepHotelId, pickupHotels)
+                      ? formatPickupHotelDisplayLine(groupRepHotelId, pickupHotels, {
+                          preferInternalName: true,
+                        })
                       : t('repNotSet')}
                   </p>
                 )}
@@ -846,12 +856,12 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
 
   return (
     <div className="bg-white rounded-lg shadow-sm border">
-      <div className="p-4">
+      <div className={chrome.shellPadding}>
         <div 
-          className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between cursor-pointer mb-3 p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+          className={`flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between cursor-pointer ${chrome.headerMargin} p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors`}
           onClick={() => onToggleSection('pickup-schedule')}
         >
-          <h2 className="text-md font-semibold text-gray-900 flex items-center min-w-0">
+          <h2 className={`${chrome.sectionTitle} flex items-center min-w-0`}>
             {t('title')}
             <ConnectionStatusLabel status={connectionStatus.reservations} section="예약" />
           </h2>
@@ -890,39 +900,41 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
               <button
                 type="button"
                 onClick={() => setShowEmailStatusHelpModal(true)}
-                className="p-1 text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+                className={`${chrome.iconButton} text-gray-500 hover:text-gray-700 hover:bg-gray-100`}
                 title={t('emailStatusHelpTitle')}
               >
-                <HelpCircle size={18} />
+                <HelpCircle size={chrome.iconSize} />
               </button>
               <button
                 type="button"
                 onClick={onAutoGenerate}
-                className="px-2.5 py-1 bg-primary text-primary-foreground rounded text-xs hover:bg-primary/90 shrink-0"
+                className={`${chrome.iconButton} border border-primary/20 bg-primary/10 text-primary hover:bg-primary/15`}
+                title={t('autoGenerateModalTitle')}
+                aria-label={t('autoGenerate')}
               >
-                {t('autoGenerate')}
+                <Sparkles size={chrome.iconSize} aria-hidden />
               </button>
               {onPreviewEmail && (
                 <button
                   type="button"
                   onClick={onPreviewEmail}
                   disabled={reservationsWithPickupTime === 0}
-                  className="px-2.5 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0"
+                  className={`${chrome.iconButton} border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50`}
                   title={
                     reservationsWithPickupTime === 0
                       ? t('emailDisabledNoPickupTime')
                       : t('sendEmailTitle')
                   }
+                  aria-label={t('email')}
                 >
-                  <FaEnvelope size={14} />
-                  <span>{t('email')}</span>
+                  <Mail size={chrome.iconSize} aria-hidden />
                 </button>
               )}
             </div>
             {expandedSections.has('pickup-schedule') ? (
-              <ChevronUp className="w-5 h-5 text-gray-500 shrink-0" />
+              <ChevronUp className={`${chrome.chevronClass} text-gray-500 shrink-0`} />
             ) : (
-              <ChevronDown className="w-5 h-5 text-gray-500 shrink-0" />
+              <ChevronDown className={`${chrome.chevronClass} text-gray-500 shrink-0`} />
             )}
           </div>
         </div>

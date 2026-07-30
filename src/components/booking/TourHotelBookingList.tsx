@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { useLocale, useTranslations } from 'next-intl';
 import { supabase } from '@/lib/supabase';
 import TourHotelBookingForm from './TourHotelBookingForm';
@@ -32,7 +31,6 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  X,
 } from 'lucide-react';
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState';
 import { useAuth } from '@/contexts/AuthContext';
@@ -47,7 +45,7 @@ import {
 } from '@/lib/bookingAudit';
 import { normalizeReservationIds, isReservationCancelledStatus } from '@/utils/tourUtils';
 import { getStatusColor as getTourStatusColor, getStatusText as getTourStatusText } from '@/utils/tourStatusUtils';
-import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent';
+import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog';
 
 interface TourHotelBookingTourMeta {
   tour_date: string;
@@ -2308,59 +2306,33 @@ export default function TourHotelBookingList() {
         onApplied={() => void refreshAfterStatementReconApply()}
       />
 
-      {tourDetailModal &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-2 sm:p-3"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="hotel-booking-tour-detail-modal-title"
-            onClick={() => setTourDetailModal(null)}
-          >
-            <div
-              className="flex h-[90vh] max-h-[90vh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
-                <h3
-                  id="hotel-booking-tour-detail-modal-title"
-                  className="text-lg font-semibold text-gray-900 truncate pr-2"
-                  title={tourDetailModal.title}
-                >
-                  {tourDetailModal.title}
-                </h3>
-                <div className="flex shrink-0 items-center gap-2">
-                  <a
-                    href={`/${locale}/admin/tours/${tourDetailModal.tourId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
-                  >
-                    {tRes('card.openTourInNewTab')}
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => setTourDetailModal(null)}
-                    className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
-                    aria-label={tRes('card.close')}
-                  >
-                    <X className="h-5 w-5" aria-hidden />
-                  </button>
-                </div>
-              </div>
-              <div className="min-h-0 flex-1 bg-gray-50">
-                <TourDetailModalContent
-                  tourId={tourDetailModal.tourId}
-                  onNavigateToTour={(nextTourId) =>
-                    setTourDetailModal((prev) => (prev ? { ...prev, tourId: nextTourId } : null))
-                  }
-                />
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
+      <TourDetailResizableDialog
+        open={Boolean(tourDetailModal)}
+        onOpenChange={(open) => !open && setTourDetailModal(null)}
+        tourId={tourDetailModal?.tourId ?? null}
+        onNavigateToTour={(nextTourId) =>
+          setTourDetailModal((prev) => (prev ? { ...prev, tourId: nextTourId } : null))
+        }
+        accessibilityTitle={tourDetailModal?.title ?? '투어 상세'}
+        stackLevel="elevated"
+        header={
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-lg font-semibold text-gray-900 truncate pr-2" title={tourDetailModal?.title}>
+              {tourDetailModal?.title}
+            </h3>
+            {tourDetailModal?.tourId ? (
+              <a
+                href={`/${locale}/admin/tours/${tourDetailModal.tourId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
+              >
+                {tRes('card.openTourInNewTab')}
+              </a>
+            ) : null}
+          </div>
+        }
+      />
 
       {/* 부킹 상세 모달 */}
       {showBookingModal && (

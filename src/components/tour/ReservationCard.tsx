@@ -8,10 +8,6 @@ import {
   Building,
   DollarSign,
   Wallet,
-  Home,
-  Plane,
-  PlaneTakeoff,
-  HelpCircle,
   CheckCircle2,
   AlertCircle,
   XCircle,
@@ -34,6 +30,7 @@ import { SimplePickupEditModal } from './modals/SimplePickupEditModal'
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import ReservationEvidenceUpload from '@/components/reservation/ReservationEvidenceUpload'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
+import { ResidentStatusCardBadge } from '@/components/tour/ResidentStatusCardBadge'
 import { isReservationCancelledStatus } from '@/utils/tourUtils'
 import { getBalanceAmountForDisplay, type PartySizeSource } from '@/utils/reservationPricingBalance'
 import {
@@ -41,11 +38,12 @@ import {
   fetchTeamDisplayNameByEmail,
   fetchTeamDisplayNameMap,
 } from '@/utils/paymentRecordNoteDisplay'
-import { isChoiceOptionUuid, simplifyChoiceLabel } from '@/utils/choiceLabels'
+import { isChoiceOptionUuid, simplifyChoiceLabel, isAntelopeTourChoiceBadgeLabel } from '@/utils/choiceLabels'
 import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
 import type { PickupHotelAssignmentOption } from '@/utils/pickupHotelUtils'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
+import { useTourDetailSectionChrome } from './TourDetailModalChromeContext'
 
 function getReservationCommunicationChannel(reservation: Reservation): string | null {
   const r = reservation as Record<string, unknown>
@@ -202,6 +200,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 }) => {
   const tCard = useTranslations('reservations.card')
   const locale = useLocale()
+  const chrome = useTourDetailSectionChrome()
+  const cardCompact = chrome.compact
   const showResidentStatusUi = productShowsResidentStatusSectionByCode(productCode)
   /** 요청 중단(AbortError) 여부 — 컴포넌트 언마운트/의존성 변경 시 정상 취소이므로 로그 생략 */
   const isAbortError = useCallback((err: unknown): boolean => {
@@ -226,7 +226,6 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const [showSimplePickupModal, setShowSimplePickupModal] = useState(false)
   const [showReviewModal, setShowReviewModal] = useState(false)
   const [channelInfo, setChannelInfo] = useState<{ name: string; favicon?: string; has_not_included_price?: boolean; commission_base_price_only?: boolean } | null>(null)
-  const [customerData, setCustomerData] = useState<{ id: string; resident_status: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null } | null>(null)
   const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
   // setResidentStatusDropdownOpen는 사용되지만 residentStatusDropdownOpen은 현재 읽히지 않음
   const [_residentStatusDropdownOpen, setResidentStatusDropdownOpen] = useState<string | null>(null)
@@ -299,21 +298,6 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       
       if (error) {
         if (!isAbortError(error)) console.error('예약 고객 정보 조회 오류:', error)
-        // fallback: customers 테이블에서 가져오기
-        if (reservation.customer_id) {
-          const { data: customer, error: customerError } = await supabase
-            .from('customers')
-            .select('id, resident_status')
-            .eq('id', reservation.customer_id)
-            .maybeSingle()
-          
-          if (!customerError && customer) {
-            setCustomerData({
-              id: (customer as any).id,
-              resident_status: (customer as any).resident_status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
-            })
-          }
-        }
         return
       }
       
@@ -325,11 +309,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       let passCoveredCount = 0
       
       if (reservationCustomers && reservationCustomers.length > 0) {
-        // 상태별 개수 계산
-        const statusCounts: Record<string, number> = {}
         reservationCustomers.forEach((rc: any) => {
           const status = rc.resident_status || 'unknown'
-          statusCounts[status] = (statusCounts[status] || 0) + 1
           
           if (status === 'us_resident') {
             usResidentCount++
@@ -339,14 +320,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             nonResidentUnder16Count++
           } else if (status === 'non_resident_with_pass') {
             nonResidentWithPassCount++
-            // 패스 커버 수는 첫 번째 레코드에서만 가져오기
             if (passCoveredCount === 0 && rc.pass_covered_count) {
               passCoveredCount = rc.pass_covered_count
             }
           }
         })
         
-        // 거주 상태별 인원 수 저장
         setResidentStatusCounts({
           usResident: usResidentCount,
           nonResident: nonResidentCount,
@@ -354,47 +333,11 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           nonResidentWithPass: nonResidentWithPassCount,
           passCoveredCount: passCoveredCount
         })
-        
-        // 가장 많은 상태 찾기
-        let mostCommonStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | 'non_resident_under_16' | null = null
-        let maxCount = 0
-        Object.entries(statusCounts).forEach(([status, count]) => {
-          if (count > maxCount && status !== 'unknown') {
-            maxCount = count
-            mostCommonStatus = status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | 'non_resident_under_16' | null
-          }
-        })
-        
-        // 가장 많은 상태가 없으면 첫 번째 상태 사용
-        if (!mostCommonStatus && reservationCustomers[0]) {
-          mostCommonStatus = reservationCustomers[0].resident_status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | 'non_resident_under_16' | null
-        }
-        
-        setCustomerData({
-          id: reservation.id, // reservation_id를 id로 사용
-          resident_status: (mostCommonStatus === 'non_resident_under_16' ? 'non_resident' : mostCommonStatus) as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
-        })
-      } else {
-        // reservation_customers에 데이터가 없으면 customers 테이블에서 가져오기 (fallback)
-        if (reservation.customer_id) {
-          const { data: customer, error: customerError } = await supabase
-            .from('customers')
-            .select('id, resident_status')
-            .eq('id', reservation.customer_id)
-            .maybeSingle()
-          
-          if (!customerError && customer) {
-            setCustomerData({
-              id: (customer as any).id,
-              resident_status: (customer as any).resident_status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
-            })
-          }
-        }
       }
     } catch (error) {
       if (!isAbortError(error)) console.error('고객 정보 조회 오류:', error)
     }
-  }, [reservation.id, reservation.customer_id, isAbortError])
+  }, [reservation.id, isAbortError])
 
   // 채널 정보 가져오기
   const fetchChannelInfo = useCallback(async () => {
@@ -1329,7 +1272,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         if (choice.choice_group_ko) choiceItem.choice_group_ko = choice.choice_group_ko
         selectedChoices.push(choiceItem)
       })
-      if (selectedChoices.length > 0) return selectedChoices
+      if (selectedChoices.length > 0) {
+        return selectedChoices.filter((choice) => isAntelopeTourChoiceBadgeLabel(choice.name))
+      }
     }
 
     // 2. reservation.choices JSON 필드에서 파싱 (fallback) — option_id UUID는 표시하지 않음
@@ -1415,7 +1360,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       }
     }
 
-    return selectedChoices
+    return selectedChoices.filter((choice) => isAntelopeTourChoiceBadgeLabel(choice.name))
   }
 
   const getPickupHotelName = () => {
@@ -1812,7 +1757,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 
   return (
      <div 
-       className={`p-3 rounded-lg border transition-colors ${
+       className={`${cardCompact ? 'p-2' : 'p-3'} rounded-lg border transition-colors ${
          isStaff 
            ? 'bg-white hover:bg-gray-50 cursor-pointer' 
            : 'bg-gray-50 cursor-not-allowed'
@@ -1821,66 +1766,32 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
      >
       {/* 메인 정보 섹션 */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
+        <div className={`flex items-center ${cardCompact ? 'space-x-1.5' : 'space-x-2'}`}>
           {/* 국가 플래그 - 이름 왼쪽에 배치 */}
           <ReactCountryFlag
             countryCode={flagCode || 'US'}
             svg
             style={{
-              width: '20px',
-              height: '15px'
+              width: cardCompact ? '14px' : '20px',
+              height: cardCompact ? '11px' : '15px'
             }}
           />
           
-          {/* 거주 상태 아이콘 */}
-          {showResidentStatusUi && isStaff && customerData && (
-            <span className="flex-shrink-0 relative resident-status-dropdown">
-              {(() => {
-                const residentStatus = customerData.resident_status
-                
-                const getStatusIcon = () => {
-                  if (residentStatus === 'us_resident') {
-                    return <Home className="h-4 w-4 text-green-600 cursor-pointer hover:scale-110 transition-transform" />
-                  } else if (residentStatus === 'non_resident') {
-                    return <Plane className="h-4 w-4 text-primary cursor-pointer hover:scale-110 transition-transform" />
-                  } else if (residentStatus === 'non_resident_with_pass') {
-                    return <PlaneTakeoff className="h-4 w-4 text-purple-600 cursor-pointer hover:scale-110 transition-transform" />
-                  } else {
-                    return <HelpCircle className="h-4 w-4 text-gray-400 cursor-pointer hover:scale-110 transition-transform" />
-                  }
-                }
-
-                const getStatusLabel = () => {
-                  if (residentStatus === 'us_resident') return '미국 거주자'
-                  if (residentStatus === 'non_resident') return '비거주자'
-                  if (residentStatus === 'non_resident_with_pass') return '비거주자 (패스 보유)'
-                  return '거주 상태 정보 없음'
-                }
-                
-                return (
-                  <div className="relative">
-                    <div 
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleOpenResidentStatusModal()
-                      }}
-                      className="relative group"
-                    >
-                      {getStatusIcon()}
-                      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
-                        {getStatusLabel()} (클릭하여 변경)
-                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })()}
-            </span>
-          )}
+          {/* 거주 상태 (비거주자 인원) */}
+          {showResidentStatusUi && isStaff ? (
+            <ResidentStatusCardBadge
+              compact={cardCompact}
+              counts={residentStatusCounts}
+              onClick={(e) => {
+                e.stopPropagation()
+                void handleOpenResidentStatusModal()
+              }}
+            />
+          ) : null}
           
           {/* 고객 이름 */}
           <p
-            className={`font-medium text-sm ${isReservationCancelled ? 'text-gray-400' : 'text-gray-900'}`}
+            className={`font-medium ${cardCompact ? 'text-xs' : 'text-sm'} ${isReservationCancelled ? 'text-gray-400' : 'text-gray-900'}`}
           >
             {customerName}
           </p>
@@ -1888,6 +1799,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           {onCommunicationChannelChange ? (
             <CustomerCommunicationChannelPicker
               compact
+              dense={cardCompact}
               align="right"
               value={getReservationCommunicationChannel(reservation)}
               channelId={reservation.channel_id ?? null}
@@ -1897,8 +1809,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           ) : null}
           
           {/* 총 인원수 뱃지 - 숫자만 표시 */}
-          <div className="flex items-center space-x-1 bg-primary/10 text-primary px-2 py-1 rounded-full text-xs font-medium">
-            <Users size={12} />
+          <div className={`flex items-center space-x-1 bg-primary/10 text-primary rounded-full font-medium ${
+            cardCompact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-1 text-xs'
+          }`}>
+            <Users size={cardCompact ? 10 : 12} />
             <span>
               {(() => {
                 // 필드명이 child/infant일 수도 있고 children/infants일 수도 있음
@@ -1920,14 +1834,16 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               return (
                 <div
                   key={index}
-                  className="relative h-7 w-7 shrink-0 overflow-hidden rounded-full border border-gray-200 bg-white"
+                  className={`relative shrink-0 overflow-hidden rounded-full border border-gray-200 bg-white ${
+                    cardCompact ? 'h-5 w-5' : 'h-7 w-7'
+                  }`}
                   title={choice.name}
                 >
                   <Image
                     src={choice.badge_icon_url}
                     alt={choice.name}
                     fill
-                    sizes="28px"
+                    sizes={cardCompact ? '20px' : '28px'}
                     className="object-contain"
                   />
                 </div>
@@ -1937,7 +1853,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             return (
               <div 
                 key={index} 
-                className={`px-2 py-1 rounded-full text-xs font-medium ${colorClasses.bg} ${colorClasses.text} border ${colorClasses.border}`}
+                className={`rounded-full font-medium ${colorClasses.bg} ${colorClasses.text} border ${colorClasses.border} ${
+                  cardCompact ? 'px-1 py-0.5 text-[10px] leading-tight' : 'px-2 py-1 text-xs'
+                }`}
               >
                 {choice.name}
               </div>
@@ -2014,9 +1932,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       </div>
 
       {/* 픽업 정보 섹션 — 취소 예약은 등록일·취소일만 표시 */}
-      <div className="mt-2 text-xs text-gray-500">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2 flex-wrap min-w-0">
+      <div className={`mt-2 text-gray-500 ${cardCompact ? 'text-[10px]' : 'text-xs'}`}>
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <div className="flex items-center space-x-2 flex-wrap min-w-0 flex-1 overflow-hidden">
             {isReservationCancelled ? (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-gray-700 min-w-0">
                 <span
@@ -2090,7 +2008,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                       setShowSimplePickupModal(true)
                     }
                   }}
-                  className={isStaff ? 'cursor-pointer hover:text-green-700' : ''}
+                  className={`min-w-0 max-w-[min(160px,42vw)] truncate inline-block ${isStaff ? 'cursor-pointer hover:text-green-700' : ''}`}
+                  title={getPickupHotelName()}
                 >
                   {getPickupHotelName()}
                 </span>
@@ -2194,8 +2113,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             calculationString += ` - ${formatCalcMoney(commissionAmount)} = ${formatCalcMoney(totalRevenue)}`
           }
           return (
-            <div className="mt-1 text-xs text-gray-700">
-              <div className="text-gray-600 break-words font-medium">
+            <div className={`mt-1 ${cardCompact ? 'text-[10px] leading-tight' : 'text-xs'} text-gray-700`}>
+              <div className={`text-gray-600 break-words ${cardCompact ? 'font-normal' : 'font-medium'}`}>
                 {calculationString}
               </div>
             </div>
@@ -2203,25 +2122,32 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         })()}
         
         {/* 3번째 줄 - pickup_location과 잔액 정보, 액션 버튼들 */}
-        <div className="flex items-center justify-between mt-1">
-          <div className="flex items-center space-x-3">
+        <div className="flex items-center justify-between mt-1 gap-2 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
             {/* 픽업 위치 — 취소 예약은 취소 사유 */}
-            <div className="text-xs text-gray-400">
-              {isReservationCancelled ? (
-                <span className="text-gray-600 break-words font-medium">
-                  {(() => {
+            {(() => {
+              const pickupLineText = isReservationCancelled
+                ? (() => {
                     const reason = String(
                       (reservation as { cancellation_reason?: string | null }).cancellation_reason ?? ''
                     ).trim()
                     return reason
                       ? `${tCard('cancellationReasonLabel')}: ${reason}`
                       : tCard('noCancellationReasonShort')
-                  })()}
-                </span>
-              ) : (
-                getPickupLocation() || ''
-              )}
-            </div>
+                  })()
+                : getPickupLocation()
+
+              if (!pickupLineText) return null
+
+              return (
+                <div
+                  className={`min-w-0 flex-1 truncate shrink ${cardCompact ? 'text-[10px]' : 'text-xs'} text-gray-400`}
+                  title={pickupLineText}
+                >
+                  {pickupLineText}
+                </div>
+              )
+            })()}
             
             {/* 잔액/환불 뱃지 및 처리 버튼 - reservation_pricing.balance_amount 사용(실제 예약 잔금과 일치) */}
             {isStaff && (() => {
@@ -2237,7 +2163,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                   reservationPricing?.currency || 'USD'
                 )
                 return (
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-2 shrink-0">
                     <div
                       className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-200"
                       title={tCard('balanceDueBadgeTitle')}
@@ -2260,7 +2186,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               if (displayBalanceBadge < 0) {
                 const refundAmount = Math.abs(displayBalanceBadge)
                 return (
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-2 shrink-0">
                     <div className="px-2 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-200">
                       -{formatCurrency(refundAmount, reservationPricing?.currency || 'USD')}
                     </div>
@@ -2307,7 +2233,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           </div>
           
           {/* 오른쪽 액션 버튼들 */}
-          <div className="flex items-center space-x-1">
+          <div className="flex items-center space-x-1 shrink-0">
             {/* 입금 내역 버튼 */}
             {isStaff && (
               <button

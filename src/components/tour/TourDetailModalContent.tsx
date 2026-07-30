@@ -36,7 +36,7 @@ export function TourDetailModalContent({
   )
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-auto bg-white">
+    <div className="w-full bg-white">
       <TourDetailPageView
         key={`${displayTourId}-${refreshNonce}`}
         tourId={displayTourId}

@@ -19,6 +19,7 @@ interface MessageListProps {
   canDeleteMessage: (message: ChatMessage) => boolean
   deleteMessage: (messageId: string) => void
   messagesEndRef: React.RefObject<HTMLDivElement>
+  messagesScrollRef?: React.RefObject<HTMLDivElement>
   showParticipantsList: boolean
   isMobileMenuOpen: boolean
   translateMessage?: (messageId: string, messageText: string) => Promise<void>
@@ -41,6 +42,7 @@ export default function MessageList({
   canDeleteMessage,
   deleteMessage,
   messagesEndRef,
+  messagesScrollRef,
   showParticipantsList,
   isMobileMenuOpen,
   translateMessage: _translateMessage,
@@ -49,6 +51,7 @@ export default function MessageList({
 }: MessageListProps) {
   return (
     <div 
+      ref={messagesScrollRef}
       className={`flex-1 overflow-y-auto p-2 lg:p-4 space-y-2 lg:space-y-3 min-h-0 bg-gradient-to-b from-transparent to-blue-50 bg-opacity-20 ${!isPublicView && showParticipantsList ? 'mr-64' : ''} ${!isMobileMenuOpen ? 'lg:mt-0' : ''}`}
       style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
     >

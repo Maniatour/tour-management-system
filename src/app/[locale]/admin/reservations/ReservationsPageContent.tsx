@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from 'react'
-import { createPortal } from 'react-dom'
 import dynamic from 'next/dynamic'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { X, Search, SlidersHorizontal, Printer, ChevronDown } from 'lucide-react'
@@ -249,19 +248,7 @@ const DeletedReservationsTableModal = dynamic(
   () => import('@/components/shared/DeletedReservationsTableModal').then((mod) => mod.DeletedReservationsTableModal),
   { ssr: false, loading: () => null }
 )
-const TourDetailModalContent = dynamic(
-  () => import('@/components/tour/TourDetailModalContent').then((mod) => mod.TourDetailModalContent),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex min-h-[320px] flex-col gap-3 p-4">
-        <div className="h-8 w-1/3 animate-pulse rounded bg-gray-200" />
-        <div className="h-24 animate-pulse rounded bg-gray-100" />
-        <div className="h-24 animate-pulse rounded bg-gray-100" />
-      </div>
-    ),
-  }
-)
+import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
 const AwayOtherUserChangesModal = dynamic(
   () => import('@/components/shared/AwayOtherUserChangesModal'),
   { ssr: false, loading: () => null }
@@ -7122,53 +7109,30 @@ export default function AdminReservations() {
         </div>
       )}
 
-      {tourDetailModalTourId &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[10050] flex items-center justify-center bg-black/60 p-2 sm:p-3"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="reservations-tour-detail-modal-title"
-            onClick={() => setTourDetailModalTourId(null)}
-          >
-            <div
-              className="flex h-[90vh] max-h-[90vh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
-                <h3 id="reservations-tour-detail-modal-title" className="text-lg font-semibold text-gray-900 truncate pr-2">
-                  {t('card.tourDetailModalTitle')}
-                </h3>
-                <div className="flex shrink-0 items-center gap-2">
-                  <a
-                    href={`/${locale}/admin/tours/${tourDetailModalTourId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
-                  >
-                    {t('card.openTourInNewTab')}
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => setTourDetailModalTourId(null)}
-                    className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
-                    aria-label={t('card.close')}
-                  >
-                    <X className="h-5 w-5" aria-hidden />
-                  </button>
-                </div>
-              </div>
-              <div className="min-h-0 flex-1 bg-gray-50">
-                <TourDetailModalContent
-                  tourId={tourDetailModalTourId}
-                  onNavigateToTour={setTourDetailModalTourId}
-                />
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
+      <TourDetailResizableDialog
+        open={Boolean(tourDetailModalTourId)}
+        onOpenChange={(open) => !open && setTourDetailModalTourId(null)}
+        tourId={tourDetailModalTourId}
+        onNavigateToTour={setTourDetailModalTourId}
+        accessibilityTitle={t('card.tourDetailModalTitle')}
+        header={
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-lg font-semibold text-gray-900 truncate pr-2">
+              {t('card.tourDetailModalTitle')}
+            </h3>
+            {tourDetailModalTourId ? (
+              <a
+                href={`/${locale}/admin/tours/${tourDetailModalTourId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
+              >
+                {t('card.openTourInNewTab')}
+              </a>
+            ) : null}
+          </div>
+        }
+      />
 
       <DeletedReservationsTableModal
         isOpen={showDeletedReservationsModal}

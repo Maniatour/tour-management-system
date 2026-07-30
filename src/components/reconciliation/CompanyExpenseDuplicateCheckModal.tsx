@@ -4,8 +4,8 @@ import { useParams } from 'next/navigation'
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { AlertTriangle, Archive, Car, ExternalLink, User, Users } from 'lucide-react'
 import DeletedUnifiedExpensesModal from '@/components/reconciliation/DeletedUnifiedExpensesModal'
-import { ReservationDetailModalContent } from '@/components/reservation/ReservationDetailModalContent'
-import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
+import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
+import { ReservationResizableDialog } from '@/components/reservation/ReservationResizableDialog'
 import { UnifiedExpenseInlineEditForm } from '@/components/reconciliation/UnifiedExpenseInlineEditForm'
 import {
   saveUnifiedExpenseEdit,
@@ -1180,13 +1180,17 @@ export default function CompanyExpenseDuplicateCheckModal({
         </DialogContent>
       </Dialog>
 
-      <Dialog modal={false} open={tourDetailModalId != null} onOpenChange={(v) => !v && setTourDetailModalId(null)}>
-        <DialogContent
-          className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden z-[110] sm:rounded-lg"
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
-            <DialogTitle className="text-base font-semibold">투어 상세</DialogTitle>
+      <TourDetailResizableDialog
+        open={tourDetailModalId != null}
+        onOpenChange={(open) => !open && setTourDetailModalId(null)}
+        tourId={tourDetailModalId}
+        onNavigateToTour={setTourDetailModalId}
+        stackLevel="elevated"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        accessibilityTitle="투어 상세"
+        header={
+          <div className="flex flex-row items-center justify-between gap-2">
+            <h2 className="text-base font-semibold">투어 상세</h2>
             {tourDetailModalId ? (
               <a
                 href={`/${locale}/admin/tours/${tourDetailModalId}`}
@@ -1198,45 +1202,16 @@ export default function CompanyExpenseDuplicateCheckModal({
                 <ExternalLink size={14} aria-hidden />
               </a>
             ) : null}
-          </DialogHeader>
-          {tourDetailModalId ? (
-            <div className="flex min-h-0 flex-1 flex-col bg-white">
-              <TourDetailModalContent tourId={tourDetailModalId} onNavigateToTour={setTourDetailModalId} />
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+          </div>
+        }
+      />
 
-      <Dialog
-        modal={false}
+      <ReservationResizableDialog
         open={reservationDetailModalId != null}
-        onOpenChange={(v) => !v && setReservationDetailModalId(null)}
-      >
-        <DialogContent
-          className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden z-[110] sm:rounded-lg"
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
-            <DialogTitle className="text-base font-semibold">예약 상세</DialogTitle>
-            {reservationDetailModalId ? (
-              <a
-                href={`/${locale}/admin/reservations/${reservationDetailModalId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-primary hover:text-primary/80 shrink-0 ml-2"
-              >
-                새 탭에서 열기
-                <ExternalLink size={14} aria-hidden />
-              </a>
-            ) : null}
-          </DialogHeader>
-          {reservationDetailModalId ? (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
-              <ReservationDetailModalContent reservationId={reservationDetailModalId} />
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+        onOpenChange={(open) => !open && setReservationDetailModalId(null)}
+        reservationId={reservationDetailModalId}
+        modalStackLevel="nested"
+      />
 
       {mode === 'ledger' ? (
         <DeletedUnifiedExpensesModal

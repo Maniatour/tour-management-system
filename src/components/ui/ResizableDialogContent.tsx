@@ -6,20 +6,10 @@ import { X } from 'lucide-react'
 import { useResizableRect } from '@/hooks/useResizableRect'
 import { cn } from '@/lib/utils'
 import { DIALOG_Z_INDEX, type DialogStackLevel } from '@/lib/dialogZIndex'
-import type { ResizeHandle } from '@/lib/resizableRect'
+import { ResizableModalHandles } from '@/components/ui/ResizableModalHandles'
+import { ResizableDialogContext } from '@/components/ui/ResizableDialogContext'
 
 const MOBILE_MAX_WIDTH = 767
-
-const HANDLE_CLASS: Record<ResizeHandle, string> = {
-  n: 'top-0 left-2 right-2 h-1.5 cursor-n-resize',
-  s: 'bottom-0 left-2 right-2 h-1.5 cursor-s-resize',
-  e: 'right-0 top-2 bottom-2 w-1.5 cursor-e-resize',
-  w: 'left-0 top-2 bottom-2 w-1.5 cursor-w-resize',
-  ne: 'top-0 right-0 h-3 w-3 cursor-ne-resize',
-  nw: 'top-0 left-0 h-3 w-3 cursor-nw-resize',
-  se: 'bottom-0 right-0 z-20 flex h-5 w-5 cursor-nwse-resize items-end justify-end p-0.5 text-gray-400 hover:text-gray-600',
-  sw: 'bottom-0 left-0 h-3 w-3 cursor-sw-resize',
-}
 
 type Props = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
   storageKey?: string
@@ -60,6 +50,7 @@ const ResizableDialogContent = React.forwardRef<
       respectHeaderInset = true,
       accessibilityTitle,
       style: propsStyle,
+      onPointerDown: propsOnPointerDown,
       ...props
     },
     ref
@@ -92,19 +83,20 @@ const ResizableDialogContent = React.forwardRef<
     }, [])
 
     const handleHeaderPointerDown = (e: React.PointerEvent) => {
-      if (isMobile) return
+      if (isMobile || e.button !== 0) return
       const root = contentNodeRef.current
       const target = e.target as HTMLElement
       if (!root || !root.contains(target)) return
       if (!target.closest(draggableHeaderSelector)) return
+      if (target.closest('button, a, input, select, textarea, [data-no-drag]')) return
       e.stopPropagation()
       onDragPointerDown(e)
     }
 
-    const handleResizePointerDown = (handle: ResizeHandle) => (e: React.PointerEvent) => {
-      e.stopPropagation()
-      onResizePointerDown(handle)(e)
-    }
+    const dialogContextValue = React.useMemo(
+      () => ({ onDragHandlePointerDown: onDragPointerDown, isMobile }),
+      [onDragPointerDown, isMobile]
+    )
 
     const zIndex = DIALOG_Z_INDEX[resolvedStackLevel]
 
@@ -153,7 +145,10 @@ const ResizableDialogContent = React.forwardRef<
         <DialogPrimitive.Content
           ref={setContentRef}
           aria-describedby={undefined}
-          onPointerDown={handleHeaderPointerDown}
+          onPointerDown={(e) => {
+            handleHeaderPointerDown(e)
+            propsOnPointerDown?.(e)
+          }}
           className={cn(
             'fixed flex flex-col gap-0 overflow-hidden border bg-white p-0 shadow-2xl duration-200',
             'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
@@ -163,38 +158,19 @@ const ResizableDialogContent = React.forwardRef<
           style={{ ...contentStyle, ...propsStyle }}
           {...props}
         >
-          {accessibilityTitle ? (
-            <DialogPrimitive.Title className="sr-only">{accessibilityTitle}</DialogPrimitive.Title>
-          ) : null}
-          {children}
-          {!isMobile
-            ? (Object.keys(HANDLE_CLASS) as ResizeHandle[]).map((handle) => (
-                <div
-                  key={handle}
-                  aria-hidden
-                  className={cn('absolute touch-none', HANDLE_CLASS[handle])}
-                  onPointerDown={handleResizePointerDown(handle)}
-                >
-                  {handle === 'se' ? (
-                    <svg viewBox="0 0 12 12" className="pointer-events-none h-3 w-3" aria-hidden>
-                      <path
-                        d="M11 11L11 6M11 11L6 11M11 11L4 4"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  ) : null}
-                </div>
-              ))
-            : null}
-          {!hideCloseButton ? (
-            <DialogPrimitive.Close className="absolute right-4 top-4 z-20 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
-              <X className="h-4 w-4" />
-              <span className="sr-only">Close</span>
-            </DialogPrimitive.Close>
-          ) : null}
+          <ResizableDialogContext.Provider value={dialogContextValue}>
+            {accessibilityTitle ? (
+              <DialogPrimitive.Title className="sr-only">{accessibilityTitle}</DialogPrimitive.Title>
+            ) : null}
+            {children}
+            {!isMobile ? <ResizableModalHandles onResizePointerDown={onResizePointerDown} /> : null}
+            {!hideCloseButton ? (
+              <DialogPrimitive.Close className="absolute right-4 top-4 z-50 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
+                <X className="h-4 w-4" />
+                <span className="sr-only">Close</span>
+              </DialogPrimitive.Close>
+            ) : null}
+          </ResizableDialogContext.Provider>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     )

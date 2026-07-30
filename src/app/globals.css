@@ -401,6 +401,10 @@
       padding-right: var(--admin-todo-dock-width, 380px);
       transition: padding-left 300ms ease, padding-right 300ms ease;
     }
+
+    html.admin-todo-docked .reservation-form-modal-overlay {
+      padding-right: calc(var(--admin-todo-dock-width, 380px) + 1rem);
+    }
   }
 
 }

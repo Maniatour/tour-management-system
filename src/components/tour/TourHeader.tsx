@@ -1,4 +1,4 @@
-import { ArrowLeft, Edit, Trash2, Copy, Printer, Mail, DollarSign, RotateCcw, FileText } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, Copy, Printer, Mail, DollarSign, RotateCcw, FileText, X, GripVertical, Users } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import TourSunriseTime from '@/components/TourSunriseTime'
@@ -35,6 +35,14 @@ interface TourHeaderProps {
   onPrintBalanceEnvelopes?: () => void
   /** 투어 정보(팀/픽업/부킹) Letter 인쇄 */
   onPrintTourInfo?: () => void
+  /** 모달 닫기 (modal-toolbar 전용) */
+  onCloseModal?: () => void
+  /** modal-toolbar: 일반투어 여부 */
+  isPrivateTour?: boolean
+  /** modal-toolbar: 최대 수용 인원 */
+  maxParticipants?: number
+  /** page: 전체 페이지 헤더, modal-toolbar: 모달 고정 툴바만 */
+  variant?: 'page' | 'modal-toolbar'
 }
 
 export default function TourHeader({
@@ -63,34 +71,252 @@ export default function TourHeader({
   onPrintReceipts,
   onPrintTipEnvelopes,
   onPrintBalanceEnvelopes,
-  onPrintTourInfo
+  onPrintTourInfo,
+  onCloseModal,
+  isPrivateTour = false,
+  maxParticipants,
+  variant = 'page',
 }: TourHeaderProps) {
+  const embeddedInModal = variant === 'modal-toolbar'
   const router = useRouter()
   const t = useTranslations('tours.tourHeader')
+  const tInfo = useTranslations('tours.tourInfo')
   const productName = params.locale === 'ko' ? product?.name_ko : product?.name_en
+  const resolvedMaxParticipants =
+    typeof maxParticipants === 'number' && Number.isFinite(maxParticipants) ? maxParticipants : 12
   
   // 모달 상태 관리
   const [showStatusModal, setShowStatusModal] = useState(false)
 
   return (
-    <div className="bg-white shadow-sm border-b">
-      <div className="px-2 sm:px-6 py-2 sm:py-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
-            <button
-              onClick={() => router.push(`/${params.locale}/admin/tours`)}
-              className="p-1.5 sm:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg flex-shrink-0"
-            >
-              <ArrowLeft size={20} />
-            </button>
+    <div
+      className={
+        variant === 'modal-toolbar'
+          ? 'bg-gray-50/80'
+          : embeddedInModal
+            ? 'border-b border-gray-100 bg-white'
+            : 'border-b bg-white shadow-sm'
+      }
+    >
+      <div
+        className={
+          variant === 'modal-toolbar'
+            ? 'px-3 py-2'
+            : embeddedInModal
+              ? 'px-3 py-2 sm:px-4'
+              : 'px-2 py-2 sm:px-6 sm:py-4'
+        }
+      >
+        {variant === 'modal-toolbar' ? (
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <GripVertical
+                className="hidden h-4 w-4 shrink-0 text-gray-400 sm:block"
+                aria-hidden
+              />
+              <p
+                className="min-w-0 max-w-[min(100%,28rem)] truncate text-sm font-semibold text-gray-900 sm:max-w-xs lg:max-w-md"
+                title={
+                  tour.tour_date && productName
+                    ? `${tour.tour_date} - ${productName}`
+                    : productName || tour.tour_date || ''
+                }
+              >
+                {tour.tour_date && productName
+                  ? `${tour.tour_date} - ${productName}`
+                  : productName || tour.tour_date || 'Tour Detail'}
+              </p>
+              {!isPrivateTour ? (
+                <button
+                  type="button"
+                  className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700"
+                  title={tInfo('regularTourTooltip')}
+                  data-no-drag
+                >
+                  {tInfo('regularTour')}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700"
+                title={tInfo('maxParticipantsTooltip', { count: resolvedMaxParticipants })}
+                data-no-drag
+              >
+                <Users className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span className="tabular-nums">
+                  {resolvedMaxParticipants}
+                  {params.locale === 'ko' ? '명' : ''}
+                </span>
+              </button>
+              {onPrintTourInfo ? (
+                <button
+                  type="button"
+                  onClick={onPrintTourInfo}
+                  className="rounded-md border border-gray-200 bg-white p-1.5 text-gray-600 hover:bg-gray-50"
+                  title={params.locale === 'ko' ? '투어 정보 인쇄' : 'Print tour info'}
+                >
+                  <FileText className="h-4 w-4" />
+                </button>
+              ) : null}
+              {onPrintReceipts ? (
+                <button
+                  type="button"
+                  onClick={onPrintReceipts}
+                  className="rounded-md border border-gray-200 bg-white p-1.5 text-gray-600 hover:bg-gray-50"
+                  title={params.locale === 'ko' ? '영수증 일괄 인쇄' : 'Print receipts'}
+                >
+                  <Printer className="h-4 w-4" />
+                </button>
+              ) : null}
+              {onPrintTipEnvelopes ? (
+                <button
+                  type="button"
+                  onClick={onPrintTipEnvelopes}
+                  className="rounded-md border border-gray-200 bg-white p-1.5 text-gray-600 hover:bg-gray-50"
+                  title={params.locale === 'ko' ? '팁 봉투 인쇄' : 'Print tip envelopes'}
+                >
+                  <Mail className="h-4 w-4" />
+                </button>
+              ) : null}
+              {onPrintBalanceEnvelopes ? (
+                <button
+                  type="button"
+                  onClick={onPrintBalanceEnvelopes}
+                  className="rounded-md border border-gray-200 bg-white p-1.5 text-gray-600 hover:bg-gray-50"
+                  title={params.locale === 'ko' ? 'Balance 봉투 인쇄' : 'Print balance envelopes'}
+                >
+                  <DollarSign className="h-4 w-4" />
+                </button>
+              ) : null}
+              <div className="max-w-[88px] flex-shrink-0 sm:max-w-none">
+                <TourSunriseTime tourDate={tour.tour_date} />
+              </div>
+            </div>
+            <StatusManagement
+              tour={tour}
+              showTourStatusDropdown={showTourStatusDropdown}
+              showAssignmentStatusDropdown={showAssignmentStatusDropdown}
+              tourStatusOptions={tourStatusOptions}
+              assignmentStatusOptions={assignmentStatusOptions}
+              getTotalAssignedPeople={getTotalAssignedPeople}
+              getTotalPeopleNonCancelled={getTotalPeopleNonCancelled}
+              getTotalCancelledPeople={getTotalCancelledPeople}
+              onToggleTourStatusDropdown={onToggleTourStatusDropdown}
+              onToggleAssignmentStatusDropdown={onToggleAssignmentStatusDropdown}
+              onUpdateTourStatus={onUpdateTourStatus}
+              onUpdateAssignmentStatus={onUpdateAssignmentStatus}
+              getStatusColor={getStatusColor}
+              getStatusText={getStatusText}
+              getAssignmentStatusColor={getAssignmentStatusColor}
+              getAssignmentStatusText={getAssignmentStatusText}
+              locale={params.locale}
+              {...(onEditClick ? { onEditClick } : {})}
+              {...(onCopyTour ? { onCopyTour } : {})}
+              {...(onDeleteTour ? { onDeleteTour } : {})}
+              {...(onRestoreTour ? { onRestoreTour } : {})}
+              {...(onCloseModal ? { onCloseModal } : {})}
+            />
+            <div className="hidden items-center gap-3 lg:flex">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowStatusModal(true)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium ${getStatusColor(tour.tour_status)} hover:opacity-80`}
+                >
+                  {t('tour')}: {getStatusText(tour.tour_status, params.locale)}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowStatusModal(true)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium ${getAssignmentStatusColor(tour)} hover:opacity-80`}
+                >
+                  {t('assignment')}: {getAssignmentStatusText(tour, params.locale)}
+                </button>
+              </div>
+              <div className="rounded-lg border border-border bg-white px-3 py-1.5 text-center text-xs">
+                <div className="font-semibold text-primary tabular-nums">
+                  {getTotalAssignedPeople} / {getTotalPeopleNonCancelled} / {getTotalCancelledPeople}
+                </div>
+              </div>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={onCopyTour}
+                  className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  <Copy size={14} className="inline mr-1" />
+                  {t('copy')}
+                </button>
+                {onRestoreTour ? (
+                  <button
+                    type="button"
+                    onClick={onRestoreTour}
+                    className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-800 hover:bg-emerald-100"
+                  >
+                    <RotateCcw size={14} className="inline mr-1" />
+                    {params.locale === 'ko' ? '복구' : 'Restore'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={onDeleteTour}
+                    className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs text-red-700 hover:bg-red-100"
+                  >
+                    <Trash2 size={14} className="inline mr-1" />
+                    {t('delete')}
+                  </button>
+                )}
+                <button
+                  onClick={onEditClick}
+                  className="rounded-md border border-primary/20 bg-primary/10 px-2.5 py-1.5 text-xs text-primary hover:bg-primary/15"
+                >
+                  <Edit size={14} className="inline mr-1" />
+                  {t('edit')}
+                </button>
+                {onCloseModal ? (
+                  <button
+                    type="button"
+                    onClick={onCloseModal}
+                    className="rounded-md border border-gray-200 bg-white p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                    aria-label={params.locale === 'ko' ? '닫기' : 'Close'}
+                    title={params.locale === 'ko' ? '닫기' : 'Close'}
+                  >
+                    <X size={14} />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
+            {!embeddedInModal ? (
+              <button
+                onClick={() => router.push(`/${params.locale}/admin/tours`)}
+                className="flex-shrink-0 rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 sm:p-2"
+              >
+                <ArrowLeft size={20} />
+              </button>
+            ) : null}
             <div className="min-w-0 flex-1">
-              {/* 모바일: 뒤로가기와 제목·일출을 한 줄에 배치 */}
-              <div className="flex items-center gap-2 min-w-0">
-                <h1 className="text-base sm:text-xl font-bold text-gray-900 truncate min-w-0">
-                  {productName || 'Tour Detail'}
-                </h1>
-                {/* 일출 시간 (박스 넘침 방지) */}
-                <div className="flex-shrink-0 min-w-0 max-w-[80px] sm:max-w-none">
+              <div className="flex min-w-0 items-center gap-2">
+                {!embeddedInModal ? (
+                  <h1 className="min-w-0 flex-1 truncate text-base font-bold text-gray-900 sm:text-xl">
+                    {productName || 'Tour Detail'}
+                  </h1>
+                ) : (
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-gray-600 sm:text-sm">
+                    <span>
+                      {params.locale === 'ko' ? '투어 ID' : 'Tour ID'}: {tour.id}
+                    </span>
+                    <span className="hidden sm:inline">|</span>
+                    <span>
+                      {params.locale === 'ko' ? '날짜' : 'Date'}: {tour.tour_date || ''}
+                    </span>
+                    <span className={`rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(tour.tour_status)}`}>
+                      {getStatusText(tour.tour_status, params.locale)}
+                    </span>
+                  </div>
+                )}
+                <div className="max-w-[80px] flex-shrink-0 min-w-0 sm:max-w-none">
                   <TourSunriseTime tourDate={tour.tour_date} />
                 </div>
                 {onPrintTourInfo && (
@@ -134,15 +360,17 @@ export default function TourHeader({
                   </button>
                 )}
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-600 mt-1">
-                <span>{params.locale === 'ko' ? '투어 ID' : 'Tour ID'}: {tour.id}</span>
-                <span className="hidden sm:inline">|</span>
-                <span>{params.locale === 'ko' ? '날짜' : 'Date'}: {tour.tour_date || ''}</span>
-                <span className="hidden sm:inline">|</span>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(tour.tour_status)}`}>
-                  {getStatusText(tour.tour_status, params.locale)}
-                </span>
-              </div>
+              {!embeddedInModal ? (
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 sm:text-sm">
+                  <span>{params.locale === 'ko' ? '투어 ID' : 'Tour ID'}: {tour.id}</span>
+                  <span className="hidden sm:inline">|</span>
+                  <span>{params.locale === 'ko' ? '날짜' : 'Date'}: {tour.tour_date || ''}</span>
+                  <span className="hidden sm:inline">|</span>
+                  <span className={`rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(tour.tour_status)}`}>
+                    {getStatusText(tour.tour_status, params.locale)}
+                  </span>
+                </div>
+              ) : null}
             </div>
           </div>
           
@@ -240,6 +468,7 @@ export default function TourHeader({
             </div>
           </div>
         </div>
+        )}
       </div>
 
       {/* 상태 변경 모달 */}

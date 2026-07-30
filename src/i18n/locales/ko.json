@@ -5059,6 +5059,8 @@
       "tourType": "투어 유형",
       "privateTour": "단독투어",
       "regularTour": "일반투어",
+      "regularTourTooltip": "일반투어 (그룹 투어)",
+      "maxParticipantsTooltip": "최대 수용 인원 {count}명. 차량 배차 저장 시 차종 탑승 인원으로 자동 반영됩니다.",
       "tourNote": "투어 노트",
       "tourNotePlaceholder": "투어 관련 특이사항이나 메모를 입력하세요...",
       "section": "투어"
@@ -5396,6 +5398,7 @@
       "reimbursementFilterOutstanding": "미환급 있음",
       "statementUnmatchedOnlyLabel": "명세와 대조되지 않은 지출만 보기",
       "statementUnmatchedEmpty": "이 조건에 해당하는 지출이 없습니다. 필터를 해제해 보세요.",
+      "tourReceiptsSection": "투어 영수증",
       "reimbursedTotalLabel": "환급 합계",
       "outstandingTotalLabel": "미환급 합계",
       "editReimbursement": "환급 기록",

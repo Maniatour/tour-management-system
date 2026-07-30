@@ -7,6 +7,7 @@ import TourPhotoUpload from '@/components/TourPhotoUpload'
 import TourPhotoUploadProgressOverlay from '@/components/TourPhotoUploadProgressOverlay'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useTourDetailSectionChrome } from './TourDetailModalChromeContext'
 
 interface TourPhotosProps {
   tour: any
@@ -17,6 +18,7 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
   tour,
   onPhotosUpdated
 }) => {
+  const chrome = useTourDetailSectionChrome()
   const { user } = useAuth()
   const t = useTranslations('tours.tourPhoto')
   const [photoCount, setPhotoCount] = useState(0)
@@ -112,9 +114,9 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
   return (
     <div className="bg-white rounded-lg shadow-sm border">
       <TourPhotoUploadProgressOverlay />
-      <div className="p-4" id="tour-photos">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">{t('title')}</h3>
+      <div className={chrome.shellPadding} id="tour-photos">
+        <div className={`flex items-center justify-between ${chrome.headerMargin}`}>
+          <h3 className={chrome.sectionTitle}>{t('title')}</h3>
         </div>
         
         {/* 공유 링크 섹션 */}
@@ -137,14 +139,25 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
                   />
                   <button
                     onClick={handleCopyLink}
-                    className="flex items-center px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors text-sm"
+                    className={
+                      chrome.compact
+                        ? `${chrome.iconButton} bg-primary text-primary-foreground hover:bg-primary/90`
+                        : 'flex items-center px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors text-sm'
+                    }
                     title="링크 복사"
+                    aria-label="링크 복사"
                   >
                     {copied ? (
-                      <>
-                        <Check size={16} className="mr-1" />
-                        복사됨
-                      </>
+                      chrome.compact ? (
+                        <Check size={chrome.iconSize} />
+                      ) : (
+                        <>
+                          <Check size={16} className="mr-1" />
+                          복사됨
+                        </>
+                      )
+                    ) : chrome.compact ? (
+                      <Copy size={chrome.iconSize} />
                     ) : (
                       <>
                         <Copy size={16} className="mr-1" />
@@ -154,10 +167,15 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
                   </button>
                   <button
                     onClick={handleOpenLink}
-                    className="flex items-center px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors text-sm"
+                    className={
+                      chrome.compact
+                        ? `${chrome.iconButton} bg-primary text-primary-foreground hover:bg-primary/90`
+                        : 'flex items-center px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors text-sm'
+                    }
                     title="새 창에서 열기"
+                    aria-label="새 창에서 열기"
                   >
-                    <ExternalLink size={16} />
+                    <ExternalLink size={chrome.compact ? chrome.iconSize : 16} />
                   </button>
                 </div>
               </div>
@@ -187,7 +205,7 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
                 <button
                   onClick={handleToggleExtendedAccess}
                   disabled={isUpdating}
-                  className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`flex items-center ${chrome.textActionButton} font-medium transition-colors ${
                     photosExtendedAccess
                       ? 'bg-green-600 text-white hover:bg-green-700'
                       : 'bg-gray-600 text-white hover:bg-gray-700'

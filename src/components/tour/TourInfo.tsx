@@ -4,7 +4,7 @@ import { ConnectionStatusLabel } from './TourUIComponents'
 import { Edit2, Check, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { TourStatusModal } from './modals/TourStatusModal'
-import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
+import { useTourDetailSectionChrome } from './TourDetailModalChromeContext'
 
 interface TourInfoProps {
   tour: any
@@ -20,13 +20,14 @@ interface TourInfoProps {
   onProductChange?: (productId: string) => Promise<void>
   /** 투어 최대 수용 인원 수동 저장 (미지정 시 기본 정보에 필드 숨김) */
   onMaxParticipantsChange?: (value: number) => Promise<void>
-  getStatusColor: (status: string | null) => string
-  getStatusText: (status: string | null, locale: string) => string
-  getAssignmentStatusColor: (tour: any) => string
-  getAssignmentStatusText: (tour: any, locale: string) => string
+  /** 모달에서는 상태·유형·수용 인원을 헤더로 이동 */
+  compactForModal?: boolean
+  getStatusColor?: (status: string | null) => string
+  getStatusText?: (status: string | null, locale: string) => string
+  getAssignmentStatusColor?: (tour: any) => string
+  getAssignmentStatusText?: (tour: any, locale: string) => string
   onUpdateTourStatus?: (status: string) => Promise<void>
   onUpdateAssignmentStatus?: (status: string) => Promise<void>
-  assignedReservations?: Array<{ id: string }>
 }
 
 interface Product {
@@ -51,14 +52,15 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   onTourTimeChange,
   onProductChange,
   onMaxParticipantsChange,
+  compactForModal = false,
   getStatusColor,
   getStatusText,
   getAssignmentStatusColor,
   getAssignmentStatusText,
   onUpdateTourStatus,
   onUpdateAssignmentStatus,
-  assignedReservations = []
 }) => {
+  const chrome = useTourDetailSectionChrome()
   const t = useTranslations('tours.tourInfo')
   const tCommon = useTranslations('common')
   const productName = params.locale === 'ko' ? product?.name_ko : product?.name_en
@@ -78,87 +80,10 @@ export const TourInfo: React.FC<TourInfoProps> = ({
     return '08:00'
   }
   const defaultTimeStr = getDefaultTimeString()
-  const showResidentStatusSection = productShowsResidentStatusSectionByCode(product?.product_code)
 
   // 편집 상태 관리
   const [editingProduct, setEditingProduct] = useState(false)
   const [showStatusModal, setShowStatusModal] = useState(false)
-  const [residentStatusSummary, setResidentStatusSummary] = useState({
-    usResident: 0,
-    nonResident: 0,
-    nonResidentUnder16: 0,
-    nonResidentWithPass: 0,
-    passCoveredCount: 0
-  })
-
-  // 거주 상태별 인원 수 합산 가져오기
-  useEffect(() => {
-    const fetchResidentStatusSummary = async () => {
-      if (!showResidentStatusSection) {
-        setResidentStatusSummary({
-          usResident: 0,
-          nonResident: 0,
-          nonResidentUnder16: 0,
-          nonResidentWithPass: 0,
-          passCoveredCount: 0
-        })
-        return
-      }
-      if (!assignedReservations || assignedReservations.length === 0) {
-        setResidentStatusSummary({
-          usResident: 0,
-          nonResident: 0,
-          nonResidentUnder16: 0,
-          nonResidentWithPass: 0,
-          passCoveredCount: 0
-        })
-        return
-      }
-
-      try {
-        const reservationIds = assignedReservations.map(r => r.id)
-        const { data: reservationCustomers, error } = await supabase
-          .from('reservation_customers')
-          .select('resident_status, pass_covered_count')
-          .in('reservation_id', reservationIds)
-        
-        if (!error && reservationCustomers) {
-          let usResidentCount = 0
-          let nonResidentCount = 0
-          let nonResidentUnder16Count = 0
-          let nonResidentWithPassCount = 0
-          let passCoveredCount = 0
-          
-          reservationCustomers.forEach((rc: any) => {
-            if (rc.resident_status === 'us_resident') {
-              usResidentCount++
-            } else if (rc.resident_status === 'non_resident') {
-              nonResidentCount++
-            } else if (rc.resident_status === 'non_resident_under_16') {
-              nonResidentUnder16Count++
-            } else if (rc.resident_status === 'non_resident_with_pass') {
-              nonResidentWithPassCount++
-              if (rc.pass_covered_count) {
-                passCoveredCount += rc.pass_covered_count
-              }
-            }
-          })
-          
-          setResidentStatusSummary({
-            usResident: usResidentCount,
-            nonResident: nonResidentCount,
-            nonResidentUnder16: nonResidentUnder16Count,
-            nonResidentWithPass: nonResidentWithPassCount,
-            passCoveredCount: passCoveredCount
-          })
-        }
-      } catch (error) {
-        console.error('거주 상태 합산 조회 오류:', error)
-      }
-    }
-
-    fetchResidentStatusSummary()
-  }, [assignedReservations])
   const [editingDate, setEditingDate] = useState(false)
   const [editingTime, setEditingTime] = useState(false)
   const [editingMaxParticipants, setEditingMaxParticipants] = useState(false)
@@ -272,23 +197,23 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   
   return (
     <div className="bg-white rounded-lg shadow-sm border">
-      <div className="p-4">
-        <h2 className="text-md font-semibold text-gray-900 mb-3 flex items-center">
+      <div className={chrome.shellPadding}>
+        <h2 className={`${chrome.sectionTitle} ${chrome.headerMargin} flex items-center`}>
           {t('title')}
           <ConnectionStatusLabel status={connectionStatus.tours} section={t('section')} />
         </h2>
         <div className="space-y-2">
           <div className="flex justify-between items-center gap-2">
-            <span className="text-gray-600 text-sm flex-shrink-0">{t('tourName')}:</span>
+            <span className={`${chrome.bodyCaption} flex-shrink-0`}>{t('tourName')}:</span>
             {editingProduct ? (
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 {loadingProducts ? (
-                  <span className="text-sm text-gray-500">{params.locale === 'ko' ? '로딩 중...' : 'Loading...'}</span>
+                  <span className={`${chrome.bodyMuted}`}>{params.locale === 'ko' ? '로딩 중...' : 'Loading...'}</span>
                 ) : (
                   <select
                     value={selectedProductId}
                     onChange={(e) => setSelectedProductId(e.target.value)}
-                    className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-ring flex-1 min-w-0 max-w-full"
+                    className={`${chrome.bodyField} focus:outline-none focus:ring-2 focus:ring-ring flex-1 min-w-0 max-w-full`}
                   >
                     <option value="">{params.locale === 'ko' ? '상품 선택' : 'Select Product'}</option>
                     {products.map((p) => {
@@ -325,7 +250,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
               </div>
             ) : (
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span className="font-medium text-sm truncate">{productName || '-'}</span>
+                <span className={`font-medium ${chrome.bodyText} truncate`}>{productName || '-'}</span>
                 {onProductChange && (
                   <button
                     onClick={() => {
@@ -342,14 +267,14 @@ export const TourInfo: React.FC<TourInfoProps> = ({
             )}
           </div>
           <div className="flex justify-between items-center gap-2">
-            <span className="text-gray-600 text-sm flex-shrink-0">{t('tourDate')}:</span>
+            <span className={`${chrome.bodyCaption} flex-shrink-0`}>{t('tourDate')}:</span>
             {editingDate ? (
               <div className="flex items-center gap-2">
                 <input
                   type="date"
                   value={dateValue}
                   onChange={(e) => setDateValue(e.target.value)}
-                  className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  className={`${chrome.bodyField} focus:outline-none focus:ring-2 focus:ring-ring`}
                 />
                 <button
                   onClick={handleDateSave}
@@ -368,7 +293,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
               </div>
             ) : (
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span className="font-medium text-sm truncate">
+                <span className={`font-medium ${chrome.bodyText} truncate`}>
                   {tour.tour_date || ''}
                 </span>
                 {onTourDateChange && (
@@ -384,14 +309,14 @@ export const TourInfo: React.FC<TourInfoProps> = ({
             )}
           </div>
           <div className="flex justify-between items-center gap-2">
-            <span className="text-gray-600 text-sm flex-shrink-0">{t('tourTime')}:</span>
+            <span className={`${chrome.bodyCaption} flex-shrink-0`}>{t('tourTime')}:</span>
             {editingTime ? (
               <div className="flex items-center gap-2">
                 <input
                   type="time"
                   value={timeValue}
                   onChange={(e) => setTimeValue(e.target.value)}
-                  className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  className={`${chrome.bodyField} focus:outline-none focus:ring-2 focus:ring-ring`}
                 />
                 <button
                   onClick={handleTimeSave}
@@ -410,7 +335,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
               </div>
             ) : (
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span className="font-medium text-sm truncate">
+                <span className={`font-medium ${chrome.bodyText} truncate`}>
                   {defaultTimeStr}
                 </span>
                 {onTourTimeChange && (
@@ -425,8 +350,11 @@ export const TourInfo: React.FC<TourInfoProps> = ({
               </div>
             )}
           </div>
+          {!compactForModal && (
+            <>
+          {getStatusColor && getStatusText ? (
           <div className="flex justify-between items-center gap-2">
-            <span className="text-gray-600 text-sm flex-shrink-0">{t('status')}:</span>
+            <span className={`${chrome.bodyCaption} flex-shrink-0`}>{t('status')}:</span>
             {onUpdateTourStatus ? (
               <button
                 onClick={() => setShowStatusModal(true)}
@@ -440,9 +368,10 @@ export const TourInfo: React.FC<TourInfoProps> = ({
               </span>
             )}
           </div>
-          {onUpdateAssignmentStatus && (
+          ) : null}
+          {onUpdateAssignmentStatus && getAssignmentStatusColor && getAssignmentStatusText ? (
             <div className="flex justify-between items-center gap-2">
-              <span className="text-gray-600 text-sm flex-shrink-0">{params.locale === 'ko' ? '배정 상태' : 'Assignment Status'}:</span>
+              <span className={`${chrome.bodyCaption} flex-shrink-0`}>{params.locale === 'ko' ? '배정 상태' : 'Assignment Status'}:</span>
               <button
                 onClick={() => setShowStatusModal(true)}
                 className={`px-3 py-1 rounded-full text-xs font-medium cursor-pointer hover:opacity-80 transition-opacity ${getAssignmentStatusColor(tour)}`}
@@ -450,12 +379,12 @@ export const TourInfo: React.FC<TourInfoProps> = ({
                 {getAssignmentStatusText(tour, params.locale)}
               </button>
             </div>
-          )}
+          ) : null}
           <div className="flex justify-between items-center gap-2">
-            <span className="text-gray-600 text-sm flex-shrink-0">{t('tourType')}:</span>
+            <span className={`${chrome.bodyCaption} flex-shrink-0`}>{t('tourType')}:</span>
             <button
               onClick={onPrivateTourToggle}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 ${
+              className={`${chrome.segmentButton} font-medium transition-colors duration-200 ${
                 isPrivateTour
                   ? 'bg-primary text-primary-foreground hover:bg-primary/90 focus:ring-2 focus:ring-ring focus:ring-offset-2'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2'
@@ -466,7 +395,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
           </div>
           {onMaxParticipantsChange && (
             <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:items-center sm:gap-2">
-              <span className="text-gray-600 text-sm flex-shrink-0">{t('maxParticipants')}:</span>
+              <span className={`${chrome.bodyCaption} flex-shrink-0`}>{t('maxParticipants')}:</span>
               {editingMaxParticipants ? (
                 <div className="flex items-center gap-2 flex-wrap justify-end">
                   <input
@@ -475,9 +404,9 @@ export const TourInfo: React.FC<TourInfoProps> = ({
                     max={500}
                     value={maxParticipantsInput}
                     onChange={(e) => setMaxParticipantsInput(e.target.value)}
-                    className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    className={`w-20 ${chrome.bodyField} focus:outline-none focus:ring-2 focus:ring-ring`}
                   />
-                  <span className="text-sm text-gray-500">{params.locale === 'ko' ? '명' : tCommon('people')}</span>
+                  <span className={chrome.bodyMuted}>{params.locale === 'ko' ? '명' : tCommon('people')}</span>
                   <button
                     type="button"
                     onClick={handleMaxParticipantsSave}
@@ -497,7 +426,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
                 </div>
               ) : (
                 <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
-                  <span className="font-medium text-sm">
+                  <span className={`font-medium ${chrome.bodyText}`}>
                     {resolvedMaxParticipants}
                     {params.locale === 'ko' ? '명' : ` ${tCommon('people')}`}
                   </span>
@@ -517,77 +446,35 @@ export const TourInfo: React.FC<TourInfoProps> = ({
             </div>
           )}
           {onMaxParticipantsChange && (
-            <p className="text-xs text-gray-500 -mt-1 sm:pl-0">{t('maxParticipantsHint')}</p>
+            <p className={`${chrome.bodyMuted} -mt-1 sm:pl-0`}>{t('maxParticipantsHint')}</p>
+          )}
+            </>
           )}
         </div>
         
-        {/* 거주 상태별 인원 수 합산 */}
-        {showResidentStatusSection && assignedReservations && assignedReservations.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {tCommon('residentStatusByCount')}
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                <div className="flex items-center space-x-2 mb-1">
-                  <span className="w-3 h-3 rounded-full bg-green-600"></span>
-                  <span className="text-xs font-medium text-green-900">{tCommon('statusUsResident')}</span>
-                </div>
-                <div className="text-lg font-semibold text-green-900">
-                  {residentStatusSummary.usResident}{params.locale === 'ko' ? '명' : ''}
-                </div>
-              </div>
-              <div className="bg-muted/50 border border-border rounded-lg p-3">
-                <div className="flex items-center space-x-2 mb-1">
-                  <span className="w-3 h-3 rounded-full bg-blue-600"></span>
-                  <span className="text-xs font-medium text-foreground">{tCommon('statusNonResident')}</span>
-                </div>
-                <div className="text-lg font-semibold text-foreground">
-                  {residentStatusSummary.nonResident}{params.locale === 'ko' ? '명' : ''}
-                </div>
-              </div>
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                <div className="flex items-center space-x-2 mb-1">
-                  <span className="w-3 h-3 rounded-full bg-purple-600"></span>
-                  <span className="text-xs font-medium text-purple-900">{params.locale === 'ko' ? '패스 커버' : 'Pass Covered'}</span>
-                </div>
-                <div className="text-lg font-semibold text-purple-900">
-                  {residentStatusSummary.passCoveredCount}{params.locale === 'ko' ? '명' : ''}
-                </div>
-              </div>
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                <div className="flex items-center space-x-2 mb-1">
-                  <span className="w-3 h-3 rounded-full bg-purple-600"></span>
-                  <span className="text-xs font-medium text-purple-900">{params.locale === 'ko' ? '패스 장수' : 'Pass Count'}</span>
-                </div>
-                <div className="text-lg font-semibold text-purple-900">
-                  {residentStatusSummary.nonResidentWithPass}{params.locale === 'ko' ? '장' : ''}
-                </div>
-              </div>
-            </div>
-            <div className="mt-2 text-xs text-gray-600">
-              {tCommon('total')}: {residentStatusSummary.usResident + residentStatusSummary.nonResident + residentStatusSummary.passCoveredCount}{params.locale === 'ko' ? '명' : ` ${tCommon('people')}`}
-            </div>
-          </div>
-        )}
-        
         {/* 투어 노트 */}
         <div className="mt-4 pt-4 border-t border-gray-200">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className={`block ${chrome.bodyLabel} mb-1.5`}>
             {t('tourNote')}
           </label>
           <textarea
             value={tourNote}
             onChange={(e) => onTourNoteChange(e.target.value)}
             placeholder={t('tourNotePlaceholder')}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
+            className={`w-full ${chrome.bodyField} px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent resize-none`}
             rows={3}
           />
         </div>
       </div>
 
       {/* 상태 변경 모달 */}
-      {onUpdateTourStatus && onUpdateAssignmentStatus && (
+      {!compactForModal &&
+        onUpdateTourStatus &&
+        onUpdateAssignmentStatus &&
+        getStatusColor &&
+        getStatusText &&
+        getAssignmentStatusColor &&
+        getAssignmentStatusText && (
         <TourStatusModal
           isOpen={showStatusModal}
           tour={tour}

@@ -280,6 +280,7 @@ export function ReservationAgencyManagementPanel({
           reservationId={editingReservationId}
           layout="modal"
           modalLightLoad
+          modalStackLevel="elevated"
           onCancel={() => setEditingReservationId(null)}
           onSaved={handleModalSaved}
         />

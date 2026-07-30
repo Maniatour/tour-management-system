@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { findRoundedGroupHotel, type PickupHotel } from '@/utils/pickupHotelUtils'
+import { findRoundedGroupHotel, getPickupHotelPrimaryName, type PickupHotel } from '@/utils/pickupHotelUtils'
 
 export type PickupGroupMode = 'representative' | 'requested'
 
@@ -172,12 +172,14 @@ export function getEffectivePickupHotelId(
 
 export function formatPickupHotelDisplayLine(
   hotelId: string | null | undefined,
-  pickupHotels: Array<{ id: string; hotel: string; pick_up_location?: string | null }>
+  pickupHotels: Array<{ id: string; hotel: string; pick_up_location?: string | null; internal_name?: string | null }>,
+  options?: { preferInternalName?: boolean }
 ): string | null {
   if (!hotelId) return null
   const hotel = pickupHotels.find((h) => h.id === hotelId)
   if (!hotel) return null
-  const parts = [hotel.hotel, hotel.pick_up_location].filter(Boolean)
+  const namePart = options?.preferInternalName ? getPickupHotelPrimaryName(hotel) : hotel.hotel
+  const parts = [namePart, hotel.pick_up_location].filter(Boolean)
   return parts.length > 0 ? parts.join(' | ') : null
 }
 

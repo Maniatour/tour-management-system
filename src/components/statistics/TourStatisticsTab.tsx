@@ -46,7 +46,7 @@ import TicketBookingReservationDetailModal, {
 } from '@/components/booking/TicketBookingReservationDetailModal'
 import TicketBookingForm from '@/components/booking/TicketBookingForm'
 import BookingHistory from '@/components/booking/BookingHistory'
-import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
+import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   filterTicketBookingsExcludedFromMainUi,
@@ -204,16 +204,20 @@ function TourStatisticsTourDetailModal({
   const href = displayTourId ? `/${locale}/admin/tours/${displayTourId}` : ''
 
   return (
-    <Dialog modal={false} open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden z-[100] sm:rounded-lg"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
-          <DialogTitle className="text-base font-semibold leading-snug truncate flex-1 min-w-0" title={productName}>
+    <TourDetailResizableDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      tourId={displayTourId}
+      onNavigateToTour={setDisplayTourId}
+      stackLevel="elevated"
+      accessibilityTitle={productName}
+      onOpenAutoFocus={(e) => e.preventDefault()}
+      header={
+        <div className="flex flex-row items-center justify-between gap-2">
+          <h2 className="text-base font-semibold leading-snug truncate flex-1 min-w-0" title={productName}>
             {productName}
-          </DialogTitle>
-          {tourId ? (
+          </h2>
+          {displayTourId ? (
             <a
               href={href}
               target="_blank"
@@ -224,14 +228,9 @@ function TourStatisticsTourDetailModal({
               <ExternalLink size={14} aria-hidden />
             </a>
           ) : null}
-        </DialogHeader>
-        {displayTourId ? (
-          <div className="flex min-h-0 flex-1 flex-col bg-white">
-            <TourDetailModalContent tourId={displayTourId} onNavigateToTour={setDisplayTourId} />
-          </div>
-        ) : null}
-      </DialogContent>
-    </Dialog>
+        </div>
+      }
+    />
   )
 }
 

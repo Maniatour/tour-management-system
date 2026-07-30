@@ -12,7 +12,8 @@ export function reservationExcludedFromTourSettlementAggregates(
     lower === 'cancelled' ||
     lower === 'canceled' ||
     lower === 'refunded' ||
-    lower === 'inquiry'
+    lower === 'inquiry' ||
+    lower === 'no_show'
   )
 }
 export type ReservationPricingRow = {

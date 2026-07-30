@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
@@ -38,7 +38,10 @@ import { TourFinance } from '@/components/tour/TourFinance'
 import { TourPhotos } from '@/components/tour/TourPhotos'
 import { TourChat } from '@/components/tour/TourChat'
 import TourHeader from '@/components/tour/TourHeader'
-import TourSopChecklistPanel from '@/components/sop/TourSopChecklistPanel'
+import {
+  TourDetailSectionChromeProvider,
+  useTourDetailModalChrome,
+} from '@/components/tour/TourDetailModalChromeContext'
 import PickupTimeModal from '@/components/tour/modals/PickupTimeModal'
 import PickupHotelModal from '@/components/tour/modals/PickupHotelModal'
 import PrivateTourModal from '@/components/tour/modals/PrivateTourModal'
@@ -57,6 +60,7 @@ import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { normalizeReservationIds, isTourDeletedStatus } from '@/utils/tourUtils'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
+import { RESERVATION_EDIT_MODAL_RECT_KEY } from '@/lib/adminModalRectStorage'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import {
   fetchActivePickupGroupPresets,
@@ -97,7 +101,6 @@ import {
   Menu,
   X,
   Printer,
-  ListChecks
 } from 'lucide-react'
 
 const PickupScheduleEmailPreviewModal = dynamic(
@@ -175,6 +178,30 @@ export function TourDetailPageView({
   // 커스텀 훅으로 데이터와 상태 관리 (모달에서는 route의 id 대신 tourId 사용)
   const tourData = useTourDetailData({ tourId, modalLightLoad })
   const tourHandlers = useTourHandlers()
+  const modalChrome = useTourDetailModalChrome()
+  const scrollMt = modalLightLoad ? 'scroll-mt-2' : 'scroll-mt-20'
+
+  useEffect(() => {
+    if (!modalLightLoad || !modalChrome || !tourData.tour || tourData.pageLoading) return
+    const productName =
+      locale === 'ko' ? tourData.product?.name_ko : tourData.product?.name_en
+    modalChrome.setMeta({
+      title: productName || 'Tour Detail',
+      ...(tourData.tour.tour_date ? { date: tourData.tour.tour_date } : {}),
+      tourId: tourData.tour.id,
+      statusLabel: getStatusText(tourData.tour.tour_status, locale),
+    })
+  }, [
+    modalLightLoad,
+    modalChrome,
+    tourData.tour?.id,
+    tourData.tour?.tour_date,
+    tourData.tour?.tour_status,
+    tourData.pageLoading,
+    tourData.product?.name_ko,
+    tourData.product?.name_en,
+    locale,
+  ])
   
   // 부킹 관련 상태 (로컬 상태로 유지)
   const [ticketBookings, setTicketBookings] = useState<LocalTicketBooking[]>([])
@@ -184,7 +211,6 @@ export function TourDetailPageView({
   const [showTourHotelBookingForm, setShowTourHotelBookingForm] = useState<boolean>(false)
   const [editingTicketBooking, setEditingTicketBooking] = useState<LocalTicketBooking | null>(null)
   const [editingTourHotelBooking, setEditingTourHotelBooking] = useState<LocalTourHotelBooking | null>(null)
-  const [showTicketBookingDetails, setShowTicketBookingDetails] = useState<boolean>(false)
   const [editingReservation, setEditingReservation] = useState<any>(null)
   const [showPickupScheduleModal, setShowPickupScheduleModal] = useState<boolean>(false)
   const [showEmailPreviewModal, setShowEmailPreviewModal] = useState<boolean>(false)
@@ -259,7 +285,6 @@ export function TourDetailPageView({
   useEffect(() => {
     const sections = [
       'tour-info',
-      'sop-checklist',
       'tour-weather',
       'pickup-schedule',
       'tour-schedule',
@@ -273,13 +298,21 @@ export function TourDetailPageView({
       'tour-report'
     ]
 
+    const scrollRoot = modalLightLoad
+      ? document.querySelector<HTMLElement>('[data-tour-detail-modal-scroll]')
+      : null
+
     const handleScroll = () => {
-      const scrollPosition = window.scrollY + 100 // 헤더 높이 고려
+      const scrollTop = scrollRoot?.scrollTop ?? window.scrollY
+      const scrollPosition = scrollTop + 100
+      const rootTop = scrollRoot?.getBoundingClientRect().top ?? 0
 
       for (let i = sections.length - 1; i >= 0; i--) {
         const section = document.getElementById(sections[i])
         if (section) {
-          const offsetTop = section.offsetTop
+          const offsetTop = scrollRoot
+            ? section.getBoundingClientRect().top - rootTop + scrollTop
+            : section.offsetTop
           if (scrollPosition >= offsetTop) {
             setActiveSection(sections[i])
             break
@@ -288,11 +321,12 @@ export function TourDetailPageView({
       }
     }
 
-    window.addEventListener('scroll', handleScroll)
-    handleScroll() // 초기 실행
+    const target: HTMLElement | Window = scrollRoot ?? window
+    target.addEventListener('scroll', handleScroll as EventListener)
+    handleScroll()
 
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
+    return () => target.removeEventListener('scroll', handleScroll as EventListener)
+  }, [modalLightLoad])
   
   // 외부 클릭 감지 로직 제거 - backdrop에서 직접 처리
   
@@ -1843,107 +1877,116 @@ export function TourDetailPageView({
     }
   }
 
-  // 필터링된 입장권 부킹 계산
-  // showTicketBookingDetails가 false일 때는 company별로 ea를 합산한 결과만 보여줌
-  const filteredTicketBookings = useMemo(() => {
-    if (showTicketBookingDetails) {
-      // 상세 보기: 모든 부킹을 그대로 표시
-      return ticketBookings
-    } else {
-      // 간단 보기: company별로 ea를 합산
-      const companyMap = new Map<string, {
-        company: string
-        totalEa: number
-        bookings: LocalTicketBooking[]
-      }>()
-      
-      ticketBookings.forEach(booking => {
-        const company = booking.company || 'Unknown'
-        const ea = booking.ea || 0
-        
-        if (!companyMap.has(company)) {
-          companyMap.set(company, {
-            company,
-            totalEa: 0,
-            bookings: []
-          })
-        }
-        
-        const companyData = companyMap.get(company)!
-        companyData.totalEa += ea
-        companyData.bookings.push(booking)
-      })
-      
-      // 합산된 결과를 booking 형태로 변환 (표시용) - 회사별 카드 안에 "시간 인원 #예약번호" 줄 단위로 표시
-      return Array.from(companyMap.values()).map((companyData, index) => {
-        const statusKeys = [
-          ...new Set(
-            companyData.bookings
-              .map((b) => (b.status != null && String(b.status).trim() !== '' ? String(b.status).trim().toLowerCase() : ''))
-              .filter(Boolean)
-          ),
-        ]
-        /** 회사 내 상태가 하나면 카드 우상단용, 여러 개면 행별 표시 */
-        const cardStatus =
-          statusKeys.length === 1
-            ? companyData.bookings.find((b) => b.status != null && String(b.status).trim() !== '')?.status ?? null
-            : null
+  useEffect(() => {
+    if (!modalLightLoad || !modalChrome) return
 
-        return {
-          id: `aggregated-${companyData.company}-${index}`,
-          company: companyData.company,
-          ea: companyData.totalEa,
-          status: cardStatus,
-          reservation_id: null,
-          category: null,
-          time: null,
-          rn_number: null,
-          bookingDetails: companyData.bookings.map((b) => {
-            const checkInRaw = (b as { check_in_date?: string | null }).check_in_date
-            const checkIn =
-              checkInRaw != null && String(checkInRaw).trim() !== ''
-                ? String(checkInRaw).trim().match(/^(\d{4}-\d{2}-\d{2})/)?.[1] ?? String(checkInRaw).trim()
-                : null
-            return {
-              check_in_date: checkIn,
-              time: b.time ? (typeof b.time === 'string' ? b.time.substring(0, 5) : String(b.time)) : null,
-              ea: b.ea || 0,
-              reservation_id: b.reservation_id ?? null,
-              rn_number: b.rn_number ?? null,
-              invoice_number: b.invoice_number ?? null,
-              status: b.status ?? null,
-            }
-          }),
-        } as LocalTicketBooking
-      })
+    if (!tourData.tour || tourData.pageLoading) {
+      modalChrome.setToolbarContent(null)
+      return
     }
-  }, [ticketBookings, showTicketBookingDetails])
+
+    modalChrome.setToolbarContent(
+      <TourHeader
+        variant="modal-toolbar"
+        tour={tourData.tour}
+        product={tourData.product}
+        params={{ locale }}
+        showTourStatusDropdown={tourData.showTourStatusDropdown}
+        showAssignmentStatusDropdown={tourData.showAssignmentStatusDropdown}
+        tourStatusOptions={tourStatusOptions}
+        assignmentStatusOptions={assignmentStatusOptions}
+        getTotalAssignedPeople={tourData.getTotalAssignedPeople}
+        getTotalPeopleNonCancelled={tourData.getTotalPeopleNonCancelled}
+        getTotalCancelledPeople={tourData.getTotalCancelledPeople}
+        onToggleTourStatusDropdown={() =>
+          tourData.setShowTourStatusDropdown(!tourData.showTourStatusDropdown)
+        }
+        onToggleAssignmentStatusDropdown={() =>
+          tourData.setShowAssignmentStatusDropdown(!tourData.showAssignmentStatusDropdown)
+        }
+        onUpdateTourStatus={handleTourStatusUpdate}
+        onUpdateAssignmentStatus={handleAssignmentStatusUpdate}
+        getStatusColor={getStatusColor}
+        getStatusText={getStatusText}
+        getAssignmentStatusColor={getAssignmentStatusColor}
+        getAssignmentStatusText={getAssignmentStatusText}
+        onEditClick={() => setShowTourEditModal(true)}
+        onCopyTour={handleCopyTour}
+        onDeleteTour={handleDeleteTour}
+        {...(tourData.isStaff &&
+        tourData.tour &&
+        isTourDeletedStatus(tourData.tour.tour_status)
+          ? { onRestoreTour: handleRestoreTour }
+          : {})}
+        onPrintTourInfo={() => setShowTourPrintModal(true)}
+        onPrintReceipts={() => setShowBatchReceiptModal(true)}
+        onPrintTipEnvelopes={() => setEnvelopeModalVariant('tip')}
+        onPrintBalanceEnvelopes={() => setEnvelopeModalVariant('balance')}
+        onCloseModal={modalChrome.onClose}
+        isPrivateTour={tourData.isPrivateTour}
+        maxParticipants={
+          typeof tourData.tour.max_participants === 'number' &&
+          Number.isFinite(tourData.tour.max_participants)
+            ? tourData.tour.max_participants
+            : 12
+        }
+      />
+    )
+
+    return () => modalChrome.setToolbarContent(null)
+  }, [
+    modalLightLoad,
+    modalChrome,
+    tourData.tour?.id,
+    tourData.pageLoading,
+    tourData.product?.id,
+    tourData.tour?.tour_status,
+    tourData.isStaff,
+    tourData.isPrivateTour,
+    tourData.tour?.max_participants,
+    locale,
+  ])
+
+  useLayoutEffect(() => {
+    if (!modalLightLoad || !modalChrome || tourData.pageLoading || !tourData.tour) return
+    modalChrome.resetScroll()
+    const raf = requestAnimationFrame(() => {
+      modalChrome.resetScroll()
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [
+    modalLightLoad,
+    modalChrome,
+    tourData.pageLoading,
+    tourData.tour?.id,
+  ])
 
   // 인증·투어 데이터 로딩 — 전체 스피너 대신 레이아웃 스켈레톤
   // 모달: 관리자 페이지에서 이미 로그인된 경우가 많아 auth loading 대기를 건너뛰어 첫 페인트 단축
   const blockOnAuth = !modalLightLoad || (!authUser && loading)
   if (blockOnAuth || tourData.pageLoading) {
     return (
-      <div className="min-h-screen app-page-bg">
-        {/* 헤더 스켈레톤 */}
-        <div className="bg-white shadow-sm border-b">
-          <div className="px-2 sm:px-6 py-2 sm:py-4">
-            <div className="flex items-center space-x-4">
-              <SkeletonCard className="w-8 h-8" />
-              <div className="flex-1">
-                <SkeletonCard className="h-6 w-64 mb-2" />
-                <div className="flex gap-2">
-                  <SkeletonCard className="h-4 w-20" />
-                  <SkeletonCard className="h-4 w-24" />
-                  <SkeletonCard className="h-4 w-16" />
+      <div className={modalLightLoad ? 'min-h-0 bg-white' : 'min-h-screen app-page-bg'}>
+        {!modalLightLoad ? (
+          <div className="border-b bg-white shadow-sm">
+            <div className="px-2 py-2 sm:px-6 sm:py-4">
+              <div className="flex items-center space-x-4">
+                <SkeletonCard className="h-8 w-8" />
+                <div className="flex-1">
+                  <SkeletonCard className="mb-2 h-6 w-64" />
+                  <div className="flex gap-2">
+                    <SkeletonCard className="h-4 w-20" />
+                    <SkeletonCard className="h-4 w-24" />
+                    <SkeletonCard className="h-4 w-16" />
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+        ) : null}
 
         {/* 메인 콘텐츠 스켈레톤 */}
-        <div className="px-2 sm:px-6 py-4">
+        <div className="px-2 py-4 sm:px-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* 왼쪽 컬럼 */}
             <div className="lg:col-span-2 space-y-4">
@@ -2016,9 +2059,11 @@ export function TourDetailPageView({
   }
 
   return (
-    <div className="min-h-screen app-page-bg">
-      {/* 헤더 */}
+    <>
+    <div className={modalLightLoad ? 'min-h-0 bg-white' : 'min-h-screen app-page-bg'}>
+      {!modalLightLoad ? (
       <TourHeader
+        variant="page"
         tour={tourData.tour}
         product={tourData.product}
         params={{ locale }}
@@ -2048,6 +2093,7 @@ export function TourDetailPageView({
         onPrintTipEnvelopes={() => setEnvelopeModalVariant('tip')}
         onPrintBalanceEnvelopes={() => setEnvelopeModalVariant('balance')}
       />
+      ) : null}
 
       {/* 영수증 일괄 인쇄: 픽업 스케줄/배정 관리와 동일한 목록 사용(assignedReservations 우선) */}
       {(() => {
@@ -2110,17 +2156,18 @@ export function TourDetailPageView({
         useRepresentativePickup={pickupResolveContext.useRepresentativePickup === true || !!pickupResolveContext.preset}
         pickupResolveContext={pickupResolveContext}
         getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || ''}
-        ticketBookings={filteredTicketBookings}
+        ticketBookings={ticketBookings}
         tourHotelBookings={tourHotelBookings}
       />
 
-      <div className="px-0 py-6 pb-24 lg:pb-6">
+      <TourDetailSectionChromeProvider compact={modalLightLoad}>
+      <div className={modalLightLoad ? 'px-3 py-3 pb-4' : 'px-0 py-6 pb-24 lg:pb-6'}>
         {/* 4열 그리드 레이아웃 */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className={`grid grid-cols-1 lg:grid-cols-4 ${modalLightLoad ? 'gap-4' : 'gap-6'}`}>
           {/* 1열: 기본 정보, 픽업 스케줄, 옵션 관리 */}
-          <div className="space-y-6">
+          <div className={modalLightLoad ? 'space-y-4' : 'space-y-6'}>
             {/* 기본 정보 */}
-            <div id="tour-info" className="scroll-mt-20">
+            <div id="tour-info" className={scrollMt}>
               <TourInfo
               tour={tourData.tour}
               product={tourData.product}
@@ -2133,42 +2180,24 @@ export function TourDetailPageView({
               onTourDateChange={handleTourDateChange}
               onTourTimeChange={handleTourTimeChange}
               onProductChange={handleTourProductUpdate}
-              onMaxParticipantsChange={handleMaxParticipantsChange}
-              getStatusColor={getStatusColor}
-              getStatusText={getStatusText}
-              getAssignmentStatusColor={getAssignmentStatusColor}
-              getAssignmentStatusText={getAssignmentStatusText}
-              onUpdateTourStatus={handleTourStatusUpdate}
-              onUpdateAssignmentStatus={handleAssignmentStatusUpdate}
-              assignedReservations={tourData.assignedReservations}
+              {...(modalLightLoad
+                ? { compactForModal: true }
+                : {
+                    onMaxParticipantsChange: handleMaxParticipantsChange,
+                    getStatusColor,
+                    getStatusText,
+                    getAssignmentStatusColor,
+                    getAssignmentStatusText,
+                    onUpdateTourStatus: handleTourStatusUpdate,
+                    onUpdateAssignmentStatus: handleAssignmentStatusUpdate,
+                  })}
             />
             </div>
 
-            {/* SOP 체크리스트 */}
-            {tourData.tour?.id ? (
-              <div id="sop-checklist" className="scroll-mt-20">
-                <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-                  <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3">
-                    <ListChecks className="h-5 w-5 text-indigo-600" />
-                    <h2 className="text-base font-semibold text-gray-900">SOP 체크리스트</h2>
-                  </div>
-                  <div className="p-4">
-                    <TourSopChecklistPanel
-                      tourId={tourData.tour.id}
-                      productId={tourData.tour.product_id}
-                      tourDate={tourData.tour.tour_date}
-                      locale={locale}
-                      mode="admin"
-                    />
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
         {/* 날씨 정보 섹션 */}
-        <div id="tour-weather" className="scroll-mt-20">
+        <div id="tour-weather" className={scrollMt}>
           <div className="bg-white rounded-lg shadow-sm border">
-            <div className="p-4">
+            <div className={modalLightLoad ? 'p-3' : 'p-4'}>
               <TourWeather 
                     tourDate={tourData.tour.tour_date} 
                     {...(tourData.product?.id && { productId: tourData.product.id })}
@@ -2178,7 +2207,7 @@ export function TourDetailPageView({
         </div>
 
         {/* 픽업 스케줄 */}
-        <div id="pickup-schedule" className="scroll-mt-20">
+        <div id="pickup-schedule" className={scrollMt}>
           <PickupSchedule
               assignedReservations={tourData.assignedReservations.map((res: any) => ({
                 ...res,
@@ -2220,7 +2249,7 @@ export function TourDetailPageView({
         </div>
 
         {/* 투어 스케줄 섹션 */}
-        <div id="tour-schedule" className="scroll-mt-20">
+        <div id="tour-schedule" className={scrollMt}>
           <TourSchedule
               tour={tourData.tour}
               expandedSections={tourData.expandedSections}
@@ -2230,15 +2259,15 @@ export function TourDetailPageView({
         </div>
 
             {/* 옵션 관리 */}
-            <div id="option-management" className="scroll-mt-20">
+            <div id="option-management" className={scrollMt}>
               <OptionManagement reservationIds={tourData.tour?.reservation_ids || []} />
             </div>
           </div>
 
           {/* 2열: 팀 구성 & 차량 배정, 배정 관리 */}
-          <div className="space-y-6">
+          <div className={modalLightLoad ? 'space-y-4' : 'space-y-6'}>
             {/* 팀 구성 & 차량 배정 통합 */}
-            <div id="team-vehicle" className="scroll-mt-20">
+            <div id="team-vehicle" className={scrollMt}>
               <TeamAndVehicleAssignment
               tourDate={tourData.tour?.tour_date}
               teamMembers={tourData.teamMembers.map((member: any) => ({
@@ -2289,7 +2318,7 @@ export function TourDetailPageView({
             </div>
 
             {/* 배정 관리 */}
-            <div id="assignment-management" className="scroll-mt-20">
+            <div id="assignment-management" className={scrollMt}>
               <AssignmentManagement
               assignedReservations={tourData.assignedReservations as any}
               pendingReservations={tourData.pendingReservations as any}
@@ -2352,14 +2381,12 @@ export function TourDetailPageView({
           </div>
 
           {/* 3열: 부킹 관리 */}
-          <div className="space-y-6">
+          <div className={modalLightLoad ? 'space-y-4' : 'space-y-6'}>
             {/* 부킹 관리 */}
-            <div id="booking-management" className="scroll-mt-20">
+            <div id="booking-management" className={scrollMt}>
               <BookingManagement
               ticketBookings={ticketBookings}
               tourHotelBookings={tourHotelBookings}
-              filteredTicketBookings={filteredTicketBookings}
-              showTicketBookingDetails={showTicketBookingDetails}
               loadingStates={tourData.loadingStates}
               connectionStatus={{ bookings: tourData.connectionStatus.bookings, hotelBookings: tourData.connectionStatus.hotelBookings }}
               isStaff={tourData.isStaff}
@@ -2368,12 +2395,11 @@ export function TourDetailPageView({
               onAddTourHotelBooking={handleAddTourHotelBooking}
               onEditTicketBooking={handleEditTicketBooking}
               onEditTourHotelBooking={handleEditTourHotelBooking}
-              onToggleTicketBookingDetails={() => setShowTicketBookingDetails(!showTicketBookingDetails)}
             />
             </div>
 
             {/* 투어 채팅방 */}
-            <div id="tour-chat" className="scroll-mt-20">
+            <div id="tour-chat" className={scrollMt}>
               <TourChat
               tour={tourData.tour}
               user={tourData.user}
@@ -2382,7 +2408,7 @@ export function TourDetailPageView({
             </div>
 
             {/* 투어 사진 */}
-            <div id="tour-photos" className="scroll-mt-20">
+            <div id="tour-photos" className={scrollMt}>
               <TourPhotos
               tour={tourData.tour}
               onPhotosUpdated={() => {
@@ -2394,8 +2420,8 @@ export function TourDetailPageView({
 
         {/* 4열: 정산 관리 (재무 권한 보유자만) */}
         {hasPermission && hasPermission('canViewFinance') && (
-          <div className="space-y-6">
-            <div id="tour-finance" className="scroll-mt-20">
+          <div className={modalLightLoad ? 'space-y-4' : 'space-y-6'}>
+            <div id="tour-finance" className={scrollMt}>
               <TourFinance
                  tour={tourData.tour}
                  connectionStatus={{ bookings: tourData.connectionStatus.bookings }}
@@ -2409,7 +2435,7 @@ export function TourDetailPageView({
             </div>
 
              {/* 투어 리포트 섹션 */}
-            <div id="tour-report" className="scroll-mt-20">
+            <div id="tour-report" className={scrollMt}>
               <TourReport
                 tour={tourData.tour}
                 product={tourData.product}
@@ -2423,8 +2449,10 @@ export function TourDetailPageView({
         )}
         </div>
       </div>
+      </TourDetailSectionChromeProvider>
 
       {/* 모바일 플로팅 메뉴 */}
+      {!modalLightLoad ? (
       <div className="lg:hidden fixed bottom-20 right-4 z-50">
         {/* 플로팅 메뉴 버튼 */}
         <button
@@ -2440,7 +2468,6 @@ export function TourDetailPageView({
             <div className="p-2 space-y-1">
               {[
                 { id: 'tour-info', label: '기본정보', icon: Info },
-                { id: 'sop-checklist', label: 'SOP 체크', icon: ListChecks },
                 { id: 'tour-weather', label: '날씨', icon: Cloud },
                 { id: 'pickup-schedule', label: '픽업 스케줄', icon: MapPin },
                 { id: 'tour-schedule', label: '투어 스케줄', icon: Calendar },
@@ -2463,8 +2490,18 @@ export function TourDetailPageView({
                     key={section.id}
                     onClick={() => {
                       const element = document.getElementById(section.id)
+                      const scrollRoot = modalLightLoad
+                        ? document.querySelector<HTMLElement>('[data-tour-detail-modal-scroll]')
+                        : null
                       if (element) {
-                        element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                        if (scrollRoot) {
+                          const rootTop = scrollRoot.getBoundingClientRect().top
+                          const targetTop =
+                            element.getBoundingClientRect().top - rootTop + scrollRoot.scrollTop - 16
+                          scrollRoot.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' })
+                        } else {
+                          element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                        }
                         setActiveSection(section.id)
                         setShowFloatingMenu(false)
                       }
@@ -2484,6 +2521,7 @@ export function TourDetailPageView({
           </div>
         )}
       </div>
+      ) : null}
 
       {/* 모달들 */}
       {tourData.selectedReservation && (
@@ -2532,6 +2570,7 @@ export function TourDetailPageView({
           coupons={reservationFormData.coupons}
           useServerCustomerInsert
           modalStackLevel="nested"
+          modalRectStorageKey={RESERVATION_EDIT_MODAL_RECT_KEY}
           titleAction={
             <div className="flex flex-wrap items-center gap-1 sm:gap-2">
               <button
@@ -2737,5 +2776,6 @@ export function TourDetailPageView({
         onSubmit={submitCancellationReasonModal}
       />
     </div>
+    </>
   )
 }

@@ -76,8 +76,8 @@ import {
   expenseReconExemptSourceSupported,
 } from '@/lib/expense-reconciliation-exemptions'
 import ExpenseStatementBulkAutoMatchModal from '@/components/reconciliation/ExpenseStatementBulkAutoMatchModal'
-import { ReservationDetailModalContent } from '@/components/reservation/ReservationDetailModalContent'
-import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
+import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
+import { ReservationResizableDialog } from '@/components/reservation/ReservationResizableDialog'
 import type { ExpenseAutoMatchInputRow } from '@/lib/expense-statement-auto-match'
 import type { ExpenseStatementReconContext, ExpenseReconSourceTable } from '@/lib/expense-reconciliation-similar-lines'
 import {
@@ -87,8 +87,6 @@ import {
 
 /** 지출 상세(z-1200)·명세 모달(z-1300) 위에 투어/예약 상세를 포털로 띄울 때 */
 const PNL_NESTED_DETAIL_OVERLAY_CLASS = 'z-[1500] pointer-events-auto'
-const PNL_NESTED_DETAIL_CONTENT_CLASS =
-  'z-[1500] w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden sm:rounded-lg'
 
 /** iframe·임베드 모달 — 포커스가 Dialog DOM 밖으로 나가면 Radix가 닫지 않게 */
 function preventNestedDetailDialogDismiss(e: Event) {
@@ -2401,24 +2399,22 @@ export default function PnlUnifiedExpenseDetailDialog({
         />
       ) : null}
 
-      {tourDetailModalId ? (
-        <Dialog
-          modal={false}
-          open
-          onOpenChange={(v) => {
-            if (!v) setTourDetailModalId(null)
-          }}
-        >
-          <DialogContent
-            overlayClassName={PNL_NESTED_DETAIL_OVERLAY_CLASS}
-            className={PNL_NESTED_DETAIL_CONTENT_CLASS}
-            onOpenAutoFocus={(e) => e.preventDefault()}
-            onPointerDownOutside={preventNestedDetailDialogDismiss}
-            onFocusOutside={preventNestedDetailDialogDismiss}
-            onInteractOutside={preventNestedDetailDialogDismiss}
-          >
-            <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
-              <DialogTitle className="text-base font-semibold truncate flex-1 min-w-0">투어 상세</DialogTitle>
+      <TourDetailResizableDialog
+        open={Boolean(tourDetailModalId)}
+        onOpenChange={(open) => !open && setTourDetailModalId(null)}
+        tourId={tourDetailModalId}
+        onNavigateToTour={setTourDetailModalId}
+        stackLevel="nestedElevated"
+        overlayClassName={PNL_NESTED_DETAIL_OVERLAY_CLASS}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onPointerDownOutside={preventNestedDetailDialogDismiss}
+        onFocusOutside={preventNestedDetailDialogDismiss}
+        onInteractOutside={preventNestedDetailDialogDismiss}
+        accessibilityTitle="투어 상세"
+        header={
+          <div className="flex flex-row items-center justify-between gap-2">
+            <h2 className="text-base font-semibold truncate flex-1 min-w-0">투어 상세</h2>
+            {tourDetailModalId ? (
               <a
                 href={`/${locale}/admin/tours/${tourDetailModalId}`}
                 target="_blank"
@@ -2428,48 +2424,17 @@ export default function PnlUnifiedExpenseDetailDialog({
                 새 탭에서 열기
                 <ExternalLink size={14} aria-hidden />
               </a>
-            </DialogHeader>
-            <div className="flex min-h-0 flex-1 flex-col bg-white">
-              <TourDetailModalContent tourId={tourDetailModalId} onNavigateToTour={setTourDetailModalId} />
-            </div>
-          </DialogContent>
-        </Dialog>
-      ) : null}
+            ) : null}
+          </div>
+        }
+      />
 
-      {reservationDetailModalId ? (
-        <Dialog
-          modal={false}
-          open
-          onOpenChange={(v) => {
-            if (!v) setReservationDetailModalId(null)
-          }}
-        >
-          <DialogContent
-            overlayClassName={PNL_NESTED_DETAIL_OVERLAY_CLASS}
-            className={PNL_NESTED_DETAIL_CONTENT_CLASS}
-            onOpenAutoFocus={(e) => e.preventDefault()}
-            onPointerDownOutside={preventNestedDetailDialogDismiss}
-            onFocusOutside={preventNestedDetailDialogDismiss}
-            onInteractOutside={preventNestedDetailDialogDismiss}
-          >
-            <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
-              <DialogTitle className="text-base font-semibold truncate flex-1 min-w-0">예약 상세</DialogTitle>
-              <a
-                href={`/${locale}/admin/reservations/${reservationDetailModalId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-primary hover:text-primary/80 shrink-0 ml-2"
-              >
-                새 탭에서 열기
-                <ExternalLink size={14} aria-hidden />
-              </a>
-            </DialogHeader>
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
-              <ReservationDetailModalContent reservationId={reservationDetailModalId} />
-            </div>
-          </DialogContent>
-        </Dialog>
-      ) : null}
+      <ReservationResizableDialog
+        open={Boolean(reservationDetailModalId)}
+        onOpenChange={(open) => !open && setReservationDetailModalId(null)}
+        reservationId={reservationDetailModalId}
+        modalStackLevel="nestedElevated"
+      />
     </>
   )
 }

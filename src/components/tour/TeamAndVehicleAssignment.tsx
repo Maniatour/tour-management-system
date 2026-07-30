@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
 import { isVehicleShownInTeamAssignmentDropdown } from '@/utils/tourUtils'
 import { isInactiveVehicleStatus } from '@/lib/vehicleStatus'
+import { useTourDetailSectionChrome } from './TourDetailModalChromeContext'
 
 interface TeamMember {
   id: string
@@ -82,6 +83,7 @@ function MemberSelectWithTabs({
   getDisplayName: (m: TeamMember) => string
   getTeamMemberName: (email: string) => string
 }) {
+  const chrome = useTourDetailSectionChrome()
   const t = useTranslations('tours.teamAndVehicle')
   const [isOpen, setIsOpen] = useState(false)
   const [tab, setTab] = useState<'active' | 'inactive'>('active')
@@ -122,10 +124,10 @@ function MemberSelectWithTabs({
       <button
         type="button"
         onClick={() => setIsOpen((o) => !o)}
-        className="w-full text-left text-sm border border-gray-300 rounded px-3 py-2 bg-white focus:ring-2 focus:ring-ring focus:border-ring flex items-center justify-between gap-2"
+        className={`w-full text-left ${chrome.bodyTrigger} flex items-center justify-between gap-2`}
       >
         <span className={value ? 'text-gray-900' : 'text-gray-500'}>{displayText}</span>
-        <ChevronDown className={`w-4 h-4 text-gray-500 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`${chrome.chevronClass} text-gray-500 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
       {isOpen && (
         <div className="absolute z-50 mt-1 w-full min-w-[200px] bg-white border border-gray-200 rounded-lg shadow-lg py-1">
@@ -134,14 +136,14 @@ function MemberSelectWithTabs({
             <button
               type="button"
               onClick={() => setTab('active')}
-              className={`flex-1 py-1.5 text-sm font-medium rounded ${tab === 'active' ? 'bg-primary/5 text-primary' : 'text-gray-600 hover:bg-gray-50'}`}
+              className={`flex-1 py-1 ${chrome.bodyText} font-medium rounded ${tab === 'active' ? 'bg-primary/5 text-primary' : 'text-gray-600 hover:bg-gray-50'}`}
             >
               {t('memberTabActive')}
             </button>
             <button
               type="button"
               onClick={() => setTab('inactive')}
-              className={`flex-1 py-1.5 text-sm font-medium rounded ${tab === 'inactive' ? 'bg-primary/5 text-primary' : 'text-gray-600 hover:bg-gray-50'}`}
+              className={`flex-1 py-1 ${chrome.bodyText} font-medium rounded ${tab === 'inactive' ? 'bg-primary/5 text-primary' : 'text-gray-600 hover:bg-gray-50'}`}
             >
               {t('memberTabInactive')}
             </button>
@@ -152,28 +154,28 @@ function MemberSelectWithTabs({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="이름/닉네임/이메일 검색"
-              className="w-full text-sm border border-gray-300 rounded px-2 py-1.5 focus:ring-2 focus:ring-ring focus:border-ring"
+              className={`w-full ${chrome.bodyField} focus:ring-2 focus:ring-ring focus:border-ring`}
             />
           </div>
           {/* 선택 해제 */}
           <button
             type="button"
             onClick={() => { onChange(''); setIsOpen(false); setSearchQuery(''); }}
-            className="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-50"
+            className={`w-full text-left px-3 py-1.5 ${chrome.bodyCaption} hover:bg-gray-50`}
           >
             {placeholder}
           </button>
           {/* 탭별 목록 */}
           <div className="max-h-48 overflow-y-auto">
             {filteredMembers.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-gray-400">{tab === 'active' ? t('memberTabActive') : t('memberTabInactive')} 팀원 없음</div>
+              <div className={`px-3 py-1.5 ${chrome.bodyMuted}`}>{tab === 'active' ? t('memberTabActive') : t('memberTabInactive')} 팀원 없음</div>
             ) : (
               filteredMembers.map((member) => (
                 <button
                   key={member.email}
                   type="button"
                   onClick={() => { onChange(member.email); setIsOpen(false); setSearchQuery(''); }}
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${value === member.email ? 'bg-primary/5 text-primary' : 'text-gray-900'}`}
+                  className={`w-full text-left px-3 py-1.5 ${chrome.bodyText} hover:bg-gray-50 ${value === member.email ? 'bg-primary/5 text-primary' : ''}`}
                 >
                   {getDisplayName(member)}
                 </button>
@@ -220,8 +222,9 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
   onLoadTeamMembersFallback,
   onFetchVehicles: _onFetchVehicles,
   getTeamMemberName,
-  getVehicleName
+  getVehicleName: _getVehicleName
 }) => {
+  const chrome = useTourDetailSectionChrome()
   const t = useTranslations('tours.teamAndVehicle')
   const [isSaving, setIsSaving] = useState(false)
 
@@ -317,12 +320,12 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
 
   return (
     <div className="bg-white rounded-lg shadow-sm border">
-      <div className="p-4">
+      <div className={chrome.shellPadding}>
         <div 
           className="flex items-center justify-between cursor-pointer"
           onClick={() => onToggleSection('team-vehicle-assignment')}
         >
-          <h2 className="text-md font-semibold text-gray-900 flex items-center">
+          <h2 className={`${chrome.sectionTitle} flex items-center`}>
             {t('title')}
             <ConnectionStatusLabel status={connectionStatus.team} section={t('sectionTeam')} />
             <ConnectionStatusLabel status={connectionStatus.vehicles} section={t('sectionVehicle')} />
@@ -339,23 +342,42 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
             )}
           </h2>
           <div className="flex items-center space-x-2">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                handleSave()
-              }}
-              disabled={isSaving || !hasChanges()}
-              className={`px-4 py-2 text-sm font-medium rounded-md flex items-center space-x-2 ${
-                isSaving || !hasChanges()
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-primary text-primary-foreground hover:bg-primary/90 focus:ring-2 focus:ring-ring'
-              }`}
-            >
-              <Save size={16} />
-              <span>{isSaving ? t('saving') : t('save')}</span>
-            </button>
+            {chrome.compact ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleSave()
+                }}
+                disabled={isSaving || !hasChanges()}
+                className={`${chrome.iconButton} ${
+                  isSaving || !hasChanges()
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                }`}
+                title={isSaving ? t('saving') : t('save')}
+                aria-label={isSaving ? t('saving') : t('save')}
+              >
+                <Save size={chrome.iconSize} />
+              </button>
+            ) : (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleSave()
+                }}
+                disabled={isSaving || !hasChanges()}
+                className={`px-4 py-2 text-sm font-medium rounded-md flex items-center space-x-2 ${
+                  isSaving || !hasChanges()
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-primary text-primary-foreground hover:bg-primary/90 focus:ring-2 focus:ring-ring'
+                }`}
+              >
+                <Save size={16} />
+                <span>{isSaving ? t('saving') : t('save')}</span>
+              </button>
+            )}
             <svg 
-              className={`w-5 h-5 text-gray-500 transition-transform duration-200 ${
+              className={`${chrome.chevronClass} text-gray-500 transition-transform duration-200 ${
                 expandedSections.has('team-vehicle-assignment') ? 'rotate-180' : ''
               }`}
               fill="none" 
@@ -368,50 +390,50 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
         </div>
         
         {expandedSections.has('team-vehicle-assignment') && (
-          <div className="mt-4 space-y-4">
+          <div className={`${chrome.bodyExpandedMargin} ${chrome.bodyStack}`}>
             {/* 팀 타입 선택 */}
-            <div className="flex space-x-2">
+            <div className="flex flex-wrap gap-1.5">
               <button 
                 onClick={() => onTeamTypeChange('1guide')}
-                className={`px-3 py-2 text-sm rounded flex items-center space-x-2 ${
+                className={`${chrome.segmentButton} flex items-center space-x-1 ${
                   teamType === '1guide' 
                     ? 'bg-primary/10 text-primary border border-border' 
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
                 }`}
               >
-                <User size={16} />
+                <User size={chrome.iconSize} />
                 <span>{t('oneGuide')}</span>
               </button>
               
               <button 
                 onClick={() => onTeamTypeChange('2guide')}
-                className={`px-3 py-2 text-sm rounded flex items-center space-x-2 ${
+                className={`${chrome.segmentButton} flex items-center space-x-1 ${
                   teamType === '2guide' 
                     ? 'bg-primary/10 text-primary border border-border' 
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
                 }`}
               >
-                <Users size={16} />
+                <Users size={chrome.iconSize} />
                 <span>{t('twoGuide')}</span>
               </button>
               
               <button 
                 onClick={() => onTeamTypeChange('guide+driver')}
-                className={`px-3 py-2 text-sm rounded flex items-center space-x-2 ${
+                className={`${chrome.segmentButton} flex items-center space-x-1 ${
                   teamType === 'guide+driver' 
                     ? 'bg-primary/10 text-primary border border-border' 
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
                 }`}
               >
-                <Car size={16} />
+                <Car size={chrome.iconSize} />
                 <span>{t('guideDriver')}</span>
               </button>
             </div>
 
-            <div className="space-y-4">
+            <div className={chrome.bodyStack}>
               {/* 가이드 선택 (드롭다운 열면 활성/비활성 탭) */}
-              <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-                <label className="text-sm font-medium text-gray-700 flex-shrink-0 whitespace-nowrap">{t('guide')}</label>
+              <div className={`flex flex-wrap items-center ${chrome.bodyRowGap}`}>
+                <label className={`${chrome.bodyLabel} flex-shrink-0 whitespace-nowrap`}>{t('guide')}</label>
                 <MemberSelectWithTabs
                   value={selectedGuide || ''}
                   onChange={onGuideSelect}
@@ -426,24 +448,24 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                     type="number"
                     value={Number.isFinite(guideFee) ? guideFee : ''}
                     onChange={(e) => onGuideFeeChange(Number(e.target.value) || 0)}
-                    className={`text-sm border rounded px-2 py-1 w-24 pl-6 ${
+                    className={`${chrome.bodyField} w-24 pl-6 ${
                       isGuideFeeFromDefault ? 'text-primary bg-primary/5 border-border' : 
                       isGuideFeeFromTour ? 'text-green-600 bg-green-50 border-green-300' : 
-                      'text-gray-900 border-gray-300'
+                      'text-gray-900'
                     }`}
                     placeholder="0"
                     min="0"
                     step="0.01"
                     title={isGuideFeeFromDefault ? '기본값 (수정 시 자동 저장)' : isGuideFeeFromTour ? '투어에 저장됨' : '수정 가능'}
                   />
-                  <span className="absolute left-2 text-sm text-gray-500 pointer-events-none">$</span>
+                  <span className={`absolute left-2 ${chrome.bodyMuted} pointer-events-none`}>$</span>
                   {isGuideFeeFromDefault && (
-                    <span className="text-sm text-primary" title="기본값">
+                    <span className={`${chrome.bodyText} text-primary`} title="기본값">
                       📋
                     </span>
                   )}
                   {isGuideFeeFromTour && (
-                    <span className="text-sm text-green-600" title="저장된 값">
+                    <span className={`${chrome.bodyText} text-green-600`} title="저장된 값">
                       💾
                     </span>
                   )}
@@ -452,8 +474,8 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
 
               {/* 2차 가이드/드라이버 선택 (드롭다운 열면 활성/비활성 탭) */}
               {(teamType === '2guide' || teamType === 'guide+driver') && (
-                <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-                  <label className="text-sm font-medium text-gray-700 flex-shrink-0 whitespace-nowrap">
+                <div className={`flex flex-wrap items-center ${chrome.bodyRowGap}`}>
+                  <label className={`${chrome.bodyLabel} flex-shrink-0 whitespace-nowrap`}>
                     {teamType === '2guide' ? t('secondGuide') : t('driver')}
                   </label>
                   <MemberSelectWithTabs
@@ -470,24 +492,24 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                       type="number"
                       value={Number.isFinite(assistantFee) ? assistantFee : ''}
                       onChange={(e) => onAssistantFeeChange(Number(e.target.value) || 0)}
-                      className={`text-sm border rounded px-2 py-1 w-24 pl-6 ${
+                      className={`${chrome.bodyField} w-24 pl-6 ${
                         isAssistantFeeFromDefault ? 'text-primary bg-primary/5 border-border' : 
                         isAssistantFeeFromTour ? 'text-green-600 bg-green-50 border-green-300' : 
-                        'text-gray-900 border-gray-300'
+                        'text-gray-900'
                       }`}
                       placeholder="0"
                       min="0"
                       step="0.01"
                       title={isAssistantFeeFromDefault ? '기본값 (수정 시 자동 저장)' : isAssistantFeeFromTour ? '투어에 저장됨' : '수정 가능'}
                     />
-                    <span className="absolute left-2 text-sm text-gray-500 pointer-events-none">$</span>
+                    <span className={`absolute left-2 ${chrome.bodyMuted} pointer-events-none`}>$</span>
                     {isAssistantFeeFromDefault && (
-                      <span className="text-sm text-primary" title="기본값">
+                      <span className={`${chrome.bodyText} text-primary`} title="기본값">
                         📋
                       </span>
                     )}
                     {isAssistantFeeFromTour && (
-                      <span className="text-sm text-green-600" title="저장된 값">
+                      <span className={`${chrome.bodyText} text-green-600`} title="저장된 값">
                         💾
                       </span>
                     )}
@@ -496,12 +518,12 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
               )}
 
               {/* 차량 선택 */}
-              <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-                <label className="text-sm font-medium text-gray-700 flex-shrink-0 whitespace-nowrap">{t('vehicle')}</label>
+              <div className={`flex flex-wrap items-center ${chrome.bodyRowGap}`}>
+                <label className={`${chrome.bodyLabel} flex-shrink-0 whitespace-nowrap`}>{t('vehicle')}</label>
                 <select
                   value={selectedVehicleId || ''}
                   onChange={(e) => onVehicleSelect(e.target.value)}
-                  className="flex-1 min-w-0 text-sm border rounded px-3 py-2 focus:ring-2 focus:ring-ring focus:border-ring"
+                  className={`flex-1 min-w-0 ${chrome.bodySelect} focus:ring-2 focus:ring-ring focus:border-ring`}
                   disabled={vehiclesLoading}
                 >
                   <option value="">{t('selectVehicle')}</option>
@@ -512,109 +534,53 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                   ))}
                 </select>
                 {vehiclesError && (
-                  <span className="text-sm text-red-600">{vehiclesError}</span>
+                  <span className={`${chrome.bodyText} text-red-600`}>{vehiclesError}</span>
                 )}
               </div>
-              <p className="text-xs text-gray-500 pl-0 sm:pl-[calc(4.5rem+0.5rem)] -mt-1">
+              <p className={`${chrome.bodyMuted} pl-0 sm:pl-[calc(3.5rem+0.5rem)] -mt-1`}>
                 {t('maxCapacityHint')}
               </p>
 
               {/* 마일리지 입력 */}
               {selectedVehicleId && (
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <label className="text-sm font-medium text-gray-700 flex-shrink-0 whitespace-nowrap">{t('start')}</label>
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                <div className={`flex flex-col sm:flex-row sm:items-center ${chrome.bodyRowGap}`}>
+                  <div className={`flex items-center ${chrome.bodyRowGap} flex-1 min-w-0`}>
+                    <label className={`${chrome.bodyLabel} flex-shrink-0 whitespace-nowrap`}>{t('start')}</label>
+                    <div className={`flex items-center ${chrome.bodyRowGap} flex-1 min-w-0`}>
                       <input
                         type="number"
                         value={startMileage || ''}
                         onChange={(e) => onStartMileageChange(Number(e.target.value) || 0)}
-                        className="text-sm border rounded px-2 py-1 flex-1 min-w-0 max-w-full text-gray-900 border-gray-300"
+                        className={`${chrome.bodyField} flex-1 min-w-0 max-w-full text-gray-900`}
                         placeholder="0"
                         min="0"
                         disabled={isMileageLoading}
                       />
-                      <span className="text-sm text-gray-500 flex-shrink-0">miles</span>
+                      <span className={`${chrome.bodyMuted} flex-shrink-0`}>miles</span>
                       {isMileageLoading && (
-                        <span className="text-sm text-gray-500 flex-shrink-0">로딩...</span>
+                        <span className={`${chrome.bodyMuted} flex-shrink-0`}>로딩...</span>
                       )}
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <label className="text-sm font-medium text-gray-700 flex-shrink-0 whitespace-nowrap">{t('end')}</label>
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <div className={`flex items-center ${chrome.bodyRowGap} flex-1 min-w-0`}>
+                    <label className={`${chrome.bodyLabel} flex-shrink-0 whitespace-nowrap`}>{t('end')}</label>
+                    <div className={`flex items-center ${chrome.bodyRowGap} flex-1 min-w-0`}>
                       <input
                         type="number"
                         value={endMileage || ''}
                         onChange={(e) => onEndMileageChange(Number(e.target.value) || 0)}
-                        className="text-sm border rounded px-2 py-1 flex-1 min-w-0 max-w-full text-gray-900 border-gray-300"
+                        className={`${chrome.bodyField} flex-1 min-w-0 max-w-full text-gray-900`}
                         placeholder="0"
                         min="0"
                       />
-                      <span className="text-sm text-gray-500 flex-shrink-0">miles</span>
+                      <span className={`${chrome.bodyMuted} flex-shrink-0`}>miles</span>
                     </div>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* 현재 배정된 팀원 및 차량 표시 */}
-            {(selectedGuide || selectedAssistant || selectedVehicleId) && (
-              <div className="p-3 bg-gray-50 rounded-lg">
-                <div className="font-medium text-gray-700 mb-2">
-                  {t('currentlyAssigned')} ({teamType === '1guide' ? t('oneGuide') : teamType === '2guide' ? t('twoGuide') : t('guideDriver')}):
-                </div>
-                <div className="space-y-1 text-sm">
-                  {selectedGuide && (
-                    <div className="text-gray-600 flex justify-between">
-                      <span>{t('guide')}: {getTeamMemberName(selectedGuide)}</span>
-                      {guideFee > 0 && (
-                        <span className={`flex items-center space-x-1 ${
-                          isGuideFeeFromTour ? 'text-green-600' : 
-                          isGuideFeeFromDefault ? 'text-primary' : 
-                          'text-gray-600'
-                        }`}>
-                          <span>${guideFee}</span>
-                          {isGuideFeeFromTour && <span title="저장된 값">💾</span>}
-                          {isGuideFeeFromDefault && <span title="기본값">📋</span>}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {selectedAssistant && (
-                    <div className="text-gray-600 flex justify-between">
-                      <span>
-                        {teamType === '2guide' ? t('secondGuide') : t('driver')}: {getTeamMemberName(selectedAssistant)}
-                      </span>
-                      {assistantFee > 0 && (
-                        <span className={`flex items-center space-x-1 ${
-                          isAssistantFeeFromTour ? 'text-green-600' : 
-                          isAssistantFeeFromDefault ? 'text-primary' : 
-                          'text-gray-600'
-                        }`}>
-                          <span>${assistantFee}</span>
-                          {isAssistantFeeFromTour && <span title="저장된 값">💾</span>}
-                          {isAssistantFeeFromDefault && <span title="기본값">📋</span>}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {selectedVehicleId && (
-                    <div className="text-gray-600 flex justify-between">
-                      <span>{t('vehicle')}: {getVehicleName(selectedVehicleId)}</span>
-                      {(startMileage > 0 || endMileage > 0) && (
-                        <span className="text-gray-600">
-                          {startMileage > 0 && `${startMileage}miles`}
-                          {startMileage > 0 && endMileage > 0 && ' → '}
-                          {endMileage > 0 && `${endMileage}miles`}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>

@@ -104,3 +104,10 @@ export function simplifyChoiceLabel(
 
   return effective
 }
+
+/** 배정 관리·투어 카드: 🏜️ X / L / U 앤텔롭 초이스 뱃지만 표시 (PASS·INTL·US 등 거주/통신 뱃지 제외) */
+export function isAntelopeTourChoiceBadgeLabel(label: string | null | undefined): boolean {
+  const trimmed = label != null ? String(label).trim() : ''
+  if (!trimmed) return false
+  return trimmed.startsWith(`${ANTLOPE_EMOJI} `)
+}

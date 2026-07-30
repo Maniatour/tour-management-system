@@ -127,6 +127,7 @@ export default function TourChatRoom({
     loadMessages,
     scrollToBottom,
     messagesEndRef,
+    messagesScrollRef,
     messagesRef
   } = useChatMessages({
     roomId: room?.id || null,
@@ -2628,6 +2629,7 @@ export default function TourChatRoom({
         canDeleteMessage={canDeleteMessage}
         deleteMessage={deleteMessage}
         messagesEndRef={messagesEndRef}
+        messagesScrollRef={messagesScrollRef}
         showParticipantsList={showParticipantsList}
         isMobileMenuOpen={isMobileMenuOpen}
         {...(translateMessage ? { translateMessage } : {})}

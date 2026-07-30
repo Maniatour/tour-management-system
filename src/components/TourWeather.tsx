@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useTranslations } from 'next-intl'
-import { Sun, Sunset, Cloud, Thermometer, Droplets, Wind, Clock, RefreshCw, CloudRain, CloudSnow, CloudLightning, Eye, ChevronDown, ChevronUp, CloudSun, CloudDrizzle, CloudFog } from 'lucide-react'
+import { Sun, Sunset, Cloud, Thermometer, Droplets, Wind, RefreshCw, CloudRain, CloudSnow, CloudLightning, Eye, ChevronDown, ChevronUp, CloudSun, CloudDrizzle, CloudFog } from 'lucide-react'
 import { getGoblinTourWeatherData, normalizeDate, type LocationWeather } from '@/lib/weatherApi'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { useTourDetailSectionChrome } from '@/components/tour/TourDetailModalChromeContext'
 
 interface TourWeatherProps {
   tourDate?: string
@@ -85,8 +86,45 @@ const LOCATION_TIMEZONES: { [key: string]: string } = {
   'Page': 'America/Phoenix'
 }
 
+function getLocationTimeAbbrev(location: string): string {
+  if (location.includes('Grand Canyon')) return 'GC'
+  if (location.includes('Zion')) return 'Zion'
+  if (location.includes('Page')) return 'Page'
+  return location.split(' ')[0] ?? location
+}
+
+function SunriseSunsetTwoLine({
+  abbrev,
+  localTime,
+  vegasTime,
+  icon,
+  compact,
+}: {
+  abbrev: string
+  localTime: string
+  vegasTime: string
+  icon: ReactNode
+  compact: boolean
+}) {
+  const lineClass = `${compact ? 'text-[10px]' : 'text-xs'} font-mono leading-tight whitespace-nowrap`
+  return (
+    <div className="flex flex-col items-start shrink-0">
+      <span className={`flex items-center gap-0.5 text-gray-600 ${lineClass}`}>
+        {icon}
+        <span>
+          {abbrev} {localTime}
+        </span>
+      </span>
+      <span className={`text-gray-400 ${lineClass} ${compact ? 'pl-[14px]' : 'pl-4'}`}>
+        LV {vegasTime}
+      </span>
+    </div>
+  )
+}
+
 export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
   const t = useTranslations('weather')
+  const chrome = useTourDetailSectionChrome()
   const [weatherData, setWeatherData] = useState<{
     grandCanyon: LocationWeather
     zionCanyon: LocationWeather
@@ -328,59 +366,71 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
       return locationData.location
     }
 
+    const locationAbbrev = getLocationTimeAbbrev(locationData.location)
+    const locationNameClass = chrome.compact
+      ? 'text-xs font-medium text-gray-700 shrink-0'
+      : 'text-sm font-medium text-gray-800 shrink-0'
+    const tempClass = chrome.compact
+      ? 'text-[10px] text-gray-600 font-mono shrink-0'
+      : 'text-xs text-gray-600 font-mono shrink-0'
+
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         {/* 헤더 - 어코디언 토글 버튼 */}
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="w-full p-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+          className={`w-full ${chrome.compact ? 'p-2' : 'p-3'} flex items-center justify-between gap-2 hover:bg-gray-50 transition-colors`}
         >
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
             {/* 날씨 아이콘 (Lucide 아이콘) */}
-            {getWeatherIconComponent(locationData.weather.weather_main || '', locationData.weather.weather_description || '')}
-            
-            {/* 위치명 */}
-            <span className="font-medium text-gray-800 text-sm">{getSimpleLocationName()}</span>
-            
-            {/* 최저/최고 기온 */}
-            <span className="text-xs text-gray-600 font-mono">
-              {getTempRange()}
+            <span className="shrink-0">
+              {getWeatherIconComponent(locationData.weather.weather_main || '', locationData.weather.weather_description || '')}
             </span>
             
-            {/* 일출/일몰 시간 (아이콘과 함께) - 현지시간 (LV 시간) */}
-            {showSunriseSunset && (
-              <div className="flex items-center space-x-1">
-                     {locationData.location.includes('Grand Canyon') && locationData.sunrise && (() => {
-                       const times = convertTimeWithTimezones(locationData.sunrise, locationData.location)
-                       return (
-                         <>
-                           <Sun className="w-3 h-3 text-yellow-500" />
-                           <span className="text-xs text-gray-600 font-mono">
-                             {times.localTime} <span className="text-gray-400">(LV {times.vegasTime})</span>
-                           </span>
-                         </>
-                       )
-                     })()}
-                     {locationData.location.includes('Zion') && locationData.sunset && (() => {
-                       const times = convertTimeWithTimezones(locationData.sunset, locationData.location)
-                       return (
-                         <>
-                           <Sunset className="w-3 h-3 text-orange-500" />
-                           <span className="text-xs text-gray-600 font-mono">
-                             {times.localTime} <span className="text-gray-400">(LV {times.vegasTime})</span>
-                           </span>
-                         </>
-                       )
-                     })()}
-              </div>
-            )}
+            {/* 위치명 */}
+            <span className={locationNameClass}>{getSimpleLocationName()}</span>
+            
+            {/* 최저/최고 기온 */}
+            <span className={tempClass}>
+              {getTempRange()}
+            </span>
           </div>
+
+          {/* 일출/일몰 — GC/LV 두 줄 배치 */}
+          {showSunriseSunset && (
+            <div className="shrink-0">
+              {locationData.location.includes('Grand Canyon') && locationData.sunrise && (() => {
+                const times = convertTimeWithTimezones(locationData.sunrise, locationData.location)
+                return (
+                  <SunriseSunsetTwoLine
+                    abbrev={locationAbbrev}
+                    localTime={times.localTime}
+                    vegasTime={times.vegasTime}
+                    compact={chrome.compact}
+                    icon={<Sun className="w-3 h-3 text-yellow-500 shrink-0" aria-hidden />}
+                  />
+                )
+              })()}
+              {locationData.location.includes('Zion') && locationData.sunset && (() => {
+                const times = convertTimeWithTimezones(locationData.sunset, locationData.location)
+                return (
+                  <SunriseSunsetTwoLine
+                    abbrev={locationAbbrev}
+                    localTime={times.localTime}
+                    vegasTime={times.vegasTime}
+                    compact={chrome.compact}
+                    icon={<Sunset className="w-3 h-3 text-orange-500 shrink-0" aria-hidden />}
+                  />
+                )
+              })()}
+            </div>
+          )}
           
           {/* 쉐브론 애로우 */}
           {isExpanded ? (
-            <ChevronUp className="h-4 w-4 text-gray-500" />
+            <ChevronUp className="h-4 w-4 text-gray-500 shrink-0" />
           ) : (
-            <ChevronDown className="h-4 w-4 text-gray-500" />
+            <ChevronDown className="h-4 w-4 text-gray-500 shrink-0" />
           )}
         </button>
         
@@ -444,36 +494,33 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
               </div>
             )}
 
-            {/* 일출/일몰 시간 상세 표시 - 현지시간 (LV 시간) */}
+            {/* 일출/일몰 시간 상세 표시 - GC/LV 두 줄 */}
             {showSunriseSunset && (() => {
               const sunriseTimes = convertTimeWithTimezones(locationData.sunrise, locationData.location)
               const sunsetTimes = convertTimeWithTimezones(locationData.sunset, locationData.location)
+              const detailLine = chrome.compact ? 'text-[10px]' : 'text-xs'
               return (
                 <div className="border-t border-gray-100 pt-2 mt-2">
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="flex items-center">
-                      <Sun className="h-3 w-3 text-yellow-500 mr-1" />
-                      <div>
-                        <div className="text-xs text-gray-500">{t('sunrise')}</div>
-                        <div className="text-xs font-medium text-gray-800">
-                          {sunriseTimes.localTime}
-                        </div>
-                        <div className="text-xs text-gray-400">
-                          (LV {sunriseTimes.vegasTime})
-                        </div>
-                      </div>
+                    <div>
+                      <div className={`${detailLine} text-gray-500 mb-0.5`}>{t('sunrise')}</div>
+                      <SunriseSunsetTwoLine
+                        abbrev={locationAbbrev}
+                        localTime={sunriseTimes.localTime}
+                        vegasTime={sunriseTimes.vegasTime}
+                        compact={chrome.compact}
+                        icon={<Sun className="w-3 h-3 text-yellow-500 shrink-0" aria-hidden />}
+                      />
                     </div>
-                    <div className="flex items-center">
-                      <Sunset className="h-3 w-3 text-orange-500 mr-1" />
-                      <div>
-                        <div className="text-xs text-gray-500">{t('sunset')}</div>
-                        <div className="text-xs font-medium text-gray-800">
-                          {sunsetTimes.localTime}
-                        </div>
-                        <div className="text-xs text-gray-400">
-                          (LV {sunsetTimes.vegasTime})
-                        </div>
-                      </div>
+                    <div>
+                      <div className={`${detailLine} text-gray-500 mb-0.5`}>{t('sunset')}</div>
+                      <SunriseSunsetTwoLine
+                        abbrev={locationAbbrev}
+                        localTime={sunsetTimes.localTime}
+                        vegasTime={sunsetTimes.vegasTime}
+                        compact={chrome.compact}
+                        icon={<Sunset className="w-3 h-3 text-orange-500 shrink-0" aria-hidden />}
+                      />
                     </div>
                   </div>
                 </div>
@@ -520,27 +567,6 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
         <WeatherCard locationData={weatherData.grandCanyon} showSunriseSunset={true} />
         <WeatherCard locationData={weatherData.pageCity} />
         <WeatherCard locationData={weatherData.zionCanyon} showSunriseSunset={true} />
-      </div>
-
-      <div className="mt-3 p-2 bg-purple-100 rounded-lg">
-        <div className="flex items-start">
-          <Clock className="h-3 w-3 text-purple-600 mr-1 mt-0.5" />
-          <div className="text-xs text-purple-700">
-            <p className="font-medium mb-1">{t('tourNotes.title')}</p>
-            {(() => {
-              const sunriseTimes = convertTimeWithTimezones(weatherData.grandCanyon.sunrise, weatherData.grandCanyon.location)
-              const sunsetTimes = convertTimeWithTimezones(weatherData.zionCanyon.sunset, weatherData.zionCanyon.location)
-              return (
-                <ul className="text-xs space-y-0.5">
-                  <li>• {t('tourNotes.sunriseTime')} {sunriseTimes.localTime} <span className="text-purple-500">(LV {sunriseTimes.vegasTime})</span></li>
-                  <li>• {t('tourNotes.sunsetTime')} {sunsetTimes.localTime} <span className="text-purple-500">(LV {sunsetTimes.vegasTime})</span></li>
-                  <li>• {t('tourNotes.clothing')}</li>
-                  <li>• {t('tourNotes.seasonal')}</li>
-                </ul>
-              )
-            })()}
-          </div>
-        </div>
       </div>
     </div>
   )

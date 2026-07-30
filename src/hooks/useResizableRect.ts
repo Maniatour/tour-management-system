@@ -10,6 +10,7 @@ import {
   type ResizableRect,
   type ResizeHandle,
 } from '@/lib/resizableRect'
+import { migrateLegacyTourDetailModalRect, TOUR_DETAIL_MODAL_RECT_KEY } from '@/lib/adminModalRectStorage'
 
 type Options = {
   storageKey?: string
@@ -31,6 +32,9 @@ export function useResizableRect({
 
   useLayoutEffect(() => {
     if (!enabled) return
+    if (storageKey === TOUR_DETAIL_MODAL_RECT_KEY) {
+      migrateLegacyTourDetailModalRect()
+    }
     if (storageKey) {
       setRect(loadPersistedRect(storageKey, fallback))
     } else {
@@ -62,6 +66,14 @@ export function useResizableRect({
       if ((e.target as HTMLElement).closest('button, a, input, select, textarea, [data-no-drag]')) return
       e.preventDefault()
       e.stopPropagation()
+      const captureTarget = e.currentTarget as HTMLElement
+      if (captureTarget.setPointerCapture) {
+        try {
+          captureTarget.setPointerCapture(e.pointerId)
+        } catch {
+          /* ignore */
+        }
+      }
       const startX = e.clientX
       const startY = e.clientY
       const start = rectRef.current
@@ -70,9 +82,18 @@ export function useResizableRect({
         const dy = ev.clientY - startY
         setRect(clampResizableRect({ ...start, x: start.x + dx, y: start.y + dy }))
       }
-      const up = () => {
+      const up = (ev: PointerEvent) => {
         window.removeEventListener('pointermove', move)
         window.removeEventListener('pointerup', up)
+        if (captureTarget.releasePointerCapture) {
+          try {
+            if (captureTarget.hasPointerCapture?.(ev.pointerId)) {
+              captureTarget.releasePointerCapture(ev.pointerId)
+            }
+          } catch {
+            /* ignore */
+          }
+        }
         commitRect(rectRef.current)
       }
       window.addEventListener('pointermove', move)

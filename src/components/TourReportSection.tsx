@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import { useLocale } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
+import { useTourDetailSectionChrome } from '@/components/tour/TourDetailModalChromeContext'
 
 interface TourReportSectionProps {
   tourId: string
@@ -32,6 +33,7 @@ export default function TourReportSection({
 }: TourReportSectionProps) {
   const t = useTranslations('tours.tourReport')
   const locale = useLocale()
+  const chrome = useTourDetailSectionChrome()
   const { user, simulatedUser, isSimulating } = useAuth()
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
   const [showForm, setShowForm] = useState(false)
@@ -157,24 +159,24 @@ export default function TourReportSection({
 
   if (loading) {
     return (
-      <div className="text-center py-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-        <p className="text-gray-500">Loading...</p>
+      <div className={`text-center ${chrome.emptyStatePadding}`}>
+        <div className={`animate-spin rounded-full border-b-2 border-primary mx-auto mb-2 ${chrome.compact ? 'h-6 w-6' : 'h-8 w-8'}`} />
+        <p className={chrome.emptyStateTitle}>Loading...</p>
       </div>
     )
   }
 
   if (hasReports) {
     return (
-      <div className="text-center py-6 space-y-3">
-        <FileText className="w-10 h-10 text-green-500 mx-auto mb-3" />
-        <p className="text-gray-700 text-base mb-1">{t('hasReports')}</p>
-        <p className="text-gray-500 text-sm">
+      <div className={`text-center space-y-2 ${chrome.compact ? 'py-4' : 'py-6'}`}>
+        <FileText className={`${chrome.compact ? 'w-8 h-8' : 'w-10 h-10'} text-green-500 mx-auto`} />
+        <p className={chrome.compact ? 'text-xs text-gray-700' : 'text-gray-700 text-base'}>{t('hasReports')}</p>
+        <p className={chrome.emptyStateSubtext}>
           {t('clickListButton')}
         </p>
         <div className="flex justify-center gap-2">
-          <Button onClick={handleViewReports} size="sm" className="px-3">
-            <Eye className="w-4 h-4 mr-1" />
+          <Button onClick={handleViewReports} size="sm" className={chrome.compact ? 'h-7 px-2 text-xs' : 'px-3'}>
+            <Eye className={`${chrome.compact ? 'w-3 h-3' : 'w-4 h-4'} mr-1`} />
             {t('reportList')}
           </Button>
         </div>
@@ -183,10 +185,10 @@ export default function TourReportSection({
   }
 
   return (
-    <div className="text-center py-8">
-      <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-      <p className="text-gray-500 text-lg mb-2">{t('noReports')}</p>
-      <p className="text-gray-400 text-sm">
+    <div className={`text-center ${chrome.emptyStatePadding}`}>
+      <FileText className={`${chrome.emptyStateIconClass} text-gray-400 mx-auto ${chrome.compact ? 'mb-2' : 'mb-4'}`} />
+      <p className={chrome.emptyStateTitle}>{t('noReports')}</p>
+      <p className={chrome.emptyStateSubtext}>
         {t('reportAfterTour')}
       </p>
     </div>

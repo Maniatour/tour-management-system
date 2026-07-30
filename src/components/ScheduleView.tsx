@@ -4,7 +4,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useR
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
@@ -52,6 +52,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
 import {
   Select,
   SelectContent,
@@ -177,17 +178,6 @@ const ScheduleTicketBookingForm = dynamic(() => import('@/components/booking/Tic
   loading: () => null,
 })
 
-const TourDetailModalContent = dynamic(
-  () => import('@/components/tour/TourDetailModalContent').then((mod) => mod.TourDetailModalContent),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex min-h-[320px] items-center justify-center text-sm text-gray-500">
-        투어 상세 불러오는 중…
-      </div>
-    ),
-  }
-)
 
 const PriceInventoryModal = dynamic(() => import('@/components/schedule/PriceInventoryModal'), {
   ssr: false,
@@ -8988,47 +8978,23 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       )}
 
       {/* 투어 상세 (스케줄 뷰에서 페이지 이동 없이 확인) */}
-      <Dialog
-        modal={false}
+      <TourDetailResizableDialog
         open={!!tourDetailModal}
+        modal={false}
         onOpenChange={(open) => {
           if (!open) {
             setTourDetailModal(null)
             setTourDetailIframeReloadNonce(0)
           }
         }}
-      >
-        <DialogContent
-          className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden sm:rounded-lg"
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
-            <DialogTitle className="text-base font-semibold leading-snug truncate flex-1 min-w-0" title={tourDetailModal?.title}>
-              {tourDetailModal?.title ?? '투어 상세'}
-            </DialogTitle>
-            {tourDetailModal?.tourId ? (
-              <a
-                href={`/${locale}/admin/tours/${tourDetailModal.tourId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-primary hover:text-primary/80 shrink-0 ml-2"
-              >
-                새 탭에서 열기
-                <ExternalLink size={14} aria-hidden />
-              </a>
-            ) : null}
-          </DialogHeader>
-          {tourDetailModal?.tourId ? (
-            <TourDetailModalContent
-              tourId={tourDetailModal.tourId}
-              refreshNonce={tourDetailIframeReloadNonce}
-              onNavigateToTour={(nextTourId) =>
-                setTourDetailModal((prev) => (prev ? { ...prev, tourId: nextTourId } : null))
-              }
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
+        tourId={tourDetailModal?.tourId ?? null}
+        refreshNonce={tourDetailIframeReloadNonce}
+        onNavigateToTour={(nextTourId) =>
+          setTourDetailModal((prev) => (prev ? { ...prev, tourId: nextTourId } : null))
+        }
+        accessibilityTitle={tourDetailModal?.title ?? '투어 상세'}
+        titleFallback={tourDetailModal?.title ?? '투어 상세'}
+      />
 
       {/* 일괄 오프 스케줄 모달 */}
       {showBatchOffModal && (

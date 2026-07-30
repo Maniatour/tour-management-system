@@ -13,6 +13,8 @@ import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
 import { ReservationFormEmailSendButtons } from '@/components/reservation/ReservationFormEmailSendButtons'
 import { ReservationFormSmsSendButton } from '@/components/reservation/ReservationFormSmsSendButton'
 import { mapDbReservationRowsToReservations } from '@/lib/mapDbReservationRowsToReservations'
+import type { DialogStackLevel } from '@/lib/dialogZIndex'
+import { RESERVATION_EDIT_MODAL_RECT_KEY } from '@/lib/adminModalRectStorage'
 
 async function fetchReservationById(reservationId: string): Promise<Reservation | null> {
   const { data, error } = await supabase.from('reservations').select('*').eq('id', reservationId).single()
@@ -27,12 +29,14 @@ export function ReservationDetailPageView({
   reservationId,
   modalLightLoad = false,
   layout = 'page',
+  modalStackLevel,
   onCancel,
   onSaved,
 }: {
   reservationId: string
   modalLightLoad?: boolean
   layout?: 'modal' | 'page'
+  modalStackLevel?: DialogStackLevel
   onCancel?: () => void
   onSaved?: () => void
 }) {
@@ -185,6 +189,8 @@ export function ReservationDetailPageView({
           onDelete={handleDelete}
           onRefreshCustomers={refreshCustomers}
           layout={layout}
+          {...(modalStackLevel ? { modalStackLevel } : {})}
+          {...(layout === 'modal' ? { modalRectStorageKey: RESERVATION_EDIT_MODAL_RECT_KEY } : {})}
           allowPastDateEdit={isSuper || !!reservation}
           followUpPipelineSnapshotRefreshToken={followUpFormPipelineRefresh}
           titleAction={
@@ -238,6 +244,7 @@ export function ReservationDetailPageView({
     isSuper,
     followUpFormPipelineRefresh,
     layout,
+    modalStackLevel,
   ])
 
   return (

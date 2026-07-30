@@ -5010,6 +5010,8 @@
       "tourType": "Tour Type",
       "privateTour": "Private Tour",
       "regularTour": "Regular Tour",
+      "regularTourTooltip": "Regular group tour",
+      "maxParticipantsTooltip": "Max capacity: {count}. Updates automatically when you save a vehicle assignment.",
       "tourNote": "Tour Note",
       "tourNotePlaceholder": "Enter tour-related special notes or memos...",
       "section": "Tours"
@@ -5347,6 +5349,7 @@
       "reimbursementFilterOutstanding": "Has outstanding",
       "statementUnmatchedOnlyLabel": "Show expenses not matched to a statement line",
       "statementUnmatchedEmpty": "No expenses match this filter. Try turning the filter off.",
+      "tourReceiptsSection": "Tour receipts",
       "reimbursedTotalLabel": "Reimbursed total",
       "outstandingTotalLabel": "Outstanding total",
       "editReimbursement": "Edit reimbursement",

@@ -6,13 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
+import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
 import TipsShareModal from '@/components/TipsShareModal'
 import { loadHtml2Canvas, loadJsPDF } from '@/lib/lazyPdfLibs'
 import {
@@ -3497,24 +3491,26 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
       </div>
     )}
 
-      <Dialog
-        modal={false}
+      <TourDetailResizableDialog
         open={tourDetailModal !== null}
         onOpenChange={(open) => {
           if (!open) setTourDetailModal(null)
         }}
-      >
-        <DialogContent
-          className="z-[120] w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden sm:rounded-lg"
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
-            <DialogTitle
+        tourId={tourDetailModal?.tourId ?? null}
+        onNavigateToTour={(nextTourId) =>
+          setTourDetailModal((prev) => (prev ? { ...prev, tourId: nextTourId } : null))
+        }
+        stackLevel="elevated"
+        accessibilityTitle={tourDetailModal?.tourName ?? '투어 상세'}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        header={
+          <div className="flex flex-row items-center justify-between gap-2">
+            <h2
               className="text-base font-semibold leading-snug truncate flex-1 min-w-0"
               title={tourDetailModal?.tourName}
             >
               {tourDetailModal?.tourName ?? '투어 상세'}
-            </DialogTitle>
+            </h2>
             {tourDetailModal?.tourId ? (
               <a
                 href={`/${locale}/admin/tours/${tourDetailModal.tourId}`}
@@ -3526,19 +3522,9 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                 <ExternalLink size={14} aria-hidden />
               </a>
             ) : null}
-          </DialogHeader>
-          {tourDetailModal?.tourId ? (
-            <div className="flex min-h-0 flex-1 flex-col bg-white">
-              <TourDetailModalContent
-                tourId={tourDetailModal.tourId}
-                onNavigateToTour={(nextTourId) =>
-                  setTourDetailModal((prev) => (prev ? { ...prev, tourId: nextTourId } : null))
-                }
-              />
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+          </div>
+        }
+      />
 
       <TipsShareModal
         isOpen={tipsShareTourId !== null}

@@ -160,9 +160,7 @@ import {
 } from '@/lib/opTodoAction'
 import type { ActionRequiredTabId } from '@/components/reservation/ReservationActionRequiredModal'
 import type { FollowUpQueueTabId } from '@/components/reservation/ReservationFollowUpQueueModal'
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { ResizableDialogContent } from '@/components/ui/ResizableDialogContent'
-import { TourDetailModalContent } from '@/components/tour/TourDetailModalContent'
+import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
 import { useAdminTodoQueueData } from '@/hooks/useAdminTodoQueueData'
 import {
   ADMIN_TODO_WIDGET_STORAGE_KEY,
@@ -200,7 +198,6 @@ function panelVisibleInTab(tab: TodoListTab, completed: boolean, linkedOnHold: b
 }
 
 const STORAGE_KEY = ADMIN_TODO_WIDGET_STORAGE_KEY
-const TOUR_HOTEL_DETAIL_MODAL_RECT_KEY = 'admin-todo-tour-hotel-detail-modal-rect'
 const HEADER_HEIGHT = 50
 const FAB_STACK_INDEX = 0
 const DEFAULT_SIZE: FloatingPanelSize = { width: 380, height: 520 }
@@ -1854,26 +1851,14 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
         request={tourPickupNotification}
         onClose={() => setTourPickupNotification(null)}
       />
-      <Dialog
+      <TourDetailResizableDialog
         open={Boolean(tourHotelDetailModalId)}
         onOpenChange={(open) => !open && setTourHotelDetailModalId(null)}
-      >
-        <ResizableDialogContent
-          storageKey={TOUR_HOTEL_DETAIL_MODAL_RECT_KEY}
-          defaultWidth={1280}
-          defaultHeight={900}
-          stackLevel="elevated"
-          accessibilityTitle={isKo ? '투어 상세' : 'Tour detail'}
-          className="flex flex-col gap-0 overflow-hidden"
-        >
-          {tourHotelDetailModalId ? (
-            <TourDetailModalContent
-              tourId={tourHotelDetailModalId}
-              onNavigateToTour={setTourHotelDetailModalId}
-            />
-          ) : null}
-        </ResizableDialogContent>
-      </Dialog>
+        tourId={tourHotelDetailModalId}
+        onNavigateToTour={setTourHotelDetailModalId}
+        stackLevel="elevated"
+        accessibilityTitle={isKo ? '투어 상세' : 'Tour detail'}
+      />
     </>
   )
 
@@ -2725,14 +2710,14 @@ export function AdminTodoActionHost({ locale }: { locale: string }) {
 
   return (
     <>
-      <Dialog open={Boolean(tourModalId)} onOpenChange={(open) => !open && closeTodoAction()}>
-        <DialogContent className="flex h-[min(92vh,900px)] max-w-6xl flex-col gap-0 overflow-hidden p-0">
-          <DialogTitle className="sr-only">
-            {isKo ? '투어 상세' : 'Tour detail'}
-          </DialogTitle>
-          {tourModalId ? <TourDetailModalContent tourId={tourModalId} onNavigateToTour={setTourModalId} /> : null}
-        </DialogContent>
-      </Dialog>
+      <TourDetailResizableDialog
+        open={Boolean(tourModalId)}
+        onOpenChange={(open) => !open && closeTodoAction()}
+        tourId={tourModalId}
+        onNavigateToTour={setTourModalId}
+        stackLevel="default"
+        accessibilityTitle={isKo ? '투어 상세' : 'Tour detail'}
+      />
 
       {actionType === 'reservation_action' && (
         <ReservationActionRequiredModal

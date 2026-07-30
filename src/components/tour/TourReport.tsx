@@ -1,9 +1,9 @@
 import React from 'react'
 import { Plus, Eye } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import { Button } from '@/components/ui/button'
 import { ConnectionStatusLabel } from './TourUIComponents'
 import TourReportSection from '@/components/TourReportSection'
+import { useTourDetailSectionChrome } from './TourDetailModalChromeContext'
 
 interface TourReportProps {
   tour: any
@@ -22,11 +22,11 @@ export const TourReport: React.FC<TourReportProps> = ({
   userRole,
   params
 }) => {
+  const chrome = useTourDetailSectionChrome()
   const t = useTranslations('tours.tourReport')
   const productName = params.locale === 'ko' ? product?.name_ko : product?.name_en
   
   const handleCreateReport = () => {
-    // 투어 리포트 작성 모드로 전환
     const reportSection = document.querySelector('[data-tour-report-section]')
     if (reportSection) {
       const createButton = reportSection.querySelector('[data-create-report]') as HTMLButtonElement
@@ -35,7 +35,6 @@ export const TourReport: React.FC<TourReportProps> = ({
   }
 
   const handleViewReports = () => {
-    // 투어 리포트 목록 모드로 전환
     const reportSection = document.querySelector('[data-tour-report-section]')
     if (reportSection) {
       const viewButton = reportSection.querySelector('[data-view-reports]') as HTMLButtonElement
@@ -45,27 +44,54 @@ export const TourReport: React.FC<TourReportProps> = ({
 
   return (
     <div className="bg-white rounded-lg shadow-sm border">
-      <div className="p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-md font-semibold text-gray-900 flex items-center">
+      <div className={chrome.shellPadding}>
+        <div className={`flex items-center justify-between ${chrome.headerMargin}`}>
+          <h2 className={`${chrome.sectionTitle} flex items-center`}>
             {t('title')}
             <ConnectionStatusLabel status={connectionStatus.bookings} section={t('section')} />
           </h2>
-          <div className="flex gap-2">
-            <Button
-              onClick={handleCreateReport}
-              className="flex items-center gap-1"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">작성</span>
-            </Button>
-            <Button
-              onClick={handleViewReports}
-              className="flex items-center gap-1"
-            >
-              <Eye className="w-4 h-4" />
-              <span className="hidden sm:inline">목록</span>
-            </Button>
+          <div className="flex gap-1">
+            {chrome.compact ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleCreateReport}
+                  className={`${chrome.iconButton} bg-primary text-primary-foreground hover:bg-primary/90`}
+                  title="작성"
+                  aria-label="작성"
+                >
+                  <Plus size={chrome.iconSize} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleViewReports}
+                  className={`${chrome.iconButton} border border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
+                  title="목록"
+                  aria-label="목록"
+                >
+                  <Eye size={chrome.iconSize} />
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={handleCreateReport}
+                  className={`inline-flex items-center gap-1 ${chrome.textActionButton} bg-primary text-primary-foreground hover:bg-primary/90`}
+                >
+                  <Plus size={chrome.iconSize} />
+                  <span>작성</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleViewReports}
+                  className={`inline-flex items-center gap-1 ${chrome.textActionButton} border border-gray-200 bg-white text-gray-700 hover:bg-gray-50`}
+                >
+                  <Eye size={chrome.iconSize} />
+                  <span>목록</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
         <div data-tour-report-section>

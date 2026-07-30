@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
-import { Plus, Upload, X, Check, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Package, Camera, ZoomIn, ZoomOut, ListOrdered, RotateCcw, RotateCw, Sparkles, type LucideIcon } from 'lucide-react'
+import { Plus, Upload, X, DollarSign, ChevronDown, ChevronRight, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Package, Camera, ZoomIn, ZoomOut, ListOrdered, RotateCcw, RotateCw, Sparkles, type LucideIcon } from 'lucide-react'
 import ExpenseVendorManagerModal from '@/components/expense/ExpenseVendorManagerModal'
 import { supabase } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
@@ -22,13 +22,22 @@ import {
   ticketExpenseForSettlement
 } from '@/lib/bookingSettlement'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
-import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
+import {
+  reservationExcludedFromTourSettlementAggregates,
+  resolveOperatingProfitForTourStats,
+} from '@/lib/tourStatsCalculator'
 import {
   expenseHasReimbursementTracking,
   parseReimbursedAmount,
   reimbursementOutstanding,
 } from '@/lib/expenseReimbursement'
-import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { ensureFreshAuthSessionForUpload } from '@/lib/uploadClient'
 import { ensureImageFitsMaxBytes, RECEIPT_COMPRESS_FAILED } from '@/lib/imageUtils'
 import { TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR } from '@/lib/tourExpenseConstants'
@@ -121,6 +130,7 @@ interface ReservationPricing {
   card_fee?: number
   prepayment_tip?: number
   choices_total?: number
+  operating_profit?: number | null
 }
 
 interface Reservation {
@@ -151,9 +161,19 @@ interface TourExpenseManagerProps {
   embedSingleExpenseId?: string | null
   onEmbedClose?: () => void
   onEmbedUpdated?: () => void
+  /** 투어 상세 모달 등 좁은 영역 — 정산 통계·지출 목록 컴팩트 표시 */
+  compact?: boolean
+  /** 부모(TourFinance) 헤더에 제목·툴바가 있을 때 내부 제목·액션 행 숨김 */
+  hideTitle?: boolean
 }
 
-export default function TourExpenseManager({ 
+export type TourExpenseManagerHandle = {
+  openOptionManagement: () => void
+  openAddExpense: () => void
+  toggleDriveImporter: () => void
+}
+
+const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManagerProps>(function TourExpenseManager({
   tourId, 
   tourDate, 
   productId, 
@@ -168,7 +188,9 @@ export default function TourExpenseManager({
   embedSingleExpenseId,
   onEmbedClose,
   onEmbedUpdated,
-}: TourExpenseManagerProps) {
+  compact = false,
+  hideTitle = false,
+}, ref) {
   const t = useTranslations('tours.tourExpense')
   const locale = useLocale()
   const { userRole: authUserRole, userPosition, authUser } = useAuth()
@@ -186,10 +208,6 @@ export default function TourExpenseManager({
   const { paymentMethodOptions, paymentMethodMap } = usePaymentMethodOptions()
 
   const [expenses, setExpenses] = useState<TourExpense[]>([])
-  /** 명세 대조(reconciliation_matches)에 연결된 투어 지출 id */
-  const [reconciledTourExpenseIds, setReconciledTourExpenseIds] = useState<Set<string>>(() => new Set())
-  /** 목록만: 명세와 매칭되지 않은 지출만 표시 */
-  const [statementUnmatchedOnly, setStatementUnmatchedOnly] = useState(false)
   const [categories, setCategories] = useState<ExpenseCategory[]>([])
   const [vendors, setVendors] = useState<ExpenseVendor[]>([])
   const [paidToOptions, setPaidToOptions] = useState<string[]>([])
@@ -656,7 +674,7 @@ export default function TourExpenseManager({
       
       const { data, error } = await supabase
         .from('reservation_pricing')
-        .select('id, reservation_id, total_price, adult_product_price, child_product_price, infant_product_price, commission_amount, commission_percent, coupon_discount, additional_discount, additional_cost, product_price_total, option_total, subtotal, card_fee, prepayment_tip, choices_total')
+        .select('id, reservation_id, total_price, adult_product_price, child_product_price, infant_product_price, commission_amount, commission_percent, coupon_discount, additional_discount, additional_cost, product_price_total, option_total, subtotal, card_fee, prepayment_tip, choices_total, operating_profit')
         .in('reservation_id', targetReservationIds)
 
       if (error) {
@@ -684,6 +702,7 @@ export default function TourExpenseManager({
           ...(row.card_fee != null ? { card_fee: row.card_fee } : {}),
           ...(row.prepayment_tip != null ? { prepayment_tip: row.prepayment_tip } : {}),
           ...(row.choices_total != null ? { choices_total: row.choices_total } : {}),
+          ...(row.operating_profit != null ? { operating_profit: row.operating_profit } : {}),
         }))
       )
       
@@ -856,21 +875,6 @@ export default function TourExpenseManager({
       setLoading(false)
     }
   }, [tourId, activeOperatorId])
-
-  useEffect(() => {
-    const ids = expenses.map((e) => e.id)
-    if (ids.length === 0) {
-      setReconciledTourExpenseIds(new Set())
-      return
-    }
-    let cancelled = false
-    void fetchReconciledSourceIds(supabase, 'tour_expenses', ids).then((set) => {
-      if (!cancelled) setReconciledTourExpenseIds(set)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [expenses])
 
   // 카테고리 목록 로드
   const loadCategories = async () => {
@@ -1437,19 +1441,23 @@ export default function TourExpenseManager({
   }
 
   // 지출 상태 업데이트
-  const handleStatusUpdate = async (expenseId: string, status: 'approved' | 'rejected') => {
+  const handleStatusUpdate = async (expenseId: string, status: TourExpense['status']) => {
     try {
       const effectiveSubmittedBy = await resolveSubmitterEmail()
-      if (!effectiveSubmittedBy) {
+      if (!effectiveSubmittedBy && status !== 'pending') {
         alert(t('submitterEmailRequired'))
         return
       }
+
+      const checkedOn = status === 'pending' ? null : new Date().toISOString()
+      const checkedBy = status === 'pending' ? null : effectiveSubmittedBy
+
       const { error } = await supabase
         .from('tour_expenses')
         .update({
           status,
-          checked_by: effectiveSubmittedBy,
-          checked_on: new Date().toISOString()
+          checked_by: checkedBy,
+          checked_on: checkedOn,
         })
         .eq('id', expenseId)
 
@@ -1458,7 +1466,12 @@ export default function TourExpenseManager({
       setExpenses(prev => 
         prev.map(expense => 
           expense.id === expenseId 
-            ? { ...expense, status, checked_by: effectiveSubmittedBy, checked_on: new Date().toISOString() }
+            ? {
+                ...expense,
+                status,
+                checked_by: checkedBy,
+                checked_on: checkedOn,
+              }
             : expense
         )
       )
@@ -1946,6 +1959,9 @@ export default function TourExpenseManager({
       if (error) throw error
 
       setExpenses(prev => prev.filter(expense => expense.id !== expenseId))
+      if (editingExpense?.id === expenseId) {
+        handleCancelEdit()
+      }
       onExpenseUpdated?.()
       onEmbedUpdated?.()
       if (embedSingleExpenseId) {
@@ -2103,77 +2119,31 @@ export default function TourExpenseManager({
     }))
   }
 
-  // Net Price 계산 함수
-  const calculateNetPrice = (pricing: ReservationPricing, reservationId: string): number => {
-    if (!pricing || !pricing.total_price) return 0
-    
-    const grandTotal = pricing.total_price
-    const channel = reservationChannels[reservationId]
-    const commissionBasePriceOnly = channel?.commission_base_price_only || false
-    
-    let commissionAmount = 0
-    if (pricing.commission_amount && pricing.commission_amount > 0) {
-      commissionAmount = pricing.commission_amount
-    } else if (pricing.commission_percent && pricing.commission_percent > 0) {
-      if (commissionBasePriceOnly) {
-        // 판매가격에만 커미션 적용
-        const productPriceTotal = pricing.product_price_total || 0
-        const couponDiscount = pricing.coupon_discount || 0
-        const additionalDiscount = pricing.additional_discount || 0
-        const additionalCost = pricing.additional_cost || 0
-        const basePriceForCommission = productPriceTotal - couponDiscount - additionalDiscount + additionalCost
-        commissionAmount = basePriceForCommission * (pricing.commission_percent / 100)
-      } else {
-        // 전체 가격에 커미션 적용
-        commissionAmount = grandTotal * (pricing.commission_percent / 100)
-      }
-    }
-    
-    return grandTotal - commissionAmount
-  }
-  
-  // 고객 총 결제 금액 계산
-  const calculateTotalCustomerPayment = (pricing: ReservationPricing): number => {
-    // total_price가 고객 총 결제 금액을 포함하고 있을 수 있지만,
-    // 정확한 계산을 위해 명시적으로 계산
-    const productPriceTotal = pricing.product_price_total || 0
-    const couponDiscount = pricing.coupon_discount || 0
-    const additionalDiscount = pricing.additional_discount || 0
-    const additionalCost = pricing.additional_cost || 0
-    const optionTotal = pricing.option_total || 0
-    const cardFee = pricing.card_fee || 0
-    const prepaymentTip = pricing.prepayment_tip || 0
-    
-    // 고객 총 결제 금액 = (상품가격 - 할인) + 옵션 + 추가비용 + 카드수수료 + 팁 (choices_total 제외 — option_total 과 이중 방지)
-    return (
-      (productPriceTotal - couponDiscount - additionalDiscount) +
-      optionTotal +
-      additionalCost +
-      cardFee +
-      prepaymentTip
+  // Operating Profit 계산 (DB 저장값 우선, 없으면 레거시 산식)
+  const resolveOperatingProfit = (pricing: ReservationPricing, reservationId: string): number => {
+    return resolveOperatingProfitForTourStats(
+      pricing,
+      reservationId,
+      reservationExpenses,
+      reservationChannels
     )
   }
-  
-  // 추가 결제금 계산 (고객 총 결제 금액 - 채널 수수료$ - 채널 정산 금액)
-  const calculateAdditionalPayment = (pricing: ReservationPricing, reservationId: string): number => {
-    const totalCustomerPayment = calculateTotalCustomerPayment(pricing)
-    const commissionAmount = pricing.commission_amount || 0
-    const netPrice = calculateNetPrice(pricing, reservationId)
-    
-    // 추가 결제금 = 고객 총 결제 금액 - 채널 수수료$ - 채널 정산 금액 (Net Price)
-    const additionalPayment = totalCustomerPayment - commissionAmount - netPrice
-    return Math.max(0, additionalPayment) // 음수는 0으로 처리
-  }
-  
-  // Operating Profit 계산 함수 (Net Price - Reservation Expenses + 추가 결제금)
-  const calculateOperatingProfit = (pricing: ReservationPricing, reservationId: string): number => {
-    const netPrice = calculateNetPrice(pricing, reservationId)
-    const reservationExpense = reservationExpenses[reservationId] || 0
-    const additionalPayment = calculateAdditionalPayment(pricing, reservationId)
-    
-    // Operating Profit = Net Price - Reservation Expenses + 추가 결제금
-    return netPrice - reservationExpense + additionalPayment
-  }
+
+  const assignedReservationIdSet = useMemo(
+    () => new Set((reservationIds ?? []).map((id) => String(id).trim()).filter(Boolean)),
+    [reservationIds]
+  )
+
+  /** 배정됐고 정산 대상인 예약만 (취소·환불·문의·노쇼 제외) */
+  const settlementReservations = useMemo(
+    () =>
+      reservations.filter(
+        (r) =>
+          assignedReservationIdSet.has(r.id) &&
+          !reservationExcludedFromTourSettlementAggregates(r.status)
+      ),
+    [reservations, assignedReservationIdSet]
+  )
 
   // 통계 계산
   const calculateFinancialStats = () => {
@@ -2188,20 +2158,16 @@ export default function TourExpenseManager({
       assistantFee
     })
     
-    // 총 입금액 계산 (reservationIds에 있는 예약만)
-    const filteredPricing = reservationIds && reservationIds.length > 0
-      ? reservationPricing.filter(p => reservationIds.includes(p.reservation_id))
-      : reservationPricing
+    const settlementReservationIds = new Set(settlementReservations.map((r) => r.id))
 
-    const pricingForSettlementTotals = filteredPricing.filter((p) => {
-      const r = reservations.find((x) => x.id === p.reservation_id)
-      return !reservationExcludedFromTourSettlementAggregates(r?.status)
-    })
+    const pricingForSettlementTotals = reservationPricing.filter((p) =>
+      settlementReservationIds.has(p.reservation_id)
+    )
 
     const totalPayments = pricingForSettlementTotals.reduce((sum, pricing) => sum + pricing.total_price, 0)
 
     const totalOperatingProfit = pricingForSettlementTotals.reduce((sum, pricing) => {
-      return sum + calculateOperatingProfit(pricing, pricing.reservation_id)
+      return sum + resolveOperatingProfit(pricing, pricing.reservation_id)
     }, 0)
     
     // 총 지출 계산 (기존 지출 + 가이드/드라이버 수수료 + 부킹 비용)
@@ -2262,15 +2228,9 @@ export default function TourExpenseManager({
     }
   }
 
-  const visibleTourExpenses = useMemo(() => {
-    if (!statementUnmatchedOnly) return expenses
-    return expenses.filter((e) => !reconciledTourExpenseIds.has(e.id))
-  }, [expenses, statementUnmatchedOnly, reconciledTourExpenseIds])
-
-  // 지출 카테고리별 그룹화 (목록 필터와 동일 데이터 기준)
   const expenseBreakdown = useMemo(() => {
     const breakdown: Record<string, { amount: number; count: number; expenses: TourExpense[] }> = {}
-    visibleTourExpenses.forEach((expense) => {
+    expenses.forEach((expense) => {
       const category = expense.paid_for
       if (!breakdown[category]) {
         breakdown[category] = { amount: 0, count: 0, expenses: [] }
@@ -2280,9 +2240,28 @@ export default function TourExpenseManager({
       breakdown[category].expenses.push(expense)
     })
     return breakdown
-  }, [visibleTourExpenses])
+  }, [expenses])
 
   const financialStats = calculateFinancialStats()
+
+  const statsSectionClass = compact ? 'bg-gray-50 rounded-lg p-2.5 space-y-2' : 'bg-gray-50 rounded-lg p-4 space-y-4'
+  const statsTitleClass = compact
+    ? 'text-sm font-semibold text-gray-900'
+    : 'text-lg font-semibold text-gray-900'
+  const statsCardBtnClass = compact
+    ? 'w-full flex items-center justify-between p-2.5 text-left hover:bg-gray-50'
+    : 'w-full flex items-center justify-between p-4 text-left hover:bg-gray-50'
+  const statsAmountClass = compact ? 'text-sm font-bold' : 'text-lg font-bold'
+  const statsLabelClass = compact ? 'text-xs font-medium text-gray-900' : 'font-medium text-gray-900'
+  const statsBodyClass = compact ? 'border-t p-2.5 bg-gray-50' : 'border-t p-4 bg-gray-50'
+  const statsRowTextClass = compact ? 'text-xs' : 'text-sm'
+  const statsChevronSize = compact ? 16 : 20
+  const statsDotClass = compact ? 'w-2 h-2 rounded-full' : 'w-3 h-3 rounded-full'
+  const pageTitleClass = compact ? 'text-sm font-semibold text-gray-900' : 'text-lg font-semibold text-gray-900'
+  const expenseListItemClass = compact ? 'border rounded-lg p-2 hover:bg-gray-50' : 'border rounded-lg p-3 hover:bg-gray-50'
+  const expenseListSubtitleClass = compact
+    ? 'text-xs font-semibold text-gray-700 mb-1.5'
+    : 'text-sm font-semibold text-gray-700 mb-2'
 
   useEffect(() => {
     loadExpenses()
@@ -2309,13 +2288,54 @@ export default function TourExpenseManager({
     handleEditExpense(expense)
   }, [embedSingleExpenseId, expenses, loading])
 
+  const openAddExpenseForm = useCallback(() => {
+    setEditingExpense(null)
+    setPaymentMethodTab('own')
+    setReimbursementSectionOpen(false)
+    setShowCustomPaidTo(false)
+    setShowCustomPaidFor(false)
+    setShowMoreCategories(false)
+    setFormData({
+      paid_to: '',
+      paid_for: '',
+      amount: '',
+      payment_method: '',
+      note: '',
+      image_url: '',
+      file_path: '',
+      custom_paid_to: '',
+      custom_paid_for: '',
+      reimbursed_amount: '',
+      reimbursed_on: '',
+      reimbursement_note: '',
+    })
+    setFormReceiptZoom(1)
+    setShowAddForm(true)
+  }, [])
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      openOptionManagement: () => setShowOptionManagement(true),
+      openAddExpense: openAddExpenseForm,
+      toggleDriveImporter: () => setShowDriveImporter((prev) => !prev),
+    }),
+    [openAddExpenseForm]
+  )
+
+  const toolbarIconBtnClass = compact
+    ? 'inline-flex items-center justify-center w-7 h-7 rounded-md disabled:opacity-50 disabled:cursor-not-allowed shrink-0'
+    : 'inline-flex items-center justify-center w-8 h-8 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed shrink-0'
+  const toolbarIconSize = compact ? 14 : 16
+
   return (
     <div className="space-y-4">
       {!embedSingleExpenseId ? (
       <>
+      {!hideTitle ? (
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">{t('title')}</h3>
-        <div className="flex items-center space-x-2">
+        <h3 className={pageTitleClass}>{t('title')}</h3>
+        <div className="flex items-center space-x-1.5">
           {allowReceiptOnlyUpload && (
             <div className="flex items-center gap-1">
               <input
@@ -2354,119 +2374,100 @@ export default function TourExpenseManager({
                   }
                 }}
                 disabled={uploading}
-                className="flex items-center justify-center w-10 h-10 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`${toolbarIconBtnClass} bg-primary text-primary-foreground hover:bg-primary/90`}
                 title={t('camera')}
               >
-                <Camera size={20} />
+                <Camera size={toolbarIconSize} />
               </button>
               <button
                 type="button"
                 onClick={() => receiptOnlyInputRef.current?.click()}
                 disabled={uploading}
-                className="flex items-center justify-center w-10 h-10 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`${toolbarIconBtnClass} bg-emerald-600 text-white hover:bg-emerald-700`}
                 title={t('receiptOnlyUpload')}
               >
-                <Receipt size={20} />
+                <Receipt size={toolbarIconSize} />
               </button>
             </div>
           )}
           <button
             onClick={() => setShowOptionManagement(true)}
-            className="flex items-center justify-center w-10 h-10 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+            className={`${toolbarIconBtnClass} bg-gray-600 text-white hover:bg-gray-700`}
             title="선택지 관리"
           >
-            <Settings size={20} />
+            <Settings size={toolbarIconSize} />
           </button>
           <button
             type="button"
-            onClick={() => {
-              setEditingExpense(null)
-              setPaymentMethodTab('own')
-              setReimbursementSectionOpen(false)
-              setShowCustomPaidTo(false)
-              setShowCustomPaidFor(false)
-              setShowMoreCategories(false)
-              setFormData({
-                paid_to: '',
-                paid_for: '',
-                amount: '',
-                payment_method: '',
-                note: '',
-                image_url: '',
-                file_path: '',
-                custom_paid_to: '',
-                custom_paid_for: '',
-                reimbursed_amount: '',
-                reimbursed_on: '',
-                reimbursement_note: '',
-              })
-              setFormReceiptZoom(1)
-              setShowAddForm(true)
-            }}
-            className="flex items-center justify-center w-10 h-10 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
+            onClick={openAddExpenseForm}
+            className={`${toolbarIconBtnClass} bg-primary text-primary-foreground hover:bg-primary/90`}
             title={t('addExpense')}
           >
-            <Plus size={20} />
+            <Plus size={toolbarIconSize} />
           </button>
+          {userRole !== 'team_member' && (
+            <button
+              type="button"
+              onClick={() => setShowDriveImporter((prev) => !prev)}
+              className={`${toolbarIconBtnClass} bg-primary text-primary-foreground hover:bg-primary/90`}
+              title="구글 드라이브에서 영수증 가져오기"
+            >
+              <Folder size={toolbarIconSize} />
+            </button>
+          )}
         </div>
       </div>
+      ) : null}
 
       {/* 정산 통계 섹션 */}
-      <div className="bg-gray-50 rounded-lg p-4 space-y-4">
-        <h4 className="text-lg font-semibold text-gray-900">{t('settlementStats')}</h4>
+      <div className={statsSectionClass}>
+        <h4 className={statsTitleClass}>{t('settlementStats')}</h4>
         
         {/* Operating Profit 총합 - 어드민만 표시 */}
         {userRole === 'admin' && (
           <div className="bg-white rounded-lg border">
           <button
             onClick={() => toggleSection('payments')}
-            className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
+            className={statsCardBtnClass}
           >
-            <div className="flex items-center space-x-3">
-              <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-              <span className="font-medium text-gray-900">Operating Profit 총합</span>
-              <span className="text-lg font-bold text-green-600">
+            <div className="flex items-center space-x-2 min-w-0">
+              <div className={`${statsDotClass} bg-green-500 shrink-0`}></div>
+              <span className={statsLabelClass}>Operating Profit</span>
+              <span className={`${statsAmountClass} text-green-600 shrink-0`}>
                 {formatCurrency(financialStats.totalOperatingProfit)}
               </span>
             </div>
-            {expandedSections.payments ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+            {expandedSections.payments ? <ChevronDown size={statsChevronSize} /> : <ChevronRight size={statsChevronSize} />}
           </button>
           
           {expandedSections.payments && (
-            <div className="border-t p-4 bg-gray-50">
-              <div className="mb-2 text-xs text-gray-500">
-                📋 표시된 예약: {reservations.filter(r => reservationIds?.includes(r.id)).length}팀 (배정된 예약만)
+            <div className={statsBodyClass}>
+              <div className={`mb-1.5 ${compact ? 'text-[10px]' : 'text-xs'} text-gray-500`}>
+                배정·정산 대상 {settlementReservations.length}팀
               </div>
-              <div className="space-y-2">
-                {reservations
-                  .filter(reservation => reservationIds?.includes(reservation.id))
-                  .map((reservation) => {
+              <div className={compact ? 'space-y-1' : 'space-y-2'}>
+                {settlementReservations.length > 0 ? (
+                  settlementReservations.map((reservation) => {
                     const pricing = reservationPricing.find(p => p.reservation_id === reservation.id)
                     const totalPeople = reservation.adults + reservation.children + reservation.infants
-                    const operatingProfit =
-                      reservationExcludedFromTourSettlementAggregates(reservation.status)
-                        ? 0
-                        : pricing
-                          ? calculateOperatingProfit(pricing, reservation.id)
-                          : 0
-                    console.log('💰 Operating Profit display:', {
-                      reservationId: reservation.id,
-                      customerName: reservation.customer_name,
-                      totalPeople,
-                      operatingProfit
-                    })
+                    const operatingProfit = pricing
+                      ? resolveOperatingProfit(pricing, reservation.id)
+                      : 0
                     return (
-                      <div key={reservation.id} className="flex items-center justify-between text-sm">
-                        <div className="flex items-center space-x-2">
-                          <span className="font-medium">{reservation.customer_name}</span>
-                          <span className="text-gray-500">({totalPeople}명)</span>
+                      <div key={reservation.id} className={`flex items-center justify-between ${statsRowTextClass}`}>
+                        <div className="flex items-center space-x-1.5 min-w-0">
+                          <span className="font-medium truncate">{reservation.customer_name}</span>
+                          <span className="text-gray-500 shrink-0">({totalPeople}명)</span>
                         </div>
-                        <span className="font-medium text-green-600">
+                        <span className="font-medium text-green-600 shrink-0 ml-2">
                           {formatCurrency(operatingProfit)}
                         </span>
                       </div>
                     )
-                  })}
+                  })
+                ) : (
+                  <div className={`${statsRowTextClass} text-gray-500`}>정산 대상 배정 예약이 없습니다.</div>
+                )}
               </div>
             </div>
           )}
@@ -2477,31 +2478,31 @@ export default function TourExpenseManager({
         <div className="bg-white rounded-lg border">
           <button
             onClick={() => toggleSection('expenses')}
-            className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
+            className={statsCardBtnClass}
           >
-            <div className="flex items-center space-x-3">
-              <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-              <span className="font-medium text-gray-900">{t('totalExpenses')}</span>
-              <span className="text-lg font-bold text-red-600">
+            <div className="flex items-center space-x-2 min-w-0">
+              <div className={`${statsDotClass} bg-red-500 shrink-0`}></div>
+              <span className={statsLabelClass}>{t('totalExpenses')}</span>
+              <span className={`${statsAmountClass} text-red-600 shrink-0`}>
                 {formatCurrency(financialStats.totalExpensesWithFeesAndBookings)}
               </span>
             </div>
-            {expandedSections.expenses ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+            {expandedSections.expenses ? <ChevronDown size={statsChevronSize} /> : <ChevronRight size={statsChevronSize} />}
           </button>
           
           {expandedSections.expenses && (
-            <div className="border-t p-4 bg-gray-50">
-              <div className="space-y-3">
+            <div className={statsBodyClass}>
+              <div className={compact ? 'space-y-2' : 'space-y-3'}>
                 {/* 가이드/드라이버 수수료 */}
                 {(financialStats.effectiveGuideFee > 0 || financialStats.effectiveAssistantFee > 0) && (
-                  <div className="bg-white rounded p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-gray-900">{t('guideDriverFee')}</span>
-                      <span className="font-bold text-red-600">
+                  <div className={`bg-white rounded ${compact ? 'p-2' : 'p-3'}`}>
+                    <div className={`flex items-center justify-between ${compact ? 'mb-1' : 'mb-2'}`}>
+                      <span className={statsLabelClass}>{t('guideDriverFee')}</span>
+                      <span className={`${statsAmountClass} text-red-600`}>
                         {formatCurrency(financialStats.totalFees)}
                       </span>
                     </div>
-                    <div className="space-y-1 text-sm text-gray-600">
+                    <div className={`space-y-0.5 ${statsRowTextClass} text-gray-600`}>
                       {financialStats.effectiveGuideFee > 0 && (
                         <div className="flex items-center justify-between">
                           <span>{t('guideFee')}</span>
@@ -2520,14 +2521,14 @@ export default function TourExpenseManager({
                 
                 {/* 부킹 비용 */}
                 {(financialStats.totalBookingCosts > 0) && (
-                  <div className="bg-white rounded p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-gray-900">{t('bookingCost')}</span>
-                      <span className="font-bold text-red-600">
+                  <div className={`bg-white rounded ${compact ? 'p-2' : 'p-3'}`}>
+                    <div className={`flex items-center justify-between ${compact ? 'mb-1' : 'mb-2'}`}>
+                      <span className={statsLabelClass}>{t('bookingCost')}</span>
+                      <span className={`${statsAmountClass} text-red-600`}>
                         {formatCurrency(financialStats.totalBookingCosts)}
                       </span>
                     </div>
-                    <div className="space-y-1 text-sm text-gray-600">
+                    <div className={`space-y-0.5 ${statsRowTextClass} text-gray-600`}>
                       {financialStats.totalTicketCosts > 0 && (
                         <div className="flex items-center justify-between">
                           <span>{t('ticketBooking')}</span>
@@ -2546,14 +2547,14 @@ export default function TourExpenseManager({
                 
                 {/* 기존 지출 카테고리들 */}
                 {Object.entries(expenseBreakdown).map(([category, data]) => (
-                  <div key={category} className="bg-white rounded p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-gray-900">{getExpensePaidForLabel(category)}</span>
-                      <span className="font-bold text-red-600">
+                  <div key={category} className={`bg-white rounded ${compact ? 'p-2' : 'p-3'}`}>
+                    <div className={`flex items-center justify-between ${compact ? 'mb-1' : 'mb-2'}`}>
+                      <span className={statsLabelClass}>{getExpensePaidForLabel(category)}</span>
+                      <span className={`${statsAmountClass} text-red-600`}>
                         {formatCurrency(data.amount)} ({data.count} {t('items')})
                       </span>
                     </div>
-                    <div className="space-y-1 text-sm text-gray-600">
+                    <div className={`space-y-0.5 ${statsRowTextClass} text-gray-600`}>
                       {data.expenses.map((expense) => (
                         <div key={expense.id} className="flex items-center justify-between">
                           <span>{expense.paid_to} - {expense.note || t('noMemo')}</span>
@@ -2573,31 +2574,31 @@ export default function TourExpenseManager({
           <div className="bg-white rounded-lg border">
           <button
             onClick={() => toggleSection('profit')}
-            className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
+            className={statsCardBtnClass}
           >
-            <div className="flex items-center space-x-3">
-              <div className={`w-3 h-3 rounded-full ${financialStats.profit >= 0 ? 'bg-primary/50' : 'bg-orange-500'}`}></div>
-              <span className="font-medium text-gray-900">{t('profit')}</span>
-              <span className={`text-lg font-bold ${financialStats.profit >= 0 ? 'text-primary' : 'text-orange-600'}`}>
+            <div className="flex items-center space-x-2 min-w-0">
+              <div className={`${statsDotClass} rounded-full shrink-0 ${financialStats.profit >= 0 ? 'bg-primary/50' : 'bg-orange-500'}`}></div>
+              <span className={statsLabelClass}>{t('profit')}</span>
+              <span className={`${statsAmountClass} shrink-0 ${financialStats.profit >= 0 ? 'text-primary' : 'text-orange-600'}`}>
                 {formatCurrency(financialStats.profit)}
               </span>
             </div>
-            {expandedSections.profit ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+            {expandedSections.profit ? <ChevronDown size={statsChevronSize} /> : <ChevronRight size={statsChevronSize} />}
           </button>
           
           {expandedSections.profit && (
-            <div className="border-t p-4 bg-gray-50">
-              <div className="space-y-2 text-sm">
+            <div className={statsBodyClass}>
+              <div className={`space-y-1.5 ${statsRowTextClass}`}>
                 <div className="flex items-center justify-between">
-                  <span>Operating Profit 총합</span>
+                  <span>Operating Profit</span>
                   <span className="text-green-600 font-medium">{formatCurrency(financialStats.totalOperatingProfit)}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>{t('totalExpensesWithFeesAndBookings')}</span>
                   <span className="text-red-600">{formatCurrency(financialStats.totalExpensesWithFeesAndBookings)}</span>
                 </div>
-                <hr className="my-2" />
-                <div className="flex items-center justify-between font-bold">
+                <hr className="my-1.5" />
+                <div className="flex items-center justify-between font-semibold">
                   <span>{t('profit')}</span>
                   <span className={financialStats.profit >= 0 ? 'text-primary' : 'text-orange-600'}>
                     {formatCurrency(financialStats.profit)}
@@ -2614,66 +2615,51 @@ export default function TourExpenseManager({
           <div className="bg-white rounded-lg border">
           <button
             onClick={() => toggleSection('additionalCosts')}
-            className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
+            className={statsCardBtnClass}
           >
-            <div className="flex items-center space-x-3">
-              <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
-              <span className="font-medium text-gray-900">추가비용 합산</span>
-              <span className="text-lg font-bold text-purple-600">
+            <div className="flex items-center space-x-2 min-w-0">
+              <div className={`${statsDotClass} bg-purple-500 shrink-0`}></div>
+              <span className={statsLabelClass}>추가비용 합산</span>
+              <span className={`${statsAmountClass} text-purple-600 shrink-0`}>
                 {formatCurrency((() => {
-                  const filteredPricing = reservationIds && reservationIds.length > 0
-                    ? reservationPricing.filter(p => reservationIds.includes(p.reservation_id))
-                    : reservationPricing
-                  const totalAdditionalCost = filteredPricing.reduce((sum, pricing) => {
-                    const additionalCost = pricing.additional_cost || 0
-                    // $100 단위로 내림
+                  const totalAdditionalCost = settlementReservations.reduce((sum, reservation) => {
+                    const pricing = reservationPricing.find(p => p.reservation_id === reservation.id)
+                    const additionalCost = pricing?.additional_cost || 0
                     return sum + Math.floor(additionalCost / 100) * 100
                   }, 0)
                   return totalAdditionalCost
                 })())}
               </span>
             </div>
-            {expandedSections.additionalCosts ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+            {expandedSections.additionalCosts ? <ChevronDown size={statsChevronSize} /> : <ChevronRight size={statsChevronSize} />}
           </button>
           
           {expandedSections.additionalCosts && (
-            <div className="border-t p-4 bg-gray-50">
-              <div className="mb-2 text-xs text-gray-500">
-                📋 표시된 예약: {reservationIds && reservationIds.length > 0 
-                  ? reservations.filter(r => reservationIds.includes(r.id)).length 
-                  : 0}팀 (배정된 예약만)
+            <div className={statsBodyClass}>
+              <div className={`mb-1.5 ${compact ? 'text-[10px]' : 'text-xs'} text-gray-500`}>
+                배정·정산 대상 {settlementReservations.length}팀
               </div>
-              <div className="space-y-2">
-                {reservationIds && reservationIds.length > 0 ? (
-                  reservations
-                    .filter(reservation => reservationIds.includes(reservation.id))
-                    .map((reservation) => {
+              <div className={compact ? 'space-y-1' : 'space-y-2'}>
+                {settlementReservations.length > 0 ? (
+                  settlementReservations.map((reservation) => {
                       const pricing = reservationPricing.find(p => p.reservation_id === reservation.id)
                       const totalPeople = reservation.adults + reservation.children + reservation.infants
                       const additionalCost = pricing?.additional_cost || 0
-                      // $100 단위로 내림
                       const roundedAdditionalCost = Math.floor(additionalCost / 100) * 100
-                      console.log('💰 Additional Cost display:', {
-                        reservationId: reservation.id,
-                        customerName: reservation.customer_name,
-                        totalPeople,
-                        additionalCost,
-                        roundedAdditionalCost
-                      })
                       return (
-                        <div key={reservation.id} className="flex items-center justify-between text-sm">
-                          <div className="flex items-center space-x-2">
-                            <span className="font-medium">{reservation.customer_name}</span>
-                            <span className="text-gray-500">({totalPeople}명)</span>
+                        <div key={reservation.id} className={`flex items-center justify-between ${statsRowTextClass}`}>
+                          <div className="flex items-center space-x-1.5 min-w-0">
+                            <span className="font-medium truncate">{reservation.customer_name}</span>
+                            <span className="text-gray-500 shrink-0">({totalPeople}명)</span>
                           </div>
-                          <span className="font-medium text-purple-600">
+                          <span className="font-medium text-purple-600 shrink-0 ml-2">
                             {formatCurrency(roundedAdditionalCost)}
                           </span>
                         </div>
                       )
                     })
                 ) : (
-                  <div className="text-sm text-gray-500">배정된 예약이 없습니다.</div>
+                  <div className={`${statsRowTextClass} text-gray-500`}>정산 대상 배정 예약이 없습니다.</div>
                 )}
               </div>
             </div>
@@ -2682,33 +2668,20 @@ export default function TourExpenseManager({
         )}
       </div>
 
-      {/* 구글 드라이브 영수증 가져오기 - 가이드(team_member)는 숨김 */}
-      {userRole !== 'team_member' && (
-        <>
-          <div className="mb-4 flex justify-end">
-            <button
-              onClick={() => setShowDriveImporter(!showDriveImporter)}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2"
-            >
-              <Folder className="w-4 h-4" />
-              <span>구글 드라이브에서 영수증 가져오기</span>
-            </button>
-          </div>
-
-          {showDriveImporter && (
-            <div className="mb-4">
-              <GoogleDriveReceiptImporter
-                onImportComplete={() => {
-                  setShowDriveImporter(false)
-                  loadExpenses() // 지출 목록 새로고침
-                }}
-              />
-            </div>
-          )}
-        </>
+      {/* 구글 드라이브 영수증 가져오기 패널 - 가이드(team_member)는 숨김 */}
+      {userRole !== 'team_member' && showDriveImporter && (
+        <div className={compact ? 'mb-2' : 'mb-4'}>
+          <GoogleDriveReceiptImporter
+            onImportComplete={() => {
+              setShowDriveImporter(false)
+              loadExpenses()
+            }}
+          />
+        </div>
       )}
 
       {/* 지출 목록 */}
+      <h4 className={expenseListSubtitleClass}>{t('tourReceiptsSection')}</h4>
       {loading ? (
         <div className="text-center py-4">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
@@ -2716,139 +2689,100 @@ export default function TourExpenseManager({
         </div>
       ) : expenses.length > 0 ? (
         <div className="space-y-2">
-          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-gray-300"
-              checked={statementUnmatchedOnly}
-              onChange={(e) => setStatementUnmatchedOnly(e.target.checked)}
-            />
-            <span>{t('statementUnmatchedOnlyLabel')}</span>
-          </label>
-          {visibleTourExpenses.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 py-8 text-center text-sm text-gray-600">
-              {t('statementUnmatchedEmpty')}
-            </div>
-          ) : (
-          <div className="space-y-2">
-          {visibleTourExpenses.map((expense) => (
-            <div key={expense.id} className="border rounded-lg p-3 hover:bg-gray-50">
-              {/* 상단: 지출명, 금액, 상태 뱃지, 수정/삭제/승인/거부 버튼 (오른쪽 끝 정렬) */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-2">
-                  <span className="font-medium text-gray-900">{getExpensePaidForLabel(expense.paid_for)}</span>
-                  <span className="text-sm font-bold text-green-600">
+          {expenses.map((expense) => (
+            <div
+              key={expense.id}
+              className={`${expenseListItemClass} cursor-pointer`}
+              onClick={() => handleEditExpense(expense)}
+            >
+              {/* 1행: 지출명·금액·상태 | 액션 버튼 오른쪽 끝 */}
+              <div className={`flex items-center justify-between gap-2 ${compact ? 'mb-1' : 'mb-2'}`}>
+                <div className={`flex min-w-0 flex-1 items-center gap-1.5 ${compact ? 'text-xs' : 'text-sm'}`}>
+                  <Select
+                    value={expense.status}
+                    onValueChange={(value) => {
+                      const next = value as TourExpense['status']
+                      if (next !== expense.status) {
+                        void handleStatusUpdate(expense.id, next)
+                      }
+                    }}
+                  >
+                    <SelectTrigger
+                      onClick={(e) => e.stopPropagation()}
+                      className={`h-auto w-auto shrink-0 gap-0.5 rounded-full border-0 px-2 py-0.5 shadow-none hover:opacity-90 focus:ring-1 focus:ring-ring [&>svg]:h-3 [&>svg]:w-3 ${compact ? 'text-[10px]' : 'text-xs'} ${getStatusColor(expense.status)}`}
+                      aria-label={t('statusLabel')}
+                    >
+                      <SelectValue>{getStatusText(expense.status)}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pending">{getStatusText('pending')}</SelectItem>
+                      <SelectItem value="approved">{getStatusText('approved')}</SelectItem>
+                      <SelectItem value="rejected">{getStatusText('rejected')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span className="font-medium text-gray-900 truncate">
+                    {getExpensePaidForLabel(expense.paid_for)}
+                  </span>
+                  <span className="font-bold text-green-600 shrink-0">
                     ${expense.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
-                  <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(expense.status)}`}>
-                    {getStatusText(expense.status)}
-                  </span>
                 </div>
-                <div className="flex items-center space-x-1">
-                  {/* 승인/거부 버튼 - pending 상태일 때만 표시 */}
-                  {expense.status === 'pending' && (
-                    <>
-                      <button
-                        onClick={() => handleStatusUpdate(expense.id, 'approved')}
-                        className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded"
-                        title="승인"
-                      >
-                        <Check size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleStatusUpdate(expense.id, 'rejected')}
-                        className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
-                        title="거부"
-                      >
-                        <X size={14} />
-                      </button>
-                    </>
+                <div className="flex shrink-0 items-center gap-0.5 self-center" onClick={(e) => e.stopPropagation()}>
+                  {canRunReceiptOcr && expense.image_url && expense.image_url.trim() !== '' && (
+                    <button
+                      type="button"
+                      onClick={() => void handleRunReceiptOcr(expense)}
+                      disabled={ocrLoadingExpenseId === expense.id}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded text-purple-600 hover:text-purple-800 hover:bg-purple-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={t('receiptOcrAction')}
+                    >
+                      <span className="text-[10px] font-bold leading-none">
+                        {ocrLoadingExpenseId === expense.id ? '...' : 'OCR'}
+                      </span>
+                    </button>
                   )}
-                  
-                  {/* 수정 버튼 */}
-                  <button
-                    onClick={() => handleEditExpense(expense)}
-                    className="p-1 text-gray-600 hover:text-primary"
-                    title="수정"
-                  >
-                    <Edit size={14} />
-                  </button>
-                  
-                  {/* 삭제 버튼 */}
-                  <button
-                    onClick={() => handleDeleteExpense(expense.id)}
-                    className="p-1 text-gray-600 hover:text-red-600"
-                    title="삭제"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  {expense.image_url && expense.image_url.trim() !== '' ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOcrReview((prev) => (prev && prev.expense.id !== expense.id ? null : prev))
+                        setViewingReceipt({
+                          imageUrl: expense.image_url!,
+                          expenseId: expense.id,
+                          paidFor: getExpensePaidForLabel(expense.paid_for),
+                        })
+                      }}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded text-primary hover:text-primary/80 hover:bg-muted/50"
+                      title="영수증 보기"
+                    >
+                      <Receipt size={14} />
+                    </button>
+                  ) : (
+                    <span
+                      className="inline-flex h-7 w-7 items-center justify-center text-gray-400 cursor-help"
+                      title={`영수증 없음 - 이미지 URL: ${expense.image_url || 'null'}, 파일 경로: ${expense.file_path || 'null'}`}
+                    >
+                      <Receipt size={14} />
+                    </span>
+                  )}
                 </div>
               </div>
               
-              {/* 하단: 결제처, 제출자, 제출일, 결제방법 */}
-              <div className="flex items-center justify-between text-xs text-gray-600">
-                <div className="flex items-center space-x-2">
-                  {expense.paid_to && (
-                    <>
-                      <span>{expense.paid_to}</span>
-                      <span>•</span>
-                    </>
-                  )}
-                  <span>{teamMembers[expense.submitted_by] || expense.submitted_by}</span>
-                  <span>•</span>
-                  <span>{new Date(expense.submit_on).toLocaleDateString('ko-KR')}</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  {expense.payment_method && (
+              {/* 2행: 결제처, 제출자, 제출일, 결제방법 */}
+              <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 ${compact ? 'text-[10px]' : 'text-xs'} text-gray-600`}>
+                {expense.paid_to ? <span>{expense.paid_to}</span> : null}
+                {expense.paid_to ? <span className="text-gray-300">•</span> : null}
+                <span>{teamMembers[expense.submitted_by] || expense.submitted_by}</span>
+                <span className="text-gray-300">•</span>
+                <span>{new Date(expense.submit_on).toLocaleDateString('ko-KR')}</span>
+                {expense.payment_method ? (
+                  <>
+                    <span className="text-gray-300">•</span>
                     <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-full text-xs">
                       {paymentMethodMap[expense.payment_method] || expense.payment_method}
                     </span>
-                  )}
-                  
-                  {/* 액션 버튼들 (영수증 보기) */}
-                  <div className="flex items-center space-x-1">
-                    {canRunReceiptOcr && expense.image_url && expense.image_url.trim() !== '' && (
-                      <button
-                        onClick={() => void handleRunReceiptOcr(expense)}
-                        disabled={ocrLoadingExpenseId === expense.id}
-                        className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                        title={t('receiptOcrAction')}
-                      >
-                        <span className="text-[10px] font-bold">
-                          {ocrLoadingExpenseId === expense.id ? '...' : 'OCR'}
-                        </span>
-                      </button>
-                    )}
-                    {expense.image_url && expense.image_url.trim() !== '' ? (
-                      <button
-                        onClick={() => {
-                          console.log('📸 Opening receipt:', {
-                            expenseId: expense.id,
-                            imageUrl: expense.image_url,
-                            paidFor: getExpensePaidForLabel(expense.paid_for)
-                          })
-                          setOcrReview((prev) => (prev && prev.expense.id !== expense.id ? null : prev))
-                          setViewingReceipt({
-                            imageUrl: expense.image_url!,
-                            expenseId: expense.id,
-                            paidFor: getExpensePaidForLabel(expense.paid_for),
-                          })
-                        }}
-                        className="p-1 text-primary hover:text-primary/80 hover:bg-muted/50 rounded"
-                        title="영수증 보기"
-                      >
-                        <Receipt size={14} />
-                      </button>
-                    ) : (
-                      <span 
-                        className="text-gray-400 cursor-help" 
-                        title={`영수증 없음 - 이미지 URL: ${expense.image_url || 'null'}, 파일 경로: ${expense.file_path || 'null'}`}
-                      >
-                        <Receipt size={14} />
-                      </span>
-                    )}
-                  </div>
-                </div>
+                  </>
+                ) : null}
               </div>
               {expense.amount > 0 && expenseHasReimbursementTracking(expense) && (
                   <div className="mt-1.5 text-[10px] text-gray-600 border-t border-gray-100 pt-1.5">
@@ -2869,13 +2803,11 @@ export default function TourExpenseManager({
                 )}
             </div>
           ))}
-          </div>
-          )}
         </div>
       ) : (
-        <div className="text-center py-8 text-gray-500">
-          <DollarSign size={48} className="mx-auto mb-4 text-gray-300" />
-          <p>{t('noExpenses')}</p>
+        <div className={`text-center text-gray-500 ${compact ? 'py-4' : 'py-8'}`}>
+          <DollarSign size={compact ? 28 : 48} className={`mx-auto text-gray-300 ${compact ? 'mb-2' : 'mb-4'}`} />
+          <p className={compact ? 'text-xs' : 'text-sm'}>{t('noExpenses')}</p>
         </div>
       )}
 
@@ -4553,4 +4485,6 @@ export default function TourExpenseManager({
       />
     </div>
   )
-}
+})
+
+export default TourExpenseManager

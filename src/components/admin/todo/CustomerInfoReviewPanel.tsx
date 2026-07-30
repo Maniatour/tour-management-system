@@ -352,18 +352,20 @@ export function CustomerInfoReviewPanel({
             ? className
             : `w-full rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50/80 to-white p-3 shadow-sm ${completed ? 'opacity-80' : ''}`
         }
-        title={onEditRequest ? (isKo ? '우클릭: 수정' : 'Right-click to edit') : undefined}
-        onContextMenu={
-          onEditRequest
-            ? (e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                onEditRequest()
-              }
-            : undefined
-        }
       >
-        <div className="flex items-start gap-2">
+        <div
+          className="flex items-start gap-2"
+          title={onEditRequest ? (isKo ? '우클릭: 수정' : 'Right-click to edit') : undefined}
+          onContextMenu={
+            onEditRequest
+              ? (e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  onEditRequest()
+                }
+              : undefined
+          }
+        >
           <TodoPanelStatusButtons
             locale={locale}
             completed={completed}
@@ -462,6 +464,7 @@ export function CustomerInfoReviewPanel({
           reservationId={editingReservationId}
           layout="modal"
           modalLightLoad
+          modalStackLevel="elevated"
           onCancel={() => setEditingReservationId(null)}
           onSaved={handleModalSaved}
         />

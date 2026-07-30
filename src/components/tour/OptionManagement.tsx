@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Settings, Package, DollarSign, Users } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
+import { useTourDetailSectionChrome } from './TourDetailModalChromeContext'
 
 interface ReservationOption {
   id: string
@@ -30,6 +31,7 @@ interface OptionManagementProps {
 }
 
 export const OptionManagement: React.FC<OptionManagementProps> = ({ reservationIds }) => {
+  const chrome = useTourDetailSectionChrome()
   const t = useTranslations('tours.optionManagement')
   const [reservationOptions, setReservationOptions] = useState<ReservationOption[]>([])
   const [loading, setLoading] = useState(false)
@@ -272,12 +274,12 @@ export const OptionManagement: React.FC<OptionManagementProps> = ({ reservationI
 
   return (
     <div className="bg-white rounded-lg shadow-sm border">
-      <div className="p-4">
-        <h2 className="text-md font-semibold text-gray-900 mb-3 flex items-center">
-          <Settings className="h-5 w-5 mr-2" />
+      <div className={chrome.shellPadding}>
+        <h2 className={`${chrome.sectionTitle} ${chrome.headerMargin} flex items-center`}>
+          <Settings className={`${chrome.compact ? 'h-4 w-4' : 'h-5 w-5'} mr-2`} />
           {t('title')}
           {reservationOptions.length > 0 && (
-            <span className="ml-2 text-sm text-gray-500">
+            <span className={`ml-2 ${chrome.bodyMuted}`}>
               ({reservationOptions.length}개 옵션)
             </span>
           )}
@@ -286,16 +288,16 @@ export const OptionManagement: React.FC<OptionManagementProps> = ({ reservationI
         {loading && (
           <div className="text-center py-6">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-            <p className="text-sm text-gray-500 mt-2">옵션을 불러오는 중...</p>
+            <p className={`${chrome.bodyMuted} mt-2`}>옵션을 불러오는 중...</p>
           </div>
         )}
 
         {error && (
           <div className="text-center py-6 text-red-600">
-            <p className="text-sm">{error}</p>
+            <p className={chrome.bodyText}>{error}</p>
             <button
               onClick={fetchReservationOptions}
-              className="mt-2 px-3 py-1 text-xs bg-red-100 text-red-600 rounded hover:bg-red-200"
+              className={`mt-2 ${chrome.textActionButton} bg-red-100 text-red-600 hover:bg-red-200`}
             >
               다시 시도
             </button>
@@ -303,40 +305,37 @@ export const OptionManagement: React.FC<OptionManagementProps> = ({ reservationI
         )}
 
         {!loading && !error && reservationOptions.length === 0 && (
-        <div className="text-center py-6 text-gray-500">
+        <div className={`text-center py-6 ${chrome.bodyCaption}`}>
             <Package className="h-8 w-8 mx-auto mb-3 text-gray-300" />
-          <p className="text-sm">등록된 옵션이 없습니다.</p>
-          <p className="text-xs">배정된 고객이 옵션을 추가하면 여기에 표시됩니다.</p>
+          <p>등록된 옵션이 없습니다.</p>
+          <p className={chrome.bodyMuted}>배정된 고객이 옵션을 추가하면 여기에 표시됩니다.</p>
         </div>
         )}
 
          {!loading && !error && reservationOptions.length > 0 && (
-           <div className="space-y-4">
+           <div className={chrome.bodyStack}>
              {/* 옵션별 그룹화 소계 - 카테고리별 그룹화 */}
-             <div className="bg-primary/5 rounded-lg p-3">
+             <div className={`bg-primary/5 rounded-lg ${chrome.compact ? 'p-2' : 'p-3'}`}>
                <div className="space-y-2">
                  {getOptionSummary().categories.map((categorySummary) => {
                    const categoryOptions = getOptionSummary().options.filter(option => option.category === categorySummary.category)
                    return (
                      <div key={categorySummary.category}>
-                       {/* 개별 옵션들 */}
                        <div className="space-y-1">
                          {categoryOptions.map((option) => (
-                           <div key={option.optionId} className="flex items-center justify-between text-sm">
+                           <div key={option.optionId} className={`flex items-center justify-between ${chrome.bodyText}`}>
                              <div className="flex items-center space-x-2">
-                               <span className="font-medium text-gray-900">{option.optionName}</span>
-                               <span className="text-xs text-gray-500">({option.category})</span>
+                               <span className="font-medium">{option.optionName}</span>
+                               <span className={chrome.bodyMuted}>({option.category})</span>
                              </div>
-                             <span className="text-gray-600">총 {option.totalQuantity}개</span>
+                             <span className={chrome.bodyCaption}>총 {option.totalQuantity}개</span>
                            </div>
                          ))}
                        </div>
-                       {/* 카테고리 구분선 */}
                        <div className="border-t border-gray-300 my-2"></div>
-                       {/* 카테고리 소계 */}
-                       <div className="flex items-center justify-between text-sm font-medium">
-                         <span className="text-gray-900">{categorySummary.category}</span>
-                         <span className="text-gray-600">총 {categorySummary.totalQuantity}개</span>
+                       <div className={`flex items-center justify-between font-medium ${chrome.bodyText}`}>
+                         <span>{categorySummary.category}</span>
+                         <span className={chrome.bodyCaption}>총 {categorySummary.totalQuantity}개</span>
                        </div>
                      </div>
                    )
@@ -345,19 +344,19 @@ export const OptionManagement: React.FC<OptionManagementProps> = ({ reservationI
              </div>
 
              {/* 전체 요약 정보 */}
-             <div className="bg-gray-50 rounded-lg p-3">
-               <div className="flex items-center justify-between text-sm">
-                 <div className="flex items-center text-gray-600">
-                   <Package className="h-4 w-4 mr-1" />
+             <div className={`bg-gray-50 rounded-lg ${chrome.compact ? 'p-2' : 'p-3'}`}>
+               <div className={`flex items-center justify-between ${chrome.bodyText}`}>
+                 <div className={`flex items-center ${chrome.bodyCaption}`}>
+                   <Package className={`${chrome.compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} mr-1`} />
                    <span>총 옵션 수: {reservationOptions.length}개</span>
                  </div>
-                 <div className="flex items-center space-x-4">
-                   <div className="flex items-center text-gray-600">
-                     <Users className="h-4 w-4 mr-1" />
+                 <div className={`flex items-center ${chrome.bodyRowGap}`}>
+                   <div className={`flex items-center ${chrome.bodyCaption}`}>
+                     <Users className={`${chrome.compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} mr-1`} />
                      <span>총 수량: {getTotalQuantity()}개</span>
                    </div>
-                   <div className="flex items-center text-green-600 font-medium">
-                     <DollarSign className="h-4 w-4 mr-1" />
+                   <div className={`flex items-center text-green-600 font-medium ${chrome.bodyText}`}>
+                     <DollarSign className={`${chrome.compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} mr-1`} />
                      <span>총 금액: {formatPrice(getTotalPrice())}</span>
                    </div>
                  </div>
@@ -367,26 +366,26 @@ export const OptionManagement: React.FC<OptionManagementProps> = ({ reservationI
             {/* 옵션 목록 */}
             <div className="space-y-2">
               {reservationOptions.map((reservationOption) => (
-                <div key={reservationOption.id} className="border rounded-lg p-3 hover:bg-gray-50">
+                <div key={reservationOption.id} className={`border rounded-lg ${chrome.compact ? 'p-2' : 'p-3'} hover:bg-gray-50`}>
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <div className="flex items-center space-x-2">
-                        <h3 className="font-medium text-gray-900">
+                        <h3 className={`font-medium ${chrome.bodyText}`}>
                           {reservationOption.option?.name || '알 수 없는 옵션'}
                         </h3>
-                        <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                        <span className={`${chrome.bodyMuted} bg-primary/10 text-primary px-2 py-0.5 rounded`}>
                           {reservationOption.option?.category || '카테고리 없음'}
                         </span>
                       </div>
-                      <div className="text-sm text-gray-500 mt-1">
+                      <div className={`${chrome.bodyMuted} mt-1`}>
                         name: {reservationOption.customer_name || '알 수 없는 고객'}
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-medium text-gray-900">
+                      <div className={`font-medium ${chrome.bodyText}`}>
                         수량: {reservationOption.quantity}개
                       </div>
-                      <div className="text-sm text-green-600 font-medium">
+                      <div className={`${chrome.bodyText} text-green-600 font-medium`}>
                         {formatPrice(reservationOption.total_price || 0)}
                       </div>
                     </div>

@@ -22,6 +22,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext'
 import { isInactiveVehicleStatus } from '@/lib/vehicleStatus'
 import { scheduleDeferredWork } from '@/lib/scheduleDeferredWork'
+import { getPickupHotelPrimaryName } from '@/utils/pickupHotelUtils'
 
 // 타입 정의
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -845,7 +846,7 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
     
     const hotel = pickupHotels.find((h) => h.id === pickupHotelId)
     if (hotel) {
-      const result = `${hotel.hotel} - ${hotel.pick_up_location}`
+      const result = `${getPickupHotelPrimaryName(hotel)} - ${hotel.pick_up_location}`
       if (process.env.NODE_ENV === 'development') {
         console.log('Hotel found:', { hotel, result })
       }
@@ -860,7 +861,7 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
 
   const getPickupHotelNameOnly = (pickupHotelId: string) => {
     const hotel = pickupHotels.find((h) => h.id === pickupHotelId)
-    return hotel ? hotel.hotel : pickupHotelId || '픽업 호텔 미지정'
+    return hotel ? getPickupHotelPrimaryName(hotel) : pickupHotelId || '픽업 호텔 미지정'
   }
 
   const getChannelInfo = (channelId: string) => {

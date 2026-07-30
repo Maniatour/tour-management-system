@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search, X } from 'lucide-react'
 import type { PickupHotel } from '@/utils/pickupHotelUtils'
+import { formatPickupHotelFormLabel, getPickupHotelPrimaryName } from '@/utils/pickupHotelUtils'
 
 export function SearchablePickupHotelSelect({
   hotels,
@@ -13,6 +14,7 @@ export function SearchablePickupHotelSelect({
   clearTitle,
   disabled = false,
   className = '',
+  preferInternalName = false,
 }: {
   hotels: PickupHotel[]
   value: string | null
@@ -22,6 +24,8 @@ export function SearchablePickupHotelSelect({
   clearTitle: string
   disabled?: boolean
   className?: string
+  /** 관리자 화면: internal_name 우선 표시 */
+  preferInternalName?: boolean
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [search, setSearch] = useState('')
@@ -32,12 +36,16 @@ export function SearchablePickupHotelSelect({
     [hotels, value]
   )
 
+  const getHotelLabel = (hotel: PickupHotel) =>
+    preferInternalName ? formatPickupHotelFormLabel(hotel) : hotel.hotel
+
   const filteredHotels = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return hotels
     return hotels.filter(
       (h) =>
         h.hotel.toLowerCase().includes(q) ||
+        (h.internal_name || '').toLowerCase().includes(q) ||
         (h.pick_up_location || '').toLowerCase().includes(q) ||
         (h.address || '').toLowerCase().includes(q)
     )
@@ -64,14 +72,14 @@ export function SearchablePickupHotelSelect({
         />
         <input
           type="text"
-          value={open ? search : selectedHotel?.hotel ?? ''}
+          value={open ? search : (selectedHotel ? getHotelLabel(selectedHotel) : '')}
           onChange={(e) => {
             setSearch(e.target.value)
             setOpen(true)
           }}
           onFocus={() => {
             if (disabled) return
-            setSearch(selectedHotel?.hotel ?? '')
+            setSearch(selectedHotel ? getHotelLabel(selectedHotel) : '')
             setOpen(true)
           }}
           placeholder={placeholder}
@@ -111,7 +119,9 @@ export function SearchablePickupHotelSelect({
                   value === h.id ? 'bg-primary/5/80' : ''
                 }`}
               >
-                <div className="text-sm font-medium text-gray-900 truncate">{h.hotel}</div>
+                <div className="text-sm font-medium text-gray-900 truncate">
+                  {preferInternalName ? getPickupHotelPrimaryName(h) : h.hotel}
+                </div>
                 {(h.pick_up_location || h.address) && (
                   <div className="text-xs text-gray-500 truncate">
                     {[h.pick_up_location, h.address].filter(Boolean).join(' · ')}

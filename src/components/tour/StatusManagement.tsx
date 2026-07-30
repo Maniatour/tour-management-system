@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Copy, Trash2, Edit, RotateCcw } from 'lucide-react'
+import { Copy, Trash2, Edit, RotateCcw, X } from 'lucide-react'
 import { TourStatusModal } from './modals/TourStatusModal'
 
 interface StatusManagementProps {
@@ -24,6 +24,7 @@ interface StatusManagementProps {
   onCopyTour?: () => void
   onDeleteTour?: () => void | Promise<void>
   onRestoreTour?: () => void | Promise<void>
+  onCloseModal?: () => void
 }
 
 export const StatusManagement: React.FC<StatusManagementProps> = ({
@@ -47,7 +48,8 @@ export const StatusManagement: React.FC<StatusManagementProps> = ({
   onEditClick,
   onCopyTour,
   onDeleteTour,
-  onRestoreTour
+  onRestoreTour,
+  onCloseModal,
 }) => {
   const [showStatusModal, setShowStatusModal] = useState(false)
   
@@ -103,6 +105,17 @@ export const StatusManagement: React.FC<StatusManagementProps> = ({
           >
             <Edit size={16} />
           </button>
+          {onCloseModal ? (
+            <button
+              type="button"
+              onClick={onCloseModal}
+              className="p-1.5 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200"
+              aria-label={locale === 'ko' ? '닫기' : 'Close'}
+              title={locale === 'ko' ? '닫기' : 'Close'}
+            >
+              <X size={16} />
+            </button>
+          ) : null}
         </div>
       </div>
 

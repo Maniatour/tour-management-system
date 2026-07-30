@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslations, useLocale } from 'next-intl'
 import { ReservationSection } from './ReservationSection'
-import { supabase } from '@/lib/supabase'
-import { ChevronDown, ChevronUp, Sparkles, Wallet, X } from 'lucide-react'
+import { supabase, getStoredAccessTokenIfValid } from '@/lib/supabase'
+import { receiveReservationBalanceCash } from '@/lib/receiveReservationBalanceCash'
+import { fetchTeamDisplayNameByEmail } from '@/utils/paymentRecordNoteDisplay'
+import { Sparkles, Wallet, X } from 'lucide-react'
 import { getStatusColor, getStatusText, getAssignmentStatusColor, getAssignmentStatusText } from '@/utils/tourStatusUtils'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import {
@@ -15,6 +17,7 @@ import {
 import { getReservationPartySize } from '@/utils/reservationUtils'
 import type { PickupHotelAssignmentOption } from '@/utils/pickupHotelUtils'
 import AutoAssignModal from './modals/AutoAssignModal'
+import { useTourDetailSectionChrome } from './TourDetailModalChromeContext'
 import { DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
 
 interface Reservation {
@@ -97,10 +100,8 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   pendingReservations,
   otherToursAssignedReservations,
   otherStatusReservations,
-  expandedSections,
   loadingStates,
   isStaff,
-  onToggleSection,
   onAssignAllReservations,
   onUnassignAllReservations,
   onEditReservationClick,
@@ -127,6 +128,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   onMoveAssignedReservationToTour,
   onCommunicationChannelChange,
 }) => {
+  const chrome = useTourDetailSectionChrome()
   const getProductCodeForReservation = React.useCallback(
     (r: Reservation) => {
       const pid = r.product_id
@@ -140,11 +142,12 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   const tHeader = useTranslations('tours.tourHeader')
   const tResCard = useTranslations('reservations.card')
   const locale = useLocale()
-  const isExpanded = expandedSections.has('assignment-management')
   const [tourInfos, setTourInfos] = useState<Record<string, TourInfo>>({})
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [showAutoAssignModal, setShowAutoAssignModal] = useState(false)
   const [assignedBalanceTotal, setAssignedBalanceTotal] = useState(0)
+  const [assignedBalanceById, setAssignedBalanceById] = useState<Map<string, number>>(() => new Map())
+  const [receivingAllBalances, setReceivingAllBalances] = useState(false)
 
   const [moveToTourModalReservationId, setMoveToTourModalReservationId] = useState<string | null>(null)
   const [peerPickerRows, setPeerPickerRows] = useState<Array<{ id: string; label: string }>>([])
@@ -152,110 +155,200 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   const [selectedTargetTourId, setSelectedTargetTourId] = useState<string | null>(null)
   const [moveSubmitting, setMoveSubmitting] = useState(false)
 
-  useEffect(() => {
-    const loadAssignedBalanceTotal = async () => {
-      const reservationIds = [...new Set(assignedReservations.map((r) => String(r.id).trim()).filter(Boolean))]
-      if (reservationIds.length === 0) {
-        setAssignedBalanceTotal(0)
-        return
-      }
-
-      try {
-        const [{ data: pricingRows, error: pErr }, { data: payRows, error: payErr }, { data: optRows, error: oErr }] =
-          await Promise.all([
-            supabase.from('reservation_pricing').select('*').in('reservation_id', reservationIds),
-            supabase
-              .from('payment_records')
-              .select('reservation_id, payment_status, amount')
-              .in('reservation_id', reservationIds),
-            supabase.from('reservation_options').select('reservation_id, total_price').in('reservation_id', reservationIds),
-          ])
-
-        if (pErr || payErr || oErr) {
-          console.error('배정 예약 잔금 합계 조회 오류:', pErr || payErr || oErr)
-          setAssignedBalanceTotal(0)
-          return
-        }
-
-        const pricingById = new Map<string, Record<string, unknown>>()
-        for (const row of pricingRows || []) {
-          const id = String((row as { reservation_id: string }).reservation_id)
-          pricingById.set(id, row as Record<string, unknown>)
-        }
-
-        const paymentsById = new Map<string, PaymentRecordLike[]>()
-        for (const row of payRows || []) {
-          const id = String((row as { reservation_id: string }).reservation_id)
-          const list = paymentsById.get(id) || []
-          list.push({
-            payment_status: String((row as { payment_status?: string | null }).payment_status || ''),
-            amount: Number((row as { amount?: unknown }).amount) || 0,
-          })
-          paymentsById.set(id, list)
-        }
-
-        const optSumById = new Map<string, number>()
-        const optCountById = new Map<string, number>()
-        for (const row of optRows || []) {
-          const id = String((row as { reservation_id: string }).reservation_id)
-          const tp = Number((row as { total_price?: unknown }).total_price) || 0
-          optSumById.set(id, (optSumById.get(id) || 0) + tp)
-          optCountById.set(id, (optCountById.get(id) || 0) + 1)
-        }
-
-        const resById = new Map(assignedReservations.map((r) => [String(r.id), r]))
-
-        let total = 0
-        for (const id of reservationIds) {
-          const pricing = pricingById.get(id)
-          const res = resById.get(id)
-          if (!pricing || !res) continue
-
-          const row = res as Record<string, unknown>
-          const paRaw = pricing.pricing_adults
-          const hasPa =
-            paRaw !== undefined &&
-            paRaw !== null &&
-            paRaw !== '' &&
-            Number.isFinite(Number(paRaw)) &&
-            Math.floor(Number(paRaw)) >= 0
-          const party: PartySizeSource = {
-            adults: hasPa ? Math.floor(Number(paRaw)) : ((row.adults as number | null | undefined) ?? null),
-            children: (row.children ?? row.child ?? null) as number | null,
-            infants: (row.infants ?? row.infant ?? null) as number | null,
-          }
-
-          const nOpts = optCountById.get(id) ?? 0
-          const optionsTotalFromOptions = nOpts > 0 ? (optSumById.get(id) || 0) : null
-
-          const b = getBalanceAmountForDisplay(
-            withNormalizedBalanceAmountForDisplay(pricing),
-            optionsTotalFromOptions,
-            party,
-            {
-              paymentRecords: paymentsById.get(id) || [],
-              reservationStatus: res.status ?? null,
-            }
-          )
-          total += b
-        }
-
-        setAssignedBalanceTotal(total)
-      } catch (error) {
-        console.error('배정 예약 잔금 합계 조회 중 오류:', error)
-        setAssignedBalanceTotal(0)
-      }
-    }
-
-    void loadAssignedBalanceTotal()
-  }, [assignedReservations])
-
   const formatBalanceBadge = (amount: number) => {
     if (!Number.isFinite(amount) || Math.abs(amount) < 0.005) return '$0.00'
     const abs = Math.abs(amount)
     const formatted = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     return amount < 0 ? `-$${formatted}` : `$${formatted}`
   }
+
+  const loadAssignedBalanceTotal = useCallback(async () => {
+    const reservationIds = [...new Set(assignedReservations.map((r) => String(r.id).trim()).filter(Boolean))]
+    if (reservationIds.length === 0) {
+      setAssignedBalanceTotal(0)
+      setAssignedBalanceById(new Map())
+      return
+    }
+
+    try {
+      const [{ data: pricingRows, error: pErr }, { data: payRows, error: payErr }, { data: optRows, error: oErr }] =
+        await Promise.all([
+          supabase.from('reservation_pricing').select('*').in('reservation_id', reservationIds),
+          supabase
+            .from('payment_records')
+            .select('reservation_id, payment_status, amount')
+            .in('reservation_id', reservationIds),
+          supabase.from('reservation_options').select('reservation_id, total_price').in('reservation_id', reservationIds),
+        ])
+
+      if (pErr || payErr || oErr) {
+        console.error('배정 예약 잔금 합계 조회 오류:', pErr || payErr || oErr)
+        setAssignedBalanceTotal(0)
+        setAssignedBalanceById(new Map())
+        return
+      }
+
+      const pricingById = new Map<string, Record<string, unknown>>()
+      for (const row of pricingRows || []) {
+        const id = String((row as { reservation_id: string }).reservation_id)
+        pricingById.set(id, row as Record<string, unknown>)
+      }
+
+      const paymentsById = new Map<string, PaymentRecordLike[]>()
+      for (const row of payRows || []) {
+        const id = String((row as { reservation_id: string }).reservation_id)
+        const list = paymentsById.get(id) || []
+        list.push({
+          payment_status: String((row as { payment_status?: string | null }).payment_status || ''),
+          amount: Number((row as { amount?: unknown }).amount) || 0,
+        })
+        paymentsById.set(id, list)
+      }
+
+      const optSumById = new Map<string, number>()
+      const optCountById = new Map<string, number>()
+      for (const row of optRows || []) {
+        const id = String((row as { reservation_id: string }).reservation_id)
+        const tp = Number((row as { total_price?: unknown }).total_price) || 0
+        optSumById.set(id, (optSumById.get(id) || 0) + tp)
+        optCountById.set(id, (optCountById.get(id) || 0) + 1)
+      }
+
+      const resById = new Map(assignedReservations.map((r) => [String(r.id), r]))
+
+      let total = 0
+      const balanceById = new Map<string, number>()
+      for (const id of reservationIds) {
+        const pricing = pricingById.get(id)
+        const res = resById.get(id)
+        if (!pricing || !res) continue
+
+        const row = res as Record<string, unknown>
+        const paRaw = pricing.pricing_adults
+        const hasPa =
+          paRaw !== undefined &&
+          paRaw !== null &&
+          paRaw !== '' &&
+          Number.isFinite(Number(paRaw)) &&
+          Math.floor(Number(paRaw)) >= 0
+        const party: PartySizeSource = {
+          adults: hasPa ? Math.floor(Number(paRaw)) : ((row.adults as number | null | undefined) ?? null),
+          children: (row.children ?? row.child ?? null) as number | null,
+          infants: (row.infants ?? row.infant ?? null) as number | null,
+        }
+
+        const nOpts = optCountById.get(id) ?? 0
+        const optionsTotalFromOptions = nOpts > 0 ? (optSumById.get(id) || 0) : null
+
+        const b = getBalanceAmountForDisplay(
+          withNormalizedBalanceAmountForDisplay(pricing),
+          optionsTotalFromOptions,
+          party,
+          {
+            paymentRecords: paymentsById.get(id) || [],
+            reservationStatus: res.status ?? null,
+          }
+        )
+        balanceById.set(id, b)
+        total += b
+      }
+
+      setAssignedBalanceById(balanceById)
+      setAssignedBalanceTotal(total)
+    } catch (error) {
+      console.error('배정 예약 잔금 합계 조회 중 오류:', error)
+      setAssignedBalanceTotal(0)
+      setAssignedBalanceById(new Map())
+    }
+  }, [assignedReservations])
+
+  useEffect(() => {
+    void loadAssignedBalanceTotal()
+  }, [loadAssignedBalanceTotal])
+
+  const handleReceiveAllAssignedBalances = useCallback(async () => {
+    if (!isStaff || receivingAllBalances) return
+
+    const targets = [...assignedBalanceById.entries()].filter(([, amount]) => amount > 0.005)
+    if (targets.length === 0) {
+      alert(locale === 'ko' ? '수령할 잔액이 없습니다.' : 'No balance due to collect.')
+      return
+    }
+
+    const total = targets.reduce((sum, [, amount]) => sum + amount, 0)
+    const confirmMsg =
+      locale === 'ko'
+        ? `배정된 ${targets.length}건의 잔액 총 ${formatBalanceBadge(total)}을 현금으로 수령 처리하시겠습니까?`
+        : `Collect cash balance for ${targets.length} reservation(s), total ${formatBalanceBadge(total)}?`
+
+    if (!confirm(confirmMsg)) return
+
+    setReceivingAllBalances(true)
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      const userEmail = user?.email ?? ''
+      const teamDisplay = (await fetchTeamDisplayNameByEmail(supabase, userEmail)) ?? (userEmail || '관리자')
+      const submitBy =
+        userEmail ||
+        (await supabase.auth.getSession()).data.session?.user?.email ||
+        (() => {
+          const token = getStoredAccessTokenIfValid(0)
+          if (!token) return ''
+          try {
+            const payload = JSON.parse(atob(token.split('.')[1])) as { email?: string }
+            return typeof payload.email === 'string' ? payload.email : ''
+          } catch {
+            return ''
+          }
+        })()
+
+      let successCount = 0
+      for (const [reservationId, amount] of targets) {
+        const result = await receiveReservationBalanceCash(supabase, {
+          reservationId,
+          balanceAmount: amount,
+          submitBy,
+          teamDisplay,
+        })
+        if (!result.ok) {
+          alert(
+            locale === 'ko'
+              ? `처리 실패: ${result.error} (${successCount}/${targets.length}건 완료)`
+              : `Failed: ${result.error} (${successCount}/${targets.length} done)`
+          )
+          break
+        }
+        successCount += 1
+      }
+
+      await loadAssignedBalanceTotal()
+      if (onRefresh) {
+        await onRefresh()
+      }
+
+      if (successCount > 0) {
+        alert(
+          locale === 'ko'
+            ? `${successCount}건 잔액 수령이 완료되었습니다.`
+            : `Balance received for ${successCount} reservation(s).`
+        )
+      }
+    } catch (error) {
+      console.error('일괄 잔액 수령 오류:', error)
+      alert(error instanceof Error ? error.message : '잔액 수령 중 오류가 발생했습니다.')
+    } finally {
+      setReceivingAllBalances(false)
+    }
+  }, [
+    assignedBalanceById,
+    isStaff,
+    loadAssignedBalanceTotal,
+    locale,
+    onRefresh,
+    receivingAllBalances,
+  ])
 
   const peerIdsKey = React.useMemo(
     () => [...sameDayPeerTourIds].sort().join('|'),
@@ -484,54 +577,46 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
 
   return (
     <div className="bg-white rounded-lg shadow-sm border">
-      <div className="p-4">
-        <div 
-          className="flex items-center justify-between cursor-pointer"
-          onClick={() => onToggleSection('assignment-management')}
-        >
-          <h2 className="text-lg font-semibold text-gray-900">{t('title')}</h2>
-          <div className="flex items-center space-x-2">
+      <div className={chrome.shellPadding}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className={chrome.sectionTitle}>{t('title')}</h2>
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {loadingStates.reservations && (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary" />
             )}
-            {isExpanded ? (
-              <ChevronUp className="w-5 h-5 text-gray-500" />
-            ) : (
-              <ChevronDown className="w-5 h-5 text-gray-500" />
-            )}
-          </div>
-        </div>
-
-        {isExpanded && (
-          <div className="mt-4">
-            {/* 전체 액션 버튼들 */}
             {isStaff && (
-              <div className="mb-4 flex flex-wrap items-center gap-2">
+              <>
                 <button
+                  type="button"
                   onClick={onAssignAllReservations}
-                  className="px-3 py-1 bg-primary text-primary-foreground text-sm rounded hover:bg-primary/90"
+                  className={`${chrome.textActionButton} bg-primary text-primary-foreground hover:bg-primary/90`}
                 >
                   {t('assignAllPending')}
                 </button>
                 <button
+                  type="button"
                   onClick={onUnassignAllReservations}
-                  className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                  className={`${chrome.textActionButton} bg-red-600 text-white hover:bg-red-700`}
                 >
                   {t('unassignAll')}
                 </button>
                 {hasMultipleToursOnSameDay && currentTourId && productId && tourDate && (
                   <button
+                    type="button"
                     onClick={() => setShowAutoAssignModal(true)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-600 text-white text-sm rounded hover:bg-amber-700"
+                    className={`inline-flex items-center gap-1 ${chrome.textActionButton} bg-amber-600 text-white hover:bg-amber-700`}
                     title={locale === 'ko' ? '조건에 맞게 팀 배정 제안 및 적용' : 'Auto-assign by language, choice, hotel, capacity'}
                   >
-                    <Sparkles className="w-4 h-4" />
+                    <Sparkles size={chrome.iconSize} />
                     {locale === 'ko' ? '자동 배정' : 'Auto assign'}
                   </button>
                 )}
-              </div>
+              </>
             )}
+          </div>
+        </div>
 
+        <div className={chrome.bodyExpandedMargin}>
             {/* 1. 이 투어에 배정된 예약 */}
             <ReservationSection
               title={t('assignedToTour')}
@@ -559,18 +644,38 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               getProductCodeForReservation={getProductCodeForReservation}
               {...(onCommunicationChannelChange ? { onCommunicationChannelChange } : {})}
               headerBadges={
-                <span
-                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
-                    assignedBalanceTotal < -0.005
-                      ? 'bg-rose-100 text-rose-800'
-                      : 'bg-purple-100 text-purple-800'
-                  }`}
-                  title={tResCard('balanceDueBadgeTitle')}
-                  aria-label={`${tResCard('balanceDueBadgeTitle')}: ${formatBalanceBadge(assignedBalanceTotal)}`}
-                >
-                  <Wallet className="w-3.5 h-3.5 shrink-0" aria-hidden />
-                  <span>{formatBalanceBadge(assignedBalanceTotal)}</span>
-                </span>
+                isStaff ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleReceiveAllAssignedBalances()
+                    }}
+                    disabled={receivingAllBalances || assignedBalanceTotal <= 0.005}
+                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                      assignedBalanceTotal < -0.005
+                        ? 'bg-rose-100 text-rose-800'
+                        : assignedBalanceTotal > 0.005
+                          ? 'bg-purple-100 text-purple-800 hover:bg-purple-200 cursor-pointer'
+                          : 'bg-gray-100 text-gray-500'
+                    }`}
+                    title={
+                      assignedBalanceTotal > 0.005
+                        ? locale === 'ko'
+                          ? '배정된 예약 잔액 일괄 현금 수령'
+                          : 'Collect all assigned balances in cash'
+                        : tResCard('balanceDueBadgeTitle')
+                    }
+                    aria-label={`${tResCard('balanceDueBadgeTitle')}: ${formatBalanceBadge(assignedBalanceTotal)}`}
+                  >
+                    {receivingAllBalances ? (
+                      <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-purple-400 border-t-transparent" aria-hidden />
+                    ) : (
+                      <Wallet className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                    )}
+                    <span>{formatBalanceBadge(assignedBalanceTotal)}</span>
+                  </button>
+                ) : null
               }
             />
 
@@ -599,7 +704,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
 
             {/* 3. 다른 투어에 배정된 예약 - 투어 ID별 그룹화 */}
             <div className="mb-6">
-              <h3 className="text-md font-semibold text-gray-900 mb-3">{t('otherToursAssigned')}</h3>
+              <h3 className={`${chrome.compact ? 'text-xs font-semibold' : 'text-md font-semibold'} text-gray-900 mb-3`}>{t('otherToursAssigned')}</h3>
               {Object.keys(groupedOtherToursReservations).length === 0 ? (
                 <div className="text-center py-4 text-gray-500">
                   <p className="text-sm">{t('noOtherToursReservations')}</p>
@@ -758,8 +863,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               getProductCodeForReservation={getProductCodeForReservation}
               {...(onCommunicationChannelChange ? { onCommunicationChannelChange } : {})}
             />
-          </div>
-        )}
+        </div>
       </div>
 
       {showAutoAssignModal && currentTourId && productId && tourDate && onAutoAssignSuccess && (

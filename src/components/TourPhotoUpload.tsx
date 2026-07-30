@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import Image from 'next/image'
-import { Upload, X, Camera, Image as ImageIcon, Share2, Eye } from 'lucide-react'
+import { Upload, Camera, Image as ImageIcon, Share2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import { createTourPhotosBucket, checkTourPhotosBucket, checkTourFolderExists, createTourFolderMarker } from '@/lib/tourPhotoBucket'
@@ -15,6 +15,7 @@ import {
   startTourPhotoPrepare,
 } from '@/lib/tourPhotoUploadSession'
 import { TOUR_PHOTO_FILENAME_EXT_REGEX } from '@/lib/tourPhotoUploadUtils'
+import { useTourDetailSectionChrome } from '@/components/tour/TourDetailModalChromeContext'
 
 interface TourPhoto {
   id: string
@@ -49,6 +50,7 @@ export default function TourPhotoUpload({
 }: TourPhotoUploadProps) {
   const { user, userRole, hasPermission } = useAuth()
   const t = useTranslations('tours.tourPhoto')
+  const chrome = useTourDetailSectionChrome()
   const isAdmin = userRole === 'admin' || userRole === 'manager' || hasPermission('canViewAdmin')
   const [photos, setPhotos] = useState<TourPhoto[]>([])
   const [uploading, setUploading] = useState(false)
@@ -885,7 +887,7 @@ export default function TourPhotoUpload({
             <button
               onClick={generateThumbnailsForExistingPhotos}
               disabled={generatingThumbnails}
-              className="flex items-center px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`flex items-center ${chrome.compact ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm'} bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed`}
               title="기존 사진들에 대한 썸네일 생성"
             >
               {generatingThumbnails ? (
@@ -909,10 +911,10 @@ export default function TourPhotoUpload({
                 navigator.clipboard.writeText(shareUrl)
                 alert('투어 전체 사진 공유 링크가 클립보드에 복사되었습니다.')
               }}
-              className="flex items-center justify-center px-3 h-10 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
+              className={`flex items-center justify-center ${chrome.compact ? 'px-2 h-8 text-xs' : 'px-3 h-10 text-sm'} bg-purple-600 text-white rounded-lg hover:bg-purple-700`}
               title="투어 전체 사진 공유 링크 복사"
             >
-              <Share2 size={16} className="mr-1" />
+              <Share2 size={chrome.uploadIconSize} className="mr-1" />
               전체 공유
             </button>
           )}
@@ -921,14 +923,14 @@ export default function TourPhotoUpload({
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading || bucketStatus !== 'exists'}
-            className="flex items-center justify-center w-10 h-10 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
+            className={`flex items-center justify-center ${chrome.uploadIconButton} bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50`}
             title={
               bucketStatus !== 'exists' 
                 ? 'Storage bucket이 생성되지 않았습니다' 
                 : uploading ? t('uploading') : t('selectFromGallery')
             }
           >
-            <ImageIcon size={20} />
+            <ImageIcon size={chrome.uploadIconSize} />
           </button>
           
           {/* 카메라로 직접 촬영 */}
@@ -944,21 +946,21 @@ export default function TourPhotoUpload({
               }
             }}
             disabled={uploading || bucketStatus !== 'exists'}
-            className="flex items-center justify-center w-10 h-10 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+            className={`flex items-center justify-center ${chrome.uploadIconButton} bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50`}
             title={
               bucketStatus !== 'exists' 
                 ? 'Storage bucket이 생성되지 않았습니다' 
                 : t('takePhoto')
             }
           >
-            <Camera size={20} />
+            <Camera size={chrome.uploadIconSize} />
           </button>
         </div>
       </div>
 
       {/* 업로드 영역 */}
       <div
-        className={`border-2 border-dashed rounded-lg p-4 sm:p-8 text-center transition-colors ${
+        className={`border-2 border-dashed rounded-lg ${chrome.uploadZonePadding} text-center transition-colors ${
           bucketStatus !== 'exists'
             ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
             : dragOver 
@@ -970,14 +972,14 @@ export default function TourPhotoUpload({
         onDrop={bucketStatus === 'exists' ? handleDrop : undefined}
         onClick={bucketStatus === 'exists' ? () => fileInputRef.current?.click() : undefined}
       >
-        <Upload size={32} className="mx-auto text-gray-400 mb-2 sm:mb-4" />
-        <p className="text-gray-600 mb-1 sm:mb-2 text-sm sm:text-base">
+        <Upload size={chrome.uploadDropIconSize} className={`mx-auto text-gray-400 ${chrome.compact ? 'mb-1.5' : 'mb-2 sm:mb-4'}`} />
+        <p className={chrome.uploadZoneText}>
           {bucketStatus !== 'exists' 
             ? 'Storage bucket이 생성되지 않았습니다' 
             : t('dragOrClick')
           }
         </p>
-        <p className="text-xs sm:text-sm text-gray-500">
+        <p className={chrome.uploadZoneHint}>
           {bucketStatus !== 'exists' 
             ? '위의 \"설정 안내\" 버튼을 눌러 bucket을 생성해주세요' 
             : t('fileFormats')
@@ -1042,108 +1044,77 @@ export default function TourPhotoUpload({
       {/* 사진 목록 */}
       {photos.length > 0 && (
         <div className="max-h-[600px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 ${chrome.compact ? 'gap-2' : 'gap-4'}`}>
           {photos.map((photo) => (
             <div key={photo.id} className="relative group cursor-pointer">
-              <div 
-                className="aspect-square bg-gray-100 rounded-lg overflow-hidden"
+              <div
+                className="relative aspect-square rounded-lg bg-gray-100"
                 onClick={() => openPhotoModal(photo)}
               >
-                <Image
-                  src={(() => {
-                    // 썸네일 경로가 있으면 썸네일 사용, 없으면 원본 사용
-                    const imagePath = photo.thumbnail_path || photo.file_path
-                    const imageUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${imagePath}`
-                    // 디버깅: 첫 번째 사진만 로그
-                    if (photos.indexOf(photo) === 0) {
-                      console.log('[TourPhotoUpload] Photo thumbnail check:', {
-                        fileName: photo.file_name,
-                        thumbnailPath: photo.thumbnail_path,
-                        filePath: photo.file_path,
-                        usingThumbnail: !!photo.thumbnail_path,
-                        imagePath,
-                        imageUrl
-                      })
-                    }
-                    return imageUrl
-                  })()}
-                  alt={photo.file_name}
-                  width={200}
-                  height={200}
-                  className="w-full h-full object-cover hover:scale-105 transition-transform duration-200"
-                  style={{ width: 'auto', height: 'auto' }}
-                />
-              </div>
-              
-              {/* 오버레이 */}
-              <div 
-                className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center pointer-events-none"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="opacity-0 group-hover:opacity-100 flex space-x-2 pointer-events-auto">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      copyShareLink(photo.share_token)
-                    }}
-                    className="p-2 bg-white rounded-full hover:bg-gray-100"
-                    title={t('copyShareLink')}
-                  >
-                    <Share2 size={16} />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      openPhotoInNewWindow(photo)
-                    }}
-                    className="p-2 bg-white rounded-full hover:bg-gray-100"
-                    title={t('viewInNewWindow')}
-                  >
-                    <Eye size={16} />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleDeletePhoto(photo.id, photo.file_path)
-                    }}
-                    className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600"
-                    title={t('delete')}
-                  >
-                    <X size={16} />
-                  </button>
+                <div className="absolute inset-0 overflow-hidden rounded-lg">
+                  <Image
+                    src={(() => {
+                      const imagePath = photo.thumbnail_path || photo.file_path
+                      const imageUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${imagePath}`
+                      if (photos.indexOf(photo) === 0) {
+                        console.log('[TourPhotoUpload] Photo thumbnail check:', {
+                          fileName: photo.file_name,
+                          thumbnailPath: photo.thumbnail_path,
+                          filePath: photo.file_path,
+                          usingThumbnail: !!photo.thumbnail_path,
+                          imagePath,
+                          imageUrl
+                        })
+                      }
+                      return imageUrl
+                    })()}
+                    alt={photo.file_name}
+                    width={200}
+                    height={200}
+                    className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                    style={{ width: 'auto', height: 'auto' }}
+                  />
                 </div>
-              </div>
 
-              {/* 숨김 상태 표시 (관리자만, 클릭 가능) */}
-              {isAdmin && photo.is_hidden && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleUnhidePhoto(photo)
-                  }}
-                  className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs font-medium z-10 cursor-pointer transition-colors"
-                  title="클릭하여 숨김 철회"
-                >
-                  숨김
-                </button>
-              )}
-
-              {/* 파일 정보 */}
-              <div className="mt-2 text-xs text-gray-600">
-                <p className="truncate">{photo.file_name}</p>
-                <p>{formatFileSize(photo.file_size)}</p>
-                <p>{new Date(photo.created_at).toLocaleString()}</p>
                 {photo.uploaded_by_name && (
-                  <p className="text-primary font-medium mt-0.5">
-                    업로드: {photo.uploaded_by_name}
-                  </p>
+                  <span
+                    className={`absolute bottom-1.5 left-1.5 z-20 max-w-[calc(100%-0.75rem)] truncate rounded-full bg-black/65 px-1.5 py-0.5 font-medium text-white backdrop-blur-sm ${chrome.compact ? 'text-[10px]' : 'text-xs'}`}
+                    title={photo.uploaded_by_name}
+                  >
+                    {photo.uploaded_by_name}
+                  </span>
                 )}
-                {/* 숨김 요청자 정보 (관리자만) */}
-                {isAdmin && photo.is_hidden && photo.hide_requested_by_name && (
-                  <p className="text-red-600 font-medium mt-1">
-                    숨김 요청: {photo.hide_requested_by_name}
-                  </p>
+
+                {isAdmin && photo.is_hidden && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleUnhidePhoto(photo)
+                    }}
+                    className="absolute right-1.5 top-1.5 z-20 cursor-pointer rounded bg-red-500 px-1.5 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-red-600"
+                    title="클릭하여 숨김 철회"
+                  >
+                    숨김
+                  </button>
                 )}
+
+                <div className="pointer-events-none absolute inset-0 z-10 rounded-lg bg-black/0 transition-all duration-200 group-hover:bg-black/55">
+                  <div
+                    className={`absolute inset-x-0 bottom-0 space-y-0.5 bg-gradient-to-t from-black/85 via-black/50 to-transparent opacity-0 transition-opacity duration-200 group-hover:opacity-100 ${chrome.compact ? 'px-1.5 pb-1.5 pt-4' : 'px-2 pb-2 pt-5'}`}
+                  >
+                    <p className={`truncate font-medium text-white ${chrome.compact ? 'text-[10px]' : 'text-xs'}`}>
+                      {photo.file_name}
+                    </p>
+                    <p className={`text-white/85 ${chrome.compact ? 'text-[10px]' : 'text-xs'}`}>
+                      {formatFileSize(photo.file_size)} · {new Date(photo.created_at).toLocaleString()}
+                    </p>
+                    {isAdmin && photo.is_hidden && photo.hide_requested_by_name && (
+                      <p className={`font-medium text-red-300 ${chrome.compact ? 'text-[10px]' : 'text-xs'}`}>
+                        숨김 요청: {photo.hide_requested_by_name}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           ))}
@@ -1152,24 +1123,24 @@ export default function TourPhotoUpload({
       )}
 
       {photos.length === 0 && !uploading && (
-        <div className="text-center py-8 text-gray-500">
-          <ImageIcon size={48} className="mx-auto mb-4 text-gray-300" />
-          <p>{t('noPhotos')}</p>
+        <div className={`text-center text-gray-500 ${chrome.emptyStatePadding}`}>
+          <ImageIcon size={chrome.emptyStateLucideSize} className={`mx-auto text-gray-300 ${chrome.compact ? 'mb-2' : 'mb-4'}`} />
+          <p className={chrome.emptyStateTitle}>{t('noPhotos')}</p>
         </div>
       )}
 
       {uploading && (
-        <div className="text-center py-8 text-gray-500">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p>{t('uploading')}</p>
-          <p className="text-xs text-gray-500 mt-2 max-w-md mx-auto px-2">{t('uploadProgressBackgroundNote')}</p>
+        <div className={`text-center text-gray-500 ${chrome.emptyStatePadding}`}>
+          <div className={`animate-spin rounded-full border-b-2 border-primary mx-auto ${chrome.compact ? 'h-8 w-8 mb-2' : 'h-12 w-12 mb-4'}`} />
+          <p className={chrome.emptyStateTitle}>{t('uploading')}</p>
+          <p className={`${chrome.emptyStateSubtext} mt-2 max-w-md mx-auto px-2`}>{t('uploadProgressBackgroundNote')}</p>
         </div>
       )}
 
       {generatingThumbnails && (
-        <div className="text-center py-8 text-gray-500">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
-          <p>썸네일 생성 중...</p>
+        <div className={`text-center text-gray-500 ${chrome.emptyStatePadding}`}>
+          <div className={`animate-spin rounded-full border-b-2 border-green-600 mx-auto ${chrome.compact ? 'h-8 w-8 mb-2' : 'h-12 w-12 mb-4'}`} />
+          <p className={chrome.emptyStateTitle}>썸네일 생성 중...</p>
           
           {/* 썸네일 생성 진행 상황 */}
           {thumbnailProgress.total > 0 && (
@@ -1268,9 +1239,9 @@ export default function TourPhotoUpload({
                     {formatFileSize(selectedPhoto.file_size)} • {selectedPhoto.file_type || selectedPhoto.mime_type}
                   </p>
                   {selectedPhoto.uploaded_by_name && (
-                    <p className="text-sm text-blue-200 mt-1">
-                      업로드: {selectedPhoto.uploaded_by_name}
-                    </p>
+                    <span className="mt-1.5 inline-block max-w-full truncate rounded-full bg-white/20 px-2 py-0.5 text-xs font-medium text-white backdrop-blur-sm">
+                      {selectedPhoto.uploaded_by_name}
+                    </span>
                   )}
                 </div>
                 <div className="flex space-x-2">

@@ -28,6 +28,7 @@ import {
   ADMIN_TOUR_CHAT_PENDING_ROOM_KEY
 } from '@/components/admin/AdminTourChatNotificationListener'
 import { chunkStrings } from '@/lib/supabaseInChunks'
+import { getPickupHotelPrimaryName } from '@/utils/pickupHotelUtils'
 
 /** DB에서 조회한 chat_rooms 행 (unread_count 등은 이후 매핑으로 추가) */
 type ChatRoomRow = {
@@ -2671,7 +2672,7 @@ export default function ChatManagementPage() {
                 }}
                 getPickupHotelNameOnly={(hotelId: string) => {
                   const hotel = pickupHotels.find(h => h.id === hotelId)
-                  return hotel?.hotel || '호텔 정보 없음'
+                  return hotel ? getPickupHotelPrimaryName(hotel) : '호텔 정보 없음'
                 }}
                 getCustomerName={(customerId: string) => {
                   const reservation = tourInfo.reservations?.find((r: any) => r.customer?.id === customerId)

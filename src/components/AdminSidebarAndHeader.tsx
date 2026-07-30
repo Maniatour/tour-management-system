@@ -70,6 +70,10 @@ const AdminWeatherReminderModal = dynamic(
   () => import('./admin/AdminWeatherReminderModal'),
   { ssr: false, loading: () => null }
 )
+const CheckoutAttendanceModal = dynamic(
+  () => import('./admin/CheckoutAttendanceModal'),
+  { ssr: false, loading: () => null }
+)
 const PriceInventoryHeaderButton = dynamic(
   () => import('./schedule/PriceInventoryHeaderButton'),
   { ssr: false, loading: () => null }
@@ -82,6 +86,13 @@ const StaffSiteAlertHeaderButton = dynamic(
   () =>
     import('./admin/staff-site-alert/StaffSiteAlertHeaderButton').then((m) => ({
       default: m.StaffSiteAlertHeaderButton,
+    })),
+  { ssr: false, loading: () => null }
+)
+const DailyReportHeaderButton = dynamic(
+  () =>
+    import('./admin/DailyReportHeaderButton').then((m) => ({
+      default: m.DailyReportHeaderButton,
     })),
   { ssr: false, loading: () => null }
 )
@@ -117,6 +128,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const [openNavGroupId, setOpenNavGroupId] = useState<string | null>(null)
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
+  const [showDailyReportModal, setShowDailyReportModal] = useState(false)
   const [attendanceAction, setAttendanceAction] = useState<'checkin' | 'checkout' | null>(null)
   const [teamBoardCount, setTeamBoardCount] = useState(0)
   const [showSimulationModal, setShowSimulationModal] = useState(false)
@@ -156,21 +168,10 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   // 출근/퇴근 실행 (커스텀 훅 사용)
   const handleCheckInExecute = async () => {
     await handleCheckIn()
-    setShowAttendanceModal(false)
   }
 
   const handleCheckOutExecute = async () => {
     await handleCheckOut()
-    setShowAttendanceModal(false)
-  }
-
-  // 모달에서 확인 버튼 클릭
-  const handleConfirmAttendance = () => {
-    if (attendanceAction === 'checkin') {
-      handleCheckInExecute()
-    } else if (attendanceAction === 'checkout') {
-      handleCheckOutExecute()
-    }
   }
 
   // 경과 시간과 타이머는 커스텀 훅에서 처리됨
@@ -822,6 +823,12 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                     </button>
                   )}
 
+                  <DailyReportHeaderButton
+                    locale={locale}
+                    open={showDailyReportModal}
+                    onOpenChange={setShowDailyReportModal}
+                  />
+
                   {/* 운영 허브 */}
                   <div className="relative hidden sm:inline-block">
                     <Link
@@ -1268,50 +1275,22 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         </main>
       </div>
 
-      {/* 출퇴근 확인 모달 */}
-      {showAttendanceModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-            <div className="text-center">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                {attendanceAction === 'checkin' ? (
-                  <CheckCircle className="h-6 w-6 text-primary" />
-                ) : (
-                  <XCircle className="h-6 w-6 text-red-600" />
-                )}
-              </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                {attendanceAction === 'checkin' ? '출근 확인' : '퇴근 확인'}
-              </h3>
-              <p className="text-sm text-gray-500 mb-6">
-                {attendanceAction === 'checkin' 
-                  ? '출근을 시작하시겠습니까?' 
-                  : '퇴근을 완료하시겠습니까?'
-                }
-              </p>
-              <div className="flex space-x-3">
-                <button
-                  onClick={() => setShowAttendanceModal(false)}
-                  className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
-                >
-                  취소
-                </button>
-                <button
-                  onClick={handleConfirmAttendance}
-                  disabled={isCheckingIn}
-                  className={`flex-1 py-2 px-4 rounded-lg transition-colors ${
-                    attendanceAction === 'checkin'
-                      ? 'bg-green-600 text-white hover:bg-green-700 disabled:opacity-50'
-                      : 'bg-red-600 text-white hover:bg-red-700'
-                  }`}
-                >
-                  {isCheckingIn ? '처리 중...' : (attendanceAction === 'checkin' ? '출근 시작' : '퇴근 완료')}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <CheckoutAttendanceModal
+        open={showAttendanceModal}
+        onClose={() => setShowAttendanceModal(false)}
+        action={attendanceAction}
+        onConfirm={
+          attendanceAction === 'checkin' ? handleCheckInExecute : handleCheckOutExecute
+        }
+        isProcessing={isCheckingIn}
+        userPosition={userPosition}
+        viewAllOpTodos={isSuper}
+        locale={locale}
+        onOpenDailyReport={() => {
+          setShowAttendanceModal(false)
+          setShowDailyReportModal(true)
+        }}
+      />
 
       {/* 시뮬레이션 모달 */}
       <SimulationModal

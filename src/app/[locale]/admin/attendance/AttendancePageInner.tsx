@@ -55,6 +55,10 @@ const OfficeScheduleModal = dynamic(() => import('@/components/attendance/Office
   ssr: false,
   loading: () => null,
 })
+const CheckoutAttendanceModal = dynamic(
+  () => import('@/components/admin/CheckoutAttendanceModal'),
+  { ssr: false, loading: () => null }
+)
 const BonusCalculatorModal = dynamic(() => import('@/components/BonusCalculatorModal'), {
   ssr: false,
   loading: () => null,
@@ -136,6 +140,7 @@ export default function AttendancePage() {
   const [isOfficeScheduleModalOpen, setIsOfficeScheduleModalOpen] = useState(false)
   const [isBonusCalculatorOpen, setIsBonusCalculatorOpen] = useState(false)
   const [isHourlyRatesModalOpen, setIsHourlyRatesModalOpen] = useState(false)
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false)
   /** Tips 쉐어 모달에서 예약 클릭 시 예약 수정 모달용 */
   const [reservationIdForEdit, setReservationIdForEdit] = useState<string | null>(null)
   const [editingReservation, setEditingReservation] = useState<any>(null)
@@ -593,8 +598,11 @@ export default function AttendancePage() {
 
   const handleCheckOutExecute = async () => {
     await handleCheckOut()
-    // 모든 데이터 새로고침
     await Promise.all([fetchTodayRecords(), fetchAttendanceRecords()])
+  }
+
+  const handleCheckOutClick = () => {
+    setShowCheckoutModal(true)
   }
 
   // 수정 모달 열기
@@ -1187,7 +1195,7 @@ export default function AttendancePage() {
             </button>
           ) : (
             <button
-              onClick={handleCheckOutExecute}
+              onClick={handleCheckOutClick}
               className="flex items-center justify-center px-5 py-3 sm:px-6 bg-red-600 text-white text-sm sm:text-base font-medium rounded-lg hover:bg-red-700 transition-colors w-full sm:w-auto"
             >
               <XCircle className="w-5 h-5 mr-2 shrink-0" />
@@ -1485,6 +1493,18 @@ export default function AttendancePage() {
         onSuccess={refreshData}
         selectedEmployee={selectedEmployee}
         selectedMonth={selectedMonth}
+      />
+
+      {/* 퇴근 확인 모달 (미처리 TODO 안내) */}
+      <CheckoutAttendanceModal
+        open={showCheckoutModal}
+        onClose={() => setShowCheckoutModal(false)}
+        action="checkout"
+        onConfirm={handleCheckOutExecute}
+        isProcessing={isCheckingIn}
+        userPosition={userPosition}
+        viewAllOpTodos={isSuper}
+        locale={locale}
       />
 
       {/* 2주급 계산기 모달 */}

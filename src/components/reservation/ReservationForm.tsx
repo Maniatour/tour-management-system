@@ -21,6 +21,11 @@ import { useAuth } from '@/contexts/AuthContext'
 import { isSuperAdminActor } from '@/lib/superAdmin'
 import type { Database } from '@/lib/supabase'
 import { DIALOG_Z_INDEX, type DialogStackLevel } from '@/lib/dialogZIndex'
+import { ResizableModalFrame } from '@/components/ui/ResizableModalFrame'
+import {
+  RESERVATION_EDIT_MODAL_DEFAULT_SIZE,
+  RESERVATION_EDIT_MODAL_RECT_KEY,
+} from '@/lib/adminModalRectStorage'
 
 /** 브라우저에서 customers INSERT 시 RLS(team↔is_staff 재귀 등)로 실패할 때 API+service role 경로 사용 */
 async function insertCustomerForReservationForm(
@@ -389,6 +394,10 @@ interface ReservationFormProps {
   modalStackLevel?: DialogStackLevel
   /** modalStackLevel 대신 직접 z-index 지정 */
   modalZIndex?: number
+  /** 지정 시 리사이즈 가능 모달 + localStorage 크기 기억 */
+  modalRectStorageKey?: string
+  modalDefaultWidth?: number
+  modalDefaultHeight?: number
 }
 
 /** 이메일에서 파싱한 금액 문자열 → 숫자 (Price $ 319.41 등) */
@@ -475,6 +484,9 @@ export default function ReservationForm({
   followUpPipelineSnapshotRefreshToken = 0,
   modalStackLevel,
   modalZIndex,
+  modalRectStorageKey,
+  modalDefaultWidth,
+  modalDefaultHeight,
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
@@ -6229,18 +6241,23 @@ export default function ReservationForm({
   const resolvedModalZIndex =
     modalZIndex ??
     (modalStackLevel != null ? DIALOG_Z_INDEX[modalStackLevel] : 1100)
+  const effectiveModalRectStorageKey =
+    modalRectStorageKey ?? (isModal ? RESERVATION_EDIT_MODAL_RECT_KEY : undefined)
+  const useResizableModal = isModal && Boolean(effectiveModalRectStorageKey)
+  const shellClassName = useResizableModal
+    ? 'flex h-full min-h-0 w-full flex-col overflow-y-auto bg-white p-0 sm:p-4'
+    : isModal
+      ? 'reservation-form-modal-shell bg-white rounded-none sm:rounded-lg p-0 sm:p-4 w-full max-w-full h-full max-h-full max-lg:h-[100dvh] max-lg:max-h-[100dvh] max-lg:flex max-lg:flex-col max-lg:overflow-hidden sm:w-[min(90vw,1400px)] sm:max-h-[90vh] lg:block lg:overflow-y-auto'
+      : 'bg-white rounded-lg p-2 sm:p-4 w-full min-h-0 flex-1 flex flex-col overflow-hidden'
 
-  const content = (
-    <div
-      className={isModal ? "fixed inset-0 bg-black/50 flex items-center justify-center p-2 sm:p-4 max-lg:items-stretch max-lg:p-0" : "w-full min-h-0 flex-1 flex flex-col"}
-      style={isModal ? { zIndex: resolvedModalZIndex } : undefined}
-    >
-      <div className={isModal 
-        ? "bg-white rounded-none sm:rounded-lg p-0 sm:p-4 w-full max-w-full h-full max-h-full max-lg:h-[100dvh] max-lg:max-h-[100dvh] max-lg:flex max-lg:flex-col max-lg:overflow-hidden sm:w-[90vw] sm:max-h-[90vh] lg:block lg:overflow-y-auto"
-        : "bg-white rounded-lg p-2 sm:p-4 w-full min-h-0 flex-1 flex flex-col overflow-hidden"}
-      >
+  const formShell = (
+    <>
+    <div className={shellClassName}>
         {/* 헤더: 모바일에서 스티키, 데스크톱 기존 */}
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center flex-shrink-0 p-3 sm:p-0 sm:mb-2 sm:space-y-0 space-y-3 border-b border-gray-200 max-lg:bg-white max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:shadow-sm">
+        <div
+          data-dialog-drag-handle={useResizableModal ? true : undefined}
+          className={`flex flex-col sm:flex-row sm:justify-between sm:items-center flex-shrink-0 p-3 sm:p-0 sm:mb-2 sm:space-y-0 space-y-3 border-b border-gray-200 max-lg:bg-white max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:shadow-sm${useResizableModal ? ' sm:cursor-grab sm:active:cursor-grabbing' : ''}`}
+        >
           <div className="flex items-center justify-between gap-2 min-w-0">
             <h2 className="text-base sm:text-base font-semibold text-gray-900 truncate">
               {formTitleOverride ?? (isNewReservation ? t('form.title') : (reservation ? t('form.editTitle') : t('form.title')))}
@@ -7272,6 +7289,25 @@ export default function ReservationForm({
         </div>
       )}
 
+    </>
+  )
+
+  const content = useResizableModal ? (
+    <ResizableModalFrame
+      storageKey={effectiveModalRectStorageKey!}
+      defaultWidth={modalDefaultWidth ?? RESERVATION_EDIT_MODAL_DEFAULT_SIZE.width}
+      defaultHeight={modalDefaultHeight ?? RESERVATION_EDIT_MODAL_DEFAULT_SIZE.height}
+      zIndex={resolvedModalZIndex}
+      className="reservation-form-modal-shell flex flex-col gap-0 overflow-hidden"
+    >
+      {formShell}
+    </ResizableModalFrame>
+  ) : (
+    <div
+      className={isModal ? "reservation-form-modal-overlay fixed inset-0 bg-black/50 flex items-center justify-center p-2 sm:p-4 max-lg:items-stretch max-lg:p-0" : "w-full min-h-0 flex-1 flex flex-col"}
+      style={isModal ? { zIndex: resolvedModalZIndex } : undefined}
+    >
+      {formShell}
     </div>
   )
 

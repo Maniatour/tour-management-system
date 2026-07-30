@@ -4,7 +4,11 @@ import { useEffect, useState, type CSSProperties } from 'react'
 import { X, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fetchReservationOptionLinesBatch, type ReservationOptionLineBilingual } from '@/lib/reservationOptionsForEmail'
-import { getBalanceAmountForDisplay } from '@/utils/reservationPricingBalance'
+import {
+  getBalanceAmountForDisplay,
+  paymentRecordAmountToNumber,
+  withNormalizedBalanceAmountForDisplay,
+} from '@/utils/reservationPricingBalance'
 import {
   buildBalanceEnvelopeBreakdownLines,
   countResidentLinesFromCustomers,
@@ -39,33 +43,6 @@ function resolveEnvelopeImageUrl(pathOrUrl: string): string {
   return `${window.location.origin}${path}`
 }
 
-/** Balance 잔액·내역 계산에 필요한 pricing 컬럼만 조회 */
-const ENVELOPE_PRICING_SELECT = [
-  'reservation_id',
-  'balance_amount',
-  'deposit_amount',
-  'currency',
-  'not_included_price',
-  'pricing_adults',
-  'product_price_total',
-  'adult_product_price',
-  'child_product_price',
-  'infant_product_price',
-  'coupon_discount',
-  'additional_discount',
-  'option_total',
-  'required_option_total',
-  'choices_total',
-  'additional_cost',
-  'tax',
-  'card_fee',
-  'prepayment_cost',
-  'prepayment_tip',
-  'refund_amount',
-  'private_tour_additional_cost',
-  'total_price',
-].join(', ')
-
 type EnvelopeReservationRow = {
   id: string
   customer_id?: string | null
@@ -83,6 +60,62 @@ function customerForReservation(
   const customerId = rez.customer_id?.trim()
   if (!customerId) return null
   return customerMap.get(customerId) ?? null
+}
+
+/** 가이드 픽업·투어 인쇄와 동일: API(사용자 RLS) 우선, 누락분만 직접 조회 */
+async function fetchPricingByReservationIds(
+  ids: string[]
+): Promise<Map<string, Record<string, unknown> | null>> {
+  const pricingByResId = new Map<string, Record<string, unknown> | null>()
+  if (ids.length === 0) return pricingByResId
+
+  const { data: sessionData } = await supabase.auth.getSession()
+  const token = sessionData?.session?.access_token?.trim()
+
+  if (token && typeof window !== 'undefined') {
+    try {
+      const res = await fetch(
+        `/api/reservation-pricing?reservation_ids=${encodeURIComponent(ids.join(','))}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      if (res.ok) {
+        const json = (await res.json()) as {
+          items?: Array<{ reservation_id: string; pricing: Record<string, unknown> | null }>
+        }
+        if (Array.isArray(json.items)) {
+          for (const { reservation_id, pricing } of json.items) {
+            pricingByResId.set(
+              reservation_id,
+              pricing && typeof pricing === 'object' ? pricing : null
+            )
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[TourEnvelopeModal] reservation-pricing API', e)
+    }
+  }
+
+  const missing = ids.filter((id) => !pricingByResId.has(id))
+  if (missing.length > 0) {
+    const { data: pricingList, error: pricingErr } = await supabase
+      .from('reservation_pricing')
+      .select('*')
+      .in('reservation_id', missing)
+    if (pricingErr) {
+      console.warn('[TourEnvelopeModal] reservation_pricing direct', pricingErr)
+    }
+    for (const row of pricingList || []) {
+      const rid = (row as { reservation_id?: string }).reservation_id
+      if (rid) pricingByResId.set(rid, row as Record<string, unknown>)
+    }
+  }
+
+  for (const id of ids) {
+    if (!pricingByResId.has(id)) pricingByResId.set(id, null)
+  }
+
+  return pricingByResId
 }
 
 const LABELS = {
@@ -337,14 +370,12 @@ export default function TourEnvelopeModal({
 
         const needsBalanceData = variant === 'balance'
         const [
-          pricingResult,
+          pricingByResId,
           optionLinesByResId,
           payResult,
           rcResult,
         ] = await Promise.all([
-          needsBalanceData
-            ? supabase.from('reservation_pricing').select(ENVELOPE_PRICING_SELECT).in('reservation_id', ids)
-            : Promise.resolve({ data: null as unknown[] | null, error: null }),
+          needsBalanceData ? fetchPricingByReservationIds(ids) : Promise.resolve(new Map()),
           needsBalanceData ? fetchReservationOptionLinesBatch(supabase, ids) : Promise.resolve(new Map()),
           needsBalanceData
             ? supabase
@@ -361,13 +392,6 @@ export default function TourEnvelopeModal({
         ])
 
         if (cancelled) return
-
-        const pricingByResId = new Map<string, Record<string, unknown> | null>()
-        if (needsBalanceData && !pricingResult.error) {
-          for (const row of (pricingResult.data || []) as Array<{ reservation_id: string }>) {
-            pricingByResId.set(row.reservation_id, row as Record<string, unknown>)
-          }
-        }
 
         const optionsTotalByResId = new Map<string, number | null>()
         if (needsBalanceData) {
@@ -401,7 +425,7 @@ export default function TourEnvelopeModal({
           const list = paymentsByResId.get(r.reservation_id) || []
           list.push({
             payment_status: r.payment_status || '',
-            amount: Number(r.amount) || 0,
+            amount: paymentRecordAmountToNumber(r.amount),
           })
           paymentsByResId.set(r.reservation_id, list)
         }
@@ -419,7 +443,8 @@ export default function TourEnvelopeModal({
             }
           }
           const customer = customerForReservation(rez, customerMap)
-          const pricing = pricingByResId.get(id) ?? null
+          const pricingRaw = pricingByResId.get(id) ?? null
+          const pricing = pricingRaw ? withNormalizedBalanceAmountForDisplay(pricingRaw) : null
           const optionsSum = optionsTotalByResId.get(id) ?? null
           const balanceAmount = needsBalanceData
             ? getBalanceAmountForDisplay(
