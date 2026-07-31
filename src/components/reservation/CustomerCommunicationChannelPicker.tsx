@@ -10,6 +10,7 @@ import {
   resolveCustomerCommunicationChannel,
   renderCustomerCommunicationChannelIcon,
 } from '@/lib/customerCommunicationChannel'
+import { ADMIN_FLOATING_PORTAL_Z_INDEX } from '@/lib/adminFloatingFabLayout'
 
 export type CustomerCommunicationChannelPickerProps = {
   value: string | null | undefined
@@ -129,7 +130,7 @@ export function CustomerCommunicationChannelPicker({
       aria-label={t('communicationChannel.pickerListAria')}
       className={
         usePortal
-          ? 'fixed z-[10000] min-w-[11rem] rounded-lg border border-gray-200 bg-white py-1 shadow-lg'
+          ? 'fixed min-w-[11rem] rounded-lg border border-gray-200 bg-white py-1 shadow-lg'
           : `absolute z-50 min-w-[11rem] rounded-lg border border-gray-200 bg-white py-1 shadow-lg ${
               placement === 'top' ? 'bottom-full mb-1' : 'top-full mt-1'
             } ${align === 'right' ? 'right-0' : 'left-0'}`
@@ -137,8 +138,8 @@ export function CustomerCommunicationChannelPicker({
       style={
         usePortal
           ? panelPos
-            ? { top: panelPos.top, left: panelPos.left }
-            : { visibility: 'hidden', top: 0, left: 0 }
+            ? { top: panelPos.top, left: panelPos.left, zIndex: ADMIN_FLOATING_PORTAL_Z_INDEX }
+            : { visibility: 'hidden', top: 0, left: 0, zIndex: ADMIN_FLOATING_PORTAL_Z_INDEX }
           : undefined
       }
       onClick={(e) => e.stopPropagation()}

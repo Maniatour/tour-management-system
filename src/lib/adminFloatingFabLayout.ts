@@ -12,6 +12,8 @@ export const FLOATING_PANEL_MAX_HEIGHT_RATIO = 0.92
 /** AdminSidebarAndHeader 고정 헤더(z-[9999]) 위에 표시 */
 export const ADMIN_FLOATING_PANEL_Z_CLASS = 'z-[10010]'
 export const ADMIN_FLOATING_FAB_Z_CLASS = 'z-[10005]'
+/** 플로팅 업무 패널 위에 뜨는 드롭다운·메뉴 포털 (패널 z-index보다 높아야 함) */
+export const ADMIN_FLOATING_PORTAL_Z_INDEX = 10020
 /** 업무 Todo 오른쪽 고정 시 메인 콘텐츠 padding-right에 사용 */
 export const ADMIN_TODO_DOCK_WIDTH_CSS_VAR = '--admin-todo-dock-width'
 export const ADMIN_TODO_DOCKED_HTML_CLASS = 'admin-todo-docked'

@@ -33,6 +33,7 @@ import type { Reservation, Customer } from '@/types/reservation'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
 import { ReservationCardSmsMenuButton } from '@/components/reservation/ReservationCardSmsMenuButton'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
+import { ADMIN_FLOATING_PORTAL_Z_INDEX } from '@/lib/adminFloatingFabLayout'
 
 function getLanguageFlagCountryCode(language: string | undefined | null): string {
   if (!language) return 'US'
@@ -978,11 +979,15 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               <div
                 ref={simpleMoreMenuPanelRef}
                 role="menu"
-                className="fixed z-[10000] w-52 max-h-[min(70vh,calc(100vh-5rem))] overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg"
+                className="fixed w-52 max-h-[min(70vh,calc(100vh-5rem))] overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg"
                 style={
                   simpleMoreMenuPos
-                    ? { top: simpleMoreMenuPos.top, left: simpleMoreMenuPos.left }
-                    : { visibility: 'hidden', top: 0, left: 0 }
+                    ? {
+                        top: simpleMoreMenuPos.top,
+                        left: simpleMoreMenuPos.left,
+                        zIndex: ADMIN_FLOATING_PORTAL_Z_INDEX,
+                      }
+                    : { visibility: 'hidden', top: 0, left: 0, zIndex: ADMIN_FLOATING_PORTAL_Z_INDEX }
                 }
                 onClick={(e) => e.stopPropagation()}
               >

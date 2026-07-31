@@ -15,6 +15,7 @@ import {
   RESERVATION_CARD_SMS_CATEGORY_IDS,
   type ReservationOutboundSmsCategoryId,
 } from '@/lib/reservationOutboundSmsCategories'
+import { ADMIN_FLOATING_PORTAL_Z_INDEX } from '@/lib/adminFloatingFabLayout'
 
 type Props = {
   reservationId: string
@@ -185,8 +186,8 @@ export function ReservationCardSmsMenuButton({
           <div
             ref={panelRef}
             role="menu"
-            className="fixed z-[10000] w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
-            style={{ top: menuPos.top, left: menuPos.left }}
+            className="fixed w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
+            style={{ top: menuPos.top, left: menuPos.left, zIndex: ADMIN_FLOATING_PORTAL_Z_INDEX }}
             onClick={(e) => e.stopPropagation()}
           >
             <p className="border-b border-gray-100 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
