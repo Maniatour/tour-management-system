@@ -24,6 +24,10 @@ export type ScheduleProductGridDailyCell = {
   enWaitingPeople?: number
   canceledPeople?: number
   assignmentPendingReservationCount?: number
+  /** 확정·모집 예약 건수(그룹 수) */
+  reservationGroupCount?: number
+  /** 대기(pending) 예약 건수 */
+  waitingReservationGroupCount?: number
   koPeople?: number
   enPeople?: number
   choiceCounts?: Record<string, number>

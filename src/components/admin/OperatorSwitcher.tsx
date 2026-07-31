@@ -7,10 +7,10 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { KOVEgAS_OPERATOR_ID } from '@/lib/operatorConstants'
+import { shortOperatorDisplayName } from '@/lib/operatorDisplayName'
 
 /** Compact tenant switcher for admin header (multi-membership). */
 export default function OperatorSwitcher() {
@@ -31,16 +31,29 @@ export default function OperatorSwitcher() {
           },
         ]
 
+  const activeOption =
+    options.find((op) => op.operatorId === operatorId) ?? options[0]
+
   if (options.length <= 1) {
+    const fullName = activeOption?.name || 'Kovegas'
+    const shortName = shortOperatorDisplayName(fullName, activeOption?.slug)
+
     return (
-      <div className="hidden items-center gap-1.5 rounded-lg border border-border/60 bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground lg:flex">
+      <div
+        className="hidden items-center gap-1.5 rounded-lg border border-border/60 bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground lg:flex"
+        title={fullName}
+      >
         <Building2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
-        <span className="max-w-[140px] truncate font-medium text-foreground">
-          {options[0]?.name || 'Kovegas'}
-        </span>
+        <span className="font-medium text-foreground">{shortName}</span>
       </div>
     )
   }
+
+  const activeFullName = activeOption?.name || t('switcherLabel')
+  const activeShortName = shortOperatorDisplayName(
+    activeFullName,
+    activeOption?.slug
+  )
 
   return (
     <div className="hidden items-center gap-2 lg:flex">
@@ -53,10 +66,11 @@ export default function OperatorSwitcher() {
         }}
       >
         <SelectTrigger
-          aria-label={t('switcherLabel')}
-          className="h-9 w-[180px] rounded-lg border-border/60 text-xs"
+          aria-label={`${t('switcherLabel')}: ${activeFullName}`}
+          title={activeFullName}
+          className="h-9 w-auto min-w-[5.5rem] rounded-lg border-border/60 px-2.5 text-xs"
         >
-          <SelectValue placeholder={t('switcherLabel')} />
+          <span className="truncate font-medium">{activeShortName}</span>
         </SelectTrigger>
         <SelectContent>
           {options.map((op) => (

@@ -40,6 +40,7 @@ export type ReservationListTourMapRow = {
   tour_date: string | null
   tour_start_datetime: string | null
   product_id: string | null
+  max_participants?: number | null
 }
 
 export type AdminListHydratedSnapshot = {
@@ -757,7 +758,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
   }
 
   const TOUR_LIST_SELECT =
-    'id, tour_status, tour_guide_id, assistant_id, reservation_ids, tour_car_id, tour_date, tour_start_datetime, product_id'
+    'id, tour_status, tour_guide_id, assistant_id, reservation_ids, tour_car_id, tour_date, tour_start_datetime, product_id, max_participants'
 
   const parseTourRow = (tour: Record<string, unknown>): ReservationListTourMapRow => {
     const resIds = Array.isArray(tour.reservation_ids)
@@ -778,6 +779,7 @@ export function useReservationData(hookOptions?: UseReservationDataOptions) {
       tour_date: tour.tour_date as string | null,
       tour_start_datetime: tour.tour_start_datetime as string | null,
       product_id: (tour.product_id as string | null) ?? null,
+      max_participants: (tour.max_participants as number | null | undefined) ?? null,
     }
   }
 

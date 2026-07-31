@@ -252,6 +252,22 @@ export default function ScheduleProductGridRow({
                             <span>{(dayData.enPeople || 0) + (dayData.enWaitingPeople || 0)}</span>
                           </span>
                         </div>
+                        {((dayData.reservationGroupCount ?? 0) > 0 ||
+                          (dayData.waitingReservationGroupCount ?? 0) > 0) && (
+                          <div className="text-sm font-semibold text-gray-100 mb-1.5 tabular-nums">
+                            {tTourCal('scheduleCellReservationGroups', {
+                              count: dayData.reservationGroupCount ?? 0,
+                            })}
+                            {(dayData.waitingReservationGroupCount ?? 0) > 0 ? (
+                              <span className="text-amber-200 font-medium">
+                                {' '}
+                                {tTourCal('scheduleCellWaitingReservationGroups', {
+                                  count: dayData.waitingReservationGroupCount ?? 0,
+                                })}
+                              </span>
+                            ) : null}
+                          </div>
+                        )}
                         {choiceLine && (
                           <div className="whitespace-nowrap break-keep leading-tight">{choiceLine}</div>
                         )}

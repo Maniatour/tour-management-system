@@ -8,6 +8,7 @@ import {
   localDateYmd,
   type SeasonDate,
 } from '@/lib/ticketBookingCancelDue'
+import { isTicketBookingPendingRequestState } from '@/lib/ticketBookingWorkflow'
 import { filterTicketBookingsExcludedFromMainUi } from '@/lib/ticketBookingSoftDelete'
 import type { TourChoiceCounts } from '@/lib/tourChoiceCounts'
 import { canonicalReservationIdKey, normalizeReservationIds } from '@/utils/tourUtils'
@@ -58,6 +59,7 @@ export type AntelopeCanyonMismatchTourRow = {
   ticket_ea_current: number
   ticket_counts: TourChoiceCounts
   has_pending_change: boolean
+  has_vendor_pending: boolean
   tickets: AntelopeCanyonTicketLite[]
 }
 
@@ -74,6 +76,7 @@ export type AntelopeCanyonCancelDueTourRow = {
   cancel_from: number
   cancel_to: number
   has_pending_change: boolean
+  has_vendor_pending: boolean
   tickets: AntelopeCanyonTicketLite[]
 }
 
@@ -170,6 +173,10 @@ function tourHasPendingTicketChange(tickets: AntelopeCanyonTicketLite[]): boolea
   return tickets.some(isTicketChangeRequested)
 }
 
+function tourHasVendorPendingTickets(tickets: AntelopeCanyonTicketLite[]): boolean {
+  return tickets.some(isTicketBookingPendingRequestState)
+}
+
 function addCalendarDaysYmd(ymd: string, delta: number): string {
   const d = new Date(`${ymd}T12:00:00`)
   d.setDate(d.getDate() + delta)
@@ -197,10 +204,11 @@ export function buildAntelopeCanyonMismatchRows(input: {
     const ticketEaEffective = sumEffectiveTicketEa(tourTickets)
     const ticketEaCurrent = sumCurrentTicketEa(tourTickets)
     const hasPendingChange = tourHasPendingTicketChange(tourTickets)
+    const hasVendorPending = tourHasVendorPendingTickets(tourTickets)
     const ticketCounts = aggregateTicketEaByCanyon(tourTickets)
 
-    if (tourPeople <= 0 && ticketEaEffective <= 0 && !hasPendingChange) continue
-    if (tourPeople === ticketEaEffective && !hasPendingChange) continue
+    if (tourPeople <= 0 && ticketEaEffective <= 0 && !hasPendingChange && !hasVendorPending) continue
+    if (tourPeople === ticketEaEffective && !hasPendingChange && !hasVendorPending) continue
 
     rows.push({
       id: tour.id,
@@ -211,6 +219,7 @@ export function buildAntelopeCanyonMismatchRows(input: {
       ticket_ea_current: ticketEaCurrent,
       ticket_counts: ticketCounts,
       has_pending_change: hasPendingChange,
+      has_vendor_pending: hasVendorPending,
       tickets: tourTickets,
     })
   }
@@ -271,9 +280,10 @@ export function buildAntelopeCanyonCancelDueRows(input: {
     const ticketEaEffective = sumEffectiveTicketEa(displayTickets)
     const ticketEaCurrent = sumCurrentTicketEa(displayTickets)
     const hasPendingChange = tourHasPendingTicketChange(displayTickets)
+    const hasVendorPending = tourHasVendorPendingTickets(displayTickets)
 
     const needsCancel = ticketEaEffective > tourPeople
-    if (!needsCancel && !hasPendingChange) continue
+    if (!needsCancel && !hasPendingChange && !hasVendorPending) continue
 
     const supplier = input.supplierProductsByBookingId.get(dueTickets[0]!.id)
     const cancelDueDate = getCancelDueDateForTicketBooking(dueTickets[0]!, supplier) || today
@@ -291,6 +301,7 @@ export function buildAntelopeCanyonCancelDueRows(input: {
       cancel_from: ticketEaEffective,
       cancel_to: tourPeople,
       has_pending_change: hasPendingChange,
+      has_vendor_pending: hasVendorPending,
       tickets: displayTickets,
     })
   }
@@ -311,6 +322,13 @@ export function formatAntelopeCanyonCountSummary(
   if (counts.U) parts.push(`U ${counts.U}`)
   if (!parts.length) return isKo ? '—' : '—'
   return parts.join(' · ')
+}
+
+export function formatAntelopeCanyonTicketTime(raw: string | null | undefined): string {
+  if (!raw) return ''
+  const s = String(raw).trim()
+  const m = s.match(/^(\d{1,2}):(\d{2})/)
+  return m ? `${m[1].padStart(2, '0')}:${m[2]}` : s.slice(0, 5)
 }
 
 export function formatTicketEaWithPending(

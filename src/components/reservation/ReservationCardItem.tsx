@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Plus, Users, DollarSign, Eye, Clock, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal } from 'lucide-react'
+import { Plus, Users, DollarSign, Eye, Clock, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal, CalendarPlus, CalendarX } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - react-country-flag may lack types
@@ -109,19 +109,18 @@ function formatCardLocaleDate(raw: string | null | undefined, locale: string): s
   return raw.trim()
 }
 
-function formatCardLocaleDateTime(raw: string | null | undefined, locale: string): string {
-  if (!raw?.trim()) return '-'
+function formatCardTimestampMmDdYyyyHm(raw: string | null | undefined, locale: string): string {
+  if (!raw?.trim()) return '—'
   const parsed = Date.parse(raw)
-  if (!Number.isNaN(parsed)) {
-    return new Date(parsed).toLocaleString(locale === 'ko' ? 'ko-KR' : 'en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    })
-  }
-  return raw.trim()
+  if (Number.isNaN(parsed)) return raw.trim()
+  const d = new Date(parsed)
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const time = d.toLocaleTimeString(locale === 'ko' ? 'ko-KR' : 'en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+  return `${mm}/${dd}/${d.getFullYear()} ${time}`
 }
 
 function formatRegistrationDateForCard(
@@ -133,7 +132,7 @@ function formatRegistrationDateForCard(
     reservation.addedTime ||
     (reservation as { created_at?: string | null }).created_at ||
     ''
-  return includeTime ? formatCardLocaleDateTime(raw, locale) : formatCardLocaleDate(raw, locale)
+  return includeTime ? formatCardTimestampMmDdYyyyHm(raw, locale) : formatCardLocaleDate(raw, locale)
 }
 
 function formatCancellationDateForCard(reservation: Reservation, locale: string): string {
@@ -142,7 +141,7 @@ function formatCancellationDateForCard(reservation: Reservation, locale: string)
     updated_at?: string | null
   }
   const raw = ext.cancellation_recorded_at ?? ext.updated_at ?? null
-  return formatCardLocaleDateTime(raw, locale)
+  return formatCardTimestampMmDdYyyyHm(raw, locale)
 }
 
 interface ReservationCardItemProps {
@@ -167,6 +166,7 @@ interface ReservationCardItemProps {
     isAssigned: boolean
     reservationIds: string[]
     productId: string | null
+    maxParticipants?: number
   }>
   reservationPricingMap: Map<string, {
     total_price: number
@@ -397,6 +397,26 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     reservationStatusLower === 'cancelled' ||
     reservationStatusLower === 'canceled' ||
     reservationStatusLower === 'deleted'
+
+  const sameDayProductTourBadges = useMemo(() => {
+    if (!hideAssignedTourUi) return []
+    const productId = String(reservation.productId ?? '').trim()
+    const tourDateKey = normalizeTourDateKey(reservation.tourDate)
+    if (!productId || !tourDateKey) return []
+
+    const badges: Array<{ tourId: string; assigned: number; max: number; sortKey: string }> = []
+    tourInfoMap.forEach((info, tourId) => {
+      if (String(info.productId ?? '').trim() !== productId) return
+      if (normalizeTourDateKey(info.tourDate) !== tourDateKey) return
+      badges.push({
+        tourId,
+        assigned: info.totalPeople,
+        max: info.maxParticipants ?? 12,
+        sortKey: info.tourStartDatetime ?? tourId,
+      })
+    })
+    return badges.sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+  }, [hideAssignedTourUi, reservation.productId, reservation.tourDate, tourInfoMap])
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false)
   const [statusModalOpen, setStatusModalOpen] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
@@ -713,21 +733,46 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           </div>
 
           {/* Row 2: 투어일·상품·뱃지 */}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0">
-            <span className="shrink-0 text-xs font-medium text-gray-900 tabular-nums">
-              {formatTourDateMmDdYyyy(reservation.tourDate)}
-            </span>
-            <span className="text-xs font-medium text-gray-900 break-words [overflow-wrap:anywhere]">
-              {getProductName(reservation.productId, products as any || [])}
-            </span>
-            <span className="inline-flex shrink-0 flex-wrap items-center gap-1 font-normal [&>span]:!px-1.5 [&>span]:!py-0.5 [&>span]:!text-[11px] [&>span]:!leading-tight">
-              <ChoicesDisplay
-                reservation={reservation}
-                getGroupColorClasses={getGroupColorClasses}
-                getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
-                choicesCacheRef={choicesCacheRef}
-              />
-            </span>
+          <div className="flex items-center gap-x-2 gap-y-1.5 min-w-0">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5">
+              <span className="shrink-0 text-xs font-medium text-gray-900 tabular-nums">
+                {formatTourDateMmDdYyyy(reservation.tourDate)}
+              </span>
+              <span className="text-xs font-medium text-gray-900 break-words [overflow-wrap:anywhere]">
+                {getProductName(reservation.productId, products as any || [])}
+              </span>
+              <span className="inline-flex shrink-0 flex-wrap items-center gap-1 font-normal [&>span]:!px-1.5 [&>span]:!py-0.5 [&>span]:!text-[11px] [&>span]:!leading-tight">
+                <ChoicesDisplay
+                  reservation={reservation}
+                  getGroupColorClasses={getGroupColorClasses}
+                  getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
+                  choicesCacheRef={choicesCacheRef}
+                />
+              </span>
+            </div>
+            {sameDayProductTourBadges.length > 0 ? (
+              <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1">
+                {sameDayProductTourBadges.map((badge) => (
+                  <button
+                    key={badge.tourId}
+                    type="button"
+                    disabled={!onOpenTourDetailModal}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onOpenTourDetailModal?.(badge.tourId)
+                    }}
+                    className="inline-flex items-center gap-0.5 rounded bg-slate-100 px-1 py-0.5 text-[9px] font-medium tabular-nums text-slate-700 ring-1 ring-slate-200/80 hover:bg-slate-200/80 disabled:cursor-default disabled:hover:bg-slate-100"
+                    title={t('card.tourCapacityBadgeTitle', {
+                      assigned: badge.assigned,
+                      max: badge.max,
+                    })}
+                  >
+                    <Users className="h-2.5 w-2.5 shrink-0 text-slate-500" aria-hidden />
+                    {badge.assigned}/{badge.max}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           {/* Row 3: 가이드·차량·인원 (취소 시 등록일·사유) */}
@@ -735,19 +780,29 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             if (hideAssignedTourUi) {
               return (
                 <div className="flex items-start gap-1 min-w-0">
-                  <dl className="m-0 grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-1.5 gap-y-0.5 text-[11px] leading-snug text-gray-800">
-                    <dt className="font-medium text-gray-600">{t('card.registrationDateLabel')}</dt>
-                    <dd className="m-0 tabular-nums">{formatRegistrationDateForCard(reservation, locale, isReservationCancelled)}</dd>
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-gray-600">
+                    <span
+                      className="inline-flex items-center gap-1 tabular-nums"
+                      title={t('card.registrationDateIconTitle')}
+                    >
+                      <CalendarPlus className="h-3 w-3 shrink-0 text-primary" aria-hidden />
+                      <span className="font-medium text-gray-800">
+                        {formatRegistrationDateForCard(reservation, locale, true)}
+                      </span>
+                    </span>
                     {isReservationCancelled ? (
-                      <>
-                        <dt className="font-medium text-gray-600">{t('card.cancellationDateLabel')}</dt>
-                        <dd className="m-0 flex flex-wrap items-center gap-1 tabular-nums">
-                          <span>{formatCancellationDateForCard(reservation, locale)}</span>
-                          {similarReservationsHint}
-                        </dd>
-                      </>
+                      <span
+                        className="inline-flex flex-wrap items-center gap-1 tabular-nums"
+                        title={t('card.cancellationDateIconTitle')}
+                      >
+                        <CalendarX className="h-3 w-3 shrink-0 text-red-600" aria-hidden />
+                        <span className="font-medium text-gray-800">
+                          {formatCancellationDateForCard(reservation, locale)}
+                        </span>
+                        {similarReservationsHint}
+                      </span>
                     ) : null}
-                  </dl>
+                  </div>
                   {isReservationCancelled && cancelReasonBadge ? (
                     <span
                       className="max-w-[11rem] shrink-0 truncate rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-800 ring-1 ring-slate-200/80"

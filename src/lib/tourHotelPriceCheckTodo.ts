@@ -101,6 +101,36 @@ export function formatTourHotelBookingPrice(
   return null
 }
 
+export const TOUR_HOTEL_PRICE_CHECK_HIGH_UNIT_THRESHOLD = 150
+
+/** $150 초과 여부 판단용 객실 단가 — 단가가 없으면 총액 ÷ 룸 수 */
+export function getTourHotelPriceCheckUnitPrice(
+  totalPrice?: number | null,
+  unitPrice?: number | null,
+  rooms?: number | null
+): number | null {
+  const unit = Number(unitPrice)
+  if (Number.isFinite(unit) && unit > 0) {
+    return Math.round(unit * 100) / 100
+  }
+  const total = Number(totalPrice)
+  const roomCount = Math.max(1, Number(rooms) || 1)
+  if (Number.isFinite(total) && total > 0) {
+    return Math.round((total / roomCount) * 100) / 100
+  }
+  return null
+}
+
+export function isTourHotelPriceCheckHighUnitPrice(
+  totalPrice?: number | null,
+  unitPrice?: number | null,
+  rooms?: number | null,
+  threshold = TOUR_HOTEL_PRICE_CHECK_HIGH_UNIT_THRESHOLD
+): boolean {
+  const unit = getTourHotelPriceCheckUnitPrice(totalPrice, unitPrice, rooms)
+  return unit != null && unit > threshold
+}
+
 export function normalizeTourHotelWebsiteUrl(url: string | null | undefined): string | null {
   const raw = String(url || '').trim()
   if (!raw) return null

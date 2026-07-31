@@ -13,6 +13,7 @@ import { TodoPanelTourStatusButtons } from '@/components/admin/todo/TodoPanelTou
 import { TourHotelPriceCheckEditModal } from '@/components/admin/todo/TourHotelPriceCheckEditModal'
 import {
   findTourHotelPriceCheckLinkedTodo,
+  isTourHotelPriceCheckHighUnitPrice,
   normalizeTourHotelWebsiteUrl,
   readTourHotelPriceCheckLocalCompleted,
   tourHotelPriceCheckCompletionDateKey,
@@ -61,6 +62,43 @@ function formatShortDate(raw: string): string {
 function formatUsd(amount: number | null): string {
   if (amount == null || !Number.isFinite(amount)) return '—'
   return `$${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+}
+
+function formatTourHotelPriceCheckRowLabel(
+  row: {
+    check_in_date: string
+    hotel: string
+    tour_name: string | null
+    reservation_name: string | null
+    tour_date: string | null
+    display_price: number | null
+    rooms: number
+  },
+  isKo: boolean
+): string {
+  const tourLabel = row.tour_name || row.reservation_name || '—'
+  const priceLabel = formatUsd(row.display_price) + (row.rooms > 1 ? ` ×${row.rooms}` : '')
+  const parts = [
+    formatShortDate(row.check_in_date),
+    row.hotel,
+    tourLabel,
+    priceLabel,
+    row.tour_date ? `${isKo ? '투어' : 'Tour'} ${formatShortDate(row.tour_date)}` : null,
+  ].filter((part): part is string => Boolean(part))
+  return parts.join(' , ')
+}
+
+function tourHotelPriceCheckRowBorderClassName(
+  rowStatus: ReturnType<typeof getTodoPanelTourStatus>,
+  highPrice: boolean
+): string {
+  if (highPrice) {
+    return 'border-red-300 bg-red-50/40 shadow-[inset_0_0_0_1px] shadow-red-200/50'
+  }
+  if (rowStatus === 'pending') {
+    return 'border-sky-200/80 bg-white/80 shadow-[inset_0_0_0_1px] shadow-sky-300/40'
+  }
+  return todoPanelTourRowClassName(rowStatus)
 }
 
 export function TourHotelPriceCheckPanel({
@@ -225,14 +263,18 @@ export function TourHotelPriceCheckPanel({
               const rowStatus = getTodoPanelTourStatus(row.id, tourState)
               const websiteUrl = normalizeTourHotelWebsiteUrl(row.website)
               const tourLabel = row.tour_name || row.reservation_name || '—'
+              const rowLabel = formatTourHotelPriceCheckRowLabel(row, isKo)
+              const highPrice = isTourHotelPriceCheckHighUnitPrice(
+                row.total_price,
+                row.unit_price,
+                row.rooms
+              )
               return (
                 <div
                   key={row.id}
                   className={[
                     'rounded-md border p-1.5',
-                    rowStatus === 'pending'
-                      ? 'border-sky-200/80 bg-white/80 shadow-[inset_0_0_0_1px] shadow-sky-300/40'
-                      : todoPanelTourRowClassName(rowStatus),
+                    tourHotelPriceCheckRowBorderClassName(rowStatus, highPrice),
                     completed ? 'opacity-70' : '',
                   ].join(' ')}
                 >
@@ -244,12 +286,24 @@ export function TourHotelPriceCheckPanel({
                     />
                     <p
                       className={`min-w-0 flex-1 truncate text-[11px] font-medium leading-snug ${todoPanelTourTitleClassName(rowStatus)}`}
+                      title={rowLabel}
                     >
                       <span className="tabular-nums">{formatShortDate(row.check_in_date)}</span>
                       <span className="text-gray-400"> , </span>
                       <span>{row.hotel}</span>
                       <span className="text-gray-400"> , </span>
                       <span>{tourLabel}</span>
+                      <span className="text-gray-400"> , </span>
+                      <span
+                        className={`inline-flex rounded px-1 py-0.5 text-[10px] font-semibold tabular-nums ${
+                          highPrice ? 'bg-red-50 text-red-900' : 'bg-emerald-50 text-emerald-900'
+                        }`}
+                      >
+                        {formatUsd(row.display_price)}
+                      </span>
+                      {row.rooms > 1 ? (
+                        <span className="ml-0.5 text-[10px] text-gray-500">×{row.rooms}</span>
+                      ) : null}
                       {row.tour_date ? (
                         <>
                           <span className="text-gray-400"> , </span>
@@ -257,13 +311,6 @@ export function TourHotelPriceCheckPanel({
                             {isKo ? '투어' : 'Tour'} {formatShortDate(row.tour_date)}
                           </span>
                         </>
-                      ) : null}
-                      <span className="text-gray-400"> , </span>
-                      <span className="inline-flex rounded bg-emerald-50 px-1 py-0.5 text-[10px] font-semibold tabular-nums text-emerald-900">
-                        {formatUsd(row.display_price)}
-                      </span>
-                      {row.rooms > 1 ? (
-                        <span className="ml-0.5 text-[10px] text-gray-500">×{row.rooms}</span>
                       ) : null}
                     </p>
                     <div className="flex shrink-0 items-center gap-0.5">

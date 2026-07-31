@@ -1174,6 +1174,7 @@ export default function AdminReservations() {
     isAssigned: boolean
     reservationIds: string[]
     productId: string | null
+    maxParticipants: number
   }>>(new Map())
 
   // reservation_pricing ?????? useReservationData ?????????
@@ -1304,14 +1305,66 @@ export default function AdminReservations() {
           isAssigned: boolean
           reservationIds: string[]
           productId: string | null
+          maxParticipants: number
         }>()
+
+        const DEFAULT_TOUR_MAX = 12
+        const productDatePairKeys = new Set<string>()
+        reservationsForTourInfo.forEach((r) => {
+          const productId = String(r.productId ?? '').trim()
+          const tourDate = normalizeTourDateKey(r.tourDate)
+          if (productId && tourDate) productDatePairKeys.add(`${productId}__${tourDate}`)
+        })
+
+        const toursForInfoBuild = new Map(toursMapForTourInfo)
+        if (productDatePairKeys.size > 0) {
+          const productIds = [...new Set([...productDatePairKeys].map((k) => k.split('__')[0]!))]
+          const tourDates = [...new Set([...productDatePairKeys].map((k) => k.split('__')[1]!))]
+          const { data: toursByProductDate } = await supabase
+            .from('tours')
+            .select(
+              'id, tour_status, tour_guide_id, assistant_id, reservation_ids, tour_car_id, tour_date, tour_start_datetime, product_id, max_participants'
+            )
+            .in('product_id', productIds)
+            .in('tour_date', tourDates)
+
+          for (const tour of toursByProductDate || []) {
+            const row = tour as Record<string, unknown>
+            const productId = String(row.product_id ?? '').trim()
+            const tourDate = normalizeTourDateKey(String(row.tour_date ?? ''))
+            const pairKey = productId && tourDate ? `${productId}__${tourDate}` : ''
+            if (!pairKey || !productDatePairKeys.has(pairKey)) continue
+            const tourId = String(row.id ?? '').trim()
+            if (!tourId || toursForInfoBuild.has(tourId)) continue
+            const resIds = Array.isArray(row.reservation_ids)
+              ? (row.reservation_ids as string[])
+              : row.reservation_ids
+                ? String(row.reservation_ids)
+                    .split(',')
+                    .map((id: string) => id.trim())
+                    .filter(Boolean)
+                : []
+            toursForInfoBuild.set(tourId, {
+              id: tourId,
+              tour_status: (row.tour_status as string | null) ?? null,
+              tour_guide_id: (row.tour_guide_id as string | null) ?? null,
+              assistant_id: (row.assistant_id as string | null) ?? null,
+              reservation_ids: resIds,
+              tour_car_id: (row.tour_car_id as string | null) ?? null,
+              tour_date: (row.tour_date as string | null) ?? null,
+              tour_start_datetime: (row.tour_start_datetime as string | null) ?? null,
+              product_id: productId || null,
+              max_participants: (row.max_participants as number | null | undefined) ?? null,
+            })
+          }
+        }
 
         // ?? ???? ?????? ????????????????
         const guideEmails = new Set<string>()
         const assistantEmails = new Set<string>()
         const vehicleIds = new Set<string>()
         
-        toursMapForTourInfo.forEach(tour => {
+        toursForInfoBuild.forEach(tour => {
           if (tour.tour_guide_id) guideEmails.add(tour.tour_guide_id)
           if (tour.assistant_id) assistantEmails.add(tour.assistant_id)
           if (tour.tour_car_id) vehicleIds.add(tour.tour_car_id)
@@ -1438,7 +1491,7 @@ export default function AdminReservations() {
         })
 
         // ?????????????? ?? (????? O(1) ?? ???)
-        toursMapForTourInfo.forEach((tour, tourId) => {
+        toursForInfoBuild.forEach((tour, tourId) => {
           let guideName = '-'
           let assistantName = '-'
           let vehicleName = '-'
@@ -1482,6 +1535,9 @@ export default function AdminReservations() {
           const sumFiltered = aggregateKey ? (dateProductConfirmedRecruitingMap.get(aggregateKey) ?? 0) : 0
           const allDateTotalPeople = aggregateKey ? sumFiltered : totalPeople
           const allDateOtherStatusPeople = aggregateKey ? Math.max(0, sumAll - sumFiltered) : 0
+          const rawMax = tour.max_participants
+          const maxParticipants =
+            typeof rawMax === 'number' && Number.isFinite(rawMax) ? rawMax : DEFAULT_TOUR_MAX
 
           newTourInfoMap.set(tourId, {
             totalPeople,
@@ -1496,7 +1552,8 @@ export default function AdminReservations() {
             tourStartDatetime: tour.tour_start_datetime || null,
             isAssigned: true,
             reservationIds: tour.reservation_ids,
-            productId: productIdForKey || null
+            productId: productIdForKey || null,
+            maxParticipants,
           })
         })
 

@@ -30,10 +30,12 @@ import {
 
 import {
   formatAntelopeCanyonCountSummary,
+  formatAntelopeCanyonTicketTime,
   formatTicketEaWithPending,
   isTicketChangeRequested,
   type AntelopeCanyonTicketLite,
 } from '@/lib/antelopeCanyonBookingQueue'
+import { isTicketBookingPendingRequestState } from '@/lib/ticketBookingWorkflow'
 
 import { useAntelopeCanyonBookingQueue } from '@/hooks/useAntelopeCanyonBookingQueue'
 
@@ -175,6 +177,10 @@ function TicketCard({
 
   const isKo = locale === 'ko'
   const pending = isTicketChangeRequested(ticket)
+  const vendorPending = isTicketBookingPendingRequestState(ticket)
+  const displayTime = formatAntelopeCanyonTicketTime(
+    pending && ticket.pending_time ? ticket.pending_time : ticket.time
+  )
 
   return (
     <button
@@ -184,27 +190,35 @@ function TicketCard({
         'flex w-full items-start gap-2 rounded-md border px-2 py-1.5 text-left transition-colors',
         pending
           ? 'border-violet-300 bg-violet-50/50 hover:border-violet-400 hover:bg-violet-50'
-          : 'border-orange-200/80 bg-white hover:border-orange-300 hover:bg-orange-50/40',
+          : vendorPending
+            ? 'border-amber-300 bg-amber-50/50 hover:border-amber-400 hover:bg-amber-50'
+            : 'border-orange-200/80 bg-white hover:border-orange-300 hover:bg-orange-50/40',
       ].join(' ')}
     >
       <Ticket
-        className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${pending ? 'text-violet-700' : 'text-orange-700'}`}
+        className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${
+          pending ? 'text-violet-700' : vendorPending ? 'text-amber-700' : 'text-orange-700'
+        }`}
         aria-hidden
       />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[11px] font-medium text-gray-900">
           <span className="text-gray-600">{ticket.company}</span>
-          {ticket.time ? (
+          {displayTime ? (
             <>
               <span className="mx-1 text-gray-300">·</span>
-              <span className="tabular-nums">{ticket.time}</span>
+              <span className="tabular-nums">{displayTime}</span>
             </>
           ) : null}
           <span className="mx-1 text-gray-300">·</span>
           <span
             className={[
               'inline-flex rounded px-1 py-0.5 text-[10px] font-semibold tabular-nums',
-              pending ? 'bg-violet-100 text-violet-900' : 'bg-orange-50 text-orange-900',
+              pending
+                ? 'bg-violet-100 text-violet-900'
+                : vendorPending
+                  ? 'bg-amber-100 text-amber-900'
+                  : 'bg-orange-50 text-orange-900',
             ].join(' ')}
           >
             {formatTicketEaWithPending(ticket, isKo)}
@@ -212,6 +226,10 @@ function TicketCard({
           {pending ? (
             <span className="ml-1 rounded border border-violet-200 bg-white px-1 py-0.5 text-[9px] font-medium text-violet-800">
               {isKo ? '변경 요청' : 'Change req.'}
+            </span>
+          ) : vendorPending ? (
+            <span className="ml-1 rounded border border-amber-200 bg-white px-1 py-0.5 text-[9px] font-medium text-amber-800">
+              {isKo ? '대기중' : 'Pending'}
             </span>
           ) : null}
         </p>
@@ -523,7 +541,9 @@ export function AntelopeCanyonBookingPanel({
 
                   <span className="text-[10px] text-gray-500">
 
-                    {isKo ? `3일 이내 투어 · 인원 불일치·변경 요청` : `Tours within 3 days · mismatch / change`}
+                    {isKo
+                      ? `3일 이내 투어 · 인원 불일치·변경·대기`
+                      : `Tours within 3 days · mismatch / change / pending`}
 
                   </span>
 
@@ -534,8 +554,8 @@ export function AntelopeCanyonBookingPanel({
                   <p className="rounded-md border border-dashed border-gray-200 bg-white/60 py-2.5 text-center text-[11px] text-gray-500">
 
                     {isKo
-                      ? '인원·부킹 불일치 또는 변경 요청 중인 3일 이내 투어가 없습니다.'
-                      : 'No mismatched or change-pending tours in the next 3 days.'}
+                      ? '인원·부킹 불일치, 변경 요청, 벤더 대기 중인 3일 이내 투어가 없습니다.'
+                      : 'No mismatched, change-pending, or vendor-pending tours in the next 3 days.'}
 
                   </p>
 
@@ -590,6 +610,11 @@ export function AntelopeCanyonBookingPanel({
                                   {isKo ? '변경 요청' : 'Change pending'}
                                 </span>
                               ) : null}
+                              {row.has_vendor_pending ? (
+                                <span className="rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-[9px] font-medium text-amber-900">
+                                  {isKo ? '대기중' : 'Pending'}
+                                </span>
+                              ) : null}
 
                               {formatAntelopeCanyonCountSummary(row.ticket_counts, isKo) !== '—' ? (
 
@@ -607,7 +632,11 @@ export function AntelopeCanyonBookingPanel({
                                   ? isKo
                                     ? '변경 요청 확인'
                                     : 'Review change'
-                                  : `${row.tour_people} ≠ ${row.ticket_ea}`}
+                                  : row.has_vendor_pending && row.tour_people === row.ticket_ea
+                                    ? isKo
+                                      ? '벤더 응답 대기'
+                                      : 'Vendor pending'
+                                    : `${row.tour_people} ≠ ${row.ticket_ea}`}
                               </span>
 
                             </div>
@@ -777,6 +806,11 @@ export function AntelopeCanyonBookingPanel({
                               {row.has_pending_change ? (
                                 <span className="rounded border border-violet-200 bg-violet-50 px-1 py-0.5 text-[9px] font-medium text-violet-900">
                                   {isKo ? '변경 요청' : 'Change pending'}
+                                </span>
+                              ) : null}
+                              {row.has_vendor_pending ? (
+                                <span className="rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-[9px] font-medium text-amber-900">
+                                  {isKo ? '대기중' : 'Pending'}
                                 </span>
                               ) : null}
 

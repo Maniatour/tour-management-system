@@ -3156,6 +3156,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             canceledPeople: number
             /** 확정·모집인데 해당일 같은 상품 투어 어디에도 배정되지 않은 예약 건수 */
             assignmentPendingReservationCount: number
+            /** 확정·모집 예약 건수(그룹 수) */
+            reservationGroupCount: number
+            /** 대기(pending) 예약 건수 */
+            waitingReservationGroupCount: number
             tours: number
             koPeople: number
             enPeople: number
@@ -3218,6 +3222,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           enWaitingPeople: number
           canceledPeople: number
           assignmentPendingReservationCount: number
+          reservationGroupCount: number
+          waitingReservationGroupCount: number
           tours: number
           koPeople: number
           enPeople: number
@@ -3396,6 +3402,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             enWaitingPeople: 0,
             canceledPeople: 0,
             assignmentPendingReservationCount: 0,
+            reservationGroupCount: 0,
+            waitingReservationGroupCount: 0,
             tours: 0,
             koPeople: 0,
             enPeople: 0,
@@ -3415,6 +3423,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         dailyData[dateString].enWaitingPeople += dayEnWaitingPeople
         dailyData[dateString].canceledPeople += dayCanceledPeople
         dailyData[dateString].assignmentPendingReservationCount += dayAssignmentPendingReservationCount
+        dailyData[dateString].reservationGroupCount += dayReservations.length
+        dailyData[dateString].waitingReservationGroupCount += dayPendingReservations.length
         dailyData[dateString].koPeople += dayKoPeople
         dailyData[dateString].enPeople += dayEnPeople
         dailyData[dateString].tours += toursCoveringThisDate.length
