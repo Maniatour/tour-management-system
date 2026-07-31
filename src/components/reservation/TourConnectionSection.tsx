@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useLocale, useTranslations } from 'next-intl'
+import { useState, useEffect, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
@@ -87,16 +87,29 @@ interface TourConnectionSectionProps {
   onTourCreated?: () => void
   /** full: 동일 날짜·상품의 모든 투어 및 배정 여부. assignedSummary: 이 예약에 배정된 투어 요약 */
   variant?: 'full' | 'assignedSummary'
+  products?: Array<{
+    id: string
+    name?: string | null
+    name_ko?: string | null
+    name_en?: string | null
+  }>
+  /**
+   * 예약 수정 모달 등 상위에서 투어 상세를 띄울 때 사용.
+   * 전달되면 내부 TourDetailResizableDialog 대신 콜백으로 위임한다.
+   */
+  onOpenTourDetail?: (tourId: string, title: string) => void
 }
 
 export default function TourConnectionSection({
   reservation,
   onTourCreated,
   variant = 'full',
+  products = [],
+  onOpenTourDetail,
 }: TourConnectionSectionProps) {
-  const locale = useLocale()
   const t = useTranslations('reservations')
-  const [tourDetailModalTourId, setTourDetailModalTourId] = useState<string | null>(null)
+  const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; title: string } | null>(null)
+  const [tourDetailRefreshNonce, setTourDetailRefreshNonce] = useState(0)
   const [tours, setTours] = useState<Tour[]>([])
   const [loading, setLoading] = useState(true)
   const [creatingTour, setCreatingTour] = useState(false)
@@ -417,6 +430,34 @@ export default function TourConnectionSection({
       ? tours.filter((t) => normalizeTourReservationIds(t.reservation_ids).includes(reservation.id))
       : tours
 
+  const getTourDetailModalTitle = useCallback(
+    (tourId: string) => {
+      const tour = tours.find((row) => row.id === tourId)
+      if (!tour) return t('card.tourDetailModalTitle')
+      const productName =
+        products.find((p) => p.id === tour.product_id)?.name_ko ||
+        products.find((p) => p.id === tour.product_id)?.name ||
+        products.find((p) => p.id === tour.product_id)?.name_en ||
+        '투어'
+      const [, m, d] = (tour.tour_date || '').split('-')
+      const datePart = m && d ? `${m}/${d}` : ''
+      return datePart ? `${datePart} ${productName}` : productName
+    },
+    [products, t, tours]
+  )
+
+  const openTourDetailModal = useCallback(
+    (tourId: string) => {
+      const title = getTourDetailModalTitle(tourId)
+      if (onOpenTourDetail) {
+        onOpenTourDetail(tourId, title)
+        return
+      }
+      setTourDetailModal({ tourId, title })
+    },
+    [getTourDetailModalTitle, onOpenTourDetail]
+  )
+
   if (loading) {
     return (
       <div className={variant === 'assignedSummary' ? '' : 'bg-white rounded-lg shadow p-6'}>
@@ -554,11 +595,11 @@ export default function TourConnectionSection({
                 key={tour.id}
                 role="button"
                 tabIndex={0}
-                onClick={() => setTourDetailModalTourId(tour.id)}
+                onClick={() => openTourDetailModal(tour.id)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault()
-                    setTourDetailModalTourId(tour.id)
+                    openTourDetailModal(tour.id)
                   }
                 }}
                 className={`border rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow ${
@@ -648,31 +689,30 @@ export default function TourConnectionSection({
           })}
         </div>
       )}
-      <TourDetailResizableDialog
-        open={Boolean(tourDetailModalTourId)}
-        onOpenChange={(open) => !open && setTourDetailModalTourId(null)}
-        tourId={tourDetailModalTourId}
-        onNavigateToTour={setTourDetailModalTourId}
-        stackLevel="elevated"
-        accessibilityTitle={t('card.tourDetailModalTitle')}
-        header={
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-lg font-semibold text-gray-900 truncate pr-2">
-              {t('card.tourDetailModalTitle')}
-            </h3>
-            {tourDetailModalTourId ? (
-              <a
-                href={`/${locale}/admin/tours/${tourDetailModalTourId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
-              >
-                {t('card.openTourInNewTab')}
-              </a>
-            ) : null}
-          </div>
-        }
-      />
+      {!onOpenTourDetail ? (
+        <TourDetailResizableDialog
+          open={Boolean(tourDetailModal)}
+          modal={false}
+          onOpenChange={(open) => {
+            if (!open) {
+              setTourDetailModal(null)
+              setTourDetailRefreshNonce(0)
+            }
+          }}
+          tourId={tourDetailModal?.tourId ?? null}
+          refreshNonce={tourDetailRefreshNonce}
+          onNavigateToTour={(nextTourId) =>
+            setTourDetailModal((prev) =>
+              prev
+                ? { tourId: nextTourId, title: getTourDetailModalTitle(nextTourId) }
+                : { tourId: nextTourId, title: getTourDetailModalTitle(nextTourId) }
+            )
+          }
+          stackLevel="nestedElevated"
+          accessibilityTitle={tourDetailModal?.title ?? t('card.tourDetailModalTitle')}
+          titleFallback={tourDetailModal?.title ?? t('card.tourDetailModalTitle')}
+        />
+      ) : null}
     </div>
   )
 }

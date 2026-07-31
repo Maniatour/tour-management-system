@@ -261,10 +261,12 @@ export default function PreTourContactSmsPreviewModal({
     <div
       className="fixed inset-0 z-[145] flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
+      onDoubleClick={(e) => e.stopPropagation()}
     >
       <div
         className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-gray-200 p-4">
           <div className="flex items-center gap-2">

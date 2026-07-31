@@ -408,13 +408,21 @@ export function resolveCommissionBasePriceForPersistence(input: {
 
 /**
  * PricingSection·가격 정보 모달에서 OTA 전용 산식(③④)을 쓸지 판별.
- * DB `channels.type`/`category`가 비어 있어도 이름 휴리스틱으로 OTA를 잡는다(예: Viator·Booking만 등록된 경우).
+ * DB `channels.type`/`category`가 비어 있어도 이름·ID 휴리스틱으로 OTA를 잡는다(예: Viator·My Real Trip).
  */
 export function channelIsOtaForPricingSection(
-  ch: { type?: string | null; category?: string | null; name?: string | null } | undefined
+  ch:
+    | { id?: string | null; type?: string | null; category?: string | null; name?: string | null }
+    | undefined
 ): boolean {
   if (!ch) return false
-  if (String(ch.type ?? '').toLowerCase() === 'ota' || String(ch.category ?? '') === 'OTA') {
+  const type = String(ch.type ?? '').toLowerCase()
+  const category = String(ch.category ?? '').toLowerCase()
+  if (type === 'ota' || category === 'ota') {
+    return true
+  }
+  const id = String(ch.id ?? '').toLowerCase()
+  if (id.includes('myrealtrip') || id.startsWith('ota_')) {
     return true
   }
   const n = String(ch.name ?? '').toLowerCase()
@@ -425,7 +433,11 @@ export function channelIsOtaForPricingSection(
     n.includes('booking') ||
     n.includes('viator') ||
     n.includes('getyourguide') ||
-    n.includes('get your guide')
+    n.includes('get your guide') ||
+    n.includes('myrealtrip') ||
+    n.includes('my real trip') ||
+    n.includes('마이리얼트립') ||
+    n.includes('마이 리얼 트립')
   )
 }
 

@@ -9,6 +9,8 @@ import {
   type StaffOutreachMessageChannel,
 } from '@/lib/staffOutreachMessageTemplates'
 import type { useStaffOutreachMessageTemplates } from '@/hooks/useStaffOutreachMessageTemplates'
+import type { AdminSmsCategoryId } from '@/lib/adminSmsTemplateCatalog'
+import AdminSmsSamplePreviewPanel from '@/components/admin/sms/AdminSmsSamplePreviewPanel'
 
 type TemplateManager = ReturnType<typeof useStaffOutreachMessageTemplates>
 
@@ -21,6 +23,11 @@ export type StaffOutreachMessageTemplatePanelProps = {
   shellNote?: string | undefined
   accentClass?: string
   templateManager: TemplateManager
+  /** SMS 관리 등 — 샘플 데이터 미리보기 */
+  adminSmsSamplePreview?: {
+    categoryId: AdminSmsCategoryId
+    messageLocale: string
+  }
 }
 
 export default function StaffOutreachMessageTemplatePanel({
@@ -32,6 +39,7 @@ export default function StaffOutreachMessageTemplatePanel({
   shellNote,
   accentClass = 'violet',
   templateManager,
+  adminSmsSamplePreview,
 }: StaffOutreachMessageTemplatePanelProps) {
   const t = useTranslations('reservations.card')
   const {
@@ -186,6 +194,15 @@ export default function StaffOutreachMessageTemplatePanel({
             </button>
           </div>
         </div>
+      )}
+
+      {adminSmsSamplePreview && channel === 'sms' && (
+        <AdminSmsSamplePreviewPanel
+          categoryId={adminSmsSamplePreview.categoryId}
+          locale={adminSmsSamplePreview.messageLocale}
+          bodyTpl={bodyTpl}
+          uiLocale={uiLocale}
+        />
       )}
     </>
   )

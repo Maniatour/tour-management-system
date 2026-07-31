@@ -1,4 +1,10 @@
 import type { PreTourContactSmsLocale } from '@/lib/preTourContactSmsLocale'
+import {
+  applySmsDatePlaceholders,
+  buildSmsDatePlaceholderValues,
+  type SmsTemplateDateLocale,
+} from '@/lib/smsTemplateDatePlaceholders'
+import { formatPickupHotelSmsDisplay } from '@/utils/pickupHotelUtils'
 
 export type MessengerContactSettings = {
   line_id: string
@@ -21,6 +27,7 @@ export type SubstitutePreTourContactSmsParams = {
   channelReference: string | null | undefined
   pickupTime: string | null | undefined
   pickupHotelName: string | null | undefined
+  pickupLocation?: string | null | undefined
   chatRoomUrl: string | null | undefined
   contacts: MessengerContactSettings
   locale: PreTourContactSmsLocale
@@ -44,34 +51,6 @@ export function getBuiltinPreTourContactSmsTemplate(locale: PreTourContactSmsLoc
   return BUILTIN_BODY[locale]
 }
 
-function formatTourDateForSms(
-  tourDate: string | null | undefined,
-  locale: PreTourContactSmsLocale
-): string {
-  const raw = tourDate?.trim()
-  if (!raw) return locale === 'ja' ? '—' : locale === 'en' ? '—' : '—'
-  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (!iso) return raw
-  if (locale === 'ja') return `${iso[1]}/${iso[2]}/${iso[3]}`
-  if (locale === 'en') return `${iso[2]}/${iso[3]}/${iso[1]}`
-  return `${iso[1]}-${iso[2]}-${iso[3]}`
-}
-
-function formatPickupTimeForSms(pickupTime: string | null | undefined): string {
-  const raw = pickupTime?.trim()
-  if (!raw) return ''
-  const m = raw.match(/^(\d{1,2}):(\d{2})/)
-  if (!m) return raw
-  const h = parseInt(m[1], 10)
-  const min = m[2]
-  if (h >= 12) {
-    const h12 = h === 12 ? 12 : h - 12
-    return `${h12}:${min} PM`
-  }
-  const h12 = h === 0 ? 12 : h
-  return `${h12}:${min} AM`
-}
-
 export function substitutePreTourContactSmsTemplate(
   bodyTpl: string,
   params: SubstitutePreTourContactSmsParams
@@ -84,9 +63,16 @@ export function substitutePreTourContactSmsTemplate(
   const productPlain =
     params.productName?.trim() ||
     (locale === 'ja' ? 'ツアー' : locale === 'en' ? 'Tour' : '투어')
-  const tourPlain = formatTourDateForSms(params.tourDate, locale)
-  const pickupTimePlain = formatPickupTimeForSms(params.pickupTime)
-  const pickupHotelPlain = params.pickupHotelName?.trim() || ''
+  const dateValues = buildSmsDatePlaceholderValues(
+    params.tourDate,
+    params.pickupTime,
+    locale as SmsTemplateDateLocale
+  )
+  const pickupLocationPlain = params.pickupLocation?.trim() || ''
+  const pickupHotelPlain = formatPickupHotelSmsDisplay(
+    params.pickupHotelName,
+    params.pickupLocation
+  )
   const chatUrl = params.chatRoomUrl?.trim() || ''
   const chatLine =
     chatUrl.length > 0
@@ -99,21 +85,21 @@ export function substitutePreTourContactSmsTemplate(
 
   const { line_id, whatsapp, kakao, contact_email } = params.contacts
 
-  return bodyTpl
+  let result = bodyTpl
     .replace(/\{\{CUSTOMER_NAME\}\}/g, namePlain)
     .replace(/\{\{PRODUCT_NAME\}\}/g, productPlain)
-    .replace(/\{\{TOUR_DATE\}\}/g, tourPlain)
     .replace(/\{\{CHANNEL_RN\}\}/g, refPlain)
-    .replace(/\{\{PICKUP_TIME\}\}/g, pickupTimePlain)
     .replace(/\{\{PICKUP_HOTEL\}\}/g, pickupHotelPlain)
+    .replace(/\{\{PICKUP_LOCATION\}\}/g, pickupLocationPlain || '—')
     .replace(/\{\{LINE_ID\}\}/g, line_id)
     .replace(/\{\{WHATSAPP\}\}/g, whatsapp)
     .replace(/\{\{KAKAO\}\}/g, kakao)
     .replace(/\{\{CONTACT_EMAIL\}\}/g, contact_email)
     .replace(/\{\{CHAT_ROOM_URL\}\}/g, chatLine)
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
+
+  result = applySmsDatePlaceholders(result, dateValues)
+  return result.replace(/\n{3,}/g, '\n\n').trim()
 }
 
 export const PRE_TOUR_CONTACT_SMS_PLACEHOLDER_HINT =
-  '{{CUSTOMER_NAME}}, {{PRODUCT_NAME}}, {{TOUR_DATE}}, {{CHANNEL_RN}}, {{PICKUP_TIME}}, {{PICKUP_HOTEL}}, {{LINE_ID}}, {{WHATSAPP}}, {{KAKAO}}, {{CONTACT_EMAIL}}, {{CHAT_ROOM_URL}}'
+  '{{CUSTOMER_NAME}}, {{PRODUCT_NAME}}, {{TOUR_DATE}}, {{PICKUP_DATE}}, {{PICKUP_TIME}}, {{PICKUP_DATE_TIME}}, {{CHANNEL_RN}}, {{PICKUP_HOTEL}} (호텔명 - 픽업장소), {{PICKUP_LOCATION}}, {{LINE_ID}}, {{WHATSAPP}}, {{KAKAO}}, {{CONTACT_EMAIL}}, {{CHAT_ROOM_URL}}'

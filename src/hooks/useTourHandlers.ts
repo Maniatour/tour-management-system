@@ -391,16 +391,29 @@ export function useTourHandlers() {
     try {
       const rid = String(reservationId).trim()
       const currentReservationIds = normalizeReservationIds(tour.reservation_ids)
-      const updatedReservationIds = currentReservationIds.filter((id: string) => id !== rid)
+      const updatedReservationIds = currentReservationIds.filter(
+        (id: string) => !reservationIdsLooselyEqual(id, rid)
+      )
 
-      const { error } = await supabase
+      if (updatedReservationIds.length === currentReservationIds.length) {
+        console.error('Unassign: reservation id not found in tour reservation_ids', rid, currentReservationIds)
+        return undefined
+      }
+
+      const { data: updatedRows, error } = await supabase
         .from('tours')
         .update({ reservation_ids: updatedReservationIds } as Database['public']['Tables']['tours']['Update'])
         .eq('id', tour.id)
+        .select('id')
 
       if (error) {
         console.error('Error unassigning reservation:', error)
-        return
+        return undefined
+      }
+
+      if (!updatedRows?.length) {
+        console.error('Unassign: tour update returned no rows (RLS or missing tour)', tour.id)
+        return undefined
       }
 
       return updatedReservationIds

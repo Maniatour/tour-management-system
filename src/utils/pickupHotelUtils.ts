@@ -67,6 +67,19 @@ export function formatPickupHotelFormLabel(hotel: {
   return namePart
 }
 
+/** 고객 SMS 등: 공개 호텔명 + 픽업 장소 */
+export function formatPickupHotelSmsDisplay(
+  hotelName: string | null | undefined,
+  pickupLocation: string | null | undefined
+): string {
+  const name = (hotelName ?? '').trim()
+  const location = (pickupLocation ?? '').trim()
+  if (name && location) return `${name} - ${location}`
+  if (name) return name
+  if (location) return location
+  return '—'
+}
+
 /** 예약·스케줄 등 픽업 호텔 선택 목록에 쓸 수 있는지 */
 export function isPickupHotelSelectable(hotel: PickupHotel): boolean {
   return hotel.use_for_pickup !== false && hotel.is_active !== false

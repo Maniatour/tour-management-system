@@ -109,6 +109,7 @@ import PricingSection from '@/components/reservation/PricingSection'
 import ProductSelectionSection from '@/components/reservation/ProductSelectionSectionNew'
 import ChannelSection from '@/components/reservation/ChannelSection'
 import TourConnectionSection from '@/components/reservation/TourConnectionSection'
+import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
 import ImportTourDaySummary from '@/components/reservation/ImportTourDaySummary'
 import PaymentRecordsList from '@/components/PaymentRecordsList'
 import ReservationExpenseManager from '@/components/ReservationExpenseManager'
@@ -530,6 +531,12 @@ export default function ReservationForm({
   const [showDuplicateModal, setShowDuplicateModal] = useState(false)
   const [similarCustomers, setSimilarCustomers] = useState<Customer[]>([])
   const [pendingCustomerData, setPendingCustomerData] = useState<any>(null)
+  /** 예약 수정 모달 → 배정된 투어 카드에서 여는 투어 상세 (예약 폼과 형제 포털로 띄움) */
+  const [linkedTourDetailModal, setLinkedTourDetailModal] = useState<{
+    tourId: string
+    title: string
+  } | null>(null)
+  const [linkedTourDetailRefreshNonce, setLinkedTourDetailRefreshNonce] = useState(0)
   const resolvedCustomerIdRef = useRef<string | null>(null)
   /** 이메일 가져오기: 상위 reservation.channel_id는 비동기로 채워지며, 이후 effect가 사용자가 모달에서 고른 채널을 덮어쓰면 안 됨 */
   const emailImportChannelParentSyncedRef = useRef(false)
@@ -1858,16 +1865,6 @@ export default function ReservationForm({
 
   // customers 데이터가 로드된 후 고객 이름 설정 (fallback)
   useEffect(() => {
-    console.log('ReservationForm: customers 데이터 로드 확인:', {
-      customersLength: customers.length,
-      hasReservation: !!reservation,
-      customerId: reservation?.customerId,
-      customer_id: (reservation as any)?.customer_id,
-      currentCustomerSearch: formData.customerSearch,
-      reservationKeys: reservation ? Object.keys(reservation) : [],
-      customersSample: customers.slice(0, 3).map(c => ({ id: c.id, name: c.name }))
-    })
-    
     // 이미 formData에 고객 정보가 있으면 건너뛰기
     if (formData.customerSearch) return
     
@@ -6237,6 +6234,9 @@ export default function ReservationForm({
   }, [])
 
   const isModal = layout !== 'page'
+  const handleOpenLinkedTourDetail = useCallback((tourId: string, title: string) => {
+    setLinkedTourDetailModal({ tourId, title })
+  }, [])
   /** 예약목록 커스텀 오버레이(≈100) 위: 1100. 스케줄뷰 Dialog(10050) 위: nested 10200+ */
   const resolvedModalZIndex =
     modalZIndex ??
@@ -6742,6 +6742,7 @@ export default function ReservationForm({
                   <TourConnectionSection
                     reservation={reservation}
                     onTourCreated={() => {}}
+                    products={products}
                   />
                 </div>
               )}
@@ -6804,7 +6805,12 @@ export default function ReservationForm({
                     />
                   </div>
                   <div id="assigned-tour-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">
-                    <TourConnectionSection reservation={reservation} variant="assignedSummary" />
+                    <TourConnectionSection
+                      reservation={reservation}
+                      variant="assignedSummary"
+                      products={products}
+                      {...(isModal ? { onOpenTourDetail: handleOpenLinkedTourDetail } : {})}
+                    />
                   </div>
                   <ReservationLocalScratchList reservationId={effectiveReservationId} />
                   {/* 후기 관리 - 3열 */}
@@ -7312,7 +7318,34 @@ export default function ReservationForm({
   )
 
   if (isModal && typeof document !== 'undefined') {
-    return createPortal(content, document.body)
+    return createPortal(
+      <>
+        {content}
+        <TourDetailResizableDialog
+          open={Boolean(linkedTourDetailModal)}
+          modal
+          onOpenChange={(open) => {
+            if (!open) {
+              setLinkedTourDetailModal(null)
+              setLinkedTourDetailRefreshNonce(0)
+            }
+          }}
+          tourId={linkedTourDetailModal?.tourId ?? null}
+          refreshNonce={linkedTourDetailRefreshNonce}
+          onNavigateToTour={(nextTourId) =>
+            setLinkedTourDetailModal((prev) =>
+              prev
+                ? { ...prev, tourId: nextTourId }
+                : { tourId: nextTourId, title: '투어 상세' }
+            )
+          }
+          stackLevel="nestedElevated"
+          accessibilityTitle={linkedTourDetailModal?.title ?? '투어 상세'}
+          titleFallback={linkedTourDetailModal?.title ?? '투어 상세'}
+        />
+      </>,
+      document.body
+    )
   }
   return content
 }

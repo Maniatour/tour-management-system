@@ -2147,17 +2147,6 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
 
   // 통계 계산
   const calculateFinancialStats = () => {
-    console.log('💰 Financial stats calculation:', {
-      reservations: reservations.length,
-      reservationIds: reservationIds,
-      reservationPricing: reservationPricing.length,
-      expenses: expenses.length,
-      ticketBookings: ticketBookings.length,
-      hotelBookings: hotelBookings.length,
-      guideFee,
-      assistantFee
-    })
-    
     const settlementReservationIds = new Set(settlementReservations.map((r) => r.id))
 
     const pricingForSettlementTotals = reservationPricing.filter((p) =>
@@ -2198,20 +2187,6 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
     
     // 수익 계산 (Operating Profit 총합 - 투어 지출 - 수수료 - 부킹 비용)
     const profit = totalOperatingProfit - totalExpensesWithFeesAndBookings
-    
-    console.log('💰 Calculated stats:', {
-      totalPayments,
-      totalOperatingProfit,
-      totalExpenses,
-      totalFees,
-      totalTicketCosts,
-      totalHotelCosts,
-      totalBookingCosts,
-      totalExpensesWithFeesAndBookings,
-      profit,
-      effectiveGuideFee,
-      effectiveAssistantFee
-    })
     
     return {
       totalPayments,

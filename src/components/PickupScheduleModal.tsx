@@ -294,10 +294,6 @@ export default function PickupScheduleModal({
   language = 'ko',
   onPhotoClick
 }: PickupScheduleModalProps) {
-  console.log('PickupScheduleModal props:', { isOpen, pickupSchedule })
-  console.log('픽업 스케줄 데이터:', pickupSchedule)
-  console.log('픽업 스케줄 개수:', pickupSchedule?.length || 0)
-  
   // 다국어 텍스트
   const texts = {
     ko: {

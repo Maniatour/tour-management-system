@@ -118,15 +118,6 @@ export function TourDetailResizableDialog({
     return () => cancelAnimationFrame(raf)
   }, [open, tourId, refreshNonce, resetScroll])
 
-  useLayoutEffect(() => {
-    if (!open || !toolbarContent) return
-    resetScroll()
-    const raf = requestAnimationFrame(() => {
-      resetScroll()
-    })
-    return () => cancelAnimationFrame(raf)
-  }, [open, toolbarContent, resetScroll])
-
   useEffect(() => {
     if (!open) return
     const onKeyDown = (e: KeyboardEvent) => {
@@ -201,7 +192,7 @@ export function TourDetailResizableDialog({
             key={`${tourId}-${refreshNonce}`}
             ref={scrollRef}
             data-tour-detail-modal-scroll
-            className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain bg-gray-50/40 p-0 [overflow-anchor:none]"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain bg-gray-50/40 p-0 pr-3 [overflow-anchor:none]"
           >
             <TourDetailModalContent
               tourId={tourId}

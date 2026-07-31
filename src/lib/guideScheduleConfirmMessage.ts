@@ -1,9 +1,15 @@
 import { detectGuidePreferredLanguage, type SupportedLocale } from '@/lib/guideLanguageDetection'
+import { fetchAdminSmsTemplatesForKey } from '@/lib/adminSmsTemplateDb'
+import {
+  getBuiltinGuideScheduleConfirmSmsTemplate,
+  substituteGuideScheduleConfirmSmsTemplate,
+} from '@/lib/guideScheduleConfirmSmsTemplate'
 import { supabaseAdmin } from '@/lib/supabase'
 import { formatTimeWithAMPM } from '@/lib/utils'
 import { formatPhoneToE164 } from '@/utils/formatPhoneToE164'
-import { normalizeReservationIds } from '@/utils/tourUtils'
+import { calculatePickupDate } from '@/lib/reservationDisplayUtils'
 import { isTourCancelled, isTourDeleted } from '@/utils/tourStatusUtils'
+import { normalizeReservationIds } from '@/utils/tourUtils'
 
 export type GuideScheduleConfirmRecipientRole = 'guide' | 'assistant'
 
@@ -102,6 +108,10 @@ function formatMinutesAsTime(totalMinutes: number): string {
   return formatTimeWithAMPM(`${hh}:${String(mm).padStart(2, '0')}`)
 }
 
+export function formatGuideScheduleTourDateLabel(date: string, locale: SupportedLocale): string {
+  return formatTourDateLabel(date, locale)
+}
+
 function formatTourDateLabel(date: string, locale: SupportedLocale): string {
   const parts = date.split('-')
   if (parts.length !== 3) return date
@@ -143,7 +153,25 @@ function findEarliestPickup(reservations: ReservationRow[]): {
   return { pickupTime: bestTime, pickupHotelId: bestHotel }
 }
 
-function buildPickupLine(
+function computeOfficeArrival(
+  tourDate: string,
+  pickupTime: string
+): { dateIso: string; timeDisplay: string } | null {
+  const pickupMinutes = parsePickupMinutes(pickupTime)
+  if (pickupMinutes == null) return null
+  const pickupDateIso = calculatePickupDate(pickupTime, tourDate)
+  let officeMinutes = pickupMinutes - 30
+  let dateIso = pickupDateIso
+  if (officeMinutes < 0) {
+    officeMinutes += 24 * 60
+    const d = new Date(`${pickupDateIso}T12:00:00`)
+    d.setDate(d.getDate() - 1)
+    dateIso = d.toISOString().split('T')[0] ?? pickupDateIso
+  }
+  return { dateIso, timeDisplay: formatMinutesAsTime(officeMinutes) }
+}
+
+export function buildGuideScheduleConfirmPickupLine(
   locale: SupportedLocale,
   firstPickupTime: string | null,
   firstPickupHotelLabel: string | null
@@ -151,25 +179,25 @@ function buildPickupLine(
   if (firstPickupTime && firstPickupHotelLabel) {
     switch (locale) {
       case 'ko':
-        return `첫 픽업: ${firstPickupHotelLabel} ${firstPickupTime}`
+        return `첫 픽업: ${firstPickupHotelLabel} ${firstPickupTime}.`
       case 'ja':
-        return `初回ピックアップ: ${firstPickupHotelLabel} ${firstPickupTime}`
+        return `初回ピックアップ: ${firstPickupHotelLabel} ${firstPickupTime}。`
       case 'zh':
-        return `首次接客: ${firstPickupHotelLabel} ${firstPickupTime}`
+        return `首次接客: ${firstPickupHotelLabel} ${firstPickupTime}。`
       default:
-        return `First pickup: ${firstPickupHotelLabel} at ${firstPickupTime}`
+        return `First pickup: ${firstPickupHotelLabel} at ${firstPickupTime}.`
     }
   }
   if (firstPickupTime) {
     switch (locale) {
       case 'ko':
-        return `첫 픽업 시간: ${firstPickupTime}`
+        return `첫 픽업 시간: ${firstPickupTime}.`
       case 'ja':
-        return `初回ピックアップ時間: ${firstPickupTime}`
+        return `初回ピックアップ時間: ${firstPickupTime}。`
       case 'zh':
-        return `首次接客时间: ${firstPickupTime}`
+        return `首次接客时间: ${firstPickupTime}。`
       default:
-        return `First pickup: ${firstPickupTime}`
+        return `First pickup: ${firstPickupTime}.`
     }
   }
   switch (locale) {
@@ -184,17 +212,25 @@ function buildPickupLine(
   }
 }
 
-function buildOfficeLine(locale: SupportedLocale, officeArrivalTime: string | null): string {
-  if (officeArrivalTime != null) {
-    switch (locale) {
-      case 'ko':
-        return `사무실 도착: 첫 픽업 30분 전인 ${officeArrivalTime}까지 오피스로 와 주세요.`
-      case 'ja':
-        return `オフィス到着: 初回ピックアップの30分前である ${officeArrivalTime} までにオフィスへお越しください。`
-      case 'zh':
-        return `到达办公室: 请在 ${officeArrivalTime} 前到达（首次接客前30分钟）。`
-      default:
-        return `Please arrive at the office by ${officeArrivalTime} (30 minutes before the first pickup).`
+export function buildGuideScheduleConfirmOfficeLine(
+  locale: SupportedLocale,
+  tourDate: string,
+  pickupTime: string | null
+): string {
+  if (pickupTime) {
+    const arrival = computeOfficeArrival(tourDate, pickupTime)
+    if (arrival) {
+      const when = `${formatTourDateLabel(arrival.dateIso, locale)} ${arrival.timeDisplay}`
+      switch (locale) {
+        case 'ko':
+          return `사무실 도착: ${when}까지 오피스로 와 주세요.\n\n(첫 픽업 30분 전입니다.)`
+        case 'ja':
+          return `オフィス到着: ${when} までにお越しください。\n\n(初回ピックアップの30分前です。)`
+        case 'zh':
+          return `请在 ${when} 前到达办公室。\n\n(首次接客前30分钟。)`
+        default:
+          return `Please arrive at the office by ${when}\n\n(30 minutes before the first pickup).`
+      }
     }
   }
   switch (locale) {
@@ -216,12 +252,13 @@ function buildMessages(input: {
   productName: string
   firstPickupTime: string | null
   firstPickupHotelLabel: string | null
-  officeArrivalTime: string | null
+  firstPickupTimeRaw: string | null
+  smsTemplateByLocale?: Partial<Record<SupportedLocale, string>>
 }): { smsBody: string; siteMessageBody: string; siteTitle: string } {
   const { locale } = input
   const dateLabel = formatTourDateLabel(input.tourDate, locale)
-  const pickupLine = buildPickupLine(locale, input.firstPickupTime, input.firstPickupHotelLabel)
-  const officeLine = buildOfficeLine(locale, input.officeArrivalTime)
+  const pickupLine = buildGuideScheduleConfirmPickupLine(locale, input.firstPickupTime, input.firstPickupHotelLabel)
+  const officeLine = buildGuideScheduleConfirmOfficeLine(locale, input.tourDate, input.firstPickupTimeRaw)
 
   const siteTitle =
     locale === 'ko'
@@ -232,24 +269,30 @@ function buildMessages(input: {
           ? '导游行程确认'
           : 'Guide schedule confirmation'
 
-  let smsBody: string
+  const smsTpl =
+    input.smsTemplateByLocale?.[locale]?.trim() ||
+    getBuiltinGuideScheduleConfirmSmsTemplate(locale)
+  const smsBody = substituteGuideScheduleConfirmSmsTemplate(smsTpl, {
+    guideName: input.guideName,
+    tourDate: dateLabel,
+    productName: input.productName,
+    pickupLine,
+    officeLine,
+  })
+
   let siteMessageBody: string
 
   switch (locale) {
     case 'ko':
-      smsBody = `[Mania Tour] ${input.guideName}님, ${dateLabel} ${input.productName} 투어 안내입니다. ${pickupLine}. ${officeLine}`
       siteMessageBody = `${input.guideName}님, 안녕하세요.\n\n${dateLabel} · ${input.productName}\n${pickupLine}\n\n${officeLine}\n\n확인 후 닫기를 눌러 주세요.`
       break
     case 'ja':
-      smsBody = `[Mania Tour] ${input.guideName}様、${dateLabel} ${input.productName} ツアーのご案内です。${pickupLine}。${officeLine}`
       siteMessageBody = `${input.guideName}様\n\n${dateLabel} · ${input.productName}\n${pickupLine}\n\n${officeLine}\n\nご確認のうえ、閉じるをタップしてください。`
       break
     case 'zh':
-      smsBody = `[Mania Tour] ${input.guideName}，${dateLabel} ${input.productName} 行程通知。${pickupLine}。${officeLine}`
       siteMessageBody = `${input.guideName}，您好。\n\n${dateLabel} · ${input.productName}\n${pickupLine}\n\n${officeLine}\n\n请阅读后点击确认。`
       break
     default:
-      smsBody = `[Mania Tour] Hi ${input.guideName}, schedule for ${dateLabel} ${input.productName}. ${pickupLine}. ${officeLine}`
       siteMessageBody = `Hello ${input.guideName},\n\n${dateLabel} · ${input.productName}\n${pickupLine}\n\n${officeLine}\n\nPlease tap Confirm after reading.`
       break
   }
@@ -271,7 +314,8 @@ export type GuideScheduleConfirmComposeInput = {
 /** DB 없이 순수 계산 — 투어 목록 로드 시 일괄 미리보기용 */
 export function composeGuideScheduleConfirmPreview(
   input: GuideScheduleConfirmComposeInput,
-  adminLocale = 'ko'
+  adminLocale = 'ko',
+  smsTemplateByLocale?: Partial<Record<SupportedLocale, string>> | undefined
 ): GuideScheduleConfirmPreview {
   const adminIsKo = adminLocale === 'ko'
   const product = input.product
@@ -324,7 +368,8 @@ export function composeGuideScheduleConfirmPreview(
       productName: localizedProductName,
       firstPickupTime: firstPickupTimeDisplay,
       firstPickupHotelLabel,
-      officeArrivalTime,
+      firstPickupTimeRaw: pickupTime,
+      ...(smsTemplateByLocale ? { smsTemplateByLocale } : {}),
     })
 
     recipients.push({
@@ -410,6 +455,8 @@ export async function buildGuideScheduleConfirmPreview(
     if (label) hotelLabelById.set(pickupHotelId, label)
   }
 
+  const smsTemplateByLocale = await fetchAdminSmsTemplatesForKey('guide_schedule_confirm')
+
   return {
     ok: true,
     data: composeGuideScheduleConfirmPreview(
@@ -423,7 +470,8 @@ export async function buildGuideScheduleConfirmPreview(
         teamByEmail: teamMap,
         hotelLabelById,
       },
-      adminLocale
+      adminLocale,
+      smsTemplateByLocale as Partial<Record<SupportedLocale, string>>
     ),
   }
 }

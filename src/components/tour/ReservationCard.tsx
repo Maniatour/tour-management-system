@@ -1755,14 +1755,18 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
   }
 
+  const runUnassign = () => {
+    if (!onUnassign) return
+    void onUnassign(reservation.id)
+  }
+
   return (
      <div 
        className={`${cardCompact ? 'p-2' : 'p-3'} rounded-lg border transition-colors ${
          isStaff 
-           ? 'bg-white hover:bg-gray-50 cursor-pointer' 
+           ? 'bg-white hover:bg-gray-50' 
            : 'bg-gray-50 cursor-not-allowed'
        }`}
-       onClick={() => onEdit && isStaff && !showSimplePickupModal ? onEdit(reservation) : undefined}
      >
       {/* 메인 정보 섹션 */}
       <div className="flex items-center justify-between">
@@ -1791,7 +1795,27 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           
           {/* 고객 이름 */}
           <p
-            className={`font-medium ${cardCompact ? 'text-xs' : 'text-sm'} ${isReservationCancelled ? 'text-gray-400' : 'text-gray-900'}`}
+            className={`font-medium ${cardCompact ? 'text-xs' : 'text-sm'} ${isReservationCancelled ? 'text-gray-400' : 'text-gray-900'} ${onEdit && isStaff ? 'cursor-pointer hover:text-primary' : ''}`}
+            onClick={
+              onEdit && isStaff
+                ? (e) => {
+                    e.stopPropagation()
+                    if (!showSimplePickupModal) onEdit(reservation)
+                  }
+                : undefined
+            }
+            onKeyDown={
+              onEdit && isStaff
+                ? (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      if (!showSimplePickupModal) onEdit(reservation)
+                    }
+                  }
+                : undefined
+            }
+            role={onEdit && isStaff ? 'button' : undefined}
+            tabIndex={onEdit && isStaff ? 0 : undefined}
           >
             {customerName}
           </p>
@@ -2233,7 +2257,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           </div>
           
           {/* 오른쪽 액션 버튼들 */}
-          <div className="flex items-center space-x-1 shrink-0">
+          <div
+            className="relative z-20 mr-2 flex items-center space-x-1 shrink-0 pointer-events-auto"
+            data-reservation-card-actions
+            data-no-drag
+            data-no-card-click
+          >
             {/* 입금 내역 버튼 */}
             {isStaff && (
               <button
@@ -2268,7 +2297,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                 {onAssign && (
                   <button
                     type="button"
+                    data-reservation-card-action
                     onClick={(e) => {
+                      e.preventDefault()
                       e.stopPropagation()
                       onAssign(reservation.id)
                     }}
@@ -2286,7 +2317,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                 {onMoveToOtherTour && (
                   <button
                     type="button"
+                    data-reservation-card-action
                     onClick={(e) => {
+                      e.preventDefault()
                       e.stopPropagation()
                       onMoveToOtherTour(reservation.id)
                     }}
@@ -2300,12 +2333,15 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                 {onUnassign && (
                   <button
                     type="button"
+                    data-reservation-card-action
                     onClick={(e) => {
+                      e.preventDefault()
                       e.stopPropagation()
-                      onUnassign(reservation.id)
+                      runUnassign()
                     }}
-                    className="p-1 text-red-600 hover:bg-red-50 rounded"
+                    className="p-2 min-w-[32px] min-h-[32px] inline-flex items-center justify-center text-red-600 hover:bg-red-50 rounded"
                     title="배정 해제"
+                    aria-label="배정 해제"
                   >
                     <X size={14} />
                   </button>
@@ -2318,7 +2354,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                   return (
                     <button
                       type="button"
+                      data-reservation-card-action
                       onClick={(e) => {
+                        e.preventDefault()
                         e.stopPropagation()
                         onReassign(reservation.id, fromTourId)
                       }}

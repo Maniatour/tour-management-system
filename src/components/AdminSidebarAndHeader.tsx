@@ -96,6 +96,13 @@ const DailyReportHeaderButton = dynamic(
     })),
   { ssr: false, loading: () => null }
 )
+const AdminSmsManagementHeaderButton = dynamic(
+  () =>
+    import('./admin/sms/AdminSmsManagementHeaderButton').then((m) => ({
+      default: m.AdminSmsManagementHeaderButton,
+    })),
+  { ssr: false, loading: () => null }
+)
 
 /** 요청 중단(AbortError) 여부 확인 — 로그 생략용 */
 function isAbortError(err: unknown): boolean {
@@ -828,6 +835,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                     open={showDailyReportModal}
                     onOpenChange={setShowDailyReportModal}
                   />
+
+                  <AdminSmsManagementHeaderButton locale={locale} />
 
                   {/* 운영 허브 */}
                   <div className="relative hidden sm:inline-block">

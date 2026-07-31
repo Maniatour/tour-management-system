@@ -8,6 +8,9 @@ export const DIALOG_Z_INDEX: Record<DialogStackLevel, number> = {
   nestedElevated: 10300,
 }
 
+/** 투어 상세 모달(nestedElevated) 위 피커·서브모달 */
+export const TOUR_DETAIL_NESTED_PICKER_Z_INDEX = DIALOG_Z_INDEX.nestedElevated + 100
+
 /**
  * Select·Popover 등 — 포털 모달 위에 표시
  * - tour expense portal ≈ 12000

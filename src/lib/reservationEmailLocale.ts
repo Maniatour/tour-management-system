@@ -42,3 +42,26 @@ export function resolveReservationEmailLocale(
 ): 'ko' | 'en' {
   return resolveReservationEmailIsEnglish(customerLanguage, localeOverride) ? 'en' : 'ko'
 }
+
+export type CustomerSmsLocale = 'ko' | 'en'
+
+/** 예약 카드 SMS: 한국 고객 → 한국어, 그 외 → 영어 */
+export function resolveCustomerSmsLocale(
+  customerLanguage: string | null | undefined,
+  localeOverride?: string | null | undefined
+): CustomerSmsLocale {
+  if (localeOverride != null && String(localeOverride).trim() !== '') {
+    const o = String(localeOverride).trim().toLowerCase()
+    if (o === 'ko') return 'ko'
+    if (o === 'en') return 'en'
+  }
+  return customerLanguageIndicatesKorean(customerLanguage) ? 'ko' : 'en'
+}
+
+export function customerSmsLocaleLabel(
+  locale: CustomerSmsLocale,
+  uiLocale: 'ko' | 'en' = 'ko'
+): string {
+  if (locale === 'ko') return uiLocale === 'en' ? 'Korean' : '한국어'
+  return uiLocale === 'en' ? 'English' : '영어'
+}

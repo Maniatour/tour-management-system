@@ -2,8 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 import {
   computeCustomerPaymentTotalLineFormula,
-  computeEffectiveCustomerPaidTowardDue,
-  depositAmountNetOfPartnerReturnedOverlapForBalance,
+  computeRemainingBalanceAfterPaymentRecords,
   summarizePaymentRecordsForBalance,
   type PartySizeSource,
   type PaymentRecordLike,
@@ -42,28 +41,18 @@ function computeBalanceWithResidentFees(
       party
     ) + residentFeesUsd
   )
-  const { depositBucketGross, balanceReceivedTotal, returnedTotal, refundedTotal } =
+  const { depositTotalNet, balanceReceivedTotal, returnedTotal } =
     summarizePaymentRecordsForBalance(records)
   const manualRefund = Math.max(0, Number(pricing.refund_amount) || 0)
   const returnedSurplus = Math.max(0, roundUsd2(returnedTotal - manualRefund))
   const totalCustomerPayment = Math.max(0, roundUsd2(grossDue - returnedSurplus))
-  const depositInput =
-    depositBucketGross > 0 ? depositBucketGross : Number(pricing.deposit_amount) || 0
-  const depositForDue = depositAmountNetOfPartnerReturnedOverlapForBalance(
-    totalCustomerPayment,
-    depositInput,
-    returnedTotal
-  )
-  const totalPaid = computeEffectiveCustomerPaidTowardDue(
-    totalCustomerPayment,
-    depositForDue,
-    balanceReceivedTotal,
-    refundedTotal,
-    manualRefund
-  )
   return {
     totalCustomerPaymentNet: totalCustomerPayment,
-    balanceAmount: roundUsd2(totalCustomerPayment - totalPaid),
+    balanceAmount: computeRemainingBalanceAfterPaymentRecords(
+      totalCustomerPayment,
+      depositTotalNet,
+      balanceReceivedTotal
+    ),
     totalPriceGross: grossDue,
   }
 }

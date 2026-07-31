@@ -11,6 +11,7 @@ import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
 import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
 import { generateTourId } from '@/lib/entityIds'
+import { reservationIdsLooselyEqual } from '@/utils/tourUtils'
 import type { Database } from '@/lib/supabase'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
@@ -1162,19 +1163,104 @@ export function TourDetailPageView({
   }
 
   const handleUnassignReservation = async (reservationId: string) => {
-    if (!tourData.tour) return
-    const updatedReservationIds = await tourHandlers.handleUnassignReservation({
-      ...tourData.tour,
-      reservation_ids: tourData.tour.reservation_ids || []
-    }, reservationId)
-    if (updatedReservationIds) {
-      const reservation = tourData.assignedReservations.find((r: any) => r.id === reservationId)
-      if (reservation) {
-        tourData.setPendingReservations([...tourData.pendingReservations, reservation])
-        tourData.setAssignedReservations(tourData.assignedReservations.filter((r: any) => r.id !== reservationId))
-        tourData.setTour((prev: TourRow | null) => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
-      }
+    if (!tourData.tour) {
+      alert(locale === 'ko' ? '투어 정보를 불러오지 못했습니다.' : 'Tour data is not loaded.')
+      return
     }
+
+    const currentReservationIds = tourData.getEffectiveTourReservationIds()
+    const optimisticIds = currentReservationIds.filter(
+      (id) => !reservationIdsLooselyEqual(id, reservationId)
+    )
+
+    if (optimisticIds.length === currentReservationIds.length) {
+      alert(locale === 'ko' ? '배정 해제에 실패했습니다.' : 'Failed to unassign reservation.')
+      return
+    }
+
+    const reservation = tourData.assignedReservations.find((r: any) =>
+      reservationIdsLooselyEqual(r.id, reservationId)
+    )
+
+    // 네트워크 대기 중 백그라운드 로드가 이전 배정 목록으로 덮어쓰지 않도록 즉시 잠금
+    tourData.beginAssignmentIdsMutation(optimisticIds)
+    tourData.setTour((prev: TourRow | null) =>
+      prev ? { ...prev, reservation_ids: optimisticIds } : null
+    )
+    if (reservation) {
+      tourData.setAssignedReservationsForced((prev: any) =>
+        prev.filter((r: any) => !reservationIdsLooselyEqual(r.id, reservationId))
+      )
+      tourData.setPendingReservationsForced((prev: any) => [...prev, reservation])
+    }
+
+    const updatedReservationIds = await tourHandlers.handleUnassignReservation(
+      {
+        ...tourData.tour,
+        reservation_ids: currentReservationIds,
+      },
+      reservationId
+    )
+
+    if (updatedReservationIds === undefined) {
+      tourData.clearAssignmentIdsMutationOverride()
+      if (tourData.refreshReservations) {
+        await tourData.refreshReservations()
+      }
+      alert(locale === 'ko' ? '배정 해제에 실패했습니다.' : 'Failed to unassign reservation.')
+      return
+    }
+
+    tourData.setTour((prev: TourRow | null) =>
+      prev ? { ...prev, reservation_ids: updatedReservationIds } : null
+    )
+  }
+
+  const handleMoveAssignedToOtherTour = async (reservationId: string, targetTourId: string) => {
+    if (!tourData.tour) return
+
+    const currentReservationIds = tourData.getEffectiveTourReservationIds()
+    const optimisticFromIds = currentReservationIds.filter(
+      (id) => !reservationIdsLooselyEqual(id, reservationId)
+    )
+
+    if (optimisticFromIds.length === currentReservationIds.length) {
+      alert(locale === 'ko' ? '배정 이동에 실패했습니다.' : 'Failed to move reservation.')
+      return
+    }
+
+    const reservation = tourData.assignedReservations.find((r: any) =>
+      reservationIdsLooselyEqual(r.id, reservationId)
+    )
+
+    tourData.beginAssignmentIdsMutation(optimisticFromIds)
+    tourData.setTour((prev: TourRow | null) =>
+      prev ? { ...prev, reservation_ids: optimisticFromIds } : null
+    )
+    if (reservation) {
+      tourData.setAssignedReservationsForced((prev: any) =>
+        prev.filter((r: any) => !reservationIdsLooselyEqual(r.id, reservationId))
+      )
+      tourData.setPendingReservationsForced((prev: any) => [...prev, reservation])
+    }
+
+    const moved = await tourHandlers.handleMoveReservationBetweenTours(
+      reservationId,
+      tourData.tour.id,
+      targetTourId
+    )
+
+    if (!moved) {
+      tourData.clearAssignmentIdsMutationOverride()
+      if (tourData.refreshReservations) {
+        await tourData.refreshReservations()
+      }
+      return
+    }
+
+    tourData.setTour((prev: TourRow | null) =>
+      prev ? { ...prev, reservation_ids: moved.newFromIds } : null
+    )
   }
 
   const handleAssignAllReservations = async () => {
@@ -1193,27 +1279,10 @@ export function TourDetailPageView({
   const handleUnassignAllReservations = async () => {
     if (!tourData.tour) return
     const updatedReservationIds = await tourHandlers.handleUnassignAllReservations(tourData.tour)
-    if (updatedReservationIds) {
+    if (updatedReservationIds !== undefined) {
       tourData.setPendingReservations([...tourData.pendingReservations, ...tourData.assignedReservations])
       tourData.setAssignedReservations([])
       tourData.setTour((prev: TourRow | null) => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
-    }
-  }
-
-  const handleMoveAssignedToOtherTour = async (reservationId: string, targetTourId: string) => {
-    if (!tourData.tour) return
-    const moved = await tourHandlers.handleMoveReservationBetweenTours(
-      reservationId,
-      tourData.tour.id,
-      targetTourId
-    )
-    if (moved) {
-      tourData.setTour((prev: TourRow | null) =>
-        prev ? { ...prev, reservation_ids: moved.newFromIds } : null
-      )
-      if (tourData.refreshReservations) {
-        await tourData.refreshReservations()
-      }
     }
   }
 
@@ -2347,14 +2416,14 @@ export function TourDetailPageView({
               getCustomerLanguage={(customerId: string) => tourData.getCustomerLanguage(customerId) ?? 'Unknown'}
               onRefresh={async (updatedPickup) => {
                 if (updatedPickup) {
-                  tourData.setAssignedReservations((prev: any) =>
+                  tourData.setAssignedReservationsForced((prev: any) =>
                     prev.map((r: any) =>
                       r.id === updatedPickup.reservationId
                         ? { ...r, pickup_time: updatedPickup.pickup_time, pickup_hotel: updatedPickup.pickup_hotel }
                         : r
                     )
                   )
-                  tourData.setPendingReservations((prev: any) =>
+                  tourData.setPendingReservationsForced((prev: any) =>
                     prev.map((r: any) =>
                       r.id === updatedPickup.reservationId
                         ? { ...r, pickup_time: updatedPickup.pickup_time, pickup_hotel: updatedPickup.pickup_hotel }

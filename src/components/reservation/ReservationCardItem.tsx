@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Plus, Users, DollarSign, Eye, Clock, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal, Smartphone } from 'lucide-react'
+import { Plus, Users, DollarSign, Eye, Clock, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - react-country-flag may lack types
@@ -31,7 +31,7 @@ import type { ReservationFollowUpPipelineSnapshot, FollowUpPipelineStepKey } fro
 import { supabase } from '@/lib/supabase'
 import type { Reservation, Customer } from '@/types/reservation'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
-import PreTourContactSmsPreviewModal from '@/components/reservation/PreTourContactSmsPreviewModal'
+import { ReservationCardSmsMenuButton } from '@/components/reservation/ReservationCardSmsMenuButton'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 
 function getLanguageFlagCountryCode(language: string | undefined | null): string {
@@ -402,7 +402,6 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [followUpModalOpen, setFollowUpModalOpen] = useState(false)
   const [simpleMoreMenuOpen, setSimpleMoreMenuOpen] = useState(false)
-  const [preTourSmsModalOpen, setPreTourSmsModalOpen] = useState(false)
   const [pickupSummaryModalOpen, setPickupSummaryModalOpen] = useState(false)
   const [pickupSummaryPortalReady, setPickupSummaryPortalReady] = useState(false)
   const [tourChatRoomPreviewOpen, setTourChatRoomPreviewOpen] = useState(false)
@@ -593,6 +592,17 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     <div
       key={reservation.id}
       className={`bg-white rounded-lg shadow-md ${tourDateBorderClass} hover:shadow-lg transition-shadow duration-200 group w-full max-w-full min-w-0 h-full`}
+      onDoubleClick={(e) => {
+        const target = e.target as HTMLElement
+        if (
+          target.closest(
+            'button, a, input, select, textarea, [role="menu"], [role="menuitem"], .fixed.inset-0'
+          )
+        ) {
+          return
+        }
+        onEditClick(reservation.id)
+      }}
     >
       
         <div className="flex h-full flex-col p-3 space-y-2">
@@ -855,7 +865,19 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   knownCancellationReason={cancelReasonBadge}
                 />
               ) : (
-                <ReservationFollowUpPipelineIcons
+                <>
+                  {onCommunicationChannelChange ? (
+                    <ReservationCardSmsMenuButton
+                      reservationId={reservation.id}
+                      customer={customers.find((c) => c.id === reservation.customerId)}
+                      sentBy={sentBy}
+                      uiLocale={locale === 'en' ? 'en' : 'ko'}
+                      {...(onPreTourSmsSendSuccess
+                        ? { onSendSuccess: () => onPreTourSmsSendSuccess(reservation.id) }
+                        : {})}
+                    />
+                  ) : null}
+                  <ReservationFollowUpPipelineIcons
                   snapshot={followUpPipelineSnapshot}
                   snapshotLoaded={followUpPipelineSnapshotLoaded}
                   disabled={followUpPipelineIconsDisabled}
@@ -871,6 +893,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                       }
                     : {})}
                 />
+                </>
               )}
             </div>
             <div className="flex shrink-0 items-center gap-0.5">
@@ -918,30 +941,18 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   const showCreateTour = Boolean(isManiaTour && !reservation.hasExistingTour)
                   return (
                     <>
-                      {onCommunicationChannelChange ? (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className={menuBtnClass}
-                          onClick={() => {
-                            const customer = customers.find((c) => c.id === reservation.customerId)
-                            closeMenu()
-                            if (!customer) {
-                              alert(locale === 'en' ? 'Customer not found.' : '고객 정보를 찾을 수 없습니다.')
-                              return
-                            }
-                            const hasPhone = !!(customer.phone?.trim() || customer.emergency_contact?.trim())
-                            if (!hasPhone) {
-                              alert(locale === 'en' ? 'No phone number.' : '고객 전화번호가 없습니다.')
-                              return
-                            }
-                            setPreTourSmsModalOpen(true)
-                          }}
-                        >
-                          <Smartphone className="h-3.5 w-3.5 shrink-0 text-violet-700" aria-hidden />
-                          {t('card.preTourSmsButtonTitle')}
-                        </button>
-                      ) : null}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={menuBtnClass}
+                        onClick={() => {
+                          closeMenu()
+                          onEditClick(reservation.id)
+                        }}
+                      >
+                        <Edit className="h-3.5 w-3.5 shrink-0 text-orange-600" />
+                        {t('card.editReservationTitle')}
+                      </button>
                       <button
                         type="button"
                         role="menuitem"
@@ -1041,18 +1052,6 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                       >
                         <MessageSquare className="h-3.5 w-3.5 shrink-0 text-pink-600" />
                         {t('card.reviewManagementTitle')}
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className={menuBtnClass}
-                        onClick={() => {
-                          closeMenu()
-                          onEditClick(reservation.id)
-                        }}
-                      >
-                        <Edit className="h-3.5 w-3.5 shrink-0 text-orange-600" />
-                        {t('card.editReservationTitle')}
                       </button>
                     </>
                   )
@@ -1233,24 +1232,6 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           </div>
         </div>
       )}
-
-      {preTourSmsModalOpen && (() => {
-        const customer = customers.find((c) => c.id === reservation.customerId)
-        if (!customer) return null
-        return (
-          <PreTourContactSmsPreviewModal
-            isOpen
-            onClose={() => setPreTourSmsModalOpen(false)}
-            reservationId={reservation.id}
-            customerLanguage={customer.language ?? null}
-            sentBy={sentBy ?? null}
-            uiLocale={locale === 'en' ? 'en' : 'ko'}
-            {...(onPreTourSmsSendSuccess
-              ? { onSendSuccess: () => onPreTourSmsSendSuccess(reservation.id) }
-              : {})}
-          />
-        )
-      })()}
 
       <TourChatRoomEmailPreviewModal
         isOpen={tourChatRoomPreviewOpen}

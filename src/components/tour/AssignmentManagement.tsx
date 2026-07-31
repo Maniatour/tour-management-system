@@ -18,7 +18,7 @@ import { getReservationPartySize } from '@/utils/reservationUtils'
 import type { PickupHotelAssignmentOption } from '@/utils/pickupHotelUtils'
 import AutoAssignModal from './modals/AutoAssignModal'
 import { useTourDetailSectionChrome } from './TourDetailModalChromeContext'
-import { DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
+import { TOUR_DETAIL_NESTED_PICKER_Z_INDEX } from '@/lib/dialogZIndex'
 
 interface Reservation {
   id: string
@@ -884,12 +884,18 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
         createPortal(
           <div
             className="fixed inset-0 flex items-center justify-center p-4 bg-black/50"
-            style={{ zIndex: DIALOG_Z_INDEX.nested }}
+            style={{ zIndex: TOUR_DETAIL_NESTED_PICKER_Z_INDEX }}
             role="dialog"
             aria-modal="true"
             aria-labelledby="move-to-tour-modal-title"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setMoveToTourModalReservationId(null)
+            }}
           >
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[85vh] flex flex-col">
+            <div
+              className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[85vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
               <div className="flex items-center justify-between border-b px-4 py-3">
                 <h2 id="move-to-tour-modal-title" className="text-base font-semibold text-gray-900">
                   {t('moveToOtherTourModalTitle')}

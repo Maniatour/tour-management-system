@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
@@ -68,7 +68,58 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
   const { hasPermission, userRole, user, loading } = useAuth()
   
   // 기본 상태들
-  const [tour, setTour] = useState<TourRow | null>(null)
+  const [tour, setTourState] = useState<TourRow | null>(null)
+  /** 배정 변경 직후 백그라운드 로드가 이전 reservation_ids 로 덮어쓰지 않도록 */
+  const tourReservationIdsRef = useRef<string[]>([])
+  const reservationIdsOverrideRef = useRef(false)
+  /** 배정 변경 후 늦게 끝나는 백그라운드 로드가 UI를 덮어쓰지 않도록 */
+  const assignmentMutationEpochRef = useRef(0)
+  const deferredAssignmentCancelRef = useRef<(() => void) | null>(null)
+
+  const reservationIdsSetsEqual = (a: string[], b: string[]) => {
+    if (a.length !== b.length) return false
+    return a.every((id) => b.some((other) => reservationIdsLooselyEqual(id, other)))
+  }
+
+  /** 배정 변경 직전(네트워크 await 전)에 호출 — 백그라운드 버킷 갱신 차단 */
+  const beginAssignmentIdsMutation = useCallback((nextIds: string[]) => {
+    deferredAssignmentCancelRef.current?.()
+    deferredAssignmentCancelRef.current = null
+    tourReservationIdsRef.current = nextIds
+    reservationIdsOverrideRef.current = true
+    assignmentMutationEpochRef.current += 1
+  }, [])
+
+  const clearAssignmentIdsMutationOverride = useCallback(() => {
+    reservationIdsOverrideRef.current = false
+  }, [])
+
+  const getEffectiveTourReservationIds = useCallback((): string[] => {
+    if (reservationIdsOverrideRef.current) {
+      return [...tourReservationIdsRef.current]
+    }
+    return normalizeReservationIds(tour?.reservation_ids)
+  }, [tour?.reservation_ids])
+
+  const setTour = useCallback<React.Dispatch<React.SetStateAction<TourRow | null>>>((updater) => {
+    setTourState((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      if (next?.reservation_ids !== undefined) {
+        const nextIds = normalizeReservationIds(next.reservation_ids)
+        const prevIds = normalizeReservationIds(prev?.reservation_ids)
+        if (!reservationIdsSetsEqual(nextIds, prevIds)) {
+          tourReservationIdsRef.current = nextIds
+          reservationIdsOverrideRef.current = true
+          assignmentMutationEpochRef.current += 1
+        }
+      }
+      if (next === null) {
+        tourReservationIdsRef.current = []
+        reservationIdsOverrideRef.current = false
+      }
+      return next
+    })
+  }, [])
   const [isPrivateTour, setIsPrivateTour] = useState<boolean>(false)
   const [showPrivateTourModal, setShowPrivateTourModal] = useState(false)
   const [pendingPrivateTourValue, setPendingPrivateTourValue] = useState<boolean>(false)
@@ -103,9 +154,44 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
   const [allTours, setAllTours] = useState<TourRow[]>([])
   const [allProducts, setAllProducts] = useState<ProductRow[]>([])
   const [channels, setChannels] = useState<{ id: string; name: string; favicon_url?: string }[]>([])
-  const [assignedReservations, setAssignedReservations] = useState<ReservationRow[]>([])
-  const [pendingReservations, setPendingReservations] = useState<ReservationRow[]>([])
-  const [otherToursAssignedReservations, setOtherToursAssignedReservations] = useState<(ReservationRow & { assigned_tour_id?: string | null })[]>([])
+  const [assignedReservations, setAssignedReservationsState] = useState<ReservationRow[]>([])
+  const [pendingReservations, setPendingReservationsState] = useState<ReservationRow[]>([])
+  const [otherToursAssignedReservations, setOtherToursAssignedReservationsState] = useState<
+    (ReservationRow & { assigned_tour_id?: string | null })[]
+  >([])
+
+  const setAssignedReservations = useCallback<React.Dispatch<React.SetStateAction<ReservationRow[]>>>(
+    (updater) => {
+      if (reservationIdsOverrideRef.current) return
+      setAssignedReservationsState(updater)
+    },
+    []
+  )
+  const setAssignedReservationsForced = useCallback<React.Dispatch<React.SetStateAction<ReservationRow[]>>>(
+    (updater) => {
+      setAssignedReservationsState(updater)
+    },
+    []
+  )
+  const setPendingReservations = useCallback<React.Dispatch<React.SetStateAction<ReservationRow[]>>>(
+    (updater) => {
+      if (reservationIdsOverrideRef.current) return
+      setPendingReservationsState(updater)
+    },
+    []
+  )
+  const setPendingReservationsForced = useCallback<React.Dispatch<React.SetStateAction<ReservationRow[]>>>(
+    (updater) => {
+      setPendingReservationsState(updater)
+    },
+    []
+  )
+  const setOtherToursAssignedReservations = useCallback<
+    React.Dispatch<React.SetStateAction<(ReservationRow & { assigned_tour_id?: string | null })[]>>
+  >((updater) => {
+    if (reservationIdsOverrideRef.current) return
+    setOtherToursAssignedReservationsState(updater)
+  }, [])
   const [otherStatusReservations, setOtherStatusReservations] = useState<ReservationRow[]>([])
   const [inactiveReservations, setInactiveReservations] = useState<ReservationRow[]>([])
   const [pickupHotels, setPickupHotels] = useState<PickupHotel[]>([])
@@ -174,6 +260,9 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
       return
     }
 
+    tourReservationIdsRef.current = []
+    reservationIdsOverrideRef.current = false
+
     const fetchTourData = async () => {
       if (!effectiveTourId || typeof effectiveTourId !== 'string') {
         return
@@ -199,14 +288,16 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
         }
 
         if (!tourData) {
-          setTour(null)
+          setTourState(null)
           setProduct(null)
           return
         }
 
         if (cancelled) return
 
-        setTour(tourData as TourRow)
+        setTourState(tourData as TourRow)
+        tourReservationIdsRef.current = normalizeReservationIds((tourData as TourRow).reservation_ids)
+        reservationIdsOverrideRef.current = false
         setIsPrivateTour((tourData as TourRow).is_private_tour || false)
         setTourNote((tourData as TourRow).tour_note || '')
         setProduct((tourData as any).products as ProductRow | null)
@@ -441,7 +532,8 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
 
         const processAssignmentBuckets = async (
           reservationsExtended: ExtendedReservationRow[],
-          sameDayTours: Array<{ id: string; reservation_ids?: unknown }>
+          sameDayTours: Array<{ id: string; reservation_ids?: unknown }>,
+          mutationEpochAtStart?: number
         ) => {
           if (!productId || !tourDate) {
             setSameDayTourIds([])
@@ -465,7 +557,11 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
 
           for (const trow of tours) {
             const tourRow = trow as TourRow
-            for (const reservationId of normalizeReservationIds(tourRow.reservation_ids)) {
+            const idsForTour =
+              tourRow.id === tour.id && reservationIdsOverrideRef.current
+                ? tourReservationIdsRef.current
+                : normalizeReservationIds(tourRow.reservation_ids)
+            for (const reservationId of idsForTour) {
               if (reservationId) {
                 const key = canonicalReservationIdKey(reservationId)
                 allAssignedReservationIdsSet.add(key)
@@ -474,7 +570,10 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
             }
           }
 
-          const assignedIds = normalizeReservationIds(tour.reservation_ids)
+          const currentTourRow = tours.find((trow) => trow.id === tour.id) as TourRow | undefined
+          const assignedIds = reservationIdsOverrideRef.current
+            ? tourReservationIdsRef.current
+            : normalizeReservationIds(currentTourRow?.reservation_ids ?? tour.reservation_ids)
           const missingAssigned: string[] = []
           for (const aid of assignedIds) {
             const k = canonicalReservationIdKey(aid)
@@ -582,6 +681,15 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
           const cancellationFollowUpMap = await fetchCancellationFollowUpMeta(cancelledIdsForReasons)
 
           if (cancelled) return
+          if (
+            mutationEpochAtStart !== undefined &&
+            mutationEpochAtStart !== assignmentMutationEpochRef.current
+          ) {
+            return
+          }
+          if (reservationIdsOverrideRef.current) {
+            return
+          }
 
           setAssignedReservations(attachCancellationFollowUpMeta(activeAssignedReservations, cancellationFollowUpMap))
           setPendingReservations(attachCancellationFollowUpMeta(pendingReservations, cancellationFollowUpMap))
@@ -695,13 +803,15 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
           )
           setPageLoading(false)
 
-          scheduleDeferredWork(() => {
+          deferredAssignmentCancelRef.current?.()
+          deferredAssignmentCancelRef.current = scheduleDeferredWork(() => {
+            const mutationEpochAtDeferStart = assignmentMutationEpochRef.current
             void (async () => {
               if (cancelled) return
               setLoadingStates((s) => ({ ...s, reservations: true }))
               try {
                 const [
-                  sameDayTours,
+                  ,
                   pickupHotelsResult,
                   fullReservations,
                   refBundle,
@@ -731,7 +841,14 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
                 applyRefBundle(refBundle)
                 setVehicles(vehiclesPack.rows)
                 setVehiclesError(vehiclesPack.err)
-                await processAssignmentBuckets(fullReservations, sameDayTours)
+
+                const freshSameDayTours = await loadSameDayTours()
+                if (cancelled) return
+                await processAssignmentBuckets(
+                  fullReservations,
+                  freshSameDayTours,
+                  mutationEpochAtDeferStart
+                )
               } catch (e) {
                 console.error('투어 모달 백그라운드 데이터 로드 오류:', e)
               } finally {
@@ -786,6 +903,8 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
     fetchTourData()
     return () => {
       cancelled = true
+      deferredAssignmentCancelRef.current?.()
+      deferredAssignmentCancelRef.current = null
     }
   }, [effectiveTourId, modalLightLoad])
 
@@ -961,11 +1080,16 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
     setChannels,
     assignedReservations,
     setAssignedReservations,
+    setAssignedReservationsForced,
     pendingReservations,
     setPendingReservations,
+    setPendingReservationsForced,
     sameDayTourIds,
     otherToursAssignedReservations,
     setOtherToursAssignedReservations,
+    beginAssignmentIdsMutation,
+    clearAssignmentIdsMutationOverride,
+    getEffectiveTourReservationIds,
     otherStatusReservations,
     setOtherStatusReservations,
     inactiveReservations,
@@ -1108,10 +1232,13 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
             })
           }
 
-          // setTour 직후 호출될 때 클로저의 tour.reservation_ids는 아직 이전 값일 수 있음 → DB에서 읽은 동일날 투어 행 사용
           const currentTourRow = toursList.find((row) => row.id === tour.id) as TourRow | undefined
-          const rawAssignedIds = currentTourRow?.reservation_ids ?? tour.reservation_ids
-          const assignedReservationIds: string[] = normalizeReservationIds(rawAssignedIds)
+          const assignedReservationIds: string[] = reservationIdsOverrideRef.current
+            ? [...tourReservationIdsRef.current]
+            : normalizeReservationIds(currentTourRow?.reservation_ids ?? tour.reservation_ids)
+          if (!reservationIdsOverrideRef.current) {
+            tourReservationIdsRef.current = assignedReservationIds
+          }
 
           let assignedReservations: ExtendedReservationRow[] = []
           if (assignedReservationIds.length > 0) {
@@ -1193,12 +1320,16 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
             .map((r) => String(r.id))
           const cancellationFollowUpMap = await fetchCancellationFollowUpMeta(cancelledIdsForReasons)
 
-          setAssignedReservations(attachCancellationFollowUpMeta(activeAssignedReservations, cancellationFollowUpMap))
-          setPendingReservations(attachCancellationFollowUpMeta(pendingReservations, cancellationFollowUpMap))
-          setOtherToursAssignedReservations(
-            attachCancellationFollowUpMeta(activeOtherToursAssignedReservations, cancellationFollowUpMap)
-          )
-          setOtherStatusReservations(attachCancellationFollowUpMeta(otherStatusReservations, cancellationFollowUpMap))
+          if (!reservationIdsOverrideRef.current) {
+            setAssignedReservations(attachCancellationFollowUpMeta(activeAssignedReservations, cancellationFollowUpMap))
+            setPendingReservations(attachCancellationFollowUpMeta(pendingReservations, cancellationFollowUpMap))
+            setOtherToursAssignedReservations(
+              attachCancellationFollowUpMeta(activeOtherToursAssignedReservations, cancellationFollowUpMap)
+            )
+            setOtherStatusReservations(
+              attachCancellationFollowUpMeta(otherStatusReservations, cancellationFollowUpMap)
+            )
+          }
         }
       } else {
         setAllReservations(reservationsData || [])

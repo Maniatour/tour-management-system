@@ -395,25 +395,11 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
     const emailStatus = emailStatusMap[reservationId]
     const pickupNotificationSent = assignedReservations.find(r => r.id === reservationId)?.pickup_notification_sent
 
-    // 디버깅: 모든 상태 로그
-    if (emailStatus) {
-      console.log(`[PickupSchedule] 이메일 상태 확인 - 예약 ID: ${reservationId}`, {
-        emailStatus,
-        delivered_at: emailStatus.delivered_at,
-        status: emailStatus.status,
-        opened_at: emailStatus.opened_at,
-        opened_count: emailStatus.opened_count,
-        isDelivered: !!(emailStatus.delivered_at || emailStatus.status === 'delivered'),
-        isOpened: !!(emailStatus.opened_at || (emailStatus.opened_count && emailStatus.opened_count > 0))
-      })
-    }
-
     // 이메일 로그가 없는 경우
     if (!emailStatus) {
       if (pickupNotificationSent) {
         // 발송 플래그만 있고 로그가 없는 경우 (구버전 데이터 또는 로그 조회 실패)
         // 이 경우에도 파란색으로 표시 (발송은 완료된 것으로 간주)
-        console.log(`[PickupSchedule] ⚠️ 이메일 로그 없음, pickup_notification_sent=true - 예약 ID: ${reservationId}`)
         return (
           <FaCheckCircle 
             size={14} 
@@ -477,16 +463,6 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
     const isDelivered = hasDeliveredAt || isDeliveredStatus
     
     if (isDelivered && !isOpened) {
-      console.log(`[PickupSchedule] ✅✅✅ 전달 완료 아이콘 렌더링 - 예약 ID: ${reservationId}`, {
-        delivered_at: emailStatus.delivered_at,
-        status: emailStatus.status,
-        opened_at: emailStatus.opened_at,
-        opened_count: emailStatus.opened_count,
-        hasDeliveredAt,
-        isDeliveredStatus,
-        isDelivered,
-        isOpened
-      })
       return (
         <span style={{ color: '#2563eb', display: 'inline-flex', alignItems: 'center' }}>
           <FaCheckCircle 

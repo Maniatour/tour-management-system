@@ -87,13 +87,15 @@ export async function buildPreTourContactSmsPreview(params: {
   }
 
   let pickupHotelName = ''
+  let pickupLocation = ''
   if (reservation.pickup_hotel) {
     const { data: hotel } = await db
       .from('pickup_hotels')
-      .select('hotel')
+      .select('hotel, pick_up_location')
       .eq('id', reservation.pickup_hotel)
       .maybeSingle()
     pickupHotelName = String((hotel as { hotel?: string } | null)?.hotel ?? '').trim()
+    pickupLocation = String((hotel as { pick_up_location?: string } | null)?.pick_up_location ?? '').trim()
   }
 
   let chatRoomUrl: string | null = null
@@ -123,6 +125,7 @@ export async function buildPreTourContactSmsPreview(params: {
     channelReference: reservation.channel_rn,
     pickupTime: reservation.pickup_time,
     pickupHotelName,
+    pickupLocation,
     chatRoomUrl,
     contacts,
     locale,

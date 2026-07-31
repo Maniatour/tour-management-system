@@ -253,6 +253,22 @@ export function summarizePaymentRecordsForBalance(records: PaymentRecordLike[]):
  * - 입금 환불 없이 「가격 정보」환불만 있으면 `deposit + balance − manualRefund` 가 맞음 (총액은 이미 환불 반영됨)
  * 위 세 가지 중 어느 하나가 현재 총액(`totalDue`)에 가장 가까운 값을 사용한다 (이중 카운팅 회피).
  */
+/**
+ * 입금 내역 집계가 있을 때 잔액(②): 총 결제 예정 − (보증금 순액 + 잔금 수령).
+ * `summarizePaymentRecordsForBalance`의 `depositTotalNet`과 동일 기준.
+ */
+export function computeRemainingBalanceAfterPaymentRecords(
+  totalCustomerPayment: number,
+  depositTotalNet: number,
+  balanceReceivedTotal: number
+): number {
+  const due = Math.max(0, roundUsd2(Number(totalCustomerPayment) || 0))
+  const paid = roundUsd2(
+    Math.max(0, Number(depositTotalNet) || 0) + Math.max(0, Number(balanceReceivedTotal) || 0)
+  )
+  return roundUsd2(due - paid)
+}
+
 export function computeEffectiveCustomerPaidTowardDue(
   totalDue: number,
   depositAmount: number,
@@ -330,31 +346,18 @@ export function computeDisplayedOnSiteBalanceLikePricingSection(
 
   const grossDue = roundUsd2(computeCustomerPaymentTotalLineFormula(pricingForGross, party))
 
-  const { depositBucketGross, balanceReceivedTotal, returnedTotal, refundedTotal } =
+  const { depositTotalNet, balanceReceivedTotal, returnedTotal } =
     summarizePaymentRecordsForBalance(records)
 
   const manualRefund = Math.max(0, pricingFieldToNumber(pricing.refund_amount))
   const returnedSurplus = Math.max(0, roundUsd2(returnedTotal - manualRefund))
   const totalCustomerPayment = Math.max(0, roundUsd2(grossDue - returnedSurplus))
 
-  const depositInput =
-    depositBucketGross > 0 ? depositBucketGross : pricingFieldToNumber(pricing.deposit_amount)
-
-  const depositForDue = depositAmountNetOfPartnerReturnedOverlapForBalance(
+  return computeRemainingBalanceAfterPaymentRecords(
     totalCustomerPayment,
-    depositInput,
-    returnedTotal
+    depositTotalNet,
+    balanceReceivedTotal
   )
-
-  const totalPaid = computeEffectiveCustomerPaidTowardDue(
-    totalCustomerPayment,
-    depositForDue,
-    balanceReceivedTotal,
-    refundedTotal,
-    manualRefund
-  )
-
-  return roundUsd2(totalCustomerPayment - totalPaid)
 }
 
 /**

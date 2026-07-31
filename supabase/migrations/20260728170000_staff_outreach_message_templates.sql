@@ -55,39 +55,46 @@ create policy "staff_outreach_message_templates_delete_staff"
   on public.staff_outreach_message_templates for delete to authenticated
   using (public.rls_is_staff_session_ok());
 
--- 기존 단일 템플릿 테이블 데이터 이전
-insert into public.staff_outreach_message_templates (
-  scope, locale, channel, variant, name, subject_template, body_template, sort_order, updated_at, updated_by
-)
-select
-  'cancellation_follow_up',
-  locale,
-  channel,
-  message_kind,
-  case when locale = 'ko' then '기본' else 'Default' end,
-  subject_template,
-  body_template,
-  0,
-  coalesce(updated_at, now()),
-  updated_by
-from public.cancellation_follow_up_message_templates
-on conflict (scope, locale, channel, variant, name) do nothing;
+-- 기존 단일 템플릿 테이블 데이터 이전 (소스 테이블이 있을 때만)
+do $$
+begin
+  if to_regclass('public.cancellation_follow_up_message_templates') is not null then
+    insert into public.staff_outreach_message_templates (
+      scope, locale, channel, variant, name, subject_template, body_template, sort_order, updated_at, updated_by
+    )
+    select
+      'cancellation_follow_up',
+      locale,
+      channel,
+      message_kind,
+      case when locale = 'ko' then '기본' else 'Default' end,
+      subject_template,
+      body_template,
+      0,
+      coalesce(updated_at, now()),
+      updated_by
+    from public.cancellation_follow_up_message_templates
+    on conflict (scope, locale, channel, variant, name) do nothing;
+  end if;
 
-insert into public.staff_outreach_message_templates (
-  scope, locale, channel, variant, name, subject_template, body_template, sort_order, updated_at, updated_by
-)
-select
-  'resident_inquiry',
-  locale,
-  'email',
-  tour_kind,
-  case when locale = 'ko' then '기본' else 'Default' end,
-  subject_template,
-  html_template,
-  0,
-  coalesce(updated_at, now()),
-  updated_by
-from public.resident_inquiry_email_templates
-on conflict (scope, locale, channel, variant, name) do nothing;
+  if to_regclass('public.resident_inquiry_email_templates') is not null then
+    insert into public.staff_outreach_message_templates (
+      scope, locale, channel, variant, name, subject_template, body_template, sort_order, updated_at, updated_by
+    )
+    select
+      'resident_inquiry',
+      locale,
+      'email',
+      tour_kind,
+      case when locale = 'ko' then '기본' else 'Default' end,
+      subject_template,
+      html_template,
+      0,
+      coalesce(updated_at, now()),
+      updated_by
+    from public.resident_inquiry_email_templates
+    on conflict (scope, locale, channel, variant, name) do nothing;
+  end if;
+end $$;
 
 commit;

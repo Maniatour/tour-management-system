@@ -39,6 +39,7 @@ import {
 import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
 import {
   computeEffectiveCustomerPaidTowardDue,
+  computeRemainingBalanceAfterPaymentRecords,
   summarizePaymentRecordsForBalance,
 } from '@/utils/reservationPricingBalance'
 import { splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
@@ -321,6 +322,7 @@ export default function PricingSection({
   const [tourExpenseAllocationEligible, setTourExpenseAllocationEligible] = useState(false)
   // 입금 내역 계산 결과 저장
   const [calculatedBalanceReceivedTotal, setCalculatedBalanceReceivedTotal] = useState(0)
+  const [calculatedDepositTotalNet, setCalculatedDepositTotalNet] = useState(0)
   // 환불 금액 저장
   const [refundedAmount, setRefundedAmount] = useState(0) // 우리 쪽 환불 (Refunded)
   const [returnedAmount, setReturnedAmount] = useState(0) // 파트너 환불 (Returned)
@@ -343,6 +345,8 @@ export default function PricingSection({
   const otaCommissionAutoFingerprintRef = useRef<string>('')
   /** User edited deposit (including 0): skip product/discount auto-fill for deposit */
   const depositAmountUserEditedRef = useRef(false)
+  /** 입금 내역이 있으면 보증금은 입금 내역 합으로 유지 (자동 업데이트 effect가 덮어쓰지 않도록) */
+  const hasPaymentRecordsRef = useRef(false)
   const prevDepositAutoChannelIdRef = useRef<string | undefined>(undefined)
   // 채널 수수료 $ 입력 필드 로컬 상태 (입력 중 포맷팅 방지)
   const [commissionAmountInput, setCommissionAmountInput] = useState<string>('')
@@ -372,6 +376,11 @@ export default function PricingSection({
     channelPaymentAmountFieldFocusedRef.current = false
     depositAmountUserEditedRef.current = false
     channelSettlementUserEditedRef.current = false
+    hasPaymentRecordsRef.current = false
+    setCalculatedDepositTotalNet(0)
+    setCalculatedBalanceReceivedTotal(0)
+    setRefundedAmount(0)
+    setReturnedAmount(0)
   }, [reservationId])
 
   /** DB에 채널 결제(net/gross) 스냅샷이 있으면 비-OTA 상품가 자동 동기화를 영구히 잠금(플래그는 수정 시 꺼질 수 있음). */
@@ -820,10 +829,17 @@ export default function PricingSection({
     [returnedAmount]
   )
 
-  /** 표시·포커스: DB/OTA가 0으로 남아 있어도 계산 잔액이 크면 계산값을 보여 줌 */
-  const displayedOnSiteBalance = useCallback(() => {
+  /** 잔액(②): 입금 내역이 있으면 depositTotalNet+잔금 수령, 없으면 보증금·환불 휴리스틱 */
+  const computeOnSiteBalanceAmount = useCallback(() => {
     if (isNotIncludedExcludedReservationStatus((formData as { status?: string }).status)) return 0
     const totalCustomerPayment = effectiveTotalCustomerPayment()
+    if (hasPaymentRecordsRef.current) {
+      return computeRemainingBalanceAfterPaymentRecords(
+        totalCustomerPayment,
+        calculatedDepositTotalNet,
+        calculatedBalanceReceivedTotal
+      )
+    }
     const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
     const depositForDue = depositAmountNetOfPartnerReturnedOverlap(
       totalCustomerPayment,
@@ -836,7 +852,21 @@ export default function PricingSection({
       refundedAmount,
       manualRef
     )
-    const defaultBalance = roundUsd2(totalCustomerPayment - totalPaid)
+    return roundUsd2(totalCustomerPayment - totalPaid)
+  }, [
+    effectiveTotalCustomerPayment,
+    calculatedDepositTotalNet,
+    calculatedBalanceReceivedTotal,
+    formData.depositAmount,
+    formData.refundAmount,
+    refundedAmount,
+    depositAmountNetOfPartnerReturnedOverlap,
+    (formData as { status?: string }).status,
+  ])
+
+  /** 표시·포커스: DB/OTA가 0으로 남아 있어도 계산 잔액이 크면 계산값을 보여 줌 */
+  const displayedOnSiteBalance = useCallback(() => {
+    const defaultBalance = computeOnSiteBalanceAmount()
     const stored = formData.onSiteBalanceAmount
     if (stored === undefined || stored === null) return defaultBalance
     if (pricingFieldsFromDb.onSiteBalanceAmount) {
@@ -848,16 +878,8 @@ export default function PricingSection({
     if (stored === 0 && defaultBalance > 0.01) return defaultBalance
     return roundUsd2(Number(stored))
   }, [
-    effectiveTotalCustomerPayment,
-    returnedAmount,
-    refundedAmount,
-    formData.refundAmount,
-    formData.depositAmount,
+    computeOnSiteBalanceAmount,
     formData.onSiteBalanceAmount,
-    calculatedBalanceReceivedTotal,
-    depositAmountNetOfPartnerReturnedOverlap,
-    (formData as { status?: string }).status,
-    formData.totalPrice,
     pricingFieldsFromDb.onSiteBalanceAmount,
   ])
 
@@ -919,6 +941,7 @@ export default function PricingSection({
 
       // 계산 결과를 state에 저장 (총 결제 예정 금액 저장 시 사용하도록 formData에도 동기화)
       setCalculatedBalanceReceivedTotal(balanceReceivedTotal)
+      setCalculatedDepositTotalNet(depositTotalNet)
       setRefundedAmount(refundedTotal)
       setReturnedAmount(returnedTotal)
       setPartnerReceivedForSettlement(partnerReceivedStrict)
@@ -963,6 +986,7 @@ export default function PricingSection({
           balanceAmount: remainingBalance,
         }))
       } else {
+        setCalculatedDepositTotalNet(0)
         setFormData((prev: typeof formData) => ({
           ...prev,
           balanceReceivedTotal
@@ -993,8 +1017,6 @@ export default function PricingSection({
     return undefined
   }, [expenseUpdateTrigger, fetchPaymentRecords])
 
-  // 입금 내역이 있으면 보증금은 입금 내역 합으로 유지 (자동 업데이트 effect가 덮어쓰지 않도록)
-  const hasPaymentRecordsRef = useRef(false)
   useEffect(() => {
     if (isExistingPricingLoaded) {
       depositAmountUserEditedRef.current = false
@@ -1016,6 +1038,7 @@ export default function PricingSection({
   type BalanceDeps = {
     totalCustomerPayment: number
     depositAmount: number
+    calculatedDepositTotalNet: number
     calculatedBalanceReceivedTotal: number
     refundedFromRecords: number
     manualRefundPricing: number
@@ -1032,19 +1055,8 @@ export default function PricingSection({
       return
     }
     const totalCustomerPayment = effectiveTotalCustomerPayment()
+    const calculatedBalance = computeOnSiteBalanceAmount()
     const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
-    const depositForDue = depositAmountNetOfPartnerReturnedOverlap(
-      totalCustomerPayment,
-      formData.depositAmount
-    )
-    const totalPaid = computeEffectiveCustomerPaidTowardDue(
-      totalCustomerPayment,
-      depositForDue,
-      calculatedBalanceReceivedTotal,
-      refundedAmount,
-      manualRef
-    )
-    const calculatedBalance = roundUsd2(totalCustomerPayment - totalPaid)
 
     const notIncludedPrice = notIncludedBreakdown.totalUsd
 
@@ -1053,6 +1065,7 @@ export default function PricingSection({
     const currentDeps: BalanceDeps = {
       totalCustomerPayment: roundUsd2(totalCustomerPayment),
       depositAmount: formData.depositAmount,
+      calculatedDepositTotalNet,
       calculatedBalanceReceivedTotal,
       refundedFromRecords: refundedAmount,
       manualRefundPricing: manualRef,
@@ -1068,6 +1081,7 @@ export default function PricingSection({
       prev == null ||
       Math.abs(prev.totalCustomerPayment - currentDeps.totalCustomerPayment) > 0.01 ||
       prev.depositAmount !== currentDeps.depositAmount ||
+      Math.abs(prev.calculatedDepositTotalNet - currentDeps.calculatedDepositTotalNet) > 0.01 ||
       prev.calculatedBalanceReceivedTotal !== currentDeps.calculatedBalanceReceivedTotal ||
       Math.abs(prev.refundedFromRecords - currentDeps.refundedFromRecords) > 0.01 ||
       Math.abs(prev.manualRefundPricing - currentDeps.manualRefundPricing) > 0.01 ||
@@ -1107,11 +1121,12 @@ export default function PricingSection({
     }
     prevBalanceDepsRef.current = currentDeps
   }, [
+    computeOnSiteBalanceAmount,
     effectiveTotalCustomerPayment,
-    returnedAmount,
-    refundedAmount,
     formData.depositAmount,
     calculatedBalanceReceivedTotal,
+    calculatedDepositTotalNet,
+    refundedAmount,
     formData.not_included_price,
     formData.pricingAdults,
     formData.child,
@@ -1124,7 +1139,6 @@ export default function PricingSection({
     formData.residentStatusAmounts,
     setFormData,
     productSalePriceCommitTick,
-    depositAmountNetOfPartnerReturnedOverlap,
     pricingFieldsFromDb.onSiteBalanceAmount,
     markPricingEdited,
   ])
@@ -2193,7 +2207,7 @@ export default function PricingSection({
     if (!formData.channelId || !channels?.length || isExistingPricingLoaded) return
     if (pricingFieldsFromDb.commission_amount) return
     const ch = channels.find((c: { id: string }) => c.id === formData.channelId)
-    const isOTA = ch && ((ch as any).type?.toLowerCase() === 'ota' || (ch as any).category === 'OTA')
+    const isOTA = channelIsOtaForPricingSection(ch)
     if (!isOTA) return
     const percentFromChannel = Number((ch as any).commission_percent ?? (ch as any).commission_rate ?? (ch as any).commission) || 0
     if (percentFromChannel <= 0) return
@@ -3805,19 +3819,27 @@ export default function PricingSection({
                         markPricingEdited('depositAmount', 'onSiteBalanceAmount', 'balanceAmount')
                         const newDepositAmount = Number(e.target.value) || 0
                         const totalCustomerPayment = effectiveTotalCustomerPayment()
-                        const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
-                        const depForDue = depositAmountNetOfPartnerReturnedOverlap(
-                          totalCustomerPayment,
-                          newDepositAmount
-                        )
-                        const totalPaid = computeEffectiveCustomerPaidTowardDue(
-                          totalCustomerPayment,
-                          depForDue,
-                          calculatedBalanceReceivedTotal,
-                          refundedAmount,
-                          manualRef
-                        )
-                        const calculatedBalance = roundUsd2(totalCustomerPayment - totalPaid)
+                        const calculatedBalance = hasPaymentRecordsRef.current
+                          ? computeRemainingBalanceAfterPaymentRecords(
+                              totalCustomerPayment,
+                              calculatedDepositTotalNet,
+                              calculatedBalanceReceivedTotal
+                            )
+                          : (() => {
+                              const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
+                              const depForDue = depositAmountNetOfPartnerReturnedOverlap(
+                                totalCustomerPayment,
+                                newDepositAmount
+                              )
+                              const totalPaid = computeEffectiveCustomerPaidTowardDue(
+                                totalCustomerPayment,
+                                depForDue,
+                                calculatedBalanceReceivedTotal,
+                                refundedAmount,
+                                manualRef
+                              )
+                              return roundUsd2(totalCustomerPayment - totalPaid)
+                            })()
                         setFormData((prev: typeof formData) => ({
                           ...prev,
                           depositAmount: newDepositAmount,

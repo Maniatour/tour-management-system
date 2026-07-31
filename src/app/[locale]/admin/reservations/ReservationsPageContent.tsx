@@ -1034,7 +1034,8 @@ export default function AdminReservations() {
 
   const [followUpPipelineManualRefresh, setFollowUpPipelineManualRefresh] = useState(0)
   const [followUpFormPipelineRefresh, setFollowUpFormPipelineRefresh] = useState(0)
-  const [tourDetailModalTourId, setTourDetailModalTourId] = useState<string | null>(null)
+  const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; title: string } | null>(null)
+  const [tourDetailRefreshNonce, setTourDetailRefreshNonce] = useState(0)
   const [reservationIdsWithPayments, setReservationIdsWithPayments] = useState<Set<string>>(new Set())
   const [paymentRecordsByReservationIdForActionBadge, setPaymentRecordsByReservationIdForActionBadge] =
     useState<Map<string, PaymentRecordLike[]>>(() => new Map())
@@ -5105,9 +5106,30 @@ export default function AdminReservations() {
     setShowPricingModal(false)
     setPricingModalReservation(null)
   }, [])
-  const handleOpenTourDetailModal = useCallback((tourId: string) => {
-    setTourDetailModalTourId(tourId)
-  }, [])
+  const getTourDetailModalTitle = useCallback(
+    (tourId: string) => {
+      const tourMeta = tourInfoMap.get(tourId)
+      const productId = tourMeta?.productId ?? null
+      const productName =
+        (products as Array<{ id: string; name?: string | null; name_ko?: string | null }>).find(
+          (p) => p.id === productId
+        )?.name_ko ||
+        (products as Array<{ id: string; name?: string | null }>).find((p) => p.id === productId)?.name ||
+        '투어'
+      const tourDate = tourMeta?.tourDate ?? ''
+      const [, m, d] = tourDate.split('-')
+      const datePart = m && d ? `${m}/${d}` : ''
+      return datePart ? `${datePart} ${productName}` : productName
+    },
+    [products, tourInfoMap]
+  )
+
+  const handleOpenTourDetailModal = useCallback(
+    (tourId: string) => {
+      setTourDetailModal({ tourId, title: getTourDetailModalTitle(tourId) })
+    },
+    [getTourDetailModalTitle]
+  )
 
   /** 투어 상세 모달 JS 청크를 유휴 시간에 미리 받아 첫 클릭 지연을 줄임 */
   useEffect(() => {
@@ -7110,28 +7132,25 @@ export default function AdminReservations() {
       )}
 
       <TourDetailResizableDialog
-        open={Boolean(tourDetailModalTourId)}
-        onOpenChange={(open) => !open && setTourDetailModalTourId(null)}
-        tourId={tourDetailModalTourId}
-        onNavigateToTour={setTourDetailModalTourId}
-        accessibilityTitle={t('card.tourDetailModalTitle')}
-        header={
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-lg font-semibold text-gray-900 truncate pr-2">
-              {t('card.tourDetailModalTitle')}
-            </h3>
-            {tourDetailModalTourId ? (
-              <a
-                href={`/${locale}/admin/tours/${tourDetailModalTourId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
-              >
-                {t('card.openTourInNewTab')}
-              </a>
-            ) : null}
-          </div>
+        open={Boolean(tourDetailModal)}
+        modal={false}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTourDetailModal(null)
+            setTourDetailRefreshNonce(0)
+          }
+        }}
+        tourId={tourDetailModal?.tourId ?? null}
+        refreshNonce={tourDetailRefreshNonce}
+        onNavigateToTour={(nextTourId) =>
+          setTourDetailModal((prev) =>
+            prev
+              ? { tourId: nextTourId, title: getTourDetailModalTitle(nextTourId) }
+              : { tourId: nextTourId, title: getTourDetailModalTitle(nextTourId) }
+          )
         }
+        accessibilityTitle={tourDetailModal?.title ?? t('card.tourDetailModalTitle')}
+        titleFallback={tourDetailModal?.title ?? t('card.tourDetailModalTitle')}
       />
 
       <DeletedReservationsTableModal
