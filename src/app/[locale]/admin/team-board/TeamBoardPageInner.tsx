@@ -26,6 +26,7 @@ import { TourHotelPriceCheckPanel } from '@/components/admin/todo/TourHotelPrice
 import { TourSettlementPanel } from '@/components/admin/todo/TourSettlementPanel'
 import { ReservationAgencyManagementPanel } from '@/components/admin/todo/ReservationAgencyManagementPanel'
 import { AntelopeCanyonBookingPanel } from '@/components/admin/todo/AntelopeCanyonBookingPanel'
+import { BentoCheckPanel } from '@/components/admin/todo/BentoCheckPanel'
 import { AdminTodoListManualButton } from '@/components/admin/todo/AdminTodoListManualModal'
 import {
   TourQuickPrintHost,
@@ -124,6 +125,13 @@ import {
   antelopeCanyonBookingCompletionDateKey,
   antelopeCanyonBookingTodoFormSeed,
 } from '@/lib/antelopeCanyonBookingTodo'
+import {
+  shouldHideTodoChipForBentoCheckPanel,
+  findBentoCheckLinkedTodo,
+  readBentoCheckLocalCompleted,
+  bentoCheckCompletionDateKey,
+  bentoCheckTodoFormSeed,
+} from '@/lib/bentoCheckTodo'
 import type { OpTodoFormValues } from '@/components/admin/todo/OpTodoFormFields'
 import {
   readTeamBoardPrimaryCache,
@@ -596,6 +604,16 @@ export default function TeamBoardPageInner() {
       return
     }
     setTodoCreateFormSeed(antelopeCanyonBookingTodoFormSeed(uiLocale))
+    setShowTodoCreateModal(true)
+  }
+
+  const handleEditBentoCheckTodo = () => {
+    const linked = findBentoCheckLinkedTodo(opTodos)
+    if (linked) {
+      setEditTodoId(linked.id)
+      return
+    }
+    setTodoCreateFormSeed(bentoCheckTodoFormSeed(uiLocale))
     setShowTodoCreateModal(true)
   }
 
@@ -1574,6 +1592,7 @@ export default function TeamBoardPageInner() {
               onEditTourSettlementTodo={handleEditTourSettlementTodo}
               onEditReservationAgencyManagementTodo={handleEditReservationAgencyManagementTodo}
               onEditAntelopeCanyonBookingTodo={handleEditAntelopeCanyonBookingTodo}
+              onEditBentoCheckTodo={handleEditBentoCheckTodo}
               onOpenTourDetail={(tourId) => router.push(`/${uiLocale}/admin/tours/${tourId}`)}
               onQuickPrint={(tourId, kind) => setTourQuickPrint({ tourId, kind })}
               onPickupAction={(tourId, kind) => setTourPickupNotification({ tourId, kind })}
@@ -3295,7 +3314,7 @@ function DeferredDailyPanel({
   )
 }
 
-function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAddTodo, onManageNotifications, onEditTodo, onEditEnvelopePrintTodo, onEditPickupNotificationTodo, onEditGuideScheduleConfirmTodo, onEditCustomerInfoReviewTodo, onEditCancelRebookingFollowUpTodo, onEditPendingCustomerManagementTodo, onCancelFollowUpManualChange, onOpenReservation, onEditOtaClosureTodo, onEditTourHotelManagementTodo, onEditTourHotelPriceCheckTodo, onEditTourSettlementTodo, onEditReservationAgencyManagementTodo, onEditAntelopeCanyonBookingTodo, onOpenTourDetail, onQuickPrint, onPickupAction, locale, toggleTodoCompletion, openHistoryModal }: { 
+function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAddTodo, onManageNotifications, onEditTodo, onEditEnvelopePrintTodo, onEditPickupNotificationTodo, onEditGuideScheduleConfirmTodo, onEditCustomerInfoReviewTodo, onEditCancelRebookingFollowUpTodo, onEditPendingCustomerManagementTodo, onCancelFollowUpManualChange, onOpenReservation, onEditOtaClosureTodo, onEditTourHotelManagementTodo, onEditTourHotelPriceCheckTodo, onEditTourSettlementTodo, onEditReservationAgencyManagementTodo, onEditAntelopeCanyonBookingTodo, onEditBentoCheckTodo, onOpenTourDetail, onQuickPrint, onPickupAction, locale, toggleTodoCompletion, openHistoryModal }: { 
   opTodos: OpTodo[]; 
   selectedDepartment: 'all' | 'office' | 'guide' | 'common';
   onDepartmentChange: (department: 'all' | 'office' | 'guide' | 'common') => void;
@@ -3320,6 +3339,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
   onEditTourSettlementTodo: () => void;
   onEditReservationAgencyManagementTodo: () => void;
   onEditAntelopeCanyonBookingTodo: () => void;
+  onEditBentoCheckTodo: () => void;
   onOpenTourDetail: (tourId: string) => void;
   onQuickPrint: (tourId: string, kind: TourQuickPrintKind) => void;
   onPickupAction: (tourId: string, kind: TourPickupNotificationKind) => void;
@@ -3571,6 +3591,23 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
     }
   }, [linkedAntelopeCanyonBookingTodo?.id, linkedAntelopeCanyonBookingTodo?.completed])
 
+  const bentoCheckDateKey = useMemo(() => bentoCheckCompletionDateKey(), [])
+  const linkedBentoCheckTodo = useMemo(() => findBentoCheckLinkedTodo(opTodos), [opTodos])
+  const [bentoCheckLocalCompleted, setBentoCheckLocalCompleted] = useState(() =>
+    readBentoCheckLocalCompleted(bentoCheckDateKey)
+  )
+  const bentoCheckCompleted = linkedBentoCheckTodo?.completed ?? bentoCheckLocalCompleted
+
+  useEffect(() => {
+    setBentoCheckLocalCompleted(readBentoCheckLocalCompleted(bentoCheckDateKey))
+  }, [bentoCheckDateKey])
+
+  useEffect(() => {
+    if (linkedBentoCheckTodo) {
+      setBentoCheckLocalCompleted(linkedBentoCheckTodo.completed)
+    }
+  }, [linkedBentoCheckTodo?.id, linkedBentoCheckTodo?.completed])
+
   // useTranslations 훅을 조건부로 사용
   let t: (key: string) => string
   try {
@@ -3608,7 +3645,8 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
         !shouldHideTodoChipForTourHotelPriceCheckPanel(todo) &&
         !shouldHideTodoChipForTourSettlementPanel(todo) &&
         !shouldHideTodoChipForReservationAgencyManagementPanel(todo) &&
-        !shouldHideTodoChipForAntelopeCanyonBookingPanel(todo)
+        !shouldHideTodoChipForAntelopeCanyonBookingPanel(todo) &&
+        !shouldHideTodoChipForBentoCheckPanel(todo)
     )
   }, [opTodos, selectedDepartment])
 
@@ -4023,6 +4061,33 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
                   }}
                   onCompletedChange={setAntelopeCanyonBookingLocalCompleted}
                   onEditRequest={onEditAntelopeCanyonBookingTodo}
+                  onOpenTourDetail={onOpenTourDetail}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={12} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
+                  bentoCheckCompleted
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <BentoCheckPanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setBentoCheckLocalCompleted}
+                  onEditRequest={onEditBentoCheckTodo}
                   onOpenTourDetail={onOpenTourDetail}
                 />
               </div>

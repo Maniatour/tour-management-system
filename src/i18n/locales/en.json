@@ -5188,7 +5188,10 @@
       "time": "Time",
       "reservationId": "Reservation",
       "rnNumber": "RN#",
-      "deletionRequested": "Deletion requested"
+      "deletionRequested": "Deletion requested",
+      "showCancelledHotelBookings": "Show cancelled",
+      "hideCancelledHotelBookings": "Hide cancelled",
+      "noActiveHotelBookings": "No active hotel bookings to show. Use the button above to view cancelled bookings."
     },
     "assignmentManagement": {
       "title": "Assignment Management",

@@ -9,7 +9,10 @@ import {
   Users,
 } from 'lucide-react'
 import { TodoPanelStatusButtons } from '@/components/admin/todo/TodoPanelStatusButtons'
+import { ReservationCardSmsMenuButton } from '@/components/reservation/ReservationCardSmsMenuButton'
+import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+import type { Customer } from '@/types/reservation'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import {
   customerInfoReviewCompletionDateKey,
@@ -134,15 +137,28 @@ function itemStillHasIssues(item: CustomerInfoReviewItem): boolean {
   return issues.length > 0
 }
 
+function reviewItemCustomerForSms(item: CustomerInfoReviewItem): Customer | undefined {
+  if (!item.customerId) return undefined
+  return {
+    id: item.customerId,
+    name: item.customerName,
+    phone: item.customerPhone,
+    emergency_contact: item.customerEmergencyContact,
+    language: item.customerLanguage,
+  } as Customer
+}
+
 function ReviewItemRow({
   item,
   locale,
+  sentBy,
   onOpenReservation,
   onCommunicationChannelChange,
   onResidentStatusUpdate,
 }: {
   item: CustomerInfoReviewItem
   locale: string
+  sentBy: string | null
   onOpenReservation: (reservationId: string) => void
   onCommunicationChannelChange: (
     reservationId: string,
@@ -184,6 +200,12 @@ function ReviewItemRow({
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 leading-none">
+          <ReservationCardSmsMenuButton
+            reservationId={item.reservationId}
+            customer={reviewItemCustomerForSms(item)}
+            sentBy={sentBy}
+            uiLocale={locale === 'en' ? 'en' : 'ko'}
+          />
           {showCommunicationPicker ? (
             <CustomerCommunicationChannelPicker
               compact
@@ -235,6 +257,8 @@ export function CustomerInfoReviewPanel({
 }: CustomerInfoReviewPanelProps) {
   const isKo = locale === 'ko'
   const isList = variant === 'list'
+  const { user } = useAuth()
+  const sentBy = user?.email || null
   const completionDateKey = useMemo(() => customerInfoReviewCompletionDateKey(), [])
   const { groups, loading, reload, targetDates } = useCustomerInfoReviewQueue(queryEnabled)
   const linkedTodo = findCustomerInfoReviewLinkedTodo(linkedTodos)
@@ -447,6 +471,7 @@ export function CustomerInfoReviewPanel({
                       key={item.reservationId}
                       item={item}
                       locale={locale}
+                      sentBy={sentBy}
                       onOpenReservation={setEditingReservationId}
                       onCommunicationChannelChange={handleCommunicationChannelChange}
                       onResidentStatusUpdate={handleResidentStatusUpdate}

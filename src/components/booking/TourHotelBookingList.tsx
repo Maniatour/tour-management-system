@@ -20,6 +20,7 @@ import {
 } from '@/lib/tour-hotel-booking-statement-recon';
 import { TicketBookingStatementReconCell } from '@/components/booking/TicketBookingStatementReconCell';
 import { getTicketBookingEffectiveExpenseUsd } from '@/lib/ticket-booking-change-display';
+import { normalizeTourHotelBookingStatus, tourHotelBookingStatusLabel } from '@/lib/tourHotelReferences';
 import {
   Grid,
   Calendar as CalendarIcon,
@@ -897,24 +898,14 @@ export default function TourHotelBookingList() {
   ]);
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'bg-yellow-100 text-yellow-800';
+    switch (normalizeTourHotelBookingStatus(status)) {
       case 'confirmed': return 'bg-green-100 text-green-800';
       case 'cancelled': return 'bg-red-100 text-red-800';
-      case 'completed': return 'bg-primary/10 text-primary';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'pending': return t('pending');
-      case 'confirmed': return t('confirmed');
-      case 'cancelled': return t('cancelled');
-      case 'completed': return t('completed');
-      default: return status;
-    }
-  };
+  const getStatusText = (status: string) => tourHotelBookingStatusLabel(status, locale);
 
   const getCCStatusText = (cc: string) => {
     switch (cc) {

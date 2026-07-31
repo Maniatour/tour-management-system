@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarPlus, CalendarX, ExternalLink, Loader2, RefreshCw, Users } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { TodoPanelStatusButtons } from '@/components/admin/todo/TodoPanelStatusButtons'
+import { ReservationCardSmsMenuButton } from '@/components/reservation/ReservationCardSmsMenuButton'
 import CancelledSimpleCardFollowUpStrip from '@/components/reservation/CancelledSimpleCardFollowUpStrip'
 import { CancelRebookingFollowUpStepBar } from '@/components/reservation/CancelRebookingFollowUpStepBar'
 import { ReservationChannelFavicon } from '@/components/reservation/ReservationChannelFavicon'
@@ -15,6 +16,7 @@ import {
   writeCancelRebookingFollowUpLocalCompleted,
   type CancelRebookingFollowUpLinkedTodo,
 } from '@/lib/cancelRebookingFollowUpTodo'
+import { useAuth } from '@/contexts/AuthContext'
 import { useCancelRebookingFollowUpQueue } from '@/hooks/useCancelRebookingFollowUpQueue'
 import { supabase } from '@/lib/supabase'
 import { upsertReservationCancelFollowUpManual } from '@/lib/reservationCancelFollowUpManual'
@@ -136,6 +138,8 @@ export function CancelRebookingFollowUpPanel({
 }: CancelRebookingFollowUpPanelProps) {
   const isKo = locale === 'ko'
   const isList = variant === 'list'
+  const { user } = useAuth()
+  const sentBy = user?.email || null
   const completionDateKey = useMemo(() => cancelRebookingFollowUpCompletionDateKey(), [])
   const {
     items,
@@ -377,17 +381,25 @@ export function CancelRebookingFollowUpPanel({
                       </span>
                     </div>
                   </div>
-                  {onOpenReservation ? (
-                    <button
-                      type="button"
-                      onClick={() => onOpenReservation(reservation.id)}
-                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                      title={isKo ? '예약 카드에서 열기' : 'Open in reservations'}
-                      aria-label={isKo ? '예약 카드에서 열기' : 'Open in reservations'}
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </button>
-                  ) : null}
+                  <div className="flex shrink-0 items-center gap-1.5 leading-none">
+                    <ReservationCardSmsMenuButton
+                      reservationId={reservation.id}
+                      customer={customer}
+                      sentBy={sentBy}
+                      uiLocale={locale === 'en' ? 'en' : 'ko'}
+                    />
+                    {onOpenReservation ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenReservation(reservation.id)}
+                        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                        title={isKo ? '예약 카드에서 열기' : 'Open in reservations'}
+                        aria-label={isKo ? '예약 카드에서 열기' : 'Open in reservations'}
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 <CancelRebookingFollowUpStepBar
                   locale={locale}

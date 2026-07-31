@@ -5,13 +5,16 @@ interface BookingModalProps {
   title: string
   children: React.ReactNode
   onClose: () => void
+  /** true이면 제목줄을 children이 직접 렌더 (중복 헤더 방지) */
+  suppressHeader?: boolean
 }
 
 export default function BookingModal({
   isOpen,
   title,
   children,
-  onClose
+  onClose,
+  suppressHeader = false,
 }: BookingModalProps) {
   if (!isOpen) return null
 
@@ -19,17 +22,19 @@ export default function BookingModal({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto mx-4">
         <div className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">
-              {title}
-            </h3>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <X size={20} />
-            </button>
-          </div>
+          {!suppressHeader ? (
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {title}
+              </h3>
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          ) : null}
           {children}
         </div>
       </div>

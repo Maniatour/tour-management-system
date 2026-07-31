@@ -17,6 +17,8 @@ export type CustomerInfoReviewItem = {
   reservationId: string
   customerId: string | null
   customerName: string
+  customerPhone: string | null
+  customerEmergencyContact: string | null
   customerLanguage: string | null
   totalPeople: number
   adults: number
@@ -186,15 +188,22 @@ export function useCustomerInfoReviewQueue(enabled = true) {
 
       const customerNameMap = new Map<string, string>()
       const customerLanguageMap = new Map<string, string | null>()
+      const customerPhoneMap = new Map<string, string | null>()
+      const customerEmergencyContactMap = new Map<string, string | null>()
       if (customerIds.size > 0) {
         const { data: customersData, error: customerErr } = await supabase
           .from('customers')
-          .select('id, name, language')
+          .select('id, name, language, phone, emergency_contact')
           .in('id', [...customerIds])
         if (customerErr) throw customerErr
         for (const c of customersData || []) {
           customerNameMap.set(c.id, (c.name && String(c.name).trim()) || '—')
           customerLanguageMap.set(c.id, (c.language && String(c.language).trim()) || null)
+          customerPhoneMap.set(c.id, (c.phone && String(c.phone).trim()) || null)
+          customerEmergencyContactMap.set(
+            c.id,
+            (c.emergency_contact && String(c.emergency_contact).trim()) || null
+          )
         }
       }
 
@@ -284,6 +293,12 @@ export function useCustomerInfoReviewQueue(enabled = true) {
             customerName: reservation.customer_id
               ? customerNameMap.get(reservation.customer_id) || '—'
               : '—',
+            customerPhone: reservation.customer_id
+              ? customerPhoneMap.get(reservation.customer_id) ?? null
+              : null,
+            customerEmergencyContact: reservation.customer_id
+              ? customerEmergencyContactMap.get(reservation.customer_id) ?? null
+              : null,
             customerLanguage: reservation.customer_id
               ? customerLanguageMap.get(reservation.customer_id) ?? null
               : null,

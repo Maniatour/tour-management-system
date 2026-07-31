@@ -224,9 +224,10 @@ export function useReservationFollowUpSnapshots(
     []
   )
 
+  /** 수동 완료 등 refreshToken 변경 시 스냅샷 맵은 유지하고 캐시만 무효화해 재조회 (전체 초기화 시 UI가 비활성처럼 보임) */
   useEffect(() => {
+    if (refreshToken <= 0) return
     loadedIdsRef.current = new Set()
-    setSnapshotsByReservationId(new Map())
   }, [refreshToken])
 
   useEffect(() => {
@@ -438,6 +439,7 @@ export function useReservationFollowUpSnapshots(
     priorityReservationIds,
     productChoicesFetchDone,
     blockingEmailDeliverySync,
+    refreshToken,
   ])
 
   const refreshReservationIds = useCallback(

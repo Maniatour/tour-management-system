@@ -47,6 +47,7 @@ import { TourHotelPriceCheckPanel } from '@/components/admin/todo/TourHotelPrice
 import { TourSettlementPanel } from '@/components/admin/todo/TourSettlementPanel'
 import { ReservationAgencyManagementPanel } from '@/components/admin/todo/ReservationAgencyManagementPanel'
 import { AntelopeCanyonBookingPanel } from '@/components/admin/todo/AntelopeCanyonBookingPanel'
+import { BentoCheckPanel } from '@/components/admin/todo/BentoCheckPanel'
 import {
   TourQuickPrintHost,
   type TourQuickPrintRequest,
@@ -136,6 +137,13 @@ import {
   antelopeCanyonBookingCompletionDateKey,
   antelopeCanyonBookingTodoFormSeed,
 } from '@/lib/antelopeCanyonBookingTodo'
+import {
+  shouldHideTodoChipForBentoCheckPanel,
+  findBentoCheckLinkedTodo,
+  readBentoCheckLocalCompleted,
+  bentoCheckCompletionDateKey,
+  bentoCheckTodoFormSeed,
+} from '@/lib/bentoCheckTodo'
 import { useTeamBoardManualOptional } from '@/contexts/TeamBoardManualContext'
 import { useAdminTodo } from '@/contexts/AdminTodoContext'
 import {
@@ -367,6 +375,7 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     () => antelopeCanyonBookingCompletionDateKey(),
     []
   )
+  const bentoCheckCompletionKey = useMemo(() => bentoCheckCompletionDateKey(), [])
   const [envelopeCompleted, setEnvelopeCompleted] = useState(() =>
     readTourEnvelopePrintLocalCompleted(envelopeTargetDate)
   )
@@ -403,6 +412,9 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     )
   const [antelopeCanyonBookingCompleted, setAntelopeCanyonBookingCompleted] = useState(() =>
     readAntelopeCanyonBookingLocalCompleted(antelopeCanyonBookingCompletionKey)
+  )
+  const [bentoCheckCompleted, setBentoCheckCompleted] = useState(() =>
+    readBentoCheckLocalCompleted(bentoCheckCompletionKey)
   )
   const [tourHotelDetailModalId, setTourHotelDetailModalId] = useState<string | null>(null)
   const [onHoldFeatureEnabled, setOnHoldFeatureEnabled] = useState(true)
@@ -498,6 +510,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     )
   }, [todos, antelopeCanyonBookingCompletionKey])
 
+  useEffect(() => {
+    const linked = findBentoCheckLinkedTodo(todos)
+    setBentoCheckCompleted(
+      linked?.completed ?? readBentoCheckLocalCompleted(bentoCheckCompletionKey)
+    )
+  }, [todos, bentoCheckCompletionKey])
+
   const handleEnvelopeToggleLinkedTodo = useCallback(
     async (todo: { id: string; completed: boolean }, completed: boolean) => {
       const full = todos.find((t) => t.id === todo.id)
@@ -590,6 +609,12 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     activeListTab,
     antelopeCanyonBookingCompleted,
     findAntelopeCanyonBookingLinkedTodo(todos)?.on_hold ?? false
+  )
+
+  const showBentoCheckInList = panelVisibleInTab(
+    activeListTab,
+    bentoCheckCompleted,
+    findBentoCheckLinkedTodo(todos)?.on_hold ?? false
   )
 
   const tourHotelPriceCheckOnHold = findTourHotelPriceCheckLinkedTodo(todos)?.on_hold ?? false
@@ -1122,6 +1147,47 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     setCreateOpen(true)
   }, [todos, openEditTodo, locale])
 
+  const handleBentoCheckToggleLinkedTodo = useCallback(
+    async (todo: { id: string; completed: boolean }, completed: boolean) => {
+      const full = todos.find((t) => t.id === todo.id)
+      if (!full) return
+      setSubmittingId(full.id)
+      try {
+        const { data, error } = await toggleOpTodoCompletion(full, completed)
+        if (error) throw error
+        const patch = {
+          completed: data?.completed ?? completed,
+          completed_at: data?.completed_at ?? (completed ? new Date().toISOString() : null),
+          next_notify_at: data?.next_notify_at ?? full.next_notify_at ?? null,
+          on_hold: data?.on_hold ?? false,
+        }
+        setTodos((prev) => prev.map((t) => (t.id === full.id ? { ...t, ...patch } : t)))
+        adjustPendingCount(full, { completed: patch.completed, on_hold: !!patch.on_hold })
+        dispatchOpTodoRefresh()
+      } catch (e) {
+        console.error(e)
+        alert(isKo ? '완료 처리에 실패했습니다.' : 'Failed to update todo.')
+        throw e
+      } finally {
+        setSubmittingId(null)
+      }
+    },
+    [adjustPendingCount, isKo, todos]
+  )
+
+  const openEditBentoCheckTodo = useCallback(() => {
+    const linked = findBentoCheckLinkedTodo(todos)
+    if (linked) {
+      openEditTodo(linked)
+      return
+    }
+    setNewTodo({
+      ...EMPTY_OP_TODO_FORM,
+      ...bentoCheckTodoFormSeed(locale),
+    })
+    setCreateOpen(true)
+  }, [todos, openEditTodo, locale])
+
   const persona = useMemo(
     () =>
       resolveSiteAccessPersona({
@@ -1509,7 +1575,8 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
           !shouldHideTodoChipForTourHotelPriceCheckPanel(t) &&
           !shouldHideTodoChipForTourSettlementPanel(t) &&
           !shouldHideTodoChipForReservationAgencyManagementPanel(t) &&
-          !shouldHideTodoChipForAntelopeCanyonBookingPanel(t)
+          !shouldHideTodoChipForAntelopeCanyonBookingPanel(t) &&
+          !shouldHideTodoChipForBentoCheckPanel(t)
       ),
     [todos]
   )
@@ -1609,6 +1676,7 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     () => findAntelopeCanyonBookingLinkedTodo(todos),
     [todos]
   )
+  const bentoCheckLinkedTodo = useMemo(() => findBentoCheckLinkedTodo(todos), [todos])
 
   const panelHoldProps = useCallback(
     (linked: { id: string; on_hold?: boolean | null } | null | undefined) => {
@@ -2083,7 +2151,8 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
           !showTourHotelPriceCheckInList &&
           !showTourSettlementInList &&
           !showReservationAgencyManagementInList &&
-          !showAntelopeCanyonBookingInList ? (
+          !showAntelopeCanyonBookingInList &&
+          !showBentoCheckInList ? (
           <p className="py-12 text-center text-sm text-gray-500">
             {activeListTab === 'pending'
               ? isKo
@@ -2333,6 +2402,26 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   onEditRequest={openEditAntelopeCanyonBookingTodo}
                   onOpenTourDetail={setTourHotelDetailModalId}
                   {...panelHoldProps(antelopeCanyonBookingLinkedTodo)}
+                />
+              </li>
+            ) : null}
+            {showBentoCheckInList ? (
+              <li
+                className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
+                  'daily',
+                  bentoCheckCompleted,
+                  bentoCheckLinkedTodo?.on_hold ?? false
+                )}`}
+              >
+                <BentoCheckPanel
+                  locale={locale}
+                  variant="list"
+                  linkedTodos={todos as never}
+                  onCompletedChange={setBentoCheckCompleted}
+                  onToggleLinkedTodo={handleBentoCheckToggleLinkedTodo}
+                  onEditRequest={openEditBentoCheckTodo}
+                  onOpenTourDetail={setTourHotelDetailModalId}
+                  {...panelHoldProps(bentoCheckLinkedTodo)}
                 />
               </li>
             ) : null}

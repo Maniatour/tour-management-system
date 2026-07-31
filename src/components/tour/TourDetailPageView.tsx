@@ -18,6 +18,7 @@ import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
 import TicketBookingForm from '@/components/booking/TicketBookingForm'
 import TicketBookingBulkAddModal from '@/components/booking/TicketBookingBulkAddModal'
 import TourHotelBookingForm from '@/components/booking/TourHotelBookingForm'
+import BookingHistory from '@/components/booking/BookingHistory'
 import TourWeather from '@/components/TourWeather'
 import { useAuth } from '@/contexts/AuthContext'
 import { isSuperAdminActor } from '@/lib/superAdmin'
@@ -150,6 +151,15 @@ type LocalTourHotelBooking = {
   check_out_date?: string | null
   rn_number?: string | null
   booking_reference?: string | null
+  total_price?: number | null
+  unit_price?: number | null
+  payment_method?: string | null
+  city?: string | null
+  website?: string | null
+  cc?: string | null
+  tour_id?: string | null
+  event_date?: string | null
+  replaces_booking_id?: string | null
 }
 
 // 외부 폼 컴포넌트의 엄격한 타입 충돌을 피하기 위한 any 캐스팅 래퍼
@@ -210,6 +220,9 @@ export function TourDetailPageView({
   const [showTicketBookingForm, setShowTicketBookingForm] = useState<boolean>(false)
   const [showTicketBookingBulkAdd, setShowTicketBookingBulkAdd] = useState<boolean>(false)
   const [showTourHotelBookingForm, setShowTourHotelBookingForm] = useState<boolean>(false)
+  const [hotelBookingSeed, setHotelBookingSeed] = useState<LocalTourHotelBooking | null>(null)
+  const [replacesBookingId, setReplacesBookingId] = useState<string | null>(null)
+  const [hotelBookingHistoryId, setHotelBookingHistoryId] = useState<string | null>(null)
   const [editingTicketBooking, setEditingTicketBooking] = useState<LocalTicketBooking | null>(null)
   const [editingTourHotelBooking, setEditingTourHotelBooking] = useState<LocalTourHotelBooking | null>(null)
   const [editingReservation, setEditingReservation] = useState<any>(null)
@@ -1912,30 +1925,91 @@ export function TourDetailPageView({
 
   const handleAddTourHotelBooking = async () => {
     setEditingTourHotelBooking(null)
+    setHotelBookingSeed(null)
+    setReplacesBookingId(null)
     setShowTourHotelBookingForm(true)
-    // 부킹 데이터 새로고침
     await loadBookings()
   }
 
   const handleEditTourHotelBooking = async (booking: LocalTourHotelBooking) => {
     setEditingTourHotelBooking(booking)
+    setHotelBookingSeed(null)
+    setReplacesBookingId(null)
     setShowTourHotelBookingForm(true)
-    // 부킹 데이터 새로고침
     await loadBookings()
+  }
+
+  const handleRebookTourHotelBooking = async (booking: LocalTourHotelBooking) => {
+    const isKo = locale === 'ko'
+    const confirmed = window.confirm(
+      isKo
+        ? '새 부킹을 추가합니다. 저장할 때 기존 예약이 취소됩니다.\n호텔·날짜는 유지되고 RN#·금액은 새로 입력합니다. 계속할까요?'
+        : 'Add a new booking. The current booking will be cancelled when you save.\nHotel and dates will be kept; enter a new RN# and price. Continue?'
+    )
+    if (!confirmed) return
+
+    try {
+      const { data: full, error: fetchError } = await supabase
+        .from('tour_hotel_bookings')
+        .select('*')
+        .eq('id', booking.id)
+        .maybeSingle()
+
+      if (fetchError || !full) {
+        throw fetchError || new Error('Booking not found')
+      }
+
+      const {
+        id: _id,
+        rn_number: _rn,
+        unit_price: _unit,
+        total_price: _total,
+        status: _status,
+        created_at: _ca,
+        updated_at: _ua,
+        replaces_booking_id: _rep,
+        ...rest
+      } = full as Record<string, unknown>
+
+      setEditingTourHotelBooking(null)
+      setHotelBookingSeed(rest as LocalTourHotelBooking)
+      setReplacesBookingId(booking.id)
+      setShowTourHotelBookingForm(true)
+    } catch (error) {
+      console.error('호텔 재예약 준비 오류:', error)
+      alert(locale === 'ko' ? '재예약 준비에 실패했습니다.' : 'Failed to start rebooking.')
+    }
+  }
+
+  const handleViewTourHotelBookingHistory = (booking: LocalTourHotelBooking) => {
+    setHotelBookingHistoryId(booking.id)
+  }
+
+  const clearHotelBookingFormExtras = () => {
+    setHotelBookingSeed(null)
+    setReplacesBookingId(null)
   }
 
   const handleCloseTourHotelBookingForm = async () => {
     setShowTourHotelBookingForm(false)
     setEditingTourHotelBooking(null)
-    // 부킹 데이터 새로고침
+    clearHotelBookingFormExtras()
     await loadBookings()
   }
 
   const handleBookingSubmit = async (_booking: LocalTicketBooking | LocalTourHotelBooking, type: 'ticket' | 'hotel') => {
+    const wasHotelRebook = type === 'hotel' && Boolean(replacesBookingId)
     if (tourData.tour) {
       await loadBookings()
     }
-    const savedMessage = locale === 'ko' ? '저장 완료되었습니다.' : 'Saved successfully.'
+    const savedMessage =
+      type === 'hotel' && wasHotelRebook
+        ? locale === 'ko'
+          ? '새 부킹이 저장되었습니다. 이전 예약은 취소 상태이며 히스토리에서 확인할 수 있습니다.'
+          : 'New booking saved. The previous booking is cancelled — see history for details.'
+        : locale === 'ko'
+          ? '저장 완료되었습니다.'
+          : 'Saved successfully.'
     alert(savedMessage)
     if (type === 'ticket') {
       setShowTicketBookingForm(false)
@@ -1943,6 +2017,7 @@ export function TourDetailPageView({
     } else {
       setShowTourHotelBookingForm(false)
       setEditingTourHotelBooking(null)
+      clearHotelBookingFormExtras()
     }
   }
 
@@ -2464,6 +2539,8 @@ export function TourDetailPageView({
               onAddTourHotelBooking={handleAddTourHotelBooking}
               onEditTicketBooking={handleEditTicketBooking}
               onEditTourHotelBooking={handleEditTourHotelBooking}
+              onRebookTourHotelBooking={handleRebookTourHotelBooking}
+              onViewTourHotelBookingHistory={handleViewTourHotelBookingHistory}
             />
             </div>
 
@@ -2773,18 +2850,45 @@ export function TourDetailPageView({
       {/* 투어 호텔 부킹 폼 모달 */}
       <BookingModal
         isOpen={showTourHotelBookingForm}
-        title={editingTourHotelBooking ? (locale === 'ko' ? '투어 호텔 부킹 수정' : 'Edit Tour Hotel Booking') : (locale === 'ko' ? '새 투어 호텔 부킹' : 'New Tour Hotel Booking')}
+        title=""
+        suppressHeader
         onClose={handleCloseTourHotelBookingForm}
       >
         {showTourHotelBookingForm && tourData.tour && (
               <TourHotelBookingFormAny
+                key={editingTourHotelBooking?.id ?? replacesBookingId ?? 'new-hotel'}
                 booking={editingTourHotelBooking || undefined}
+                seedBooking={!editingTourHotelBooking && hotelBookingSeed ? hotelBookingSeed : undefined}
+                replacesBookingId={replacesBookingId ?? undefined}
             tourId={tourData.tour?.id || ''}
+            defaultTourDate={tourData.tour?.tour_date || ''}
+            modalTitle={
+              editingTourHotelBooking
+                ? locale === 'ko'
+                  ? '투어 호텔 부킹 수정'
+                  : 'Edit Tour Hotel Booking'
+                : replacesBookingId
+                  ? locale === 'ko'
+                    ? '새 호텔 부킹 (가격 변경)'
+                    : 'New hotel booking (price change)'
+                  : locale === 'ko'
+                    ? '새 투어 호텔 부킹'
+                    : 'New Tour Hotel Booking'
+            }
+            showHeaderClose
                 onSave={(b: any) => handleBookingSubmit(b as unknown as LocalTourHotelBooking, 'hotel')}
                 onCancel={handleCloseTourHotelBookingForm}
               />
         )}
       </BookingModal>
+
+      {hotelBookingHistoryId ? (
+        <BookingHistory
+          bookingType="hotel"
+          bookingId={hotelBookingHistoryId}
+          onClose={() => setHotelBookingHistoryId(null)}
+        />
+      ) : null}
 
       {/* 픽업 스케줄 자동 생성 모달 */}
       {tourData.tour && (

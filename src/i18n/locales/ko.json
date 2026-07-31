@@ -5237,7 +5237,10 @@
       "time": "시간",
       "reservationId": "예약번호",
       "rnNumber": "RN#",
-      "deletionRequested": "삭제 요청됨"
+      "deletionRequested": "삭제 요청됨",
+      "showCancelledHotelBookings": "취소된 예약 보기",
+      "hideCancelledHotelBookings": "취소된 예약 숨기기",
+      "noActiveHotelBookings": "표시할 호텔 부킹이 없습니다. 취소된 예약이 있으면 위 버튼으로 확인하세요."
     },
     "assignmentManagement": {
       "title": "배정 관리",

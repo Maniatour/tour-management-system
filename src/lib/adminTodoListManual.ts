@@ -314,6 +314,27 @@ export const ADMIN_TODO_LIST_MANUAL_SECTIONS: AdminTodoListManualSection[] = [
     completeEn: 'Resolve mismatches and due items, then mark panel done.',
   },
   {
+    id: 'bento-check',
+    titleKo: '도시락 체크',
+    titleEn: 'Bento check',
+    categoryKo: '일일 · 고정 패널',
+    categoryEn: 'Daily · built-in panel',
+    departmentKo: 'Office',
+    departmentEn: 'Office',
+    filterLinesKo: [
+      '투어일 = 오늘 + 2일(D+2, LA 기준).',
+      '취소·삭제된 투어·예약 제외.',
+      '예약 옵션(reservation_options) 또는 선택 초이스에 도시락/식사(meal) 옵션이 있는 투어만 표시.',
+    ],
+    filterLinesEn: [
+      'Tour date = today + 2 days (D+2, LA).',
+      'Excludes cancelled or deleted tours and reservations.',
+      'Shows tours with bento/meal options in reservation_options or reservation choices.',
+    ],
+    completeKo: '도시락 주문 완료 후 투어별 완료 처리.',
+    completeEn: 'Place bento orders, then mark each tour done.',
+  },
+  {
     id: 'custom-db-todos',
     titleKo: '사용자 정의 Todo (DB)',
     titleEn: 'Custom todos (database)',

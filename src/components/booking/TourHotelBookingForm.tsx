@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Settings2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { fetchUploadApi } from '@/lib/uploadClient';
 import { useLocale, useTranslations } from 'next-intl';
@@ -10,6 +11,16 @@ import {
   fetchTicketToursForCheckIn,
   type TicketTourPickerRow,
 } from '@/lib/ticketBookingToursForCheckIn';
+import { SearchableTextSelect } from '@/components/booking/SearchableTextSelect';
+import TourHotelReferenceManageModal from '@/components/booking/TourHotelReferenceManageModal';
+import {
+  addDaysToYmd,
+  DEFAULT_TOUR_HOTEL_ROOM_TYPE,
+  resolveHotelReferenceFields,
+  TOUR_HOTEL_BOOKING_STATUS_OPTIONS,
+  normalizeTourHotelBookingStatus,
+  type TourHotelReference,
+} from '@/lib/tourHotelReferences';
 
 interface TourHotelBooking {
   id?: string;
@@ -40,22 +51,13 @@ function roundUsdTotal(product: number): number {
   return Math.round(product * 100) / 100;
 }
 
-function teamMemberMatchesReservation(
-  member: { name_ko: string | null; name_en: string | null },
-  reservationName: string
-): boolean {
-  const r = reservationName.trim();
-  if (!r) return false;
-  const ko = (member.name_ko || '').trim();
-  const en = (member.name_en || '').trim();
-  return r === ko || (en.length > 0 && r === en);
-}
 
 /** DB 컬럼만 전송 (File 등 클라이언트 전용 필드 제외) — 그대로내면 400 발생 */
 function toTourHotelBookingRowPayload(
   formData: TourHotelBooking,
   newUploadedUrls: string[],
-  submittedByEmail: string
+  submittedByEmail: string,
+  replacesBookingId?: string
 ): Record<string, unknown> {
   const existingUrls = Array.isArray(formData.uploaded_file_urls)
     ? formData.uploaded_file_urls.filter((u): u is string => typeof u === 'string' && u.length > 0)
@@ -86,6 +88,10 @@ function toTourHotelBookingRowPayload(
     status: formData.status,
   };
 
+  if (replacesBookingId?.trim()) {
+    row.replaces_booking_id = replacesBookingId.trim();
+  }
+
   if (newUploadedUrls.length > 0) {
     row.uploaded_file_urls = [...existingUrls, ...newUploadedUrls];
   } else if (existingUrls.length > 0) {
@@ -97,29 +103,83 @@ function toTourHotelBookingRowPayload(
 
 function buildInitialFormData(
   tourId: string | undefined,
-  booking?: TourHotelBooking
+  booking?: TourHotelBooking,
+  defaultTourDate?: string,
+  seedBooking?: TourHotelBooking
 ): TourHotelBooking {
+  const tourDate = String(defaultTourDate || '').trim().slice(0, 10);
   const empty: TourHotelBooking = {
     tour_id: tourId || '',
-    event_date: '',
-    check_in_date: '',
-    check_out_date: '',
+    event_date: tourDate || '',
+    check_in_date: tourDate,
+    check_out_date: tourDate ? addDaysToYmd(tourDate, 1) : '',
     reservation_name: '',
     submitted_by: '',
     cc: 'not_sent',
     rooms: 1,
     city: '',
     hotel: '',
-    room_type: '',
+    room_type: DEFAULT_TOUR_HOTEL_ROOM_TYPE,
     unit_price: 0,
     total_price: 0,
     payment_method: '',
     website: '',
     rn_number: '',
-    status: 'pending',
+    status: 'confirmed',
     uploaded_files: [],
     uploaded_file_urls: [],
   };
+
+  if (booking?.id) {
+    return {
+      ...empty,
+      ...booking,
+      tour_id: booking.tour_id ?? tourId ?? empty.tour_id,
+      event_date: booking.event_date ?? null,
+      check_in_date: booking.check_in_date ?? empty.check_in_date,
+      check_out_date: booking.check_out_date ?? empty.check_out_date,
+      reservation_name: booking.reservation_name ?? empty.reservation_name,
+      submitted_by: booking.submitted_by ?? empty.submitted_by,
+      cc: booking.cc ?? empty.cc,
+      rooms: booking.rooms ?? empty.rooms,
+      city: (booking.city != null ? String(booking.city).trim() : '') || empty.city,
+      hotel: (booking.hotel != null ? String(booking.hotel).trim() : '') || empty.hotel,
+      room_type: booking.room_type ?? empty.room_type,
+      unit_price: booking.unit_price ?? empty.unit_price,
+      total_price: booking.total_price ?? empty.total_price,
+      payment_method: booking.payment_method ?? empty.payment_method,
+      website: booking.website ?? empty.website,
+      rn_number: booking.rn_number ?? empty.rn_number,
+      status: normalizeTourHotelBookingStatus(booking.status),
+      uploaded_file_urls: booking.uploaded_file_urls ?? empty.uploaded_file_urls,
+      uploaded_files: [],
+    } as TourHotelBooking;
+  }
+
+  if (seedBooking) {
+    return {
+      ...empty,
+      ...seedBooking,
+      tour_id: seedBooking.tour_id ?? tourId ?? empty.tour_id,
+      event_date: seedBooking.event_date ?? seedBooking.check_in_date ?? empty.event_date,
+      check_in_date: seedBooking.check_in_date ?? empty.check_in_date,
+      check_out_date: seedBooking.check_out_date ?? empty.check_out_date,
+      reservation_name: seedBooking.reservation_name ?? empty.reservation_name,
+      cc: seedBooking.cc ?? empty.cc,
+      rooms: seedBooking.rooms ?? empty.rooms,
+      city: (seedBooking.city != null ? String(seedBooking.city).trim() : '') || empty.city,
+      hotel: (seedBooking.hotel != null ? String(seedBooking.hotel).trim() : '') || empty.hotel,
+      room_type: seedBooking.room_type ?? empty.room_type,
+      unit_price: 0,
+      total_price: 0,
+      payment_method: seedBooking.payment_method ?? '',
+      website: seedBooking.website ?? empty.website,
+      rn_number: '',
+      status: 'confirmed',
+      uploaded_file_urls: [],
+      uploaded_files: [],
+    } as TourHotelBooking;
+  }
 
   if (!booking) {
     return empty;
@@ -144,7 +204,7 @@ function buildInitialFormData(
     payment_method: booking.payment_method ?? empty.payment_method,
     website: booking.website ?? empty.website,
     rn_number: booking.rn_number ?? empty.rn_number,
-    status: booking.status ?? empty.status,
+    status: normalizeTourHotelBookingStatus(booking.status),
     uploaded_file_urls: booking.uploaded_file_urls ?? empty.uploaded_file_urls,
     uploaded_files: [],
   } as TourHotelBooking;
@@ -155,32 +215,48 @@ interface TourHotelBookingFormProps {
   onSave: (booking: TourHotelBooking) => void;
   onCancel: () => void;
   tourId?: string;
+  /** 투어 상세 모달 등에서 새 부킹 시 체크인 기본값 */
+  defaultTourDate?: string;
+  /** 모달 제목줄 왼쪽 (상태 버튼은 오른쪽 끝) */
+  modalTitle?: string;
+  /** 제목줄 오른쪽에 닫기(X) 버튼 표시 */
+  showHeaderClose?: boolean;
+  /** 취소된 부킹에서 이어서 새로 추가할 때 시드 데이터 */
+  seedBooking?: TourHotelBooking;
+  /** replaces_booking_id 로 저장 */
+  replacesBookingId?: string;
 }
 
 export default function TourHotelBookingForm({ 
   booking, 
   onSave, 
   onCancel, 
-  tourId 
+  tourId,
+  defaultTourDate,
+  modalTitle,
+  showHeaderClose = false,
+  seedBooking,
+  replacesBookingId,
 }: TourHotelBookingFormProps) {
   const t = useTranslations('booking.tourHotelBooking');
   const locale = useLocale();
   const { authUser } = useAuth();
   const [formData, setFormData] = useState<TourHotelBooking>(() =>
-    buildInitialFormData(tourId, booking)
+    buildInitialFormData(tourId, booking, defaultTourDate, seedBooking)
   );
 
   useEffect(() => {
-    setFormData(buildInitialFormData(tourId, booking));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- booking 전체는 참조가 불안정할 수 있음
-  }, [booking?.id, tourId]);
+    setFormData(buildInitialFormData(tourId, booking, defaultTourDate, seedBooking));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- booking/seed 참조 불안정
+  }, [booking?.id, tourId, defaultTourDate, seedBooking, replacesBookingId]);
 
   const [tours, setTours] = useState<TicketTourPickerRow[]>([]);
   const [toursLoading, setToursLoading] = useState(false);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [hotelReferences, setHotelReferences] = useState<TourHotelReference[]>([]);
   const [hotels, setHotels] = useState<string[]>([]);
-  const [cities, setCities] = useState<string[]>([]);
   const [websites, setWebsites] = useState<string[]>([]);
+  const [showHotelManageModal, setShowHotelManageModal] = useState(false);
   const [paymentMethodsList, setPaymentMethodsList] = useState<
     Array<{ id: string; method: string; display_name: string | null }>
   >([]);
@@ -196,8 +272,8 @@ export default function TourHotelBookingForm({
 
   useEffect(() => {
     fetchTeamMembers();
+    fetchHotelReferences();
     fetchHotels();
-    fetchCities();
     fetchWebsites();
     fetchPaymentMethods();
   }, []);
@@ -325,6 +401,19 @@ export default function TourHotelBookingForm({
     }
   };
 
+  const fetchHotelReferences = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('tour_hotel_references' as never)
+        .select('id, hotel_name, city, website')
+        .order('hotel_name');
+      if (error) throw error;
+      setHotelReferences((data || []) as TourHotelReference[]);
+    } catch (error) {
+      console.error('호텔 참조 목록 조회 오류:', error);
+    }
+  };
+
   const fetchHotels = async () => {
     try {
       const { data, error } = await supabase
@@ -347,27 +436,94 @@ export default function TourHotelBookingForm({
     }
   };
 
-  const fetchCities = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('tour_hotel_bookings')
-        .select('city')
-        .not('city', 'is', null)
-        .order('city');
-      
-      if (error) throw error;
-      const uniqueCities = [
-        ...new Set(
-          (data?.map((item) => (item.city != null ? String(item.city).trim() : '')) || []).filter(
-            (c) => c.length > 0
-          )
-        ),
-      ].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-      setCities(uniqueCities);
-    } catch (error) {
-      console.error('도시 목록 조회 오류:', error);
+  const applyHotelAutoFields = useCallback(
+    (hotelName: string) => {
+      const resolved = resolveHotelReferenceFields(hotelName, hotelReferences);
+      if (!resolved) return;
+      setFormData((prev) => ({
+        ...prev,
+        city: resolved.city,
+        ...(resolved.website ? { website: resolved.website } : {}),
+      }));
+    },
+    [hotelReferences]
+  );
+
+  const hotelNameOptions = useMemo(() => {
+    const names = new Set<string>();
+    hotelReferences.forEach((r) => {
+      if (r.hotel_name.trim()) names.add(r.hotel_name.trim());
+    });
+    hotels.forEach((h) => {
+      if (h.trim()) names.add(h.trim());
+    });
+    return [...names]
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+      .map((name) => ({ value: name, label: name }));
+  }, [hotelReferences, hotels]);
+
+  const reservationNameOptions = useMemo(() => {
+    const opts: Array<{ value: string; label: string; hint?: string }> = [];
+    const seen = new Set<string>();
+    teamMembers.forEach((member) => {
+      const ko = (member.name_ko || '').trim();
+      const en = (member.name_en || '').trim();
+      const position = member.position || '';
+      if (ko && !seen.has(ko)) {
+        seen.add(ko);
+        opts.push({
+          value: ko,
+          label: ko,
+          hint: [en, position].filter(Boolean).join(' · '),
+        });
+      }
+      if (en && en !== ko && !seen.has(en)) {
+        seen.add(en);
+        opts.push({
+          value: en,
+          label: en,
+          hint: [ko, position].filter(Boolean).join(' · '),
+        });
+      }
+    });
+    const current = formData.reservation_name?.trim();
+    if (current && !seen.has(current)) {
+      opts.unshift({ value: current, label: current, hint: '기존 값' });
     }
-  };
+    return opts;
+  }, [teamMembers, formData.reservation_name]);
+
+  const paymentMethodOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const opts: Array<{ id: string; value: string; label: string }> = [];
+    for (const pm of paymentMethodsList) {
+      const value = String(pm.method || '').trim();
+      if (!value || seen.has(value)) continue;
+      seen.add(value);
+      opts.push({
+        id: pm.id,
+        value,
+        label: pm.display_name || value,
+      });
+    }
+    const current = formData.payment_method?.trim();
+    if (current && !seen.has(current)) {
+      opts.unshift({ id: `legacy-${current}`, value: current, label: current });
+    }
+    return opts;
+  }, [paymentMethodsList, formData.payment_method]);
+
+  const roomTypeOptions = useMemo(
+    () => [
+      DEFAULT_TOUR_HOTEL_ROOM_TYPE,
+      '1 KING',
+      '2 QUEEN',
+      '2 FULL',
+      '3 FULL',
+      '3 QUEEN',
+    ],
+    []
+  );
 
   const fetchWebsites = async () => {
     try {
@@ -502,7 +658,12 @@ export default function TourHotelBookingForm({
         }
       }
 
-      const rowPayload = toTourHotelBookingRowPayload(formData, uploadedFileUrls, submitterEmail);
+      const rowPayload = toTourHotelBookingRowPayload(
+        formData,
+        uploadedFileUrls,
+        submitterEmail,
+        !booking?.id ? replacesBookingId : undefined
+      );
 
       let error;
       if (booking?.id) {
@@ -516,6 +677,23 @@ export default function TourHotelBookingForm({
           .from('tour_hotel_bookings')
           .insert(rowPayload as never);
         error = insertError;
+
+        if (!error && replacesBookingId?.trim()) {
+          const priorId = replacesBookingId.trim();
+          const { error: cancelError } = await supabase
+            .from('tour_hotel_bookings')
+            .update({ status: 'cancelled' } as never)
+            .eq('id', priorId)
+            .neq('status', 'cancelled');
+          if (cancelError) {
+            console.error('이전 부킹 취소 오류:', cancelError);
+            alert(
+              locale === 'ko'
+                ? '새 부킹은 저장되었으나 이전 부킹 취소 처리에 실패했습니다. 수동으로 취소해 주세요.'
+                : 'New booking saved but failed to cancel the previous booking. Please cancel it manually.'
+            );
+          }
+        }
       }
 
       if (error) throw error;
@@ -552,22 +730,29 @@ export default function TourHotelBookingForm({
         const unitNum = name === 'unit_price' ? (Number(nextVal) || 0) : prev.unit_price;
         next.total_price = roundUsdTotal(roomsNum * unitNum);
       }
+      if (name === 'check_in_date' && typeof nextVal === 'string' && nextVal.trim()) {
+        next.check_out_date = addDaysToYmd(nextVal, 1);
+        next.event_date = nextVal.trim();
+      }
       return next;
     });
+
+    if (name === 'hotel' && typeof nextVal === 'string') {
+      applyHotelAutoFields(nextVal);
+    }
 
     // 투어 선택 시 날짜 자동 설정
     if (name === 'tour_id' && value) {
       const selectedTour = tours.find(tour => tour.id === value);
       if (selectedTour && selectedTour.tour_date) {
         const tourDate = selectedTour.tour_date;
-        const checkOutDate = new Date(tourDate);
-        checkOutDate.setDate(checkOutDate.getDate() + 1);
-        const checkOutDateString = checkOutDate.toISOString().split('T')[0];
+        const checkOutDateString = addDaysToYmd(tourDate, 1);
         
         setFormData(prev => ({
           ...prev,
           check_in_date: tourDate,
-          check_out_date: checkOutDateString
+          check_out_date: checkOutDateString,
+          event_date: tourDate,
         }));
       }
     }
@@ -580,6 +765,11 @@ export default function TourHotelBookingForm({
       setFilteredWebsites(filtered);
       setShowWebsiteSuggestions(value.length > 0 && filtered.length > 0);
     }
+  };
+
+  const handleHotelNameChange = (hotelName: string) => {
+    setFormData((prev) => ({ ...prev, hotel: hotelName.trim() }));
+    applyHotelAutoFields(hotelName);
   };
 
   const handleWebsiteSelect = (website: string) => {
@@ -603,24 +793,82 @@ export default function TourHotelBookingForm({
     }
 
     const formattedDate = newDate.toISOString().split('T')[0];
-    setFormData(prev => ({
-      ...prev,
-      [field]: formattedDate
-    }));
+    setFormData(prev => {
+      const next = { ...prev, [field]: formattedDate };
+      if (field === 'check_in_date') {
+        next.check_out_date = addDaysToYmd(formattedDate, 1);
+        next.event_date = formattedDate;
+      }
+      return next;
+    });
   };
 
-  const reservationInTeamList = teamMembers.some((m) =>
-    teamMemberMatchesReservation(m, formData.reservation_name || '')
-  );
+  const legacyStatusOption =
+    formData.status &&
+    !TOUR_HOTEL_BOOKING_STATUS_OPTIONS.some((o) => o.value === formData.status)
+      ? formData.status
+      : null;
 
-  const cityTrim = (formData.city || '').trim();
-  const hotelTrim = (formData.hotel || '').trim();
-  const cityInDbList = cityTrim.length > 0 && cities.includes(cityTrim);
-  const hotelInDbList = hotelTrim.length > 0 && hotels.includes(hotelTrim);
+  const statusBar = (
+    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
+      {TOUR_HOTEL_BOOKING_STATUS_OPTIONS.map((opt) => {
+        const active = formData.status === opt.value;
+        const label = locale === 'ko' ? opt.labelKo : opt.labelEn;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setFormData((prev) => ({ ...prev, status: opt.value }))}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium border transition-colors ${
+              active
+                ? opt.value === 'confirmed'
+                  ? 'bg-green-600 text-white border-green-600'
+                  : 'bg-red-600 text-white border-red-600'
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            {label}
+          </button>
+        );
+      })}
+      {legacyStatusOption ? (
+        <span className="text-xs text-amber-700 px-1">
+          ({legacyStatusOption})
+        </span>
+      ) : null}
+      {showHeaderClose ? (
+        <button
+          type="button"
+          onClick={onCancel}
+          className="ml-1 p-1 text-gray-400 hover:text-gray-600 rounded-md"
+          aria-label={t('cancel')}
+        >
+          <X size={20} />
+        </button>
+      ) : null}
+    </div>
+  );
 
   return (
     <div className="space-y-3 sm:space-y-4">
+        {(modalTitle || !showHeaderClose) && (
+          <div className={`flex items-start sm:items-center gap-3 ${modalTitle ? '-mt-2 mb-2' : 'mb-3'}`}>
+            {modalTitle ? (
+              <h3 className="text-lg font-semibold text-gray-900 shrink-0">{modalTitle}</h3>
+            ) : (
+              <span className="flex-1" />
+            )}
+            <div className="flex-1 min-w-0 flex justify-end">{statusBar}</div>
+          </div>
+        )}
         <form onSubmit={handleSubmit}>
+          {replacesBookingId ? (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+              {locale === 'ko'
+                ? `저장하면 이전 부킹이 취소되고 새 부킹이 추가됩니다. 호텔·날짜 정보는 유지됩니다. 새 RN#·금액·결제 방법을 입력한 뒤 저장하세요. (이전 ID: ${replacesBookingId.slice(0, 8)}…)`
+                : `Saving will cancel the previous booking and add this new one. Hotel and dates are kept — enter new RN#, price, and payment method. (Prior ID: ${replacesBookingId.slice(0, 8)}…)`}
+            </div>
+          ) : null}
           {/* 첫 번째 줄: 투어 선택, RN# - 모바일 최적화 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div>
@@ -770,54 +1018,14 @@ export default function TourHotelBookingForm({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 예약자명 *
               </label>
-              <select
-                name="reservation_name"
+              <SearchableTextSelect
                 value={formData.reservation_name || ''}
-                onChange={handleChange}
+                onChange={(v) => setFormData((prev) => ({ ...prev, reservation_name: v }))}
+                options={reservationNameOptions}
+                placeholder="이름 검색"
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                <option value="">예약자명을 선택하세요</option>
-                {formData.reservation_name?.trim() && !reservationInTeamList ? (
-                  <option value={formData.reservation_name.trim()}>
-                    {formData.reservation_name.trim()} (비활성/미등록 예약자명 · 수정 시 팀원만 선택 가능)
-                  </option>
-                ) : null}
-                {teamMembers.flatMap((member) => {
-                  const ko = (member.name_ko || '').trim();
-                  const en = (member.name_en || '').trim();
-                  const opts: React.ReactElement[] = [];
-                  if (ko) {
-                    opts.push(
-                      <option key={`${member.email}-ko`} value={ko}>
-                        {ko}
-                        {en ? ` (${en})` : ''} — {member.position || '직책 없음'}
-                      </option>
-                    );
-                  }
-                  if (en && en !== ko) {
-                    opts.push(
-                      <option key={`${member.email}-en`} value={en}>
-                        {en}
-                        {ko ? ` (${ko})` : ''} — {member.position || '직책 없음'}
-                      </option>
-                    );
-                  }
-                  return opts;
-                })}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                제출자 이메일 (자동 저장)
-              </label>
-              <p className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-sm text-gray-800">
-                {authUser?.email?.trim() || '— (로그인 필요)'}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                저장 시 현재 로그인 계정 이메일이 기록됩니다.
-              </p>
+                allowCustom={false}
+              />
             </div>
 
             <div>
@@ -838,130 +1046,148 @@ export default function TourHotelBookingForm({
             </div>
 
             <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-medium text-gray-700">
+                  호텔명 *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowHotelManageModal(true)}
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80"
+                >
+                  <Settings2 className="h-3.5 w-3.5" />
+                  호텔 관리
+                </button>
+              </div>
+              <SearchableTextSelect
+                value={formData.hotel || ''}
+                onChange={handleHotelNameChange}
+                options={hotelNameOptions}
+                placeholder="호텔명 검색 또는 입력"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                호텔명 앞 글자(P=Page 등) 또는 호텔 관리에 등록된 정보로 도시가 자동 입력됩니다.
+              </p>
+            </div>
+
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                객실 수 *
+                도시 * (자동 입력)
               </label>
               <input
-                type="number"
-                name="rooms"
-                value={formData.rooms}
-                onChange={handleChange}
-                required
-                min="1"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                도시 * (DB에 사용된 도시)
-              </label>
-              <select
+                type="text"
                 name="city"
-                value={cityTrim}
+                value={formData.city || ''}
                 onChange={handleChange}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-sm"
-              >
-                <option value="">도시를 선택하세요</option>
-                {!cityInDbList && cityTrim ? (
-                  <option value={cityTrim}>{cityTrim} (기존 값 · 목록에 없음)</option>
-                ) : null}
-                {cities.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-              {cities.length === 0 ? (
-                <p className="text-xs text-amber-700 mt-1">
-                  저장된 호텔 부킹에 도시 기록이 없습니다. 한 건이라도 등록되면 목록이 채워집니다.
-                </p>
-              ) : null}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                호텔명 * (DB에 사용된 호텔)
-              </label>
-              <select
-                name="hotel"
-                value={hotelTrim}
-                onChange={handleChange}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-sm"
-              >
-                <option value="">호텔을 선택하세요</option>
-                {!hotelInDbList && hotelTrim ? (
-                  <option value={hotelTrim}>{hotelTrim} (기존 값 · 목록에 없음)</option>
-                ) : null}
-                {hotels.map((h) => (
-                  <option key={h} value={h}>
-                    {h}
-                  </option>
-                ))}
-              </select>
-              {hotels.length === 0 ? (
-                <p className="text-xs text-amber-700 mt-1">
-                  저장된 호텔 부킹에 호텔명이 없습니다. 한 건이라도 등록되면 목록이 채워집니다.
-                </p>
-              ) : null}
+                readOnly
+                className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-sm text-gray-800"
+                placeholder="호텔명 입력 시 자동 설정"
+              />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 객실 타입
               </label>
-              <select
+              <input
+                type="text"
                 name="room_type"
-                value={formData.room_type || ''}
+                list="tour-hotel-room-type-options"
+                value={formData.room_type || DEFAULT_TOUR_HOTEL_ROOM_TYPE}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                <option value="">객실 타입을 선택하세요</option>
-                <option value="1 king">1 King</option>
-                <option value="2 queen">2 Queen</option>
-                <option value="2 full">2 Full</option>
-                <option value="3 full">3 Full</option>
-                <option value="3 queen">3 Queen</option>
-              </select>
+                placeholder={DEFAULT_TOUR_HOTEL_ROOM_TYPE}
+              />
+              <datalist id="tour-hotel-room-type-options">
+                {roomTypeOptions.map((rt) => (
+                  <option key={rt} value={rt} />
+                ))}
+              </datalist>
             </div>
 
-            <div>
+            <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                단가 (USD) *
+                웹사이트
               </label>
               <input
-                type="number"
-                name="unit_price"
-                value={formData.unit_price}
+                type="text"
+                name="website"
+                value={formData.website}
                 onChange={handleChange}
-                required
-                step="0.01"
-                min="0"
+                onBlur={handleWebsiteBlur}
+                onFocus={() => {
+                  if (formData.website.length > 0) {
+                    const filtered = websites.filter(website => 
+                      website.toLowerCase().includes(formData.website.toLowerCase())
+                    );
+                    setFilteredWebsites(filtered);
+                    setShowWebsiteSuggestions(filtered.length > 0);
+                  }
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="웹사이트 주소 또는 이름을 입력하세요"
+                autoComplete="off"
               />
+              {showWebsiteSuggestions && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {filteredWebsites.map((website, index) => (
+                    <div
+                      key={`website-${website}-${index}`}
+                      className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                      onClick={() => handleWebsiteSelect(website)}
+                    >
+                      {website}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                총 가격 (USD)
-              </label>
-              <input
-                type="number"
-                name="total_price"
-                value={formData.total_price}
-                onChange={handleChange}
-                onBlur={() =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    total_price: roundUsdTotal(Number(prev.total_price) || 0),
-                  }))
-                }
-                step="0.01"
-                min="0"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
-              />
+            <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  객실 수 *
+                </label>
+                <input
+                  type="number"
+                  name="rooms"
+                  value={formData.rooms}
+                  onChange={handleChange}
+                  required
+                  min="1"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  단가 (USD) *
+                </label>
+                <input
+                  type="number"
+                  name="unit_price"
+                  value={formData.unit_price}
+                  onChange={handleChange}
+                  required
+                  step="0.01"
+                  min="0"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  총 가격 (USD)
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  value={roundUsdTotal(formData.total_price).toFixed(2)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-sm font-medium text-gray-900"
+                />
+              </div>
             </div>
 
             <div>
@@ -1004,87 +1230,22 @@ export default function TourHotelBookingForm({
                   </button>
                 </div>
               ) : (
-                <select
-                  name="payment_method"
-                  value={formData.payment_method || ''}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === '__new__') {
-                      setShowNewPaymentMethodInput(true);
-                      return;
-                    }
-                    setFormData((prev) => ({ ...prev, payment_method: v }));
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="">{t('select')}</option>
-                  {formData.payment_method &&
-                  !paymentMethodsList.some((pm) => pm.method === formData.payment_method) ? (
-                    <option value={formData.payment_method}>{formData.payment_method}</option>
-                  ) : null}
-                  {paymentMethodsList.map((pm) => (
-                    <option key={pm.id} value={pm.method}>
-                      {pm.display_name || pm.method}
-                    </option>
-                  ))}
-                  <option value="__new__">➕ {t('addNew')}</option>
-                </select>
-              )}
-            </div>
-
-            <div className="relative">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                웹사이트
-              </label>
-              <input
-                type="text"
-                name="website"
-                value={formData.website}
-                onChange={handleChange}
-                onBlur={handleWebsiteBlur}
-                onFocus={() => {
-                  if (formData.website.length > 0) {
-                    const filtered = websites.filter(website => 
-                      website.toLowerCase().includes(formData.website.toLowerCase())
-                    );
-                    setFilteredWebsites(filtered);
-                    setShowWebsiteSuggestions(filtered.length > 0);
-                  }
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder="웹사이트 주소 또는 이름을 입력하세요"
-                autoComplete="off"
-              />
-              {showWebsiteSuggestions && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                  {filteredWebsites.map((website, index) => (
-                    <div
-                      key={`website-${website}-${index}`}
-                      className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
-                      onClick={() => handleWebsiteSelect(website)}
-                    >
-                      {website}
-                    </div>
-                  ))}
+                <div className="space-y-2">
+                  <SearchableTextSelect
+                    value={formData.payment_method || ''}
+                    onChange={(v) => setFormData((prev) => ({ ...prev, payment_method: v }))}
+                    options={paymentMethodOptions}
+                    placeholder={t('select')}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPaymentMethodInput(true)}
+                    className="text-xs text-primary hover:text-primary/80"
+                  >
+                    ➕ {t('addNew')}
+                  </button>
                 </div>
               )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                상태
-              </label>
-              <select
-                name="status"
-                value={formData.status || ''}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                <option value="pending">대기중</option>
-                <option value="confirmed">확정</option>
-                <option value="cancelled">취소</option>
-                <option value="completed">완료</option>
-              </select>
             </div>
           </div>
 
@@ -1223,6 +1384,18 @@ export default function TourHotelBookingForm({
             </button>
           </div>
         </form>
+
+      <TourHotelReferenceManageModal
+        open={showHotelManageModal}
+        onOpenChange={setShowHotelManageModal}
+        locale={locale}
+        initialHotelNames={hotels}
+        initialReferences={hotelReferences}
+        onChanged={() => {
+          void fetchHotelReferences();
+          void fetchHotels();
+        }}
+      />
     </div>
   );
 }

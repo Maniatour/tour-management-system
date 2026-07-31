@@ -5,6 +5,7 @@ export type TodoPanelTourCompletionNamespace =
   | 'tour-hotel-price-check'
   | 'tour-hotel-management'
   | 'tour-settlement'
+  | 'bento-check'
 
 export type TodoPanelTourItemStatus = 'completed' | 'on_hold'
 export type TodoPanelTourItemState = 'pending' | TodoPanelTourItemStatus
