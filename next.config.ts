@@ -141,7 +141,8 @@ const nextConfig = {
 		esmExternals: true,
 		// Vercel 8GB 빌드 컨테이너: webpack·TypeScript 단계 메모리 피크 완화
 		webpackMemoryOptimizations: true,
-		webpackBuildWorker: true,
+		// 별도 워커는 총 RAM 사용량을 늘려 8GB Vercel 빌드에서 OOM 유발 가능
+		webpackBuildWorker: process.env.VERCEL !== '1',
 		// barrel import → 직접 import 변환으로 초기 번들·컴파일 부담 완화
 		optimizePackageImports: [
 			'@supabase/supabase-js',
