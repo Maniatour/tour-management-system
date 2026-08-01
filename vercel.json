@@ -1,7 +1,8 @@
 {
   "build": {
     "env": {
-      "NODE_OPTIONS": "--max-old-space-size=5120"
+      "NODE_OPTIONS": "--max-old-space-size=4608",
+      "BUILD_LOW_MEMORY": "1"
     }
   },
   "crons": [

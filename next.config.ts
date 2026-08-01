@@ -17,6 +17,10 @@ const useWinDevDistDir =
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 
+/** Vercel·로컬 저메모리 빌드: critters·splitChunks·webpack 캐시 축소 */
+const buildLowMemory =
+	process.env.BUILD_LOW_MEMORY === '1' || process.env.VERCEL === '1'
+
 const revision =
 	process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_REF ?? randomUUID()
 
@@ -42,6 +46,16 @@ const withSerwist = withSerwistInit({
 
 const nextConfig = {
 	...(useWinDevDistDir ? { distDir: WIN_DEV_DIST_DIR } : {}),
+
+	productionBrowserSourceMaps: false,
+
+	// type-check·lint는 별도 스크립트/CI에서 실행 (next build 프로세스 메모리 피크 완화)
+	typescript: {
+		ignoreBuildErrors: true,
+	},
+	eslint: {
+		ignoreDuringBuilds: true,
+	},
 
 	// Next 16 dev: `app/admin` 페이지와 `app/api/admin` API가 동시에 있으면 /api/admin/* 가 404 나는 경우가 있음
 	// 동일하게 `app/admin` 과 `app/[locale]/admin` 이 함께 있으면 /ko/admin/* 하위 페이지가 전부 404 — MDGC 유틸은 app/mdgc-tools 로 분리
@@ -136,7 +150,8 @@ const nextConfig = {
 	
 	// 실험적 기능 활성화 (optimizeCss는 dev에서 .next CSS 동시 I/O를 늘려 Windows -4094 유발 가능)
 	experimental: {
-		optimizeCss: process.env.NODE_ENV === 'production',
+		optimizeCss:
+			process.env.NODE_ENV === 'production' && !buildLowMemory,
 		scrollRestoration: true,
 		esmExternals: true,
 		// Vercel 8GB 빌드 컨테이너: webpack·TypeScript 단계 메모리 피크 완화
@@ -164,7 +179,12 @@ const nextConfig = {
 			'@tiptap/extension-link',
 			'@tiptap/extension-placeholder',
 			'@tiptap/extension-underline',
+			'@uiw/react-md-editor',
+			'@uiw/react-textarea-code-editor',
+			'reactflow',
 		],
+		// Vercel 8GB: static generation 워커 수 제한
+		cpus: buildLowMemory ? 1 : undefined,
 		disableOptimizedLoading: false,
 	},
 
@@ -231,8 +251,11 @@ const nextConfig = {
 
 		// 프로덕션 빌드 최적화
 		if (!dev) {
-			// 청크 분할 최적화
-			if (!isServer) {
+			config.parallelism = 1
+			config.cache = false
+
+			// 청크 분할 최적화 (저메모리 모드에서는 Next 기본 splitChunks 유지)
+			if (!isServer && !buildLowMemory) {
 				config.optimization.splitChunks = {
 					chunks: 'all',
 					minSize: 20000,

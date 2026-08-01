@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "node scripts/dev-win.cjs",
     "dev:webpack": "node scripts/dev-win.cjs",
-    "build": "next build --webpack",
+    "build": "npm run type-check && next build --webpack",
+    "build:win": "node scripts/build-win.cjs",
     "vercel-build": "next build --webpack",
     "build:analyze": "ANALYZE=true next build --webpack",
     "build:production": "NODE_ENV=production next build --webpack",

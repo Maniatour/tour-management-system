@@ -922,6 +922,22 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                     onCancellationReasonSaved?.()
                   }}
                   knownCancellationReason={cancelReasonBadge}
+                  leadingActions={
+                    onCommunicationChannelChange ? (
+                      <ReservationCardSmsMenuButton
+                        reservationId={reservation.id}
+                        customer={customers.find((c) => c.id === reservation.customerId)}
+                        sentBy={sentBy}
+                        uiLocale={locale === 'en' ? 'en' : 'ko'}
+                        {...(onPreTourSmsSendSuccess
+                          ? { onSendSuccess: () => onPreTourSmsSendSuccess(reservation.id) }
+                          : {})}
+                        {...(onSmsLogsClick
+                          ? { onSmsLogsClick: () => onSmsLogsClick(reservation.id) }
+                          : {})}
+                      />
+                    ) : null
+                  }
                 />
               ) : (
                 <>

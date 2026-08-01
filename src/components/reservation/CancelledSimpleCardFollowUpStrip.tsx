@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { MessageSquare, PhoneForwarded, Globe, Loader2, Mail, MessagesSquare } from 'lucide-react'
 import CancellationFollowUpMessagePreviewModal from '@/components/reservation/CancellationFollowUpMessagePreviewModal'
 import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
@@ -45,6 +45,8 @@ export type CancelledSimpleCardFollowUpStripProps = {
   knownHasCustomerResponse?: boolean
   onCustomerResponseSaved?: () => void
   showWorkflowStepBar?: boolean
+  /** 메일·문자 미리보기 버튼 왼쪽 (예: SMS 발송) */
+  leadingActions?: ReactNode
 }
 
 export default function CancelledSimpleCardFollowUpStrip({
@@ -68,6 +70,7 @@ export default function CancelledSimpleCardFollowUpStrip({
   knownHasCustomerResponse = false,
   onCustomerResponseSaved,
   showWorkflowStepBar = true,
+  leadingActions,
 }: CancelledSimpleCardFollowUpStripProps) {
   const t = useTranslations('reservations.followUpPipeline')
   const tc = useTranslations('reservations.card')
@@ -298,19 +301,22 @@ export default function CancelledSimpleCardFollowUpStrip({
           />
         ) : null}
         <div className="flex shrink-0 items-center justify-between gap-2">
-          <button
-            type="button"
-            title={tc('cancelFollowUpMessagePreviewTitle')}
-            aria-label={tc('cancelFollowUpMessagePreviewTitle')}
-            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100"
-            onClick={(e) => {
-              e.stopPropagation()
-              setMessagePreviewKind('follow_up')
-              setMessagePreviewOpen(true)
-            }}
-          >
-            <Mail className="h-3 w-3" aria-hidden />
-          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            {leadingActions}
+            <button
+              type="button"
+              title={tc('cancelFollowUpMessagePreviewTitle')}
+              aria-label={tc('cancelFollowUpMessagePreviewTitle')}
+              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100"
+              onClick={(e) => {
+                e.stopPropagation()
+                setMessagePreviewKind('follow_up')
+                setMessagePreviewOpen(true)
+              }}
+            >
+              <Mail className="h-3 w-3" aria-hidden />
+            </button>
+          </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
             <button
               type="button"
