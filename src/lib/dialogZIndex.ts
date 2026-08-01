@@ -24,3 +24,14 @@ export const RECEIPT_MODAL_Z_INDEX = 12000
 export function dialogZIndexStyle(level: DialogStackLevel = 'default'): { zIndex: number } {
   return { zIndex: DIALOG_Z_INDEX[level] }
 }
+
+/** 예약 수정 모달 위 자식 오버레이 간격 (부모 + step × tier) */
+export const RESERVATION_FORM_CHILD_Z_STEP = 200
+
+export function childModalZIndex(parentZIndex: number, tier: 1 | 2 | 3 = 1): number {
+  return parentZIndex + RESERVATION_FORM_CHILD_Z_STEP * tier
+}
+
+export function childModalZIndexClass(parentZIndex: number, tier: 1 | 2 | 3 = 1): string {
+  return `z-[${childModalZIndex(parentZIndex, tier)}]`
+}

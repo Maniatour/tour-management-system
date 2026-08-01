@@ -16,6 +16,8 @@ interface CustomerFormProps {
   onDelete?: () => void
   /** 분할 모달 등 외부 레이아웃에 삽입할 때 오버레이 없이 본문만 렌더 */
   embedded?: boolean
+  /** 예약 수정 모달 등 상위 오버레이 위에 표시 */
+  overlayZIndex?: number
 }
 
 const INPUT_CLASS =
@@ -55,6 +57,7 @@ export default function CustomerForm({
   onCancel,
   onDelete,
   embedded = false,
+  overlayZIndex,
 }: CustomerFormProps) {
   const defaultFormData = useMemo<CustomerInsert>(() => {
     if (customer) {
@@ -361,7 +364,10 @@ export default function CustomerForm({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div
+      className={`fixed inset-0 flex items-center justify-center bg-black/50 p-4${overlayZIndex == null ? ' z-50' : ''}`}
+      style={overlayZIndex != null ? { zIndex: overlayZIndex } : undefined}
+    >
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-xl sm:p-6">
         {header}
         <form onSubmit={handleSubmit} className="space-y-5">

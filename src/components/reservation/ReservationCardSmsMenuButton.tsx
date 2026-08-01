@@ -23,6 +23,7 @@ type Props = {
   sentBy: string | null
   uiLocale?: 'ko' | 'en'
   onSendSuccess?: () => void
+  onSmsLogsClick?: () => void
   variant?: 'icon' | 'menuItem'
   onBeforeOpen?: () => void
 }
@@ -33,6 +34,7 @@ export function ReservationCardSmsMenuButton({
   sentBy,
   uiLocale = 'ko',
   onSendSuccess,
+  onSmsLogsClick,
   variant = 'icon',
   onBeforeOpen,
 }: Props) {
@@ -218,6 +220,24 @@ export function ReservationCardSmsMenuButton({
                 </button>
               )
             })}
+            {onSmsLogsClick ? (
+              <>
+                <div className="my-1 border-t border-gray-100" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-primary hover:bg-muted/50"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setMenuOpen(false)
+                    onSmsLogsClick()
+                  }}
+                >
+                  <Smartphone className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  <span>{isEn ? 'SMS send history' : 'SMS 발송 내역'}</span>
+                </button>
+              </>
+            ) : null}
           </div>,
           document.body
         )}

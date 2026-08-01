@@ -36,6 +36,7 @@ interface PricingInfoModalProps {
   reservation: Reservation | null
   isOpen: boolean
   onClose: () => void
+  overlayZIndex?: number
 }
 
 interface PricingData {
@@ -101,7 +102,7 @@ interface Coupon {
   product_id: string | null
 }
 
-export default function PricingInfoModal({ reservation, isOpen, onClose }: PricingInfoModalProps) {
+export default function PricingInfoModal({ reservation, isOpen, onClose, overlayZIndex }: PricingInfoModalProps) {
   const { authUser, userPosition } = useAuth()
   const isSuperPricingAdmin = isSuperAdminActor(authUser?.email, userPosition)
   const [pricingData, setPricingData] = useState<PricingData | null>(null)
@@ -1157,7 +1158,10 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
   if (!isOpen || !reservation) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-2 sm:p-4">
+    <div
+      className={`fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4${overlayZIndex == null ? ' z-[60]' : ''}`}
+      style={overlayZIndex != null ? { zIndex: overlayZIndex } : undefined}
+    >
       <div className="bg-white rounded-lg shadow-xl w-full max-w-[95vw] sm:max-w-2xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
         {/* 헤더 */}
         <div className="flex items-center justify-between p-3 sm:p-4 border-b border-gray-200">

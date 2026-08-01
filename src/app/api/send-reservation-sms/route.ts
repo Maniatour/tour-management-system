@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { buildReservationOutboundSmsPreview } from '@/lib/buildReservationOutboundSmsPreview'
 import { isReservationOutboundSmsCategoryId } from '@/lib/reservationOutboundSmsCategories'
+import { fetchReservationCustomerId, insertReservationSmsLog } from '@/lib/reservationSmsLog'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { sendTwilioSms } from '@/lib/twilioClient'
 
@@ -49,34 +50,42 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const db = supabaseAdmin ?? supabase
+    const customerId = await fetchReservationCustomerId(db, reservationId)
+
     const twilioResult = await sendTwilioSms(toPhone, message)
     if ('error' in twilioResult) {
+      await insertReservationSmsLog(db, {
+        reservationId,
+        customerId,
+        categoryId,
+        toPhone,
+        messageBody: message,
+        locale: resolvedLocale,
+        status: 'failed',
+        errorMessage: twilioResult.error,
+        sentBy,
+      })
+
       return NextResponse.json(
         { error: 'SMS 발송에 실패했습니다.', details: twilioResult.error },
         { status: 500 }
       )
     }
 
-    const db = supabaseAdmin ?? supabase
+    await insertReservationSmsLog(db, {
+      reservationId,
+      customerId,
+      categoryId,
+      toPhone,
+      messageBody: message,
+      locale: resolvedLocale,
+      twilioMessageSid: twilioResult.sid,
+      status: 'sent',
+      sentBy,
+    })
 
     if (categoryId === 'pre_tour_contact') {
-      const { data: reservation } = await db
-        .from('reservations')
-        .select('customer_id')
-        .eq('id', reservationId)
-        .maybeSingle()
-
-      await (db as any).from('pre_tour_contact_sms_logs').insert({
-        reservation_id: reservationId,
-        customer_id: (reservation as { customer_id?: string } | null)?.customer_id ?? null,
-        to_phone: toPhone,
-        message_body: message,
-        locale: resolvedLocale,
-        twilio_message_sid: twilioResult.sid,
-        status: 'sent',
-        sent_by: sentBy,
-      })
-
       await db
         .from('reservations')
         .update({ customer_communication_channel: 'text_message' })

@@ -20,8 +20,9 @@ import { generateCustomerId } from '@/lib/entityIds'
 import { useAuth } from '@/contexts/AuthContext'
 import { isSuperAdminActor } from '@/lib/superAdmin'
 import type { Database } from '@/lib/supabase'
-import { DIALOG_Z_INDEX, type DialogStackLevel } from '@/lib/dialogZIndex'
+import { DIALOG_Z_INDEX, childModalZIndex, type DialogStackLevel } from '@/lib/dialogZIndex'
 import { ResizableModalFrame } from '@/components/ui/ResizableModalFrame'
+import { ReservationFormModalStackProvider } from '@/components/reservation/ReservationFormModalStackContext'
 import {
   RESERVATION_EDIT_MODAL_DEFAULT_SIZE,
   RESERVATION_EDIT_MODAL_RECT_KEY,
@@ -6241,6 +6242,7 @@ export default function ReservationForm({
   const resolvedModalZIndex =
     modalZIndex ??
     (modalStackLevel != null ? DIALOG_Z_INDEX[modalStackLevel] : 1100)
+  const childOverlayZIndex = childModalZIndex(resolvedModalZIndex)
   const effectiveModalRectStorageKey =
     modalRectStorageKey ?? (isModal ? RESERVATION_EDIT_MODAL_RECT_KEY : undefined)
   const useResizableModal = isModal && Boolean(effectiveModalRectStorageKey)
@@ -6251,6 +6253,7 @@ export default function ReservationForm({
       : 'bg-white rounded-lg p-2 sm:p-4 w-full min-h-0 flex-1 flex flex-col overflow-hidden'
 
   const formShell = (
+    <ReservationFormModalStackProvider parentZIndex={resolvedModalZIndex}>
     <>
     <div className={shellClassName}>
         {/* 헤더: 모바일에서 스티키, 데스크톱 기존 */}
@@ -6769,6 +6772,7 @@ export default function ReservationForm({
                       itemVariant="line"
                       isPersisted={!isNewReservation}
                       onPendingOptionsChange={setPendingReservationOptions}
+                      addOptionModalZIndex={childOverlayZIndex}
                     />
                   </div>
                   <div id="payment-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">
@@ -6953,6 +6957,7 @@ export default function ReservationForm({
                 options={options}
                 t={t}
                 autoSelectCoupon={pricingSectionAutoSelectCoupon}
+                helpModalOverlayZIndex={childOverlayZIndex}
                 {...(isImportViatorNetRateMode
                   ? {
                       onCouponDropdownUserInput: () => {
@@ -7002,6 +7007,7 @@ export default function ReservationForm({
           channels={channels}
           onSubmit={handleAddCustomer}
           onCancel={() => setShowCustomerForm(false)}
+          overlayZIndex={childOverlayZIndex}
         />
       )}
 
@@ -7011,12 +7017,16 @@ export default function ReservationForm({
           reservation={reservation}
           isOpen={showPricingModal}
           onClose={() => setShowPricingModal(false)}
+          overlayZIndex={childOverlayZIndex}
         />
       )}
 
       {/* 상품 및 초이스 선택 모달 */}
       {showProductChoiceModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[110] p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4"
+          style={{ zIndex: childOverlayZIndex }}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-3 border-b border-gray-200 flex-shrink-0">
               <h3 className="text-base font-semibold text-gray-900">{t('form.openProductChoice')}</h3>
@@ -7061,7 +7071,10 @@ export default function ReservationForm({
 
       {/* 채널 선택 모달 */}
       {showChannelModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[110] p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4"
+          style={{ zIndex: childOverlayZIndex }}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-3 border-b border-gray-200 flex-shrink-0">
               <h3 className="text-base font-semibold text-gray-900">{t('form.openChannelSelect')}</h3>
@@ -7106,7 +7119,10 @@ export default function ReservationForm({
 
       {/* 중복 고객 확인 모달 */}
       {showDuplicateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[110]">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
+          style={{ zIndex: childOverlayZIndex }}
+        >
           <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold flex items-center space-x-2">
@@ -7296,6 +7312,7 @@ export default function ReservationForm({
       )}
 
     </>
+    </ReservationFormModalStackProvider>
   )
 
   const content = useResizableModal ? (

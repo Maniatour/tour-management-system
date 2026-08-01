@@ -54,6 +54,11 @@ interface DocumentUploadModalProps {
   editingDocument?: Document | null
 }
 
+function toDateInputValue(date?: string | null): string {
+  if (!date) return ''
+  return date.slice(0, 10)
+}
+
 export default function DocumentUploadModal({
   categories,
   onClose,
@@ -70,8 +75,8 @@ export default function DocumentUploadModal({
     title: editingDocument?.title || '',
     description: editingDocument?.description || '',
     category_id: editingDocument?.category_id || '',
-    issue_date: editingDocument?.issue_date || '',
-    expiry_date: editingDocument?.expiry_date || '',
+    issue_date: toDateInputValue(editingDocument?.issue_date),
+    expiry_date: toDateInputValue(editingDocument?.expiry_date),
     auto_calculate_expiry: editingDocument?.auto_calculate_expiry || false,
     validity_period_months: editingDocument?.validity_period_months || 12,
     reminder_30_days: editingDocument?.reminder_30_days ?? true,
@@ -206,7 +211,7 @@ export default function DocumentUploadModal({
       onSuccess()
     } catch (error) {
       console.error('문서 업로드 오류:', error)
-      toast.error('문서 업로드 중 오류가 발생했습니다.')
+      toast.error(editingDocument ? '문서 수정 중 오류가 발생했습니다.' : '문서 업로드 중 오류가 발생했습니다.')
     } finally {
       setLoading(false)
       setUploading(false)

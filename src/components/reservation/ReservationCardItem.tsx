@@ -271,6 +271,8 @@ interface ReservationCardItemProps {
   sentBy?: string | null
   /** 간단 카드: SMS 발송 성공 후 (예: 소통 채널 UI 갱신) */
   onPreTourSmsSendSuccess?: (reservationId: string) => void
+  /** 간단 카드: SMS 발송 내역 모달 */
+  onSmsLogsClick?: (reservationId: string) => void
   /** 취소 사유 저장 후 부모 갱신(큐 모달 등) */
   onCancellationReasonSaved?: () => void
   /** 유사 고객 예약 배지·모달 (취소 예약) */
@@ -341,6 +343,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   onCommunicationChannelChange,
   sentBy = null,
   onPreTourSmsSendSuccess,
+  onSmsLogsClick,
   onCancellationReasonSaved,
   similarCustomerProductMap,
   operatorId,
@@ -930,6 +933,9 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                       uiLocale={locale === 'en' ? 'en' : 'ko'}
                       {...(onPreTourSmsSendSuccess
                         ? { onSendSuccess: () => onPreTourSmsSendSuccess(reservation.id) }
+                        : {})}
+                      {...(onSmsLogsClick
+                        ? { onSmsLogsClick: () => onSmsLogsClick(reservation.id) }
                         : {})}
                     />
                   ) : null}

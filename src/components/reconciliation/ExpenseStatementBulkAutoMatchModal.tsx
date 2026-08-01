@@ -34,6 +34,8 @@ type Props = {
   description?: string
   /** 다른 Dialog(z≥1200) 위에 열 때 — 오버레이·본문 z-[1300] */
   nestedElevated?: boolean
+  /** `nestedElevated` 대신 절대 z-index */
+  forceZIndex?: number
   onApplied: () => void
 }
 
@@ -46,6 +48,7 @@ export default function ExpenseStatementBulkAutoMatchModal({
   title: titleProp,
   description: descriptionProp,
   nestedElevated = false,
+  forceZIndex,
   onApplied,
 }: Props) {
   const t = useTranslations('expenses.statementRecon.bulkAutoMatch')
@@ -246,8 +249,12 @@ export default function ExpenseStatementBulkAutoMatchModal({
       }}
     >
       <DialogContent
-        {...(nestedElevated ? { overlayClassName: 'z-[1300]' } : {})}
-        className={`max-w-4xl max-h-[90vh] flex flex-col gap-0 p-0${nestedElevated ? ' z-[1300]' : ''}`}
+        {...(forceZIndex != null
+          ? { forceZIndex }
+          : nestedElevated
+            ? { overlayClassName: 'z-[1300]' }
+            : {})}
+        className={`max-w-4xl max-h-[90vh] flex flex-col gap-0 p-0${forceZIndex == null && nestedElevated ? ' z-[1300]' : ''}`}
         onEscapeKeyDown={(e) => {
           if (applying || preparing) e.preventDefault()
         }}

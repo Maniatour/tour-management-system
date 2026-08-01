@@ -326,7 +326,10 @@ export default function DocumentManagementPage() {
                 <span className="hidden sm:inline">카테고리</span>
               </button>
               <button
-                onClick={() => setShowUploadModal(true)}
+                onClick={() => {
+                  setEditingDocument(null)
+                  setShowUploadModal(true)
+                }}
                 className="p-2 sm:px-4 sm:py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring"
                 title="문서 업로드"
               >
@@ -416,7 +419,10 @@ export default function DocumentManagementPage() {
               <p className="mt-1 text-xs sm:text-sm text-gray-500">새로운 문서를 업로드해보세요.</p>
               <div className="mt-4 sm:mt-6">
                 <button
-                  onClick={() => setShowUploadModal(true)}
+                  onClick={() => {
+                    setEditingDocument(null)
+                    setShowUploadModal(true)
+                  }}
                   className="inline-flex items-center px-3 py-2 sm:px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring"
                 >
                   <Plus className="w-4 h-4 mr-2" />
@@ -431,7 +437,10 @@ export default function DocumentManagementPage() {
                   key={document.id}
                   document={document}
                   viewMode={viewMode}
-                  onEdit={() => setEditingDocument(document)}
+                  onEdit={() => {
+                    setEditingDocument(document)
+                    setShowUploadModal(true)
+                  }}
                   onDelete={() => handleDeleteDocument(document.id)}
                   onDownload={() => handleDownloadDocument(document)}
                 />

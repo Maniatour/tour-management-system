@@ -13,6 +13,7 @@ import {
   type CancellationFollowUpMessageLocale,
 } from '@/lib/cancellationFollowUpMessage'
 import { defaultStaffOutreachTemplateName } from '@/lib/staffOutreachMessageTemplates'
+import { useReservationFormChildOverlayZIndex } from '@/components/reservation/ReservationFormModalStackContext'
 import {
   buildCustomerRebookingUrlFromReservation,
   formatRebookingCouponValidUntil,
@@ -72,6 +73,7 @@ export default function CancellationFollowUpMessagePreviewModal({
 }: CancellationFollowUpMessagePreviewModalProps) {
   const t = useTranslations('reservations.card')
   const uiLocale = useLocale()
+  const overlayZIndex = useReservationFormChildOverlayZIndex(145)
   const [copied, setCopied] = useState(false)
 
   const emailLocale: CancellationFollowUpMessageLocale = resolveReservationEmailIsEnglish(
@@ -361,7 +363,8 @@ export default function CancellationFollowUpMessagePreviewModal({
 
   return (
     <div
-      className="fixed inset-0 z-[145] flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 flex items-center justify-center bg-black/50 p-4"
+      style={{ zIndex: overlayZIndex }}
       onClick={onClose}
     >
       <div

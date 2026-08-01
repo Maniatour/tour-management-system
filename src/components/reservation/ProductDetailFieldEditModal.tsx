@@ -11,6 +11,10 @@ import {
   PRODUCT_DETAIL_FIELD_LABELS_KO,
   isProductDetailVisibleOnCustomerPage,
 } from '@/lib/fetchProductDetailsForEmail'
+import {
+  useReservationFormChildOverlayZIndex,
+  useReservationFormGrandchildOverlayZIndex,
+} from '@/components/reservation/ReservationFormModalStackContext'
 
 type ChannelRow = { id: string; name: string; type: string }
 
@@ -62,6 +66,8 @@ export default function ProductDetailFieldEditModal({
   onSaved,
 }: ProductDetailFieldEditModalProps) {
   const supabase = createClientSupabase()
+  const overlayZIndex = useReservationFormChildOverlayZIndex(60)
+  const importOverlayZIndex = useReservationFormGrandchildOverlayZIndex(70)
   const sectionTitlesFromRow = useMemo(
     () => sectionTitlesProp ?? {},
     [sectionTitlesProp]
@@ -315,7 +321,8 @@ export default function ProductDetailFieldEditModal({
   return (
     <>
       <div
-        className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"
+        className="fixed inset-0 bg-black/50 flex items-center justify-center p-4"
+        style={{ zIndex: overlayZIndex }}
         onClick={onClose}
       >
         <div
@@ -437,7 +444,8 @@ export default function ProductDetailFieldEditModal({
 
       {importOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4"
+          style={{ zIndex: importOverlayZIndex }}
           onClick={() => setImportOpen(false)}
         >
           <div
@@ -524,7 +532,8 @@ export default function ProductDetailFieldEditModal({
 
       {copyOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4"
+          style={{ zIndex: importOverlayZIndex }}
           onClick={() => setCopyOpen(false)}
         >
           <div

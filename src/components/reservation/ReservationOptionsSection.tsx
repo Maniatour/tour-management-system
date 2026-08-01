@@ -36,6 +36,8 @@ interface ReservationOptionsSectionProps {
   onCancelledRefundTotalChange?: (totalUsd: number) => void
   /** 부모 모달 위에 옵션 추가 오버레이를 올릴 때 z-index 클래스 (예: z-[110]) */
   addOptionModalZClass?: string
+  /** `addOptionModalZClass` 대신 직접 z-index 지정 */
+  addOptionModalZIndex?: number
 }
 
 const defaultFormData: CreateReservationOptionData = {
@@ -61,6 +63,7 @@ export default function ReservationOptionsSection({
   onPendingOptionsChange,
   onPersistedMutation,
   addOptionModalZClass,
+  addOptionModalZIndex,
 }: ReservationOptionsSectionProps) {
   const t = useTranslations('reservations.reservationOptions')
   const tCommon = useTranslations('common')
@@ -302,7 +305,10 @@ export default function ReservationOptionsSection({
 
       {/* 옵션 추가 모달 */}
       {showAddModal && (
-        <div className={`fixed inset-0 flex items-center justify-center bg-black/50 p-4 ${addOptionModalZClass ?? 'z-50'}`}>
+        <div
+          className={`fixed inset-0 flex items-center justify-center bg-black/50 p-4 ${addOptionModalZIndex == null ? (addOptionModalZClass ?? 'z-50') : ''}`}
+          style={addOptionModalZIndex != null ? { zIndex: addOptionModalZIndex } : undefined}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-5">
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-sm font-semibold text-gray-900">{t('addNewOption')}</h4>

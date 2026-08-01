@@ -508,6 +508,7 @@ export default function ExpenseStatementSimilarLinesModal({
   context,
   onApplied,
   nestedElevated = false,
+  forceZIndex,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -515,6 +516,8 @@ export default function ExpenseStatementSimilarLinesModal({
   onApplied?: () => void
   /** 다른 Dialog(z≥1200) 위에 열 때 — 오버레이·본문 z-[1300] */
   nestedElevated?: boolean
+  /** `nestedElevated` 대신 절대 z-index (예약 수정 모달 위) */
+  forceZIndex?: number
 }) {
   const t = useTranslations('expenses.statementRecon')
   const locale = useLocale()
@@ -2034,8 +2037,15 @@ export default function ExpenseStatementSimilarLinesModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        {...(nestedElevated ? { overlayClassName: 'z-[1300]' } : {})}
-        className={cn(RECON_MODAL_SHELL_CLASS, nestedElevated && 'z-[1300]')}
+        {...(forceZIndex != null
+          ? { forceZIndex }
+          : nestedElevated
+            ? { overlayClassName: 'z-[1300]' }
+            : {})}
+        className={cn(
+          RECON_MODAL_SHELL_CLASS,
+          forceZIndex == null && nestedElevated && 'z-[1300]'
+        )}
       >
         <DialogHeader className="shrink-0 border-b bg-white px-3 py-2.5 lg:border-0 lg:bg-transparent lg:px-0 lg:py-0 lg:pr-8">
           <DialogTitle className="text-base lg:text-lg leading-snug text-left">

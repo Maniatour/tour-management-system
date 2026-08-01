@@ -34,6 +34,8 @@ import ReservationExpenseTabPager, {
   RESERVATION_EXPENSE_PAGE_SIZES,
   reservationExpenseTotalPages
 } from '@/components/expenses/ReservationExpenseTabPager'
+import { useReservationFormModalStack } from '@/components/reservation/ReservationFormModalStackContext'
+import { RECEIPT_MODAL_Z_INDEX } from '@/lib/dialogZIndex'
 
 const ReservationForm = dynamic(() => import('@/components/reservation/ReservationForm'), {
   ssr: false,
@@ -42,8 +44,9 @@ const ReservationForm = dynamic(() => import('@/components/reservation/Reservati
 const ReservationFormAny = ReservationForm as React.ComponentType<any>
 
 /** Radix Dialog가 body에 pointer-events:none을 둘 때도 영수증 오버레이가 동작하도록 body 포털 + 명시적 hit-target */
-const RESERVATION_RECEIPT_VIEW_PORTAL_CLASS =
-  'fixed inset-0 z-[12000] pointer-events-auto overscroll-contain bg-black bg-opacity-75 flex items-center justify-center p-4'
+function reservationReceiptViewPortalClass(zIndex: number) {
+  return `fixed inset-0 pointer-events-auto overscroll-contain bg-black bg-opacity-75 flex items-center justify-center p-4 z-[${zIndex}]`
+}
 
 type ReservationProductEmbed = {
   name?: string | null
@@ -252,6 +255,12 @@ export default function ReservationExpenseManager({
 }: ReservationExpenseManagerProps) {
   
   const t = useTranslations('reservationExpense')
+  const modalStack = useReservationFormModalStack()
+  const expenseDialogZIndex =
+    modalStack?.childZIndex ?? RECEIPT_MODAL_Z_INDEX
+  const expenseNestedDialogZIndex =
+    modalStack?.grandchildZIndex ?? expenseDialogZIndex + 200
+  const receiptViewZIndex = expenseDialogZIndex
   const tExpensesSub = useTranslations('expenses.reservationSubTabs')
   const tTour = useTranslations('tours.tourExpense')
   const tRes = useTranslations('reservations')
@@ -1677,7 +1686,7 @@ export default function ReservationExpenseManager({
           if (!open) closeAddModal()
         }}
       >
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" forceZIndex={expenseDialogZIndex}>
           <DialogHeader>
             <DialogTitle>{t('addExpense')}</DialogTitle>
             <DialogDescription>{t('amountRefundHint')}</DialogDescription>
@@ -2362,7 +2371,7 @@ export default function ReservationExpenseManager({
       {receiptViewPortalReady &&
         viewingReceipt &&
         createPortal(
-          <div className={RESERVATION_RECEIPT_VIEW_PORTAL_CLASS}>
+          <div className={reservationReceiptViewPortalClass(receiptViewZIndex)}>
             <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
               <div className="flex items-center justify-between p-4 border-b">
                 <div className="flex items-center gap-2">
@@ -2410,7 +2419,7 @@ export default function ReservationExpenseManager({
 
       {/* 예약 지출 수정 모달 */}
       <Dialog open={showEditModal} onOpenChange={(open) => { if (!open) closeEditModal(); }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" forceZIndex={expenseDialogZIndex}>
           <DialogHeader>
             <DialogTitle>{t('editExpense')}</DialogTitle>
             <DialogDescription>{t('amountRefundHint')}</DialogDescription>
@@ -2593,6 +2602,7 @@ export default function ReservationExpenseManager({
         }}
         context={stmtReconCtx}
         onApplied={() => void loadExpenses()}
+        forceZIndex={expenseNestedDialogZIndex}
       />
 
       {adminList ? (
@@ -2610,6 +2620,7 @@ export default function ReservationExpenseManager({
           reconciledExpenseIds={reconciledReservationIds}
           sourceTable="reservation_expenses"
           onApplied={() => void loadExpenses()}
+          forceZIndex={expenseNestedDialogZIndex}
         />
       ) : null}
 
@@ -2617,15 +2628,23 @@ export default function ReservationExpenseManager({
         open={vendorManagerOpen}
         onOpenChange={setVendorManagerOpen}
         onUpdated={() => void loadVendors()}
+        forceZIndex={expenseNestedDialogZIndex}
       />
 
       {loadingReservationForEdit && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[60]" aria-hidden>
+        <div
+          className={`fixed inset-0 bg-black/30 flex items-center justify-center${modalStack ? '' : ' z-[60]'}`}
+          style={modalStack ? { zIndex: expenseDialogZIndex } : undefined}
+          aria-hidden
+        >
           <div className="text-white font-medium">{tRes('loadingReservationData')}</div>
         </div>
       )}
       {editingReservation && reservationFormData && (
-        <div className="fixed inset-0 z-[60]">
+        <div
+          className={modalStack ? 'fixed inset-0' : 'fixed inset-0 z-[60]'}
+          style={modalStack ? { zIndex: expenseDialogZIndex } : undefined}
+        >
           <ReservationFormAny
             reservation={editingReservation}
             customers={reservationFormData.customers}
@@ -2638,6 +2657,7 @@ export default function ReservationExpenseManager({
             layout="modal"
             allowPastDateEdit={isSuper}
             useServerCustomerInsert
+            modalStackLevel="nested"
             onSubmit={async (reservationData: any) => {
               try {
                 const fullPayload = toReservationUpdatePayload(reservationData)

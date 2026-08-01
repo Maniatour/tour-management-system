@@ -19,6 +19,7 @@ import { defaultStaffOutreachTemplateName } from '@/lib/staffOutreachMessageTemp
 import EmailPreviewBodyPanel from '@/components/reservation/EmailPreviewBodyPanel'
 import StaffOutreachMessageTemplatePanel from '@/components/reservation/StaffOutreachMessageTemplatePanel'
 import { useStaffOutreachMessageTemplates } from '@/hooks/useStaffOutreachMessageTemplates'
+import { useReservationFormChildOverlayZIndex } from '@/components/reservation/ReservationFormModalStackContext'
 
 export interface ResidentInquiryEmailPreviewModalProps {
   isOpen: boolean
@@ -53,6 +54,7 @@ export default function ResidentInquiryEmailPreviewModal({
   const t = useTranslations('reservations.card')
   const tRes = useTranslations('reservations')
   const uiLocale = useLocale()
+  const overlayZIndex = useReservationFormChildOverlayZIndex(120)
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
   const [copiedLink, setCopiedLink] = useState(false)
@@ -255,7 +257,8 @@ export default function ResidentInquiryEmailPreviewModal({
 
   return (
     <div
-      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 flex items-center justify-center bg-black/50 p-4"
+      style={{ zIndex: overlayZIndex }}
       onClick={onClose}
     >
       <div

@@ -266,6 +266,8 @@ interface PricingSectionProps {
     company_total_revenue: number | null
     operating_profit: number | null
   } | null
+  /** 가격 계산 안내 모달 — 예약 수정 모달 위에 표시 */
+  helpModalOverlayZIndex?: number
 }
 
 export default function PricingSection({
@@ -293,6 +295,7 @@ export default function PricingSection({
   channels = [],
   products = [],
   pricingDbSnapshot = null,
+  helpModalOverlayZIndex,
   t
 }: PricingSectionProps) {
   const locale = useLocale()
@@ -4903,7 +4906,10 @@ export default function PricingSection({
       )}
 
       {showHelp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div
+          className={`fixed inset-0 flex items-center justify-center${helpModalOverlayZIndex == null ? ' z-50' : ''}`}
+          style={helpModalOverlayZIndex != null ? { zIndex: helpModalOverlayZIndex } : undefined}
+        >
           <div className="absolute inset-0 bg-black bg-opacity-50" onClick={() => setShowHelp(false)}></div>
           <div className="relative bg-white w-full max-w-2xl max-h-[80vh] rounded-lg shadow-lg overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">

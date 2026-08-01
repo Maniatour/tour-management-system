@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { buildPreTourContactSmsPreview } from '@/lib/buildPreTourContactSmsPreview'
+import { fetchReservationCustomerId, insertReservationSmsLog } from '@/lib/reservationSmsLog'
 import { sendTwilioSms } from '@/lib/twilioClient'
 
 /**
@@ -40,25 +41,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const twilioResult = await sendTwilioSms(toPhone, message)
     const db = supabaseAdmin ?? supabase
+    const customerId = await fetchReservationCustomerId(db, reservationId)
 
-    const { data: reservation } = await db
-      .from('reservations')
-      .select('customer_id')
-      .eq('id', reservationId)
-      .maybeSingle()
+    const twilioResult = await sendTwilioSms(toPhone, message)
 
     if ('error' in twilioResult) {
-      await (db as any).from('pre_tour_contact_sms_logs').insert({
-        reservation_id: reservationId,
-        customer_id: (reservation as { customer_id?: string } | null)?.customer_id ?? null,
-        to_phone: toPhone,
-        message_body: message,
+      await insertReservationSmsLog(db, {
+        reservationId,
+        customerId,
+        categoryId: 'pre_tour_contact',
+        toPhone,
+        messageBody: message,
         locale: resolvedLocale,
         status: 'failed',
-        error_message: twilioResult.error,
-        sent_by: sentBy,
+        errorMessage: twilioResult.error,
+        sentBy,
       })
 
       return NextResponse.json(
@@ -67,15 +65,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    await (db as any).from('pre_tour_contact_sms_logs').insert({
-      reservation_id: reservationId,
-      customer_id: (reservation as { customer_id?: string } | null)?.customer_id ?? null,
-      to_phone: toPhone,
-      message_body: message,
+    await insertReservationSmsLog(db, {
+      reservationId,
+      customerId,
+      categoryId: 'pre_tour_contact',
+      toPhone,
+      messageBody: message,
       locale: resolvedLocale,
-      twilio_message_sid: twilioResult.sid,
+      twilioMessageSid: twilioResult.sid,
       status: 'sent',
-      sent_by: sentBy,
+      sentBy,
     })
 
     await db

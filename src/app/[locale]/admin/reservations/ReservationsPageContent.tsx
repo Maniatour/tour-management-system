@@ -206,6 +206,7 @@ const ResidentInquiryEmailPreviewModal = dynamic(
   { ssr: false, loading: () => null }
 )
 const EmailLogsModal = dynamic(() => import('@/components/reservation/EmailLogsModal'), { ssr: false, loading: () => null })
+const SmsLogsModal = dynamic(() => import('@/components/reservation/SmsLogsModal'), { ssr: false, loading: () => null })
 const ReviewManagementSection = dynamic(
   () => import('@/components/reservation/ReviewManagementSection'),
   { ssr: false, loading: () => null }
@@ -1061,6 +1062,8 @@ export default function AdminReservations() {
   } | null>(null)
   const [showEmailLogs, setShowEmailLogs] = useState(false)
   const [selectedReservationForEmailLogs, setSelectedReservationForEmailLogs] = useState<string | null>(null)
+  const [showSmsLogs, setShowSmsLogs] = useState(false)
+  const [selectedReservationForSmsLogs, setSelectedReservationForSmsLogs] = useState<string | null>(null)
 
   // ??????????? ???? ??? ?????
   useEffect(() => {
@@ -5670,6 +5673,11 @@ export default function AdminReservations() {
     setEmailDropdownOpen(null)
   }, [])
 
+  const handleSmsLogsClick = useCallback((reservationId: string) => {
+    setSelectedReservationForSmsLogs(reservationId)
+    setShowSmsLogs(true)
+  }, [])
+
   const handleEmailDropdownToggle = useCallback((reservationId: string | null) => {
     setEmailDropdownOpen(reservationId)
   }, [])
@@ -5948,6 +5956,7 @@ export default function AdminReservations() {
           onCommunicationChannelChange={handleCommunicationChannelChange}
           sentBy={user?.email ?? null}
           onPreTourSmsSendSuccess={handlePreTourSmsSendSuccess}
+          onSmsLogsClick={handleSmsLogsClick}
         />
       )
     },
@@ -6944,6 +6953,7 @@ export default function AdminReservations() {
             onCommunicationChannelChange={handleCommunicationChannelChange}
             sentBy={user?.email ?? null}
             onPreTourSmsSendSuccess={handlePreTourSmsSendSuccess}
+          onSmsLogsClick={handleSmsLogsClick}
             onCancellationReasonSaved={() => onReasonSaved(reservation.id)}
           />
           )
@@ -7022,6 +7032,7 @@ export default function AdminReservations() {
             onCommunicationChannelChange={handleCommunicationChannelChange}
             sentBy={user?.email ?? null}
             onPreTourSmsSendSuccess={handlePreTourSmsSendSuccess}
+          onSmsLogsClick={handleSmsLogsClick}
           />
         )}
       />
@@ -7131,6 +7142,18 @@ export default function AdminReservations() {
             }
           }}
           reservationId={selectedReservationForEmailLogs}
+        />
+      )}
+
+      {showSmsLogs && selectedReservationForSmsLogs && (
+        <SmsLogsModal
+          isOpen={showSmsLogs}
+          onClose={() => {
+            setShowSmsLogs(false)
+            setSelectedReservationForSmsLogs(null)
+          }}
+          reservationId={selectedReservationForSmsLogs}
+          uiLocale={locale === 'en' ? 'en' : 'ko'}
         />
       )}
 
@@ -7289,6 +7312,7 @@ export default function AdminReservations() {
             onCommunicationChannelChange={handleCommunicationChannelChange}
             sentBy={user?.email ?? null}
             onPreTourSmsSendSuccess={handlePreTourSmsSendSuccess}
+          onSmsLogsClick={handleSmsLogsClick}
           />
         )}
       />

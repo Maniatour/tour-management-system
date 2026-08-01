@@ -7,6 +7,7 @@ import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { PRE_TOUR_CONTACT_SMS_PLACEHOLDER_HINT } from '@/lib/preTourContactSms'
 import type { PreTourContactSmsLocale } from '@/lib/preTourContactSmsLocale'
 import type { MessengerContactSettings } from '@/lib/preTourContactSms'
+import { useReservationFormChildOverlayZIndex } from '@/components/reservation/ReservationFormModalStackContext'
 
 type PreviewData = {
   locale: PreTourContactSmsLocale
@@ -45,6 +46,7 @@ export default function PreTourContactSmsPreviewModal({
   onSendSuccess,
 }: PreTourContactSmsPreviewModalProps) {
   const isEn = uiLocale === 'en'
+  const overlayZIndex = useReservationFormChildOverlayZIndex(145)
   const [smsLocale, setSmsLocale] = useState<PreTourContactSmsLocale>('en')
   const [preview, setPreview] = useState<PreviewData | null>(null)
   const [bodyTpl, setBodyTpl] = useState('')
@@ -259,7 +261,8 @@ export default function PreTourContactSmsPreviewModal({
 
   return (
     <div
-      className="fixed inset-0 z-[145] flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 flex items-center justify-center bg-black/50 p-4"
+      style={{ zIndex: overlayZIndex }}
       onClick={onClose}
       onDoubleClick={(e) => e.stopPropagation()}
     >
