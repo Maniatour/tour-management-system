@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { Loader2, Smartphone } from 'lucide-react'
 import type { Customer } from '@/types/reservation'
 import ReservationOutboundSmsModal from '@/components/reservation/ReservationOutboundSmsModal'
+import { resolveAdminSmsCategoryIconColor } from '@/lib/adminSmsCategoryColors'
 import { resolveAdminSmsCategoryIcon } from '@/lib/adminSmsCategoryIcons'
 import {
   resolveAdminSmsCategoryIconKey,
@@ -15,6 +16,15 @@ import {
   RESERVATION_CARD_SMS_CATEGORY_IDS,
   type ReservationOutboundSmsCategoryId,
 } from '@/lib/reservationOutboundSmsCategories'
+import {
+  fetchReservationSmsLogSummaries,
+  type ReservationSmsLogSummary,
+} from '@/lib/reservationSmsLogSummaries'
+import {
+  smsDeliveryStateBadgeClasses,
+  smsDeliveryStateIconBorderClasses,
+  smsDeliveryStateLabel,
+} from '@/lib/smsLogDeliveryState'
 import { ADMIN_FLOATING_PORTAL_Z_INDEX } from '@/lib/adminFloatingFabLayout'
 
 type Props = {
@@ -23,9 +33,13 @@ type Props = {
   sentBy: string | null
   uiLocale?: 'ko' | 'en'
   onSendSuccess?: () => void
+  onSmsSendSuccess?: (reservationId: string) => void
   onSmsLogsClick?: () => void
   variant?: 'icon' | 'menuItem'
   onBeforeOpen?: () => void
+  /** 목록 페이지 배치 조회 시 전달 */
+  smsLogSummary?: ReservationSmsLogSummary | null
+  smsLogSummaryLoaded?: boolean
 }
 
 export function ReservationCardSmsMenuButton({
@@ -34,9 +48,12 @@ export function ReservationCardSmsMenuButton({
   sentBy,
   uiLocale = 'ko',
   onSendSuccess,
+  onSmsSendSuccess,
   onSmsLogsClick,
   variant = 'icon',
   onBeforeOpen,
+  smsLogSummary: smsLogSummaryProp,
+  smsLogSummaryLoaded: smsLogSummaryLoadedProp,
 }: Props) {
   const isEn = uiLocale === 'en'
   const { settings } = useAdminSmsCategorySettings()
@@ -47,14 +64,31 @@ export function ReservationCardSmsMenuButton({
     null
   )
   const [busy, setBusy] = useState(false)
+  const [localSummary, setLocalSummary] = useState<ReservationSmsLogSummary | null>(null)
+  const [localSummaryLoaded, setLocalSummaryLoaded] = useState(false)
 
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
+  const smsLogSummary = smsLogSummaryProp ?? localSummary
+  const smsLogSummaryLoaded = smsLogSummaryLoadedProp ?? localSummaryLoaded
+
   useEffect(() => {
     setPortalReady(true)
   }, [])
+
+  const loadLocalSummary = useCallback(async () => {
+    if (smsLogSummaryProp !== undefined) return
+    const fetched = await fetchReservationSmsLogSummaries([reservationId])
+    setLocalSummary(fetched.get(reservationId) ?? { latest: null, byCategory: {} })
+    setLocalSummaryLoaded(true)
+  }, [reservationId, smsLogSummaryProp])
+
+  useEffect(() => {
+    if (smsLogSummaryProp !== undefined) return
+    void loadLocalSummary()
+  }, [smsLogSummaryProp, loadLocalSummary])
 
   const validateCustomer = useCallback(() => {
     if (!customer) {
@@ -84,9 +118,12 @@ export function ReservationCardSmsMenuButton({
       e.stopPropagation()
       onBeforeOpen?.()
       if (!validateCustomer()) return
+      if (smsLogSummaryProp === undefined && !localSummaryLoaded) {
+        void loadLocalSummary()
+      }
       setMenuOpen((open) => !open)
     },
-    [onBeforeOpen, validateCustomer]
+    [onBeforeOpen, validateCustomer, smsLogSummaryProp, localSummaryLoaded, loadLocalSummary]
   )
 
   useEffect(() => {
@@ -115,7 +152,7 @@ export function ReservationCardSmsMenuButton({
       const panel = panelRef.current
       if (!btn) return
       const rect = btn.getBoundingClientRect()
-      const panelWidth = panel?.offsetWidth ?? 220
+      const panelWidth = panel?.offsetWidth ?? 260
       const left = Math.min(rect.left, window.innerWidth - panelWidth - 8)
       setMenuPos({ top: rect.bottom + 4, left: Math.max(8, left) })
     }
@@ -129,10 +166,38 @@ export function ReservationCardSmsMenuButton({
   }, [menuOpen])
 
   const handleSendSuccess = useCallback(() => {
+    onSmsSendSuccess?.(reservationId)
+    if (smsLogSummaryProp === undefined) {
+      void loadLocalSummary()
+    }
     if (activeCategory === 'pre_tour_contact') {
       onSendSuccess?.()
     }
-  }, [activeCategory, onSendSuccess])
+  }, [
+    activeCategory,
+    onSendSuccess,
+    onSmsSendSuccess,
+    reservationId,
+    smsLogSummaryProp,
+    loadLocalSummary,
+  ])
+
+  const latestLog = smsLogSummaryLoaded ? (smsLogSummary?.latest ?? null) : null
+  const hasSendHistory = !!latestLog
+
+  const triggerIconKey = hasSendHistory
+    ? resolveAdminSmsCategoryIconKey(
+        latestLog.categoryId as ReservationOutboundSmsCategoryId,
+        settings
+      )
+    : 'smartphone'
+  const TriggerIcon = resolveAdminSmsCategoryIcon(triggerIconKey)
+  const triggerIconColor = hasSendHistory
+    ? resolveAdminSmsCategoryIconColor(latestLog.categoryId)
+    : 'text-violet-700'
+  const triggerBorderClasses = hasSendHistory
+    ? smsDeliveryStateIconBorderClasses(latestLog.deliveryState)
+    : 'border-violet-200 bg-violet-50'
 
   const triggerButton =
     variant === 'menuItem' ? (
@@ -149,9 +214,9 @@ export function ReservationCardSmsMenuButton({
         aria-expanded={menuOpen}
       >
         {busy ? (
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-violet-700" />
+          <Loader2 className={`h-3.5 w-3.5 shrink-0 animate-spin ${triggerIconColor}`} />
         ) : (
-          <Smartphone className="h-3.5 w-3.5 shrink-0 text-violet-700" />
+          <TriggerIcon className={`h-3.5 w-3.5 shrink-0 ${triggerIconColor}`} />
         )}
         {isEn ? 'Send SMS' : 'SMS 발송'}
       </button>
@@ -161,8 +226,14 @@ export function ReservationCardSmsMenuButton({
         ref={buttonRef}
         disabled={busy || !!activeCategory}
         onClick={toggleMenu}
-        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded leading-none border-2 border-violet-200 bg-violet-50 text-violet-700 transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
-        title={isEn ? 'Send SMS' : 'SMS 발송'}
+        className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border-2 leading-none transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 ${triggerBorderClasses} ${triggerIconColor}`}
+        title={
+          hasSendHistory
+            ? `${isEn ? 'Send SMS' : 'SMS 발송'} · ${smsDeliveryStateLabel(latestLog.deliveryState, uiLocale)}`
+            : isEn
+              ? 'Send SMS'
+              : 'SMS 발송'
+        }
         aria-label={isEn ? 'Send SMS' : 'SMS 발송'}
         aria-haspopup="menu"
         aria-expanded={menuOpen}
@@ -170,7 +241,7 @@ export function ReservationCardSmsMenuButton({
         {busy ? (
           <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden />
         ) : (
-          <Smartphone className="h-3 w-3 shrink-0" aria-hidden />
+          <TriggerIcon className="h-3 w-3 shrink-0" aria-hidden />
         )}
       </button>
     )
@@ -188,7 +259,7 @@ export function ReservationCardSmsMenuButton({
           <div
             ref={panelRef}
             role="menu"
-            className="fixed w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
+            className="fixed w-64 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
             style={{ top: menuPos.top, left: menuPos.left, zIndex: ADMIN_FLOATING_PORTAL_Z_INDEX }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -199,6 +270,11 @@ export function ReservationCardSmsMenuButton({
               const iconKey = resolveAdminSmsCategoryIconKey(categoryId, settings)
               const Icon = resolveAdminSmsCategoryIcon(iconKey)
               const label = resolveAdminSmsCategoryLabel(categoryId, settings, uiLocale)
+              const iconColor = resolveAdminSmsCategoryIconColor(categoryId)
+              const categorySummary = smsLogSummary?.byCategory?.[categoryId] ?? null
+              const deliveryState = categorySummary?.deliveryState
+              const showBadge = !!categorySummary && deliveryState && deliveryState !== 'none'
+
               return (
                 <button
                   key={categoryId}
@@ -215,8 +291,15 @@ export function ReservationCardSmsMenuButton({
                     }
                   }}
                 >
-                  <Icon className="h-3.5 w-3.5 shrink-0 text-violet-700" aria-hidden />
-                  <span className="min-w-0 truncate">{label}</span>
+                  <Icon className={`h-3.5 w-3.5 shrink-0 ${iconColor}`} aria-hidden />
+                  <span className="min-w-0 flex-1 truncate">{label}</span>
+                  {showBadge && deliveryState ? (
+                    <span
+                      className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium leading-tight ${smsDeliveryStateBadgeClasses(deliveryState)}`}
+                    >
+                      {smsDeliveryStateLabel(deliveryState, uiLocale)}
+                    </span>
+                  ) : null}
                 </button>
               )
             })}

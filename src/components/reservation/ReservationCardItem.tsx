@@ -32,6 +32,7 @@ import { supabase } from '@/lib/supabase'
 import type { Reservation, Customer } from '@/types/reservation'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
 import { ReservationCardSmsMenuButton } from '@/components/reservation/ReservationCardSmsMenuButton'
+import type { ReservationSmsLogSummary } from '@/lib/reservationSmsLogSummaries'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import { ADMIN_FLOATING_PORTAL_Z_INDEX } from '@/lib/adminFloatingFabLayout'
 
@@ -271,6 +272,11 @@ interface ReservationCardItemProps {
   sentBy?: string | null
   /** 간단 카드: SMS 발송 성공 후 (예: 소통 채널 UI 갱신) */
   onPreTourSmsSendSuccess?: (reservationId: string) => void
+  /** SMS 발송 성공 후 로그 요약 갱신 */
+  onSmsSendSuccess?: (reservationId: string) => void
+  /** SMS 발송 요약 (목록 배치 조회) */
+  smsLogSummary?: ReservationSmsLogSummary | null
+  smsLogSummaryLoaded?: boolean
   /** 간단 카드: SMS 발송 내역 모달 */
   onSmsLogsClick?: (reservationId: string) => void
   /** 취소 사유 저장 후 부모 갱신(큐 모달 등) */
@@ -343,6 +349,9 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   onCommunicationChannelChange,
   sentBy = null,
   onPreTourSmsSendSuccess,
+  onSmsSendSuccess,
+  smsLogSummary = null,
+  smsLogSummaryLoaded = false,
   onSmsLogsClick,
   onCancellationReasonSaved,
   similarCustomerProductMap,
@@ -929,8 +938,13 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                         customer={customers.find((c) => c.id === reservation.customerId)}
                         sentBy={sentBy}
                         uiLocale={locale === 'en' ? 'en' : 'ko'}
+                        smsLogSummary={smsLogSummary}
+                        smsLogSummaryLoaded={smsLogSummaryLoaded}
                         {...(onPreTourSmsSendSuccess
                           ? { onSendSuccess: () => onPreTourSmsSendSuccess(reservation.id) }
+                          : {})}
+                        {...(onSmsSendSuccess
+                          ? { onSmsSendSuccess: () => onSmsSendSuccess(reservation.id) }
                           : {})}
                         {...(onSmsLogsClick
                           ? { onSmsLogsClick: () => onSmsLogsClick(reservation.id) }
@@ -947,8 +961,13 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                       customer={customers.find((c) => c.id === reservation.customerId)}
                       sentBy={sentBy}
                       uiLocale={locale === 'en' ? 'en' : 'ko'}
+                      smsLogSummary={smsLogSummary}
+                      smsLogSummaryLoaded={smsLogSummaryLoaded}
                       {...(onPreTourSmsSendSuccess
                         ? { onSendSuccess: () => onPreTourSmsSendSuccess(reservation.id) }
+                        : {})}
+                      {...(onSmsSendSuccess
+                        ? { onSmsSendSuccess: () => onSmsSendSuccess(reservation.id) }
                         : {})}
                       {...(onSmsLogsClick
                         ? { onSmsLogsClick: () => onSmsLogsClick(reservation.id) }

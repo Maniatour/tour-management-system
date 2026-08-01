@@ -57,3 +57,17 @@ export function smsDeliveryStateCardClasses(state: SmsLogDeliveryState): string 
       return 'border-gray-200 bg-white'
   }
 }
+
+/** 예약 카드 SMS 버튼 테두리·배경 (최신 발송 상태) */
+export function smsDeliveryStateIconBorderClasses(state: SmsLogDeliveryState): string {
+  switch (state) {
+    case 'delivered':
+      return 'border-green-400 bg-green-50'
+    case 'failed':
+      return 'border-red-400 bg-red-50'
+    case 'pending':
+      return 'border-amber-400 bg-amber-50'
+    default:
+      return 'border-violet-200 bg-violet-50'
+  }
+}

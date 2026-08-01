@@ -21,6 +21,7 @@ import {
   mergeAdminListHydratedSnapshots,
 } from '@/hooks/useReservationData'
 import { useReservationFollowUpSnapshots } from '@/hooks/useReservationFollowUpSnapshots'
+import { useReservationSmsLogSummaries } from '@/hooks/useReservationSmsLogSummaries'
 import { useOperationalQueueBadgeSnapshot } from '@/hooks/useOperationalQueueBadgeSnapshot'
 import { useCancellationReasonByReservationId } from '@/hooks/useCancellationReasonByReservationId'
 import { useImagePrefetch } from '@/hooks/useImagePrefetch'
@@ -551,6 +552,11 @@ export default function AdminReservations() {
   /** 목록 재조회 시 stale-while-revalidate — 기존 카드가 있으면 전체 로딩 스피너 생략 */
   const reservationsListRef = useRef<Reservation[]>([])
   reservationsListRef.current = reservations
+  /** 한 번이라도 카드가 그려진 뒤에는 빈 재조회 결과로 전체 로딩 스피너를 띄우지 않음 */
+  const mainListPaintedOnceRef = useRef(false)
+  if (reservations.length > 0) {
+    mainListPaintedOnceRef.current = true
+  }
 
   // 채널 favicon 워밍업 — 카드/배지 첫 페인트 시 깜빡임 제거
   const channelFaviconUrls = useMemo(
@@ -794,7 +800,29 @@ export default function AdminReservations() {
     selectedChannel,
     dateRange: { start: dateRange.start, end: dateRange.end },
   })
+  /** 스토리지 복원 직후 listQueryFilters가 기본값으로 먼저 fetch되는 것 방지 */
+  const reservationFiltersHydratedRef = useRef(false)
+  useLayoutEffect(() => {
+    if (!reservationListUiHydrated) {
+      reservationFiltersHydratedRef.current = false
+      return
+    }
+    if (reservationFiltersHydratedRef.current) return
+    reservationFiltersHydratedRef.current = true
+    setListQueryFilters({
+      selectedStatus,
+      selectedChannel,
+      dateRange: { start: dateRange.start, end: dateRange.end },
+    })
+  }, [
+    reservationListUiHydrated,
+    selectedStatus,
+    selectedChannel,
+    dateRange.start,
+    dateRange.end,
+  ])
   useEffect(() => {
+    if (!reservationFiltersHydratedRef.current) return
     const timer = window.setTimeout(() => {
       setListQueryFilters((prev) => {
         if (
@@ -999,6 +1027,8 @@ export default function AdminReservations() {
 
   useEffect(() => {
     if (!operationalListReadyForBadge) return
+    if (!reservationFiltersHydratedRef.current) return
+    if (reservations.length === 0) return
     void refreshCancelReasonQueueStats().then((meta) => {
       if (cancelReasonAutoOpenAttemptedRef.current) return
       cancelReasonAutoOpenAttemptedRef.current = true
@@ -1008,7 +1038,7 @@ export default function AdminReservations() {
         setCancelReasonQueueOpen(true)
       }
     })
-  }, [operationalListReadyForBadge, refreshCancelReasonQueueStats])
+  }, [operationalListReadyForBadge, refreshCancelReasonQueueStats, reservations.length])
 
   const handleOpenCancelReasonQueue = useCallback(() => {
     if (cancelReasonQueueStats.union <= 0) return
@@ -2045,6 +2075,11 @@ export default function AdminReservations() {
     }
   )
 
+  const {
+    summariesByReservationId: smsLogSummariesByReservationId,
+    refreshReservationIds: refreshSmsLogReservationIds,
+  } = useReservationSmsLogSummaries(reservationsLiteForFollowUp)
+
   const handleFollowUpPipelineManualChange = useCallback(
     async (reservationId: string, step: FollowUpPipelineStepKey, action: 'mark' | 'clear') => {
       const col =
@@ -2490,6 +2525,12 @@ export default function AdminReservations() {
     const fetchGen = adminCardWeekFetchGenRef.current
     pricingHydrateAttemptedRef.current.clear()
     toursHydrateAttemptedRef.current.clear()
+    const clearReservationsIfCurrentlyEmpty = async () => {
+      if (reservationsListRef.current.length === 0) {
+        await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
+        setResidentCustomerBatchMap(new Map())
+      }
+    }
     if (reservationsListRef.current.length === 0) {
       setServerListLoading(true)
     }
@@ -2575,8 +2616,7 @@ export default function AdminReservations() {
                 if (fetchGen !== adminCardWeekFetchGenRef.current) return false
                 if (rows.length === 0) {
                   if (!firstPaintDone) {
-                    await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
-                    setResidentCustomerBatchMap(new Map())
+                    await clearReservationsIfCurrentlyEmpty()
                     setServerListTotal(totalCount ?? 0)
                     setServerListLoading(false)
                     firstPaintDone = true
@@ -2810,8 +2850,7 @@ export default function AdminReservations() {
                       tier === 'tier3_legacy_tour' &&
                       resolvedTotal === 0
                     ) {
-                      await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
-                      setResidentCustomerBatchMap(new Map())
+                      await clearReservationsIfCurrentlyEmpty()
                       setServerListTotal(0)
                       setServerListLoading(false)
                       firstPaintDone = true
@@ -2894,8 +2933,7 @@ export default function AdminReservations() {
         })
 
         if (!firstPaintDone) {
-          await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
-          setResidentCustomerBatchMap(new Map())
+          await clearReservationsIfCurrentlyEmpty()
           setServerListTotal(totalForProgress ?? tierBaseLoaded)
           setServerListLoading(false)
         }
@@ -2936,8 +2974,7 @@ export default function AdminReservations() {
             onFirstChunk: async ({ rows, totalCount }) => {
               if (fetchGen !== adminCardWeekFetchGenRef.current) return false
               if (rows.length === 0) {
-                await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
-                setResidentCustomerBatchMap(new Map())
+                await clearReservationsIfCurrentlyEmpty()
                 setServerListTotal(totalCount ?? 0)
                 setServerListLoading(false)
                 return true
@@ -3032,9 +3069,11 @@ export default function AdminReservations() {
         return
       }
       console.error(`loadAdminReservationList: ${describeError(e)}`, serializeError(e))
-      setResidentCustomerBatchMap(new Map())
-      await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
-      setServerListTotal(0)
+      if (reservationsListRef.current.length === 0) {
+        setResidentCustomerBatchMap(new Map())
+        await replaceReservationsFromQueryResultRef.current([], { skipLoadingFlags: true })
+        setServerListTotal(0)
+      }
     } finally {
       if (fetchGen === adminCardWeekFetchGenRef.current) {
         setAdminListChunkProgress(null)
@@ -3620,7 +3659,7 @@ export default function AdminReservations() {
   useEffect(() => {
     if (!reservationListUiHydrated) return
     if (serverListLoading || adminListChunkProgress) return
-    if (showActionRequiredModal || followUpQueueModalOpen) return
+    if (showActionRequiredModal || followUpQueueModalOpen || cancelReasonQueueOpen) return
 
     let cancelled = false
     let idleHandle: number | null = null
@@ -3654,6 +3693,7 @@ export default function AdminReservations() {
     adminListChunkProgress,
     showActionRequiredModal,
     followUpQueueModalOpen,
+    cancelReasonQueueOpen,
     prefetchOperationalQueueSnapshot,
   ])
 
@@ -3680,7 +3720,7 @@ export default function AdminReservations() {
   ])
 
   useEffect(() => {
-    if (!reservationListUiHydrated) return
+    if (!reservationListUiHydrated || !reservationFiltersHydratedRef.current) return
     void loadAdminReservationList()
   }, [loadAdminReservationList, currentPage, reservationListUiHydrated])
 
@@ -5667,6 +5707,13 @@ export default function AdminReservations() {
     [patchReservationInList, patchOperationalQueueReservation]
   )
 
+  const handleSmsSendSuccess = useCallback(
+    (reservationId: string) => {
+      void refreshSmsLogReservationIds([reservationId])
+    },
+    [refreshSmsLogReservationIds]
+  )
+
   const handleEmailLogsClick = useCallback((reservationId: string) => {
     setSelectedReservationForEmailLogs(reservationId)
     setShowEmailLogs(true)
@@ -5812,10 +5859,15 @@ export default function AdminReservations() {
   const listContentStillPending =
     serverListLoading ||
     !!adminListChunkProgress ||
-    (serverListTotal > 0 && filteredReservations.length === 0)
+    (!mainListPaintedOnceRef.current &&
+      serverListTotal > 0 &&
+      filteredReservations.length === 0)
   const showMainBodyLoading =
     !reservationListUiHydrated ||
-    (serverListLoading && !hasReservationListPaintData && viewMode !== 'calendar')
+    (serverListLoading &&
+      !hasReservationListPaintData &&
+      !mainListPaintedOnceRef.current &&
+      viewMode !== 'calendar')
   const mainBodyLoadingHeadline = !reservationListUiHydrated
     ? t('loadingReservationData')
     : t('loadingReservationList')
@@ -5956,6 +6008,9 @@ export default function AdminReservations() {
           onCommunicationChannelChange={handleCommunicationChannelChange}
           sentBy={user?.email ?? null}
           onPreTourSmsSendSuccess={handlePreTourSmsSendSuccess}
+          onSmsSendSuccess={handleSmsSendSuccess}
+          smsLogSummary={smsLogSummariesByReservationId.get(reservation.id) ?? null}
+          smsLogSummaryLoaded={smsLogSummariesByReservationId.has(reservation.id)}
           onSmsLogsClick={handleSmsLogsClick}
         />
       )
@@ -6003,6 +6058,9 @@ export default function AdminReservations() {
       handleCommunicationChannelChange,
       user?.email,
       handlePreTourSmsSendSuccess,
+      handleSmsSendSuccess,
+      smsLogSummariesByReservationId,
+      handleSmsLogsClick,
     ]
   )
 
@@ -6953,6 +7011,9 @@ export default function AdminReservations() {
             onCommunicationChannelChange={handleCommunicationChannelChange}
             sentBy={user?.email ?? null}
             onPreTourSmsSendSuccess={handlePreTourSmsSendSuccess}
+            onSmsSendSuccess={handleSmsSendSuccess}
+            smsLogSummary={smsLogSummariesByReservationId.get(reservation.id) ?? null}
+            smsLogSummaryLoaded={smsLogSummariesByReservationId.has(reservation.id)}
           onSmsLogsClick={handleSmsLogsClick}
             onCancellationReasonSaved={() => onReasonSaved(reservation.id)}
           />
@@ -7032,6 +7093,9 @@ export default function AdminReservations() {
             onCommunicationChannelChange={handleCommunicationChannelChange}
             sentBy={user?.email ?? null}
             onPreTourSmsSendSuccess={handlePreTourSmsSendSuccess}
+            onSmsSendSuccess={handleSmsSendSuccess}
+            smsLogSummary={smsLogSummariesByReservationId.get(reservation.id) ?? null}
+            smsLogSummaryLoaded={smsLogSummariesByReservationId.has(reservation.id)}
           onSmsLogsClick={handleSmsLogsClick}
           />
         )}
@@ -7312,6 +7376,9 @@ export default function AdminReservations() {
             onCommunicationChannelChange={handleCommunicationChannelChange}
             sentBy={user?.email ?? null}
             onPreTourSmsSendSuccess={handlePreTourSmsSendSuccess}
+            onSmsSendSuccess={handleSmsSendSuccess}
+            smsLogSummary={smsLogSummariesByReservationId.get(reservation.id) ?? null}
+            smsLogSummaryLoaded={smsLogSummariesByReservationId.has(reservation.id)}
           onSmsLogsClick={handleSmsLogsClick}
           />
         )}
