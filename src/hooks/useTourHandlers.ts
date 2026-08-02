@@ -5,7 +5,7 @@ import type { Database } from '@/lib/supabase'
 import { timeToHHmm } from '@/lib/utils'
 import { isTourCancelled, tourStaffVehicleAssignmentClearPatch } from '@/utils/tourStatusUtils'
 import {
-  normalizeReservationIds,
+  dedupeReservationIdsPreservingOrder,
   reservationIdsLooselyEqual,
   sameTourProductAndDate,
 } from '@/utils/tourUtils'
@@ -257,13 +257,15 @@ export function useTourHandlers() {
         const toRow = rows.find((r) => r.id === toTourId) as { id: string; reservation_ids?: unknown } | undefined
         if (!fromRow || !toRow) return null
 
-        const fromIds = normalizeReservationIds(fromRow.reservation_ids)
-        const toIds = normalizeReservationIds(toRow.reservation_ids)
+        const fromIds = dedupeReservationIdsPreservingOrder(fromRow.reservation_ids)
+        const toIds = dedupeReservationIdsPreservingOrder(toRow.reservation_ids)
         const fromMatch = fromIds.find((id) => reservationIdsLooselyEqual(id, rid))
         const ridForStorage = fromMatch ?? rid
         const newFromIds = fromIds.filter((id) => !reservationIdsLooselyEqual(id, rid))
-        const toUnique = [...new Set(toIds.filter((id) => !reservationIdsLooselyEqual(id, rid)))]
-        const newToIds = [...toUnique, ridForStorage]
+        const newToIds = dedupeReservationIdsPreservingOrder([
+          ...toIds.filter((id) => !reservationIdsLooselyEqual(id, rid)),
+          ridForStorage,
+        ])
 
         const { error: e1 } = await supabase
           .from('tours')
@@ -361,12 +363,14 @@ export function useTourHandlers() {
           return
         }
 
-        const currentReservationIds = normalizeReservationIds((tour as { reservation_ids?: unknown }).reservation_ids)
-        if (currentReservationIds.includes(rid)) {
+        const currentReservationIds = dedupeReservationIdsPreservingOrder(
+          (tour as { reservation_ids?: unknown }).reservation_ids
+        )
+        if (currentReservationIds.some((id) => reservationIdsLooselyEqual(id, rid))) {
           return currentReservationIds
         }
 
-        const updatedReservationIds = [...currentReservationIds, rid]
+        const updatedReservationIds = dedupeReservationIdsPreservingOrder([...currentReservationIds, rid])
 
         const { error } = await supabase
           .from('tours')
@@ -393,7 +397,7 @@ export function useTourHandlers() {
 
     try {
       const rid = String(reservationId).trim()
-      const currentReservationIds = normalizeReservationIds(tour.reservation_ids)
+      const currentReservationIds = dedupeReservationIdsPreservingOrder(tour.reservation_ids)
       const updatedReservationIds = currentReservationIds.filter(
         (id: string) => !reservationIdsLooselyEqual(id, rid)
       )
@@ -431,11 +435,13 @@ export function useTourHandlers() {
     if (!tour || pendingReservations.length === 0) return
 
     try {
-      const currentReservationIds = normalizeReservationIds(tour.reservation_ids)
+      const currentReservationIds = dedupeReservationIdsPreservingOrder(tour.reservation_ids)
       const pendingIds = [
         ...new Set(pendingReservations.map((r) => String(r.id).trim()).filter(Boolean)),
       ]
-      const toAdd = pendingIds.filter((id) => !currentReservationIds.includes(id))
+      const toAdd = pendingIds.filter(
+        (id) => !currentReservationIds.some((existing) => reservationIdsLooselyEqual(existing, id))
+      )
       const conflictIds: string[] = []
       for (const pid of toAdd) {
         const { data: rows, error: qErr } = await supabase
@@ -458,7 +464,10 @@ export function useTourHandlers() {
       }
       if (addable.length === 0) return
 
-      const updatedReservationIds = [...currentReservationIds, ...addable]
+      const updatedReservationIds = dedupeReservationIdsPreservingOrder([
+        ...currentReservationIds,
+        ...addable,
+      ])
 
       const { error } = await supabase
         .from('tours')

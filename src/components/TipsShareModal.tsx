@@ -209,12 +209,12 @@ export default function TipsShareModal({ isOpen, onClose, locale: _locale = 'ko'
     setEndDate(endDate.toISOString().split('T')[0])
   }
 
-  // OP 멤버 조회 (수습기간 제외)
+  // OP 멤버 조회 (Office Tips 모달과 동일 기준 — 활성 OP/OM 전원)
   const fetchOpMembers = async () => {
     try {
       const { data, error } = await supabase
         .from('team')
-        .select('email, name_ko, hire_date')
+        .select('email, name_ko')
         .eq('is_active', true)
         .or('position.ilike.op,position.ilike.office manager')
         .order('name_ko')
@@ -224,22 +224,7 @@ export default function TipsShareModal({ isOpen, onClose, locale: _locale = 'ko'
         return
       }
 
-      // 수습기간인 OP 제외 (hire_date가 3개월 이내인 경우)
-      const today = new Date()
-      const threeMonthsAgo = new Date(today)
-      threeMonthsAgo.setMonth(today.getMonth() - 3)
-
-      const filteredMembers = (data || []).filter(member => {
-        if (!member.hire_date) {
-          // hire_date가 없으면 수습기간이 아니라고 가정
-          return true
-        }
-        const hireDate = new Date(member.hire_date)
-        // hire_date가 3개월 이전이면 수습기간이 아님
-        return hireDate < threeMonthsAgo
-      })
-
-      setOpMembers(filteredMembers.map(m => ({ email: m.email, name_ko: m.name_ko })))
+      setOpMembers((data || []).map(m => ({ email: m.email, name_ko: m.name_ko })))
     } catch (error) {
       console.error('OP 멤버 조회 오류:', error)
     }
@@ -1013,7 +998,8 @@ export default function TipsShareModal({ isOpen, onClose, locale: _locale = 'ko'
 
       if (insertError) {
         console.error('팁 쉐어 저장 오류:', insertError)
-        alert('팁 쉐어 저장 중 오류가 발생했습니다. 데이터베이스 테이블이 생성되었는지 확인해주세요.')
+        const detail = insertError.message || insertError.code || 'unknown'
+        alert(`팁 쉐어 저장 중 오류가 발생했습니다.\n(${detail})`)
         return
       }
 

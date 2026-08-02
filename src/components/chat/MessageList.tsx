@@ -155,11 +155,11 @@ export default function MessageList({
                   <div className={`flex flex-col max-w-xs lg:max-w-md ${isMyMessage ? 'items-end' : 'items-start'}`}>
                     {/* 이름 (다른 사람의 메시지일 때만 표시) */}
                     {!isMyMessage && (
-                      <div className={`text-xs font-medium mb-1 px-1 ${
-                        isStaffBubble
-                          ? 'text-white' 
-                          : 'text-gray-700'
-                      }`}>
+                      <div
+                        className={`text-xs font-medium mb-1 px-1 ${
+                          isStaffBubble ? 'text-blue-800' : 'text-gray-700'
+                        }`}
+                      >
                         {senderDisplayName}
                       </div>
                     )}

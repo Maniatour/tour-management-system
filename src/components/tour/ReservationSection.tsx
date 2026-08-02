@@ -1,6 +1,7 @@
 import React from 'react'
 import { ReservationCard } from './ReservationCard'
 import { getReservationPartySize } from '@/utils/reservationUtils'
+import { dedupeReservationsPreservingOrder } from '@/utils/tourUtils'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import type { PickupHotelAssignmentOption } from '@/utils/pickupHotelUtils'
 
@@ -83,18 +84,10 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
   headerBadges,
   onCommunicationChannelChange,
 }) => {
-  // 중복 제거: 같은 ID를 가진 예약 중 첫 번째 것만 유지
-  const uniqueReservations = React.useMemo(() => {
-    const seen = new Set<string>()
-    return reservations.filter(reservation => {
-      if (seen.has(reservation.id)) {
-        console.warn(`⚠️ 중복된 예약 ID 발견: ${reservation.id} - 제거됨`)
-        return false
-      }
-      seen.add(reservation.id)
-      return true
-    })
-  }, [reservations])
+  const uniqueReservations = React.useMemo(
+    () => dedupeReservationsPreservingOrder(reservations),
+    [reservations]
+  )
 
   // 총 인원 계산 (성인+아동+유아; DB 필드명 child/infant 호환)
   const totalPeople = uniqueReservations.reduce(

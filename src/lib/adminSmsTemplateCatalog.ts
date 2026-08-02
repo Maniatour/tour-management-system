@@ -1,10 +1,16 @@
 import { PRE_TOUR_CONTACT_SMS_PLACEHOLDER_HINT } from '@/lib/preTourContactSms'
 import {
+  GUIDE_SCHEDULE_ASSIGNMENT_SMS_PLACEHOLDER_HINT,
+} from '@/lib/guideScheduleAssignmentSmsTemplate'
+import {
   GUIDE_SCHEDULE_CONFIRM_SMS_PLACEHOLDER_HINT,
 } from '@/lib/guideScheduleConfirmSmsTemplate'
 import { PICKUP_NOTIFICATION_SMS_PLACEHOLDER_HINT } from '@/lib/pickupNotificationSms'
 
-export type AdminSmsDbTemplateKey = 'pickup_notification' | 'guide_schedule_confirm'
+export type AdminSmsDbTemplateKey =
+  | 'pickup_notification'
+  | 'guide_schedule_confirm'
+  | 'guide_schedule_assignment'
 
 export type AdminSmsCategoryId =
   | 'pre_tour_contact'
@@ -48,6 +54,16 @@ export const ADMIN_SMS_CATEGORIES: readonly AdminSmsCategoryDef[] = [
     kind: 'locale_template',
     locales: ['ko', 'en'],
     placeholderHint: PICKUP_NOTIFICATION_SMS_PLACEHOLDER_HINT,
+  },
+  {
+    id: 'guide_schedule_assignment',
+    labelKo: '가이드 스케줄 부여',
+    labelEn: 'Guide schedule assignment',
+    descriptionKo: '가이드·어시스턴트에게 스케줄 배정 안내 SMS (확정/거절 링크 포함)',
+    descriptionEn: 'Schedule assignment SMS for guides with confirm/reject link',
+    kind: 'locale_template',
+    locales: ['ko', 'en'],
+    placeholderHint: GUIDE_SCHEDULE_ASSIGNMENT_SMS_PLACEHOLDER_HINT,
   },
   {
     id: 'guide_schedule_confirm',
@@ -113,5 +129,9 @@ export function getAdminSmsCategory(id: AdminSmsCategoryId): AdminSmsCategoryDef
 export function isAdminSmsDbTemplateKey(
   categoryId: AdminSmsCategoryId
 ): categoryId is AdminSmsDbTemplateKey {
-  return categoryId === 'pickup_notification' || categoryId === 'guide_schedule_confirm'
+  return (
+    categoryId === 'pickup_notification' ||
+    categoryId === 'guide_schedule_confirm' ||
+    categoryId === 'guide_schedule_assignment'
+  )
 }

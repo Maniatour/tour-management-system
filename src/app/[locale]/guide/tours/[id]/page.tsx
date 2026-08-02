@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import {
   ArrowLeft,
@@ -378,6 +378,7 @@ function groupReservationsByPickupHotel(reservations: ReservationRow[]) {
 export default function GuideTourDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const locale = useLocale()
   const { user, userRole, simulatedUser, isSimulating } = useAuth()
   const t = useTranslations('guideTour')
@@ -440,6 +441,20 @@ export default function GuideTourDetailPage() {
     sunriseTime: string;
   } | null>(null)
   const reportReminderShownForTourRef = useRef<string | null>(null)
+  const assignmentActionRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (searchParams.get('assignment') !== '1') return
+    setExpandedSections((prev) => {
+      const next = new Set(prev)
+      next.add('tour-info')
+      return next
+    })
+    const timer = window.setTimeout(() => {
+      assignmentActionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 400)
+    return () => window.clearTimeout(timer)
+  }, [searchParams, tour?.id])
 
   useEffect(() => {
     const onOnline = () => setOnlineRefreshTick((n) => n + 1)
@@ -1529,7 +1544,7 @@ export default function GuideTourDetailPage() {
                 {/* 배정 확인/거절 버튼 (assignment_status가 'assigned'이고 현재 사용자가 가이드로 배정된 경우에만 표시) */}
                 {(tour as TourRow & { assignment_status?: string }).assignment_status === 'assigned' && 
                  (tour.tour_guide_id === currentUserEmail || tour.assistant_id === currentUserEmail) && (
-                  <div className="flex items-center space-x-1">
+                  <div ref={assignmentActionRef} className="flex items-center space-x-1">
                     <button
                       onClick={(e) => {
                         e.stopPropagation()

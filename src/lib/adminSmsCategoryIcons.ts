@@ -16,6 +16,7 @@ import {
   Send,
   Smartphone,
   Users,
+  UserCheck,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -36,6 +37,7 @@ export const ADMIN_SMS_CATEGORY_ICON_OPTIONS = [
   { key: 'phone', labelKo: '전화', labelEn: 'Phone' },
   { key: 'mail', labelKo: '메일', labelEn: 'Mail' },
   { key: 'users', labelKo: '사용자', labelEn: 'Users' },
+  { key: 'user-check', labelKo: '배정 확인', labelEn: 'Assignment' },
   { key: 'rotate-ccw', labelKo: '재시도', labelEn: 'Retry' },
 ] as const
 
@@ -58,6 +60,7 @@ const ADMIN_SMS_CATEGORY_ICON_MAP: Record<string, LucideIcon> = {
   phone: Phone,
   mail: Mail,
   users: Users,
+  'user-check': UserCheck,
   'rotate-ccw': RotateCcw,
 }
 

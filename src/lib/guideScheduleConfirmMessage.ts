@@ -33,6 +33,8 @@ export type GuideScheduleConfirmPreview = {
   tourDate: string
   productName: string
   firstPickupTime: string | null
+  firstPickupTimeRaw: string | null
+  firstPickupDateIso: string | null
   firstPickupHotelLabel: string | null
   officeArrivalTime: string | null
   recipients: GuideScheduleConfirmRecipientPreview[]
@@ -109,18 +111,42 @@ function formatMinutesAsTime(totalMinutes: number): string {
 }
 
 export function formatGuideScheduleTourDateLabel(date: string, locale: SupportedLocale): string {
-  return formatTourDateLabel(date, locale)
+  return formatGuideScheduleDateWithWeekday(date, locale)
 }
 
-function formatTourDateLabel(date: string, locale: SupportedLocale): string {
+const WEEKDAY_SHORT_KO = ['일', '월', '화', '수', '목', '금', '토'] as const
+const WEEKDAY_SHORT_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
+const WEEKDAY_SHORT_JA = ['日', '月', '火', '水', '木', '金', '土'] as const
+const WEEKDAY_SHORT_ZH = ['日', '一', '二', '三', '四', '五', '六'] as const
+
+export function formatGuideScheduleDateWithWeekday(date: string, locale: SupportedLocale): string {
   const parts = date.split('-')
   if (parts.length !== 3) return date
   const month = Number(parts[1])
   const day = Number(parts[2])
   if (!month || !day) return date
-  if (locale === 'ko') return `${month}월 ${day}일`
-  if (locale === 'ja' || locale === 'zh') return `${month}月${day}日`
-  return `${month}/${day}`
+
+  const parsed = new Date(`${date}T12:00:00`)
+  const dow = Number.isNaN(parsed.getTime()) ? null : parsed.getDay()
+
+  if (locale === 'ko') {
+    const weekday = dow != null ? `(${WEEKDAY_SHORT_KO[dow]})` : ''
+    return `${month}월 ${day}일${weekday}`
+  }
+  if (locale === 'ja') {
+    const weekday = dow != null ? `(${WEEKDAY_SHORT_JA[dow]})` : ''
+    return `${month}月${day}日${weekday}`
+  }
+  if (locale === 'zh') {
+    const weekday = dow != null ? `(${WEEKDAY_SHORT_ZH[dow]})` : ''
+    return `${month}月${day}日${weekday}`
+  }
+  const weekday = dow != null ? ` (${WEEKDAY_SHORT_EN[dow]})` : ''
+  return `${month}/${day}${weekday}`
+}
+
+function formatTourDateLabel(date: string, locale: SupportedLocale): string {
+  return formatGuideScheduleDateWithWeekday(date, locale)
 }
 
 function isActiveReservation(status: string | null | undefined): boolean {
@@ -174,30 +200,51 @@ function computeOfficeArrival(
 export function buildGuideScheduleConfirmPickupLine(
   locale: SupportedLocale,
   firstPickupTime: string | null,
-  firstPickupHotelLabel: string | null
+  firstPickupHotelLabel: string | null,
+  pickupDateIso?: string | null,
 ): string {
+  const pickupDateLabel = pickupDateIso
+    ? formatGuideScheduleDateWithWeekday(pickupDateIso, locale)
+    : null
+
   if (firstPickupTime && firstPickupHotelLabel) {
     switch (locale) {
       case 'ko':
-        return `첫 픽업: ${firstPickupHotelLabel} ${firstPickupTime}.`
+        return pickupDateLabel
+          ? `첫 픽업: ${pickupDateLabel} ${firstPickupTime} ${firstPickupHotelLabel}.`
+          : `첫 픽업: ${firstPickupHotelLabel} ${firstPickupTime}.`
       case 'ja':
-        return `初回ピックアップ: ${firstPickupHotelLabel} ${firstPickupTime}。`
+        return pickupDateLabel
+          ? `初回ピックアップ: ${pickupDateLabel} ${firstPickupTime} ${firstPickupHotelLabel}。`
+          : `初回ピックアップ: ${firstPickupHotelLabel} ${firstPickupTime}。`
       case 'zh':
-        return `首次接客: ${firstPickupHotelLabel} ${firstPickupTime}。`
+        return pickupDateLabel
+          ? `首次接客: ${pickupDateLabel} ${firstPickupTime} ${firstPickupHotelLabel}。`
+          : `首次接客: ${firstPickupHotelLabel} ${firstPickupTime}。`
       default:
-        return `First pickup: ${firstPickupHotelLabel} at ${firstPickupTime}.`
+        return pickupDateLabel
+          ? `First pickup: ${pickupDateLabel} ${firstPickupTime} at ${firstPickupHotelLabel}.`
+          : `First pickup: ${firstPickupHotelLabel} at ${firstPickupTime}.`
     }
   }
   if (firstPickupTime) {
     switch (locale) {
       case 'ko':
-        return `첫 픽업 시간: ${firstPickupTime}.`
+        return pickupDateLabel
+          ? `첫 픽업: ${pickupDateLabel} ${firstPickupTime}.`
+          : `첫 픽업 시간: ${firstPickupTime}.`
       case 'ja':
-        return `初回ピックアップ時間: ${firstPickupTime}。`
+        return pickupDateLabel
+          ? `初回ピックアップ: ${pickupDateLabel} ${firstPickupTime}。`
+          : `初回ピックアップ時間: ${firstPickupTime}。`
       case 'zh':
-        return `首次接客时间: ${firstPickupTime}。`
+        return pickupDateLabel
+          ? `首次接客: ${pickupDateLabel} ${firstPickupTime}。`
+          : `首次接客时间: ${firstPickupTime}。`
       default:
-        return `First pickup: ${firstPickupTime}.`
+        return pickupDateLabel
+          ? `First pickup: ${pickupDateLabel} ${firstPickupTime}.`
+          : `First pickup: ${firstPickupTime}.`
     }
   }
   switch (locale) {
@@ -253,11 +300,17 @@ function buildMessages(input: {
   firstPickupTime: string | null
   firstPickupHotelLabel: string | null
   firstPickupTimeRaw: string | null
+  pickupDateIso?: string | null
   smsTemplateByLocale?: Partial<Record<SupportedLocale, string>>
 }): { smsBody: string; siteMessageBody: string; siteTitle: string } {
   const { locale } = input
   const dateLabel = formatTourDateLabel(input.tourDate, locale)
-  const pickupLine = buildGuideScheduleConfirmPickupLine(locale, input.firstPickupTime, input.firstPickupHotelLabel)
+  const pickupLine = buildGuideScheduleConfirmPickupLine(
+    locale,
+    input.firstPickupTime,
+    input.firstPickupHotelLabel,
+    input.pickupDateIso,
+  )
   const officeLine = buildGuideScheduleConfirmOfficeLine(locale, input.tourDate, input.firstPickupTimeRaw)
 
   const siteTitle =
@@ -327,6 +380,9 @@ export function composeGuideScheduleConfirmPreview(
     ? input.hotelLabelById.get(pickupHotelId)?.trim() || null
     : null
   const firstPickupTimeDisplay = formatPickupTimeDisplay(pickupTime)
+  const firstPickupDateIso = pickupTime
+    ? calculatePickupDate(pickupTime, input.tourDate)
+    : input.tourDate
 
   const officeArrivalTime =
     pickupTime != null && parsePickupMinutes(pickupTime) != null
@@ -369,6 +425,7 @@ export function composeGuideScheduleConfirmPreview(
       firstPickupTime: firstPickupTimeDisplay,
       firstPickupHotelLabel,
       firstPickupTimeRaw: pickupTime,
+      pickupDateIso: firstPickupDateIso,
       ...(smsTemplateByLocale ? { smsTemplateByLocale } : {}),
     })
 
@@ -391,10 +448,12 @@ export function composeGuideScheduleConfirmPreview(
     tourId: input.tourId,
     tourDate: input.tourDate,
     productName: defaultProductName,
-      firstPickupTime: firstPickupTimeDisplay,
-      firstPickupHotelLabel,
-      officeArrivalTime,
-      recipients,
+    firstPickupTime: firstPickupTimeDisplay,
+    firstPickupTimeRaw: pickupTime,
+    firstPickupDateIso: pickupTime ? firstPickupDateIso : null,
+    firstPickupHotelLabel,
+    officeArrivalTime,
+    recipients,
     warnings,
   }
 }

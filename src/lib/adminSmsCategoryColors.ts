@@ -4,6 +4,7 @@ import type { AdminSmsCategoryId } from '@/lib/adminSmsTemplateCatalog'
 export const ADMIN_SMS_CATEGORY_ICON_COLORS: Record<AdminSmsCategoryId, string> = {
   pre_tour_contact: 'text-violet-600',
   pickup_notification: 'text-blue-600',
+  guide_schedule_assignment: 'text-violet-600',
   guide_schedule_confirm: 'text-indigo-600',
   cancellation_follow_up: 'text-orange-600',
   cancellation_rebooking: 'text-rose-600',

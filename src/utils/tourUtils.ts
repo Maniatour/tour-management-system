@@ -159,9 +159,25 @@ export function dedupeReservationIdsPreservingOrder(reservationIds: unknown): st
   const out: string[] = []
   const seen = new Set<string>()
   for (const id of ids) {
-    if (seen.has(id)) continue
-    seen.add(id)
+    const key = canonicalReservationIdKey(id)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
     out.push(id)
+  }
+  return out
+}
+
+/** 예약 객체 배열에서 id 기준 중복 제거 (첫 등장 순서 유지) */
+export function dedupeReservationsPreservingOrder<T extends { id: string | number | null | undefined }>(
+  reservations: T[]
+): T[] {
+  const out: T[] = []
+  const seen = new Set<string>()
+  for (const reservation of reservations) {
+    const key = canonicalReservationIdKey(String(reservation.id ?? ''))
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    out.push(reservation)
   }
   return out
 }

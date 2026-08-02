@@ -58,6 +58,12 @@ import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationCh
 import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import TourEnvelopeModal from '@/components/receipt/TourEnvelopeModal'
 import { GuideScheduleConfirmPreviewModal } from '@/components/admin/todo/GuideScheduleConfirmPreviewModal'
+import { GuideScheduleAssignmentPreviewModal } from '@/components/admin/todo/GuideScheduleAssignmentPreviewModal'
+
+const GuideScheduleAssignmentHistoryModal = dynamic(
+  () => import('@/components/schedule/GuideScheduleAssignmentHistoryModal'),
+  { ssr: false },
+)
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { normalizeReservationIds, isTourDeletedStatus } from '@/utils/tourUtils'
@@ -233,6 +239,8 @@ export function TourDetailPageView({
   const [showBatchReceiptModal, setShowBatchReceiptModal] = useState<boolean>(false)
   const [showEditReceiptModal, setShowEditReceiptModal] = useState<boolean>(false)
   const [showGuideScheduleConfirmModal, setShowGuideScheduleConfirmModal] = useState(false)
+  const [showGuideScheduleAssignmentModal, setShowGuideScheduleAssignmentModal] = useState(false)
+  const [showGuideAssignmentHistoryModal, setShowGuideAssignmentHistoryModal] = useState(false)
   const [envelopeModalVariant, setEnvelopeModalVariant] = useState<'tip' | 'balance' | null>(null)
   const [showTourPrintModal, setShowTourPrintModal] = useState<boolean>(false)
   const [pickupPresets, setPickupPresets] = useState<PickupGroupPresetRow[]>([])
@@ -365,6 +373,14 @@ export function TourDetailPageView({
 
   const openGuideScheduleConfirmModal = useCallback(() => {
     setShowGuideScheduleConfirmModal(true)
+  }, [])
+
+  const openGuideScheduleAssignmentModal = useCallback(() => {
+    setShowGuideScheduleAssignmentModal(true)
+  }, [])
+
+  const openGuideAssignmentHistoryModal = useCallback(() => {
+    setShowGuideAssignmentHistoryModal(true)
   }, [])
 
   const canSendGuideScheduleConfirm = Boolean(
@@ -2077,8 +2093,12 @@ export function TourDetailPageView({
         onPrintTipEnvelopes={() => setEnvelopeModalVariant('tip')}
         onPrintBalanceEnvelopes={() => setEnvelopeModalVariant('balance')}
         {...(canSendGuideScheduleConfirm
-          ? { onSendGuideScheduleConfirm: openGuideScheduleConfirmModal }
+          ? {
+              onSendGuideScheduleConfirm: openGuideScheduleConfirmModal,
+              onSendGuideScheduleAssignment: openGuideScheduleAssignmentModal,
+            }
           : {})}
+        {...(tourData.isStaff ? { onViewAssignmentHistory: openGuideAssignmentHistoryModal } : {})}
         onCloseModal={modalChrome.onClose}
         isPrivateTour={tourData.isPrivateTour}
         maxParticipants={
@@ -2250,8 +2270,12 @@ export function TourDetailPageView({
         onPrintTipEnvelopes={() => setEnvelopeModalVariant('tip')}
         onPrintBalanceEnvelopes={() => setEnvelopeModalVariant('balance')}
         {...(canSendGuideScheduleConfirm
-          ? { onSendGuideScheduleConfirm: openGuideScheduleConfirmModal }
+          ? {
+              onSendGuideScheduleConfirm: openGuideScheduleConfirmModal,
+              onSendGuideScheduleAssignment: openGuideScheduleAssignmentModal,
+            }
           : {})}
+        {...(tourData.isStaff ? { onViewAssignmentHistory: openGuideAssignmentHistoryModal } : {})}
       />
       ) : null}
 
@@ -2325,6 +2349,30 @@ export function TourDetailPageView({
         tourId={tourData.tour?.id ?? null}
         locale={locale}
         onClose={() => setShowGuideScheduleConfirmModal(false)}
+      />
+
+      <GuideScheduleAssignmentPreviewModal
+        isOpen={showGuideScheduleAssignmentModal}
+        tourId={tourData.tour?.id ?? null}
+        locale={locale}
+        onClose={() => setShowGuideScheduleAssignmentModal(false)}
+      />
+
+      <GuideScheduleAssignmentHistoryModal
+        isOpen={showGuideAssignmentHistoryModal}
+        onClose={() => setShowGuideAssignmentHistoryModal(false)}
+        tourId={tourData.tour?.id ?? null}
+        locale={locale}
+        teamMembers={tourData.teamMembers.map((member: any) => ({
+          email: member.email,
+          name_ko: member.name_ko,
+          nick_name: member.nick_name,
+        }))}
+        tourLabel={
+          tourData.product
+            ? `${locale === 'ko' ? tourData.product.name_ko : tourData.product.name_en || tourData.product.name_ko} · ${tourData.tour?.tour_date || ''}`
+            : tourData.tour?.tour_date || null
+        }
       />
 
       <TourDetailSectionChromeProvider compact={modalLightLoad}>

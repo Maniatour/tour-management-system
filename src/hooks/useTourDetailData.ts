@@ -15,6 +15,8 @@ import {
   isReservationDeletedStatus,
   isReservationCancelledStatus,
   normalizeReservationIds,
+  dedupeReservationIdsPreservingOrder,
+  dedupeReservationsPreservingOrder,
   canonicalReservationIdKey,
   reservationIdsLooselyEqual,
   parseTourAssignmentEmails,
@@ -85,7 +87,7 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
   const beginAssignmentIdsMutation = useCallback((nextIds: string[]) => {
     deferredAssignmentCancelRef.current?.()
     deferredAssignmentCancelRef.current = null
-    tourReservationIdsRef.current = nextIds
+    tourReservationIdsRef.current = dedupeReservationIdsPreservingOrder(nextIds)
     reservationIdsOverrideRef.current = true
     assignmentMutationEpochRef.current += 1
   }, [])
@@ -96,17 +98,17 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
 
   const getEffectiveTourReservationIds = useCallback((): string[] => {
     if (reservationIdsOverrideRef.current) {
-      return [...tourReservationIdsRef.current]
+      return dedupeReservationIdsPreservingOrder(tourReservationIdsRef.current)
     }
-    return normalizeReservationIds(tour?.reservation_ids)
+    return dedupeReservationIdsPreservingOrder(tour?.reservation_ids)
   }, [tour?.reservation_ids])
 
   const setTour = useCallback<React.Dispatch<React.SetStateAction<TourRow | null>>>((updater) => {
     setTourState((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater
       if (next?.reservation_ids !== undefined) {
-        const nextIds = normalizeReservationIds(next.reservation_ids)
-        const prevIds = normalizeReservationIds(prev?.reservation_ids)
+        const nextIds = dedupeReservationIdsPreservingOrder(next.reservation_ids)
+        const prevIds = dedupeReservationIdsPreservingOrder(prev?.reservation_ids)
         if (!reservationIdsSetsEqual(nextIds, prevIds)) {
           tourReservationIdsRef.current = nextIds
           reservationIdsOverrideRef.current = true
@@ -163,13 +165,19 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
   const setAssignedReservations = useCallback<React.Dispatch<React.SetStateAction<ReservationRow[]>>>(
     (updater) => {
       if (reservationIdsOverrideRef.current) return
-      setAssignedReservationsState(updater)
+      setAssignedReservationsState((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater
+        return dedupeReservationsPreservingOrder(next)
+      })
     },
     []
   )
   const setAssignedReservationsForced = useCallback<React.Dispatch<React.SetStateAction<ReservationRow[]>>>(
     (updater) => {
-      setAssignedReservationsState(updater)
+      setAssignedReservationsState((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater
+        return dedupeReservationsPreservingOrder(next)
+      })
     },
     []
   )
@@ -296,7 +304,9 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
         if (cancelled) return
 
         setTourState(tourData as TourRow)
-        tourReservationIdsRef.current = normalizeReservationIds((tourData as TourRow).reservation_ids)
+        tourReservationIdsRef.current = dedupeReservationIdsPreservingOrder(
+          (tourData as TourRow).reservation_ids
+        )
         reservationIdsOverrideRef.current = false
         setIsPrivateTour((tourData as TourRow).is_private_tour || false)
         setTourNote((tourData as TourRow).tour_note || '')
@@ -571,9 +581,11 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
           }
 
           const currentTourRow = tours.find((trow) => trow.id === tour.id) as TourRow | undefined
-          const assignedIds = reservationIdsOverrideRef.current
-            ? tourReservationIdsRef.current
-            : normalizeReservationIds(currentTourRow?.reservation_ids ?? tour.reservation_ids)
+          const assignedIds = dedupeReservationIdsPreservingOrder(
+            reservationIdsOverrideRef.current
+              ? tourReservationIdsRef.current
+              : currentTourRow?.reservation_ids ?? tour.reservation_ids
+          )
           const missingAssigned: string[] = []
           for (const aid of assignedIds) {
             const k = canonicalReservationIdKey(aid)
@@ -619,8 +631,12 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
           }
 
           const assignedReservations: ExtendedReservationRow[] = []
+          const seenAssignedKeys = new Set<string>()
           for (const aid of assignedIds) {
-            const row = byCanonId.get(canonicalReservationIdKey(aid))
+            const key = canonicalReservationIdKey(aid)
+            if (seenAssignedKeys.has(key)) continue
+            seenAssignedKeys.add(key)
+            const row = byCanonId.get(key)
             if (row) assignedReservations.push(row)
           }
 
@@ -1234,16 +1250,18 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
 
           const currentTourRow = toursList.find((row) => row.id === tour.id) as TourRow | undefined
           const assignedReservationIds: string[] = reservationIdsOverrideRef.current
-            ? [...tourReservationIdsRef.current]
-            : normalizeReservationIds(currentTourRow?.reservation_ids ?? tour.reservation_ids)
+            ? dedupeReservationIdsPreservingOrder(tourReservationIdsRef.current)
+            : dedupeReservationIdsPreservingOrder(currentTourRow?.reservation_ids ?? tour.reservation_ids)
           if (!reservationIdsOverrideRef.current) {
             tourReservationIdsRef.current = assignedReservationIds
           }
 
           let assignedReservations: ExtendedReservationRow[] = []
           if (assignedReservationIds.length > 0) {
-            assignedReservations = reservationsList.filter((r) =>
-              assignedReservationIds.some((aid) => reservationIdsLooselyEqual(aid, String(r.id)))
+            assignedReservations = dedupeReservationsPreservingOrder(
+              reservationsList.filter((r) =>
+                assignedReservationIds.some((aid) => reservationIdsLooselyEqual(aid, String(r.id)))
+              )
             )
           }
 

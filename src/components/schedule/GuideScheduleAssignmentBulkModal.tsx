@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import dayjs from 'dayjs'
-import { Loader2, Send, Smartphone, X } from 'lucide-react'
+import { Loader2, Send, UserCheck, X } from 'lucide-react'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { supabase } from '@/lib/supabase'
 import { normalizeTourDateKey } from '@/utils/tourUtils'
@@ -33,7 +33,7 @@ type BulkTourRow = {
   assignmentStatus: string | null | undefined
 }
 
-type GuideScheduleConfirmBulkModalProps = {
+type GuideScheduleAssignmentBulkModalProps = {
   isOpen: boolean
   onClose: () => void
   locale: string
@@ -48,7 +48,7 @@ function memberLabel(m: TeamMember): string {
   return m.nick_name || m.name_ko || m.email
 }
 
-export default function GuideScheduleConfirmBulkModal({
+export default function GuideScheduleAssignmentBulkModal({
   isOpen,
   onClose,
   locale,
@@ -57,7 +57,7 @@ export default function GuideScheduleConfirmBulkModal({
   defaultStartDate,
   defaultEndDate,
   onSent,
-}: GuideScheduleConfirmBulkModalProps) {
+}: GuideScheduleAssignmentBulkModalProps) {
   const isKo = locale === 'ko'
   const [selectedEmail, setSelectedEmail] = useState('')
   const [startDate, setStartDate] = useState(defaultStartDate || dayjs().startOf('month').format('YYYY-MM-DD'))
@@ -147,7 +147,7 @@ export default function GuideScheduleConfirmBulkModal({
             ? `${sent + failed + 1}/${targets.length} 발송 중…`
             : `Sending ${sent + failed + 1}/${targets.length}…`,
         )
-        const response = await fetchApiWithAuth('/api/guide-schedule-confirm/send', {
+        const response = await fetchApiWithAuth('/api/guide-schedule-assignment/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -155,13 +155,12 @@ export default function GuideScheduleConfirmBulkModal({
             locale,
             sentBy: user?.email || null,
             recipientEmails: [email],
-            sendMode: 'sms_and_site',
           }),
         })
         const data = await response.json()
         if (!response.ok) {
           failed += 1
-          console.error('bulk send failed', row.tourId, data.error)
+          console.error('bulk assignment send failed', row.tourId, data.error)
         } else {
           sent += 1
         }
@@ -195,9 +194,9 @@ export default function GuideScheduleConfirmBulkModal({
       >
         <div className="flex items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-2">
-            <Smartphone className="h-5 w-5 text-primary" />
+            <UserCheck className="h-5 w-5 text-violet-600" />
             <h2 className="text-lg font-semibold text-gray-900">
-              {isKo ? '가이드 스케줄 컨펌 발송' : 'Send schedule confirm'}
+              {isKo ? '가이드 스케줄 부여 SMS' : 'Send schedule assignment SMS'}
             </h2>
           </div>
           <button type="button" onClick={onClose} className="rounded p-1 text-gray-500 hover:bg-gray-100">
@@ -206,6 +205,12 @@ export default function GuideScheduleConfirmBulkModal({
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+          <p className="text-xs text-gray-500">
+            {isKo
+              ? '선택한 투어에 대해 가이드·어시스턴트에게 배정 안내 SMS를 보냅니다. 링크에서 확정/거절할 수 있습니다.'
+              : 'Sends assignment SMS with a link to confirm or reject each tour.'}
+          </p>
+
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-700">
               {isKo ? '가이드 / 어시스턴트' : 'Guide / Assistant'}
@@ -323,10 +328,10 @@ export default function GuideScheduleConfirmBulkModal({
             type="button"
             disabled={sending || !selectedEmail || selectedTourIds.size === 0}
             onClick={() => void handleSend()}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
           >
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            {isKo ? 'SMS·앱 알림 발송' : 'Send SMS & notification'}
+            {isKo ? 'SMS 발송' : 'Send SMS'}
           </button>
         </div>
       </div>

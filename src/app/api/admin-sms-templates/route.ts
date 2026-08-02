@@ -4,13 +4,20 @@ import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { requireStaffApiAuth } from '@/lib/api-security'
 import { isAdminSmsDbTemplateKey } from '@/lib/adminSmsTemplateCatalog'
 import type { AdminSmsDbTemplateKey } from '@/lib/adminSmsTemplateCatalog'
+import { getBuiltinGuideScheduleAssignmentSmsTemplate } from '@/lib/guideScheduleAssignmentSmsTemplate'
 import { getBuiltinGuideScheduleConfirmSmsTemplate } from '@/lib/guideScheduleConfirmSmsTemplate'
 import { getBuiltinPickupNotificationSmsTemplate, parsePickupNotificationSmsLocale } from '@/lib/pickupNotificationSms'
 import type { SupportedLocale } from '@/lib/guideLanguageDetection'
 import { fetchAdminSmsTemplateFromDb } from '@/lib/adminSmsTemplateDb'
 
 function parseDbTemplateKey(v: string | null): AdminSmsDbTemplateKey | null {
-  if (v === 'pickup_notification' || v === 'guide_schedule_confirm') return v
+  if (
+    v === 'pickup_notification' ||
+    v === 'guide_schedule_confirm' ||
+    v === 'guide_schedule_assignment'
+  ) {
+    return v
+  }
   return null
 }
 
@@ -20,9 +27,17 @@ function getBuiltin(templateKey: AdminSmsDbTemplateKey, locale: string): string 
     if (!loc) return ''
     return getBuiltinPickupNotificationSmsTemplate(loc)
   }
-  const supported = ['ko', 'en', 'ja', 'zh'] as const
-  if (!(supported as readonly string[]).includes(locale)) return ''
-  return getBuiltinGuideScheduleConfirmSmsTemplate(locale as SupportedLocale)
+  if (templateKey === 'guide_schedule_confirm') {
+    const supported = ['ko', 'en', 'ja', 'zh'] as const
+    if (!(supported as readonly string[]).includes(locale)) return ''
+    return getBuiltinGuideScheduleConfirmSmsTemplate(locale as SupportedLocale)
+  }
+  if (templateKey === 'guide_schedule_assignment') {
+    const supported = ['ko', 'en', 'ja', 'zh'] as const
+    if (!(supported as readonly string[]).includes(locale)) return ''
+    return getBuiltinGuideScheduleAssignmentSmsTemplate(locale as SupportedLocale)
+  }
+  return ''
 }
 
 /** GET: DB 저장 템플릿 또는 내장 기본값 */

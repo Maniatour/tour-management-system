@@ -1,5 +1,6 @@
 import type { AdminSmsCategoryId } from '@/lib/adminSmsTemplateCatalog'
 import { substituteCancellationFollowUpMessageTemplate } from '@/lib/cancellationFollowUpMessage'
+import { substituteGuideScheduleAssignmentSmsTemplate } from '@/lib/guideScheduleAssignmentSmsTemplate'
 import { substituteGuideScheduleConfirmSmsTemplate } from '@/lib/guideScheduleConfirmSmsTemplate'
 import type { SupportedLocale } from '@/lib/guideLanguageDetection'
 import {
@@ -7,6 +8,7 @@ import {
   buildGuideScheduleConfirmPickupLine,
   formatGuideScheduleTourDateLabel,
 } from '@/lib/guideScheduleConfirmMessage'
+import { buildGuideTourAssignmentUrl } from '@/lib/guideScheduleAssignmentMessage'
 import {
   DEFAULT_MESSENGER_CONTACT_SETTINGS,
   substitutePreTourContactSmsTemplate,
@@ -160,6 +162,31 @@ export function buildAdminSmsSamplePreview(params: {
     })
   }
 
+  if (categoryId === 'guide_schedule_assignment') {
+    const guideLocale = (locale === 'ko' || locale === 'en' || locale === 'ja' || locale === 'zh'
+      ? locale
+      : 'en') as SupportedLocale
+    const tourDateIso = '2026-07-31'
+    const pickupTimeRaw = '22:40'
+    const pickupTimeDisplay = '10:40 PM'
+    const pickupHotel =
+      guideLocale === 'ko' ? '더 베네치안 라스베가스' : 'The Venetian Las Vegas'
+    return substituteGuideScheduleAssignmentSmsTemplate(trimmed, {
+      guideName: guideLocale === 'en' ? 'Dez' : sample.guideName,
+      tourDate: formatGuideScheduleTourDateLabel(tourDateIso, guideLocale),
+      productName:
+        guideLocale === 'ko' ? '선라이즈 투어' : guideLocale === 'ja' ? 'サンライズツアー' : 'Sunrise Tour',
+      pickupLine: buildGuideScheduleConfirmPickupLine(
+        guideLocale,
+        pickupTimeDisplay,
+        pickupHotel,
+        '2026-07-30',
+      ),
+      officeLine: buildGuideScheduleConfirmOfficeLine(guideLocale, tourDateIso, pickupTimeRaw),
+      confirmUrl: buildGuideTourAssignmentUrl('sample-tour-id', guideLocale),
+    })
+  }
+
   if (categoryId === 'guide_schedule_confirm') {
     const guideLocale = (locale === 'ko' || locale === 'en' || locale === 'ja' || locale === 'zh'
       ? locale
@@ -177,7 +204,8 @@ export function buildAdminSmsSamplePreview(params: {
       pickupLine: buildGuideScheduleConfirmPickupLine(
         guideLocale,
         pickupTimeDisplay,
-        pickupHotel
+        pickupHotel,
+        '2026-07-30',
       ),
       officeLine: buildGuideScheduleConfirmOfficeLine(guideLocale, tourDateIso, pickupTimeRaw),
     })

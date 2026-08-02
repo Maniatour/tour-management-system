@@ -1,7 +1,9 @@
 /**
- * 투어 채팅: 직원 발신 표시명 (영문 이름 우선, 도메인 접두사 없음)
+ * 투어 채팅: 직원 발신 표시명 — "Judy (MANIATOUR)" 형식
  * team 테이블에는 display_name 없음 → name_en / nick_name / display_name / name_ko 순으로 후보 사용.
  */
+
+export const TOUR_CHAT_STAFF_ORG_LABEL = 'MANIATOUR'
 
 export type TourChatStaffTeamFields = {
   /** 과거 코드·별칭용 (DB에 없으면 생략) */
@@ -33,12 +35,11 @@ export function formatTourChatStaffDisplayName(
   email: string | null | undefined,
   team: TourChatStaffTeamFields | null | undefined
 ): string {
-  if (!email?.trim()) {
-    return resolveTourChatPersonName(team) || 'staff'
-  }
-  return (
-    resolveTourChatPersonName(team) ||
-    email.split('@')[0]?.trim() ||
-    'staff'
-  )
+  const personName = email?.trim()
+    ? resolveTourChatPersonName(team) ||
+      email.split('@')[0]?.trim() ||
+      'staff'
+    : resolveTourChatPersonName(team) || 'staff'
+
+  return `${personName} (${TOUR_CHAT_STAFF_ORG_LABEL})`
 }

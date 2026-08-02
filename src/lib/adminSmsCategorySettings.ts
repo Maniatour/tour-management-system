@@ -32,6 +32,13 @@ export const DEFAULT_ADMIN_SMS_CATEGORY_SETTINGS: Record<
     icon_key: 'bus',
     sort_order: 20,
   },
+  guide_schedule_assignment: {
+    category_key: 'guide_schedule_assignment',
+    label_ko: '가이드 스케줄 부여',
+    label_en: 'Guide schedule assignment',
+    icon_key: 'user-check',
+    sort_order: 25,
+  },
   guide_schedule_confirm: {
     category_key: 'guide_schedule_confirm',
     label_ko: '가이드 스케줄 컨펌',

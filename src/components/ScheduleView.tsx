@@ -4,7 +4,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useR
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone, UserCheck, History } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
@@ -197,6 +197,16 @@ const PriceInventoryModal = dynamic(() => import('@/components/schedule/PriceInv
 
 const GuideScheduleConfirmBulkModal = dynamic(
   () => import('@/components/schedule/GuideScheduleConfirmBulkModal'),
+  { ssr: false, loading: () => null },
+)
+
+const GuideScheduleAssignmentHistoryModal = dynamic(
+  () => import('@/components/schedule/GuideScheduleAssignmentHistoryModal'),
+  { ssr: false, loading: () => null },
+)
+
+const GuideScheduleAssignmentBulkModal = dynamic(
+  () => import('@/components/schedule/GuideScheduleAssignmentBulkModal'),
   { ssr: false, loading: () => null },
 )
 
@@ -1061,6 +1071,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const [showBatchOffModal, setShowBatchOffModal] = useState(false)
   const [showPriceInventoryModal, setShowPriceInventoryModal] = useState(false)
   const [showGuideScheduleBulkModal, setShowGuideScheduleBulkModal] = useState(false)
+  const [showGuideScheduleAssignmentBulkModal, setShowGuideScheduleAssignmentBulkModal] = useState(false)
+  const [guideAssignmentHistoryTourId, setGuideAssignmentHistoryTourId] = useState<string | null>(null)
   const [priceInventoryInitial, setPriceInventoryInitial] = useState<{
     productId: string
     date: string
@@ -6034,6 +6046,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 <DollarSign className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
 
+              {/* 가이드 스케줄 부여 SMS 일괄 발송 */}
+              <button
+                type="button"
+                onClick={() => setShowGuideScheduleAssignmentBulkModal(true)}
+                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"
+                title={locale === 'ko' ? '가이드 스케줄 부여 SMS' : 'Send schedule assignment SMS'}
+                aria-label={locale === 'ko' ? '가이드 스케줄 부여 SMS' : 'Send schedule assignment SMS'}
+              >
+                <UserCheck className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+
               {/* 가이드 스케줄 컨펌 SMS·앱 알림 일괄 발송 */}
               <button
                 type="button"
@@ -8666,6 +8689,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           : {})}
       />
 
+      <GuideScheduleAssignmentBulkModal
+        isOpen={showGuideScheduleAssignmentBulkModal}
+        onClose={() => setShowGuideScheduleAssignmentBulkModal(false)}
+        locale={locale}
+        teamMembers={teamMembers}
+        tours={tours}
+        defaultStartDate={firstDayOfMonth.format('YYYY-MM-DD')}
+        defaultEndDate={lastDayOfMonth.format('YYYY-MM-DD')}
+        onSent={() => void handleClearCacheAndRefresh()}
+      />
+
       <GuideScheduleConfirmBulkModal
         isOpen={showGuideScheduleBulkModal}
         onClose={() => setShowGuideScheduleBulkModal(false)}
@@ -8675,6 +8709,19 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         defaultStartDate={firstDayOfMonth.format('YYYY-MM-DD')}
         defaultEndDate={lastDayOfMonth.format('YYYY-MM-DD')}
         onSent={() => void handleClearCacheAndRefresh()}
+      />
+
+      <GuideScheduleAssignmentHistoryModal
+        isOpen={!!guideAssignmentHistoryTourId}
+        onClose={() => setGuideAssignmentHistoryTourId(null)}
+        tourId={guideAssignmentHistoryTourId}
+        locale={locale}
+        teamMembers={teamMembers}
+        tourLabel={
+          guideAssignmentHistoryTourId
+            ? getTourDetailModalTitle(guideAssignmentHistoryTourId)
+            : null
+        }
       />
 
       {scheduleLeavePromptOpen && (
@@ -8980,22 +9027,36 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 </div>
               </div>
             ) : null}
-            <div className="mt-6 flex justify-between">
-              <button
-                onClick={() => {
-                  if (guideModalContent.tourId) {
-                    setShowGuideModal(false)
-                    openTourDetailModal(guideModalContent.tourId)
-                  }
-                }}
-                disabled={!guideModalContent.tourId}
-                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
-                투어 상세 열기
-              </button>
+            <div className="mt-6 flex flex-wrap justify-between gap-2">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    if (guideModalContent.tourId) {
+                      setShowGuideModal(false)
+                      openTourDetailModal(guideModalContent.tourId)
+                    }
+                  }}
+                  disabled={!guideModalContent.tourId}
+                  className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                  투어 상세 열기
+                </button>
+                {guideModalContent.tourId && isScheduleStaff ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGuideAssignmentHistoryTourId(guideModalContent.tourId)
+                    }}
+                    className="px-4 py-2 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors flex items-center gap-2"
+                  >
+                    <History className="w-4 h-4" />
+                    {locale === 'ko' ? '배정·컨펌 기록' : 'Assignment history'}
+                  </button>
+                ) : null}
+              </div>
               <button
                 onClick={() => setShowGuideModal(false)}
                 className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"

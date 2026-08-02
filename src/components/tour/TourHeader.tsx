@@ -1,4 +1,4 @@
-import { ArrowLeft, Edit, Trash2, Copy, Printer, Mail, DollarSign, RotateCcw, FileText, X, GripVertical, Users, Smartphone } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, Copy, Printer, Mail, DollarSign, RotateCcw, FileText, X, GripVertical, Users, Smartphone, UserCheck, History } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import TourSunriseTime from '@/components/TourSunriseTime'
@@ -43,6 +43,10 @@ interface TourHeaderProps {
   maxParticipants?: number
   /** 가이드/어시스턴트 스케줄 컨펌 SMS·앱 알림 발송 */
   onSendGuideScheduleConfirm?: () => void
+  /** 가이드/어시스턴트 스케줄 부여 SMS 발송 (확정/거절 링크) */
+  onSendGuideScheduleAssignment?: () => void
+  /** 가이드 스케줄 배정·컨펌 상세 기록 */
+  onViewAssignmentHistory?: () => void
   /** page: 전체 페이지 헤더, modal-toolbar: 모달 고정 툴바만 */
   variant?: 'page' | 'modal-toolbar'
 }
@@ -78,6 +82,8 @@ export default function TourHeader({
   isPrivateTour = false,
   maxParticipants,
   onSendGuideScheduleConfirm,
+  onSendGuideScheduleAssignment,
+  onViewAssignmentHistory,
   variant = 'page',
 }: TourHeaderProps) {
   const embeddedInModal = variant === 'modal-toolbar'
@@ -161,6 +167,17 @@ export default function TourHeader({
                   <FileText className="h-4 w-4" />
                 </button>
               ) : null}
+              {onSendGuideScheduleAssignment ? (
+                <button
+                  type="button"
+                  onClick={onSendGuideScheduleAssignment}
+                  className="rounded-md border border-violet-200 bg-violet-50 p-1.5 text-violet-700 hover:bg-violet-100"
+                  title={params.locale === 'ko' ? '가이드·어시 스케줄 부여 SMS' : 'Send schedule assignment SMS'}
+                  data-no-drag
+                >
+                  <UserCheck className="h-4 w-4" />
+                </button>
+              ) : null}
               {onSendGuideScheduleConfirm ? (
                 <button
                   type="button"
@@ -170,6 +187,17 @@ export default function TourHeader({
                   data-no-drag
                 >
                   <Smartphone className="h-4 w-4" />
+                </button>
+              ) : null}
+              {onViewAssignmentHistory ? (
+                <button
+                  type="button"
+                  onClick={onViewAssignmentHistory}
+                  className="rounded-md border border-slate-200 bg-slate-50 p-1.5 text-slate-700 hover:bg-slate-100"
+                  title={params.locale === 'ko' ? '배정·컨펌 기록' : 'Assignment history'}
+                  data-no-drag
+                >
+                  <History className="h-4 w-4" />
                 </button>
               ) : null}
               {onPrintReceipts ? (
@@ -343,6 +371,16 @@ export default function TourHeader({
                     <FileText className="w-5 h-5" />
                   </button>
                 )}
+                {onSendGuideScheduleAssignment && (
+                  <button
+                    type="button"
+                    onClick={onSendGuideScheduleAssignment}
+                    className="p-2 rounded-lg hover:bg-violet-50 text-violet-700 flex-shrink-0"
+                    title={params.locale === 'ko' ? '가이드·어시 스케줄 부여 SMS' : 'Send schedule assignment SMS'}
+                  >
+                    <UserCheck className="w-5 h-5" />
+                  </button>
+                )}
                 {onSendGuideScheduleConfirm && (
                   <button
                     type="button"
@@ -351,6 +389,16 @@ export default function TourHeader({
                     title={params.locale === 'ko' ? '가이드·어시 스케줄 컨펌 발송' : 'Send schedule confirm'}
                   >
                     <Smartphone className="w-5 h-5" />
+                  </button>
+                )}
+                {onViewAssignmentHistory && (
+                  <button
+                    type="button"
+                    onClick={onViewAssignmentHistory}
+                    className="p-2 rounded-lg hover:bg-slate-50 text-slate-700 flex-shrink-0"
+                    title={params.locale === 'ko' ? '배정·컨펌 기록' : 'Assignment history'}
+                  >
+                    <History className="w-5 h-5" />
                   </button>
                 )}
                 {onPrintReceipts && (

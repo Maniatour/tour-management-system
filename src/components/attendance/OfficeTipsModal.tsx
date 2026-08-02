@@ -10,7 +10,7 @@ import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { workCalendarDateYmd } from '@/lib/employeeHourlyRates'
 import { useTranslations, useLocale } from 'next-intl'
 import { getStatusColor, getStatusText } from '@/utils/tourStatusUtils'
-import { calculateAssignedPeople, normalizeReservationIds } from '@/utils/tourUtils'
+import { calculateAssignedPeople, dedupeReservationIdsPreservingOrder } from '@/utils/tourUtils'
 
 const TIER_LIMITS = { low: 480, mid: 960 } as const
 
@@ -209,10 +209,26 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         return
       }
 
+      const tourIds = toursData.map((t: { id: string }) => t.id)
+
       const { data: officeTipsData } = await fromUntypedTable(supabase, 'tour_office_tips')
         .select('tour_id, office_tip_amount, note, settled_at')
         .eq('operator_id', activeOperatorId)
-        .in('tour_id', toursData.map((t: { id: string }) => t.id))
+        .in('tour_id', tourIds)
+
+      /** Tips 쉐어 관리에서 저장한 OP 몫 — Office Tips 배분 풀의 Prepaid Tips 소스 */
+      const { data: tipSharesData } = await supabase
+        .from('tour_tip_shares')
+        .select('tour_id, op_amount')
+        .eq('operator_id', activeOperatorId)
+        .in('tour_id', tourIds)
+
+      const opAmountByTour = new Map(
+        (tipSharesData || []).map((row: { tour_id: string; op_amount?: number | null }) => [
+          row.tour_id,
+          Math.round((Number(row.op_amount) || 0) * 100) / 100,
+        ])
+      )
 
       const tipsByTour = new Map(
         (officeTipsData || []).map((r: { tour_id: string; office_tip_amount?: number; note?: string | null; settled_at?: string | null }) => [
@@ -255,8 +271,13 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         reservationsBatch = (resRows || []) as typeof reservationsBatch
       }
 
-      const getPrepaidTipsOfficeShare = (tour: { reservation_ids?: string[] | unknown }) => {
-        const list = normalizeReservationIds(tour.reservation_ids)
+      const getPrepaidTipsOfficeShare = (tour: { id: string; reservation_ids?: string[] | unknown }) => {
+        const savedOpAmount = opAmountByTour.get(tour.id)
+        if (savedOpAmount != null && savedOpAmount > 0) {
+          return savedOpAmount
+        }
+
+        const list = dedupeReservationIdsPreservingOrder(tour.reservation_ids)
         if (list.length === 0) return 0
         let sum = 0
         for (const rid of list) {
