@@ -23,6 +23,7 @@ export {
   buildEngineApplyPreview,
   computeLegacyPricingSnapshot,
   expandEngineApplyFieldKeys,
+  fetchReservationPricingDbStoredMap,
   reservationMatchesEngineMismatchCriteria,
   type EngineDbFieldKey,
   type EnginePatchFieldKey,

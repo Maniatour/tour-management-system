@@ -1515,7 +1515,9 @@ export default function AdminTours() {
                     onClick={(e) => e.stopPropagation()}
                   >
                     <option value="pending">대기</option>
+                    <option value="assigned">부여</option>
                     <option value="confirmed">확정</option>
+                    <option value="rejected">거절</option>
                   </select>
                   {updatingAssignment === tour.id && (
                     <div className="animate-spin rounded-full h-3 w-3 border-b border-primary"></div>

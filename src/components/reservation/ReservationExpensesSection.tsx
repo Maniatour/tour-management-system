@@ -116,19 +116,6 @@ export default function ReservationExpensesSection({
       : `Reservation expenses (${expenses.length})`
   const total = roundUsd2(expenses.reduce((sum, row) => sum + row.amount, 0))
 
-  if (loading) {
-    return (
-      <div className={wrapperClass || 'p-3'}>
-        <div className="flex items-center justify-center py-4">
-          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
-          <span className="ml-2 text-xs text-gray-600">
-            {isKorean ? '예약 지출 조회 중...' : 'Loading expenses...'}
-          </span>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className={wrapperClass}>
       <div className="flex items-center justify-between gap-2 mb-2">
@@ -148,6 +135,15 @@ export default function ReservationExpensesSection({
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
+
+      {loading && expenses.length === 0 ? (
+        <div className="flex items-center justify-center py-4">
+          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary" />
+          <span className="ml-2 text-xs text-gray-600">
+            {isKorean ? '예약 지출 조회 중...' : 'Loading expenses...'}
+          </span>
+        </div>
+      ) : null}
 
       {error && (
         <div className="mb-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">{error}</div>

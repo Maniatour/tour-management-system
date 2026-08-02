@@ -266,29 +266,9 @@ export default function ReservationOptionsSection({
   const isLine = itemVariant === 'line'
   const wrapperClass = isLine ? 'space-y-2' : 'bg-white rounded-lg shadow-sm border border-gray-200 p-3'
 
-  if (isPersisted && loading) {
-    return (
-      <div className={wrapperClass || 'p-3'}>
-        <div className="flex items-center justify-center py-4">
-          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-          <span className="ml-2 text-xs text-gray-600">{t('loadingOptions')}</span>
-        </div>
-      </div>
-    )
-  }
-
-  if (isPersisted && error) {
-    return (
-      <div className={wrapperClass || 'p-3'}>
-        <div className="text-red-600 text-center py-3 text-xs">
-          {t('errorLoading', { error })}
-        </div>
-      </div>
-    )
-  }
-
   const showTitle = !hideTitle || titleProp
   const titleText = titleProp ?? t('title')
+
   return (
     <div className={wrapperClass}>
       <div className="flex items-center justify-between gap-2 mb-2">
@@ -303,7 +283,19 @@ export default function ReservationOptionsSection({
         </button>
       </div>
 
-      {/* 옵션 추가 모달 */}
+      {isPersisted && loading ? (
+        <div className="flex items-center justify-center py-4">
+          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary" />
+          <span className="ml-2 text-xs text-gray-600">{t('loadingOptions')}</span>
+        </div>
+      ) : null}
+
+      {isPersisted && error ? (
+        <div className="text-red-600 text-center py-3 text-xs">
+          {t('errorLoading', { error })}
+        </div>
+      ) : null}
+
       {showAddModal && (
         <div
           className={`fixed inset-0 flex items-center justify-center bg-black/50 p-4 ${addOptionModalZIndex == null ? (addOptionModalZClass ?? 'z-50') : ''}`}
@@ -425,6 +417,7 @@ export default function ReservationOptionsSection({
       )}
 
       {/* 옵션 목록 (저장된 목록 또는 대기 목록) */}
+      {!loading ? (
       <div className={isLine ? 'divide-y divide-gray-200' : 'space-y-3'}>
         {(isPersisted ? reservationOptions : pendingOptions).length === 0 ? (
           <div className="text-center py-6 text-gray-500 text-xs">
@@ -636,9 +629,10 @@ export default function ReservationOptionsSection({
           })
         )}
       </div>
+      ) : null}
 
       {/* 총합계 */}
-      {optionsForTotal.length > 0 && (
+      {!loading && optionsForTotal.length > 0 && (
         <div className="mt-4 pt-4 border-t border-gray-200">
             <div className="flex justify-end">
               <div className="text-lg font-semibold">

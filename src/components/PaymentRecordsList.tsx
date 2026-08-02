@@ -11,6 +11,7 @@ import {
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 import PaymentRecordForm from './PaymentRecordForm'
 import { displayPaymentRecordNote, fetchTeamDisplayNameMap } from '@/utils/paymentRecordNoteDisplay'
+import { summarizePaymentRecordsForBalance, type PaymentRecordLike } from '@/utils/reservationPricingBalance'
 
 interface PaymentRecord {
   id: string
@@ -43,6 +44,10 @@ interface PaymentRecordsListProps {
   itemVariant?: 'card' | 'line'
   /** 입금 내역 추가/수정/삭제 시 호출 (가격 섹션의 고객 실제 지불액 등 재계산용) */
   onPaymentRecordsUpdated?: () => void
+  /** 입금 내역 로드·변경 시 잔액·정산용 요약 전달 */
+  onPaymentSummaryChange?: (summary: ReturnType<typeof summarizePaymentRecordsForBalance>) => void
+  /** 입금 내역 로드·변경 시 원본 레코드 전달 (가격 엔진 재계산 등) */
+  onPaymentRecordsChange?: (records: PaymentRecordLike[]) => void
   /**
    * 고객 실제 지불액(보증금) USD — 「-$취소」로 환불됨(파트너)·Partner Received(transfer) 라인 추가 시 금액으로 사용
    */
@@ -56,6 +61,8 @@ export default function PaymentRecordsList({
   title: titleProp,
   itemVariant = 'card',
   onPaymentRecordsUpdated,
+  onPaymentSummaryChange,
+  onPaymentRecordsChange,
   suggestedCancelRefundAmountUsd = 0,
 }: PaymentRecordsListProps) {
   const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([])
@@ -69,12 +76,25 @@ export default function PaymentRecordsList({
   const [addingStripeRefund, setAddingStripeRefund] = useState(false)
   const locale = useLocale()
 
-  // 결제 방법 정보 로드
-  const loadPaymentMethods = async () => {
+  // 결제 방법 정보 로드 (methodKeys 없으면 전체 — 폼용)
+  const loadPaymentMethods = async (methodKeys?: string[]) => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('payment_methods')
         .select('id, method, display_name, card_holder_name, user_email')
+
+      if (methodKeys && methodKeys.length > 0) {
+        const keys = methodKeys.map((k) => String(k).trim()).filter(Boolean)
+        const uuidKeys = keys.filter((k) => /^[0-9a-f-]{36}$/i.test(k))
+        const slugKeys = keys.filter((k) => !/^[0-9a-f-]{36}$/i.test(k))
+        const filters: string[] = []
+        if (uuidKeys.length > 0) filters.push(`id.in.(${uuidKeys.join(',')})`)
+        if (slugKeys.length > 0) filters.push(`method.in.(${slugKeys.join(',')})`)
+        if (filters.length === 0) return
+        query = query.or(filters.join(','))
+      }
+
+      const { data, error } = await query
 
       if (error) throw error
 
@@ -119,7 +139,7 @@ export default function PaymentRecordsList({
         methodMap[pm.id] = label
         methodMap[pm.method] = label
       })
-      setPaymentMethodMap(methodMap)
+      setPaymentMethodMap((prev) => ({ ...prev, ...methodMap }))
     } catch (error) {
       if (!isAbortLikeError(error)) {
         console.error('결제 방법 정보 로드 오류:', error)
@@ -127,48 +147,67 @@ export default function PaymentRecordsList({
     }
   }
 
+  const notifyPaymentSummary = (list: PaymentRecord[]) => {
+    const normalized: PaymentRecordLike[] = list.map((r) => ({
+      payment_status: r.payment_status || '',
+      amount: Number(r.amount) || 0,
+    }))
+    onPaymentSummaryChange?.(summarizePaymentRecordsForBalance(normalized))
+    onPaymentRecordsChange?.(normalized)
+  }
+
+  const enrichPaymentRecordsMeta = async (list: PaymentRecord[]) => {
+    const methodKeys = [...new Set(list.map((r) => r.payment_method).filter(Boolean))]
+    if (methodKeys.length > 0) {
+      void loadPaymentMethods(methodKeys)
+    }
+    const emails = [...new Set(list.map((r) => r.submit_by).filter(Boolean))] as string[]
+    if (emails.length > 0) {
+      const map = await fetchTeamDisplayNameMap(supabase, emails)
+      setTeamDisplayByEmail(map)
+    } else {
+      setTeamDisplayByEmail({})
+    }
+  }
+
   const fetchPaymentRecords = async () => {
+    setLoading(true)
+    setError('')
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('인증이 필요합니다.')
-      }
+      const { data, error: fetchError } = await supabase
+        .from('payment_records')
+        .select('*')
+        .eq('reservation_id', reservationId)
+        .order('created_at', { ascending: false })
 
-      const response = await fetch(`/api/payment-records?reservation_id=${reservationId}`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      })
+      if (fetchError) throw fetchError
 
-      if (!response.ok) {
-        throw new Error('입금 내역을 불러올 수 없습니다.')
-      }
-
-      const data = await response.json()
-      const list = (data.paymentRecords || []) as PaymentRecord[]
+      const list = (data || []) as PaymentRecord[]
       setPaymentRecords(list)
-      const emails = [...new Set(list.map((r) => r.submit_by).filter(Boolean))] as string[]
-      if (emails.length > 0) {
-        const map = await fetchTeamDisplayNameMap(supabase, emails)
-        setTeamDisplayByEmail(map)
-      } else {
-        setTeamDisplayByEmail({})
-      }
+      notifyPaymentSummary(list)
+      setLoading(false)
+      void enrichPaymentRecordsMeta(list)
     } catch (error) {
       if (!isAbortLikeError(error)) {
         console.error('입금 내역 조회 오류:', error)
         setError(error instanceof Error ? error.message : '입금 내역을 불러올 수 없습니다.')
       }
+      setPaymentRecords([])
       setTeamDisplayByEmail({})
-    } finally {
+      notifyPaymentSummary([])
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    loadPaymentMethods()
-    fetchPaymentRecords()
+    void fetchPaymentRecords()
   }, [reservationId])
+
+  useEffect(() => {
+    if (showForm || editingRecord) {
+      void loadPaymentMethods()
+    }
+  }, [showForm, editingRecord])
 
   const handleDelete = async (recordId: string) => {
     if (!confirm('이 입금 내역을 삭제하시겠습니까?')) return
@@ -411,14 +450,6 @@ export default function PaymentRecordsList({
     }
   }
 
-  if (loading) {
-    return (
-      <div className="p-4">
-        <div className="text-center text-gray-500">입금 내역을 불러오는 중...</div>
-      </div>
-    )
-  }
-
   const isLine = itemVariant === 'line'
   const showTitle = !hideTitle || titleProp
   const titleText = titleProp ? `${titleProp} (${paymentRecords.length})` : `입금 내역 (${paymentRecords.length})`
@@ -483,7 +514,12 @@ export default function PaymentRecordsList({
         </div>
       )}
 
-      {paymentRecords.length === 0 ? (
+      {loading && paymentRecords.length === 0 ? (
+        <div className="flex items-center justify-center py-4 text-gray-500 text-xs">
+          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary mr-2" />
+          <span>입금 내역을 불러오는 중...</span>
+        </div>
+      ) : paymentRecords.length === 0 ? (
         <div className="text-center py-3 text-gray-500 text-xs">
           <DollarSign size={20} className="mx-auto mb-1 text-gray-300" />
           <p>입금 내역이 없습니다</p>

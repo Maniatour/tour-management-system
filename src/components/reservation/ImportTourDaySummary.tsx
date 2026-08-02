@@ -7,6 +7,11 @@ import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { getReservationPartySize } from '@/utils/reservationUtils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { normalizeTourDateForDb } from '@/lib/utils'
+import {
+  computePerTourCapacityRows,
+  pickTourWithMostSpotsLeft,
+  type PerTourCapacityRow,
+} from '@/lib/scheduleTourCapacity'
 import type { Product } from '@/types/reservation'
 
 /** tours.reservation_ids 정규화 (TourConnectionSection과 동일 규칙) */
@@ -65,6 +70,7 @@ interface TourRow {
   team_type: string | null
   reservation_ids: unknown
   tour_start_datetime?: string | null
+  max_participants?: number | null
   guide?: TeamRow | null
   assistant?: TeamRow | null
   vehicle?: { vehicle_number: string | null; nick: string | null } | null
@@ -75,14 +81,24 @@ export interface ImportTourDaySummaryProps {
   productId: string
   products: Product[]
   locale: string
+  /** 2개 이상 투어일 때 저장 시 배정할 투어 (미선택 시 여유 좌석 많은 투어로 자동 배정) */
+  selectedTourId?: string | null
+  onSelectedTourIdChange?: (tourId: string | null) => void
 }
 
-export default function ImportTourDaySummary({ tourDate, productId, products, locale }: ImportTourDaySummaryProps) {
+export default function ImportTourDaySummary({
+  tourDate,
+  productId,
+  products,
+  locale,
+  selectedTourId = null,
+  onSelectedTourIdChange,
+}: ImportTourDaySummaryProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [tours, setTours] = useState<TourRow[]>([])
   const [reservationInfoById, setReservationInfoById] = useState<
-    Map<string, { party: number; confirmed: boolean }>
+    Map<string, { party: number; status: string }>
   >(new Map())
 
   const dateNorm = useMemo(() => normalizeTourDateForDb(tourDate) || tourDate?.trim() || '', [tourDate])
@@ -139,7 +155,7 @@ export default function ImportTourDaySummary({ tourDate, productId, products, lo
       try {
         const { data, error: qErr } = await supabase
           .from('tours')
-          .select('id, tour_date, product_id, tour_status, tour_guide_id, assistant_id, tour_car_id, team_type, reservation_ids, tour_start_datetime')
+          .select('id, tour_date, product_id, tour_status, tour_guide_id, assistant_id, tour_car_id, team_type, reservation_ids, tour_start_datetime, max_participants')
           .eq('product_id', productId)
           .eq('tour_date', dateNorm)
           .order('created_at', { ascending: true })
@@ -182,7 +198,7 @@ export default function ImportTourDaySummary({ tourDate, productId, products, lo
           normalizeTourReservationIds(tour.reservation_ids).forEach((id) => idSet.add(id))
         }
 
-        const nextMap = new Map<string, { party: number; confirmed: boolean }>()
+        const nextMap = new Map<string, { party: number; status: string }>()
         if (idSet.size > 0) {
           const idList = Array.from(idSet)
           const chunkSize = 200
@@ -190,7 +206,7 @@ export default function ImportTourDaySummary({ tourDate, productId, products, lo
             const chunk = idList.slice(i, i + chunkSize)
             const { data: rows, error: resErr } = await supabase
               .from('reservations')
-              .select('id, adults, child, infant, total_people, status')
+              .select('id, adults, child, infant, total_people, status, tour_date, product_id')
               .in('id', chunk)
             if (resErr) {
               if (!isAbortLikeError(resErr)) {
@@ -203,7 +219,7 @@ export default function ImportTourDaySummary({ tourDate, productId, products, lo
               const party = getReservationPartySize(row as Record<string, unknown>)
               nextMap.set(String(r.id), {
                 party,
-                confirmed: (r.status || '').toLowerCase() === 'confirmed',
+                status: String(r.status || '').toLowerCase(),
               })
             }
           }
@@ -228,6 +244,38 @@ export default function ImportTourDaySummary({ tourDate, productId, products, lo
     }
   }, [dateNorm, productId])
 
+  const perTourCapacity = useMemo((): Map<string, PerTourCapacityRow> => {
+    if (!dateNorm || !productId || tours.length === 0) return new Map()
+    const reservationRows = Array.from(reservationInfoById.entries()).map(([id, info]) => ({
+      id,
+      tour_date: dateNorm,
+      product_id: productId,
+      total_people: info.party,
+      status: info.status,
+    }))
+    const rows = computePerTourCapacityRows(
+      tours.map((t) => ({
+        id: t.id,
+        tour_date: t.tour_date,
+        tour_status: t.tour_status,
+        max_participants: t.max_participants ?? null,
+        reservation_ids: normalizeTourReservationIds(t.reservation_ids),
+        product_id: t.product_id,
+      })),
+      reservationRows,
+      dateNorm,
+      productId
+    )
+    return new Map(rows.map((r) => [r.tourId, r]))
+  }, [dateNorm, productId, tours, reservationInfoById])
+
+  const recommendedTourId = useMemo(
+    () => pickTourWithMostSpotsLeft(Array.from(perTourCapacity.values())),
+    [perTourCapacity]
+  )
+
+  const showTourPicker = tours.length >= 2 && !!onSelectedTourIdChange
+
   const { totalConfirmedOnTours, perTourConfirmed } = useMemo(() => {
     const perTour: { id: string; confirmed: number }[] = []
     let total = 0
@@ -236,7 +284,7 @@ export default function ImportTourDaySummary({ tourDate, productId, products, lo
       let sum = 0
       for (const rid of ids) {
         const info = reservationInfoById.get(rid)
-        if (info?.confirmed) sum += info.party
+        if (info?.status === 'confirmed') sum += info.party
       }
       total += sum
       perTour.push({ id: tour.id, confirmed: sum })
@@ -308,6 +356,16 @@ export default function ImportTourDaySummary({ tourDate, productId, products, lo
           <span>확정 예약 인원 합계 {totalConfirmedOnTours}명</span>
           <span className="text-gray-400">(예약 상태가 확정인 인원만)</span>
         </p>
+        {showTourPicker && (
+          <p className="text-[11px] text-teal-800 bg-teal-50 border border-teal-100 rounded-lg px-2.5 py-2 mt-2 leading-relaxed">
+            투어가 2건 이상입니다. 저장 시 배정할 투어를 선택하세요.
+            {!selectedTourId && recommendedTourId && (
+              <span className="block mt-1 text-teal-700">
+                선택하지 않으면 여유 좌석이 가장 많은 투어에 자동 배정됩니다.
+              </span>
+            )}
+          </p>
+        )}
       </div>
 
       {tours.length === 0 ? (
@@ -315,39 +373,67 @@ export default function ImportTourDaySummary({ tourDate, productId, products, lo
           이 날짜·상품으로 등록된 투어가 없습니다. 예약 저장 후 투어에 배정할 수 있습니다.
         </div>
       ) : (
-        <ul className="space-y-2.5 max-h-[min(420px,55vh)] overflow-y-auto pr-0.5">
-          {tours.map((tour) => {
+        <ul className="space-y-2.5 max-h-[min(420px,55vh)] overflow-y-auto pr-0.5" role={showTourPicker ? 'radiogroup' : undefined} aria-label={showTourPicker ? '배정할 투어 선택' : undefined}>
+          {tours.map((tour, tourIndex) => {
             const confirmed = perTourConfirmed.get(tour.id) ?? 0
+            const capacity = perTourCapacity.get(tour.id)
+            const assigned = capacity?.assigned ?? confirmed
+            const maxPax = capacity?.max ?? 12
+            const spotsLeft = capacity?.spotsLeft ?? Math.max(0, maxPax - assigned)
             const st = (tour.tour_status || '—').toString()
             const secondLabel = secondStaffLabel(tour.team_type)
             const vehicleLine =
               tour.vehicle?.nick || tour.vehicle?.vehicle_number
                 ? [tour.vehicle?.nick, tour.vehicle?.vehicle_number].filter(Boolean).join(' · ')
                 : null
+            const isSelected = selectedTourId === tour.id
+            const isRecommended = !selectedTourId && recommendedTourId === tour.id
+            const tourLabel = `투어 ${tourIndex + 1}`
 
-            return (
-              <li
-                key={tour.id}
-                className="rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-sm"
-              >
+            const cardInner = (
+              <>
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-mono text-[11px] text-gray-500 truncate max-w-[200px]" title={tour.id}>
-                        {tour.id}
-                      </span>
+                      {showTourPicker && (
+                        <span
+                          className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                            isSelected
+                              ? 'border-primary bg-primary'
+                              : 'border-gray-300 bg-white'
+                          }`}
+                          aria-hidden
+                        >
+                          {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                        </span>
+                      )}
+                      <span className="text-xs font-semibold text-gray-800">{tourLabel}</span>
+                      {isRecommended && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-100 text-[10px] font-medium">
+                          자동 배정 추천
+                        </span>
+                      )}
                       <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 text-[10px]">{st}</span>
                     </div>
+                    <p className="font-mono text-[10px] text-gray-400 truncate max-w-[220px] mt-0.5" title={tour.id}>
+                      {tour.id}
+                    </p>
                     {startFmt(tour.tour_start_datetime) && (
                       <p className="text-[11px] text-gray-500 mt-0.5">시작 {startFmt(tour.tour_start_datetime)}</p>
                     )}
                   </div>
                   <div className="shrink-0 text-right">
-                    <p className="text-[11px] text-gray-500">확정 인원</p>
-                    <p className="text-sm font-semibold text-teal-800">{confirmed}명</p>
+                    <p className="text-[11px] text-gray-500">배정 / 정원</p>
+                    <p className="text-sm font-semibold text-teal-800">
+                      {assigned} / {maxPax}명
+                    </p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      여유 <span className="font-medium text-gray-800">{spotsLeft}석</span>
+                    </p>
                     <Link
                       href={`/${locale}/admin/tours/${tour.id}`}
                       className="inline-flex items-center gap-0.5 text-[11px] text-primary hover:underline mt-1"
+                      onClick={(e) => e.stopPropagation()}
                     >
                       투어 상세
                       <ExternalLink className="w-3 h-3" aria-hidden />
@@ -373,7 +459,40 @@ export default function ImportTourDaySummary({ tourDate, productId, products, lo
                     </dt>
                     <dd className="min-w-0">{vehicleLine ?? '차량 미정'}</dd>
                   </div>
+                  <div className="flex gap-2">
+                    <dt className="w-16 shrink-0 text-gray-500">확정 인원</dt>
+                    <dd className="min-w-0">{confirmed}명</dd>
+                  </div>
                 </dl>
+              </>
+            )
+
+            if (!showTourPicker) {
+              return (
+                <li
+                  key={tour.id}
+                  className="rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-sm"
+                >
+                  {cardInner}
+                </li>
+              )
+            }
+
+            return (
+              <li key={tour.id}>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
+                  onClick={() => onSelectedTourIdChange?.(isSelected ? null : tour.id)}
+                  className={`w-full rounded-lg border p-3 text-xs shadow-sm text-left transition-colors ${
+                    isSelected
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+                      : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50/80'
+                  }`}
+                >
+                  {cardInner}
+                </button>
               </li>
             )
           })}

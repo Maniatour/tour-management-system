@@ -18,6 +18,11 @@ export function pricingFieldToNumber(v: unknown): number {
   return Number(v) || 0
 }
 
+/** DB·폼에 ± 혼재 — PricingSection·엔진은 양수 할인액으로 차감 */
+export function pricingDiscountAmountMagnitude(v: unknown): number {
+  return Math.abs(pricingFieldToNumber(v))
+}
+
 /**
  * 배치 조회한 `reservation_options.total_price` 합이 있으면 `option_total`만 덮어써
  * 가격 불일치 필터·잔액 테이블이 동일한 “라인 총액”을 보게 함.
@@ -81,6 +86,46 @@ export function normalizeReservationIdForPayments(id: unknown): string {
   return String(id ?? '')
     .trim()
     .replace(/\u200B/g, '')
+}
+
+/** payment_records 배치 Map — 정규화·원본 id 모두로 조회 */
+export function resolvePaymentRecordsForReservation(
+  map: Map<string, PaymentRecordLike[]> | undefined,
+  reservationId: unknown
+): PaymentRecordLike[] {
+  if (!map || map.size === 0) return []
+  const norm = normalizeReservationIdForPayments(reservationId)
+  const raw = String(reservationId ?? '').trim()
+  return map.get(norm) ?? (raw && raw !== norm ? map.get(raw) : undefined) ?? []
+}
+
+/** 입금 집계 Map에 예약 id(정규화·원본) 양쪽 키로 동일 레코드 추가 */
+export function appendPaymentRecordToReservationMap(
+  map: Map<string, PaymentRecordLike[]>,
+  reservationId: unknown,
+  record: PaymentRecordLike
+): void {
+  const norm = normalizeReservationIdForPayments(reservationId)
+  const raw = String(reservationId ?? '').trim()
+  for (const key of new Set([norm, raw].filter(Boolean))) {
+    const arr = map.get(key) ?? []
+    arr.push(record)
+    map.set(key, arr)
+  }
+}
+
+/** 입금 집계 Map — 예약 id 정규화·원본 키에 동일 배열 참조로 설정(배치 갱신용) */
+export function setPaymentRecordsForReservation(
+  map: Map<string, PaymentRecordLike[]>,
+  reservationId: unknown,
+  records: PaymentRecordLike[]
+): void {
+  const norm = normalizeReservationIdForPayments(reservationId)
+  const raw = String(reservationId ?? '').trim()
+  const copy = [...records]
+  for (const key of new Set([norm, raw].filter(Boolean))) {
+    map.set(key, copy)
+  }
 }
 
 /**
@@ -550,8 +595,8 @@ export function computeCustomerPaymentTotalLineFormula(
 ): number {
   const productSum = effectiveProductPriceTotalForBalance(pricing, party)
   const discount =
-    pricingFieldToNumber(pricing.coupon_discount) +
-    pricingFieldToNumber(pricing.additional_discount)
+    pricingDiscountAmountMagnitude(pricing.coupon_discount) +
+    pricingDiscountAmountMagnitude(pricing.additional_discount)
   const extras =
     pricingFieldToNumber(pricing.additional_cost) +
     pricingFieldToNumber(pricing.tax) +
@@ -606,8 +651,8 @@ export function computeCustomerTotalDueGross(
     optionsTotalFromOptions !== null ? optionsTotalFromOptions : pricingFieldToNumber(pricing.option_total)
   const discounted =
     effectiveProductPriceTotalForBalance(pricing, party) -
-    pricingFieldToNumber(pricing.coupon_discount) -
-    pricingFieldToNumber(pricing.additional_discount)
+    pricingDiscountAmountMagnitude(pricing.coupon_discount) -
+    pricingDiscountAmountMagnitude(pricing.additional_discount)
   return (
     discounted +
     effectiveOpts +

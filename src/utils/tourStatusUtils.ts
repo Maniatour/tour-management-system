@@ -219,6 +219,10 @@ export const getAssignmentStatusColor = (tour: any) => {
     case 'confirm':
     case 'confirmed': 
       return 'bg-green-100 text-green-800'
+    case 'assigned':
+      return 'bg-violet-100 text-violet-800'
+    case 'rejected':
+      return 'bg-red-100 text-red-800'
     case 'pending': 
       return 'bg-yellow-100 text-yellow-800'
     default: 
@@ -232,12 +236,16 @@ export const getAssignmentStatusText = (tour: any, locale: string = 'ko') => {
       undefined: '미정',
       confirm: '확정',
       confirmed: '확정',
+      assigned: '부여',
+      rejected: '거절',
       pending: '대기'
     },
     en: {
       undefined: 'Undefined',
       confirm: 'Confirmed',
       confirmed: 'Confirmed',
+      assigned: 'Assigned',
+      rejected: 'Rejected',
       pending: 'Pending'
     }
   }
@@ -253,6 +261,10 @@ export const getAssignmentStatusText = (tour: any, locale: string = 'ko') => {
     case 'confirm':
     case 'confirmed': 
       return lang.confirmed
+    case 'assigned':
+      return lang.assigned
+    case 'rejected':
+      return lang.rejected
     case 'pending': 
       return lang.pending
     default: 
@@ -316,8 +328,10 @@ export const tourStatusOptions = [
 
 // 배정 상태 옵션들
 export const assignmentStatusOptions = [
-  { value: 'confirm', label: '확정', color: 'bg-green-100 text-green-800' },
-  { value: 'pending', label: '대기', color: 'bg-yellow-100 text-yellow-800' }
+  { value: 'pending', label: '대기', color: 'bg-yellow-100 text-yellow-800' },
+  { value: 'assigned', label: '부여', color: 'bg-violet-100 text-violet-800' },
+  { value: 'confirmed', label: '확정', color: 'bg-green-100 text-green-800' },
+  { value: 'rejected', label: '거절', color: 'bg-red-100 text-red-800' },
 ]
 
 // Google Maps 링크 열기

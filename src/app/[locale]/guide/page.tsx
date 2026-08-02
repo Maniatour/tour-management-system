@@ -10,6 +10,10 @@ import { useTranslations, useLocale } from 'next-intl'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
 import { isBrowserOffline, loadGuideSnapshot, saveGuideSnapshot } from '@/lib/guideOfflineStore'
+import {
+  GuideAssignmentResponseButtons,
+  GuideAssignmentStatusBadge,
+} from '@/components/guide/GuideAssignmentResponseButtons'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Omit<Tour, 'assignment_status'> & {
@@ -1173,7 +1177,15 @@ export default function GuideDashboard() {
                     console.log('About to render upcoming tours:', upcomingTours.map(t => ({ id: t.id, tour_date: t.tour_date, product_id: t.product_id })))
                     return upcomingTours.map((tour) => {
                       console.log('Rendering TourCard for:', tour.id, 'date:', tour.tour_date)
-                      return <TourCard key={tour.id} tour={tour} onClick={() => router.push(`/${locale}/guide/tours/${tour.id}`)} locale={locale} />
+                      return (
+                        <TourCard
+                          key={tour.id}
+                          tour={tour}
+                          onClick={() => router.push(`/${locale}/guide/tours/${tour.id}`)}
+                          locale={locale}
+                          currentUserEmail={currentUserEmail}
+                        />
+                      )
                     })
                   })()}
                 </>
@@ -1190,7 +1202,13 @@ export default function GuideDashboard() {
             <div className="space-y-2">
               {pastTours.length > 0 ? (
                         pastTours.map((tour) => (
-                          <TourCard key={tour.id} tour={tour} onClick={() => router.push(`/${locale}/guide/tours/${tour.id}`)} locale={locale} />
+                          <TourCard
+                            key={tour.id}
+                            tour={tour}
+                            onClick={() => router.push(`/${locale}/guide/tours/${tour.id}`)}
+                            locale={locale}
+                            currentUserEmail={currentUserEmail}
+                          />
                         ))
               ) : (
                 <div className="text-center text-gray-500 py-8">
@@ -1706,8 +1724,25 @@ export default function GuideDashboard() {
 }
 
 // 투어 카드 컴포넌트
-function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () => void; locale: string }) {
+function TourCard({
+  tour,
+  onClick,
+  locale,
+  currentUserEmail,
+  onAssignmentUpdated,
+}: {
+  tour: ExtendedTour
+  onClick: () => void
+  locale: string
+  currentUserEmail?: string | null | undefined
+  onAssignmentUpdated?: (tourId: string, status: 'confirmed' | 'rejected') => void
+}) {
   const t = useTranslations('guide')
+  const [assignmentStatus, setAssignmentStatus] = useState(tour.assignment_status)
+
+  useEffect(() => {
+    setAssignmentStatus(tour.assignment_status)
+  }, [tour.assignment_status, tour.id])
   
   // 디버깅을 위한 로그
   console.log('TourCard component called:', {
@@ -1753,18 +1788,6 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
     }
   }
   
-
-  const getAssignmentStatusBadgeClasses = (status: string | null | undefined) => {
-    switch (status?.toLowerCase()) {
-      case 'confirmed':
-        return 'bg-emerald-100 text-emerald-800'
-      case 'pending':
-        return 'bg-amber-100 text-amber-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
-
   // 라스베가스 시간대 기준 오늘 날짜 계산
   const getLasVegasToday = () => {
     const now = new Date()
@@ -1876,10 +1899,21 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
           </div>
 
           {/* 배정 상태 배지 - 오른쪽 끝 정렬 (투어 상태 대신 배정 상태 표시) */}
-          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getAssignmentStatusBadgeClasses(tour.assignment_status)}`}>
-            {tour.assignment_status === 'confirmed' ? 'Confirmed' : 'Pending'}
-          </span>
+          <GuideAssignmentStatusBadge status={assignmentStatus} locale={locale} />
         </div>
+
+        <GuideAssignmentResponseButtons
+          tourId={tour.id}
+          assignmentStatus={assignmentStatus}
+          currentUserEmail={currentUserEmail}
+          tourGuideId={tour.tour_guide_id}
+          assistantId={tour.assistant_id}
+          locale={locale}
+          onUpdated={(status) => {
+            setAssignmentStatus(status)
+            onAssignmentUpdated?.(tour.id, status)
+          }}
+        />
 
         {/* 세번째 줄: 가이드, 어시스턴트, 차량 */}
         <div className="flex flex-wrap gap-1">

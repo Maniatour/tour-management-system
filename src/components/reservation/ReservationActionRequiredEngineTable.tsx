@@ -26,6 +26,7 @@ import {
 import type { BalanceChannelRowInput } from '@/utils/balanceChannelRevenue'
 import {
   normalizeReservationIdForPayments,
+  resolvePaymentRecordsForReservation,
   type PaymentRecordLike,
 } from '@/utils/reservationPricingBalance'
 import {
@@ -50,9 +51,11 @@ type Props = {
   paymentRecordsByReservationId: Map<string, PaymentRecordLike[]>
   reservationOptionSumByReservationId: Map<string, number>
   reservationExpenseSumByReservationId: Map<string, number>
+  dbStoredPricingByReservationId: Map<string, ReservationPricingMapValue>
   locale: string
   onEditClick: (reservationId: string) => void
   onPricingInfoClick: (reservation: Reservation) => void
+  onOpenPricingBrowse?: (reservations: Reservation[], startIndex: number) => void
   onRefreshReservations?: () => void | Promise<void>
   onRefreshReservationPricing?: (ids: string[]) => void | Promise<void>
 }
@@ -515,9 +518,11 @@ export function ReservationActionRequiredEngineTable({
   paymentRecordsByReservationId,
   reservationOptionSumByReservationId,
   reservationExpenseSumByReservationId,
+  dbStoredPricingByReservationId,
   locale,
   onEditClick,
   onPricingInfoClick,
+  onOpenPricingBrowse,
   onRefreshReservations,
   onRefreshReservationPricing,
 }: Props) {
@@ -533,18 +538,16 @@ export function ReservationActionRequiredEngineTable({
     const list: Array<{ reservation: Reservation; analysis: ReservationPricingAnalysis }> = []
     for (const r of reservations) {
       const p = reservationPricingMap.get(r.id)
-      const rid = normalizeReservationIdForPayments(r.id)
-      const records =
-        paymentRecordsByReservationId.get(rid) ??
-        paymentRecordsByReservationId.get(r.id) ??
-        []
+      const records = resolvePaymentRecordsForReservation(paymentRecordsByReservationId, r.id)
       const analysis = analyzeReservationPricingEngine(
         r,
         p,
         channels,
         records,
         reservationOptionSumByReservationId,
-        reservationExpenseSumByReservationId
+        reservationExpenseSumByReservationId,
+        dbStoredPricingByReservationId.get(r.id) ??
+          dbStoredPricingByReservationId.get(normalizeReservationIdForPayments(r.id))
       )
       if (analysis) list.push({ reservation: r, analysis })
     }
@@ -555,12 +558,16 @@ export function ReservationActionRequiredEngineTable({
     paymentRecordsByReservationId,
     reservationOptionSumByReservationId,
     reservationExpenseSumByReservationId,
+    dbStoredPricingByReservationId,
     channels,
   ])
 
-  const mismatchCount = analyses.filter(
-    (a) => a.analysis.fields.some((f) => !f.matchDb || !f.matchLegacy)
-  ).length
+  const visibleAnalyses = useMemo(
+    () => analyses.filter((a) => !a.analysis.allMatch),
+    [analyses]
+  )
+
+  const mismatchCount = visibleAnalyses.length
 
   const applyPatch = useCallback(
     async (reservationId: string, fieldKeys: EngineDbFieldKey[]) => {
@@ -574,9 +581,7 @@ export function ReservationActionRequiredEngineTable({
         channels,
         pricing: p,
         paymentRecords:
-          paymentRecordsByReservationId.get(normalizeReservationIdForPayments(reservationId)) ??
-          paymentRecordsByReservationId.get(reservationId) ??
-          [],
+          resolvePaymentRecordsForReservation(paymentRecordsByReservationId, reservationId),
         reservationOptionSumByReservationId,
       }).patch
       if (Object.keys(patch).length === 0) return
@@ -621,7 +626,21 @@ export function ReservationActionRequiredEngineTable({
   }, [selectedIds, analyses, applyPatch])
 
   const allSelected =
-    analyses.length > 0 && analyses.every((a) => selectedIds.has(a.reservation.id))
+    visibleAnalyses.length > 0 && visibleAnalyses.every((a) => selectedIds.has(a.reservation.id))
+
+  const openBrowseAt = useCallback(
+    (reservationId: string) => {
+      const list = visibleAnalyses.map((a) => a.reservation)
+      const idx = list.findIndex((r) => r.id === reservationId)
+      if (onOpenPricingBrowse) {
+        onOpenPricingBrowse(list, Math.max(0, idx))
+      } else {
+        const item = visibleAnalyses.find((a) => a.reservation.id === reservationId)
+        if (item) onPricingInfoClick(item.reservation)
+      }
+    },
+    [visibleAnalyses, onOpenPricingBrowse, onPricingInfoClick]
+  )
 
   return (
     <div className="space-y-4">
@@ -640,7 +659,7 @@ export function ReservationActionRequiredEngineTable({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-sm">
-              {isKorean ? `총 ${analyses.length}건` : `${analyses.length} total`}
+              {isKorean ? `총 ${visibleAnalyses.length}건` : `${visibleAnalyses.length} total`}
             </span>
             <span
               className={`rounded-full px-3 py-1 text-xs font-medium shadow-sm ${
@@ -654,15 +673,24 @@ export function ReservationActionRequiredEngineTable({
           </div>
         </div>
 
-        {analyses.length > 0 && (
+        {visibleAnalyses.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-indigo-100/80 pt-3">
+            <button
+              type="button"
+              disabled={!onOpenPricingBrowse}
+              onClick={() => onOpenPricingBrowse?.(visibleAnalyses.map((a) => a.reservation), 0)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-50 disabled:opacity-50"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              {isKorean ? '모달 보기' : 'Modal browse'}
+            </button>
             <label className="inline-flex items-center gap-2 text-xs text-slate-700">
               <input
                 type="checkbox"
                 checked={allSelected}
                 onChange={(e) => {
                   if (e.target.checked) {
-                    setSelectedIds(new Set(analyses.map((a) => a.reservation.id)))
+                    setSelectedIds(new Set(visibleAnalyses.map((a) => a.reservation.id)))
                   } else {
                     setSelectedIds(new Set())
                   }
@@ -690,21 +718,20 @@ export function ReservationActionRequiredEngineTable({
         )}
       </div>
 
-      {analyses.length === 0 ? (
+      {visibleAnalyses.length === 0 ? (
         <p className="rounded-lg border border-dashed border-gray-200 bg-white px-4 py-8 text-center text-sm text-muted-foreground">
           {t('actionRequired.empty')}
         </p>
       ) : (
         <div className="space-y-3">
-          {analyses.map(({ reservation, analysis }) => {
+          {visibleAnalyses.map(({ reservation, analysis }) => {
             const channel = channelById.get(reservation.channelId ?? '')
             const p = reservationPricingMap.get(reservation.id)
             if (!p) return null
-            const rid = normalizeReservationIdForPayments(reservation.id)
-            const records =
-              paymentRecordsByReservationId.get(rid) ??
-              paymentRecordsByReservationId.get(reservation.id) ??
-              []
+            const records = resolvePaymentRecordsForReservation(
+              paymentRecordsByReservationId,
+              reservation.id
+            )
             return (
               <EngineReviewCard
                 key={reservation.id}
@@ -730,7 +757,7 @@ export function ReservationActionRequiredEngineTable({
                 }}
                 onApply={(keys) => void applyPatch(reservation.id, keys)}
                 onEdit={() => onEditClick(reservation.id)}
-                onPricingInfo={() => onPricingInfoClick(reservation)}
+                onPricingInfo={() => openBrowseAt(reservation.id)}
                 statusLabel={getStatusLabel(reservation.status, t)}
               />
             )

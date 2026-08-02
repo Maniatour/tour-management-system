@@ -115,6 +115,13 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: '팝업 메시지 저장에 실패했습니다.' }, { status: 500 })
       }
 
+      // 컨펌 요청 발송 시 배정 상태를 '부여'로 표시 (대기 중이었을 때만)
+      await (db as any)
+        .from('tours')
+        .update({ assignment_status: 'assigned' })
+        .eq('id', tourId)
+        .or('assignment_status.eq.pending,assignment_status.is.null')
+
       results.push({
         email: recipient.email,
         role: recipient.role,

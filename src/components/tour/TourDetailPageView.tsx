@@ -57,6 +57,7 @@ import { ReservationFormSmsSendButton } from '@/components/reservation/Reservati
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import TourEnvelopeModal from '@/components/receipt/TourEnvelopeModal'
+import { GuideScheduleConfirmPreviewModal } from '@/components/admin/todo/GuideScheduleConfirmPreviewModal'
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { normalizeReservationIds, isTourDeletedStatus } from '@/utils/tourUtils'
@@ -231,6 +232,7 @@ export function TourDetailPageView({
   const [showTourEditModal, setShowTourEditModal] = useState<boolean>(false)
   const [showBatchReceiptModal, setShowBatchReceiptModal] = useState<boolean>(false)
   const [showEditReceiptModal, setShowEditReceiptModal] = useState<boolean>(false)
+  const [showGuideScheduleConfirmModal, setShowGuideScheduleConfirmModal] = useState(false)
   const [envelopeModalVariant, setEnvelopeModalVariant] = useState<'tip' | 'balance' | null>(null)
   const [showTourPrintModal, setShowTourPrintModal] = useState<boolean>(false)
   const [pickupPresets, setPickupPresets] = useState<PickupGroupPresetRow[]>([])
@@ -360,6 +362,14 @@ export function TourDetailPageView({
   const [feesHydrated, setFeesHydrated] = useState(false)
   const activeTourIdRef = useRef<string | undefined>(undefined)
   activeTourIdRef.current = tourData.tour?.id
+
+  const openGuideScheduleConfirmModal = useCallback(() => {
+    setShowGuideScheduleConfirmModal(true)
+  }, [])
+
+  const canSendGuideScheduleConfirm = Boolean(
+    tourData.tour?.tour_guide_id || tourData.tour?.assistant_id,
+  )
 
   // 핸들러 함수들
   const handlePrivateTourToggle = () => {
@@ -2066,6 +2076,9 @@ export function TourDetailPageView({
         onPrintReceipts={() => setShowBatchReceiptModal(true)}
         onPrintTipEnvelopes={() => setEnvelopeModalVariant('tip')}
         onPrintBalanceEnvelopes={() => setEnvelopeModalVariant('balance')}
+        {...(canSendGuideScheduleConfirm
+          ? { onSendGuideScheduleConfirm: openGuideScheduleConfirmModal }
+          : {})}
         onCloseModal={modalChrome.onClose}
         isPrivateTour={tourData.isPrivateTour}
         maxParticipants={
@@ -2236,6 +2249,9 @@ export function TourDetailPageView({
         onPrintReceipts={() => setShowBatchReceiptModal(true)}
         onPrintTipEnvelopes={() => setEnvelopeModalVariant('tip')}
         onPrintBalanceEnvelopes={() => setEnvelopeModalVariant('balance')}
+        {...(canSendGuideScheduleConfirm
+          ? { onSendGuideScheduleConfirm: openGuideScheduleConfirmModal }
+          : {})}
       />
       ) : null}
 
@@ -2302,6 +2318,13 @@ export function TourDetailPageView({
         getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || ''}
         ticketBookings={ticketBookings}
         tourHotelBookings={tourHotelBookings}
+      />
+
+      <GuideScheduleConfirmPreviewModal
+        isOpen={showGuideScheduleConfirmModal}
+        tourId={tourData.tour?.id ?? null}
+        locale={locale}
+        onClose={() => setShowGuideScheduleConfirmModal(false)}
       />
 
       <TourDetailSectionChromeProvider compact={modalLightLoad}>

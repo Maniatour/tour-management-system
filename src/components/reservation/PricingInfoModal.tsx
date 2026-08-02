@@ -1,16 +1,14 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { X, DollarSign, Users, Calendar, MapPin, Save } from 'lucide-react'
+import { X, DollarSign, Users, Calendar, MapPin, Save, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useLocale } from 'next-intl'
 import PaymentRecordsList from '@/components/PaymentRecordsList'
 import ReservationOptionsSection from '@/components/reservation/ReservationOptionsSection'
 import ReservationExpensesSection from '@/components/reservation/ReservationExpensesSection'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import type { Reservation } from '@/types/reservation'
-import { useReservationOptions } from '@/hooks/useReservationOptions'
-import { reservationOptionCountsTowardPricingTotal } from '@/utils/reservationOptionsShared'
 import { roundUsd2, splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
 import {
   computePricingSectionCustomerPaymentGrossLike,
@@ -28,7 +26,7 @@ import {
   shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
 } from '@/utils/channelSettlement'
 import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
-import { summarizePaymentRecordsForBalance, cancelledNonOtaNetCollectedFromPayments } from '@/utils/reservationPricingBalance'
+import { summarizePaymentRecordsForBalance, cancelledNonOtaNetCollectedFromPayments, type PaymentRecordLike } from '@/utils/reservationPricingBalance'
 import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
 import { useAuth } from '@/contexts/AuthContext'
 import { isSuperAdminActor } from '@/lib/superAdmin'
@@ -37,13 +35,22 @@ import {
   isNoShowReservationStatus,
   isNotIncludedExcludedReservationStatus,
 } from '@/lib/reservationStatus'
+import {
+  PricingEngineCompareValue,
+  PricingEngineValueBadge,
+} from '@/components/reservation/PricingEngineCompareValue'
+import type {
+  EngineDbFieldKey,
+  ReservationPricingAnalysis,
+} from '@/lib/pricingEngine/analyzeReservation'
+import { analyzeReservationPricingEngine } from '@/lib/pricingEngine/analyzeReservation'
+import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
+import type { BalanceChannelRowInput } from '@/utils/balanceChannelRevenue'
 
 function fmtUsd(n: number | null | undefined): string {
   if (n == null || Number.isNaN(Number(n))) return '—'
   return `$${Number(n).toFixed(2)}`
 }
-
-const DB_METRICS_EPS = 0.02
 
 function DbStoredHint({
   dbValue,
@@ -68,11 +75,58 @@ function DbStoredHint({
   )
 }
 
+const DB_METRICS_EPS = 0.02
+
+function formatReservationTourDateLine(tourDate: string): string {
+  const iso = tourDate.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (iso) return `${iso[2]}/${iso[3]}/${iso[1]}`
+  return tourDate
+}
+
+function reservationPaxCount(reservation: Reservation): number {
+  const total = reservation.totalPeople
+  if (total != null && total > 0) return total
+  return (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)
+}
+
+function PricingColumnLoading({ message }: { message: string }) {
+  return (
+    <div className="bg-white p-6 rounded border border-gray-200 flex items-center justify-center min-h-[10rem]">
+      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+      <span className="ml-2 text-sm text-gray-600">{message}</span>
+    </div>
+  )
+}
+
 interface PricingInfoModalProps {
   reservation: Reservation | null
   isOpen: boolean
   onClose: () => void
   overlayZIndex?: number
+  /** 필터된 예약 목록 좌우 탐색 (가격 엔진 탭 등) */
+  navigation?: {
+    reservations: Reservation[]
+    currentIndex: number
+    onIndexChange: (index: number) => void
+  }
+  headerMeta?: {
+    customerName: string
+    productName: string
+    statusLabel: string
+    statusColorClass?: string
+    channelName?: string
+  }
+  /** 엔진 비교 모드 — DB 표시 + 엔진 뱃지 */
+  engineAnalysis?: ReservationPricingAnalysis | null
+  /** 입금 내역 로드 후 엔진 재계산용 (가격 엔진 탭 모달 보기) */
+  engineRecomputeDeps?: {
+    channels: BalanceChannelRowInput[]
+    pricing: ReservationPricingMapValue
+    reservationOptionSumByReservationId: Map<string, number>
+    reservationExpenseSumByReservationId: Map<string, number>
+    paymentRecords?: PaymentRecordLike[]
+    dbStoredPricing?: ReservationPricingMapValue
+  }
 }
 
 interface PricingData {
@@ -138,7 +192,16 @@ interface Coupon {
   product_id: string | null
 }
 
-export default function PricingInfoModal({ reservation, isOpen, onClose, overlayZIndex }: PricingInfoModalProps) {
+export default function PricingInfoModal({
+  reservation,
+  isOpen,
+  onClose,
+  overlayZIndex,
+  navigation,
+  headerMeta,
+  engineAnalysis = null,
+  engineRecomputeDeps,
+}: PricingInfoModalProps) {
   const { authUser, userPosition } = useAuth()
   const locale = useLocale()
   const isKorean = locale === 'ko'
@@ -156,16 +219,60 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
   const [paymentSummaryModal, setPaymentSummaryModal] = useState<ReturnType<
     typeof summarizePaymentRecordsForBalance
   > | null>(null)
+  const [localPaymentRecords, setLocalPaymentRecords] = useState<PaymentRecordLike[]>([])
   const [partnerReceivedForSettlement, setPartnerReceivedForSettlement] = useState(0)
   const [reservationExpensesTotal, setReservationExpensesTotal] = useState(0)
+  const [liveReservationOptionsTotal, setLiveReservationOptionsTotal] = useState(0)
   const handleReservationExpensesTotalChange = useCallback((total: number) => {
     setReservationExpensesTotal(roundUsd2(total))
   }, [])
+  const handleReservationOptionsTotalChange = useCallback((total: number) => {
+    setLiveReservationOptionsTotal(roundUsd2(total))
+  }, [])
+  const handlePaymentSummaryChange = useCallback(
+    (summary: ReturnType<typeof summarizePaymentRecordsForBalance>) => {
+      setReturnedAmount(summary.returnedTotal)
+      setRefundedAmount(summary.refundedTotal)
+      setPartnerReceivedForSettlement(summary.partnerReceivedStrict)
+      setPaymentSummaryModal(summary)
+    },
+    []
+  )
+  const handlePaymentRecordsChange = useCallback((records: PaymentRecordLike[]) => {
+    setLocalPaymentRecords(records)
+  }, [])
+
+  const effectiveEngineAnalysis = useMemo(() => {
+    if (!engineRecomputeDeps || !reservation) {
+      return engineAnalysis
+    }
+    const records =
+      localPaymentRecords.length > 0
+        ? localPaymentRecords
+        : (engineRecomputeDeps.paymentRecords ?? [])
+    if (records.length === 0) {
+      return engineAnalysis
+    }
+    return analyzeReservationPricingEngine(
+      reservation,
+      engineRecomputeDeps.pricing,
+      engineRecomputeDeps.channels,
+      records,
+      engineRecomputeDeps.reservationOptionSumByReservationId,
+      engineRecomputeDeps.reservationExpenseSumByReservationId,
+      engineRecomputeDeps.dbStoredPricing
+    )
+  }, [engineAnalysis, engineRecomputeDeps, reservation, localPaymentRecords])
+
+  const engineFieldByKey = useMemo(() => {
+    if (!effectiveEngineAnalysis) return null
+    return new Map(effectiveEngineAnalysis.fields.map((f) => [f.key, f]))
+  }, [effectiveEngineAnalysis])
+
   const [isOTAChannel, setIsOTAChannel] = useState(false)
   /** 홈페이지 채널 판별용 — `channels` 목록 없이 현재 예약 채널명만으로 검사 */
   const [channelDisplayName, setChannelDisplayName] = useState<string | null>(null)
   const [channelFaviconUrl, setChannelFaviconUrl] = useState<string | null>(null)
-  const [paymentRecordsRefreshKey, setPaymentRecordsRefreshKey] = useState(0)
   const [channelSettlementFocused, setChannelSettlementFocused] = useState(false)
   const [channelSettlementDraft, setChannelSettlementDraft] = useState('')
   const [currentTeamProfile, setCurrentTeamProfile] = useState<TeamAuditProfile | null>(null)
@@ -176,15 +283,111 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
     operating_profit: number | null
   } | null>(null)
 
-  const reservationOptionsHookId = isOpen && reservation?.id ? String(reservation.id) : ''
-  const { reservationOptions: reservationOptionsRows, fetchReservationOptions } =
-    useReservationOptions(reservationOptionsHookId)
+  const balanceReceivedTotal = paymentSummaryModal?.balanceReceivedTotal ?? 0
+
+  const totalActualPaidDisplay = useMemo(() => {
+    const deposit = Number(editData?.deposit_amount) || 0
+    const balance = Number(editData?.balance_amount) || 0
+    return roundUsd2(deposit + balanceReceivedTotal + balance)
+  }, [editData?.deposit_amount, editData?.balance_amount, balanceReceivedTotal])
+
+  const engineCompareMode = engineFieldByKey != null
+  const loadGenerationRef = useRef(0)
+
+  const renderEngineMoney = useCallback(
+    (key: EngineDbFieldKey, fallbackDb: number | null | undefined, className?: string) => {
+      const field = engineFieldByKey?.get(key)
+      if (field) {
+        return (
+          <PricingEngineCompareValue
+            dbValue={field.dbValue}
+            engineValue={field.engineValue}
+            engineTitle={isKorean ? '엔진' : 'Engine'}
+            {...(className ? { valueClassName: className } : {})}
+          />
+        )
+      }
+      if (fallbackDb != null && Number.isFinite(Number(fallbackDb))) {
+        return <span className={className || 'font-medium tabular-nums'}>{fmtUsd(Number(fallbackDb))}</span>
+      }
+      return <span className={className || 'font-medium tabular-nums'}>—</span>
+    },
+    [engineFieldByKey, isKorean]
+  )
+
+  const renderEngineInputBadge = useCallback(
+    (key: EngineDbFieldKey) => {
+      const field = engineFieldByKey?.get(key)
+      if (!field) return null
+      return (
+        <PricingEngineValueBadge
+          engineValue={field.engineValue}
+          matchDb={field.matchDb}
+          title={isKorean ? '엔진 계산값' : 'Engine value'}
+        />
+      )
+    },
+    [engineFieldByKey, isKorean]
+  )
 
   useEffect(() => {
-    if (isOpen && reservation) {
-      loadPricingData()
+    if (!isOpen || !navigation) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' && navigation.currentIndex > 0) {
+        e.preventDefault()
+        navigation.onIndexChange(navigation.currentIndex - 1)
+      }
+      if (e.key === 'ArrowRight' && navigation.currentIndex < navigation.reservations.length - 1) {
+        e.preventDefault()
+        navigation.onIndexChange(navigation.currentIndex + 1)
+      }
     }
-  }, [isOpen, reservation])
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isOpen, navigation])
+
+  useEffect(() => {
+    if (!isOpen || !navigation) return
+    for (const offset of [-1, 1]) {
+      const neighbor = navigation.reservations[navigation.currentIndex + offset]
+      if (!neighbor?.id) continue
+      void supabase
+        .from('reservation_pricing')
+        .select('id')
+        .eq('reservation_id', String(neighbor.id))
+        .maybeSingle()
+    }
+  }, [isOpen, navigation?.currentIndex, navigation?.reservations])
+
+  useEffect(() => {
+    if (!isOpen || !reservation) return
+
+    const generation = ++loadGenerationRef.current
+
+    setPricingData(null)
+    setEditData(null)
+    setLiveReservationOptionsTotal(0)
+    setLocalPaymentRecords([])
+    setPaymentSummaryModal(null)
+    setError(null)
+    setLoading(true)
+
+    void (async () => {
+      try {
+        await loadPricingData(generation)
+      } catch {
+        if (loadGenerationRef.current === generation) {
+          setLoading(false)
+        }
+      }
+    })()
+
+    if (reservation.channelId) {
+      void loadCoupons()
+    } else {
+      setCoupons([])
+    }
+  }, [isOpen, reservation?.id])
 
   useEffect(() => {
     if (!isOpen) {
@@ -222,54 +425,18 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
     }
   }, [authUser?.email, authUser?.name, isOpen, userPosition])
 
-  // pricingData가 로드된 후 쿠폰 로드 (채널 변경 시에도 다시 로드)
   useEffect(() => {
-    if (pricingData && reservation) {
-      loadCoupons()
+    if (!pricingData?.coupon_code || coupons.length === 0) return
+    const code = pricingData.coupon_code.trim()
+    const matchingCoupon = coupons.find(
+      (c) => c.coupon_code && c.coupon_code.trim().toLowerCase() === code.toLowerCase()
+    )
+    if (matchingCoupon) {
+      setSelectedCoupon(matchingCoupon.id)
     }
-  }, [pricingData, reservation?.channelId])
+  }, [pricingData?.coupon_code, coupons])
 
-  useEffect(() => {
-    if (!isOpen || !reservation?.id) return
-    let cancelled = false
-    void (async () => {
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-        if (!session?.access_token) return
-        const res = await fetch(`/api/payment-records?reservation_id=${reservation.id}`, {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        })
-        if (!res.ok) return
-        const json = await res.json()
-        const records = json.paymentRecords || []
-        const normalized = records.map((r: { payment_status: string; amount: number }) => ({
-          payment_status: r.payment_status || '',
-          amount: Number(r.amount) || 0,
-        }))
-        const summary = summarizePaymentRecordsForBalance(normalized)
-        if (!cancelled) {
-          setReturnedAmount(summary.returnedTotal)
-          setRefundedAmount(summary.refundedTotal)
-          setPartnerReceivedForSettlement(summary.partnerReceivedStrict)
-          setPaymentSummaryModal(summary)
-        }
-      } catch {
-        if (!cancelled) {
-          setReturnedAmount(0)
-          setRefundedAmount(0)
-          setPartnerReceivedForSettlement(0)
-          setPaymentSummaryModal(null)
-        }
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [isOpen, reservation?.id, paymentRecordsRefreshKey])
-
-  const loadPricingData = async () => {
+  const loadPricingData = async (generation = loadGenerationRef.current) => {
     if (!reservation) return
 
     setLoading(true)
@@ -287,52 +454,57 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
     }
 
     try {
-      // 채널 정보 가져오기
-      if (reservation.channelId) {
-        const { data: channelData } = await supabase
-          .from('channels')
-          .select(
-            'pricing_type, has_not_included_price, not_included_type, not_included_price, type, category, name, favicon_url'
-          )
-          .eq('id', reservation.channelId)
-          .single()
+      const reservationId = String(reservation.id)
 
-        if (channelData?.pricing_type) {
-          setChannelPricingType(channelData.pricing_type as 'separate' | 'single')
-        }
-        if (channelData) {
-          setIsOTAChannel(
-            channelIsOtaForPricingSection(
-              channelData as { type?: string | null; category?: string | null; name?: string | null }
+      const channelPromise = reservation.channelId
+        ? supabase
+            .from('channels')
+            .select(
+              'pricing_type, has_not_included_price, not_included_type, not_included_price, type, category, name, favicon_url'
             )
+            .eq('id', reservation.channelId)
+            .single()
+        : Promise.resolve({ data: null, error: null })
+
+      const pricingPromise = supabase
+        .from('reservation_pricing')
+        .select(
+          'id, reservation_id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, choices, choices_total, not_included_price, refund_amount, refund_reason, commission_amount, commission_percent, commission_base_price, channel_settlement_amount, pricing_adults, company_total_revenue, operating_profit, audited, audited_at, audited_by_email, audited_by_name, audited_by_nick_name'
+        )
+        .eq('reservation_id', reservationId)
+        .maybeSingle()
+
+      const [{ data: channelData }, { data, error }] = await Promise.all([
+        channelPromise,
+        pricingPromise,
+      ])
+
+      if (loadGenerationRef.current !== generation) return
+
+      if (channelData?.pricing_type) {
+        setChannelPricingType(channelData.pricing_type as 'separate' | 'single')
+      }
+      if (channelData) {
+        setIsOTAChannel(
+          channelIsOtaForPricingSection(
+            channelData as { type?: string | null; category?: string | null; name?: string | null }
           )
-          setChannelDisplayName(
-            channelData.name != null && String(channelData.name).trim() !== ''
-              ? String(channelData.name)
-              : null
-          )
-          setChannelFaviconUrl(
-            channelData.favicon_url != null && String(channelData.favicon_url).trim() !== ''
-              ? String(channelData.favicon_url)
-              : null
-          )
-        } else {
-          setChannelDisplayName(null)
-          setChannelFaviconUrl(null)
-          setIsOTAChannel(false)
-        }
+        )
+        setChannelDisplayName(
+          channelData.name != null && String(channelData.name).trim() !== ''
+            ? String(channelData.name)
+            : null
+        )
+        setChannelFaviconUrl(
+          channelData.favicon_url != null && String(channelData.favicon_url).trim() !== ''
+            ? String(channelData.favicon_url)
+            : null
+        )
       } else {
         setChannelDisplayName(null)
         setChannelFaviconUrl(null)
         setIsOTAChannel(false)
       }
-      // reservation_id는 DB에서 문자열/UUID이므로 문자열로 통일해 조회. 상품 단가 컬럼 명시적으로 요청.
-      const reservationId = String(reservation.id)
-      const { data, error } = await supabase
-        .from('reservation_pricing')
-        .select('id, reservation_id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, choices, choices_total, not_included_price, refund_amount, refund_reason, commission_amount, commission_percent, commission_base_price, channel_settlement_amount, pricing_adults, company_total_revenue, operating_profit, audited, audited_at, audited_by_email, audited_by_name, audited_by_nick_name')
-        .eq('reservation_id', reservationId)
-        .maybeSingle()
 
       if (error) {
         console.error('❌ Reservation pricing error:', error)
@@ -419,6 +591,8 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
         setDbMetricsSnapshot(null)
         setPricingData(defaultData)
         setEditData(defaultData)
+        setLiveReservationOptionsTotal(roundUsd2(Number(defaultData.option_total) || 0))
+        if (loadGenerationRef.current === generation) setLoading(false)
         return
       }
 
@@ -506,14 +680,22 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
             ? toNum(raw.operating_profit)
             : null,
       })
+
+      if (loadGenerationRef.current !== generation) return
       
       setPricingData(pricingDataWithDefaults as PricingData)
       setEditData(pricingDataWithDefaults as PricingData)
+      setLiveReservationOptionsTotal(
+        roundUsd2(Number((pricingDataWithDefaults as PricingData).option_total) || 0)
+      )
     } catch (err) {
+      if (loadGenerationRef.current !== generation) return
       console.error('가격 정보 로드 오류:', err)
       setError('가격 정보를 불러오는 중 오류가 발생했습니다.')
     } finally {
-      setLoading(false)
+      if (loadGenerationRef.current === generation) {
+        setLoading(false)
+      }
     }
   }
 
@@ -551,19 +733,6 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
             product_id: c.product_id,
           }))
       )
-      
-      // 기존 가격 데이터에 쿠폰이 있으면 해당 쿠폰을 선택
-      // reservation_pricing.coupon_code는 coupons.coupon_code와 조인됨 (대소문자 구분 없이)
-      if (pricingData?.coupon_code && data) {
-        const code = pricingData.coupon_code.trim()
-        const matchingCoupon = data.find(c => 
-          c.coupon_code && 
-          c.coupon_code.trim().toLowerCase() === code.toLowerCase()
-        )
-        if (matchingCoupon) {
-          setSelectedCoupon(matchingCoupon.id)
-        }
-      }
     } catch (err) {
       if (!isAbortLikeError(err)) {
         console.error('쿠폰 로드 오류:', err)
@@ -990,14 +1159,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
     )
   }, [editData, reservation, pricingAdultsVal])
 
-  const reservationOptionsTotalUsd = useMemo(
-    () =>
-      reservationOptionsRows.reduce((sum, o) => {
-        if (!reservationOptionCountsTowardPricingTotal(o.status)) return sum
-        return sum + (o.total_price || 0)
-      }, 0),
-    [reservationOptionsRows]
-  )
+  const reservationOptionsTotalUsd = liveReservationOptionsTotal
 
   const isReservationCancelled = isCancelledReservationStatus(reservation?.status)
   const isReservationNoShow = isNoShowReservationStatus(reservation?.status)
@@ -1197,6 +1359,29 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
     return computePricingSectionDisplayOperatingProfit(revenueDisplayInput)
   }, [revenueDisplayInput])
 
+  const headerOneLine = useMemo(() => {
+    if (!headerMeta || !reservation) return null
+    const pax = reservationPaxCount(reservation)
+    const paxPart = isKorean ? `${pax}명` : `${pax} pax`
+    const date = formatReservationTourDateLine(reservation.tourDate)
+    const channel =
+      headerMeta.channelName?.trim() ||
+      channelDisplayName?.trim() ||
+      reservation.channelNameSnapshot?.trim() ||
+      reservation.channelRN?.trim() ||
+      ''
+    return {
+      customerName: headerMeta.customerName,
+      paxPart,
+      date,
+      productName: headerMeta.productName,
+      statusLabel: headerMeta.statusLabel,
+      statusColorClass: headerMeta.statusColorClass,
+      channel,
+      full: `${headerMeta.customerName} ${paxPart}, ${date} ${headerMeta.productName}, ${headerMeta.statusLabel}${channel ? `, ${channel}` : ''}`,
+    }
+  }, [headerMeta, reservation, channelDisplayName, isKorean])
+
 
   if (!isOpen || !reservation) return null
 
@@ -1220,12 +1405,44 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
     >
       <div className="bg-white rounded-lg shadow-xl w-full max-w-[98vw] xl:max-w-6xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
         {/* 헤더 */}
-        <div className="flex items-center justify-between p-3 sm:p-4 border-b border-gray-200">
-          <div className="flex items-center space-x-2">
-            <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
-            <h2 className="text-lg font-semibold text-gray-900">가격 정보</h2>
+        <div className="flex items-center justify-between p-3 sm:p-4 border-b border-gray-200 gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            {navigation && navigation.reservations.length > 1 ? (
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => navigation.onIndexChange(navigation.currentIndex - 1)}
+                  disabled={navigation.currentIndex <= 0}
+                  className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-40"
+                  aria-label={isKorean ? '이전 예약' : 'Previous reservation'}
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <span className="text-xs text-gray-500 tabular-nums whitespace-nowrap">
+                  {navigation.currentIndex + 1}/{navigation.reservations.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => navigation.onIndexChange(navigation.currentIndex + 1)}
+                  disabled={navigation.currentIndex >= navigation.reservations.length - 1}
+                  className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-40"
+                  aria-label={isKorean ? '다음 예약' : 'Next reservation'}
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            ) : null}
+            <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-green-600 shrink-0" />
+            <h2 className="text-lg font-semibold text-gray-900 truncate">
+              {isKorean ? '가격 정보' : 'Pricing'}
+            </h2>
+            {engineCompareMode ? (
+              <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-medium text-indigo-800 shrink-0">
+                {isKorean ? '엔진 비교' : 'Engine compare'}
+              </span>
+            ) : null}
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 shrink-0">
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -1236,7 +1453,26 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
         </div>
 
         {/* 예약 기본 정보 */}
-        <div className="p-3 border-b border-gray-200 bg-gray-50">
+        <div className="px-3 py-2.5 border-b border-gray-200 bg-gray-50">
+          {headerOneLine ? (
+            <p className="text-sm text-gray-800 leading-snug truncate" title={headerOneLine.full}>
+              <span className="font-semibold text-gray-900">{headerOneLine.customerName}</span>
+              <span className="text-gray-700"> {headerOneLine.paxPart}</span>
+              <span className="text-gray-500">, </span>
+              <span className="text-gray-700">
+                {headerOneLine.date} {headerOneLine.productName}
+              </span>
+              <span className="text-gray-500">, </span>
+              <span className="font-medium text-gray-800">{headerOneLine.statusLabel}</span>
+              {headerOneLine.channel ? (
+                <>
+                  <span className="text-gray-500">, </span>
+                  <span className="text-gray-700">{headerOneLine.channel}</span>
+                </>
+              ) : null}
+            </p>
+          ) : (
+            <>
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-gray-600">
             <div className="flex items-center gap-1 min-w-0">
               <Users className="w-3 h-3 flex-shrink-0" />
@@ -1280,35 +1516,109 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
               <span className="truncate">{reservation.pickUpHotel}</span>
             </div>
           </div>
+            </>
+          )}
         </div>
 
         {/* 가격 정보 */}
         <div className="p-3 sm:p-4">
-          {loading ? (
-            <div className="flex items-center justify-center py-6">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-              <span className="ml-2 text-sm text-gray-600">가격 정보를 불러오는 중...</span>
-            </div>
-          ) : error ? (
-            <div className="text-center py-6">
-              <div className="text-red-600 mb-2">⚠️</div>
-              <p className="text-sm text-gray-600">{error}</p>
-              <button
-                onClick={loadPricingData}
-                className="mt-3 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
-              >
-                다시 시도
-              </button>
-            </div>
-          ) : !pricingData ? (
-            <div className="text-center py-6">
-              <div className="text-gray-400 mb-2">📊</div>
-              <p className="text-sm text-gray-600">가격 정보가 없습니다.</p>
-            </div>
-          ) : (
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+              {/* 오른쪽: 입금·옵션·지출 — 가격 로드와 병렬 표시 */}
+              <div className="space-y-3 xl:order-3">
+                <div className="bg-white p-3 rounded border border-gray-200">
+                  {reservation.id ? (
+                    <PaymentRecordsList
+                      reservationId={String(reservation.id)}
+                      customerName={paymentCustomerLabel}
+                      itemVariant="line"
+                      title={isKorean ? '입금 내역' : 'Payment records'}
+                      suggestedCancelRefundAmountUsd={editData?.deposit_amount ?? 0}
+                      onPaymentSummaryChange={handlePaymentSummaryChange}
+                      onPaymentRecordsChange={handlePaymentRecordsChange}
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {isKorean ? '입금 내역 없음' : 'No payment records'}
+                    </p>
+                  )}
+                </div>
+                <div className="bg-white p-3 rounded border border-gray-200">
+                  {reservation.id ? (
+                    <ReservationOptionsSection
+                      reservationId={String(reservation.id)}
+                      itemVariant="line"
+                      title={isKorean ? '옵션 내역' : 'Reservation options'}
+                      isPersisted
+                      addOptionModalZIndex={nestedOverlayZ}
+                      onTotalPriceChange={handleReservationOptionsTotalChange}
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {isKorean ? '옵션 내역 없음' : 'No options'}
+                    </p>
+                  )}
+                </div>
+                <div className="bg-white p-3 rounded border border-gray-200">
+                  {reservation.id ? (
+                    <ReservationExpensesSection
+                      reservationId={String(reservation.id)}
+                      itemVariant="line"
+                      title={isKorean ? '예약 지출' : 'Reservation expenses'}
+                      onTotalChange={handleReservationExpensesTotalChange}
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {isKorean ? '예약 지출 없음' : 'No reservation expenses'}
+                    </p>
+                  )}
+                </div>
+                {engineCompareMode && effectiveEngineAnalysis ? (
+                  <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-2.5">
+                    <p className="mb-1.5 text-[10px] font-medium text-indigo-950">
+                      {isKorean
+                        ? '엔진 뱃지(왼쪽) · DB 값(오른쪽) — 녹색 일치 / 빨간 불일치'
+                        : 'Engine badge (left) · DB value (right) — green match / red mismatch'}
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {effectiveEngineAnalysis.fields.map((field) => (
+                        <span
+                          key={field.key}
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                            field.matchDb
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-red-100 text-red-800'
+                          }`}
+                        >
+                          {isKorean ? field.labelKo : field.labelEn}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
               {/* 왼쪽: 상품가격 + 할인/추가비용 */}
               <div className="space-y-3 xl:order-1">
+                {loading && !editData ? (
+                  <PricingColumnLoading message="가격 정보를 불러오는 중..." />
+                ) : error && !editData ? (
+                  <div className="text-center py-6 bg-white rounded border border-gray-200">
+                    <div className="text-red-600 mb-2">⚠️</div>
+                    <p className="text-sm text-gray-600">{error}</p>
+                    <button
+                      onClick={() => void loadPricingData()}
+                      className="mt-3 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
+                    >
+                      다시 시도
+                    </button>
+                  </div>
+                ) : !editData ? (
+                  <div className="text-center py-6 bg-white rounded border border-gray-200">
+                    <div className="text-gray-400 mb-2">📊</div>
+                    <p className="text-sm text-gray-600">가격 정보가 없습니다.</p>
+                  </div>
+                ) : (
+                <>
                 {/* 1. 상품가격 */}
                 <div className="bg-white p-3 rounded border border-gray-200">
                   <h4 className="text-sm font-medium text-gray-900 mb-2">상품가격</h4>
@@ -1587,15 +1897,22 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
                     )}
                   </div>
                 </div>
+                </div>
 
                 {/* reservation_pricing id (상품 가격·할인/추가비용 아래 표시) */}
                 <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100">
                   reservation_pricing id: <span className="font-mono text-gray-700">{pricingData?.id ? pricingData.id : '(아직 저장되지 않음)'}</span>
                 </div>
-              </div>
+                </>
+                )}
               </div>
 
               {/* 가운데: 가격 계산 */}
+              {loading && !editData ? (
+                <div className="xl:order-2">
+                  <PricingColumnLoading message="가격 정보를 불러오는 중..." />
+                </div>
+              ) : editData ? (
               <div className="bg-white p-3 rounded border border-gray-200 overflow-y-auto max-h-[70vh] xl:order-2">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <h4 className="text-xs font-semibold text-gray-900">가격 계산</h4>
@@ -1746,12 +2063,22 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
                       <div className="flex justify-between">
                         <span className="font-bold text-primary">고객 총 결제 금액</span>
                         <span className="font-bold text-primary text-right">
-                          ${displayCustomerNet.toFixed(2)}
-                          <DbStoredHint
-                            dbValue={dbMetricsSnapshot?.total_price}
-                            displayValue={displayCustomerNet}
-                            isKorean={isKorean}
-                          />
+                          {engineCompareMode ? (
+                            renderEngineMoney(
+                              'total_price',
+                              dbMetricsSnapshot?.total_price ?? editData?.total_price,
+                              'font-bold text-primary'
+                            )
+                          ) : (
+                            <>
+                              ${displayCustomerNet.toFixed(2)}
+                              <DbStoredHint
+                                dbValue={dbMetricsSnapshot?.total_price}
+                                displayValue={displayCustomerNet}
+                                isKorean={isKorean}
+                              />
+                            </>
+                          )}
                         </span>
                       </div>
                     </div>
@@ -1765,7 +2092,17 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
                     <div className="space-y-1">
                       <div className="flex justify-between pb-2 border-b border-gray-100">
                         <span className="font-semibold text-gray-900">총 결제 예정 금액</span>
-                        <span className="font-bold text-primary">${displayCustomerNet.toFixed(2)}</span>
+                        <span className="font-bold text-primary">
+                          {engineCompareMode ? (
+                            renderEngineMoney(
+                              'total_price',
+                              dbMetricsSnapshot?.total_price ?? editData?.total_price,
+                              'font-bold text-primary'
+                            )
+                          ) : (
+                            <>${displayCustomerNet.toFixed(2)}</>
+                          )}
+                        </span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-gray-700">고객 실제 지불액 (보증금)</span>
@@ -1780,24 +2117,37 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
                           />
                         </div>
                       </div>
+                      {balanceReceivedTotal > 0.005 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-700">
+                            {isKorean ? '잔금 수령' : 'Balance Received'}
+                          </span>
+                          <span className="text-xs font-medium text-green-600 tabular-nums">
+                            ${balanceReceivedTotal.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between items-center">
                         <span className="text-gray-700">잔액 (투어 당일 지불)</span>
-                        <div className="relative">
-                          <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">$</span>
-                          <input
-                            type="number"
-                            value={editData?.balance_amount ?? ''}
-                            onChange={(e) => handleInputChange('balance_amount', Number(e.target.value) || 0)}
-                            className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right"
-                            step="0.01"
-                          />
+                        <div className="flex items-center gap-1.5">
+                          {renderEngineInputBadge('balance_amount')}
+                          <div className="relative">
+                            <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">$</span>
+                            <input
+                              type="number"
+                              value={editData?.balance_amount ?? ''}
+                              onChange={(e) => handleInputChange('balance_amount', Number(e.target.value) || 0)}
+                              className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right"
+                              step="0.01"
+                            />
+                          </div>
                         </div>
                       </div>
                       <div className="border-t border-gray-100 my-1" />
                       <div className="flex justify-between">
                         <span className="font-semibold text-gray-900">총 실제 지불 합</span>
-                        <span className="font-bold text-primary">
-                          ${((editData?.deposit_amount || 0) + (editData?.balance_amount || 0)).toFixed(2)}
+                        <span className="font-bold text-primary tabular-nums">
+                          ${totalActualPaidDisplay.toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -1821,8 +2171,17 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
                           {isOTAChannel ? '채널 결제 금액' : '고객 총 결제 금액'}
                         </span>
                         <span className="font-medium">
-                          $
-                          {(isOTAChannel ? editData?.deposit_amount || 0 : displayCustomerNet).toFixed(2)}
+                          {engineCompareMode ? (
+                            renderEngineMoney(
+                              'commission_base_price',
+                              editData?.commission_base_price ?? null
+                            )
+                          ) : (
+                            <>
+                              $
+                              {(isOTAChannel ? editData?.deposit_amount || 0 : displayCustomerNet).toFixed(2)}
+                            </>
+                          )}
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
@@ -1842,21 +2201,26 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-gray-700">채널 수수료 $</span>
-                        <div className="relative">
-                          <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">$</span>
-                          <input
-                            type="number"
-                            value={editData?.commission_amount ?? ''}
-                            onChange={(e) => handleInputChange('commission_amount', Number(e.target.value) || 0)}
-                            className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right"
-                            step="0.01"
-                          />
+                        <div className="flex items-center gap-1.5">
+                          {renderEngineInputBadge('commission_amount')}
+                          <div className="relative">
+                            <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">$</span>
+                            <input
+                              type="number"
+                              value={editData?.commission_amount ?? ''}
+                              onChange={(e) => handleInputChange('commission_amount', Number(e.target.value) || 0)}
+                              className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right"
+                              step="0.01"
+                            />
+                          </div>
                         </div>
                       </div>
                       <div className="border-t border-gray-100 my-1" />
                       <div className="flex justify-between items-center">
                         <span className="font-semibold text-gray-700">채널 정산 금액</span>
-                        <div className="relative">
+                        <div className="flex items-center gap-1.5">
+                          {renderEngineInputBadge('channel_settlement_amount')}
+                          <div className="relative">
                           <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">$</span>
                           <input
                             type="number"
@@ -1903,6 +2267,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
                       </div>
                     </div>
                   </div>
+                  </div>
 
                   <div className="pb-1">
                     <div className="flex items-center mb-1.5">
@@ -1912,7 +2277,14 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
                     <div className="space-y-1">
                       <div className="flex justify-between">
                         <span className="text-gray-700">채널 정산금액 (표시 기준)</span>
-                        <span className="font-medium">${channelSettlementForDisplay.toFixed(2)}</span>
+                        {engineCompareMode ? (
+                          renderEngineMoney(
+                            'channel_settlement_amount',
+                            editData?.channel_settlement_amount ?? channelSettlementForDisplay
+                          )
+                        ) : (
+                          <span className="font-medium">${channelSettlementForDisplay.toFixed(2)}</span>
+                        )}
                       </div>
                       {Math.abs(reservationExpensesTotal) > 0.005 && (
                         <div className={`flex justify-between ${reservationExpensesTotal >= 0 ? 'text-red-600' : 'text-green-600'}`}>
@@ -1933,12 +2305,22 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
                       <div className="flex justify-between">
                         <span className="font-bold text-green-800">총 매출</span>
                         <span className="font-bold text-green-600 text-right">
-                          ${totalRevenueDisplay.toFixed(2)}
-                          <DbStoredHint
-                            dbValue={dbMetricsSnapshot?.company_total_revenue}
-                            displayValue={totalRevenueDisplay}
-                            isKorean={isKorean}
-                          />
+                          {engineCompareMode ? (
+                            renderEngineMoney(
+                              'company_total_revenue',
+                              dbMetricsSnapshot?.company_total_revenue ?? totalRevenueDisplay,
+                              'font-bold text-green-600'
+                            )
+                          ) : (
+                            <>
+                              ${totalRevenueDisplay.toFixed(2)}
+                              <DbStoredHint
+                                dbValue={dbMetricsSnapshot?.company_total_revenue}
+                                displayValue={totalRevenueDisplay}
+                                isKorean={isKorean}
+                              />
+                            </>
+                          )}
                         </span>
                       </div>
                       {(editData?.prepayment_tip || 0) > 0 && prepaymentTipDeductionDisplay > 0.005 && (
@@ -1953,12 +2335,22 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
                       <div className="flex justify-between">
                         <span className="font-bold text-purple-800">운영 이익</span>
                         <span className="font-bold text-purple-600 text-right">
-                          ${operatingProfitDisplay.toFixed(2)}
-                          <DbStoredHint
-                            dbValue={dbMetricsSnapshot?.operating_profit}
-                            displayValue={operatingProfitDisplay}
-                            isKorean={isKorean}
-                          />
+                          {engineCompareMode ? (
+                            renderEngineMoney(
+                              'operating_profit',
+                              dbMetricsSnapshot?.operating_profit ?? operatingProfitDisplay,
+                              'font-bold text-purple-600'
+                            )
+                          ) : (
+                            <>
+                              ${operatingProfitDisplay.toFixed(2)}
+                              <DbStoredHint
+                                dbValue={dbMetricsSnapshot?.operating_profit}
+                                displayValue={operatingProfitDisplay}
+                                isKorean={isKorean}
+                              />
+                            </>
+                          )}
                         </span>
                       </div>
                     </div>
@@ -1968,69 +2360,30 @@ export default function PricingInfoModal({ reservation, isOpen, onClose, overlay
                     <div className="flex justify-between pt-1">
                       <span className="font-semibold text-gray-900">총 가격 (표시)</span>
                       <span className="font-bold text-gray-900 text-right">
-                        ${displayCustomerNet.toFixed(2)}
-                        <DbStoredHint
-                          dbValue={dbMetricsSnapshot?.total_price}
-                          displayValue={displayCustomerNet}
-                          isKorean={isKorean}
-                        />
+                        {engineCompareMode ? (
+                          renderEngineMoney(
+                            'total_price',
+                            dbMetricsSnapshot?.total_price ?? editData?.total_price,
+                            'font-bold text-gray-900'
+                          )
+                        ) : (
+                          <>
+                            ${displayCustomerNet.toFixed(2)}
+                            <DbStoredHint
+                              dbValue={dbMetricsSnapshot?.total_price}
+                              displayValue={displayCustomerNet}
+                              isKorean={isKorean}
+                            />
+                          </>
+                        )}
                       </span>
                     </div>
                   </div>
                 </div>
               </div>
+              ) : null}
 
-              {/* 오른쪽: 입금·옵션 내역 */}
-              <div className="space-y-3 xl:order-3">
-                <div className="bg-white p-3 rounded border border-gray-200">
-                  {reservation.id ? (
-                    <PaymentRecordsList
-                      reservationId={String(reservation.id)}
-                      customerName={paymentCustomerLabel}
-                      itemVariant="line"
-                      title={isKorean ? '입금 내역' : 'Payment records'}
-                      suggestedCancelRefundAmountUsd={editData?.deposit_amount ?? 0}
-                      onPaymentRecordsUpdated={() => setPaymentRecordsRefreshKey((k) => k + 1)}
-                    />
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      {isKorean ? '입금 내역 없음' : 'No payment records'}
-                    </p>
-                  )}
-                </div>
-                <div className="bg-white p-3 rounded border border-gray-200">
-                  {reservation.id ? (
-                    <ReservationOptionsSection
-                      reservationId={String(reservation.id)}
-                      itemVariant="line"
-                      title={isKorean ? '옵션 내역' : 'Reservation options'}
-                      isPersisted
-                      addOptionModalZIndex={nestedOverlayZ}
-                      onPersistedMutation={() => void fetchReservationOptions()}
-                    />
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      {isKorean ? '옵션 내역 없음' : 'No options'}
-                    </p>
-                  )}
-                </div>
-                <div className="bg-white p-3 rounded border border-gray-200">
-                  {reservation.id ? (
-                    <ReservationExpensesSection
-                      reservationId={String(reservation.id)}
-                      itemVariant="line"
-                      title={isKorean ? '예약 지출' : 'Reservation expenses'}
-                      onTotalChange={handleReservationExpensesTotalChange}
-                    />
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      {isKorean ? '예약 지출 없음' : 'No reservation expenses'}
-                    </p>
-                  )}
-                </div>
-              </div>
             </div>
-          )}
         </div>
 
         {/* 푸터 */}

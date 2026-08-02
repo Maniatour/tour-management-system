@@ -1,5 +1,6 @@
 import type { Reservation } from '@/types/reservation'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { buildPricingEngineContext } from '@/lib/pricingEngine/buildContext'
 import { computeReservationPricing } from '@/lib/pricingEngine/compute'
 import type { PricingProfileId, ReservationPricingResult } from '@/lib/pricingEngine/types'
@@ -18,7 +19,9 @@ import {
   computeDisplayedOnSiteBalanceLikePricingSection,
   mergePricingWithLiveOptionTotal,
   normalizeReservationIdForPayments,
+  pricingDiscountAmountMagnitude,
   pricingFieldToNumber,
+  resolvePaymentRecordsForReservation,
   summarizePaymentRecordsForBalance,
   type PaymentRecordLike,
 } from '@/utils/reservationPricingBalance'
@@ -268,8 +271,8 @@ export function buildEngineContextFromReservation(
     adultProductPrice: pricingFieldToNumber(pLine.adult_product_price),
     childProductPrice: pricingFieldToNumber(pLine.child_product_price),
     infantProductPrice: pricingFieldToNumber(pLine.infant_product_price),
-    couponDiscount: pricingFieldToNumber(pLine.coupon_discount),
-    additionalDiscount: pricingFieldToNumber(pLine.additional_discount),
+    couponDiscount: pricingDiscountAmountMagnitude(pLine.coupon_discount),
+    additionalDiscount: pricingDiscountAmountMagnitude(pLine.additional_discount),
     additionalCost: pricingFieldToNumber(pLine.additional_cost),
     tax: pricingFieldToNumber(pLine.tax),
     cardFee: pricingFieldToNumber(pLine.card_fee),
@@ -385,13 +388,69 @@ export function computeLegacyPricingSnapshot(
   }
 }
 
+export const ENGINE_DB_PRICING_COLUMNS =
+  'reservation_id, total_price, balance_amount, commission_base_price, channel_settlement_amount, commission_amount, company_total_revenue, operating_profit' as const
+
+function mapDbStoredPricingRow(p: Record<string, unknown>): ReservationPricingMapValue {
+  const companyTotalRevenue =
+    p.company_total_revenue === null || p.company_total_revenue === undefined
+      ? undefined
+      : fieldNum(p.company_total_revenue) ?? undefined
+  const operatingProfit =
+    p.operating_profit === null || p.operating_profit === undefined
+      ? undefined
+      : fieldNum(p.operating_profit) ?? undefined
+  return {
+    total_price: fieldNum(p.total_price) ?? 0,
+    balance_amount: fieldNum(p.balance_amount) ?? 0,
+    commission_base_price: fieldNum(p.commission_base_price) ?? 0,
+    channel_settlement_amount: fieldNum(p.channel_settlement_amount) ?? 0,
+    commission_amount: fieldNum(p.commission_amount) ?? 0,
+    ...(companyTotalRevenue !== undefined ? { company_total_revenue: companyTotalRevenue } : {}),
+    ...(operatingProfit !== undefined ? { operating_profit: operatingProfit } : {}),
+    currency: 'USD',
+  }
+}
+
+/** 가격 정보 모달과 동일 — `reservation_pricing` DB 저장 컬럼만 직접 조회(목록 맵·캐시와 분리) */
+export async function fetchReservationPricingDbStoredMap(
+  reservationIds: string[]
+): Promise<Map<string, ReservationPricingMapValue>> {
+  const unique = [...new Set(reservationIds.map((id) => String(id ?? '').trim()).filter(Boolean))]
+  const map = new Map<string, ReservationPricingMapValue>()
+  if (unique.length === 0) return map
+
+  const chunkSize = 200
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize)
+    const { data, error } = await supabase
+      .from('reservation_pricing')
+      .select(ENGINE_DB_PRICING_COLUMNS)
+      .in('reservation_id', chunk)
+
+    if (error && !isAbortLikeError(error)) {
+      console.warn('[pricing-engine] DB snapshot fetch error:', error.message)
+      continue
+    }
+
+    for (const row of data ?? []) {
+      const rid = String((row as { reservation_id?: string }).reservation_id ?? '').trim()
+      if (!rid) continue
+      map.set(rid, mapDbStoredPricingRow(row as Record<string, unknown>))
+    }
+  }
+  return map
+}
+
 export function analyzeReservationPricingEngine(
   reservation: Reservation,
   pricing: ReservationPricingMapValue | undefined,
   channels: BalanceChannelRowInput[],
   paymentRecords: PaymentRecordLike[],
   reservationOptionSumByReservationId: Map<string, number> | undefined,
-  reservationExpenseSumByReservationId?: Map<string, number> | undefined
+  reservationExpenseSumByReservationId?: Map<string, number> | undefined,
+  /** DB 비교열 전용 — 없으면 pricing 맵(목록 캐시) 사용 */
+  dbStoredPricing?: ReservationPricingMapValue | undefined
 ): ReservationPricingAnalysis | null {
   if (!pricing) return null
   const hasPricing = pricing.total_price != null && Number(pricing.total_price) > 0
@@ -416,8 +475,10 @@ export function analyzeReservationPricingEngine(
   )
   const engine = computeReservationPricing(ctx)
 
+  const dbLine = dbStoredPricing ?? pricing
+
   const fields: EngineFieldComparison[] = FIELD_DEFS.map((def) => {
-    const dbValue = def.pickDb(pricing)
+    const dbValue = def.pickDb(dbLine)
     const legacyValue = roundUsd2(def.pickLegacy(legacy))
     const engineValue = roundUsd2(def.pickEngine(engine))
     const deltaDbVsEngine = roundUsd2(engineValue - (dbValue ?? 0))
@@ -462,20 +523,27 @@ export function reservationMatchesEngineMismatchCriteria(
   channels: BalanceChannelRowInput[],
   paymentRecordsByReservationId: Map<string, PaymentRecordLike[]> | undefined,
   reservationOptionSumByReservationId: Map<string, number> | undefined,
-  reservationExpenseSumByReservationId?: Map<string, number> | undefined
+  reservationExpenseSumByReservationId?: Map<string, number> | undefined,
+  dbStoredPricingByReservationId?: Map<string, ReservationPricingMapValue> | undefined
 ): boolean {
   const p = pricingMap.get(reservation.id)
-  const records = paymentRecordsByReservationId?.get(reservation.id) ?? []
+  const records = resolvePaymentRecordsForReservation(
+    paymentRecordsByReservationId,
+    reservation.id
+  )
+  const rid = normalizeReservationIdForPayments(reservation.id)
   const analysis = analyzeReservationPricingEngine(
     reservation,
     p,
     channels,
     records,
     reservationOptionSumByReservationId,
-    reservationExpenseSumByReservationId
+    reservationExpenseSumByReservationId,
+    dbStoredPricingByReservationId?.get(rid) ??
+      dbStoredPricingByReservationId?.get(reservation.id)
   )
   if (!analysis) return false
-  return analysis.fields.some((f) => !f.matchDb || !f.matchLegacy)
+  return analysis.fields.some((f) => !f.matchDb)
 }
 
 /** 선택·연쇄 포함 적용 미리보기 */

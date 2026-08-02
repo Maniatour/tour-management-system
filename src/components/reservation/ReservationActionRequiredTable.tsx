@@ -87,10 +87,13 @@ export interface ReservationActionRequiredTableProps {
   reservationOptionSumByReservationId?: Map<string, number>
   /** 예약 지출 합계 — 가격 엔진 ④ 총매출·운영이익 차감 */
   reservationExpenseSumByReservationId?: Map<string, number>
+  /** 엔진 DB(저장) 열 — reservation_pricing 직접 조회 스냅샷 */
+  dbStoredPricingByReservationId?: Map<string, ReservationPricingMapValue>
   locale: string
   emailDropdownOpen: string | null
   sendingEmail: string | null
   onPricingInfoClick: (reservation: Reservation) => void
+  onOpenPricingBrowse?: (reservations: Reservation[], startIndex: number) => void
   onCreateTour: (reservation: Reservation) => void
   onPickupTimeClick: (reservation: Reservation, e: React.MouseEvent) => void
   onPickupHotelClick: (reservation: Reservation, e: React.MouseEvent) => void
@@ -955,9 +958,11 @@ export function ReservationActionRequiredTable(props: ReservationActionRequiredT
           paymentRecordsByReservationId={rest.paymentRecordsByReservationId ?? new Map()}
           reservationOptionSumByReservationId={rest.reservationOptionSumByReservationId ?? new Map()}
           reservationExpenseSumByReservationId={rest.reservationExpenseSumByReservationId ?? new Map()}
+          dbStoredPricingByReservationId={rest.dbStoredPricingByReservationId ?? new Map()}
           locale={rest.locale}
           onEditClick={rest.onEditClick}
           onPricingInfoClick={rest.onPricingInfoClick}
+          {...(rest.onOpenPricingBrowse ? { onOpenPricingBrowse: rest.onOpenPricingBrowse } : {})}
           {...(rest.onRefreshReservations ? { onRefreshReservations: rest.onRefreshReservations } : {})}
           {...(rest.onRefreshReservationPricing ? { onRefreshReservationPricing: rest.onRefreshReservationPricing } : {})}
         />

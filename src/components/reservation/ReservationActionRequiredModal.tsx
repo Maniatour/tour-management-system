@@ -15,6 +15,8 @@ import {
   computeRemainingBalanceAmount,
   normalizeReservationIdForPayments,
   paymentRecordAmountToNumber,
+  resolvePaymentRecordsForReservation,
+  setPaymentRecordsForReservation,
   summarizePaymentRecordsForBalance,
   type PaymentRecordLike,
   type PricingBalanceFields,
@@ -24,8 +26,20 @@ import {
   reservationMatchesOperatingProfitMismatchCriteria,
   type BalanceChannelRowInput,
 } from '@/utils/balanceChannelRevenue'
-import { reservationMatchesEngineMismatchCriteria } from '@/lib/pricingEngine'
+import dynamic from 'next/dynamic'
+import { fetchReservationPricingDbStoredMap, reservationMatchesEngineMismatchCriteria, analyzeReservationPricingEngine } from '@/lib/pricingEngine'
 import { childModalZIndex, DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
+import {
+  getCustomerName,
+  getProductNameForLocale,
+  getStatusLabel,
+  getStatusColor,
+} from '@/utils/reservationUtils'
+
+const PricingInfoModal = dynamic(() => import('@/components/reservation/PricingInfoModal'), {
+  ssr: false,
+  loading: () => null,
+})
 import { reservationNeedsCancelFinancialCleanup } from '@/lib/reservationActionRequiredCancelTab'
 import {
   isManiaTourOrServiceReservation,
@@ -230,12 +244,167 @@ export default function ReservationActionRequiredModal({
   const [reservationExpenseSumByReservationId, setReservationExpenseSumByReservationId] = useState<
     Map<string, number>
   >(() => new Map())
+  /** 엔진 DB(저장) 열 — 가격 정보 모달과 동일하게 reservation_pricing 직접 조회 */
+  const [dbStoredPricingByReservationId, setDbStoredPricingByReservationId] = useState<
+    Map<string, ReservationPricingMapValue>
+  >(() => new Map())
   const [reservationOptionsPresenceByReservationId, setReservationOptionsPresenceByReservationId] =
     useState<Map<string, boolean>>(() => new Map())
   const [loadingPayments, setLoadingPayments] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [tableListRefreshToken, setTableListRefreshToken] = useState(0)
   const [tourDateTableSort, setTourDateTableSort] = useState<SortDir | null>(null)
+  const [enginePricingBrowse, setEnginePricingBrowse] = useState<{
+    reservations: Reservation[]
+    index: number
+  } | null>(null)
+
+  const balanceChannels = useMemo(
+    () =>
+      channels.map((c) => ({
+        id: c.id,
+        name: c.name,
+        ...(c.favicon_url != null && c.favicon_url !== '' ? { favicon_url: c.favicon_url } : {}),
+        ...(c.type != null ? { type: c.type } : {}),
+        ...(c.category != null ? { category: c.category } : {}),
+        ...(c.commission_percent != null ? { commission_percent: c.commission_percent } : {}),
+      })),
+    [channels]
+  )
+
+  const attachPricingToReservation = useCallback(
+    (reservation: Reservation): Reservation => {
+      const pricing = reservationPricingMap.get(reservation.id)
+      if (!pricing) return reservation
+      return {
+        ...reservation,
+        pricing: pricing as unknown as {
+          adult_product_price?: number
+          child_product_price?: number
+          infant_product_price?: number
+          [k: string]: unknown
+        },
+      } as Reservation
+    },
+    [reservationPricingMap]
+  )
+
+  const handleEnginePricingBrowse = useCallback((list: Reservation[], startIndex: number) => {
+    if (list.length === 0) return
+    setEnginePricingBrowse({
+      reservations: list,
+      index: Math.max(0, Math.min(startIndex, list.length - 1)),
+    })
+  }, [])
+
+  const engineBrowseReservation =
+    enginePricingBrowse?.reservations[enginePricingBrowse.index] ?? null
+
+  const engineBrowseAnalysis = useMemo(() => {
+    if (!engineBrowseReservation) return null
+    const p = reservationPricingMap.get(engineBrowseReservation.id)
+    if (!p) return null
+    const rid = normalizeReservationIdForPayments(engineBrowseReservation.id)
+    const records = resolvePaymentRecordsForReservation(
+      paymentRecordsByReservationId,
+      engineBrowseReservation.id
+    )
+    return analyzeReservationPricingEngine(
+      engineBrowseReservation,
+      p,
+      balanceChannels,
+      records,
+      reservationOptionSumByReservationId,
+      reservationExpenseSumByReservationId,
+      dbStoredPricingByReservationId.get(engineBrowseReservation.id) ??
+        dbStoredPricingByReservationId.get(rid)
+    )
+  }, [
+    engineBrowseReservation,
+    reservationPricingMap,
+    balanceChannels,
+    paymentRecordsByReservationId,
+    reservationOptionSumByReservationId,
+    reservationExpenseSumByReservationId,
+    dbStoredPricingByReservationId,
+  ])
+
+  const engineBrowseRecomputeDeps = useMemo(() => {
+    if (!engineBrowseReservation) return undefined
+    const p = reservationPricingMap.get(engineBrowseReservation.id)
+    if (!p) return undefined
+    const rid = normalizeReservationIdForPayments(engineBrowseReservation.id)
+    const stored =
+      dbStoredPricingByReservationId.get(engineBrowseReservation.id) ??
+      dbStoredPricingByReservationId.get(rid)
+    const paymentRecords = resolvePaymentRecordsForReservation(
+      paymentRecordsByReservationId,
+      engineBrowseReservation.id
+    )
+    return {
+      channels: balanceChannels,
+      pricing: p,
+      reservationOptionSumByReservationId,
+      reservationExpenseSumByReservationId,
+      ...(paymentRecords.length > 0 ? { paymentRecords } : {}),
+      ...(stored ? { dbStoredPricing: stored } : {}),
+    }
+  }, [
+    engineBrowseReservation,
+    reservationPricingMap,
+    balanceChannels,
+    reservationOptionSumByReservationId,
+    reservationExpenseSumByReservationId,
+    dbStoredPricingByReservationId,
+    paymentRecordsByReservationId,
+  ])
+
+  const handleEngineBrowseIndexChange = useCallback((index: number) => {
+    setEnginePricingBrowse((prev) => (prev ? { ...prev, index } : null))
+  }, [])
+
+  const engineBrowseReservationWithPricing = useMemo(
+    () => (engineBrowseReservation ? attachPricingToReservation(engineBrowseReservation) : null),
+    [engineBrowseReservation, attachPricingToReservation]
+  )
+
+  const engineBrowseNavigationReservations = useMemo(() => {
+    if (!enginePricingBrowse) return []
+    return enginePricingBrowse.reservations.map(attachPricingToReservation)
+  }, [enginePricingBrowse, attachPricingToReservation])
+
+  const engineBrowseNavigation = useMemo(() => {
+    if (!enginePricingBrowse) return undefined
+    return {
+      reservations: engineBrowseNavigationReservations,
+      currentIndex: enginePricingBrowse.index,
+      onIndexChange: handleEngineBrowseIndexChange,
+    }
+  }, [
+    enginePricingBrowse,
+    engineBrowseNavigationReservations,
+    handleEngineBrowseIndexChange,
+  ])
+  const engineBrowseHeaderMeta = useMemo(() => {
+    if (!engineBrowseReservation) return undefined
+    const channelRow = channels.find((c) => c.id === engineBrowseReservation.channelId)
+    const channelName =
+      channelRow?.name?.trim() ||
+      engineBrowseReservation.channelNameSnapshot?.trim() ||
+      engineBrowseReservation.channelRN?.trim() ||
+      ''
+    return {
+      customerName: getCustomerName(engineBrowseReservation.customerId ?? '', customers),
+      productName: getProductNameForLocale(
+        engineBrowseReservation.productId ?? '',
+        products,
+        locale
+      ),
+      statusLabel: getStatusLabel(engineBrowseReservation.status, t),
+      statusColorClass: getStatusColor(engineBrowseReservation.status),
+      channelName,
+    }
+  }, [engineBrowseReservation, customers, products, channels, locale, t])
 
   const handleRefreshClick = useCallback(async () => {
     if (refreshing || bulkReservationsLoading) return
@@ -255,6 +424,12 @@ export default function ReservationActionRequiredModal({
   const handleTourDateSortClick = useCallback(() => {
     setTourDateTableSort((prev) => (prev === 'asc' ? 'desc' : 'asc'))
   }, [])
+
+  useEffect(() => {
+    if (!isOpen) {
+      setEnginePricingBrowse(null)
+    }
+  }, [isOpen])
 
   // 탭 전환 시 1페이지로
   useEffect(() => {
@@ -324,12 +499,37 @@ export default function ReservationActionRequiredModal({
     [reservations]
   )
 
+  const handleRefreshReservationPricing = useCallback(
+    async (reservationIds: string[]) => {
+      const ids = [...new Set(reservationIds.map((id) => String(id ?? '').trim()).filter(Boolean))]
+      if (ids.length === 0) return
+      await onRefreshReservationPricing?.(ids)
+      const dbStoredMap = await fetchReservationPricingDbStoredMap(ids)
+      setDbStoredPricingByReservationId((prev) => {
+        const next = new Map(prev)
+        dbStoredMap.forEach((v, k) => next.set(k, v))
+        return next
+      })
+    },
+    [onRefreshReservationPricing]
+  )
+
   const mergePaymentAndOptionAggregates = useCallback(async (reservationIds: string[]) => {
     const ids = [...new Set(reservationIds)].filter(Boolean)
     if (ids.length === 0) return
     const chunkSize = 200
     for (let i = 0; i < ids.length; i += chunkSize) {
-      const chunk = [...new Set(ids.slice(i, i + chunkSize).map(normalizeReservationIdForPayments).filter(Boolean))]
+      const chunk = [
+        ...new Set(
+          ids
+            .slice(i, i + chunkSize)
+            .flatMap((id) => {
+              const raw = String(id ?? '').trim()
+              const norm = normalizeReservationIdForPayments(id)
+              return [raw, norm].filter(Boolean)
+            })
+        ),
+      ]
       const [{ data }, { data: optRows }, { data: expenseRows }] = await Promise.all([
         supabase
           .from('payment_records')
@@ -345,10 +545,7 @@ export default function ReservationActionRequiredModal({
           .in('reservation_id', chunk)
           .not('status', 'eq', 'rejected'),
       ])
-      const chunkByRes = new Map<string, PaymentRecordLike[]>()
-      for (const id of chunk) {
-        chunkByRes.set(id, [])
-      }
+      const chunkByRes = new Map<string, { sourceId: string; records: PaymentRecordLike[] }>()
       if (data) {
         for (const row of data as {
           reservation_id: string
@@ -361,15 +558,18 @@ export default function ReservationActionRequiredModal({
             payment_status: String(row.payment_status ?? '').trim(),
             amount: paymentRecordAmountToNumber(row.amount),
           }
-          const arr = chunkByRes.get(rid) ?? []
-          arr.push(rec)
-          chunkByRes.set(rid, arr)
+          const bucket = chunkByRes.get(rid) ?? {
+            sourceId: row.reservation_id,
+            records: [] as PaymentRecordLike[],
+          }
+          bucket.records.push(rec)
+          chunkByRes.set(rid, bucket)
         }
       }
       setReservationIdsWithPayments((prev) => {
         const next = new Set(prev)
         for (const id of chunk) {
-          const rows = chunkByRes.get(id) ?? []
+          const rows = chunkByRes.get(id)?.records ?? []
           if (rows.length > 0) next.add(id)
         }
         return next
@@ -377,7 +577,12 @@ export default function ReservationActionRequiredModal({
       setPaymentRecordsByReservationId((prev) => {
         const next = new Map(prev)
         for (const id of chunk) {
-          next.set(id, chunkByRes.get(id) ?? [])
+          const bucket = chunkByRes.get(id)
+          setPaymentRecordsForReservation(
+            next,
+            bucket?.sourceId ?? id,
+            bucket?.records ?? []
+          )
         }
         return next
       })
@@ -429,6 +634,7 @@ export default function ReservationActionRequiredModal({
       setPaymentRecordsByReservationId(new Map())
       setReservationOptionSumByReservationId(new Map())
       setReservationExpenseSumByReservationId(new Map())
+      setDbStoredPricingByReservationId(new Map())
       setReservationOptionsPresenceByReservationId(new Map())
       setLoadingPayments(false)
       return
@@ -438,7 +644,7 @@ export default function ReservationActionRequiredModal({
     setLoadingPayments(true)
     void (async () => {
       const set = new Set<string>()
-      const byRes = new Map<string, PaymentRecordLike[]>()
+      const byRes = new Map<string, { sourceId: string; records: PaymentRecordLike[] }>()
       const mergedOptionSums = new Map<string, number>()
       const mergedExpenseSums = new Map<string, number>()
       const mergedOptionsPresence = new Map<string, boolean>()
@@ -446,7 +652,17 @@ export default function ReservationActionRequiredModal({
       const chunkSize = 200
       try {
         for (let i = 0; i < ids.length; i += chunkSize) {
-          const chunk = [...new Set(ids.slice(i, i + chunkSize).map(normalizeReservationIdForPayments).filter(Boolean))]
+          const chunk = [
+        ...new Set(
+          ids
+            .slice(i, i + chunkSize)
+            .flatMap((id) => {
+              const raw = String(id ?? '').trim()
+              const norm = normalizeReservationIdForPayments(id)
+              return [raw, norm].filter(Boolean)
+            })
+        ),
+      ]
           const [{ data }, { data: optRows }, { data: expenseRows }] = await Promise.all([
             supabase
               .from('payment_records')
@@ -472,9 +688,12 @@ export default function ReservationActionRequiredModal({
                 payment_status: String(row.payment_status ?? '').trim(),
                 amount: paymentRecordAmountToNumber(row.amount),
               }
-              const arr = byRes.get(rid) ?? []
-              arr.push(rec)
-              byRes.set(rid, arr)
+              const bucket = byRes.get(rid)
+              if (bucket) {
+                bucket.records.push(rec)
+              } else {
+                byRes.set(rid, { sourceId: row.reservation_id, records: [rec] })
+              }
             })
           }
           const chunkSums = aggregateReservationOptionSumsByReservationId((optRows ?? []) as ReservationOptionSumRow[])
@@ -498,10 +717,15 @@ export default function ReservationActionRequiredModal({
         }
         if (cancelled) return
         setReservationIdsWithPayments(set)
-        setPaymentRecordsByReservationId(byRes)
+        const paymentMap = new Map<string, PaymentRecordLike[]>()
+        for (const [, bucket] of byRes) {
+          setPaymentRecordsForReservation(paymentMap, bucket.sourceId, bucket.records)
+        }
+        setPaymentRecordsByReservationId(paymentMap)
         setReservationOptionSumByReservationId(mergedOptionSums)
         setReservationExpenseSumByReservationId(mergedExpenseSums)
         setReservationOptionsPresenceByReservationId(mergedOptionsPresence)
+        await handleRefreshReservationPricing(ids)
       } finally {
         if (!cancelled) setLoadingPayments(false)
       }
@@ -509,7 +733,21 @@ export default function ReservationActionRequiredModal({
     return () => {
       cancelled = true
     }
-  }, [isOpen, reservationsPaymentLoadKey, tableListRefreshToken])
+  }, [isOpen, reservationsPaymentLoadKey, tableListRefreshToken, handleRefreshReservationPricing])
+
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'engine' || !reservationsPaymentLoadKey) return
+    const ids = reservationsPaymentLoadKey.split(',').filter(Boolean)
+    if (ids.length === 0) return
+    let cancelled = false
+    void (async () => {
+      await handleRefreshReservationPricing(ids)
+      if (cancelled) return
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, activeTab, reservationsPaymentLoadKey, tableListRefreshToken, handleRefreshReservationPricing])
 
   const handleReservationOptionsMutated = useCallback(
     (reservationId: string) => {
@@ -531,10 +769,10 @@ export default function ReservationActionRequiredModal({
           next.set(reservationId, sum)
           return next
         })
-        await onRefreshReservationPricing?.([reservationId])
+        await handleRefreshReservationPricing([reservationId])
       })()
     },
-    [onRefreshReservationPricing]
+    [handleRefreshReservationPricing]
   )
 
   const hasTourAssigned = useCallback(
@@ -657,7 +895,8 @@ export default function ReservationActionRequiredModal({
           channels as BalanceChannelRowInput[],
           paymentRecordsByReservationId,
           reservationOptionSumByReservationId,
-          reservationExpenseSumByReservationId
+          reservationExpenseSumByReservationId,
+          dbStoredPricingByReservationId
         )
     )
 
@@ -692,7 +931,7 @@ export default function ReservationActionRequiredModal({
       if (isCancelled(r) || !pastTour(r) || !hasPricing(r)) return false
       const p = reservationPricingMap.get(r.id)
       if (!p) return false
-      const records = paymentRecordsByReservationId?.get(r.id) ?? []
+      const records = resolvePaymentRecordsForReservation(paymentRecordsByReservationId, r.id)
       const balanceReceived = summarizePaymentRecordsForBalance(records).balanceReceivedTotal
       const total = pricingNum(p.total_price)
       const dep = pricingNum(p.deposit_amount)
@@ -727,6 +966,7 @@ export default function ReservationActionRequiredModal({
     reservationPricingMap,
     reservationOptionSumByReservationId,
     reservationExpenseSumByReservationId,
+    dbStoredPricingByReservationId,
     products,
     optionChoices,
     reservationIdsWithPayments,
@@ -1394,6 +1634,7 @@ export default function ReservationActionRequiredModal({
                   paymentRecordsByReservationId={paymentRecordsByReservationId}
                   reservationOptionSumByReservationId={reservationOptionSumByReservationId}
                   reservationExpenseSumByReservationId={reservationExpenseSumByReservationId}
+                  dbStoredPricingByReservationId={dbStoredPricingByReservationId}
                   customers={customers}
                   products={products}
                   channels={channels.map((c) => ({
@@ -1411,6 +1652,7 @@ export default function ReservationActionRequiredModal({
                   emailDropdownOpen={emailDropdownOpen}
                   sendingEmail={sendingEmail}
                   onPricingInfoClick={onPricingInfoClick}
+                  onOpenPricingBrowse={handleEnginePricingBrowse}
                   onCreateTour={onCreateTour}
                   onPickupTimeClick={onPickupTimeClick}
                   onPickupHotelClick={onPickupHotelClick}
@@ -1427,7 +1669,7 @@ export default function ReservationActionRequiredModal({
                   getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
                   choicesCacheRef={choicesCacheRef}
                   onRefreshReservations={onRefreshReservations}
-                  {...(onRefreshReservationPricing ? { onRefreshReservationPricing } : {})}
+                  {...(handleRefreshReservationPricing ? { onRefreshReservationPricing: handleRefreshReservationPricing } : {})}
                   {...(activeTab === 'balance' || activeTab === 'cancel' || activeTab === 'formula'
                     ? { balanceReservationsForApply: currentList }
                     : {})}
@@ -1550,5 +1792,21 @@ export default function ReservationActionRequiredModal({
   )
 
   if (typeof document === 'undefined') return modal
-  return createPortal(modal, document.body)
+  return (
+    <>
+      {createPortal(modal, document.body)}
+      {enginePricingBrowse && engineBrowseReservationWithPricing ? (
+        <PricingInfoModal
+          reservation={engineBrowseReservationWithPricing}
+          isOpen
+          onClose={() => setEnginePricingBrowse(null)}
+          overlayZIndex={childModalZIndex(overlayZ, 2)}
+          {...(engineBrowseNavigation ? { navigation: engineBrowseNavigation } : {})}
+          {...(engineBrowseHeaderMeta ? { headerMeta: engineBrowseHeaderMeta } : {})}
+          engineAnalysis={engineBrowseAnalysis}
+          {...(engineBrowseRecomputeDeps ? { engineRecomputeDeps: engineBrowseRecomputeDeps } : {})}
+        />
+      ) : null}
+    </>
+  )
 }

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useR
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
@@ -189,6 +189,11 @@ const PriceInventoryModal = dynamic(() => import('@/components/schedule/PriceInv
   ssr: false,
   loading: () => null,
 })
+
+const GuideScheduleConfirmBulkModal = dynamic(
+  () => import('@/components/schedule/GuideScheduleConfirmBulkModal'),
+  { ssr: false, loading: () => null },
+)
 
 const ReservationForm = dynamic(() => import('@/components/reservation/ReservationForm'), {
   ssr: false,
@@ -1048,6 +1053,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   // 일괄 오프 스케줄 모달 상태
   const [showBatchOffModal, setShowBatchOffModal] = useState(false)
   const [showPriceInventoryModal, setShowPriceInventoryModal] = useState(false)
+  const [showGuideScheduleBulkModal, setShowGuideScheduleBulkModal] = useState(false)
   const [priceInventoryInitial, setPriceInventoryInitial] = useState<{
     productId: string
     date: string
@@ -6007,6 +6013,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 <DollarSign className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
 
+              {/* 가이드 스케줄 컨펌 SMS·앱 알림 일괄 발송 */}
+              <button
+                type="button"
+                onClick={() => setShowGuideScheduleBulkModal(true)}
+                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                title={locale === 'ko' ? '가이드 스케줄 컨펌 발송' : 'Send guide schedule confirm'}
+                aria-label={locale === 'ko' ? '가이드 스케줄 컨펌 발송' : 'Send guide schedule confirm'}
+              >
+                <Smartphone className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+
               {isSuperAdmin ? (
                 <button
                   type="button"
@@ -8626,6 +8643,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               initialSelectedDate: priceInventoryInitial.date,
             }
           : {})}
+      />
+
+      <GuideScheduleConfirmBulkModal
+        isOpen={showGuideScheduleBulkModal}
+        onClose={() => setShowGuideScheduleBulkModal(false)}
+        locale={locale}
+        teamMembers={teamMembers}
+        tours={tours}
+        defaultStartDate={firstDayOfMonth.format('YYYY-MM-DD')}
+        defaultEndDate={lastDayOfMonth.format('YYYY-MM-DD')}
+        onSent={() => void handleClearCacheAndRefresh()}
       />
 
       {scheduleLeavePromptOpen && (

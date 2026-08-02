@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import type {
   ReservationOption,
   CreateReservationOptionData,
@@ -12,7 +13,6 @@ export function useReservationOptions(reservationId: string) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // reservation_options 데이터 가져오기
   const fetchReservationOptions = useCallback(async () => {
     if (!reservationId) return
 
@@ -20,17 +20,58 @@ export function useReservationOptions(reservationId: string) {
     setError(null)
 
     try {
-      const response = await fetch(`/api/reservation-options/${reservationId}`)
+      const { data: reservationOptions, error: fetchError } = await supabase
+        .from('reservation_options')
+        .select(
+          'id, reservation_id, option_id, ea, price, total_price, status, note, created_at, updated_at'
+        )
+        .eq('reservation_id', reservationId)
+        .order('created_at', { ascending: true })
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch reservation options')
+      if (fetchError) throw fetchError
+
+      const optionIds = (reservationOptions || [])
+        .map((option) => option.option_id)
+        .filter(Boolean)
+      let optionNames: Record<string, string> = {}
+
+      if (optionIds.length > 0) {
+        const { data: options, error: optionsError } = await supabase
+          .from('options')
+          .select('id, name')
+          .in('id', optionIds)
+
+        if (!optionsError && options) {
+          optionNames = options.reduce(
+            (acc, option) => {
+              acc[option.id] = option.name
+              return acc
+            },
+            {} as Record<string, string>
+          )
+        }
       }
 
-      const data = await response.json()
-      setReservationOptions(data.reservationOptions || [])
+      const transformedOptions: ReservationOption[] = (reservationOptions || []).map((option) => ({
+        id: String(option.id),
+        reservation_id: String(option.reservation_id),
+        option_id: String(option.option_id),
+        option_name: optionNames[option.option_id] || String(option.option_id),
+        ea: Number(option.ea) || 0,
+        price: Number(option.price) || 0,
+        total_price: Number(option.total_price) || 0,
+        status: (option.status || 'active') as ReservationOption['status'],
+        ...(option.note != null && String(option.note).trim() !== '' ? { note: String(option.note) } : {}),
+        created_at: String(option.created_at),
+        updated_at: String(option.updated_at),
+      }))
+
+      setReservationOptions(transformedOptions)
     } catch (err) {
-      console.error('Error fetching reservation options:', err)
-      setError(err instanceof Error ? err.message : 'Unknown error')
+      if (!isAbortLikeError(err)) {
+        console.error('Error fetching reservation options:', err)
+        setError(err instanceof Error ? err.message : 'Unknown error')
+      }
     } finally {
       setLoading(false)
     }

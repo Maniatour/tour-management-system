@@ -10,6 +10,7 @@ import {
   guideScheduleConfirmPopupConfirmLabel,
   guideScheduleConfirmPopupOfficeLine,
 } from '@/lib/guideScheduleConfirmMessage'
+import { confirmTourAssignmentForRecipient } from '@/lib/guideAssignmentStatus'
 import { supabase } from '@/lib/supabase'
 
 type PopupRow = {
@@ -17,6 +18,7 @@ type PopupRow = {
   title: string
   site_message_body: string
   tour_id: string
+  recipient_role: 'guide' | 'assistant'
   first_pickup_time: string | null
   office_arrival_time: string | null
   created_at: string
@@ -61,7 +63,7 @@ export function GuideScheduleConfirmPopupLayer({ userEmail }: GuideScheduleConfi
     try {
       const { data, error } = await supabase
         .from('guide_schedule_confirm_popups')
-        .select('id, title, site_message_body, tour_id, first_pickup_time, office_arrival_time, created_at')
+        .select('id, title, site_message_body, tour_id, recipient_role, first_pickup_time, office_arrival_time, created_at')
         .ilike('recipient_email', emailKey)
         .is('acknowledged_at', null)
         .order('created_at', { ascending: true })
@@ -95,6 +97,17 @@ export function GuideScheduleConfirmPopupLayer({ userEmail }: GuideScheduleConfi
         .eq('id', current.id)
 
       if (error) throw error
+
+      const role = current.recipient_role === 'assistant' ? 'assistant' : 'guide'
+      const confirmResult = await confirmTourAssignmentForRecipient(
+        current.tour_id,
+        emailKey,
+        role,
+      )
+      if (!confirmResult.ok) {
+        console.warn('GuideScheduleConfirmPopupLayer assignment confirm', confirmResult.error)
+      }
+
       setQueue((prev) => prev.filter((p) => p.id !== current.id))
     } catch (e) {
       console.error('GuideScheduleConfirmPopupLayer ack', e)

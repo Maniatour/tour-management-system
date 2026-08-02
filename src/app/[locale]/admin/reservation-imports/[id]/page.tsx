@@ -439,6 +439,7 @@ export default function ReservationImportDetailPage() {
           status: (payload.status as string) || 'confirmed',
           selected_choices: payload.selectedChoices ?? undefined,
           variant_key: (payload.variantKey as string) || undefined,
+          tour_id: (payload.importSelectedTourId as string) || undefined,
           // 새 예약 추가와 동일: 가격·입금 정보 전달 → reservation_pricing + payment_record 저장
           pricingInfo: payload.pricingInfo ?? undefined,
         }),

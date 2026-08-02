@@ -198,7 +198,10 @@ export function useTourHandlers() {
       // assistant_id는 team 테이블의 email 값을 직접 저장
       const { error } = await supabase
         .from('tours')
-        .update({ assistant_id: assistantEmail } as Database['public']['Tables']['tours']['Update'])
+        .update({
+          assistant_id: assistantEmail,
+          assignment_status: 'assigned',
+        } as Database['public']['Tables']['tours']['Update'])
         .eq('id', tour.id)
 
       if (error) {

@@ -1,4 +1,4 @@
-import { ArrowLeft, Edit, Trash2, Copy, Printer, Mail, DollarSign, RotateCcw, FileText, X, GripVertical, Users } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, Copy, Printer, Mail, DollarSign, RotateCcw, FileText, X, GripVertical, Users, Smartphone } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import TourSunriseTime from '@/components/TourSunriseTime'
@@ -41,6 +41,8 @@ interface TourHeaderProps {
   isPrivateTour?: boolean
   /** modal-toolbar: 최대 수용 인원 */
   maxParticipants?: number
+  /** 가이드/어시스턴트 스케줄 컨펌 SMS·앱 알림 발송 */
+  onSendGuideScheduleConfirm?: () => void
   /** page: 전체 페이지 헤더, modal-toolbar: 모달 고정 툴바만 */
   variant?: 'page' | 'modal-toolbar'
 }
@@ -75,6 +77,7 @@ export default function TourHeader({
   onCloseModal,
   isPrivateTour = false,
   maxParticipants,
+  onSendGuideScheduleConfirm,
   variant = 'page',
 }: TourHeaderProps) {
   const embeddedInModal = variant === 'modal-toolbar'
@@ -156,6 +159,17 @@ export default function TourHeader({
                   title={params.locale === 'ko' ? '투어 정보 인쇄' : 'Print tour info'}
                 >
                   <FileText className="h-4 w-4" />
+                </button>
+              ) : null}
+              {onSendGuideScheduleConfirm ? (
+                <button
+                  type="button"
+                  onClick={onSendGuideScheduleConfirm}
+                  className="rounded-md border border-indigo-200 bg-indigo-50 p-1.5 text-indigo-700 hover:bg-indigo-100"
+                  title={params.locale === 'ko' ? '가이드·어시 스케줄 컨펌 발송' : 'Send schedule confirm'}
+                  data-no-drag
+                >
+                  <Smartphone className="h-4 w-4" />
                 </button>
               ) : null}
               {onPrintReceipts ? (
@@ -327,6 +341,16 @@ export default function TourHeader({
                     title={params.locale === 'ko' ? '투어 정보 인쇄 (팀/픽업/부킹)' : 'Print tour info'}
                   >
                     <FileText className="w-5 h-5" />
+                  </button>
+                )}
+                {onSendGuideScheduleConfirm && (
+                  <button
+                    type="button"
+                    onClick={onSendGuideScheduleConfirm}
+                    className="p-2 rounded-lg hover:bg-indigo-50 text-indigo-700 flex-shrink-0"
+                    title={params.locale === 'ko' ? '가이드·어시 스케줄 컨펌 발송' : 'Send schedule confirm'}
+                  >
+                    <Smartphone className="w-5 h-5" />
                   </button>
                 )}
                 {onPrintReceipts && (

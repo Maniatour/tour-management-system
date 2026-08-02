@@ -5,13 +5,14 @@ import { generateCustomerId, generateReservationId } from '@/lib/entityIds'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 import { isManiatourHomepageBookingEmail } from '@/lib/emailReservationParser'
 import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
-import { computeDayTourCapacityTotals } from '@/lib/scheduleTourCapacity'
+import { computeDayTourCapacityTotals, computePerTourCapacityRows, pickTourWithMostSpotsLeft } from '@/lib/scheduleTourCapacity'
 import { shouldOpenPriceInventoryForRemaining } from '@/lib/otaPriceInventory'
 import {
   computeChannelPaymentAfterReturn,
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
 } from '@/utils/channelSettlement'
+import { isTourCancelled } from '@/utils/tourStatusUtils'
 import {
   computeImportReservationStatus,
   didCrossDepartureThreshold,
@@ -110,6 +111,8 @@ interface ConfirmBody {
   status?: string
   variant_key?: string
   selected_choices?: SelectedChoiceItem[]
+  /** 저장 시 배정할 투어 ID (미지정이고 해당일 활성 투어가 2건 이상이면 여유 좌석 많은 투어로 자동 배정) */
+  tour_id?: string | null
   /** 가격 정보 (있으면 reservation_pricing + deposit 시 payment_record 저장) */
   pricingInfo?: PricingInfo
 }
@@ -236,11 +239,41 @@ export async function POST(
     )
   }
 
+  let assignTourId = body.tour_id?.trim() || null
+  if (!assignTourId) {
+    const { data: dayToursForAssign } = await client
+      .from('tours')
+      .select('id, tour_date, product_id, tour_status, max_participants, reservation_ids')
+      .eq('product_id', body.product_id)
+      .eq('tour_date', tourDateYmd)
+
+    const activeToursForAssign = (dayToursForAssign || []).filter(
+      (t) => !isTourCancelled((t as { tour_status?: string | null }).tour_status)
+    )
+
+    if (activeToursForAssign.length > 1) {
+      const { data: capacityReservations } = await client
+        .from('reservations')
+        .select('id, tour_date, product_id, total_people, status')
+        .eq('product_id', body.product_id)
+        .eq('tour_date', tourDateYmd)
+
+      const capacityRows = computePerTourCapacityRows(
+        activeToursForAssign as Parameters<typeof computePerTourCapacityRows>[0],
+        (capacityReservations || []) as Parameters<typeof computePerTourCapacityRows>[1],
+        tourDateYmd,
+        body.product_id
+      )
+      assignTourId = pickTourWithMostSpotsLeft(capacityRows)
+    }
+  }
+
   await autoCreateOrUpdateTour(
     body.product_id,
     body.tour_date,
     reservationId,
-    false
+    false,
+    { targetTourId: assignTourId }
   )
 
   // reservation_choices 저장 (미정 __undecided__ 제외)

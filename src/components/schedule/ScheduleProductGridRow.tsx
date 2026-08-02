@@ -9,7 +9,6 @@ import { getScheduleProductColor } from '@/lib/scheduleAirportPickDropGroup'
 import type { ScheduleProductRef } from '@/lib/scheduleAirportPickDropGroup'
 import {
   isScheduleMiscTourRowKey,
-  getMiscTourStoredItemLabel,
 } from '@/lib/scheduleMiscTourGroup'
 import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import { tourChoiceCountsDisplayKeys } from '@/lib/tourChoiceCounts'
@@ -73,7 +72,6 @@ export default function ScheduleProductGridRow({
   draggedProductRow,
   miscTourProductIds,
   miscTourDayProductBreakdown,
-  products,
   scheduleHealthProductCellAlertSet,
   isToday,
   handleProductRowDragOver,
@@ -211,36 +209,33 @@ export default function ScheduleProductGridRow({
                   content={
                     dayData ? (
                       <>
-                        {isScheduleMiscTourRowKey(productId) && miscTourProductIds.length > 0 && (
-                          <div className="mb-2 pb-2 border-b border-gray-600 space-y-1.5">
-                            <div className="text-sm font-bold text-violet-200 tracking-tight">
-                              {locale === 'ko' ? '포함 상품' : 'Grouped products'}
-                            </div>
-                            {(() => {
-                              const dayBreakdown = miscTourDayProductBreakdown[dateString]
-                              const activeEntries = dayBreakdown
-                                ? Object.entries(dayBreakdown).filter(([, v]) => v.total > 0 || v.waiting > 0)
-                                : []
-                              if (activeEntries.length > 0) {
-                                return activeEntries.map(([canon, v]) => (
-                                  <div key={canon} className="text-sm font-semibold leading-snug">
-                                    <span className="text-yellow-300">{v.name}</span>
-                                    <span className="tabular-nums font-bold text-white">
-                                      {': '}
-                                      {v.total}
-                                      {v.waiting > 0 ? ` (+${v.waiting})` : ''}
-                                    </span>
-                                  </div>
-                                ))
-                              }
-                              return miscTourProductIds.map((pid) => (
-                                <div key={pid} className="text-sm font-semibold text-yellow-300 leading-snug">
-                                  {getMiscTourStoredItemLabel(pid, products)}
+                        {(() => {
+                          if (!isScheduleMiscTourRowKey(productId) || miscTourProductIds.length === 0) {
+                            return null
+                          }
+                          const dayBreakdown = miscTourDayProductBreakdown[dateString]
+                          const activeEntries = dayBreakdown
+                            ? Object.entries(dayBreakdown).filter(([, v]) => v.total > 0 || v.waiting > 0)
+                            : []
+                          if (activeEntries.length === 0) return null
+                          return (
+                            <div className="mb-2 pb-2 border-b border-gray-600 space-y-1.5">
+                              <div className="text-sm font-bold text-violet-200 tracking-tight">
+                                {locale === 'ko' ? '포함 상품' : 'Grouped products'}
+                              </div>
+                              {activeEntries.map(([canon, v]) => (
+                                <div key={canon} className="text-sm font-semibold leading-snug">
+                                  <span className="text-yellow-300">{v.name}</span>
+                                  <span className="tabular-nums font-bold text-white">
+                                    {': '}
+                                    {v.total}
+                                    {v.waiting > 0 ? ` (+${v.waiting})` : ''}
+                                  </span>
                                 </div>
-                              ))
-                            })()}
-                          </div>
-                        )}
+                              ))}
+                            </div>
+                          )
+                        })()}
                         <div className="flex items-center gap-2 mb-1.5 flex-nowrap">
                           <span className="inline-flex items-center gap-1 shrink-0">
                             <ReactCountryFlag countryCode="KR" svg style={{ width: '1em', height: '0.75em' }} />

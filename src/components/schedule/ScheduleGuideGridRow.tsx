@@ -13,6 +13,9 @@ import type {
 } from '@/lib/scheduleGuideGridTypes'
 import { normalizeTourDateKey } from '@/utils/tourUtils'
 import { shouldHighlightGuideScheduleDateNote } from '@/lib/scheduleDateNotes'
+import GuideScheduleAssignedTourBoxes from '@/components/schedule/GuideScheduleAssignedTourBoxes'
+import GuideAssignmentStatusIcon from '@/components/schedule/GuideAssignmentStatusIcon'
+import { getAssignmentStatusLabel } from '@/lib/guideAssignmentStatus'
 import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import type { ScheduleGuideGridProps } from '@/components/schedule/ScheduleGuideGrid'
 
@@ -126,7 +129,6 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
     handleCreateOffSchedule,
     draggedTour,
     draggedUnassignedTour,
-    monthVehiclesWithColors,
     getColorFromClass,
     getBorderColorValue,
     getTourBorderColor,
@@ -499,322 +501,82 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                 >
                   {dayData ? (
                     <div className="relative h-full">
-                      {/* 상품별 배경색 표시 (텍스트 아래) - 멀티데이 시작일은 오버레이에서만 표시 */}
-                      {Object.keys(dayData.productColors).length > 0 && !dayData.isMultiDay && (
-                        <div className="absolute inset-0 pointer-events-none rounded" 
-                             style={{
-                               background: Object.values(dayData.productColors).length === 1 
-                                 ? `linear-gradient(135deg, ${getColorFromClass(Object.values(dayData.productColors)[0])} 0%, ${getColorFromClass(Object.values(dayData.productColors)[0])} 100%)`
-                                 : `linear-gradient(135deg, ${Object.values(dayData.productColors).map(color => getColorFromClass(color)).join(', ')})`
-                             }}>
-                        </div>
-                      )}
-                      
-                      {/* 가이드로 배정된 경우 - 인원 표시 */}
                       {dayData.role === 'guide' && !dayData.isMultiDay && (() => {
-                        // 해당 날짜의 가이드 투어들 중 단독투어 여부 확인
-                        const guideTours = tours.filter(tour => 
-                          tourMatchesScheduleDate(tour, dateString) && 
-                          String(tour.tour_guide_id || '').trim() === teamMemberId
+                        const guideTours = tours.filter(
+                          (tour) =>
+                            tourMatchesScheduleDate(tour, dateString) &&
+                            String(tour.tour_guide_id || '').trim() === teamMemberId,
                         )
-                        const hasPrivateTour = guideTours.some(tour => 
-                          tour.is_private_tour === 'TRUE' || tour.is_private_tour === true
-                        )
-                        
-                        // 차량 배차 여부 및 배정된 차량 색상
-                        const hasUnassignedVehicle = guideTours.some(t => !t.tour_car_id || String(t.tour_car_id).trim().length === 0)
-                        const assignedCarId = guideTours.find(t => t.tour_car_id && String(t.tour_car_id).trim())?.tour_car_id
-                        const vehicleColorClass = assignedCarId ? monthVehiclesWithColors.vehicleIdToColor.get(String(assignedCarId).trim()) : null
-                        
-                        // 같은 날짜에 같은 product_id의 투어가 여러 팀(가이드)으로 나가는지 확인
-                        if (guideTours.length > 0 && guideTours[0].product_id && guideTours[0].id) {
-                          // 같은 날짜, 같은 product_id를 가진 모든 투어 확인
-                          const sameDateProductTours = tours.filter(t => 
-                            tourMatchesScheduleDate(t, dateString) && 
-                            t.product_id === guideTours[0].product_id &&
-                            t.tour_guide_id // 가이드가 배정된 투어만
-                          )
-                          
-                          // 같은 product_id에서 여러 가이드(팀)가 있으면 테두리 색상 적용
-                          const uniqueGuides = new Set(sameDateProductTours.map(t => t.tour_guide_id).filter(Boolean))
-                          const hasMultipleTeams = uniqueGuides.size > 1
-                          
-                          const borderColor = hasMultipleTeams
-                            ? getTourBorderColor(
-                                guideTours[0].id,
-                                dateString,
-                                guideTours[0].product_id,
-                                teamMemberId
-                              )
-                            : ''
-                          
-                          return (
-                            <ScheduleHoverTooltip
-                              content={
-                                guideTours.length > 0
-                                  ? getGuideScheduleTourHoverText(guideTours[0])
-                                  : guide.team_member_name
-                              }
-                            >
-                            <div 
-                              className={`absolute inset-0 flex items-center justify-center gap-1 text-white px-2 py-0 text-[10px] rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
-                                dayData.assignedPeople === 0 
-                                  ? 'bg-gray-400' 
-                                  : 'bg-transparent'
-                              } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''} ${borderColor ? 'border-2 border-white' : ''}`}
-                              style={{
-                                backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                  ? getColorFromClass(Object.values(dayData.productColors)[0])
-                                  : undefined,
-                                color: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                  ? getProductDisplayProps(Object.values(dayData.productColors)[0]).style?.color
-                                  : undefined,
-                                boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined
-                              }}
-                              draggable
-                              onDragStart={(e) => {
-                                if (guideTours.length > 0) {
-                                  setDraggedRole('guide')
-                                  handleDragStart(e, guideTours[0])
-                                }
-                              }}
-                              onDragEnd={handleAssignedTourDragEnd}
-                              onDoubleClick={() => {
-                                if (guideTours.length > 0) {
-                                  openTourDetailModal(guideTours[0].id)
-                                }
-                              }}
-                              onClick={() => {
-                                if (guideTours.length > 0) {
-                                  showGuideModalContent('투어 상세 정보', getTourSummary(guideTours[0]), guideTours[0].id)
-                                }
-                              }}
-                            >
-                              {hasUnassignedVehicle && (
-                                <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
-                              )}
-                              {!hasUnassignedVehicle && vehicleColorClass && (
-                                <span className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full border border-white ${vehicleColorClass}`} />
-                              )}
-                              {hasPrivateTour && <span>🔒</span>}
-                              <span>{dayData.assignedPeople}</span>
-                              {dayData.extendsToNextMonth && (
-                                <span className="text-xs opacity-75">→</span>
-                              )}
-                            </div>
-                            </ScheduleHoverTooltip>
-                          )
-                        }
-                        
-                        // 기본 렌더링 (product_id가 없는 경우)
+                        if (guideTours.length === 0) return null
                         return (
-                          <ScheduleHoverTooltip
-                            content={
-                              guideTours.length > 0
-                                ? getGuideScheduleTourHoverText(guideTours[0])
-                                : guide.team_member_name
-                            }
-                          >
-                          <div 
-                            className={`absolute inset-0 flex items-center justify-center gap-1 text-white px-2 py-0 text-[10px] rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
-                              dayData.assignedPeople === 0 
-                                ? 'bg-gray-400' 
-                                : 'bg-transparent'
-                            } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''}`}
-                            style={{
-                              backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                ? getColorFromClass(Object.values(dayData.productColors)[0])
-                                : undefined,
-                              color: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                ? getProductDisplayProps(Object.values(dayData.productColors)[0]).style?.color
-                                : undefined
-                            }}
-                            draggable
-                            onDragStart={(e) => {
-                              if (guideTours.length > 0) {
-                                setDraggedRole('guide')
-                                handleDragStart(e, guideTours[0])
-                              }
-                            }}
-                            onDragEnd={handleAssignedTourDragEnd}
-                            onDoubleClick={() => {
-                              if (guideTours.length > 0) {
-                                openTourDetailModal(guideTours[0].id)
-                              }
-                            }}
-                            onClick={() => {
-                              if (guideTours.length > 0) {
-                                showGuideModalContent('투어 상세 정보', getTourSummary(guideTours[0]), guideTours[0].id)
-                              }
-                            }}
-                          >
-                            {hasUnassignedVehicle && (
-                              <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
-                            )}
-                            {!hasUnassignedVehicle && vehicleColorClass && (
-                              <span className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full border border-white ${vehicleColorClass}`} />
-                            )}
-                            {hasPrivateTour && <span>🔒</span>}
-                            <span>{dayData.assignedPeople}</span>
-                            {dayData.extendsToNextMonth && (
-                              <span className="text-xs opacity-75">→</span>
-                            )}
-                          </div>
-                          </ScheduleHoverTooltip>
+                          <GuideScheduleAssignedTourBoxes
+                            roleTours={guideTours}
+                            allTours={tours}
+                            dateString={dateString}
+                            teamMemberId={teamMemberId}
+                            role="guide"
+                            locale={locale}
+                            reservations={reservations}
+                            productColors={productColors}
+                            products={products}
+                            defaultPresetIds={defaultPresetIds}
+                            airportPickupMemberIdSet={airportPickupMemberIdSet}
+                            airportSendingMemberIdSet={airportSendingMemberIdSet}
+                            teamMembers={teamMembers}
+                            extendsToNextMonth={dayData.extendsToNextMonth}
+                            isToday={isToday}
+                            getColorFromClass={getColorFromClass}
+                            getBorderColorValue={getBorderColorValue}
+                            getTourBorderColor={getTourBorderColor}
+                            setDraggedRole={setDraggedRole}
+                            handleDragStart={handleDragStart}
+                            handleAssignedTourDragEnd={handleAssignedTourDragEnd}
+                            openTourDetailModal={openTourDetailModal}
+                            showGuideModalContent={showGuideModalContent}
+                            getTourSummary={getTourSummary}
+                            getGuideScheduleTourHoverText={getGuideScheduleTourHoverText}
+                            tooltipFallback={guide.team_member_name}
+                          />
                         )
                       })()}
-                      
-                      {/* 어시스턴트로 배정된 경우 - 가이드 이름 초성 표시 */}
+
                       {dayData.role === 'assistant' && !dayData.isMultiDay && (() => {
-                        // 해당 날짜의 어시스턴트 투어들 중 단독투어 여부 확인
-                        const assistantTours = tours.filter(tour => 
-                          tourMatchesScheduleDate(tour, dateString) && 
-                          String(tour.assistant_id || '').trim() === teamMemberId
+                        const assistantTours = tours.filter(
+                          (tour) =>
+                            tourMatchesScheduleDate(tour, dateString) &&
+                            String(tour.assistant_id || '').trim() === teamMemberId,
                         )
-                        const hasPrivateTour = assistantTours.some(tour => 
-                          tour.is_private_tour === 'TRUE' || tour.is_private_tour === true
-                        )
-                        
-                        // 차량 배차 여부 및 배정된 차량 색상
-                        const hasUnassignedVehicle = assistantTours.some(t => !t.tour_car_id || String(t.tour_car_id).trim().length === 0)
-                        const assignedCarIdAsst = assistantTours.find(t => t.tour_car_id && String(t.tour_car_id).trim())?.tour_car_id
-                        const vehicleColorClassAsst = assignedCarIdAsst ? monthVehiclesWithColors.vehicleIdToColor.get(String(assignedCarIdAsst).trim()) : null
-                        
-                        // 같은 날짜에 같은 product_id의 투어가 여러 팀(가이드)으로 나가는지 확인
-                        if (assistantTours.length > 0 && assistantTours[0].product_id && assistantTours[0].id && assistantTours[0].tour_guide_id) {
-                          // 같은 날짜, 같은 product_id를 가진 모든 투어 확인
-                          const sameDateProductTours = tours.filter(t => 
-                            tourMatchesScheduleDate(t, dateString) && 
-                            t.product_id === assistantTours[0].product_id &&
-                            t.tour_guide_id // 가이드가 배정된 투어만
-                          )
-                          
-                          // 같은 product_id에서 여러 가이드(팀)가 있으면 테두리 색상 적용
-                          const uniqueGuides = new Set(sameDateProductTours.map(t => t.tour_guide_id).filter(Boolean))
-                          const hasMultipleTeams = uniqueGuides.size > 1
-                          
-                          const borderColor = hasMultipleTeams
-                            ? getTourBorderColor(
-                                assistantTours[0].id,
-                                dateString,
-                                assistantTours[0].product_id,
-                                assistantTours[0].tour_guide_id
-                              )
-                            : ''
-                          
-                          return (
-                            <ScheduleHoverTooltip
-                              content={
-                                assistantTours.length > 0
-                                  ? getGuideScheduleTourHoverText(assistantTours[0])
-                                  : guide.team_member_name
-                              }
-                            >
-                            <div 
-                              className={`absolute inset-0 flex items-center justify-center gap-1 text-white px-2 py-0 text-[10px] rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
-                                dayData.assignedPeople === 0 
-                                  ? 'bg-gray-400' 
-                                  : 'bg-transparent'
-                              } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''} ${borderColor ? 'border-2 border-white' : ''}`}
-                              style={{
-                                backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                  ? getColorFromClass(Object.values(dayData.productColors)[0])
-                                  : undefined,
-                                color: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                  ? getProductDisplayProps(Object.values(dayData.productColors)[0]).style?.color
-                                  : undefined,
-                                boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined
-                              }}
-                            draggable
-                            onDragStart={(e) => {
-                              if (assistantTours.length > 0) {
-                                setDraggedRole('assistant')
-                                handleDragStart(e, assistantTours[0])
-                              }
-                            }}
-                            onDragEnd={handleAssignedTourDragEnd}
-                            onDoubleClick={() => {
-                              if (assistantTours.length > 0) {
-                                openTourDetailModal(assistantTours[0].id)
-                              }
-                            }}
-                            onClick={() => {
-                              if (assistantTours.length > 0) {
-                                showGuideModalContent('투어 상세 정보', getTourSummary(assistantTours[0]), assistantTours[0].id)
-                              }
-                            }}
-                          >
-                            {hasUnassignedVehicle && (
-                              <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
-                            )}
-                            {!hasUnassignedVehicle && vehicleColorClassAsst && (
-                              <span className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full border border-white ${vehicleColorClassAsst}`} />
-                            )}
-                            {hasPrivateTour && <span>🔒</span>}
-                            <span>{dayData.guideInitials || 'A'}</span>
-                            {dayData.extendsToNextMonth && (
-                              <span className="text-xs opacity-75">→</span>
-                            )}
-                          </div>
-                            </ScheduleHoverTooltip>
-                        )
-                        }
-                        
-                        // 기본 렌더링 (product_id가 없거나 tour_guide_id가 없는 경우)
+                        if (assistantTours.length === 0) return null
                         return (
-                          <ScheduleHoverTooltip
-                            content={
-                              assistantTours.length > 0
-                                ? getGuideScheduleTourHoverText(assistantTours[0])
-                                : guide.team_member_name
-                            }
-                          >
-                          <div 
-                            className={`absolute inset-0 flex items-center justify-center gap-1 text-white px-2 py-0 text-[10px] rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
-                              dayData.assignedPeople === 0 
-                                ? 'bg-gray-400' 
-                                : 'bg-transparent'
-                            } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''}`}
-                            style={{
-                              backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                ? getColorFromClass(Object.values(dayData.productColors)[0])
-                                : undefined,
-                              color: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                ? getProductDisplayProps(Object.values(dayData.productColors)[0]).style?.color
-                                : undefined
-                            }}
-                            draggable
-                            onDragStart={(e) => {
-                              if (assistantTours.length > 0) {
-                                setDraggedRole('assistant')
-                                handleDragStart(e, assistantTours[0])
-                              }
-                            }}
-                            onDragEnd={handleAssignedTourDragEnd}
-                            onDoubleClick={() => {
-                              if (assistantTours.length > 0) {
-                                openTourDetailModal(assistantTours[0].id)
-                              }
-                            }}
-                            onClick={() => {
-                              if (assistantTours.length > 0) {
-                                showGuideModalContent('투어 상세 정보', getTourSummary(assistantTours[0]), assistantTours[0].id)
-                              }
-                            }}
-                          >
-                            {hasUnassignedVehicle && (
-                              <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
-                            )}
-                            {!hasUnassignedVehicle && vehicleColorClassAsst && (
-                              <span className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full border border-white ${vehicleColorClassAsst}`} />
-                            )}
-                            {hasPrivateTour && <span>🔒</span>}
-                            <span>{dayData.guideInitials || 'A'}</span>
-                            {dayData.extendsToNextMonth && (
-                              <span className="text-xs opacity-75">→</span>
-                            )}
-                          </div>
-                          </ScheduleHoverTooltip>
+                          <GuideScheduleAssignedTourBoxes
+                            roleTours={assistantTours}
+                            allTours={tours}
+                            dateString={dateString}
+                            teamMemberId={teamMemberId}
+                            role="assistant"
+                            locale={locale}
+                            reservations={reservations}
+                            productColors={productColors}
+                            products={products}
+                            defaultPresetIds={defaultPresetIds}
+                            airportPickupMemberIdSet={airportPickupMemberIdSet}
+                            airportSendingMemberIdSet={airportSendingMemberIdSet}
+                            teamMembers={teamMembers}
+                            fallbackGuideInitials={dayData.guideInitials}
+                            extendsToNextMonth={dayData.extendsToNextMonth}
+                            isToday={isToday}
+                            getColorFromClass={getColorFromClass}
+                            getBorderColorValue={getBorderColorValue}
+                            getTourBorderColor={getTourBorderColor}
+                            setDraggedRole={setDraggedRole}
+                            handleDragStart={handleDragStart}
+                            handleAssignedTourDragEnd={handleAssignedTourDragEnd}
+                            openTourDetailModal={openTourDetailModal}
+                            showGuideModalContent={showGuideModalContent}
+                            getTourSummary={getTourSummary}
+                            getGuideScheduleTourHoverText={getGuideScheduleTourHoverText}
+                            tooltipFallback={guide.team_member_name}
+                          />
                         )
                       })()}
                     </div>
@@ -911,11 +673,6 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                 ? String(tourItem.tour_guide_id || '').trim() === teamMemberId
                 : String(tourItem.assistant_id || '').trim() === teamMemberId)
             )
-            const hasUnassignedVehicleMd = mdRowTours.some(t => !t.tour_car_id || String(t.tour_car_id).trim().length === 0)
-            const assignedCarIdMd = mdRowTours.find(t => t.tour_car_id && String(t.tour_car_id).trim())?.tour_car_id
-            const vehicleColorClassMd = assignedCarIdMd
-              ? monthVehiclesWithColors.vehicleIdToColor.get(String(assignedCarIdMd).trim())
-              : null
             return (
               <div
                 key={`md-overlay-${idx}-${tour.startDate}`}
@@ -956,20 +713,17 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                     }
                   }}
                 >
-                  {hasUnassignedVehicleMd && (
-                    <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
-                  )}
-                  {!hasUnassignedVehicleMd && vehicleColorClassMd && (
-                    <span className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full border border-white ${vehicleColorClassMd}`} />
-                  )}
                   {mdRowTours.some(tourItem => tourItem.is_private_tour === 'TRUE' || tourItem.is_private_tour === true) && (
                     <span>🔒</span>
                   )}
-                  <span>
+                  <GuideAssignmentStatusIcon
+                    status={mdRowTours[0]?.assignment_status}
+                    title={getAssignmentStatusLabel(mdRowTours[0]?.assignment_status, locale)}
+                  >
                     {tour.dayData.role === 'assistant'
                       ? (tour.dayData.guideInitials || 'A')
                       : (tour.dayData.assignedPeople || '')}
-                  </span>
+                  </GuideAssignmentStatusIcon>
                   {tour.extendsToNextMonth && (
                     <span className="text-xs opacity-75">→</span>
                   )}

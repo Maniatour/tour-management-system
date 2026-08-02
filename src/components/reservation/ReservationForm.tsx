@@ -527,7 +527,8 @@ export default function ReservationForm({
   const [isSubmitting, setIsSubmitting] = useState(false)
   /** 새 예약 시 저장 전에 추가한 옵션 목록. 예약 저장 시 함께 전달됨 */
   const [pendingReservationOptions, setPendingReservationOptions] = useState<Array<{ option_id: string; ea?: number; price?: number; total_price?: number; status?: string; note?: string }>>([])
-  
+  /** 예약 가져오기: 해당일 투어 2건 이상일 때 저장 시 배정할 투어 (미선택 시 서버에서 여유 좌석 많은 투어 자동 배정) */
+  const [importSelectedTourId, setImportSelectedTourId] = useState<string | null>(null)
   // 중복 고객 확인 모달 상태
   const [showDuplicateModal, setShowDuplicateModal] = useState(false)
   const [similarCustomers, setSimilarCustomers] = useState<Customer[]>([])
@@ -1055,6 +1056,11 @@ export default function ReservationForm({
       setFormDataState(arg)
     }
   }, [])
+
+  useEffect(() => {
+    if (!isImportMode) return
+    setImportSelectedTourId(null)
+  }, [isImportMode, formData.tourDate, formData.productId])
 
   const syncResidentChoicesInFormState = useCallback((prev: typeof formData): typeof formData => {
     const ch = findUsResidentClassificationChoice(prev.productChoices)
@@ -6003,6 +6009,7 @@ export default function ReservationForm({
         selectedChoices: formData.selectedChoices as any,
         // 새 예약 시 저장 전에 추가한 옵션 목록 (예약 저장 시 함께 저장)
         pendingReservationOptions: isNewReservation ? pendingReservationOptions : undefined,
+        importSelectedTourId: isImportMode ? importSelectedTourId : undefined,
         // 가격 정보를 포함하여 전달 (DB 저장 시 숫자로 쓰이도록 명시적 변환, fd 사용으로 불포함/commission_amount 등 최신값 반영)
         pricingInfo: {
           adultProductPrice: toNum(fd.adultProductPrice),
@@ -6759,6 +6766,8 @@ export default function ReservationForm({
                   productId={formData.productId}
                   products={products}
                   locale={locale}
+                  selectedTourId={importSelectedTourId}
+                  onSelectedTourIdChange={setImportSelectedTourId}
                 />
               )}
               {reservation && !isImportMode && effectiveReservationId && (

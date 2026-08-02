@@ -14,11 +14,17 @@ export interface TourAutoCreationResult {
 /**
  * Mania Tour 또는 Mania Service 예약에 대해 자동으로 투어를 생성하거나 기존 투어에 추가하는 함수
  */
+export type AutoCreateOrUpdateTourOptions = {
+  /** 지정 시 해당 활성 투어에 배정 (없으면 기존처럼 첫 번째 활성 투어) */
+  targetTourId?: string | null
+}
+
 export async function autoCreateOrUpdateTour(
   productId: string,
   tourDate: string,
   reservationId: string,
-  isPrivateTour?: boolean
+  isPrivateTour?: boolean,
+  options?: AutoCreateOrUpdateTourOptions
 ): Promise<TourAutoCreationResult> {
   try {
     // 1. 해당 상품의 sub_category 확인
@@ -105,7 +111,9 @@ export async function autoCreateOrUpdateTour(
         }
       }
       // 3. 활성 투어가 있는 경우: reservation_ids에 새 예약 ID 추가
-      const existingTour = activeTours[0]
+      const preferredId = options?.targetTourId?.trim()
+      const existingTour =
+        (preferredId ? activeTours.find((t) => t.id === preferredId) : undefined) ?? activeTours[0]
       const currentReservationIds = normalizeReservationIds(existingTour.reservation_ids)
       const updatedReservationIds = [...new Set([...currentReservationIds, rid])]
 
