@@ -25,7 +25,7 @@ const ENVELOPE_WIDTH_MM = 3.625 * 25.4  // 92.075
 const ENVELOPE_HEIGHT_MM = 6.5 * 25.4   // 165.1
 
 /** Balance 봉투: 정보 블록이 들어가는 영역(빨간 박스) = 왼쪽 상단, mm */
-const BALANCE_BLOCK_LEFT_MM = 42
+const BALANCE_BLOCK_LEFT_MM = 48
 const BALANCE_BLOCK_TOP_MM = 10
 const BALANCE_BLOCK_WIDTH_MM = 176
 
@@ -238,8 +238,27 @@ function getBalanceBlockCompaction(balanceLineCount: number): {
 // 인쇄용 스타일 (Balance 블록 = 봉투 왼쪽 상단 빨간 박스 영역에 고정)
 // ---------------------------------------------------------------------------
 
+/** 미리보기·모달에서 인쇄 영역 가이드(연한 테두리). 실제 인쇄 시에는 숨김 */
+const ENVELOPE_GUIDE_STYLES = `
+  .envelope-area-guide {
+    border: 1px solid rgba(156, 163, 175, 0.55) !important;
+    box-sizing: border-box !important;
+  }
+  .envelope-balance-area-guide {
+    border: 1px dashed rgba(239, 68, 68, 0.38) !important;
+    box-sizing: border-box !important;
+  }
+  @media print {
+    .envelope-area-guide,
+    .envelope-balance-area-guide {
+      border: none !important;
+    }
+  }
+`
+
 function getPrintStyles(): string {
   return `
+    ${ENVELOPE_GUIDE_STYLES}
     *, *::before, *::after { box-sizing: border-box; }
     html, body { margin: 0 !important; padding: 0 !important; background: white !important; font-family: Arial, Helvetica, sans-serif !important; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
     body * { font-family: Arial, Helvetica, sans-serif !important; }
@@ -621,7 +640,7 @@ export default function TourEnvelopeModal({
     transformOrigin: 'left top' as const,
     fontFamily: 'Arial, Helvetica, sans-serif',
     color: '#111827',
-    paddingLeft: '4mm',
+    paddingLeft: '6mm',
     paddingRight: '4mm',
   }
 
@@ -641,6 +660,7 @@ export default function TourEnvelopeModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <style dangerouslySetInnerHTML={{ __html: ENVELOPE_GUIDE_STYLES }} />
       <div className="bg-white rounded-lg shadow-xl w-full max-w-[min(95vw,520px)] max-h-[90vh] overflow-hidden flex flex-col">
         <header className="flex items-center justify-between p-4 border-b flex-shrink-0">
           <h2 className="text-lg font-bold text-gray-900">{variant === 'tip' ? L.titleTip : L.titleBalance}</h2>
@@ -714,7 +734,7 @@ export default function TourEnvelopeModal({
                     return (
                     <div
                       key={`${row.reservationId}-${idx}`}
-                      className="envelope-sheet bg-white overflow-visible relative"
+                      className={`envelope-sheet bg-white overflow-visible relative${variant === 'balance' ? ' envelope-area-guide' : ''}`}
                       style={{
                         width: `${ENVELOPE_WIDTH_MM}mm`,
                         height: `${ENVELOPE_HEIGHT_MM}mm`,
@@ -733,7 +753,7 @@ export default function TourEnvelopeModal({
                       )}
                       {variant === 'balance' && balanceLayout ? (
                         <div
-                          className="envelope-balance-block absolute z-10 flex flex-col flex-shrink-0"
+                          className="envelope-balance-block envelope-balance-area-guide absolute z-10 flex flex-col flex-shrink-0"
                           style={balanceLayout.blockStyle}
                         >
                           <div style={{ display: 'flex', gap: '6px', minHeight: '2em' }}>

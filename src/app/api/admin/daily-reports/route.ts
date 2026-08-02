@@ -44,14 +44,18 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response
 
   const { searchParams } = new URL(request.url)
-  const reportDate = searchParams.get('date')?.trim() || todayInLasVegas()
+  const startDate = searchParams.get('startDate')?.trim() || searchParams.get('date')?.trim() || todayInLasVegas()
+  let endDate = searchParams.get('endDate')?.trim() || startDate
+  if (endDate < startDate) {
+    endDate = startDate
+  }
   const operatorId = resolveOperatorId(searchParams.get('operatorId'))
 
   const submitter = await getSubmitterInfo(auth.staffClient, auth.userEmail)
 
   const { data: existing } = await fromUntypedTable(auth.staffClient, 'office_daily_reports')
     .select('*')
-    .eq('report_date', reportDate)
+    .eq('report_date', startDate)
     .eq('operator_id', operatorId)
     .maybeSingle()
 
@@ -68,7 +72,8 @@ export async function GET(request: NextRequest) {
       }
     : undefined
 
-  const fresh = await generateDailyReportData(auth.staffClient, operatorId, reportDate, {
+  const fresh = await generateDailyReportData(auth.staffClient, operatorId, startDate, {
+    endDate,
     submittedByName: submitter.name,
     submittedByEmail: submitter.email,
     ...(preserveNotes ? { preserveNotes } : {}),

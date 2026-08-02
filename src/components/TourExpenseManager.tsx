@@ -238,6 +238,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
   const expenseModalBackdropSuppressedUntilRef = useRef(0)
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; expenseId: string; paidFor: string } | null>(null)
   const [receiptViewerZoom, setReceiptViewerZoom] = useState(1)
+  const [receiptViewerRotation, setReceiptViewerRotation] = useState<ReceiptOcrRotationDegrees>(0)
   const embedEditOpenedRef = useRef(false)
   const [formReceiptZoom, setFormReceiptZoom] = useState(1)
   const [formReceiptRotation, setFormReceiptRotation] = useState<ReceiptOcrRotationDegrees>(0)
@@ -277,6 +278,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
 
   useEffect(() => {
     setReceiptViewerZoom(1)
+    setReceiptViewerRotation(0)
   }, [viewingReceipt?.expenseId, viewingReceipt?.imageUrl])
 
   useEffect(() => {
@@ -2796,7 +2798,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
           <div
             className={`fixed inset-0 bg-black/75 flex items-center justify-center p-2 sm:p-4 ${TOUR_EXPENSE_MODAL_PORTAL_Z} ${TOUR_EXPENSE_MODAL_PORTAL_INTERACTION}`}
           >
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl h-[92vh] max-h-[92vh] flex flex-col overflow-hidden">
               <div className="flex items-start justify-between gap-3 p-3 sm:p-4 border-b shrink-0">
                 <div className="flex items-start gap-2 min-w-0">
                   <Receipt className="w-5 h-5 text-primary shrink-0 mt-0.5" />
@@ -2861,6 +2863,30 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                     >
                       {t('receiptViewerZoomReset')}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setReceiptViewerRotation(
+                          (r) => ((r + 270) % 360) as ReceiptOcrRotationDegrees
+                        )
+                      }
+                      className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+                      title={t('receiptOcrRotateLeft')}
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setReceiptViewerRotation(
+                          (r) => ((r + 90) % 360) as ReceiptOcrRotationDegrees
+                        )
+                      }
+                      className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+                      title={t('receiptOcrRotateRight')}
+                    >
+                      <RotateCw className="w-4 h-4" />
+                    </button>
                     <a
                       href={viewingReceipt.imageUrl}
                       target="_blank"
@@ -2871,7 +2897,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                       {t('openInNewWindow')}
                     </a>
                   </div>
-                  <div className="flex-1 min-h-0 overflow-auto p-3 bg-slate-100/90">
+                  <div className="flex-1 min-h-0 overflow-auto overscroll-contain p-3 bg-slate-100/90">
                     <img
                       src={viewingReceipt.imageUrl}
                       alt={`${viewingReceipt.paidFor} receipt`}
@@ -2879,6 +2905,8 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                         width: `${100 * receiptViewerZoom}%`,
                         maxWidth: 'none',
                         height: 'auto',
+                        transform: `rotate(${receiptViewerRotation}deg)`,
+                        transformOrigin: 'center center',
                       }}
                       className="rounded-lg shadow-md block"
                       onError={(e) => {

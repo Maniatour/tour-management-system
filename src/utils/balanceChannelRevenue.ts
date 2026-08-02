@@ -16,6 +16,8 @@ import {
   pricingFieldToNumber,
   mergePricingWithLiveOptionTotal,
   summarizePaymentRecordsForBalance,
+  cancelledNonOtaNetCollectedFromPayments,
+  cancelledSettlementReturnedAmount,
   isStoredCustomerTotalMismatchWithFormula,
   computeCustomerPaymentTotalLineFormula,
   computeCustomerPaymentNetForCompanyRevenueBase,
@@ -144,7 +146,12 @@ export function computeBalanceChannelMetrics(
       | undefined) ?? p
 
   const paySm = summarizePaymentRecordsForBalance(paymentRecords)
-  const returnedAmount = paySm.returnedTotal
+  const manualRefundPricing = pricingFieldToNumber(p.refund_amount)
+  const st = String(reservation.status || '').toLowerCase().trim()
+  const isReservationCancelled = st === 'cancelled' || st === 'canceled'
+  const returnedAmount = isReservationCancelled
+    ? cancelledSettlementReturnedAmount(paySm, manualRefundPricing)
+    : paySm.returnedTotal
   const partnerReceived = paySm.partnerReceivedStrict
   const refundedOur = paySm.refundedTotal
 
@@ -199,9 +206,6 @@ export function computeBalanceChannelMetrics(
 
   const channelSettlementFromFormula = computeChannelSettlementAmount(settlementInput)
 
-  const st = String(reservation.status || '').toLowerCase().trim()
-  const isReservationCancelled = st === 'cancelled' || st === 'canceled'
-
   const channelPaymentDb =
     p.commission_base_price != null && Number.isFinite(Number(p.commission_base_price))
       ? storedCb
@@ -242,12 +246,10 @@ export function computeBalanceChannelMetrics(
   const storedSettle = p.channel_settlement_amount
   const hasStoredSettle = storedSettle != null && Number.isFinite(Number(storedSettle))
 
-  /** 취소 건: DB `channel_settlement_amount`가 환불·Returned 반영 전 값으로 남은 경우가 많아 ④·필터와 어긋남 → 입금 반영 산식 정산을 베이스로 사용 */
-  const channelSettlementBaseForRevenue = isReservationCancelled
-    ? round2(Math.max(0, channelSettlementFromFormula))
-    : hasStoredSettle
-      ? Math.max(0, Number(storedSettle))
-      : channelSettlementFromFormula
+  /** 가격 정보 `channelSettlementBeforePartnerReturn`와 동일: DB 저장값 우선, 없으면 산식 */
+  const channelSettlementBaseForRevenue = hasStoredSettle
+    ? Math.max(0, Number(storedSettle))
+    : round2(Math.max(0, channelSettlementFromFormula))
 
   const usesStored = hasStoredSettle
   let channelPaymentGrossDbLike = 0
@@ -292,6 +294,14 @@ export function computeBalanceChannelMetrics(
         ) || 0
       )
     )
+    const partyForGross = {
+      adults: reservation.adults,
+      children: reservation.child,
+      infants: reservation.infant,
+    }
+    const customerPaymentGross = round2(
+      computeCustomerPaymentTotalLineFormula(pLine, partyForGross)
+    )
     const storedRev = computeStoredCompanyRevenueFields({
       channelSettlementBase: channelSettlementBaseForRevenue,
       cardFee: pricingFieldToNumber(pLine.card_fee),
@@ -317,6 +327,10 @@ export function computeBalanceChannelMetrics(
       prepaymentTip: prepTip,
       refundAmountForCompanyRevenueBlock: refundForRevenue,
       reservationExpensesTotal,
+      cancelledNetCollectedFromPayments: !isOta
+        ? cancelledNonOtaNetCollectedFromPayments(paySm)
+        : null,
+      customerPaymentGross,
     })
     companyTotalRevenue = storedRev.company_total_revenue
     operatingProfit = round2(storedRev.operating_profit)
@@ -427,6 +441,13 @@ export function computeReservationPricingStoredRevenueColumns(
     returnedAmount,
   })
 
+  const storedSettleRaw = pLine.channel_settlement_amount
+  const hasStoredSettle =
+    storedSettleRaw != null && Number.isFinite(Number(storedSettleRaw))
+  const channelSettlementBase = hasStoredSettle
+    ? Math.max(0, Number(storedSettleRaw))
+    : m.channelSettlementBaseForRevenue
+
   const pricingAdultsVal = Math.max(
     0,
     Math.floor(
@@ -454,8 +475,29 @@ export function computeReservationPricingStoredRevenueColumns(
     : 0
   const customerNetForSelf = !isOta ? customerNetForRevenue : null
 
+  const depositAmount = pricingFieldToNumber(pLine.deposit_amount)
+  const storedCb = pricingFieldToNumber(pLine.commission_base_price)
+  const billingPax = Math.max(
+    1,
+    pricingAdultsVal + (reservation.child ?? 0) + (reservation.infant ?? 0)
+  )
+  const productTotalForGross = round2(
+    pricingFieldToNumber(pLine.product_price_total) +
+      pricingFieldToNumber(pLine.not_included_price) * billingPax
+  )
+  const channelPaymentGross = storedCb
+    ? deriveCommissionGrossForSettlement(storedCb, {
+        returnedAmount,
+        depositAmount,
+        productPriceTotal: productTotalForGross,
+        isOTAChannel: isOta,
+      })
+    : m.channelPaymentFromFormula
+
+  const customerPaymentGross = round2(computeCustomerPaymentTotalLineFormula(pLine, party))
+
   return computeStoredCompanyRevenueFields({
-    channelSettlementBase: m.channelSettlementBaseForRevenue,
+    channelSettlementBase,
     customerPaymentNetForRevenueBase: customerNetForSelf,
     customerPaymentNetForOtaOmitCheck: customerNetForRevenue,
     ...(m.commissionAmountDb != null ? { commissionAmount: m.commissionAmountDb } : {}),
@@ -466,10 +508,10 @@ export function computeReservationPricingStoredRevenueColumns(
     isHomepageBooking: isHomepageBookingChannel(reservation.channelId, channels),
     reservationOptionsActiveSum: activeSum,
     omitCtx: {
-      usesStoredChannelSettlement: false,
-      depositAmount: 0,
+      usesStoredChannelSettlement: hasStoredSettle,
+      depositAmount,
       onlinePaymentAmount: 0,
-      channelPaymentGross: 0,
+      channelPaymentGross,
     },
     omitAdditionalDiscountAndCostFromSumOverride: m.omitAdditionalDiscountAndCostFromCompanyRevenueSum,
     notIncludedPerPerson: pricingFieldToNumber(pLine.not_included_price),
@@ -483,6 +525,11 @@ export function computeReservationPricingStoredRevenueColumns(
     prepaymentTip: pricingFieldToNumber(pLine.prepayment_tip),
     refundAmountForCompanyRevenueBlock: refundForRevenue,
     reservationExpensesTotal,
+    cancelledNetCollectedFromPayments:
+      isReservationCancelledRow && !isOta
+        ? cancelledNonOtaNetCollectedFromPayments(paySm)
+        : null,
+    customerPaymentGross,
   })
 }
 
@@ -660,4 +707,56 @@ export function reservationMatchesExtendedPricingMismatchCriteria(
   )
     return true
   return false
+}
+
+/** DB `operating_profit` vs 가격 정보 ④ 운영 이익 산식(`computeReservationPricingStoredRevenueColumns`) */
+export function hasOperatingProfitStoredVsFormulaMismatch(
+  p: ReservationPricingMapValue | undefined,
+  reservation: Reservation,
+  channels: BalanceChannelRowInput[],
+  paymentRecords: PaymentRecordLike[],
+  reservationOptionSumByReservationId: Map<string, number> | undefined
+): boolean {
+  if (!p) return false
+  const hasPricing = p.total_price != null && Number(p.total_price) > 0
+  if (!hasPricing) return false
+
+  const stored = computeReservationPricingStoredRevenueColumns(
+    p,
+    reservation,
+    channels,
+    paymentRecords,
+    [],
+    reservationOptionSumByReservationId
+  )
+  if (!stored) return false
+
+  const computed = stored.operating_profit
+  const dbRaw = p.operating_profit
+  if (
+    dbRaw == null ||
+    (typeof dbRaw === 'string' && String(dbRaw).trim() === '') ||
+    !Number.isFinite(Number(dbRaw))
+  ) {
+    return Math.abs(computed) > PRICING_LINE_MISMATCH_TOL
+  }
+  return Math.abs(pricingFieldToNumber(dbRaw) - computed) > PRICING_LINE_MISMATCH_TOL
+}
+
+export function reservationMatchesOperatingProfitMismatchCriteria(
+  reservation: Reservation,
+  pricingMap: Map<string, ReservationPricingMapValue>,
+  channels: BalanceChannelRowInput[],
+  paymentRecordsByReservationId: Map<string, PaymentRecordLike[]> | undefined,
+  reservationOptionSumByReservationId: Map<string, number> | undefined
+): boolean {
+  const p = pricingMap.get(reservation.id)
+  const records = paymentRecordsByReservationId?.get(reservation.id) ?? []
+  return hasOperatingProfitStoredVsFormulaMismatch(
+    p,
+    reservation,
+    channels,
+    records,
+    reservationOptionSumByReservationId
+  )
 }

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
-import { lasVegasDayBounds } from '@/lib/dailyReport/dateUtils'
+import { lasVegasDateRangeBounds } from '@/lib/dailyReport/dateUtils'
 import { amountToNumber, roundUsd } from '@/lib/dailyReport/moneyUtils'
 import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
 import {
@@ -66,17 +66,27 @@ function category(
 export async function buildFinancialReport(
   client: SupabaseClient<Database>,
   operatorId: string,
-  reportDate: string,
+  startDate: string,
+  endDate: string,
   todayTours: TourRow[],
   tourFinancials: DailyReportTourFinancial[]
 ): Promise<DailyReportFinancialReport> {
-  const { start, end } = lasVegasDayBounds(reportDate)
+  const { start, end } = lasVegasDateRangeBounds(startDate, endDate)
   const tourIds = todayTours.map((t) => t.id)
   const tourNameById = new Map(todayTours.map((t) => [t.id, productDisplayName(t.products)]))
   const cashPaymentMethods = new Set(await getCashPaymentMethodFilterValues())
 
+  const tourExpensesQuery = fromUntypedTable(client, 'tour_expenses')
+    .select('id, tour_id, paid_for, paid_to, amount, payment_method, note, submit_on')
+    .eq('operator_id', operatorId)
+    .is('deleted_at', null)
+
+  const tourExpensesRes =
+    startDate === endDate
+      ? await tourExpensesQuery.eq('tour_date', startDate)
+      : await tourExpensesQuery.gte('tour_date', startDate).lte('tour_date', endDate)
+
   const [
-    tourExpensesRes,
     reservationExpensesRes,
     companyExpensesRes,
     ticketBookingsRes,
@@ -90,11 +100,6 @@ export async function buildFinancialReport(
     reservationCashPeriodRes,
     reservationCashLedgerRes,
   ] = await Promise.all([
-    fromUntypedTable(client, 'tour_expenses')
-      .select('id, tour_id, paid_for, paid_to, amount, payment_method, note, submit_on')
-      .eq('operator_id', operatorId)
-      .eq('tour_date', reportDate)
-      .is('deleted_at', null),
     fromUntypedTable(client, 'reservation_expenses')
       .select('id, reservation_id, tour_id, paid_for, paid_to, amount, payment_method, note, submit_on')
       .eq('operator_id', operatorId)

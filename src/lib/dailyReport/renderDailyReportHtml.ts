@@ -1,5 +1,5 @@
 import type { DailyReportData } from '@/lib/dailyReport/types'
-import { formatReportDateLabel } from '@/lib/dailyReport/dateUtils'
+import { formatReportDateLabel, formatReportDateRangeLabel, isSingleDayReport } from '@/lib/dailyReport/dateUtils'
 import { formatUsd } from '@/lib/dailyReport/moneyUtils'
 
 function esc(s: string): string {
@@ -42,7 +42,9 @@ function sectionBlock(title: string, body: string): string {
 }
 
 export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko'): string {
-  const dateLabel = formatReportDateLabel(data.reportDate, locale)
+  const endDate = data.reportEndDate ?? data.reportDate
+  const singleDay = isSingleDayReport(data.reportDate, endDate)
+  const dateLabel = formatReportDateRangeLabel(data.reportDate, endDate, locale)
   const tomorrowLabel = formatReportDateLabel(data.tomorrowSchedule.date, locale)
   const submittedBy = data.submittedByName || data.submittedByEmail || '사무실'
   const rs = data.reservationSummary
@@ -51,7 +53,7 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
   const reservationBody = `
     <table style="width:100%;border-collapse:collapse;">
       ${statRow('신규 접수', `${rs.newRegistrations.count}건 / ${rs.newRegistrations.guests}명`)}
-      ${statRow('당일 취소', `${rs.cancellationsToday.count}건 / ${rs.cancellationsToday.guests}명`)}
+      ${statRow(singleDay ? '당일 취소' : '기간 취소', `${rs.cancellationsToday.count}건 / ${rs.cancellationsToday.guests}명`)}
       ${statRow('순예약', `${rs.netReservations.count}건 / ${rs.netReservations.guests}명`)}
     </table>
     ${breakdownTable('투어 상품별', rs.byProduct)}
@@ -85,8 +87,8 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
 
   const tourBody = `
     ${tourFinRows ? `<table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:12px;"><thead><tr style="background:#f9fafb;">
-      <th style="padding:8px;text-align:left;">상품</th><th>결제</th><th>잔액</th><th>수익</th><th>지출</th><th>순수익</th>
-    </tr></thead><tbody>${tourFinRows}${tourTotalRow}</tbody></table>` : '<p>오늘 투어 없음</p>'}
+      <th style="padding:8px;text-align:left;">상품</th><th>총매출</th><th>잔액</th><th>운영이익</th><th>지출</th><th>순수익</th>
+    </tr></thead><tbody>${tourFinRows}${tourTotalRow}</tbody></table>` : `<p>${singleDay ? '오늘 투어 없음' : '해당 기간 투어 없음'}</p>`}
     ${sectionNotes(ts.notes)}
   `
 
@@ -181,7 +183,7 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
   return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
   <div style="max-width:720px;margin:0 auto;padding:24px 16px;">
     <div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#fff;border-radius:16px 16px 0 0;padding:28px 24px;">
-      <div style="font-size:12px;opacity:0.8;">DAILY REPORT</div>
+      <div style="font-size:12px;opacity:0.8;">${singleDay ? 'DAILY REPORT' : 'PERIOD REPORT'}</div>
       <h1 style="margin:8px 0 4px;font-size:24px;">${esc(dateLabel)}</h1>
       <p style="margin:0;opacity:0.85;font-size:14px;">작성: ${esc(submittedBy)}</p>
     </div>
@@ -190,12 +192,15 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
       ${sectionBlock('투어 관리 요약 (재무)', tourBody)}
       ${financialBody ? sectionBlock('재무 보고', financialBody) : ''}
       ${sectionBlock('TODO 처리 현황 (사용자별)', todoBody)}
-      ${sectionBlock('내일 투어 스케줄 · 배차', tomorrowBody)}
+      ${singleDay ? sectionBlock('내일 투어 스케줄 · 배차', tomorrowBody) : ''}
       ${additionalBlock}
     </div>
   </div></body></html>`
 }
 
 export function dailyReportEmailSubject(data: DailyReportData): string {
-  return `[Daily Report] ${data.reportDate} 일일 업무 보고`
+  const endDate = data.reportEndDate ?? data.reportDate
+  const dateLabel = formatReportDateRangeLabel(data.reportDate, endDate, 'ko')
+  const kind = isSingleDayReport(data.reportDate, endDate) ? '일일' : '기간'
+  return `[Daily Report] ${dateLabel} ${kind} 업무 보고`
 }

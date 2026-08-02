@@ -1,6 +1,11 @@
-import { shouldOmitOtaExtrasFromCompanyRevenueSum } from '@/utils/channelSettlement'
+import {
+  shouldOmitOtaExtrasFromCompanyRevenueSum,
+  otaReservationOptionsForCompanyRevenue,
+  otaPricingFormExtrasForCompanyRevenue,
+} from '@/utils/channelSettlement'
 import { roundUsd2 } from '@/utils/pricingSectionDisplay'
 import { isNoShowReservationStatus } from '@/lib/reservationStatus'
+import { computePrepaymentTipOperatingDeduction } from '@/utils/storedCompanyRevenue'
 
 /** PricingSection 우측 「4. 최종 매출 & 운영 이익」의 총 매출 표시값과 동일 */
 export type PricingSectionRevenueDisplayInput = {
@@ -28,6 +33,10 @@ export type PricingSectionRevenueDisplayInput = {
   commissionAmount?: number
   channelPaymentNet?: number
   reservationStatus?: string | null
+  /** ① 고객 총 결제(gross) — 선결제 팁 환불 구간 판정용 */
+  customerPaymentGross?: number | null
+  /** 취소·비-OTA: 입금 순수령 — 선결제 팁 환불 판정 보조 */
+  cancelledNetCollectedFromPayments?: number | null
 }
 
 export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionRevenueDisplayInput): number {
@@ -62,43 +71,49 @@ export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionReve
 
   if (useCustomerBase) {
     totalRevenue -= inp.refundedAmount
-    if (inp.excludeHomepageAdditionalCostFromCompanyTotals && inp.additionalCost > 0) {
-      totalRevenue -= inp.additionalCost
-    }
     return roundUsd2(totalRevenue)
   }
 
-  if (!omitOtaExtras) {
-    if (inp.reservationOptionsTotalPrice > 0 && inp.isOTAChannel) {
-      totalRevenue += inp.reservationOptionsTotalPrice
-    }
-  }
+  totalRevenue += otaReservationOptionsForCompanyRevenue({
+    isOTAChannel: inp.isOTAChannel,
+    reservationOptionsTotalPrice: inp.reservationOptionsTotalPrice,
+    omitOtaExtras,
+    customerPaymentNet: Number(inp.customerPaymentNetForOtaOmitCheck) || 0,
+    channelPaymentNet: Number(inp.channelPaymentNet) || 0,
+  })
   /** 불포함(입장권·비거주자 비용)은 OTA 판매가에 포함되지 않는 별도 수금이라 omitOtaExtras와 무관하게 항상 가산 */
   if (inp.notIncludedTotalUsd > 0) {
     totalRevenue += inp.notIncludedTotalUsd
   }
 
-  const omitDiscCostEffective =
-    (inp.omitAdditionalDiscountAndCostFromSum &&
-      !(inp.isOTAChannel && !inp.isReservationCancelled)) ||
-    omitOtaExtras
+  const formExtras = otaPricingFormExtrasForCompanyRevenue({
+    isOTAChannel: inp.isOTAChannel,
+    omitOtaExtras,
+    additionalDiscount: inp.additionalDiscount,
+    additionalCost: inp.additionalCost,
+    tax: inp.tax,
+    cardFee: Number(inp.cardFeeForCompanyRevenue) || 0,
+    prepaymentCost: inp.prepaymentCost,
+    customerPaymentNet: Number(inp.customerPaymentNetForOtaOmitCheck) || 0,
+    channelPaymentNet: Number(inp.channelPaymentNet) || 0,
+    notIncludedTotalUsd: inp.notIncludedTotalUsd,
+    reservationOptionsTotalPrice: inp.reservationOptionsTotalPrice,
+  })
 
-  if (!omitDiscCostEffective) {
-    if (inp.additionalDiscount > 0 && !inp.excludeHomepageAdditionalCostFromCompanyTotals) {
-      totalRevenue -= inp.additionalDiscount
-    }
-    if (inp.additionalCost > 0) totalRevenue += inp.additionalCost
+  if (formExtras.additionalDiscount > 0 && !inp.excludeHomepageAdditionalCostFromCompanyTotals) {
+    totalRevenue -= formExtras.additionalDiscount
   }
-  if (!omitOtaExtras) {
-    if (inp.tax > 0) totalRevenue += inp.tax
-    if (inp.prepaymentCost > 0 && !inp.excludeHomepageAdditionalCostFromCompanyTotals) {
-      totalRevenue += inp.prepaymentCost
-    }
+  if (formExtras.additionalCost > 0) {
+    totalRevenue += formExtras.additionalCost
   }
-
-  const cf = Number(inp.cardFeeForCompanyRevenue) || 0
-  if (inp.isOTAChannel && !inp.isReservationCancelled && !omitOtaExtras && cf > 0.005) {
-    totalRevenue += cf
+  if (formExtras.tax > 0) {
+    totalRevenue += formExtras.tax
+  }
+  if (formExtras.prepaymentCost > 0 && !inp.excludeHomepageAdditionalCostFromCompanyTotals) {
+    totalRevenue += formExtras.prepaymentCost
+  }
+  if (inp.isOTAChannel && !inp.isReservationCancelled && formExtras.cardFee > 0.005) {
+    totalRevenue += formExtras.cardFee
   }
 
   const ptip = Number(inp.prepaymentTip) || 0
@@ -106,7 +121,9 @@ export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionReve
     totalRevenue += ptip
   }
 
-  totalRevenue -= inp.refundedAmount
+  if (!omitOtaExtras) {
+    totalRevenue -= inp.refundedAmount
+  }
   if (inp.excludeHomepageAdditionalCostFromCompanyTotals && inp.additionalCost > 0) {
     totalRevenue -= inp.additionalCost
   }
@@ -114,18 +131,30 @@ export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionReve
 }
 
 export function computePricingSectionDisplayOperatingProfit(inp: PricingSectionRevenueDisplayInput): number {
+  const totalRevenue = computePricingSectionDisplayTotalRevenue(inp)
+  const tipDeduction = computePrepaymentTipOperatingDeduction({
+    prepaymentTip: Number(inp.prepaymentTip) || 0,
+    isReservationCancelled: inp.isReservationCancelled,
+    isOTAChannel: inp.isOTAChannel,
+    refundAmountForCompanyRevenueBlock: Number(inp.refundedAmount) || 0,
+    customerPaymentGross: inp.customerPaymentGross ?? null,
+    cancelledNetCollectedFromPayments: inp.cancelledNetCollectedFromPayments ?? null,
+    totalRevenue,
+    refundedFromRecords: inp.refundedAmount,
+  })
+
   if (isNoShowReservationStatus(inp.reservationStatus)) {
-    return roundUsd2(
-      computePricingSectionDisplayTotalRevenue(inp) - inp.prepaymentTip
-    )
+    return roundUsd2(totalRevenue - tipDeduction)
   }
 
   if (inp.isReservationCancelled) {
     if (inp.isOTAChannel) {
-      return roundUsd2(inp.channelSettlementBeforePartnerReturn - inp.prepaymentTip)
+      return roundUsd2(inp.channelSettlementBeforePartnerReturn - tipDeduction)
     }
-    return 0
+    if (totalRevenue <= 0.005) {
+      return 0
+    }
+    return roundUsd2(totalRevenue - tipDeduction)
   }
-  const totalRevenue = computePricingSectionDisplayTotalRevenue(inp)
-  return roundUsd2(totalRevenue - inp.prepaymentTip)
+  return roundUsd2(totalRevenue - tipDeduction)
 }

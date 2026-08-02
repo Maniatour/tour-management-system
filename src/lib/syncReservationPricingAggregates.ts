@@ -61,6 +61,33 @@ export function aggregateReservationOptionSumsByReservationId(
   return sums
 }
 
+export type ReservationExpenseSumRow = {
+  reservation_id: string | null
+  amount?: unknown
+  status?: string | null
+}
+
+/** `reservation_expenses` 행 배치 → 예약별 합계 (rejected 제외) */
+export function aggregateReservationExpenseSumsByReservationId(
+  rows: ReservationExpenseSumRow[] | null | undefined
+): Map<string, number> {
+  const raw = new Map<string, number>()
+  for (const r of rows || []) {
+    const status = String(r.status ?? '').toLowerCase().trim()
+    if (status === 'rejected') continue
+    const rid = r.reservation_id
+    if (!rid) continue
+    const add = Number(r.amount) || 0
+    if (Number.isNaN(add)) continue
+    raw.set(rid, (raw.get(rid) || 0) + add)
+  }
+  const sums = new Map<string, number>()
+  for (const [rid, v] of raw) {
+    sums.set(rid, roundUsd2(v))
+  }
+  return sums
+}
+
 /**
  * 예약 단위로 pricing 캐시 컬럼 동기화. reservation_pricing 행이 없으면 스킵.
  */

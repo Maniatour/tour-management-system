@@ -40,6 +40,8 @@ export type DailyReportTourFinancial = {
   guestCount: number
   reservationCount: number
   totalPayment: number
+  /** 채널 수수료 합계 (총매출 산출 시 차감) */
+  channelCommission: number
   balanceOutstanding: number
   cashDeposit: number
   totalIncome: number
@@ -56,6 +58,7 @@ export type DailyReportTourSummary = {
   totalGuests: number
   totals: {
     totalPayment: number
+    channelCommission: number
     balanceOutstanding: number
     cashDeposit: number
     totalIncome: number
@@ -132,6 +135,8 @@ export type DailyReportFinancialReport = {
 
 export type DailyReportData = {
   reportDate: string
+  /** 종료일 — 시작일과 같으면 일일 보고, 다르면 기간 보고 */
+  reportEndDate?: string
   tomorrowDate: string
   generatedAt: string
   operatorId: string

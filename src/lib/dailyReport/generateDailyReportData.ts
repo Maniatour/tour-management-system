@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
-import { lasVegasDayBounds, tomorrowInLasVegas } from '@/lib/dailyReport/dateUtils'
+import { lasVegasDateRangeBounds, tomorrowInLasVegas, isSingleDayReport } from '@/lib/dailyReport/dateUtils'
 import { buildTourFinancialSummary } from '@/lib/dailyReport/buildTourFinancials'
 import { buildFinancialReport } from '@/lib/dailyReport/buildFinancialReport'
 import type {
@@ -160,6 +160,7 @@ export async function generateDailyReportData(
   operatorId: string,
   reportDate: string,
   options?: {
+    endDate?: string
     submittedByName?: string | null
     submittedByEmail?: string | null
     preserveNotes?: Partial<Pick<DailyReportData, 'additionalNotes'>> & {
@@ -170,8 +171,10 @@ export async function generateDailyReportData(
     }
   }
 ): Promise<DailyReportData> {
-  const tomorrowDate = tomorrowInLasVegas(reportDate)
-  const { start, end } = lasVegasDayBounds(reportDate)
+  const endDate = options?.endDate ?? reportDate
+  const singleDay = isSingleDayReport(reportDate, endDate)
+  const tomorrowDate = tomorrowInLasVegas(singleDay ? reportDate : endDate)
+  const { start, end } = lasVegasDateRangeBounds(reportDate, endDate)
 
   const newReservationsRes = await client
       .from('reservations')
@@ -196,7 +199,8 @@ export async function generateDailyReportData(
       .select('id, status, total_people, created_at, tour_date, archive')
       .eq('operator_id', operatorId)
       .eq('archive', false)
-      .eq('tour_date', reportDate),
+      .gte('tour_date', reportDate)
+      .lte('tour_date', endDate),
     client
       .from('reservation_status_events')
       .select('id, reservation_id, from_status, to_status, occurred_at')
@@ -208,14 +212,17 @@ export async function generateDailyReportData(
         'id, tour_date, tour_status, assignment_status, tour_guide_id, assistant_id, tour_car_id, reservation_ids, tour_start_datetime, product_id, guide_fee, assistant_fee, products(name, name_ko, name_en)'
       )
       .eq('operator_id', operatorId)
-      .eq('tour_date', reportDate),
-    client
-      .from('tours')
-      .select(
-        'id, tour_date, tour_status, assignment_status, tour_guide_id, assistant_id, tour_car_id, reservation_ids, tour_start_datetime, products(name, name_ko, name_en)'
-      )
-      .eq('operator_id', operatorId)
-      .eq('tour_date', tomorrowDate),
+      .gte('tour_date', reportDate)
+      .lte('tour_date', endDate),
+    singleDay
+      ? client
+          .from('tours')
+          .select(
+            'id, tour_date, tour_status, assignment_status, tour_guide_id, assistant_id, tour_car_id, reservation_ids, tour_start_datetime, products(name, name_ko, name_en)'
+          )
+          .eq('operator_id', operatorId)
+          .eq('tour_date', tomorrowDate)
+      : Promise.resolve({ data: [], error: null }),
     client
       .from('op_todos')
       .select('id, title, department, completed, completed_at, on_hold, assigned_to, created_by')
@@ -321,6 +328,7 @@ export async function generateDailyReportData(
     client,
     operatorId,
     reportDate,
+    endDate,
     todayTours,
     tourFinancials.tours
   )
@@ -338,13 +346,17 @@ export async function generateDailyReportData(
     reservationHighlights.push(`신규 ${newStats.count}건 / ${newStats.guests}명`)
   }
   if (cancelStats.count > 0) {
-    reservationHighlights.push(`당일 취소 ${cancelStats.count}건 / ${cancelStats.guests}명`)
+    reservationHighlights.push(
+      `${singleDay ? '당일' : '기간'} 취소 ${cancelStats.count}건 / ${cancelStats.guests}명`
+    )
   }
   reservationHighlights.push(`순예약 ${netStats.count}건 / ${netStats.guests}명`)
 
   const tourHighlights: string[] = []
   if (todayTours.length > 0) {
-    tourHighlights.push(`투어 ${todayTours.length}건 · 순이익 ${tourFinancials.totals.netProfit.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}`)
+    tourHighlights.push(
+      `투어 ${todayTours.length}건 · 순이익 ${tourFinancials.totals.netProfit.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}`
+    )
   }
 
   const completerByTodo = new Map<string, string>()
@@ -435,6 +447,7 @@ export async function generateDailyReportData(
 
   return {
     reportDate,
+    ...(singleDay ? {} : { reportEndDate: endDate }),
     tomorrowDate,
     generatedAt: new Date().toISOString(),
     operatorId,

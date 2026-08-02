@@ -72,6 +72,8 @@ export const RESERVATION_ACTION_TABS: Array<{ value: ActionRequiredTabId; labelK
   { value: 'deposit', labelKo: '입금' },
   { value: 'cancel', labelKo: '취소' },
   { value: 'balance', labelKo: '잔액' },
+  { value: 'formula', labelKo: '계산식' },
+  { value: 'engine', labelKo: '가격 엔진' },
   { value: 'incompleteDraft', labelKo: '미완성' },
 ]
 

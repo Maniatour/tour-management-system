@@ -7,6 +7,8 @@ import { roundUsd2, splitNotIncludedForDisplay } from '@/utils/pricingSectionDis
 import {
   shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
   shouldOmitOtaExtrasFromCompanyRevenueSum,
+  otaReservationOptionsForCompanyRevenue,
+  otaPricingFormExtrasForCompanyRevenue,
 } from '@/utils/channelSettlement'
 import {
   isCancelledReservationStatus,
@@ -86,6 +88,79 @@ export type StoredCompanyRevenueComputeInput = {
    * 미지정 시 0. 음수면 가산(환수)으로 동작해 UI와 부호가 일치한다.
    */
   reservationExpensesTotal?: number
+  /** 취소·비-OTA: 입금 순수령(보증금 순액+잔금 수령) — 있으면 채널 정산 베이스 대신 ④에 사용 */
+  cancelledNetCollectedFromPayments?: number | null
+  /** ① 고객 총 결제(gross) — 선결제 팁 환불 구간 판정용 */
+  customerPaymentGross?: number | null
+}
+
+/**
+ * ④ 운영 이익에서 차감할 선결제 팁.
+ * 취소·비-OTA에서 고객 환불이 선결제 팁 구간까지 포함되면 팁도 함께 반환된 것으로 보고 차감하지 않는다.
+ */
+export function computePrepaymentTipOperatingDeduction(inp: {
+  prepaymentTip: number
+  isReservationCancelled: boolean
+  isOTAChannel: boolean
+  refundAmountForCompanyRevenueBlock: number
+  customerPaymentGross?: number | null
+  cancelledNetCollectedFromPayments?: number | null
+  /** ④ 총 매출 — 취소·전액 환불 후 0이면 팁 차감 없음 */
+  totalRevenue?: number | null
+  /** 입금 「환불됨 (우리)」 합 — `refundAmountForCompanyRevenueBlock` 보조 */
+  refundedFromRecords?: number | null
+}): number {
+  const tip = Math.max(0, Number(inp.prepaymentTip) || 0)
+  if (tip <= 0.005) return 0
+
+  if (inp.isReservationCancelled && !inp.isOTAChannel) {
+    const tr = Number(inp.totalRevenue)
+    if (Number.isFinite(tr) && tr <= 0.005) {
+      return 0
+    }
+
+    const gross = Number(inp.customerPaymentGross)
+    const refund = roundUsd2(
+      Math.max(
+        Math.max(0, Number(inp.refundAmountForCompanyRevenueBlock) || 0),
+        Math.max(0, Number(inp.refundedFromRecords) || 0)
+      )
+    )
+
+    if (Number.isFinite(gross) && gross > 0.005 && refund > 0.005) {
+      const nonTipGross = Math.max(0, roundUsd2(gross - tip))
+      const tipRefunded = roundUsd2(Math.min(tip, Math.max(0, refund - nonTipGross)))
+      return roundUsd2(Math.max(0, tip - tipRefunded))
+    }
+
+    const net = inp.cancelledNetCollectedFromPayments
+    if (net != null && Number.isFinite(Number(net)) && Number(net) <= 0.005) {
+      return 0
+    }
+  }
+
+  return tip
+}
+
+function operatingProfitFromTotalRevenue(
+  totalRevenue: number,
+  inp: StoredCompanyRevenueComputeInput,
+  isReservationCancelled: boolean
+): number {
+  const tipDeduction = computePrepaymentTipOperatingDeduction({
+    prepaymentTip: Number(inp.prepaymentTip) || 0,
+    isReservationCancelled,
+    isOTAChannel: inp.isOTAChannel,
+    refundAmountForCompanyRevenueBlock: inp.refundAmountForCompanyRevenueBlock,
+    customerPaymentGross: inp.customerPaymentGross ?? null,
+    cancelledNetCollectedFromPayments: inp.cancelledNetCollectedFromPayments ?? null,
+    totalRevenue,
+    refundedFromRecords: inp.refundAmountForCompanyRevenueBlock,
+  })
+  if (isReservationCancelled && !inp.isOTAChannel && totalRevenue <= 0.005) {
+    return 0
+  }
+  return roundUsd2(totalRevenue - tipDeduction)
 }
 
 export function computeStoredCompanyRevenueFields(
@@ -98,7 +173,7 @@ export function computeStoredCompanyRevenueFields(
   /** 예약 지출(위약금 등) — UI ④와 동일하게 모든 분기에서 차감(부호 그대로) */
   const rex = Number(inp.reservationExpensesTotal) || 0
 
-  const omitAdditionalDiscountAndCostFromRevenueSum =
+  const _omitAdditionalDiscountAndCostFromRevenueSum =
     inp.omitAdditionalDiscountAndCostFromSumOverride !== undefined
       ? inp.omitAdditionalDiscountAndCostFromSumOverride
       : shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum({
@@ -108,25 +183,36 @@ export function computeStoredCompanyRevenueFields(
           onlinePaymentAmount: inp.omitCtx.onlinePaymentAmount,
           channelPaymentGross: inp.omitCtx.channelPaymentGross,
         })
+  void _omitAdditionalDiscountAndCostFromRevenueSum
 
   if (isReservationCancelled && !inp.isOTAChannel) {
+    const netFromPayments = inp.cancelledNetCollectedFromPayments
+    if (netFromPayments != null && Number.isFinite(Number(netFromPayments))) {
+      const tr = roundUsd2(Math.max(0, Number(netFromPayments)) - rex)
+      return {
+        company_total_revenue: tr,
+        operating_profit: operatingProfitFromTotalRevenue(tr, inp, true),
+      }
+    }
     const ch = roundUsd2(Math.max(0, Number(inp.channelSettlementBase) || 0))
-    /** 비-OTA 취소: 투어 환불은 ③ 정산 net에 반영 — 저장 총매출은 정산 베이스(OTA 취소와 동일: refb 재차감 없음) 에서 예약 지출(위약금) 차감 */
-    const tr = roundUsd2(ch - rex)
+    const refb = inp.refundAmountForCompanyRevenueBlock
+    /** 채널 정산 net에 환불이 안 잡힌 경우 입금·가격 환불 합으로 차감 */
+    const tr = roundUsd2(ch - rex - (refb > 0.005 ? refb : 0))
     return {
       company_total_revenue: tr,
-      operating_profit: roundUsd2(tr - prepTip),
+      operating_profit: operatingProfitFromTotalRevenue(tr, inp, true),
     }
   }
 
   const refb = inp.refundAmountForCompanyRevenueBlock
 
   if (isReservationCancelled && inp.isOTAChannel) {
+    /** `computePricingSectionDisplayTotalRevenue`·가격 정보 ④와 동일 — 저장된 채널 정산(net)만 사용, 환불 재차감 없음 */
     const ch = roundUsd2(Math.max(0, Number(inp.channelSettlementBase) || 0))
-    const tr = roundUsd2(ch - rex - refb)
+    const tr = roundUsd2(ch - rex)
     return {
       company_total_revenue: tr,
-      operating_profit: roundUsd2(tr - prepTip),
+      operating_profit: operatingProfitFromTotalRevenue(tr, inp, true),
     }
   }
 
@@ -135,7 +221,7 @@ export function computeStoredCompanyRevenueFields(
     const tr = roundUsd2(ch - rex)
     return {
       company_total_revenue: tr,
-      operating_profit: roundUsd2(tr - prepTip),
+      operating_profit: operatingProfitFromTotalRevenue(tr, inp, false),
     }
   }
 
@@ -152,14 +238,10 @@ export function computeStoredCompanyRevenueFields(
     if (refb > 0.005) {
       tr -= refb
     }
-    if (inp.isHomepageBooking && (Number(inp.additionalCost) || 0) > 0.005) {
-      const ac = Number(inp.additionalCost) || 0
-      tr -= ac
-    }
     tr = roundUsd2(tr)
     return {
       company_total_revenue: tr,
-      operating_profit: roundUsd2(tr - prepTip),
+      operating_profit: operatingProfitFromTotalRevenue(tr, inp, false),
     }
   }
 
@@ -177,11 +259,16 @@ export function computeStoredCompanyRevenueFields(
   /** UI ledger와 동일: omit 판정(베이스 기준) 이후 예약 지출(위약금) 차감 */
   tr -= rex
 
-  if (!omitOtaExtras && inp.reservationOptionsActiveSum > 0 && inp.isOTAChannel) {
-    tr += inp.reservationOptionsActiveSum
-  }
+  tr += otaReservationOptionsForCompanyRevenue({
+    isOTAChannel: inp.isOTAChannel,
+    reservationOptionsTotalPrice: inp.reservationOptionsActiveSum,
+    omitOtaExtras,
+    customerPaymentNet: Number(inp.customerPaymentNetForOtaOmitCheck) || 0,
+    channelPaymentNet: Number(inp.channelPaymentNet) || 0,
+  })
 
   /** 불포함(입장권·비거주자 비용)은 OTA 판매가에 포함되지 않는 별도 수금이라 omitOtaExtras와 무관하게 항상 가산 */
+  let notIncludedTotalUsd = 0
   if (!isNotIncludedExcludedReservationStatus(inp.reservationStatus)) {
     const { baseUsd, residentFeesUsd } = splitNotIncludedForDisplay(
       inp.choiceNotIncludedTotal ?? 0,
@@ -194,51 +281,49 @@ export function computeStoredCompanyRevenueFields(
     )
     if (baseUsd > 0.005) {
       tr += baseUsd
+      notIncludedTotalUsd += baseUsd
     }
     if (residentFeesUsd > 0.005) {
       tr += residentFeesUsd
+      notIncludedTotalUsd += residentFeesUsd
     }
   }
 
-  const omitDiscCostEffective =
-    (omitAdditionalDiscountAndCostFromRevenueSum &&
-      !(inp.isOTAChannel && !isReservationCancelled)) ||
-    omitOtaExtras
+  const formExtras = otaPricingFormExtrasForCompanyRevenue({
+    isOTAChannel: inp.isOTAChannel,
+    omitOtaExtras,
+    additionalDiscount: Number(inp.additionalDiscount) || 0,
+    additionalCost: Number(inp.additionalCost) || 0,
+    tax: Number(inp.tax) || 0,
+    cardFee: Number(inp.cardFee) || 0,
+    prepaymentCost: Number(inp.prepaymentCost) || 0,
+    customerPaymentNet: Number(inp.customerPaymentNetForOtaOmitCheck) || 0,
+    channelPaymentNet: Number(inp.channelPaymentNet) || 0,
+    notIncludedTotalUsd,
+    reservationOptionsTotalPrice: inp.reservationOptionsActiveSum,
+  })
 
-  if (!omitDiscCostEffective) {
-    const disc = Number(inp.additionalDiscount) || 0
-    if (disc > 0.005 && !inp.isHomepageBooking) {
-      tr -= disc
-    }
-    const ac = Number(inp.additionalCost) || 0
-    if (ac > 0.005 && !inp.isHomepageBooking) {
-      tr += ac
-    }
+  if (formExtras.additionalDiscount > 0.005 && !inp.isHomepageBooking) {
+    tr -= formExtras.additionalDiscount
+  }
+  if (formExtras.additionalCost > 0.005 && !inp.isHomepageBooking) {
+    tr += formExtras.additionalCost
+  }
+  if (formExtras.tax > 0.005) {
+    tr += formExtras.tax
+  }
+  if (formExtras.prepaymentCost > 0.005 && !inp.isHomepageBooking) {
+    tr += formExtras.prepaymentCost
+  }
+  if (inp.isOTAChannel && !isReservationCancelled && formExtras.cardFee > 0.005) {
+    tr += formExtras.cardFee
+  }
+  if (inp.isOTAChannel && !isReservationCancelled && !omitOtaExtras && prepTip > 0.005) {
+    tr += prepTip
   }
 
-  if (!omitOtaExtras) {
-    const tax = Number(inp.tax) || 0
-    if (tax > 0.005) {
-      tr += tax
-    }
-
-    const ppc = Number(inp.prepaymentCost) || 0
-    if (ppc > 0.005 && !inp.isHomepageBooking) {
-      tr += ppc
-    }
-  }
-
-  if (inp.isOTAChannel && !isReservationCancelled && !omitOtaExtras) {
-    const cf = Number(inp.cardFee) || 0
-    if (cf > 0.005) {
-      tr += cf
-    }
-    if (prepTip > 0.005) {
-      tr += prepTip
-    }
-  }
-
-  if (refb > 0.005) {
+  /** 채널 정산 ≈ 고객 총 결제(넷)이면 환불·Returned는 정산에 이미 반영 — 이중 차감 방지 */
+  if (refb > 0.005 && !omitOtaExtras) {
     tr -= refb
   }
 
@@ -250,6 +335,6 @@ export function computeStoredCompanyRevenueFields(
   tr = roundUsd2(tr)
   return {
     company_total_revenue: tr,
-    operating_profit: roundUsd2(tr - prepTip),
+    operating_profit: operatingProfitFromTotalRevenue(tr, inp, isReservationCancelled),
   }
 }

@@ -20,7 +20,7 @@ import { downloadDomAsA4Pdf } from '@/lib/sopPreviewPrintAndPdf'
 import { DailyReportDocument } from '@/components/admin/daily-report/DailyReportDocument'
 import type { DailyReportData } from '@/lib/dailyReport/types'
 import { DAILY_REPORT_TRAVEL_AGENCY_RECOMMENDATIONS } from '@/lib/dailyReport/types'
-import { todayInLasVegas } from '@/lib/dailyReport/dateUtils'
+import { todayInLasVegas, getDailyReportDatePreset, DAILY_REPORT_DATE_PRESET_LABELS, formatReportDateRangeLabel, type DailyReportDatePreset } from '@/lib/dailyReport/dateUtils'
 import { useOperator } from '@/contexts/OperatorContext'
 
 type DailyReportPreviewModalProps = {
@@ -65,13 +65,15 @@ export function DailyReportPreviewModal({
   }, [open, reportDate])
 
   const reportDateForLoad = startDate
+  const isRangeReport = startDate !== endDate
 
   const loadReport = useCallback(async () => {
-    if (!open || !reportDateForLoad) return
+    if (!open || !reportDateForLoad || !endDate) return
     setLoading(true)
     try {
       const params = new URLSearchParams()
-      params.set('date', reportDateForLoad)
+      params.set('startDate', reportDateForLoad)
+      params.set('endDate', endDate)
       if (operatorId) params.set('operatorId', operatorId)
 
       const res = await fetchApiWithAuth(`/api/admin/daily-reports?${params}`)
@@ -88,7 +90,7 @@ export function DailyReportPreviewModal({
     } finally {
       setLoading(false)
     }
-  }, [operatorId, isKo, open, reportDateForLoad])
+  }, [operatorId, isKo, open, reportDateForLoad, endDate])
 
   useEffect(() => {
     if (open && startDate && endDate) {
@@ -97,16 +99,29 @@ export function DailyReportPreviewModal({
   }, [open, startDate, endDate, loadReport])
 
   const handleStartDateChange = (value: string) => {
-    const wasSingleDay = startDate === endDate
     setStartDate(value)
-    if (wasSingleDay || endDate < value) setEndDate(value)
+    if (endDate < value) setEndDate(value)
   }
 
   const handleEndDateChange = (value: string) => {
-    const wasSingleDay = startDate === endDate
     setEndDate(value)
-    if (wasSingleDay || startDate > value) setStartDate(value)
+    if (startDate > value) setStartDate(value)
   }
+
+  const applyDatePreset = (preset: DailyReportDatePreset) => {
+    const range = getDailyReportDatePreset(preset)
+    setStartDate(range.start)
+    setEndDate(range.end)
+  }
+
+  const datePresets: DailyReportDatePreset[] = [
+    'today',
+    'yesterday',
+    'this_week',
+    'last_week',
+    'this_month',
+    'last_month',
+  ]
 
   const updateNotes = (
     section: 'reservation' | 'tour' | 'todo' | 'tomorrow' | 'additional',
@@ -153,7 +168,11 @@ export function DailyReportPreviewModal({
   const handleDownloadPdf = async () => {
     if (!previewRef.current || !data) return
     try {
-      await downloadDomAsA4Pdf(previewRef.current, `daily-report-${data.reportDate}`, { format: 'letter' })
+      await downloadDomAsA4Pdf(
+        previewRef.current,
+        isRangeReport ? `report-${startDate}_${endDate}` : `daily-report-${data.reportDate}`,
+        { format: 'letter' }
+      )
     } catch (e) {
       console.error('pdf download', e)
       alert(isKo ? 'PDF 다운로드에 실패했습니다.' : 'PDF download failed.')
@@ -164,8 +183,8 @@ export function DailyReportPreviewModal({
     if (!data || !previewRef.current) return
 
     const confirmMsg = isKo
-      ? `SUPER 관리자에게 ${data.reportDate} 일일 보고를 발송하시겠습니까?\nPDF가 서버에 저장되고 이메일이 전송됩니다.`
-      : `Send the daily report for ${data.reportDate} to SUPER admins?`
+      ? `SUPER 관리자에게 ${formatReportDateRangeLabel(data.reportDate, data.reportEndDate ?? data.reportDate, locale)} 업무 보고를 발송하시겠습니까?\nPDF가 서버에 저장되고 이메일이 전송됩니다.`
+      : `Send the report for ${formatReportDateRangeLabel(data.reportDate, data.reportEndDate ?? data.reportDate, locale)} to SUPER admins?`
 
     if (!window.confirm(confirmMsg)) return
 
@@ -220,49 +239,72 @@ export function DailyReportPreviewModal({
             {isKo ? 'Daily Report — 일일 업무 보고' : 'Daily Report'}
           </DialogTitle>
 
-          <div className="mt-3 flex flex-wrap items-end gap-3">
-            <div className="min-w-[140px] flex-1 sm:flex-none">
-              <Label htmlFor="daily-report-start-date" className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                {isKo ? '시작일' : 'Start date'}
-              </Label>
-              <Input
-                id="daily-report-start-date"
-                type="date"
-                value={startDate}
-                onChange={(e) => handleStartDateChange(e.target.value)}
-                disabled={busy}
-                className="h-9 rounded-lg"
-              />
+          <div className="mt-3 space-y-2">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="min-w-[140px] flex-1 sm:flex-none">
+                <Label htmlFor="daily-report-start-date" className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                  {isKo ? '시작일' : 'Start date'}
+                </Label>
+                <Input
+                  id="daily-report-start-date"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => handleStartDateChange(e.target.value)}
+                  disabled={busy}
+                  className="h-9 rounded-lg"
+                />
+              </div>
+              <span className="hidden pb-2 text-muted-foreground sm:inline" aria-hidden>
+                —
+              </span>
+              <div className="min-w-[140px] flex-1 sm:flex-none">
+                <Label htmlFor="daily-report-end-date" className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                  {isKo ? '종료일' : 'End date'}
+                </Label>
+                <Input
+                  id="daily-report-end-date"
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => handleEndDateChange(e.target.value)}
+                  disabled={busy}
+                  className="h-9 rounded-lg"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 sm:ml-auto">
+                {datePresets.map((preset) => (
+                  <Button
+                    key={preset}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => applyDatePreset(preset)}
+                    className="h-9 rounded-lg px-2.5 text-xs"
+                  >
+                    {isKo ? DAILY_REPORT_DATE_PRESET_LABELS[preset].ko : DAILY_REPORT_DATE_PRESET_LABELS[preset].en}
+                  </Button>
+                ))}
+              </div>
             </div>
-            <span className="hidden pb-2 text-muted-foreground sm:inline" aria-hidden>
-              —
-            </span>
-            <div className="min-w-[140px] flex-1 sm:flex-none">
-              <Label htmlFor="daily-report-end-date" className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                {isKo ? '종료일' : 'End date'}
-              </Label>
-              <Input
-                id="daily-report-end-date"
-                type="date"
-                value={endDate}
-                onChange={(e) => handleEndDateChange(e.target.value)}
-                disabled={busy}
-                className="h-9 rounded-lg"
-              />
-            </div>
-            {startDate !== endDate && (
-              <p className="w-full text-xs text-amber-700">
+
+            {isRangeReport && (
+              <p className="text-xs text-primary">
                 {isKo
-                  ? '일일 보고는 시작일 기준으로 집계됩니다.'
-                  : 'The daily report is aggregated for the start date.'}
+                  ? `${formatReportDateRangeLabel(startDate, endDate, locale)} 기간 통계를 표시합니다.`
+                  : `Showing stats for ${formatReportDateRangeLabel(startDate, endDate, locale)}.`}
               </p>
             )}
           </div>
 
           <DialogDescription className="mt-2">
             {isKo
-              ? '하루 업무를 한눈에 확인하고, 메모를 추가한 뒤 SUPER 관리자에게 발송하세요.'
-              : 'Review today, add notes, and send to SUPER admins.'}
+              ? isRangeReport
+                ? '선택한 기간의 업무 통계를 확인하고, 메모를 추가한 뒤 SUPER 관리자에게 발송하세요.'
+                : '하루 업무를 한눈에 확인하고, 메모를 추가한 뒤 SUPER 관리자에게 발송하세요.'
+              : isRangeReport
+                ? 'Review the selected period, add notes, and send to SUPER admins.'
+                : 'Review today, add notes, and send to SUPER admins.'}
             {existing?.status === 'submitted' && (
               <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
                 <CheckCircle2 className="h-3 w-3" />

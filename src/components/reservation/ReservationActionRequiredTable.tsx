@@ -33,6 +33,7 @@ import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusS
 import { ChoicesDisplay } from '@/components/reservation/ChoicesDisplay'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
 import { ReservationActionRequiredBalanceTable } from '@/components/reservation/ReservationActionRequiredBalanceTable'
+import { ReservationActionRequiredEngineTable } from '@/components/reservation/ReservationActionRequiredEngineTable'
 import { ReservationChannelFavicon } from '@/components/reservation/ReservationChannelFavicon'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
 import type { SortDir } from '@/lib/clientTableSort'
@@ -49,6 +50,8 @@ export type ActionRequiredTableVariant =
   | 'pricingMismatch'
   | 'deposit'
   | 'balance'
+  | 'formula'
+  | 'engine'
   | 'incompleteDraft'
 
 export interface ReservationActionRequiredTableProps {
@@ -82,6 +85,8 @@ export interface ReservationActionRequiredTableProps {
   paymentRecordsByReservationId?: Map<string, Array<{ payment_status: string; amount: number }>>
   /** balance 테이블: reservation_options 실시간 합 → 선택옵션·소계·산식에 반영 */
   reservationOptionSumByReservationId?: Map<string, number>
+  /** 예약 지출 합계 — 가격 엔진 ④ 총매출·운영이익 차감 */
+  reservationExpenseSumByReservationId?: Map<string, number>
   locale: string
   emailDropdownOpen: string | null
   sendingEmail: string | null
@@ -934,8 +939,32 @@ export function ReservationActionRequiredTable(props: ReservationActionRequiredT
 
   const useBalanceLayout =
     tableVariant === 'balance' ||
+    tableVariant === 'formula' ||
     tableVariant === 'pricingNoPrice' ||
     tableVariant === 'pricingMismatch'
+
+  if (tableVariant === 'engine') {
+    return (
+      <>
+        <ReservationActionRequiredEngineTable
+          reservations={reservations}
+          customers={rest.customers}
+          products={rest.products}
+          channels={rest.channels}
+          reservationPricingMap={rest.reservationPricingMap}
+          paymentRecordsByReservationId={rest.paymentRecordsByReservationId ?? new Map()}
+          reservationOptionSumByReservationId={rest.reservationOptionSumByReservationId ?? new Map()}
+          reservationExpenseSumByReservationId={rest.reservationExpenseSumByReservationId ?? new Map()}
+          locale={rest.locale}
+          onEditClick={rest.onEditClick}
+          onPricingInfoClick={rest.onPricingInfoClick}
+          {...(rest.onRefreshReservations ? { onRefreshReservations: rest.onRefreshReservations } : {})}
+          {...(rest.onRefreshReservationPricing ? { onRefreshReservationPricing: rest.onRefreshReservationPricing } : {})}
+        />
+        {followUpReservation && <FollowUpModal followUpReservation={followUpReservation} onClose={() => setFollowUpReservation(null)} />}
+      </>
+    )
+  }
 
   if (useBalanceLayout) {
     return (
@@ -968,8 +997,11 @@ export function ReservationActionRequiredTable(props: ReservationActionRequiredT
           {...(tableVariant === 'balance' && rest.balanceReservationsForApply
             ? { balanceReservationsForApply: rest.balanceReservationsForApply }
             : {})}
+          {...(tableVariant === 'formula' && rest.balanceReservationsForApply
+            ? { balanceReservationsForApply: rest.balanceReservationsForApply }
+            : {})}
           actionsColumnEditOnly
-          enableMismatchFormulaBundleApply={tableVariant === 'pricingMismatch'}
+          enableMismatchFormulaBundleApply={tableVariant === 'pricingMismatch' || tableVariant === 'formula'}
           showPartnerCancelRefundAction={showPartnerCancelRefundAction ?? false}
           {...(onRefreshPaymentAggregates ? { onRefreshPaymentAggregates } : {})}
           {...(tourDateSortActive !== undefined ? { tourDateSortActive } : {})}

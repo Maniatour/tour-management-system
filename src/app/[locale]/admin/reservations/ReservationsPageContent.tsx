@@ -189,6 +189,7 @@ import {
   reservationNeedsCancelFollowUpQueueAttention,
   type FollowUpPipelineStepKey,
 } from '@/lib/reservationFollowUpPipeline'
+import { DIALOG_Z_INDEX, childModalZIndex } from '@/lib/dialogZIndex'
 
 const CustomerForm = dynamic(() => import('@/components/CustomerForm'), { ssr: false, loading: () => null })
 const CustomerEditSimilarReservationsModal = dynamic(
@@ -6690,6 +6691,7 @@ export default function AdminReservations() {
           coupons={(coupons || []) as { id: string; coupon_code: string; discount_type: 'percentage' | 'fixed'; [key: string]: unknown }[]}
           onSubmit={editingReservation ? handleEditReservation : handleAddReservation}
           isNewReservation={showAddForm && !editingReservation}
+          {...(showActionRequiredModal ? { modalStackLevel: 'nested' as const } : {})}
           onCancel={() => {
             setShowAddForm(false)
             setNewReservationId(null)
@@ -6819,11 +6821,17 @@ export default function AdminReservations() {
         reservation={pricingModalReservation}
         isOpen={showPricingModal}
         onClose={handleClosePricingModal}
+        {...(showActionRequiredModal || followUpQueueModalOpen
+          ? { overlayZIndex: childModalZIndex(DIALOG_Z_INDEX.default, 2) }
+          : {})}
       />
 
       {/* ??? ??? ?? */}
       {showPaymentRecords && selectedReservationForPayment && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"
+          style={{ zIndex: showActionRequiredModal ? DIALOG_Z_INDEX.nested : 60 }}
+        >
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <h2 className="text-xl font-semibold text-gray-900">

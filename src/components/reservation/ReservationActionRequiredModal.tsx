@@ -2,10 +2,10 @@
 
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { X, AlertCircle, MapPin, DollarSign, CreditCard, Scale, HelpCircle, ChevronLeft, ChevronRight, LayoutGrid, Table2, GalleryHorizontal, Ban, FileWarning, RefreshCw } from 'lucide-react'
+import { X, AlertCircle, MapPin, DollarSign, CreditCard, Scale, HelpCircle, ChevronLeft, ChevronRight, LayoutGrid, Table2, GalleryHorizontal, Ban, FileWarning, RefreshCw, Calculator, Sparkles } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
-import { aggregateReservationOptionSumsByReservationId, type ReservationOptionSumRow } from '@/lib/syncReservationPricingAggregates'
+import { aggregateReservationOptionSumsByReservationId, aggregateReservationExpenseSumsByReservationId, type ReservationOptionSumRow } from '@/lib/syncReservationPricingAggregates'
 import { ReservationCardItem } from '@/components/reservation/ReservationCardItem'
 import {
   ReservationActionRequiredTable,
@@ -21,8 +21,11 @@ import {
 } from '@/utils/reservationPricingBalance'
 import {
   reservationMatchesExtendedPricingMismatchCriteria,
+  reservationMatchesOperatingProfitMismatchCriteria,
   type BalanceChannelRowInput,
 } from '@/utils/balanceChannelRevenue'
+import { reservationMatchesEngineMismatchCriteria } from '@/lib/pricingEngine'
+import { childModalZIndex, DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
 import { reservationNeedsCancelFinancialCleanup } from '@/lib/reservationActionRequiredCancelTab'
 import {
   isManiaTourOrServiceReservation,
@@ -40,6 +43,8 @@ export type ActionRequiredTabId =
   | 'deposit'
   | 'cancel'
   | 'balance'
+  | 'formula'
+  | 'engine'
   | 'incompleteDraft'
 export type PricingSubTabId = 'noPrice' | 'mismatch'
 export type BalanceSubTabId = 'cancelled' | 'unpaid' | 'calcWrong'
@@ -154,6 +159,8 @@ const TABS: { id: ActionRequiredTabId; labelKey: string; icon: React.ElementType
   { id: 'deposit', labelKey: 'actionRequired.tabs.deposit', icon: CreditCard },
   { id: 'cancel', labelKey: 'actionRequired.tabs.cancel', icon: Ban },
   { id: 'balance', labelKey: 'actionRequired.tabs.balance', icon: Scale },
+  { id: 'formula', labelKey: 'actionRequired.tabs.formula', icon: Calculator },
+  { id: 'engine', labelKey: 'actionRequired.tabs.engine', icon: Sparkles },
   { id: 'incompleteDraft', labelKey: 'actionRequired.tabs.incompleteDraft', icon: FileWarning },
 ]
 
@@ -218,6 +225,9 @@ export default function ReservationActionRequiredModal({
     Map<string, PaymentRecordLike[]>
   >(() => new Map())
   const [reservationOptionSumByReservationId, setReservationOptionSumByReservationId] = useState<
+    Map<string, number>
+  >(() => new Map())
+  const [reservationExpenseSumByReservationId, setReservationExpenseSumByReservationId] = useState<
     Map<string, number>
   >(() => new Map())
   const [reservationOptionsPresenceByReservationId, setReservationOptionsPresenceByReservationId] =
@@ -320,7 +330,7 @@ export default function ReservationActionRequiredModal({
     const chunkSize = 200
     for (let i = 0; i < ids.length; i += chunkSize) {
       const chunk = [...new Set(ids.slice(i, i + chunkSize).map(normalizeReservationIdForPayments).filter(Boolean))]
-      const [{ data }, { data: optRows }] = await Promise.all([
+      const [{ data }, { data: optRows }, { data: expenseRows }] = await Promise.all([
         supabase
           .from('payment_records')
           .select('reservation_id, payment_status, amount')
@@ -329,6 +339,11 @@ export default function ReservationActionRequiredModal({
           .from('reservation_options')
           .select('reservation_id, total_price, price, ea, status')
           .in('reservation_id', chunk),
+        supabase
+          .from('reservation_expenses')
+          .select('reservation_id, amount, status')
+          .in('reservation_id', chunk)
+          .not('status', 'eq', 'rejected'),
       ])
       const chunkByRes = new Map<string, PaymentRecordLike[]>()
       for (const id of chunk) {
@@ -391,6 +406,20 @@ export default function ReservationActionRequiredModal({
         }
         return n
       })
+      const chunkExpenseSums = aggregateReservationExpenseSumsByReservationId(expenseRows ?? [])
+      setReservationExpenseSumByReservationId((prev) => {
+        const n = new Map(prev)
+        const sumsByNorm = new Map<string, number>()
+        for (const [rid, v] of chunkExpenseSums) {
+          const k = normalizeReservationIdForPayments(rid)
+          if (!k) continue
+          sumsByNorm.set(k, Math.round(((sumsByNorm.get(k) ?? 0) + v) * 100) / 100)
+        }
+        for (const id of chunk) {
+          n.set(id, sumsByNorm.get(id) ?? 0)
+        }
+        return n
+      })
     }
   }, [])
 
@@ -399,6 +428,7 @@ export default function ReservationActionRequiredModal({
       setReservationIdsWithPayments(new Set())
       setPaymentRecordsByReservationId(new Map())
       setReservationOptionSumByReservationId(new Map())
+      setReservationExpenseSumByReservationId(new Map())
       setReservationOptionsPresenceByReservationId(new Map())
       setLoadingPayments(false)
       return
@@ -410,13 +440,14 @@ export default function ReservationActionRequiredModal({
       const set = new Set<string>()
       const byRes = new Map<string, PaymentRecordLike[]>()
       const mergedOptionSums = new Map<string, number>()
+      const mergedExpenseSums = new Map<string, number>()
       const mergedOptionsPresence = new Map<string, boolean>()
       ids.forEach((id) => mergedOptionsPresence.set(id, false))
       const chunkSize = 200
       try {
         for (let i = 0; i < ids.length; i += chunkSize) {
           const chunk = [...new Set(ids.slice(i, i + chunkSize).map(normalizeReservationIdForPayments).filter(Boolean))]
-          const [{ data }, { data: optRows }] = await Promise.all([
+          const [{ data }, { data: optRows }, { data: expenseRows }] = await Promise.all([
             supabase
               .from('payment_records')
               .select('reservation_id, payment_status, amount')
@@ -425,6 +456,11 @@ export default function ReservationActionRequiredModal({
               .from('reservation_options')
               .select('reservation_id, total_price, price, ea, status')
               .in('reservation_id', chunk),
+            supabase
+              .from('reservation_expenses')
+              .select('reservation_id, amount, status')
+              .in('reservation_id', chunk)
+              .not('status', 'eq', 'rejected'),
           ])
           if (cancelled) return
           if (data) {
@@ -452,11 +488,19 @@ export default function ReservationActionRequiredModal({
             const rid = normalizeReservationIdForPayments((row as { reservation_id?: string }).reservation_id)
             if (rid) mergedOptionsPresence.set(rid, true)
           }
+          const chunkExpenseSums = aggregateReservationExpenseSumsByReservationId(expenseRows ?? [])
+          for (const [rid, v] of chunkExpenseSums) {
+            const k = normalizeReservationIdForPayments(rid)
+            if (!k) continue
+            const prev = mergedExpenseSums.get(k) ?? 0
+            mergedExpenseSums.set(k, Math.round((prev + v) * 100) / 100)
+          }
         }
         if (cancelled) return
         setReservationIdsWithPayments(set)
         setPaymentRecordsByReservationId(byRes)
         setReservationOptionSumByReservationId(mergedOptionSums)
+        setReservationExpenseSumByReservationId(mergedExpenseSums)
         setReservationOptionsPresenceByReservationId(mergedOptionsPresence)
       } finally {
         if (!cancelled) setLoadingPayments(false)
@@ -592,6 +636,31 @@ export default function ReservationActionRequiredModal({
 
     const incompleteDraftList = list.filter((r) => isMinimalUnlinkedReservationRow(r))
 
+    const formulaList = list.filter(
+      (r) =>
+        hasPricing(r) &&
+        reservationMatchesOperatingProfitMismatchCriteria(
+          r,
+          reservationPricingMap as Map<string, ReservationPricingMapValue>,
+          channels as BalanceChannelRowInput[],
+          paymentRecordsByReservationId,
+          reservationOptionSumByReservationId
+        )
+    )
+
+    const engineList = list.filter(
+      (r) =>
+        hasPricing(r) &&
+        reservationMatchesEngineMismatchCriteria(
+          r,
+          reservationPricingMap as Map<string, ReservationPricingMapValue>,
+          channels as BalanceChannelRowInput[],
+          paymentRecordsByReservationId,
+          reservationOptionSumByReservationId,
+          reservationExpenseSumByReservationId
+        )
+    )
+
     const pricingNum = (v: unknown): number => {
       if (v == null || v === '') return 0
       if (typeof v === 'number' && !Number.isNaN(v)) return v
@@ -649,12 +718,15 @@ export default function ReservationActionRequiredModal({
       balanceCancelled: balanceCancelledList,
       balanceUnpaid: balanceUnpaidList,
       balanceCalcWrong: balanceCalcWrongList,
+      formula: formulaList,
+      engine: engineList,
       incompleteDraft: incompleteDraftList,
     }
   }, [
     reservations,
     reservationPricingMap,
     reservationOptionSumByReservationId,
+    reservationExpenseSumByReservationId,
     products,
     optionChoices,
     reservationIdsWithPayments,
@@ -672,6 +744,8 @@ export default function ReservationActionRequiredModal({
     deposit: filteredByTab.deposit.length,
     cancel: filteredByTab.cancel.length,
     balance: filteredByTab.balance.length,
+    formula: filteredByTab.formula.length,
+    engine: filteredByTab.engine.length,
     incompleteDraft: filteredByTab.incompleteDraft.length,
   }), [filteredByTab])
 
@@ -683,6 +757,8 @@ export default function ReservationActionRequiredModal({
       ...filteredByTab.deposit.map(r => r.id),
       ...filteredByTab.cancel.map(r => r.id),
       ...filteredByTab.balance.map(r => r.id),
+      ...filteredByTab.formula.map(r => r.id),
+      ...filteredByTab.engine.map(r => r.id),
       ...filteredByTab.incompleteDraft.map(r => r.id),
     ]).size
   , [filteredByTab])
@@ -715,6 +791,12 @@ export default function ReservationActionRequiredModal({
     }
     if (activeTab === 'incompleteDraft') {
       return filteredByTab.incompleteDraft
+    }
+    if (activeTab === 'formula') {
+      return filteredByTab.formula
+    }
+    if (activeTab === 'engine') {
+      return filteredByTab.engine
     }
     return filteredByTab[activeTab as keyof typeof filteredByTab] as Reservation[]
   }, [
@@ -799,6 +881,8 @@ export default function ReservationActionRequiredModal({
   const actionRequiredTableVariant = useMemo((): ActionRequiredTableVariant => {
     if (activeTab === 'balance') return 'balance'
     if (activeTab === 'cancel') return 'balance'
+    if (activeTab === 'formula') return 'formula'
+    if (activeTab === 'engine') return 'engine'
     if (activeTab === 'status') return 'status'
     if (activeTab === 'tour') return 'tour'
     if (activeTab === 'incompleteDraft') return 'incompleteDraft'
@@ -807,7 +891,9 @@ export default function ReservationActionRequiredModal({
   }, [activeTab, pricingSubTab])
 
   const showCardTableToggle =
-    currentList.length > 0 && !(loadingPayments && (activeTab === 'deposit' || activeTab === 'cancel'))
+    activeTab !== 'engine' &&
+    currentList.length > 0 &&
+    !(loadingPayments && (activeTab === 'deposit' || activeTab === 'cancel'))
 
   // 현재 탭 목록이 줄었을 때 페이지 범위 맞추기
   useEffect(() => {
@@ -855,12 +941,17 @@ export default function ReservationActionRequiredModal({
 
   if (!isOpen) return null
 
+  const overlayZ = DIALOG_Z_INDEX.default
+  const manualOverlayZ = childModalZIndex(overlayZ, 1)
+  const swipeHintZ = overlayZ + 1
+
   if (bulkReservationsLoading) {
     const loadingMsg =
       locale === 'en' ? 'Loading all reservations for this queue…' : '처리 큐용 전체 예약을 불러오는 중…'
-    return (
+    const loadingModal = (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        className="fixed inset-0 flex items-center justify-center bg-black/50 p-4"
+        style={{ zIndex: overlayZ }}
         onClick={(e) => {
           if (e.target === e.currentTarget) onClose()
         }}
@@ -874,10 +965,15 @@ export default function ReservationActionRequiredModal({
         </div>
       </div>
     )
+    if (typeof document === 'undefined') return loadingModal
+    return createPortal(loadingModal, document.body)
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-0 sm:items-center sm:p-4">
+  const modal = (
+    <div
+      className="fixed inset-0 flex items-stretch justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+      style={{ zIndex: overlayZ }}
+    >
       <div
         className="flex h-full min-h-0 w-full max-w-none flex-col bg-white pt-[env(safe-area-inset-top)] shadow-xl rounded-none sm:h-auto sm:max-h-[90vh] sm:max-w-[min(98vw,2000px)] sm:rounded-xl sm:pt-0"
         onClick={(e) => e.stopPropagation()}
@@ -1194,43 +1290,40 @@ export default function ReservationActionRequiredModal({
             <>
               {listViewMode === 'detail' && paginatedList[0] ? (
                 <>
-                  {typeof document !== 'undefined' &&
-                    createPortal(
-                      <div
-                        className="fixed bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-1/2 z-[105] flex -translate-x-1/2 flex-col items-center gap-1.5 pointer-events-none"
-                        aria-live="polite"
+                  <div
+                    className="fixed bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-1/2 flex -translate-x-1/2 flex-col items-center gap-1.5 pointer-events-none"
+                    style={{ zIndex: swipeHintZ }}
+                    aria-live="polite"
+                  >
+                    <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-gray-200 bg-white/95 px-2 py-1.5 shadow-lg backdrop-blur-sm sm:gap-2 sm:px-3 sm:py-2">
+                      <button
+                        type="button"
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        disabled={safePage <= 1}
+                        className="rounded-full p-2 text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                        aria-label={t('actionRequired.detailPrevReservation')}
                       >
-                        <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-gray-200 bg-white/95 px-2 py-1.5 shadow-lg backdrop-blur-sm sm:gap-2 sm:px-3 sm:py-2">
-                          <button
-                            type="button"
-                            onClick={() => setPage((p) => Math.max(1, p - 1))}
-                            disabled={safePage <= 1}
-                            className="rounded-full p-2 text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                            aria-label={t('actionRequired.detailPrevReservation')}
-                          >
-                            <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
-                          </button>
-                          <span className="min-w-[5rem] text-center text-xs font-medium tabular-nums text-gray-800 sm:text-sm">
-                            {safePage} / {totalPages}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                            disabled={safePage >= totalPages}
-                            className="rounded-full p-2 text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                            aria-label={t('actionRequired.detailNextReservation')}
-                          >
-                            <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
-                          </button>
-                        </div>
-                        {totalPages > 1 && (
-                          <p className="pointer-events-none max-w-[min(90vw,20rem)] text-center text-[10px] text-gray-600 sm:text-xs">
-                            {t('actionRequired.detailSwipeHint')}
-                          </p>
-                        )}
-                      </div>,
-                      document.body
+                        <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
+                      </button>
+                      <span className="min-w-[5rem] text-center text-xs font-medium tabular-nums text-gray-800 sm:text-sm">
+                        {safePage} / {totalPages}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={safePage >= totalPages}
+                        className="rounded-full p-2 text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                        aria-label={t('actionRequired.detailNextReservation')}
+                      >
+                        <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
+                      </button>
+                    </div>
+                    {totalPages > 1 && (
+                      <p className="pointer-events-none max-w-[min(90vw,20rem)] text-center text-[10px] text-gray-600 sm:text-xs">
+                        {t('actionRequired.detailSwipeHint')}
+                      </p>
                     )}
+                  </div>
                   <div
                     className="flex min-h-[4rem] flex-col items-center justify-center py-4 text-center text-xs text-gray-500"
                     onTouchStart={onDetailTouchStart}
@@ -1242,7 +1335,7 @@ export default function ReservationActionRequiredModal({
                     </p>
                   </div>
                 </>
-              ) : listViewMode === 'card' ? (
+              ) : listViewMode === 'card' && activeTab !== 'engine' ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {paginatedList.map((reservation) => (
                     <ReservationCardItem
@@ -1300,6 +1393,7 @@ export default function ReservationActionRequiredModal({
                   reservationIdsWithPayments={reservationIdsWithPayments}
                   paymentRecordsByReservationId={paymentRecordsByReservationId}
                   reservationOptionSumByReservationId={reservationOptionSumByReservationId}
+                  reservationExpenseSumByReservationId={reservationExpenseSumByReservationId}
                   customers={customers}
                   products={products}
                   channels={channels.map((c) => ({
@@ -1334,7 +1428,7 @@ export default function ReservationActionRequiredModal({
                   choicesCacheRef={choicesCacheRef}
                   onRefreshReservations={onRefreshReservations}
                   {...(onRefreshReservationPricing ? { onRefreshReservationPricing } : {})}
-                  {...(activeTab === 'balance' || activeTab === 'cancel'
+                  {...(activeTab === 'balance' || activeTab === 'cancel' || activeTab === 'formula'
                     ? { balanceReservationsForApply: currentList }
                     : {})}
                   showPartnerCancelRefundAction={activeTab === 'cancel'}
@@ -1385,7 +1479,8 @@ export default function ReservationActionRequiredModal({
 
       {manualOpen && (
         <div
-          className="fixed inset-0 z-[60] flex items-stretch justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+          className="fixed inset-0 flex items-stretch justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+          style={{ zIndex: manualOverlayZ }}
           onClick={() => setManualOpen(false)}
         >
           <div
@@ -1431,6 +1526,14 @@ export default function ReservationActionRequiredModal({
                   <span>{renderManualText(t('actionRequired.manualBalance'))}</span>
                 </li>
                 <li className="flex gap-2">
+                  <span className="font-medium text-gray-900 shrink-0">{t('actionRequired.tabs.formula')}:</span>
+                  <span>{renderManualText(t('actionRequired.manualFormula'))}</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-medium text-gray-900 shrink-0">{t('actionRequired.tabs.engine')}:</span>
+                  <span>{renderManualText(t('actionRequired.manualEngine'))}</span>
+                </li>
+                <li className="flex gap-2">
                   <span className="font-medium text-gray-900 shrink-0">{t('actionRequired.tabs.incompleteDraft')}:</span>
                   <span>{renderManualText(t('actionRequired.manualIncompleteDraft'))}</span>
                 </li>
@@ -1445,4 +1548,7 @@ export default function ReservationActionRequiredModal({
       )}
     </div>
   )
+
+  if (typeof document === 'undefined') return modal
+  return createPortal(modal, document.body)
 }

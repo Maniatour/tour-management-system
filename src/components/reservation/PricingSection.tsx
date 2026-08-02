@@ -35,11 +35,15 @@ import {
   deriveCommissionGrossForSettlement,
   shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
   shouldOmitOtaExtrasFromCompanyRevenueSum,
+  otaReservationOptionsForCompanyRevenue,
+  otaPricingFormExtrasForCompanyRevenue,
 } from '@/utils/channelSettlement'
+import { computePrepaymentTipOperatingDeduction } from '@/utils/storedCompanyRevenue'
 import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
 import {
   computeEffectiveCustomerPaidTowardDue,
   computeRemainingBalanceAfterPaymentRecords,
+  customerRefundCreditAgainstDue,
   summarizePaymentRecordsForBalance,
 } from '@/utils/reservationPricingBalance'
 import { splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
@@ -48,6 +52,9 @@ import {
   isNoShowReservationStatus,
   isNotIncludedExcludedReservationStatus,
 } from '@/lib/reservationStatus'
+import PricingEngineComparePanel from '@/components/reservation/PricingEngineComparePanel'
+import { buildPricingEngineContext } from '@/lib/pricingEngine'
+import type { PaymentRecordLike } from '@/utils/reservationPricingBalance'
 
 function roundUsd2(n: number): number {
   return Math.round(n * 100) / 100
@@ -331,6 +338,7 @@ export default function PricingSection({
   const [returnedAmount, setReturnedAmount] = useState(0) // 파트너 환불 (Returned)
   /** 정산 상한용: payment_status가 정확히 'Partner Received' 인 합계(DB·`computeChannelSettlementAmount`와 동일) */
   const [partnerReceivedForSettlement, setPartnerReceivedForSettlement] = useState(0)
+  const [paymentRecordsNormalized, setPaymentRecordsNormalized] = useState<PaymentRecordLike[]>([])
   // 카드 수수료 수동 입력 여부 추적
   const isCardFeeManuallyEdited = useRef(false)
   /** OTA 채널 결제 금액을 사용자가 직접 입력한 뒤에는 상품가 동기화 effect가 덮어쓰지 않음(블러 직후 리셋 방지) */
@@ -837,10 +845,16 @@ export default function PricingSection({
     if (isNotIncludedExcludedReservationStatus((formData as { status?: string }).status)) return 0
     const totalCustomerPayment = effectiveTotalCustomerPayment()
     if (hasPaymentRecordsRef.current) {
+      const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
+      const refundCredit = customerRefundCreditAgainstDue(
+        { refundedTotal: refundedAmount },
+        manualRef
+      )
       return computeRemainingBalanceAfterPaymentRecords(
         totalCustomerPayment,
         calculatedDepositTotalNet,
-        calculatedBalanceReceivedTotal
+        calculatedBalanceReceivedTotal,
+        refundCredit
       )
     }
     const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
@@ -921,6 +935,7 @@ export default function PricingSection({
         payment_status: record.payment_status || '',
         amount: Number(record.amount) || 0,
       }))
+      setPaymentRecordsNormalized(normalized)
       const {
         depositTotalNet,
         depositBucketGross: depositTotal,
@@ -1719,11 +1734,16 @@ export default function PricingSection({
       : (Number(formData.not_included_price) || 0) * (billingPax || 1)
     const productTotalForSettlement = (Number(formData.productPriceTotal) || 0) + notIncludedTotal
 
-    /** 채널 결제 넷: gross − max(입금 Returned, 투어 환불) — 동일 건 이중 차감 방지 */
-    const returnedForSettlementCompute = Math.max(
-      Math.max(0, Number(returnedAmount) || 0),
-      manualRefundAmount
-    )
+    /** 채널 결제 넷: gross − max(입금 Returned·Refunded, 투어 환불) — 동일 건 이중 차감 방지 */
+    const returnedForSettlementCompute = isReservationCancelled
+      ? roundUsd2(
+          Math.max(
+            Math.max(0, Number(returnedAmount) || 0),
+            Math.max(0, Number(refundedAmount) || 0),
+            manualRefundAmount
+          )
+        )
+      : Math.max(Math.max(0, Number(returnedAmount) || 0), manualRefundAmount)
 
     const baseSettled = computeChannelSettlementAmount({
       depositAmount: Number(formData.depositAmount) || 0,
@@ -1764,13 +1784,14 @@ export default function PricingSection({
     formData.prepaymentTip,
     formData.onSiteBalanceAmount,
     formData.balanceAmount,
+    isReservationCancelled,
     returnedAmount,
+    refundedAmount,
     manualRefundAmount,
     partnerReceivedForSettlement,
     formData.commission_amount,
     formData.status,
     isOTAChannel,
-    isReservationCancelled,
     isReservationNoShow,
     isOtaNotIncludedExcludedSettle,
     channelPaymentAmountAfterReturn,
@@ -1798,15 +1819,108 @@ export default function PricingSection({
     ]
   )
 
+  /** Self·직판 ④ 총매출 베이스 — 입금 내역이 있으면 실제 입금 합계, 없으면 ① 산식 총 결제 */
+  const selfCompanyRevenuePaymentBase = useCallback((): {
+    amount: number
+    labelKo: string
+    labelEn: string
+  } => {
+    const formulaDue = effectiveTotalCustomerPayment()
+    const hasPayments =
+      calculatedDepositTotalNet > 0.005 || calculatedBalanceReceivedTotal > 0.005
+    if (!hasPayments) {
+      return {
+        amount: formulaDue,
+        labelKo: '고객 총 결제 금액',
+        labelEn: 'Total customer payment',
+      }
+    }
+    const paid = computeEffectiveCustomerPaidTowardDue(
+      formulaDue,
+      calculatedDepositTotalNet,
+      calculatedBalanceReceivedTotal,
+      refundedAmount,
+      Math.max(0, Number(formData.refundAmount) || 0)
+    )
+    const amount = paid > 0.005 ? paid : formulaDue
+    const usesPaymentRecords =
+      paid > 0.005 && Math.abs(paid - formulaDue) > 0.01
+    return {
+      amount,
+      labelKo: usesPaymentRecords ? '고객 실제 입금 합계' : '고객 총 결제 금액',
+      labelEn: usesPaymentRecords ? 'Customer payments received' : 'Total customer payment',
+    }
+  }, [
+    effectiveTotalCustomerPayment,
+    calculatedDepositTotalNet,
+    calculatedBalanceReceivedTotal,
+    refundedAmount,
+    formData.refundAmount,
+  ])
+
   /** ④ 최종 매출 — 한눈에 보는 가감 산식(표시 줄 + 합계 일치) */
   const companyViewRevenueLedger = useMemo(() => {
     const prepTip = Number(formData.prepaymentTip) || 0
     type LedgerLine = { sign: '+' | '-'; labelKo: string; labelEn: string; amount: number }
     const lines: LedgerLine[] = []
 
+    const finishLedger = (ledgerLines: LedgerLine[], tr: number, netCollected?: number | null) => {
+      const prepaymentTipDeduction = computePrepaymentTipOperatingDeduction({
+        prepaymentTip: prepTip,
+        isReservationCancelled,
+        isOTAChannel: !!isOTAChannel,
+        refundAmountForCompanyRevenueBlock: refundAmountForCompanyRevenueBlock,
+        customerPaymentGross: effectiveTotalCustomerPayment(),
+        cancelledNetCollectedFromPayments: netCollected ?? null,
+        totalRevenue: tr,
+        refundedFromRecords: refundedAmount,
+      })
+      const operatingProfit =
+        isReservationCancelled && !isOTAChannel && tr <= 0.005
+          ? 0
+          : roundUsd2(tr - prepaymentTipDeduction)
+      return {
+        lines: ledgerLines,
+        totalRevenue: tr,
+        prepaymentTipDeduction,
+        operatingProfit,
+      }
+    }
+
     if (isReservationCancelled && !isOTAChannel) {
-      const ch = channelSettlementBeforePartnerReturn
       const rex = Number(reservationExpensesTotal) || 0
+      const hasPayments =
+        calculatedDepositTotalNet > 0.005 ||
+        calculatedBalanceReceivedTotal > 0.005 ||
+        refundedAmount > 0.005 ||
+        returnedAmount > 0.005
+
+      if (hasPayments) {
+        const netFromPayments = roundUsd2(
+          calculatedDepositTotalNet + calculatedBalanceReceivedTotal
+        )
+        const linesSelf: LedgerLine[] = [
+          {
+            sign: '+',
+            labelKo: '고객 실제 입금 순액',
+            labelEn: 'Net customer payments received',
+            amount: netFromPayments,
+          },
+        ]
+        if (Math.abs(rex) > 0.005) {
+          linesSelf.push({
+            sign: rex >= 0 ? '-' : '+',
+            labelKo: '예약 지출 금액',
+            labelEn: 'Reservation expenses',
+            amount: Math.abs(rex),
+          })
+        }
+        const tr = roundUsd2(netFromPayments - rex)
+        return finishLedger(linesSelf, tr, netFromPayments)
+      }
+
+      const ch = channelSettlementBeforePartnerReturn
+      const refb = refundAmountForCompanyRevenueBlock
       lines.push({ sign: '+', labelKo: '채널 정산 금액', labelEn: 'Channel settlement', amount: ch })
       if (Math.abs(rex) > 0.005) {
         lines.push({
@@ -1816,13 +1930,16 @@ export default function PricingSection({
           amount: Math.abs(rex),
         })
       }
-      /** 비-OTA 취소: 투어 환불은 ③ 채널 결제·정산 net에 이미 반영 — ④에서 환불 줄로 재차감하지 않음 */
-      const tr = roundUsd2(ch - rex)
-      return {
-        lines,
-        totalRevenue: tr,
-        operatingProfit: roundUsd2(tr - prepTip),
+      if (refb > 0.005) {
+        lines.push({
+          sign: '-',
+          labelKo: '환불 (총매출 차감)',
+          labelEn: 'Refund (deducted from revenue)',
+          amount: refb,
+        })
       }
+      const tr = roundUsd2(ch - rex - refb)
+      return finishLedger(lines, tr, null)
     }
 
     if (isReservationCancelled && isOTAChannel) {
@@ -1847,11 +1964,7 @@ export default function PricingSection({
         })
       }
       const tr = roundUsd2(ch - rex - refb)
-      return {
-        lines,
-        totalRevenue: tr,
-        operatingProfit: roundUsd2(tr - prepTip),
-      }
+      return finishLedger(lines, tr, null)
     }
 
     if (isReservationNoShow) {
@@ -1867,11 +1980,7 @@ export default function PricingSection({
         })
       }
       const tr = roundUsd2(ch - rex)
-      return {
-        lines,
-        totalRevenue: tr,
-        operatingProfit: roundUsd2(tr - prepTip),
-      }
+      return finishLedger(lines, tr, null)
     }
 
     const omitOtaExtras = shouldOmitOtaExtrasFromCompanyRevenueSum({
@@ -1883,20 +1992,16 @@ export default function PricingSection({
       channelPaymentNet: channelPaymentAmountAfterReturn,
     })
 
-    const omitDiscCostEffective =
-      (omitAdditionalDiscountAndCostFromRevenueSum &&
-        !(isOTAChannel && !isReservationCancelled)) ||
-      omitOtaExtras
-
-    /** Self·직판: ① 고객 총 결제(넷) 기준 — ③ 채널 정산 금액은 ④에 사용하지 않음 */
+    /** Self·직판: ① 고객 총 결제(넷)·입금 합계 기준 — ③ 채널 정산 금액은 ④에 사용하지 않음 */
     if (!isReservationCancelled && !isReservationNoShow && !isOTAChannel) {
-      const selfBase = effectiveTotalCustomerPayment()
+      const paymentBase = selfCompanyRevenuePaymentBase()
+      const selfBase = paymentBase.amount
       let trSelf = selfBase
       const linesSelf: LedgerLine[] = [
         {
           sign: '+',
-          labelKo: '고객 총 결제 금액',
-          labelEn: 'Total customer payment',
+          labelKo: paymentBase.labelKo,
+          labelEn: paymentBase.labelEn,
           amount: selfBase,
         },
       ]
@@ -1923,23 +2028,8 @@ export default function PricingSection({
         trSelf -= refbSelf
       }
 
-      if (isHomepageBooking && (Number(formData.additionalCost) || 0) > 0.005) {
-        const ac = Number(formData.additionalCost) || 0
-        linesSelf.push({
-          sign: '-',
-          labelKo: '추가비용 (회사 매출 제외)',
-          labelEn: 'Additional cost (excluded from revenue)',
-          amount: ac,
-        })
-        trSelf -= ac
-      }
-
       trSelf = roundUsd2(trSelf)
-      return {
-        lines: linesSelf,
-        totalRevenue: trSelf,
-        operatingProfit: roundUsd2(trSelf - prepTip),
-      }
+      return finishLedger(linesSelf, trSelf, null)
     }
 
     let tr = channelSettlementBeforePartnerReturn
@@ -1961,18 +2051,26 @@ export default function PricingSection({
       tr -= rex
     }
 
-    if (!omitOtaExtras && reservationOptionsTotalPrice > 0 && isOTAChannel) {
-      const a = reservationOptionsTotalPrice
-      lines.push({ sign: '+', labelKo: '예약 옵션', labelEn: 'Reservation options', amount: a })
-      tr += a
+    const otaOptionsRevenue = otaReservationOptionsForCompanyRevenue({
+      isOTAChannel: !!isOTAChannel,
+      reservationOptionsTotalPrice,
+      omitOtaExtras,
+      customerPaymentNet: effectiveTotalCustomerPayment(),
+      channelPaymentNet: channelPaymentAmountAfterReturn,
+    })
+    if (otaOptionsRevenue > 0.005) {
+      lines.push({ sign: '+', labelKo: '예약 옵션', labelEn: 'Reservation options', amount: otaOptionsRevenue })
+      tr += otaOptionsRevenue
     }
 
     /** 불포함(입장권·비거주자 비용)은 OTA 판매가에 포함되지 않는 별도 수금이라 omitOtaExtras와 무관하게 항상 가산 */
+    let notIncludedTotalUsd = 0
     if (!isNotIncludedExcludedReservationStatus(reservationStatusRaw)) {
       const { baseUsd, residentFeesUsd } = notIncludedBreakdown
       if (baseUsd > 0.005) {
         lines.push({ sign: '+', labelKo: '불포함 (입장권)', labelEn: 'Not included (admission)', amount: baseUsd })
         tr += baseUsd
+        notIncludedTotalUsd += baseUsd
       }
       if (residentFeesUsd > 0.005) {
         lines.push({
@@ -1982,45 +2080,48 @@ export default function PricingSection({
           amount: residentFeesUsd,
         })
         tr += residentFeesUsd
+        notIncludedTotalUsd += residentFeesUsd
       }
     }
 
-    if (!omitDiscCostEffective) {
-      const disc = Number(formData.additionalDiscount) || 0
-      if (disc > 0.005 && !isHomepageBooking) {
-        lines.push({ sign: '-', labelKo: '추가할인', labelEn: 'Additional discount', amount: disc })
-        tr -= disc
-      }
-      const ac = Number(formData.additionalCost) || 0
-      if (ac > 0.005 && !isHomepageBooking) {
-        lines.push({ sign: '+', labelKo: '추가비용', labelEn: 'Additional cost', amount: ac })
-        tr += ac
-      }
+    const formExtras = otaPricingFormExtrasForCompanyRevenue({
+      isOTAChannel: !!isOTAChannel,
+      omitOtaExtras,
+      additionalDiscount: Number(formData.additionalDiscount) || 0,
+      additionalCost: Number(formData.additionalCost) || 0,
+      tax: Number(formData.tax) || 0,
+      cardFee: Number(formData.cardFee) || 0,
+      prepaymentCost: Number(formData.prepaymentCost) || 0,
+      customerPaymentNet: effectiveTotalCustomerPayment(),
+      channelPaymentNet: channelPaymentAmountAfterReturn,
+      notIncludedTotalUsd,
+      reservationOptionsTotalPrice,
+    })
+
+    if (formExtras.additionalDiscount > 0.005 && !isHomepageBooking) {
+      lines.push({ sign: '-', labelKo: '추가할인', labelEn: 'Additional discount', amount: formExtras.additionalDiscount })
+      tr -= formExtras.additionalDiscount
     }
-
-    if (!omitOtaExtras) {
-      const tax = Number(formData.tax) || 0
-      if (tax > 0.005) {
-        lines.push({ sign: '+', labelKo: '세금', labelEn: 'Tax', amount: tax })
-        tr += tax
-      }
-
-      const ppc = Number(formData.prepaymentCost) || 0
-      if (ppc > 0.005 && !isHomepageBooking) {
-        lines.push({ sign: '+', labelKo: '선결제 지출', labelEn: 'Prepayment cost', amount: ppc })
-        tr += ppc
-      }
+    if (formExtras.additionalCost > 0.005 && !isHomepageBooking) {
+      lines.push({ sign: '+', labelKo: '추가비용', labelEn: 'Additional cost', amount: formExtras.additionalCost })
+      tr += formExtras.additionalCost
     }
-
-    const cardFeeUsd = Number(formData.cardFee) || 0
-    if (isOTAChannel && !isReservationCancelled && !omitOtaExtras && cardFeeUsd > 0.005) {
+    if (formExtras.tax > 0.005) {
+      lines.push({ sign: '+', labelKo: '세금', labelEn: 'Tax', amount: formExtras.tax })
+      tr += formExtras.tax
+    }
+    if (formExtras.prepaymentCost > 0.005 && !isHomepageBooking) {
+      lines.push({ sign: '+', labelKo: '선결제 지출', labelEn: 'Prepayment cost', amount: formExtras.prepaymentCost })
+      tr += formExtras.prepaymentCost
+    }
+    if (isOTAChannel && !isReservationCancelled && formExtras.cardFee > 0.005) {
       lines.push({
         sign: '+',
         labelKo: '카드 수수료',
         labelEn: 'Card fee',
-        amount: cardFeeUsd,
+        amount: formExtras.cardFee,
       })
-      tr += cardFeeUsd
+      tr += formExtras.cardFee
     }
 
     if (isOTAChannel && !isReservationCancelled && !omitOtaExtras && prepTip > 0.005) {
@@ -2056,11 +2157,7 @@ export default function PricingSection({
     }
 
     tr = roundUsd2(tr)
-    return {
-      lines,
-      totalRevenue: tr,
-      operatingProfit: roundUsd2(tr - prepTip),
-    }
+    return finishLedger(lines, tr, null)
   }, [
     isReservationCancelled,
     isReservationNoShow,
@@ -2070,6 +2167,10 @@ export default function PricingSection({
     channelSettlementBeforePartnerReturn,
     reservationExpensesTotal,
     refundAmountForCompanyRevenueBlock,
+    calculatedDepositTotalNet,
+    calculatedBalanceReceivedTotal,
+    refundedAmount,
+    returnedAmount,
     reservationOptionsTotalPrice,
     notIncludedBreakdown,
     omitAdditionalDiscountAndCostFromRevenueSum,
@@ -2081,8 +2182,108 @@ export default function PricingSection({
     formData.cardFee,
     formData.commission_amount,
     effectiveTotalCustomerPayment,
+    selfCompanyRevenuePaymentBase,
     channelPaymentAmountAfterReturn,
   ])
+
+  const pricingEngineContext = useMemo(
+    () =>
+      buildPricingEngineContext({
+        reservationStatus: (formData as { status?: string }).status ?? null,
+        channelId: formData.channelId,
+        isOtaChannel: !!isOTAChannel,
+        isHomepageBooking,
+        adults: formData.adults,
+        children: formData.child,
+        infants: formData.infant,
+        pricingAdults: formData.pricingAdults,
+        productPriceTotal: formData.productPriceTotal,
+        adultProductPrice: formData.adultProductPrice,
+        childProductPrice: formData.childProductPrice,
+        infantProductPrice: formData.infantProductPrice,
+        couponDiscount: formData.couponDiscount,
+        additionalDiscount: formData.additionalDiscount,
+        additionalCost: formData.additionalCost,
+        tax: formData.tax,
+        cardFee: formData.cardFee,
+        prepaymentCost: formData.prepaymentCost,
+        prepaymentTip: formData.prepaymentTip,
+        manualRefundAmount,
+        privateTourAdditionalCost: formData.privateTourAdditionalCost,
+        reservationOptionsTotal: reservationOptionsTotalPrice,
+        requiredOptionTotal: (formData as { requiredOptionTotal?: number }).requiredOptionTotal ?? 0,
+        optionTotal: formData.optionTotal,
+        notIncludedTotalUsd: notIncludedBreakdown.totalUsd,
+        notIncludedBaseUsd: notIncludedBreakdown.baseUsd,
+        notIncludedResidentFeesUsd: notIncludedBreakdown.residentFeesUsd,
+        depositAmount: formData.depositAmount,
+        onlinePaymentAmount: formData.onlinePaymentAmount ?? 0,
+        commissionAmount: Number(formData.commission_amount) || 0,
+        commissionPercent: Number(formData.commission_percent) || 0,
+        commissionBasePriceStored:
+          formData.commission_base_price != null &&
+          Number.isFinite(Number(formData.commission_base_price))
+            ? Number(formData.commission_base_price)
+            : null,
+        channelSettlementAmountStored:
+          formData.channelSettlementAmount !== undefined &&
+          formData.channelSettlementAmount !== null &&
+          String(formData.channelSettlementAmount) !== '' &&
+          Number.isFinite(Number(formData.channelSettlementAmount))
+            ? Number(formData.channelSettlementAmount)
+            : null,
+        balanceAmountStored: formData.onSiteBalanceAmount ?? formData.balanceAmount ?? null,
+        totalPriceStored:
+          formData.totalPrice != null && Number.isFinite(Number(formData.totalPrice))
+            ? Number(formData.totalPrice)
+            : null,
+        usesStoredChannelSettlement:
+          formData.channelSettlementAmount !== undefined &&
+          formData.channelSettlementAmount !== null &&
+          String(formData.channelSettlementAmount) !== '' &&
+          Number.isFinite(Number(formData.channelSettlementAmount)),
+        channelPricingFieldsUserEdited: channelPaymentPricingTouched,
+        paymentRecords: paymentRecordsNormalized,
+        reservationExpensesTotal,
+        optionCancelRefundUsd,
+        tourExpensesTotal,
+        partnerReceivedAmount: partnerReceivedForSettlement,
+      }),
+    [
+      formData,
+      isOTAChannel,
+      isHomepageBooking,
+      manualRefundAmount,
+      reservationOptionsTotalPrice,
+      notIncludedBreakdown,
+      channelPaymentPricingTouched,
+      paymentRecordsNormalized,
+      reservationExpensesTotal,
+      optionCancelRefundUsd,
+      tourExpensesTotal,
+      partnerReceivedForSettlement,
+    ]
+  )
+
+  const legacyPricingSnapshot = useMemo(
+    () => ({
+      customerPaymentGross: calculateTotalCustomerPaymentGross(),
+      customerPaymentNet: effectiveTotalCustomerPayment(),
+      onSiteBalance: displayedOnSiteBalance(),
+      channelPaymentNet: channelPaymentAmountAfterReturn,
+      channelSettlement: channelSettlementBeforePartnerReturn,
+      companyTotalRevenue: companyViewRevenueLedger.totalRevenue,
+      operatingProfit: companyViewRevenueLedger.operatingProfit,
+    }),
+    [
+      calculateTotalCustomerPaymentGross,
+      effectiveTotalCustomerPayment,
+      displayedOnSiteBalance,
+      channelPaymentAmountAfterReturn,
+      channelSettlementBeforePartnerReturn,
+      companyViewRevenueLedger,
+    ]
+  )
 
   /** DB에 net만 있고 폼이 online≈net으로 로드된 경우 gross로 보정 (저장·산식과 동일) */
   useEffect(() => {
@@ -3826,7 +4027,11 @@ export default function PricingSection({
                           ? computeRemainingBalanceAfterPaymentRecords(
                               totalCustomerPayment,
                               calculatedDepositTotalNet,
-                              calculatedBalanceReceivedTotal
+                              calculatedBalanceReceivedTotal,
+                              customerRefundCreditAgainstDue(
+                                { refundedTotal: refundedAmount },
+                                Math.max(0, Number(formData.refundAmount) || 0)
+                              )
                             )
                           : (() => {
                               const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
@@ -4594,7 +4799,7 @@ export default function PricingSection({
                   </span>
                 </div>
 
-                {formData.prepaymentTip > 0.005 && (
+                {companyViewRevenueLedger.prepaymentTipDeduction > 0.005 && (
                   <div className="mt-1.5 flex items-baseline justify-between gap-2 text-xs text-gray-800">
                     <span className="flex min-w-0 items-baseline gap-1">
                       <span className="w-5 shrink-0 text-center text-sm font-bold text-red-600">
@@ -4605,7 +4810,7 @@ export default function PricingSection({
                       </span>
                     </span>
                     <span className="shrink-0 font-mono font-semibold text-red-700 tabular-nums">
-                      −${(Number(formData.prepaymentTip) || 0).toFixed(2)}
+                      −${companyViewRevenueLedger.prepaymentTipDeduction.toFixed(2)}
                     </span>
                   </div>
                 )}
@@ -4658,6 +4863,12 @@ export default function PricingSection({
                   </div>
                 )}
               </div>
+
+              <PricingEngineComparePanel
+                context={pricingEngineContext}
+                legacy={legacyPricingSnapshot}
+                locale={locale}
+              />
             </div>
           </div>
         </div>

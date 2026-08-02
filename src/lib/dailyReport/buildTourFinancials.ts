@@ -3,6 +3,7 @@ import type { Database } from '@/lib/database.types'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import {
   reservationExcludedFromTourSettlementAggregates,
+  resolveChannelCommissionAmount,
   sumOperatingProfitForTourPricing,
   type ReservationPricingRow,
 } from '@/lib/tourStatsCalculator'
@@ -38,8 +39,8 @@ type TourRow = {
   products: { name: string | null; name_ko: string | null; name_en: string | null } | null
 }
 
-function productDisplayName(p: TourRow['products']): string {
-  return p?.name_ko?.trim() || p?.name_en?.trim() || p?.name?.trim() || '상품 미지정'
+function productInternalName(p: TourRow['products']): string {
+  return p?.name?.trim() || p?.name_ko?.trim() || p?.name_en?.trim() || '상품 미지정'
 }
 
 function isCashPayment(method: string | null, cashSet: Set<string>): boolean {
@@ -178,7 +179,8 @@ export async function buildTourFinancialSummary(
       (id) => !reservationExcludedFromTourSettlementAggregates(reservationById.get(id)?.status)
     )
 
-    let totalPayment = 0
+    let totalGrossPayment = 0
+    let totalChannelCommission = 0
     let balanceOutstanding = 0
 
     for (const rid of activeResIds) {
@@ -191,7 +193,8 @@ export async function buildTourFinancialSummary(
         pricing as PricingBalanceFields,
         party
       )
-      totalPayment += lineGross
+      totalGrossPayment += lineGross
+      totalChannelCommission += resolveChannelCommissionAmount(pricing, rid, reservationChannels)
 
       const payments = paymentsByReservation.get(rid) ?? []
       balanceOutstanding += computeDisplayedOnSiteBalanceLikePricingSection(
@@ -243,12 +246,13 @@ export async function buildTourFinancialSummary(
 
     return {
       id: tour.id,
-      productName: productDisplayName(tour.products),
+      productName: productInternalName(tour.products),
       tourStatus: tour.tour_status,
       guideName: memberName(tour.tour_guide_id),
       guestCount,
       reservationCount: activeResIds.length,
-      totalPayment: roundUsd(totalPayment),
+      totalPayment: roundUsd(Math.max(0, totalGrossPayment - totalChannelCommission)),
+      channelCommission: roundUsd(totalChannelCommission),
       balanceOutstanding: roundUsd(balanceOutstanding),
       cashDeposit: 0, // filled below
       totalIncome: roundUsd(totalIncome),
@@ -286,6 +290,7 @@ export async function buildTourFinancialSummary(
 
   const totals = {
     totalPayment: roundUsd(tours.reduce((s, t) => s + t.totalPayment, 0)),
+    channelCommission: roundUsd(tours.reduce((s, t) => s + t.channelCommission, 0)),
     balanceOutstanding: roundUsd(tours.reduce((s, t) => s + t.balanceOutstanding, 0)),
     cashDeposit: roundUsd(tours.reduce((s, t) => s + t.cashDeposit, 0)),
     totalIncome: roundUsd(tours.reduce((s, t) => s + t.totalIncome, 0)),

@@ -4038,6 +4038,8 @@
         "deposit": "Deposit",
         "cancel": "Cancelled",
         "balance": "Balance",
+        "formula": "Formula",
+        "engine": "Pricing engine",
         "incompleteDraft": "Incomplete drafts"
       },
       "pricingSubTabs": {
@@ -4051,6 +4053,8 @@
         "deposit": "Combines ① reservations with a payment/deposit record but no tour assignment, and ② confirmed reservations with no payment record.",
         "cancel": "Cancelled reservations where customer payments (net deposit or balance received) are not fully offset by refunds, or stored total / total revenue & operating profit (formula) still show revenue.",
         "balance": "Past-tour balance issues. Sub-tabs: cancelled with balance left, unpaid (matches formula), stored balance vs formula mismatch.",
+        "formula": "Reservations with a stored total where DB operating_profit differs from the pricing form section ④ operating profit formula by more than 0.01. Compare DB (top) vs formula (bottom) in the table; use bulk apply to refresh snapshots.",
+        "engine": "Reservations where DB stored values (customer total, balance, channel payment, settlement, commission, total revenue, operating profit) differ from the new pricing engine. Review in card UI and apply engine values per field or in bulk.",
         "incompleteDraft": "Pending rows in the database with only a reservation id and defaults: no customer, product, or tour linked yet (same as ensure-draft stubs). Finish editing or delete from the reservation form if not needed."
       },
       "pricingSubTabTooltips": {
@@ -4082,6 +4086,8 @@
       "manualDeposit": "① Reservations that **have payment/deposit** but are **not assigned to a tour**, ② **Confirmed** reservations with **no payment record**",
       "manualCancel": "**Cancelled** reservations where **refunds do not fully clear** net deposit or balance received, or **total_price** / **total revenue & operating profit (formula)** still show revenue (for pricing/settlement cleanup).",
       "manualBalance": "Sub-tabs: **Cancelled** (past tour, balance>0), **Balance unpaid** (not cancelled, past tour, balance>0, stored balance matches deposit/pricing formula), **Balance mismatch** (not cancelled, past tour, total (DB) − deposit (DB) − balance received ≠ 0)",
+      "manualFormula": "Reservations with a stored total where **DB operating_profit** differs from pricing form **section ④ operating profit** by **more than 0.01** (includes missing snapshots or stale values after price edits).",
+      "manualEngine": "Reservations with a stored total where **new pricing engine** values differ from **DB stored** amounts. Use the **Pricing engine** tab to compare field-by-field (DB vs engine) and apply selectively or in bulk.",
       "manualIncompleteDraft": "Reservations with **pending** status where **customer, product, and tour** are all **empty**. Open **Edit** to complete the reservation form or delete the row.",
       "partnerCancelRefundLabel": "−$ Cancel",
       "partnerCancelRefundTitle": "Add partner deposit refund line — {amount}",

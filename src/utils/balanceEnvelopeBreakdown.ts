@@ -46,8 +46,36 @@ function classifyOptionResidentLineKey(labelKo: string, labelEn: string): Reside
   return null
 }
 
-function isNonResidentFeeOptionLabel(labelKo: string, labelEn: string): boolean {
+export function isNonResidentFeeOptionLabel(labelKo: string, labelEn: string): boolean {
   return classifyOptionResidentLineKey(labelKo, labelEn) !== null
+}
+
+/** 거주 상태별 인원·금액 → 영수증·봉투 표시용 라인 */
+export function buildResidentFeeDisplayLines(
+  residentCounts: ResidentStatusCounts,
+  residentStatusAmounts?: Partial<Record<ResidentLineKey, number>> | null
+): BalanceEnvelopeLine[] {
+  const amounts = residentAmountsFromCounts(residentCounts, residentStatusAmounts)
+  const lines: BalanceEnvelopeLine[] = []
+
+  for (const key of RESIDENT_FEE_SUM_KEYS) {
+    const qty = Math.max(0, Math.floor(Number(residentCounts[key]) || 0))
+    const subtotal = roundUsd2(Number(amounts[key]) || 0)
+    if (qty <= 0 || subtotal < 0.005) continue
+    const defaultUnit = RESIDENT_LINE_USD_PER_UNIT[key] ?? 0
+    const unitPrice =
+      qty > 0 && subtotal > 0 ? roundUsd2(subtotal / qty) : defaultUnit
+    const labels = RESIDENT_LINE_LABELS[key]
+    lines.push({
+      labelKo: labels.ko,
+      labelEn: labels.en,
+      unitPrice,
+      qty,
+      subtotal,
+    })
+  }
+
+  return lines
 }
 
 function optionLineFromInput(
@@ -310,25 +338,10 @@ export function buildBalanceEnvelopeBreakdownLines(input: {
     amounts as Record<string, number>
   )
 
-  const candidates: BalanceEnvelopeCandidate[] = []
-
-  for (const key of RESIDENT_FEE_SUM_KEYS) {
-    const qty = Math.max(0, Math.floor(Number(residentCounts[key]) || 0))
-    const subtotal = roundUsd2(Number(amounts[key]) || 0)
-    if (qty <= 0 || subtotal < 0.005) continue
-    const defaultUnit = RESIDENT_LINE_USD_PER_UNIT[key] ?? 0
-    const unitPrice =
-      qty > 0 && subtotal > 0 ? roundUsd2(subtotal / qty) : defaultUnit
-    const labels = RESIDENT_LINE_LABELS[key]
-    candidates.push({
-      labelKo: labels.ko,
-      labelEn: labels.en,
-      unitPrice,
-      qty,
-      subtotal,
-      source: 'resident',
-    })
-  }
+  const candidates: BalanceEnvelopeCandidate[] = buildResidentFeeDisplayLines(
+    residentCounts,
+    residentStatusAmounts
+  ).map((line) => ({ ...line, source: 'resident' as const }))
 
   const billingPax = Math.max(0, (pricingAdults || 0) + (child || 0) + (infant || 0))
   if (baseUsd > 0.005 && billingPax > 0) {

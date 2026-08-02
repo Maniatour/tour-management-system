@@ -3,6 +3,7 @@ import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAg
 import {
   computeCustomerPaymentTotalLineFormula,
   computeRemainingBalanceAfterPaymentRecords,
+  customerRefundCreditAgainstDue,
   summarizePaymentRecordsForBalance,
   type PartySizeSource,
   type PaymentRecordLike,
@@ -41,17 +42,19 @@ function computeBalanceWithResidentFees(
       party
     ) + residentFeesUsd
   )
-  const { depositTotalNet, balanceReceivedTotal, returnedTotal } =
+  const { depositTotalNet, balanceReceivedTotal, returnedTotal, refundedTotal } =
     summarizePaymentRecordsForBalance(records)
   const manualRefund = Math.max(0, Number(pricing.refund_amount) || 0)
   const returnedSurplus = Math.max(0, roundUsd2(returnedTotal - manualRefund))
   const totalCustomerPayment = Math.max(0, roundUsd2(grossDue - returnedSurplus))
+  const refundCredit = customerRefundCreditAgainstDue({ refundedTotal }, manualRefund)
   return {
     totalCustomerPaymentNet: totalCustomerPayment,
     balanceAmount: computeRemainingBalanceAfterPaymentRecords(
       totalCustomerPayment,
       depositTotalNet,
-      balanceReceivedTotal
+      balanceReceivedTotal,
+      refundCredit
     ),
     totalPriceGross: grossDue,
   }

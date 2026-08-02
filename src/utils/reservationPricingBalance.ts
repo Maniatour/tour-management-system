@@ -246,6 +246,44 @@ export function summarizePaymentRecordsForBalance(records: PaymentRecordLike[]):
   }
 }
 
+/** 입금 내역에 결제·환불 라인이 하나라도 있는지 */
+export function hasPaymentRecordActivity(
+  paySm: ReturnType<typeof summarizePaymentRecordsForBalance>
+): boolean {
+  return (
+    paySm.depositBucketGross > 0.005 ||
+    paySm.balanceReceivedTotal > 0.005 ||
+    paySm.returnedTotal > 0.005 ||
+    paySm.refundedTotal > 0.005
+  )
+}
+
+/**
+ * 취소 예약 채널 결제·정산 산식 — Returned·Refunded(우리 환불)·가격 환불 입력 중 최대값으로 gross 차감.
+ */
+export function cancelledSettlementReturnedAmount(
+  paySm: ReturnType<typeof summarizePaymentRecordsForBalance>,
+  manualRefundFromPricing: number
+): number {
+  return roundUsd2(
+    Math.max(
+      paySm.returnedTotal,
+      paySm.refundedTotal,
+      Math.max(0, manualRefundFromPricing)
+    )
+  )
+}
+
+/**
+ * 취소·비-OTA ④ 총매출 — 입금 순수령(보증금 순액 + 잔금 수령). 전액 환불 후 0.
+ */
+export function cancelledNonOtaNetCollectedFromPayments(
+  paySm: ReturnType<typeof summarizePaymentRecordsForBalance>
+): number | null {
+  if (!hasPaymentRecordActivity(paySm)) return null
+  return roundUsd2(Math.max(0, paySm.depositTotalNet + paySm.balanceReceivedTotal))
+}
+
 /**
  * 「총 결제 예정」과 보증금·잔금 수령 간 잔액 산출용: 고객이 이미 확정 적용된 지불(+) 합 추정.
  * - 폼 보증금이 입금(Refunded) 반영 순액이면 `deposit + balanceReceived` 가 총액과 맞음
@@ -256,17 +294,32 @@ export function summarizePaymentRecordsForBalance(records: PaymentRecordLike[]):
 /**
  * 입금 내역 집계가 있을 때 잔액(②): 총 결제 예정 − (보증금 순액 + 잔금 수령).
  * `summarizePaymentRecordsForBalance`의 `depositTotalNet`과 동일 기준.
+ *
+ * `refundCreditAgainstDue`: 입금 「환불됨 (우리)」·가격 투어 환불이 보증금 순액에 이미 반영됐을 때,
+ * 총 결제 예정(①)에서도 동일 금액을 차감해 이중 차감을 막는다 (진행 중 예약 부분 환불 등).
  */
+export function customerRefundCreditAgainstDue(
+  paySm: Pick<ReturnType<typeof summarizePaymentRecordsForBalance>, 'refundedTotal'>,
+  manualRefundFromPricing: number
+): number {
+  const refRec = roundUsd2(Math.max(0, Math.abs(Number(paySm.refundedTotal) || 0)))
+  const man = roundUsd2(Math.max(0, Number(manualRefundFromPricing) || 0))
+  return roundUsd2(Math.max(man, refRec))
+}
+
 export function computeRemainingBalanceAfterPaymentRecords(
   totalCustomerPayment: number,
   depositTotalNet: number,
-  balanceReceivedTotal: number
+  balanceReceivedTotal: number,
+  refundCreditAgainstDue: number = 0
 ): number {
   const due = Math.max(0, roundUsd2(Number(totalCustomerPayment) || 0))
+  const credit = Math.max(0, roundUsd2(Number(refundCreditAgainstDue) || 0))
+  const adjustedDue = roundUsd2(Math.max(0, due - credit))
   const paid = roundUsd2(
     Math.max(0, Number(depositTotalNet) || 0) + Math.max(0, Number(balanceReceivedTotal) || 0)
   )
-  return roundUsd2(due - paid)
+  return roundUsd2(adjustedDue - paid)
 }
 
 export function computeEffectiveCustomerPaidTowardDue(
@@ -346,17 +399,19 @@ export function computeDisplayedOnSiteBalanceLikePricingSection(
 
   const grossDue = roundUsd2(computeCustomerPaymentTotalLineFormula(pricingForGross, party))
 
-  const { depositTotalNet, balanceReceivedTotal, returnedTotal } =
+  const { depositTotalNet, balanceReceivedTotal, returnedTotal, refundedTotal } =
     summarizePaymentRecordsForBalance(records)
 
   const manualRefund = Math.max(0, pricingFieldToNumber(pricing.refund_amount))
   const returnedSurplus = Math.max(0, roundUsd2(returnedTotal - manualRefund))
   const totalCustomerPayment = Math.max(0, roundUsd2(grossDue - returnedSurplus))
+  const refundCredit = customerRefundCreditAgainstDue({ refundedTotal }, manualRefund)
 
   return computeRemainingBalanceAfterPaymentRecords(
     totalCustomerPayment,
     depositTotalNet,
-    balanceReceivedTotal
+    balanceReceivedTotal,
+    refundCredit
   )
 }
 

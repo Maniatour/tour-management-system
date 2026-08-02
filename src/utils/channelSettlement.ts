@@ -35,6 +35,11 @@ function toN(v: unknown): number {
   return Number.isFinite(n) ? n : 0
 }
 
+/** DB·폼에 음수로 저장된 할인도 차감으로 처리 (PricingInfoModal·PricingSection과 동일) */
+function discountMagnitudeForSettlement(n: unknown): number {
+  return Math.abs(toN(n))
+}
+
 const GROSS_NET_EPS = 0.02
 const PAY_LINE_EPS = 0.005
 
@@ -107,6 +112,105 @@ export function shouldOmitOtaExtrasFromCompanyRevenueSum(inp: {
 }
 
 /**
+ * OTA ④ 총매출에 더할 예약 옵션 금액.
+ * - omitOtaExtras=false: 옵션 전액 가산(기존)
+ * - omitOtaExtras=true: 채널 결제(③)에 없는 고객 총 결제 초과분만 가산 — 현장 옵션·별도 수금 이중 제외 방지
+ */
+export function otaReservationOptionsForCompanyRevenue(inp: {
+  isOTAChannel: boolean
+  reservationOptionsTotalPrice: number
+  omitOtaExtras: boolean
+  customerPaymentNet?: number
+  channelPaymentNet?: number
+}): number {
+  const opts = Math.max(0, Number(inp.reservationOptionsTotalPrice) || 0)
+  if (opts <= PAY_LINE_EPS || !inp.isOTAChannel) return 0
+  if (!inp.omitOtaExtras) return roundUsd2(opts)
+
+  const cust = roundUsd2(Math.max(0, Number(inp.customerPaymentNet) || 0))
+  const chPay = roundUsd2(Math.max(0, Number(inp.channelPaymentNet) || 0))
+  const extraBeyondChannel = roundUsd2(Math.max(0, cust - chPay))
+  if (extraBeyondChannel <= PAY_LINE_EPS) return 0
+  return roundUsd2(Math.min(opts, extraBeyondChannel))
+}
+
+export type OtaPricingFormExtrasAmounts = {
+  additionalDiscount: number
+  additionalCost: number
+  tax: number
+  cardFee: number
+  prepaymentCost: number
+}
+
+/**
+ * OTA ④ 총매출에 반영할 추가할인·추가비용·세금·카드수수료·선결제지출.
+ * omitOtaExtras=true(채널정산+수수료=채널결제)여도 고객 총 결제가 채널 결제를 초과하면
+ * 불포함·예약옵션 제외 잔액(pool)만큼 폼 항목을 가산한다.
+ */
+export function otaPricingFormExtrasForCompanyRevenue(inp: {
+  isOTAChannel: boolean
+  omitOtaExtras: boolean
+  additionalDiscount: number
+  additionalCost: number
+  tax: number
+  cardFee: number
+  prepaymentCost: number
+  customerPaymentNet?: number
+  channelPaymentNet?: number
+  notIncludedTotalUsd?: number
+  reservationOptionsTotalPrice?: number
+}): OtaPricingFormExtrasAmounts {
+  const zero: OtaPricingFormExtrasAmounts = {
+    additionalDiscount: 0,
+    additionalCost: 0,
+    tax: 0,
+    cardFee: 0,
+    prepaymentCost: 0,
+  }
+
+  const disc = Math.max(0, Number(inp.additionalDiscount) || 0)
+  const cost = Math.max(0, Number(inp.additionalCost) || 0)
+  const tax = Math.max(0, Number(inp.tax) || 0)
+  const cardFee = Math.max(0, Number(inp.cardFee) || 0)
+  const prepCost = Math.max(0, Number(inp.prepaymentCost) || 0)
+  const full: OtaPricingFormExtrasAmounts = {
+    additionalDiscount: roundUsd2(disc),
+    additionalCost: roundUsd2(cost),
+    tax: roundUsd2(tax),
+    cardFee: roundUsd2(cardFee),
+    prepaymentCost: roundUsd2(prepCost),
+  }
+
+  if (!inp.isOTAChannel) return full
+  if (!inp.omitOtaExtras) return full
+
+  const cust = roundUsd2(Math.max(0, Number(inp.customerPaymentNet) || 0))
+  const chPay = roundUsd2(Math.max(0, Number(inp.channelPaymentNet) || 0))
+  const notInc = roundUsd2(Math.max(0, Number(inp.notIncludedTotalUsd) || 0))
+  const opts = otaReservationOptionsForCompanyRevenue({
+    isOTAChannel: true,
+    reservationOptionsTotalPrice: Number(inp.reservationOptionsTotalPrice) || 0,
+    omitOtaExtras: true,
+    customerPaymentNet: cust,
+    channelPaymentNet: chPay,
+  })
+  const pool = roundUsd2(Math.max(0, cust - chPay - notInc - opts))
+  const netFormExtras = roundUsd2(cost + tax + cardFee + prepCost - disc)
+
+  if (pool <= PAY_LINE_EPS || netFormExtras <= PAY_LINE_EPS) return zero
+  if (pool >= netFormExtras - OTA_REVENUE_MATCH_EPS) return full
+
+  const ratio = pool / netFormExtras
+  return {
+    additionalDiscount: roundUsd2(disc * ratio),
+    additionalCost: roundUsd2(cost * ratio),
+    tax: roundUsd2(tax * ratio),
+    cardFee: roundUsd2(cardFee * ratio),
+    prepaymentCost: roundUsd2(prepCost * ratio),
+  }
+}
+
+/**
  * DB·폼에 남아 있는 `commission_base_price`가 net(신규)인지 gross(기존 행)인지에 따라
  * `computeChannelSettlementAmount`에 넣을 gross를 복원한다.
  */
@@ -148,8 +252,8 @@ export function computeChannelPaymentGrossBeforeReturn(inp: ChannelSettlementCom
   const depositAmount = toN(inp.depositAmount)
   const onlinePaymentAmount = toN(inp.onlinePaymentAmount)
   const productPriceTotal = toN(inp.productPriceTotal)
-  const couponDiscount = toN(inp.couponDiscount)
-  const additionalDiscount = toN(inp.additionalDiscount)
+  const couponDiscount = discountMagnitudeForSettlement(inp.couponDiscount)
+  const additionalDiscount = discountMagnitudeForSettlement(inp.additionalDiscount)
   const optionTotalSum = toN(inp.optionTotalSum)
   const additionalCost = toN(inp.additionalCost)
   const tax = toN(inp.tax)
@@ -209,8 +313,8 @@ function roundUsd2(n: number): number {
 /**
  * PricingSection「4. 최종 매출 & 운영 이익」의 총 매출(Total Revenue)과 동일한 산식.
  * - OTA: 기준 `channelSettlementBase`(③ 채널 정산) + 옵션·불포함·부가 + 진행 예약 시 폼 카드수수료·선결제 팁(총매출 항목) + 추가할인/추가비용(③에 없을 때 omit 무시)
- * - Self(`revenueFromCustomerPaymentTotal`): 기준 `channelSettlementBase` = ① 고객 총 결제(넷) — 옵션·불포함·세 등은 이중 가산하지 않음
- * - 자체(홈페이지): `excludeHomepageAdditionalCostFromCompanyTotals` 규칙 유지
+ * - Self(`revenueFromCustomerPaymentTotal`): 기준 `channelSettlementBase` = ① 고객 총 결제(넷) — 옵션·불포함·추가비용 등은 이미 포함되어 이중 가산·차감하지 않음
+ * - 자체(홈페이지) OTA 경로: `excludeHomepageAdditionalCostFromCompanyTotals` — ③ 정산 베이스 경로에서만 추가비용 가산 후 말미 차감
  */
 export type CompanyTotalRevenueInput = {
   channelSettlementBase: number
@@ -256,7 +360,7 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
     tax,
     prepaymentCost,
     refundedOurAmount,
-    omitAdditionalDiscountAndCostFromSum,
+    omitAdditionalDiscountAndCostFromSum: _omitAdditionalDiscountAndCostFromSum,
     excludeHomepageAdditionalCostFromCompanyTotals,
     revenueFromCustomerPaymentTotal = false,
     cardFeeForCompanyRevenue = 0,
@@ -282,55 +386,61 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
   if (revenueFromCustomerPaymentTotal) {
     let totalRevenue = channelSettlementBase
     totalRevenue -= refundedOurAmount
-    if (excludeHomepageAdditionalCostFromCompanyTotals && additionalCost > 0) {
-      totalRevenue -= additionalCost
-    }
     return roundUsd2(totalRevenue)
   }
 
   let totalRevenue = channelSettlementBase
 
-  if (!omitOtaExtras) {
-    if (reservationOptionsTotalPrice > 0 && isOTAChannel) {
-      totalRevenue += reservationOptionsTotalPrice
-    }
-  }
+  totalRevenue += otaReservationOptionsForCompanyRevenue({
+    isOTAChannel,
+    reservationOptionsTotalPrice,
+    omitOtaExtras,
+    customerPaymentNet: customerPaymentNetForOtaOmitCheck,
+    channelPaymentNet,
+  })
   /** 불포함(입장권·비거주자 비용)은 OTA 판매가에 포함되지 않는 별도 수금이라 omitOtaExtras와 무관하게 항상 가산 */
   if (notIncludedTotalUsd > 0) {
     totalRevenue += notIncludedTotalUsd
   }
 
-  const omitDiscCostEffective =
-    (omitAdditionalDiscountAndCostFromSum && !(isOTAChannel && !isReservationCancelled)) ||
-    omitOtaExtras
+  const formExtras = otaPricingFormExtrasForCompanyRevenue({
+    isOTAChannel,
+    omitOtaExtras,
+    additionalDiscount,
+    additionalCost,
+    tax,
+    cardFee: cardFeeForCompanyRevenue,
+    prepaymentCost,
+    customerPaymentNet: customerPaymentNetForOtaOmitCheck,
+    channelPaymentNet,
+    notIncludedTotalUsd,
+    reservationOptionsTotalPrice,
+  })
 
-  if (!omitDiscCostEffective) {
-    if (additionalDiscount > 0 && !excludeHomepageAdditionalCostFromCompanyTotals) {
-      totalRevenue -= additionalDiscount
-    }
-    if (additionalCost > 0) {
-      totalRevenue += additionalCost
-    }
+  if (formExtras.additionalDiscount > 0 && !excludeHomepageAdditionalCostFromCompanyTotals) {
+    totalRevenue -= formExtras.additionalDiscount
+  }
+  if (formExtras.additionalCost > 0) {
+    totalRevenue += formExtras.additionalCost
+  }
+  if (formExtras.tax > 0) {
+    totalRevenue += formExtras.tax
+  }
+  if (formExtras.prepaymentCost > 0 && !excludeHomepageAdditionalCostFromCompanyTotals) {
+    totalRevenue += formExtras.prepaymentCost
   }
   if (!omitOtaExtras) {
-    if (tax > 0) {
-      totalRevenue += tax
-    }
-    if (prepaymentCost > 0 && !excludeHomepageAdditionalCostFromCompanyTotals) {
-      totalRevenue += prepaymentCost
-    }
+    totalRevenue -= refundedOurAmount
   }
-  totalRevenue -= refundedOurAmount
 
   if (excludeHomepageAdditionalCostFromCompanyTotals && additionalCost > 0) {
     totalRevenue -= additionalCost
   }
 
+  if (isOTAChannel && !isReservationCancelled && formExtras.cardFee > 0.005) {
+    totalRevenue += formExtras.cardFee
+  }
   if (isOTAChannel && !isReservationCancelled && !omitOtaExtras) {
-    const cf = Number(cardFeeForCompanyRevenue) || 0
-    if (cf > 0.005) {
-      totalRevenue += cf
-    }
     const ptip = Number(prepaymentTipForCompanyRevenue) || 0
     if (ptip > 0.005) {
       totalRevenue += ptip

@@ -1,7 +1,7 @@
 'use client'
 
 import type { DailyReportData, DailyReportFinancialCategory } from '@/lib/dailyReport/types'
-import { formatReportDateLabel } from '@/lib/dailyReport/dateUtils'
+import { formatReportDateLabel, formatReportDateRangeLabel, isSingleDayReport } from '@/lib/dailyReport/dateUtils'
 import { formatUsd } from '@/lib/dailyReport/moneyUtils'
 import {
   Calendar,
@@ -146,7 +146,9 @@ function FinancialCategoryBlock({
 
 export function DailyReportDocument({ data, locale = 'ko' }: DailyReportDocumentProps) {
   const isKo = locale.startsWith('ko')
-  const dateLabel = formatReportDateLabel(data.reportDate, locale)
+  const endDate = data.reportEndDate ?? data.reportDate
+  const singleDay = isSingleDayReport(data.reportDate, endDate)
+  const dateLabel = formatReportDateRangeLabel(data.reportDate, endDate, locale)
   const tomorrowLabel = formatReportDateLabel(data.tomorrowSchedule.date, locale)
   const rs = data.reservationSummary
   const ts = data.tourSummary
@@ -154,8 +156,15 @@ export function DailyReportDocument({ data, locale = 'ko' }: DailyReportDocument
   return (
     <div className="bg-white text-foreground" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       <div className="rounded-t-2xl bg-gradient-to-br from-slate-900 to-slate-700 px-8 py-8 text-white">
-        <div className="text-xs font-medium uppercase tracking-widest text-white/70">Daily Report</div>
+        <div className="text-xs font-medium uppercase tracking-widest text-white/70">
+          {singleDay ? 'Daily Report' : 'Period Report'}
+        </div>
         <h1 className="mt-2 text-3xl font-bold tracking-tight">{dateLabel}</h1>
+        {!singleDay ? (
+          <p className="mt-1 text-sm text-white/70">
+            {isKo ? '기간 업무 보고' : 'Period summary report'}
+          </p>
+        ) : null}
         <p className="mt-2 text-sm text-white/80">
           {isKo ? '작성' : 'By'}: {data.submittedByName || data.submittedByEmail || '—'}
         </p>
@@ -175,7 +184,7 @@ export function DailyReportDocument({ data, locale = 'ko' }: DailyReportDocument
               sub={`${rs.newRegistrations.guests}${isKo ? '명' : ' guests'}`}
             />
             <StatCard
-              label={isKo ? '당일 취소' : 'Cancelled today'}
+              label={singleDay ? (isKo ? '당일 취소' : 'Cancelled today') : (isKo ? '기간 취소' : 'Cancelled')}
               value={`${rs.cancellationsToday.count}${isKo ? '건' : ''}`}
               sub={`${rs.cancellationsToday.guests}${isKo ? '명' : ' guests'}`}
               accent="text-red-600"
@@ -198,7 +207,11 @@ export function DailyReportDocument({ data, locale = 'ko' }: DailyReportDocument
         <section>
           <div className="mb-4 flex items-center gap-2">
             <DollarSign className="h-5 w-5 text-emerald-600" />
-            <h2 className="text-lg font-semibold">{isKo ? '투어 관리 요약 (재무)' : 'Tour financials'}</h2>
+            <h2 className="text-lg font-semibold">
+              {singleDay
+                ? (isKo ? '투어 관리 요약 (재무)' : 'Tour financials')
+                : (isKo ? '기간 투어 요약 (재무)' : 'Tour financials (period)')}
+            </h2>
           </div>
 
           {ts.tours.length > 0 ? (
@@ -207,9 +220,9 @@ export function DailyReportDocument({ data, locale = 'ko' }: DailyReportDocument
                 <thead className="bg-muted/50">
                   <tr>
                     <th className="px-3 py-2 text-left">{isKo ? '상품' : 'Product'}</th>
-                    <th className="px-3 py-2 text-right">{isKo ? '결제' : 'Paid'}</th>
+                    <th className="px-3 py-2 text-right">{isKo ? '총매출' : 'Revenue'}</th>
                     <th className="px-3 py-2 text-right">{isKo ? '잔액' : 'Bal.'}</th>
-                    <th className="px-3 py-2 text-right">{isKo ? '수익' : 'Income'}</th>
+                    <th className="px-3 py-2 text-right">{isKo ? '운영 이익' : 'Op. profit'}</th>
                     <th className="px-3 py-2 text-right">{isKo ? '지출' : 'Exp.'}</th>
                     <th className="px-3 py-2 text-right">{isKo ? '순수익' : 'Net'}</th>
                   </tr>
@@ -240,7 +253,11 @@ export function DailyReportDocument({ data, locale = 'ko' }: DailyReportDocument
               </table>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">{isKo ? '오늘 투어가 없습니다.' : 'No tours today.'}</p>
+            <p className="text-sm text-muted-foreground">
+              {singleDay
+                ? (isKo ? '오늘 투어가 없습니다.' : 'No tours today.')
+                : (isKo ? '해당 기간 투어가 없습니다.' : 'No tours in this period.')}
+            </p>
           )}
           {ts.notes.trim() ? (
             <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm whitespace-pre-wrap">{ts.notes}</div>
@@ -339,7 +356,8 @@ export function DailyReportDocument({ data, locale = 'ko' }: DailyReportDocument
           ) : null}
         </section>
 
-        {/* 내일 스케줄 */}
+        {/* 내일 스케줄 — 일일 보고에서만 표시 */}
+        {singleDay ? (
         <section>
           <div className="mb-4 flex items-center gap-2">
             <Calendar className="h-5 w-5 text-indigo-600" />
@@ -383,6 +401,7 @@ export function DailyReportDocument({ data, locale = 'ko' }: DailyReportDocument
             <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm whitespace-pre-wrap">{data.tomorrowSchedule.notes}</div>
           ) : null}
         </section>
+        ) : null}
 
         {data.additionalNotes.trim() ? (
           <section className="rounded-xl border border-border/60 bg-muted/30 p-5">

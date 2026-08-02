@@ -8,6 +8,14 @@ import { supabase } from '@/lib/supabase'
 import { RECEIPT_MODAL_Z_INDEX } from '@/lib/dialogZIndex'
 import { summarizePaymentRecordsForBalance } from '@/utils/reservationPricingBalance'
 import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
+import { splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
+import { loadResidentStatusAmountsForReservation } from '@/lib/saveResidentStatusWithPricing'
+import {
+  buildResidentFeeDisplayLines,
+  countResidentLinesFromCustomers,
+  isNonResidentFeeOptionLabel,
+  type BalanceEnvelopeLine,
+} from '@/utils/balanceEnvelopeBreakdown'
 
 /** Radix Dialog body pointer-events:none 환경에서도 상호작용 유지 */
 const RECEIPT_MODAL_PORTAL_CLASS =
@@ -31,6 +39,10 @@ type ReceiptData = {
   pickupHotelName: string
   channelName: string
   reservationOptions: Array<{ option_id: string; ea: number; price: number; total_price: number; option_name: string }>
+  /** 거주 상태별 인원·금액 (choices JSON) */
+  residentStatusAmounts?: Record<string, number>
+  /** 거주 상태별 비용 표시 라인 (비거주자 2인 × $100 등) */
+  residentFeeLines: BalanceEnvelopeLine[]
   pricing: {
     adult_product_price: number
     child_product_price: number
@@ -347,8 +359,45 @@ function billingPartyCount(reservation: ReceiptData['reservation'], pricingAdult
   return Math.max(1, pa + (reservation.child ?? 0) + (reservation.infant ?? 0))
 }
 
-function notIncludedTotalFromPricing(pricing: ReceiptData['pricing'], reservation: ReceiptData['reservation']): number {
-  return toNum(pricing.not_included_price) * billingPartyCount(reservation, pricing.pricing_adults)
+function notIncludedBreakdownFromPricing(
+  pricing: ReceiptData['pricing'],
+  reservation: ReceiptData['reservation'],
+  residentStatusAmounts?: Record<string, number>
+) {
+  const adults = reservation.adults ?? 0
+  const child = reservation.child ?? 0
+  const infant = reservation.infant ?? 0
+  const ap = toNum(pricing.adult_product_price)
+  const cp = toNum(pricing.child_product_price)
+  const ip = toNum(pricing.infant_product_price)
+  const ppt = toNum(pricing.product_price_total)
+  const pricingAdults = inferPricingAdultsWhenUnset({
+    pricingAdultsRaw: pricing.pricing_adults,
+    reservationAdults: adults,
+    child,
+    infant,
+    adultProductPrice: ap,
+    childProductPrice: cp,
+    infantProductPrice: ip,
+    productPriceTotal: ppt,
+  })
+  return splitNotIncludedForDisplay(
+    0,
+    0,
+    toNum(pricing.not_included_price),
+    pricingAdults,
+    child,
+    infant,
+    residentStatusAmounts
+  )
+}
+
+function notIncludedTotalFromPricing(
+  pricing: ReceiptData['pricing'],
+  reservation: ReceiptData['reservation'],
+  residentStatusAmounts?: Record<string, number>
+): number {
+  return notIncludedBreakdownFromPricing(pricing, reservation, residentStatusAmounts).totalUsd
 }
 
 /** Admin line formula: required_option_total + option_total */
@@ -371,11 +420,19 @@ function pricingExtraFees(p: ReceiptData['pricing']): number {
  * Not-included amount comes only from DB `not_included_price` x party count.
  * Do not infer from total_price — it can equal the discount gap and show a fake entrance-fee line.
  */
-function effectiveNotIncludedTotal(pricing: ReceiptData['pricing'], reservation: ReceiptData['reservation']): number {
-  return notIncludedTotalFromPricing(pricing, reservation)
+function effectiveNotIncludedTotal(
+  pricing: ReceiptData['pricing'],
+  reservation: ReceiptData['reservation'],
+  residentStatusAmounts?: Record<string, number>
+): number {
+  return notIncludedTotalFromPricing(pricing, reservation, residentStatusAmounts)
 }
 
-function productSellingAmount(pricing: ReceiptData['pricing'], reservation: ReceiptData['reservation']): number {
+function productSellingAmount(
+  pricing: ReceiptData['pricing'],
+  reservation: ReceiptData['reservation'],
+  residentStatusAmounts?: Record<string, number>
+): number {
   const adults = reservation.adults ?? 0
   const child = reservation.child ?? 0
   const infant = reservation.infant ?? 0
@@ -398,7 +455,7 @@ function productSellingAmount(pricing: ReceiptData['pricing'], reservation: Rece
   const tierSum = ap * billingAdults + cp * child + ip * infant
   if (tierSum > 0.009) return tierSum
 
-  const notInc = notIncludedTotalFromPricing(pricing, reservation)
+  const notInc = notIncludedTotalFromPricing(pricing, reservation, residentStatusAmounts)
   if (ppt > 0 && notInc > 0.009) return Math.max(0, ppt - notInc)
   if (ppt > 0) return ppt
 
@@ -455,11 +512,15 @@ function sellingUnitPriceForDisplay(
   return 0
 }
 
-function getCustomerTotalPaymentFromDbPricing(pricing: ReceiptData['pricing'], reservation: ReceiptData['reservation']): number {
+function getCustomerTotalPaymentFromDbPricing(
+  pricing: ReceiptData['pricing'],
+  reservation: ReceiptData['reservation'],
+  residentStatusAmounts?: Record<string, number>
+): number {
   const couponMag = discountAmount(pricing.coupon_discount)
   const addMag = discountAmount(pricing.additional_discount)
-  const selling = productSellingAmount(pricing, reservation)
-  const notIncludedTotal = effectiveNotIncludedTotal(pricing, reservation)
+  const selling = productSellingAmount(pricing, reservation, residentStatusAmounts)
+  const notIncludedTotal = effectiveNotIncludedTotal(pricing, reservation, residentStatusAmounts)
   const discountedProduct = Math.max(0, selling - couponMag - addMag)
   return discountedProduct + notIncludedTotal + optionsTotalFromPricing(pricing) + pricingExtraFees(pricing)
 }
@@ -469,7 +530,11 @@ function getCustomerTotalPaymentFromDbPricing(pricing: ReceiptData['pricing'], r
  * Prefer the line-formula total so Grand Total matches the receipt rows; `total_price` can lag as pre-discount/gross.
  */
 function resolveCustomerTotalPayment(d: ReceiptData): number {
-  const computed = getCustomerTotalPaymentFromDbPricing(d.pricing, d.reservation)
+  const computed = getCustomerTotalPaymentFromDbPricing(
+    d.pricing,
+    d.reservation,
+    d.residentStatusAmounts
+  )
   if (computed > 0.009) {
     return Math.round(computed * 100) / 100
   }
@@ -683,6 +748,13 @@ export default function CustomerReceiptModal({
             .select('option_id, ea, price, total_price')
             .eq('reservation_id', id)
           if (optsErr) console.warn('reservation_options 조회 오류:', optsErr)
+          const productId = String((rez as { product_id?: string | null }).product_id ?? '').trim() || null
+          const [{ data: residentCustomers }, residentStatusAmounts] = await Promise.all([
+            supabase.from('reservation_customers').select('resident_status').eq('reservation_id', id),
+            loadResidentStatusAmountsForReservation(supabase, id, productId),
+          ])
+          const residentCounts = countResidentLinesFromCustomers(residentCustomers)
+          const residentFeeLines = buildResidentFeeDisplayLines(residentCounts, residentStatusAmounts)
           const optionIds = [...new Set((optsRows || []).map((o: any) => o.option_id).filter(Boolean))]
           type OptionDisplay = { name: string; name_ko?: string | null; name_en?: string | null }
           let optionsMap: Record<string, OptionDisplay> = {}
@@ -756,6 +828,8 @@ export default function CustomerReceiptModal({
             pickupHotelName,
             channelName,
             reservationOptions,
+            ...(Object.keys(residentStatusAmounts).length > 0 ? { residentStatusAmounts } : {}),
+            residentFeeLines,
             pricing: {
               adult_product_price: toNum(pricingRow?.adult_product_price),
               child_product_price: toNum(pricingRow?.child_product_price),
@@ -1010,12 +1084,22 @@ export default function CustomerReceiptModal({
                   ? (d.product.customer_name_en || d.product.name_en || d.product.customer_name_ko || d.product.name_ko || '')
                   : (d.product.customer_name_ko || d.product.name_ko || d.product.customer_name_en || d.product.name_en || '')
                 const totalPeople = Math.max(1, d.reservation.total_people ?? 1)
+                const notIncludedBreakdown = notIncludedBreakdownFromPricing(
+                  d.pricing,
+                  d.reservation,
+                  d.residentStatusAmounts
+                )
                 const notIncludedQty = billingPartyCount(d.reservation, d.pricing.pricing_adults)
-                const productRowAmount = productSellingAmount(d.pricing, d.reservation)
-                const notIncludedTotalEffective = effectiveNotIncludedTotal(d.pricing, d.reservation)
+                const notIncludedBaseUsd = notIncludedBreakdown.baseUsd
+                const productRowAmount = productSellingAmount(
+                  d.pricing,
+                  d.reservation,
+                  d.residentStatusAmounts
+                )
+                const notIncludedTotalEffective = notIncludedBreakdown.totalUsd
                 const notIncludedPerPersonDisplay =
-                  notIncludedQty > 0 && notIncludedTotalEffective > 0.009
-                    ? notIncludedTotalEffective / notIncludedQty
+                  notIncludedQty > 0 && notIncludedBaseUsd > 0.009
+                    ? notIncludedBaseUsd / notIncludedQty
                     : 0
                 const productLineQty = sellingDisplayQty(d.reservation, d.pricing)
                 const productUnitPrice = sellingUnitPriceForDisplay(d.pricing, d.reservation, productRowAmount)
@@ -1024,10 +1108,16 @@ export default function CustomerReceiptModal({
                 const productTotalBeforeOptions = productRowAmount - couponMag - addMag + notIncludedTotalEffective
                 const dbOptionsCombined = optionsTotalFromPricing(d.pricing)
                 const opts = d.reservationOptions || []
-                const rawOptsSum = opts.reduce((s, o) => s + toNum(o.total_price), 0)
+                const hasResidentFeeLines = (d.residentFeeLines || []).length > 0
+                const optsExcludingResidentFees = hasResidentFeeLines
+                  ? opts.filter(
+                      (o) => !isNonResidentFeeOptionLabel(o.option_name, o.option_name)
+                    )
+                  : opts
+                const rawOptsSum = optsExcludingResidentFees.reduce((s, o) => s + toNum(o.total_price), 0)
                 const displayOptions =
                   rawOptsSum > 0.009 && dbOptionsCombined > 0.009 && Math.abs(rawOptsSum - dbOptionsCombined) > 0.009
-                    ? opts.map((o) => {
+                    ? optsExcludingResidentFees.map((o) => {
                         const scale = dbOptionsCombined / rawOptsSum
                         return {
                           ...o,
@@ -1045,7 +1135,7 @@ export default function CustomerReceiptModal({
                             option_name: isJa ? 'オプション' : isEn ? 'Options' : '\uC635\uC158',
                           },
                         ]
-                      : opts
+                      : optsExcludingResidentFees
                 const privateTourCost = toNum(d.pricing.private_tour_additional_cost)
                 const customerTotalPayment = resolveCustomerTotalPayment(d)
                 const paidAmountToShow = d.pricing.paid_amount_from_records ?? d.pricing.deposit_amount ?? 0
@@ -1155,15 +1245,31 @@ export default function CustomerReceiptModal({
                               </td>
                             </tr>
                           )}
-                          {notIncludedTotalEffective > 0.009 && (
+                          {notIncludedBaseUsd > 0.009 && (
                             <tr className="border-b border-gray-100">
                               <td className="px-1.5 py-1" />
                               <td className="px-1.5 py-1 text-gray-900"><span className="text-gray-500">└ </span>{L.notIncludedEntrance}</td>
                               <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(notIncludedPerPersonDisplay, cur)}</td>
                               <td className="px-1.5 py-1 text-right text-gray-900 w-8 min-w-0">{notIncludedQty}</td>
-                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(notIncludedTotalEffective, cur)}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(notIncludedBaseUsd, cur)}</td>
                             </tr>
                           )}
+                          {(d.residentFeeLines || []).map((line, idx) => (
+                            <tr key={`resident-fee-${idx}`} className="border-b border-gray-100">
+                              <td className="px-1.5 py-1" />
+                              <td className="px-1.5 py-1 text-gray-900">
+                                <span className="text-gray-500">└ </span>
+                                {isEn || isJa ? line.labelEn : line.labelKo}
+                              </td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">
+                                {formatMoney(line.unitPrice, cur)}
+                              </td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 w-8 min-w-0">{line.qty}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">
+                                {formatMoney(line.subtotal, cur)}
+                              </td>
+                            </tr>
+                          ))}
                           {/* Product Total (selling - discount + entrance fee) */}
                           <tr className="border-b border-gray-100 bg-gray-50/50">
                             <td className="px-1.5 py-1" />

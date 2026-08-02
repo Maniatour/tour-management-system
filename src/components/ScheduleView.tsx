@@ -118,6 +118,12 @@ import {
 } from '@/lib/ticketBookingSoftDelete'
 import { tourProductRequiresTicketBookingCount } from '@/lib/ticketBookingCountTourProducts'
 import {
+  isSchedulePreConfirmTicketBooking,
+  isTicketBookingActiveForScheduleGrid,
+  type ScheduleTicketBookingActivityRow,
+} from '@/lib/scheduleTicketBookingActivity'
+import { isActiveTourHotelBookingStatus } from '@/lib/tourHotelBookingCounts'
+import {
   buildTourCanyonDisplayBadges,
   formatTourCanyonChoiceCardLine,
 } from '@/lib/ticketBookingDateView'
@@ -289,15 +295,8 @@ function defaultScheduleHealthFabPos(): { left: number; top: number } {
   )
 }
 
-function isActiveTicketBookingStatusForHealth(status: string | null | undefined): boolean {
-  const s = (status || '').toLowerCase()
-  return (
-    s === 'confirmed' ||
-    s === 'paid' ||
-    s === 'pending' ||
-    s === 'tentative' ||
-    s === 'completed'
-  )
+function isActiveTicketBookingStatusForHealth(row: ScheduleTicketBookingActivityRow): boolean {
+  return isTicketBookingActiveForScheduleGrid(row)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -4482,17 +4481,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     const vehicleAssigned = tour.tour_car_id && String(tour.tour_car_id).trim().length > 0
 
     const confirmedEa = ticketBookings
-      .filter(tb => {
-        if (tb.tour_id !== tour.id) return false
-        const s = tb.status?.toLowerCase()
-        return (
-          s === 'confirmed' ||
-          s === 'paid' ||
-          s === 'pending' ||
-          s === 'tentative' ||
-          s === 'completed'
-        )
-      })
+      .filter((tb) => tb.tour_id === tour.id && isTicketBookingActiveForScheduleGrid(tb))
       .reduce((s, tb) => s + (tb.ea || 0), 0)
 
     const isPrivateTour = tour.is_private_tour === 'TRUE' || tour.is_private_tour === true
@@ -4986,7 +4975,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       const list = tbByTour.get(String(tour.id)) || []
       let ticketEa = 0
       for (const tb of list) {
-        if (!isActiveTicketBookingStatusForHealth(tb.status)) continue
+        if (!isActiveTicketBookingStatusForHealth(tb)) continue
         ticketEa += Number(tb.ea) || 0
       }
       if (assignedPeople !== ticketEa) {
@@ -5253,31 +5242,25 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       )
     }
 
-    const isActiveStatus = (status: string | null) => {
-      if (!status) return false
-      const s = status.toLowerCase()
-      return (
-        s === 'confirmed' ||
-        s === 'paid' ||
-        s === 'pending' ||
-        s === 'tentative' ||
-        s === 'completed'
-      )
-    }
-
-    // 입장권 부킹 합산 (체크인일 기준; 멀티데이·밤도깨비·당일·앤텔롭+홀슈 연결 투어만)
+    // 입장권 부킹 합산 (체크인일 기준; 멀티데이·밤도깨비·당일·앤텔롭+홀슈 연결 투어만, 가예약·홀드는 미연결도 표시)
     ticketBookings.forEach(booking => {
-      if (!isActiveStatus(booking.status)) return
+      if (!isTicketBookingActiveForScheduleGrid(booking)) return
 
       const linkedTour = booking.tour_id ? toursByIdForBookings.get(String(booking.tour_id)) : undefined
-      if (!linkedTour || !tourProductRequiresTicketBookingCount(linkedTour)) return
+      const showWithoutTourLink = isSchedulePreConfirmTicketBooking(booking)
+      if (!showWithoutTourLink) {
+        if (!linkedTour || !tourProductRequiresTicketBookingCount(linkedTour)) return
+      }
 
       const dateString = resolveScheduleTicketBookingDisplayYmd(booking, tourStartYmdByTourId)
 
       if (dateString && dailyTotals[dateString]) {
         dailyTotals[dateString].ticketCount += booking.ea || 0
         dailyTotals[dateString].totalCount += booking.ea || 0
-        const assignedForTour = assignedPeopleByTourId.get(String(booking.tour_id)) ?? 0
+        const assignedForTour =
+          linkedTour && booking.tour_id
+            ? assignedPeopleByTourId.get(String(booking.tour_id)) ?? 0
+            : undefined
         const connectedTourLabel = formatConnectedTourLabelForTicketBookingTooltip(
           linkedTour,
           teamMembers,
@@ -5298,7 +5281,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
     // 투어 호텔 부킹 합산
     tourHotelBookings.forEach(booking => {
-      if (!isActiveStatus(booking.status)) return
+      if (!isActiveTourHotelBookingStatus(booking.status)) return
 
       const checkIn = booking.check_in_date ? String(booking.check_in_date).trim().slice(0, 10) : null
       const dateString =
@@ -5353,18 +5336,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       byDate[dateString] = { ticketMismatch: false, multiDayHotelMissing: false }
     })
 
-    const isActiveBookingStatus = (status: string | null | undefined) => {
-      if (!status) return false
-      const s = status.toLowerCase()
-      return (
-        s === 'confirmed' ||
-        s === 'paid' ||
-        s === 'pending' ||
-        s === 'tentative' ||
-        s === 'completed'
-      )
-    }
-
     const tourStartYmdByTourId = new Map<string, string>()
     const toursById = new Map<string, Tour>()
     for (const tour of tours) {
@@ -5375,7 +5346,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
     const activeTicketsByTourId = new Map<string, ScheduleTicketBookingRow[]>()
     for (const booking of ticketBookings) {
-      if (!booking.tour_id || !isActiveBookingStatus(booking.status)) continue
+      if (!booking.tour_id || !isTicketBookingActiveForScheduleGrid(booking)) continue
       const tid = String(booking.tour_id)
       const list = activeTicketsByTourId.get(tid) ?? []
       list.push(booking)
@@ -5387,7 +5358,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       const toursCountedForDay = new Set<string>()
 
       for (const booking of ticketBookings) {
-        if (!isActiveBookingStatus(booking.status) || !booking.tour_id) continue
+        if (!isTicketBookingActiveForScheduleGrid(booking) || !booking.tour_id) continue
         const displayYmd = resolveScheduleTicketBookingDisplayYmd(booking, tourStartYmdByTourId)
         if (displayYmd !== dateString) continue
         const tid = String(booking.tour_id)
@@ -5418,7 +5389,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
     const tourIdsWithHotel = new Set<string>()
     for (const hb of tourHotelBookings) {
-      if (!hb.tour_id || !isActiveBookingStatus(hb.status)) continue
+      if (!hb.tour_id || !isActiveTourHotelBookingStatus(hb.status)) continue
       const hasHotelName = Boolean(String(hb.hotel ?? '').trim())
       const hasRooms = (Number(hb.rooms) || 0) > 0
       if (hasHotelName || hasRooms) tourIdsWithHotel.add(String(hb.tour_id))

@@ -65,6 +65,33 @@ export function calculateNetPrice(
   return grandTotal - commissionAmount
 }
 
+/** 채널 수수료 $ (DB 저장값 우선, 없으면 % 산출) */
+export function resolveChannelCommissionAmount(
+  pricing: ReservationPricingRow | null,
+  reservationId: string,
+  reservationChannels: Record<string, { commission_base_price_only?: boolean }>
+): number {
+  if (!pricing) return 0
+  if (pricing.commission_amount != null && Number(pricing.commission_amount) > 0) {
+    return roundUsd2(Number(pricing.commission_amount))
+  }
+  const percent = pricing.commission_percent
+  if (percent != null && percent > 0) {
+    const commissionBasePriceOnly = reservationChannels[reservationId]?.commission_base_price_only || false
+    if (commissionBasePriceOnly) {
+      const productPriceTotal = pricing.product_price_total || 0
+      const couponDiscount = pricing.coupon_discount || 0
+      const additionalDiscount = pricing.additional_discount || 0
+      const additionalCost = pricing.additional_cost || 0
+      const base = productPriceTotal - couponDiscount - additionalDiscount + additionalCost
+      return roundUsd2(base * (percent / 100))
+    }
+    const grandTotal = pricing.total_price || 0
+    return roundUsd2(grandTotal * (percent / 100))
+  }
+  return 0
+}
+
 export function calculateTotalCustomerPayment(pricing: ReservationPricingRow | null): number {
   if (!pricing) return 0
   const productPriceTotal = pricing.product_price_total || 0

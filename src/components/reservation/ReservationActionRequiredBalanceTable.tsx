@@ -52,6 +52,7 @@ import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusS
 import {
   buildReservationPricingMismatchFormulaPatch,
   computeBalanceChannelMetrics,
+  computeReservationPricingStoredRevenueColumns,
 } from '@/utils/balanceChannelRevenue'
 
 function fmtUsd(v: number | undefined | null): string {
@@ -854,6 +855,30 @@ function BalanceRow(props: BalanceRowProps) {
     [p, reservation, channels, paymentRecords, reservationOptionSumByReservationId]
   )
 
+  const storedRevenueColumns = useMemo(
+    () =>
+      p
+        ? computeReservationPricingStoredRevenueColumns(
+            p,
+            reservation,
+            channels || [],
+            paymentRecords,
+            [],
+            reservationOptionSumByReservationId
+          )
+        : null,
+    [p, reservation, channels, paymentRecords, reservationOptionSumByReservationId]
+  )
+
+  const dbCompanyTotalRevenue =
+    p?.company_total_revenue != null && Number.isFinite(Number(p.company_total_revenue))
+      ? pricingFieldToNumber(p.company_total_revenue)
+      : null
+  const dbOperatingProfit =
+    p?.operating_profit != null && Number.isFinite(Number(p.operating_profit))
+      ? pricingFieldToNumber(p.operating_profit)
+      : null
+
   const dbChannelSettlement =
     p != null &&
     p.channel_settlement_amount != null &&
@@ -1407,8 +1432,8 @@ function BalanceRow(props: BalanceRowProps) {
         title={t('actionRequired.balanceTable.cols.companyTotalRevenueHint')}
       >
         <DbFormulaMoneyCell
-          dbVal={null}
-          computedVal={channelMetrics?.companyTotalRevenue ?? null}
+          dbVal={dbCompanyTotalRevenue}
+          computedVal={storedRevenueColumns?.company_total_revenue ?? channelMetrics?.companyTotalRevenue ?? null}
         />
       </td>
       <td
@@ -1416,8 +1441,8 @@ function BalanceRow(props: BalanceRowProps) {
         title={t('actionRequired.balanceTable.cols.operatingProfitHint')}
       >
         <DbFormulaMoneyCell
-          dbVal={null}
-          computedVal={channelMetrics?.operatingProfit ?? null}
+          dbVal={dbOperatingProfit}
+          computedVal={storedRevenueColumns?.operating_profit ?? channelMetrics?.operatingProfit ?? null}
         />
       </td>
 
