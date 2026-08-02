@@ -11,6 +11,7 @@ import {
   isScheduleMiscTourRowKey,
 } from '@/lib/scheduleMiscTourGroup'
 import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
+import { getAssignmentStatusTooltipColorClass } from '@/lib/guideAssignmentStatus'
 import { tourChoiceCountsDisplayKeys } from '@/lib/tourChoiceCounts'
 import {
   aggregateScheduleBreakdownFromDailyData,
@@ -276,6 +277,18 @@ export default function ScheduleProductGridRow({
                                     guide: row.guideName,
                                     assistant: row.assistantName,
                                   })}
+                                </div>
+                                <div className="text-[11px] font-medium leading-snug">
+                                  <span className="text-gray-400">
+                                    {locale === 'ko' ? '배정 상태' : 'Assignment'}:{' '}
+                                  </span>
+                                  <span
+                                    className={getAssignmentStatusTooltipColorClass({
+                                      assignment_status: row.assignmentStatus,
+                                    })}
+                                  >
+                                    {row.assignmentStatusLabel}
+                                  </span>
                                 </div>
                                 <div className="text-[11px] text-gray-100 font-medium tabular-nums">
                                   {tTourCal('scheduleCellCapacityPerTour', {

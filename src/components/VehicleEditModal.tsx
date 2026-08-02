@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Car, DollarSign, Wrench, Calendar, Upload, Trash2, Image, Images, Settings } from 'lucide-react'
+import { X, Car, DollarSign, Wrench, Calendar, Upload, Trash2, Image, Images, Settings, FileText, ExternalLink } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fetchUploadApi } from '@/lib/uploadClient'
 import { rentalImpliedDailyUsd } from '@/lib/rentalVehicleUtils'
 import { VEHICLE_STATUS_SELECT_OPTIONS } from '@/lib/vehicleStatus'
 import {
@@ -65,8 +66,46 @@ interface Vehicle {
   rental_notes?: string
   /** Rental Agreement # (예약 번호·RN과 별도) */
   rental_agreement_number?: string | null
+  /** Rental Agreement 파일 URL */
+  rental_agreement_file_url?: string | null
+  /** Rental Receipt 파일 URL */
+  rental_receipt_url?: string | null
   /** 달력/일정 뷰 표시용 닉네임 */
   nick?: string | null
+}
+
+const RENTAL_DOC_ACCEPT =
+  'image/jpeg,image/png,image/gif,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+function fileNameFromUrl(url: string): string {
+  try {
+    const path = new URL(url).pathname
+    const name = path.split('/').pop() || 'document'
+    return decodeURIComponent(name)
+  } catch {
+    return 'document'
+  }
+}
+
+async function uploadRentalDocument(file: File): Promise<string> {
+  const uploadFormData = new FormData()
+  uploadFormData.append('bucketType', 'vehicle_rental')
+  uploadFormData.append('files', file)
+
+  const response = await fetchUploadApi(uploadFormData)
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(
+      typeof err?.detail === 'string'
+        ? err.detail
+        : err?.error || '파일 업로드에 실패했습니다.'
+    )
+  }
+
+  const result = await response.json()
+  const url = result.urls?.[0]
+  if (!url) throw new Error('업로드된 파일 URL을 받지 못했습니다.')
+  return url
 }
 
 interface VehicleEditModalProps {
@@ -122,8 +161,14 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
     status: 'available',
     rental_notes: '',
     rental_agreement_number: '',
+    rental_agreement_file_url: '',
+    rental_receipt_url: '',
     nick: ''
   })
+
+  const [pendingRentalAgreementFile, setPendingRentalAgreementFile] = useState<File | null>(null)
+  const [pendingRentalReceiptFile, setPendingRentalReceiptFile] = useState<File | null>(null)
+  const [uploadingRentalDocs, setUploadingRentalDocs] = useState(false)
 
   const [imageFiles, setImageFiles] = useState<File[]>([])
   const [imagePreviews, setImagePreviews] = useState<string[]>([])
@@ -345,6 +390,8 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
           : vehicle.rental_pickup_location || '',
         rental_notes: vehicle.rental_notes || '',
         rental_agreement_number: vehicle.rental_agreement_number || '',
+        rental_agreement_file_url: vehicle.rental_agreement_file_url || '',
+        rental_receipt_url: vehicle.rental_receipt_url || '',
         nick: vehicle.nick || '',
         // 불린 필드들
         is_installment: vehicle.is_installment || false,
@@ -395,12 +442,20 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
         status: 'available',
         rental_notes: '',
         rental_agreement_number: '',
+        rental_agreement_file_url: '',
+        rental_receipt_url: '',
         nick: '',
       }
       setFormData({
         ...base,
         ...(prefill != null && typeof prefill === 'object' ? prefill : {}),
       })
+      setPendingRentalAgreementFile(null)
+      setPendingRentalReceiptFile(null)
+    }
+    if (vehicle) {
+      setPendingRentalAgreementFile(null)
+      setPendingRentalReceiptFile(null)
     }
   }, [vehicle, prefill])
 
@@ -696,12 +751,59 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
     }
   }
 
+  const handleRentalDocSelect = (
+    kind: 'agreement' | 'receipt',
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert('파일 크기는 10MB 이하여야 합니다.')
+      return
+    }
+
+    const allowedTypes = RENTAL_DOC_ACCEPT.split(',')
+    if (!allowedTypes.includes(file.type)) {
+      alert('PDF, Word 문서, 이미지 파일만 업로드할 수 있습니다.')
+      return
+    }
+
+    if (kind === 'agreement') {
+      setPendingRentalAgreementFile(file)
+    } else {
+      setPendingRentalReceiptFile(file)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     try {
+      let rentalAgreementFileUrl = formData.rental_agreement_file_url?.trim() || null
+      let rentalReceiptUrl = formData.rental_receipt_url?.trim() || null
+
+      if (pendingRentalAgreementFile || pendingRentalReceiptFile) {
+        setUploadingRentalDocs(true)
+        try {
+          if (pendingRentalAgreementFile) {
+            rentalAgreementFileUrl = await uploadRentalDocument(pendingRentalAgreementFile)
+          }
+          if (pendingRentalReceiptFile) {
+            rentalReceiptUrl = await uploadRentalDocument(pendingRentalReceiptFile)
+          }
+        } finally {
+          setUploadingRentalDocs(false)
+        }
+      }
+
       // 날짜 필드 정리 및 유효성 검사
-      const cleanedData = { ...formData } as Record<string, unknown>
+      const cleanedData = {
+        ...formData,
+        rental_agreement_file_url: rentalAgreementFileUrl,
+        rental_receipt_url: rentalReceiptUrl,
+      } as Record<string, unknown>
       
       // 빈 문자열인 날짜 필드들을 null로 변환
       const dateFields = [
@@ -1251,6 +1353,144 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                       </div>
                     </div>
 
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                          Rental Agreement File
+                        </label>
+                        <div className="mt-1.5 rounded-lg border border-gray-200 bg-slate-50/60 p-3">
+                          {pendingRentalAgreementFile ? (
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <FileText className="h-4 w-4 shrink-0 text-primary" />
+                                <span className="truncate text-sm text-gray-800">
+                                  {pendingRentalAgreementFile.name}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setPendingRentalAgreementFile(null)}
+                                className="shrink-0 rounded-md p-1 text-red-600 hover:bg-red-50"
+                                title="선택 취소"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : formData.rental_agreement_file_url?.trim() ? (
+                            <div className="flex items-start justify-between gap-2">
+                              <a
+                                href={formData.rental_agreement_file_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex min-w-0 items-center gap-2 text-sm text-primary hover:underline"
+                              >
+                                <FileText className="h-4 w-4 shrink-0" />
+                                <span className="truncate">
+                                  {fileNameFromUrl(formData.rental_agreement_file_url)}
+                                </span>
+                                <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setFormData((prev) => ({ ...prev, rental_agreement_file_url: '' }))
+                                }
+                                className="shrink-0 rounded-md p-1 text-red-600 hover:bg-red-50"
+                                title="파일 제거"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-gray-500">업로드된 계약서가 없습니다.</p>
+                          )}
+                          <label className="mt-2 inline-flex cursor-pointer items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+                            <Upload className="mr-1 h-3.5 w-3.5" />
+                            {formData.rental_agreement_file_url?.trim() || pendingRentalAgreementFile
+                              ? '파일 변경'
+                              : '파일 업로드'}
+                            <input
+                              type="file"
+                              accept={RENTAL_DOC_ACCEPT}
+                              onChange={(e) => handleRentalDocSelect('agreement', e)}
+                              className="hidden"
+                            />
+                          </label>
+                          <p className="mt-1.5 text-[11px] text-gray-400">
+                            PDF, Word, 이미지 · 최대 10MB
+                          </p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                          Rental Receipt
+                        </label>
+                        <div className="mt-1.5 rounded-lg border border-gray-200 bg-slate-50/60 p-3">
+                          {pendingRentalReceiptFile ? (
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <FileText className="h-4 w-4 shrink-0 text-primary" />
+                                <span className="truncate text-sm text-gray-800">
+                                  {pendingRentalReceiptFile.name}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setPendingRentalReceiptFile(null)}
+                                className="shrink-0 rounded-md p-1 text-red-600 hover:bg-red-50"
+                                title="선택 취소"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : formData.rental_receipt_url?.trim() ? (
+                            <div className="flex items-start justify-between gap-2">
+                              <a
+                                href={formData.rental_receipt_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex min-w-0 items-center gap-2 text-sm text-primary hover:underline"
+                              >
+                                <FileText className="h-4 w-4 shrink-0" />
+                                <span className="truncate">
+                                  {fileNameFromUrl(formData.rental_receipt_url)}
+                                </span>
+                                <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setFormData((prev) => ({ ...prev, rental_receipt_url: '' }))
+                                }
+                                className="shrink-0 rounded-md p-1 text-red-600 hover:bg-red-50"
+                                title="파일 제거"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-gray-500">업로드된 영수증이 없습니다.</p>
+                          )}
+                          <label className="mt-2 inline-flex cursor-pointer items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+                            <Upload className="mr-1 h-3.5 w-3.5" />
+                            {formData.rental_receipt_url?.trim() || pendingRentalReceiptFile
+                              ? '파일 변경'
+                              : '파일 업로드'}
+                            <input
+                              type="file"
+                              accept={RENTAL_DOC_ACCEPT}
+                              onChange={(e) => handleRentalDocSelect('receipt', e)}
+                              className="hidden"
+                            />
+                          </label>
+                          <p className="mt-1.5 text-[11px] text-gray-400">
+                            PDF, Word, 이미지 · 최대 10MB
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700">메모</label>
                       <textarea
@@ -1726,9 +1966,10 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
           <div className="flex shrink-0 flex-row-reverse gap-2 border-t border-gray-200 bg-slate-50/90 px-4 py-3 sm:px-5">
               <button
                 type="submit"
-                className="inline-flex min-h-11 justify-center rounded-lg border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                disabled={uploadingRentalDocs}
+                className="inline-flex min-h-11 justify-center rounded-lg border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                저장
+                {uploadingRentalDocs ? '파일 업로드 중…' : '저장'}
               </button>
               <button
                 type="button"

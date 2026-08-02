@@ -67,6 +67,11 @@ import { generateTourId } from '@/lib/entityIds'
 import { upsertReservationCancellationReason, fetchCancellationFollowUpMeta } from '@/lib/reservationCancellationReason'
 import { doesGuideSupportLanguage } from '@/lib/guideLanguageDetection'
 import {
+  getAssignmentStatusLabel,
+  getTourAssignmentStatusTooltipLine,
+  resolveTourDisplayAssignmentStatus,
+} from '@/lib/guideAssignmentStatus'
+import {
   SCHEDULE_COLOR_PRESETS,
   getScheduleProductDisplayProps,
 } from '@/lib/scheduleProductColorPresets'
@@ -266,6 +271,8 @@ const SCHEDULE_VEHICLE_EDIT_SELECT = `
   rental_total_cost,
   rental_notes,
   rental_agreement_number,
+  rental_agreement_file_url,
+  rental_receipt_url,
   nick,
   created_at,
   updated_at
@@ -2770,6 +2777,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         'rental_total_cost',
         'rental_notes',
         'rental_agreement_number',
+        'rental_agreement_file_url',
+        'rental_receipt_url',
         'nick',
       ]
       const cleanedData = { ...vehicleData }
@@ -3185,6 +3194,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 assigned: number
                 max: number
                 spotsLeft: number
+                assignmentStatusLabel: string
+                assignmentStatus: string
               }>
               totalAssigned: number
               totalMax: number
@@ -3245,6 +3256,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               assigned: number
               max: number
               spotsLeft: number
+              assignmentStatusLabel: string
+              assignmentStatus: string
             }>
             totalAssigned: number
             totalMax: number
@@ -3382,7 +3395,12 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             assistantName,
             assigned,
             max,
-            spotsLeft
+            spotsLeft,
+            assignmentStatusLabel: getAssignmentStatusLabel(
+              resolveTourDisplayAssignmentStatus(tour),
+              locale,
+            ),
+            assignmentStatus: resolveTourDisplayAssignmentStatus(tour),
           }
         })
         const capTotalAssigned = tourCapacityRows.reduce((s, r) => s + r.assigned, 0)
@@ -3468,6 +3486,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     airportPickupMemberIdSet,
     airportSendingMemberIdSet,
     miscTourProductIds,
+    locale,
   ])
 
   /** 디스플레이: 공유 설정에 팀원이 없으면 표시 기간 투어의 가이드/어시스턴트로 자동 채움 */
@@ -4609,6 +4628,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     const c = getTourSummaryCore(tour)
     const lines = [
       `투어: ${c.productName}${c.isPrivateTour ? ' (단독투어)' : ''}`,
+      getTourAssignmentStatusTooltipLine(tour, locale),
       `가이드: ${c.guideName}`,
       `어시스턴트: ${c.assistantName}`,
       `차량: ${c.vehicleNumber}`,
@@ -4624,6 +4644,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     const lines = [
       `투어: ${c.productName}${c.isPrivateTour ? ' (단독투어)' : ''}`,
       `날짜: ${c.tourDate}`,
+      getTourAssignmentStatusTooltipLine(tour, locale),
       `인원: ${c.assignedPeople} / ${c.totalPeopleAll}`,
       `배정 언어: ko ${c.assignedKo} / en ${c.assignedEn}`,
       ...(c.choiceLine ? [c.choiceLine] : []),

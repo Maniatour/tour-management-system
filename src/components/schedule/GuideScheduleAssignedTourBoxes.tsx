@@ -1,8 +1,11 @@
 'use client'
 
-import GuideAssignmentStatusIcon from '@/components/schedule/GuideAssignmentStatusIcon'
+import GuideAssignmentStatusStripe from '@/components/schedule/GuideAssignmentStatusIcon'
 import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
-import { getAssignmentStatusLabel } from '@/lib/guideAssignmentStatus'
+import {
+  getAssignmentStatusLabel,
+  resolveTourDisplayAssignmentStatus,
+} from '@/lib/guideAssignmentStatus'
 import { getScheduleProductDisplayProps } from '@/lib/scheduleProductColorPresets'
 import type { ScheduleProductRef } from '@/lib/scheduleAirportPickDropGroup'
 import {
@@ -154,7 +157,8 @@ export default function GuideScheduleAssignedTourBoxes({
           role === 'guide'
             ? assignedPeople
             : getAssistantGuideInitials(tour, teamMembers) || fallbackGuideInitials || 'A'
-        const statusLabel = getAssignmentStatusLabel(tour.assignment_status, locale)
+        const displayAssignmentStatus = resolveTourDisplayAssignmentStatus(tour)
+        const statusLabel = getAssignmentStatusLabel(displayAssignmentStatus, locale)
         const textColor =
           assignedPeople > 0 && colorClass
             ? getProductDisplayProps(colorClass).style?.color
@@ -187,9 +191,13 @@ export default function GuideScheduleAssignedTourBoxes({
               }
             >
               {hasPrivateTour ? <span className="text-[9px]">🔒</span> : null}
-              <GuideAssignmentStatusIcon status={tour.assignment_status} title={statusLabel}>
+              <GuideAssignmentStatusStripe
+                status={displayAssignmentStatus}
+                title={statusLabel}
+              />
+              <span className="relative z-10 tabular-nums text-[10px] font-semibold leading-none">
                 {displayText}
-              </GuideAssignmentStatusIcon>
+              </span>
               {extendsToNextMonth && roleTours.length === 1 ? (
                 <span className="text-xs opacity-75">→</span>
               ) : null}

@@ -65,7 +65,7 @@ export const SCHEDULE_ADMIN_RESERVATION_SELECT =
 
 /** 스케줄 디스플레이·관리자 스케줄뷰 공통 투어 조회 컬럼 (편집·배정에 필요한 필드) */
 export const SCHEDULE_DISPLAY_TOUR_SELECT =
-  'id, tour_date, tour_status, tour_guide_id, assistant_id, tour_car_id, product_id, reservation_ids, team_type, is_private_tour, max_participants, tour_start_datetime, operator_id, products(name)'
+  'id, tour_date, tour_status, assignment_status, tour_guide_id, assistant_id, tour_car_id, product_id, reservation_ids, team_type, is_private_tour, max_participants, tour_start_datetime, operator_id, products(name)'
 
 /** 미배정 투어 카드 — 상품 inner join */
 export const SCHEDULE_ADMIN_UNASSIGNED_TOUR_SELECT =

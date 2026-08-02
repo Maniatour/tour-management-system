@@ -1,81 +1,44 @@
 'use client'
 
-import type { ReactNode } from 'react'
 import {
   normalizeAssignmentStatus,
   shouldShowAssignmentStatusIcon,
 } from '@/lib/guideAssignmentStatus'
 
-type GuideAssignmentStatusIconProps = {
+type GuideAssignmentStatusStripeProps = {
   status?: string | null
-  className?: string
   title?: string
-  children: ReactNode
 }
 
-/** 인원 숫자를 감싸는 배정 상태 표시: 부여(○) · 확정(□) · 거절(×) */
-export default function GuideAssignmentStatusIcon({
+const STRIPE_BY_STATUS: Record<string, string> = {
+  assigned: 'bg-yellow-400',
+  confirmed: 'bg-green-500',
+  rejected: 'bg-red-500',
+}
+
+/**
+ * 투어 박스 왼쪽 색상 라인 — 부여(노랑) · 확정(녹색) · 거절(빨강)
+ */
+export function GuideAssignmentStatusStripe({
   status,
-  className = '',
   title,
-  children,
-}: GuideAssignmentStatusIconProps) {
+}: GuideAssignmentStatusStripeProps) {
   const normalized = normalizeAssignmentStatus(status)
 
   if (!shouldShowAssignmentStatusIcon(status)) {
-    return <span className={className}>{children}</span>
+    return null
   }
 
-  const label = (
-    <span className="relative z-10 inline-flex min-w-[0.7rem] items-center justify-center tabular-nums text-[10px] font-semibold leading-none">
-      {children}
-    </span>
+  const colorClass = STRIPE_BY_STATUS[normalized]
+  if (!colorClass) return null
+
+  return (
+    <span
+      className={`pointer-events-none absolute left-0 top-0 z-20 h-full w-[4px] rounded-l-sm shadow-[1px_0_2px_rgba(0,0,0,0.35)] ${colorClass}`}
+      title={title}
+      aria-label={title}
+    />
   )
-
-  if (normalized === 'assigned') {
-    return (
-      <span
-        className={`relative inline-flex min-h-[14px] min-w-[14px] items-center justify-center px-[2px] ${className}`}
-        title={title}
-      >
-        <span
-          className="pointer-events-none absolute inset-0 rounded-full border-[1.5px] border-white shadow-[0_0_0_0.5px_rgba(0,0,0,0.2)]"
-          aria-hidden
-        />
-        {label}
-      </span>
-    )
-  }
-
-  if (normalized === 'confirmed') {
-    return (
-      <span
-        className={`relative inline-flex min-h-[14px] min-w-[14px] items-center justify-center px-[2px] ${className}`}
-        title={title}
-      >
-        <span
-          className="pointer-events-none absolute inset-0 border-[1.5px] border-white shadow-[0_0_0_0.5px_rgba(0,0,0,0.2)]"
-          aria-hidden
-        />
-        {label}
-      </span>
-    )
-  }
-
-  if (normalized === 'rejected') {
-    return (
-      <span
-        className={`relative inline-flex min-h-[14px] min-w-[14px] items-center justify-center px-[2px] ${className}`}
-        title={title}
-      >
-        <span className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden>
-          <span className="absolute h-[110%] w-[1.5px] rotate-45 rounded-full bg-white shadow-[0_0_1px_rgba(0,0,0,0.35)]" />
-          <span className="absolute h-[110%] w-[1.5px] -rotate-45 rounded-full bg-white shadow-[0_0_1px_rgba(0,0,0,0.35)]" />
-        </span>
-        {label}
-      </span>
-    )
-  }
-
-  return <span className={className}>{children}</span>
 }
+
+export default GuideAssignmentStatusStripe

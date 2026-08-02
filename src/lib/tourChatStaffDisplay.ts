@@ -1,6 +1,6 @@
 /**
- * 투어 채팅: 직원 발신 표시명 (예: judy@maniatour.com + 이름 → "maniatour - Judy")
- * team 테이블에는 display_name 없음 → nick_name / name_ko / name_en 순으로 후보 사용.
+ * 투어 채팅: 직원 발신 표시명 (영문 이름 우선, 도메인 접두사 없음)
+ * team 테이블에는 display_name 없음 → name_en / nick_name / display_name / name_ko 순으로 후보 사용.
  */
 
 export type TourChatStaffTeamFields = {
@@ -13,10 +13,10 @@ export type TourChatStaffTeamFields = {
 
 function resolveTourChatPersonName(team: TourChatStaffTeamFields | null | undefined): string | undefined {
   const s =
-    team?.display_name?.trim() ||
+    team?.name_en?.trim() ||
     team?.nick_name?.trim() ||
-    team?.name_ko?.trim() ||
-    team?.name_en?.trim()
+    team?.display_name?.trim() ||
+    team?.name_ko?.trim()
   return s || undefined
 }
 
@@ -36,10 +36,9 @@ export function formatTourChatStaffDisplayName(
   if (!email?.trim()) {
     return resolveTourChatPersonName(team) || 'staff'
   }
-  const domain = tourChatEmailDomainLabel(email)
-  const person =
+  return (
     resolveTourChatPersonName(team) ||
     email.split('@')[0]?.trim() ||
     'staff'
-  return `${domain} - ${person}`
+  )
 }

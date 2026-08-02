@@ -21,6 +21,59 @@ export function shouldShowAssignmentStatusIcon(status: string | null | undefined
   return n === 'assigned' || n === 'confirmed' || n === 'rejected'
 }
 
+type TourAssignmentStatusSource = {
+  assignment_status?: string | null
+  tour_guide_id?: string | null
+  assistant_id?: string | null
+}
+
+/** DB 상태가 pending/null이어도 가이드·어시 배정이 있으면 부여(노랑 라인)로 표시 */
+export function resolveTourDisplayAssignmentStatus(
+  tour: TourAssignmentStatusSource | null | undefined,
+): string {
+  if (!tour) return 'pending'
+  const normalized = normalizeAssignmentStatus(tour.assignment_status)
+  if (normalized === 'assigned' || normalized === 'confirmed' || normalized === 'rejected') {
+    return normalized
+  }
+  const hasGuide = Boolean(String(tour.tour_guide_id || '').trim())
+  const hasAssistant = Boolean(String(tour.assistant_id || '').trim())
+  if (hasGuide || hasAssistant) {
+    return 'assigned'
+  }
+  return normalized
+}
+
+export function shouldShowTourAssignmentStatusIcon(
+  tour: TourAssignmentStatusSource | null | undefined,
+): boolean {
+  return shouldShowAssignmentStatusIcon(resolveTourDisplayAssignmentStatus(tour))
+}
+
+export function getTourAssignmentStatusTooltipLine(
+  tour: TourAssignmentStatusSource | null | undefined,
+  locale: string = 'ko',
+): string {
+  const label = getAssignmentStatusLabel(resolveTourDisplayAssignmentStatus(tour), locale)
+  return locale === 'en' ? `Assignment status: ${label}` : `배정 상태: ${label}`
+}
+
+export function getAssignmentStatusTooltipColorClass(
+  tour: TourAssignmentStatusSource | null | undefined,
+): string {
+  const normalized = resolveTourDisplayAssignmentStatus(tour)
+  switch (normalized) {
+    case 'assigned':
+      return 'text-yellow-400'
+    case 'confirmed':
+      return 'text-green-400'
+    case 'rejected':
+      return 'text-red-400'
+    default:
+      return 'text-gray-300'
+  }
+}
+
 export function getAssignmentStatusLabel(
   status: string | null | undefined,
   locale: string = 'ko',

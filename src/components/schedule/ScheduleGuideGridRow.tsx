@@ -14,8 +14,11 @@ import type {
 import { normalizeTourDateKey } from '@/utils/tourUtils'
 import { shouldHighlightGuideScheduleDateNote } from '@/lib/scheduleDateNotes'
 import GuideScheduleAssignedTourBoxes from '@/components/schedule/GuideScheduleAssignedTourBoxes'
-import GuideAssignmentStatusIcon from '@/components/schedule/GuideAssignmentStatusIcon'
-import { getAssignmentStatusLabel } from '@/lib/guideAssignmentStatus'
+import GuideAssignmentStatusStripe from '@/components/schedule/GuideAssignmentStatusIcon'
+import {
+  getAssignmentStatusLabel,
+  resolveTourDisplayAssignmentStatus,
+} from '@/lib/guideAssignmentStatus'
 import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import type { ScheduleGuideGridProps } from '@/components/schedule/ScheduleGuideGrid'
 
@@ -716,14 +719,18 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                   {mdRowTours.some(tourItem => tourItem.is_private_tour === 'TRUE' || tourItem.is_private_tour === true) && (
                     <span>🔒</span>
                   )}
-                  <GuideAssignmentStatusIcon
-                    status={mdRowTours[0]?.assignment_status}
-                    title={getAssignmentStatusLabel(mdRowTours[0]?.assignment_status, locale)}
-                  >
+                  <GuideAssignmentStatusStripe
+                    status={resolveTourDisplayAssignmentStatus(mdRowTours[0])}
+                    title={getAssignmentStatusLabel(
+                      resolveTourDisplayAssignmentStatus(mdRowTours[0]),
+                      locale,
+                    )}
+                  />
+                  <span className="relative z-10 tabular-nums text-[10px] font-semibold leading-none">
                     {tour.dayData.role === 'assistant'
                       ? (tour.dayData.guideInitials || 'A')
                       : (tour.dayData.assignedPeople || '')}
-                  </GuideAssignmentStatusIcon>
+                  </span>
                   {tour.extendsToNextMonth && (
                     <span className="text-xs opacity-75">→</span>
                   )}

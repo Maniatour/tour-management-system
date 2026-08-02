@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { Calendar, Users, CalendarOff, CheckCircle, XCircle, Clock as ClockIcon, Plus, X, User, Car, History, MessageSquare, MessageCircle, Search as SearchIcon } from 'lucide-react'
+import { Calendar, Users, CalendarOff, CheckCircle, XCircle, Clock as ClockIcon, Plus, X, User, History, MessageSquare, MessageCircle, Search as SearchIcon } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -14,6 +14,7 @@ import {
   GuideAssignmentResponseButtons,
   GuideAssignmentStatusBadge,
 } from '@/components/guide/GuideAssignmentResponseButtons'
+import GuideVehicleBadge from '@/components/guide/GuideVehicleBadge'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Omit<Tour, 'assignment_status'> & {
@@ -31,6 +32,7 @@ type ExtendedTour = Omit<Tour, 'assignment_status'> & {
   assistant_name?: string | null;
   assistant_name_en?: string | null;
   vehicle_number?: string | null;
+  rental_agreement_file_url?: string | null;
 }
 
 type OffSchedule = Database['public']['Tables']['off_schedules']['Row']
@@ -757,14 +759,30 @@ export default function GuideDashboard() {
         // 차량 정보 가져오기
         const vehicleIds = [...new Set((toursData || []).map(tour => tour.tour_car_id).filter((id): id is string => Boolean(id)))]
         
-        let vehicleMap = new Map()
+        let vehicleMap = new Map<string, { vehicle_number: string | null; rental_agreement_file_url: string | null }>()
         if (vehicleIds.length > 0) {
           const { data: vehiclesData } = await supabase
             .from('vehicles')
-            .select('id, vehicle_number')
-            .in('id', vehicleIds) as { data: { id: string; vehicle_number: string }[] | null }
-          
-          vehicleMap = new Map((vehiclesData || []).map(vehicle => [vehicle.id, vehicle.vehicle_number]))
+            .select('id, vehicle_number, rental_agreement_file_url')
+            .in('id', vehicleIds) as {
+            data:
+              | {
+                  id: string
+                  vehicle_number: string | null
+                  rental_agreement_file_url: string | null
+                }[]
+              | null
+          }
+
+          vehicleMap = new Map(
+            (vehiclesData || []).map((vehicle) => [
+              vehicle.id,
+              {
+                vehicle_number: vehicle.vehicle_number,
+                rental_agreement_file_url: vehicle.rental_agreement_file_url,
+              },
+            ])
+          )
         }
 
         // reservation_ids 정규화 함수: 배열/JSON/콤마 지원
@@ -886,7 +904,10 @@ export default function GuideDashboard() {
             guide_name_en: tour.tour_guide_id ? teamEnMap.get(tour.tour_guide_id) : null,
             assistant_name: tour.assistant_id ? teamMap.get(tour.assistant_id) : null,
             assistant_name_en: tour.assistant_id ? teamEnMap.get(tour.assistant_id) : null,
-            vehicle_number: tour.tour_car_id ? vehicleMap.get(tour.tour_car_id) : null,
+            vehicle_number: tour.tour_car_id ? vehicleMap.get(tour.tour_car_id)?.vehicle_number ?? null : null,
+            rental_agreement_file_url: tour.tour_car_id
+              ? vehicleMap.get(tour.tour_car_id)?.rental_agreement_file_url ?? null
+              : null,
           }
 
           // 디버깅을 위한 로그
@@ -1930,10 +1951,11 @@ function TourCard({
           </span>
 
           {/* 차량 배지 */}
-          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-            <Car className="w-3 h-3 mr-1" />
-            {tour.vehicle_number || t('tourCard.unassigned')}
-          </span>
+          <GuideVehicleBadge
+            vehicleNumber={tour.vehicle_number ?? null}
+            rentalAgreementFileUrl={tour.rental_agreement_file_url ?? null}
+            unassignedLabel={t('tourCard.unassigned')}
+          />
         </div>
       </div>
     </div>

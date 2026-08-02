@@ -426,6 +426,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
   const currentUser = isSimulating && simulatedUser ? simulatedUser : user
   const currentUserRole = isSimulating && simulatedUser ? simulatedUser.role : userRole
+  const isTourDetailPage = /\/guide\/tours\/[^/]+$/.test(pathname)
 
   if (!currentUser || !['admin', 'manager', 'team_member'].includes(currentUserRole || '')) {
     return (
@@ -471,7 +472,11 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
          {/* 상단 Navigation은 [locale]/layout.tsx(가이드 분기)에서만 렌더 */}
 
          {/* 메인: main-safe-area로 고정 푸터(lg 미만) 높이 + safe-area 만큼 하단 여백 확보 */}
-         <main className="main-safe-area flex-1 max-w-7xl mx-auto w-full px-2 pt-2 sm:px-2 sm:pt-4 lg:px-4">
+         <main
+           className={`main-safe-area flex-1 max-w-7xl mx-auto w-full pt-2 sm:pt-4 ${
+             isTourDetailPage ? 'px-0 lg:px-4' : 'px-2 sm:px-2 lg:px-4'
+           }`}
+         >
            {children}
          </main>
 

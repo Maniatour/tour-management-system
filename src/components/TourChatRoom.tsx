@@ -8,7 +8,6 @@ import VoiceCallModal from './VoiceCallModal'
 import VoiceCallUserSelector from './VoiceCallUserSelector'
 import AvatarSelector from './AvatarSelector'
 import PickupHotelPhotoGallery from './PickupHotelPhotoGallery'
-import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import ChatRoomShareModal from './ChatRoomShareModal'
 import PickupScheduleModal from './PickupScheduleModal'
@@ -28,6 +27,7 @@ import MessageList from './chat/MessageList'
 import MessageInput from './chat/MessageInput'
 import ChatSidebar from './chat/ChatSidebar'
 import GuidePickupProgressBar from '@/components/chat/GuidePickupProgressBar'
+import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
 import {
   isWithinGuidePickupShareWindow,
   buildPickupCompleteChatMessages
@@ -100,8 +100,6 @@ export default function TourChatRoom({
   onMessageCountChange
   // isModalView = false // 사용되지 않음
 }: TourChatRoomProps) {
-  const router = useRouter()
-  
   // customerLanguage prop을 사용하여 locale 결정 (next-intl 컨텍스트가 없을 수 있으므로)
   const locale: 'ko' | 'en' = customerLanguage === 'ko' ? 'ko' : 'en'
   
@@ -290,6 +288,8 @@ export default function TourChatRoom({
   const [internalMobileMenuOpen, setInternalMobileMenuOpen] = useState(false)
   
   const [showParticipantsList, setShowParticipantsList] = useState(false)
+  const [showTourDetailModal, setShowTourDetailModal] = useState(false)
+  const [tourDetailTourId, setTourDetailTourId] = useState<string | null>(null)
   
   // 고객용 아바타 선택
   const [selectedAvatar, setSelectedAvatar] = useState<string>('')
@@ -1281,12 +1281,22 @@ export default function TourChatRoom({
     return 'US' // 기본값
   }
 
-  // 투어 상세 페이지로 이동
+  useEffect(() => {
+    if (tourId) setTourDetailTourId(tourId)
+  }, [tourId])
+
+  // 투어 상세 모달 열기
   const goToTourDetail = () => {
     if (tourId) {
-      router.push(`/${locale}/admin/tours/${tourId}`)
+      setTourDetailTourId(tourId)
+      setShowTourDetailModal(true)
     }
   }
+
+  const tourDetailModalTitle =
+    publicDisplayRoomName?.trim() ||
+    room?.room_name ||
+    (selectedLanguage === 'ko' ? '투어 상세' : 'Tour Details')
 
   // loadMessages는 useChatMessages 훅에서 제공됨
   // ref로 접근하기 위해 저장
@@ -1592,22 +1602,13 @@ export default function TourChatRoom({
   // 실시간 메시지 구독 및 메시지 로드는 useChatMessages 훅에서 처리됨
 
   // 투어 배정 변경 감지 및 동기화
-  const assignmentChannelRoomIdRef = useRef<string | null>(null)
   useEffect(() => {
     if (!room?.id || !tourId || isPublicView) {
-      assignmentChannelRoomIdRef.current = null
       return
     }
-    
-    // room.id가 실제로 변경되었는지 확인
-    if (assignmentChannelRoomIdRef.current === room.id) {
-      return // 같은 room이면 재구독하지 않음
-    }
-    
-    assignmentChannelRoomIdRef.current = room.id
 
     const channel = supabase
-      .channel(`tour_${tourId}_assignments`)
+      .channel(`tour_${tourId}_assignments_${Date.now()}`)
       .on(
         'postgres_changes',
         {
@@ -1672,7 +1673,7 @@ export default function TourChatRoom({
     void fetchMessageCount()
 
     const countChannel = supabase
-      .channel(`chat_header_msg_count_${room.id}`)
+      .channel(`chat_header_msg_count_${room.id}_${Date.now()}`)
       .on(
         'postgres_changes',
         {
@@ -2379,13 +2380,14 @@ export default function TourChatRoom({
   }
 
   const formatTime = (dateString: string) => {
-    const formattedTime = new Date(dateString).toLocaleString('ko-KR', {
+    const formattedTime = new Date(dateString).toLocaleString('en-US', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
-      hour12: false
+      hour12: true,
+      timeZone: 'America/Los_Angeles',
     })
     return `${formattedTime} (PST)`
   }
@@ -2604,15 +2606,13 @@ export default function TourChatRoom({
         />
       )}
 
-      {/* 참여자 목록 사이드바 (관리자/가이드/드라이버/어시스턴트만) */}
-      {!isPublicView && (
-        <ChatSidebar
-          isOpen={showParticipantsList}
-          onClose={() => setShowParticipantsList(false)}
-          participants={onlineParticipants}
-          selectedLanguage={selectedLanguage}
-        />
-      )}
+      {/* 참여자 목록 사이드바 */}
+      <ChatSidebar
+        isOpen={showParticipantsList}
+        onClose={() => setShowParticipantsList(false)}
+        participants={onlineParticipants}
+        selectedLanguage={selectedLanguage}
+      />
 
       {/* 메시지 목록 */}
       <MessageList
@@ -2995,7 +2995,7 @@ export default function TourChatRoom({
                   rel="noopener noreferrer"
                   className="text-primary hover:text-primary/80 text-xs underline"
                 >
-                  {selectedLanguage === 'ko' ? 'Google Maps에서 보기' : 'View on Google Maps'}
+                  View on Google Maps
                 </a>
                 {selectedLanguage === 'ko' && (
                   <a
@@ -3004,7 +3004,7 @@ export default function TourChatRoom({
                     rel="noopener noreferrer"
                     className="text-primary hover:text-primary/80 text-xs underline"
                   >
-                    Naver Maps에서 보기
+                    View on Naver Maps
                   </a>
                 )}
               </div>
@@ -3043,6 +3043,17 @@ export default function TourChatRoom({
           language={convertToSupportedLanguage(locale)}
         />
       )}
+
+      {!isPublicView && (tourDetailTourId || tourId) ? (
+        <TourDetailResizableDialog
+          open={showTourDetailModal}
+          onOpenChange={setShowTourDetailModal}
+          tourId={tourDetailTourId ?? tourId}
+          onNavigateToTour={(nextTourId) => setTourDetailTourId(nextTourId)}
+          accessibilityTitle={tourDetailModalTitle}
+          titleFallback={tourDetailModalTitle}
+        />
+      ) : null}
     </div>
   )
 }

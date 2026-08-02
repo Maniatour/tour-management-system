@@ -55,6 +55,11 @@ export function useChatMessages({
     })
   }, [])
 
+  const scrollToBottomRef = useRef(scrollToBottom)
+  useEffect(() => {
+    scrollToBottomRef.current = scrollToBottom
+  }, [scrollToBottom])
+
   const loadMessages = useCallback(
     async (roomIdParam: string, options?: { publicPoll?: boolean }) => {
       try {
@@ -152,33 +157,28 @@ export function useChatMessages({
     return () => window.clearInterval(id)
   }, [isPublicView, roomCode, roomId])
 
-  const messageChannelRoomIdRef = useRef<string | null>(null)
+  const messageChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+
   useEffect(() => {
-    if (isPublicView && roomCode) {
-      messageChannelRoomIdRef.current = null
+    if ((isPublicView && roomCode) || !roomId) {
+      if (messageChannelRef.current) {
+        void supabase.removeChannel(messageChannelRef.current)
+        messageChannelRef.current = null
+      }
       return
     }
 
-    if (!roomId) {
-      messageChannelRoomIdRef.current = null
-      return
-    }
+    const channel = supabase.channel(`chat_messages_hook_${roomId}_${Date.now()}`)
+    messageChannelRef.current = channel
 
-    if (messageChannelRoomIdRef.current === roomId) {
-      return
-    }
-
-    messageChannelRoomIdRef.current = roomId
-
-    const channel = supabase
-      .channel(`chat_${roomId}`)
+    channel
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'chat_messages',
-          filter: `room_id=eq.${roomId}`
+          filter: `room_id=eq.${roomId}`,
         },
         (payload: { new: Record<string, unknown> }) => {
           const newMessage = payload.new as unknown as ChatMessage
@@ -190,34 +190,41 @@ export function useChatMessages({
             ) {
               return
             }
-          } else {
-            if (newMessage.sender_type === 'guide' && newMessage.sender_email === guideEmailRef.current) {
-              return
-            }
+          } else if (
+            newMessage.sender_type === 'guide' &&
+            newMessage.sender_email === guideEmailRef.current
+          ) {
+            return
           }
 
-          setMessages(prev => {
-            const exists = prev.some(m => m.id === newMessage.id)
+          setMessages((prev) => {
+            const exists = prev.some((m) => m.id === newMessage.id)
             if (exists) {
               return prev
             }
             const updated = [...prev, newMessage]
             if (updated.length > 500) {
               return updated
-                .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+                .sort(
+                  (a, b) =>
+                    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                )
                 .slice(-500)
             }
             return updated
           })
-          scrollToBottom()
+          scrollToBottomRef.current()
         }
       )
       .subscribe()
 
     return () => {
-      supabase.removeChannel(channel)
+      void supabase.removeChannel(channel)
+      if (messageChannelRef.current === channel) {
+        messageChannelRef.current = null
+      }
     }
-  }, [roomId, isPublicView, roomCode, scrollToBottom])
+  }, [roomId, isPublicView, roomCode])
 
   return {
     messages,

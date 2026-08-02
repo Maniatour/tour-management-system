@@ -7230,6 +7230,11 @@
     "tourCard": {
       "unassigned": "미배정",
       "today": "오늘",
+      "viewRentalAgreement": "렌터카 계약서 보기",
+      "rentalAgreementTitle": "Rental Agreement",
+      "rentalAgreementPreviewUnavailable": "미리보기를 지원하지 않는 형식입니다. 새 창에서 열어 주세요.",
+      "openInNewWindow": "새 창에서 열기",
+      "close": "닫기",
       "status": {
         "confirmed": "확정",
         "scheduled": "예정",

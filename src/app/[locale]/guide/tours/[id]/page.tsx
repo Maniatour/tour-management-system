@@ -1280,6 +1280,11 @@ export default function GuideTourDetailPage() {
   }
   
   // 아코디언 섹션 컴포넌트
+  const guidePanelShell = isGuideMobileLayout
+    ? 'bg-white rounded-none shadow-none border-b border-gray-200 mb-0'
+    : 'bg-white rounded-lg shadow mb-3 sm:mb-4'
+  const guideContentInset = isGuideMobileLayout ? 'px-3' : ''
+
   const AccordionSection = ({ 
     id, 
     title, 
@@ -1303,8 +1308,8 @@ export default function GuideTourDetailPage() {
     }
     
     return (
-      <div className="bg-white rounded-lg shadow mb-3 sm:mb-4">
-        <div className="flex items-center justify-between p-3 sm:p-4">
+      <div className={guidePanelShell}>
+        <div className={`flex items-center justify-between p-3 sm:p-4 ${guideContentInset}`}>
           <button
             type="button"
             onClick={handleToggle}
@@ -1387,12 +1392,12 @@ export default function GuideTourDetailPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-0 sm:px-2">
+    <div className="w-full lg:max-w-5xl lg:mx-auto lg:px-2">
       {/* 헤더 - 모바일 최적화 */}
-      <div className="mb-6">
+      <div className={`mb-4 sm:mb-6 ${guideContentInset} lg:px-0`}>
         <button
           onClick={() => router.push(`/${locale}/guide/tours`)}
-          className="flex items-center text-gray-600 hover:text-gray-900 mb-4 text-sm sm:text-base"
+          className="flex items-center text-gray-600 hover:text-gray-900 text-sm sm:text-base"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           {t('backToTourList')}
@@ -1400,8 +1405,8 @@ export default function GuideTourDetailPage() {
       </div>
 
       {/* 모바일 탭 네비게이션 - 앱 스타일 */}
-      <div className="lg:hidden mb-4">
-        <div className="bg-white rounded-lg shadow p-2">
+      <div className="lg:hidden mb-0 lg:mb-4">
+        <div className={`${guidePanelShell} p-2`}>
           <div className="flex space-x-2 overflow-x-auto pb-1">
             <button
               onClick={() => handleTabChange('overview')}
@@ -1491,11 +1496,11 @@ export default function GuideTourDetailPage() {
       </div>
 
       {/* 모바일 최적화된 아코디언 레이아웃 */}
-      <div className="space-y-3 sm:space-y-4">
+      <div className="space-y-0 lg:space-y-4">
         {/* 투어 기본 정보 - 개요 탭에만 표시 */}
         <div className={`${activeTab === 'overview' ? 'block' : 'hidden'} lg:block`}>
-          <div className="bg-white rounded-lg shadow mb-3 sm:mb-4">
-            <div className="flex items-center justify-between p-3 sm:p-4">
+          <div className={guidePanelShell}>
+            <div className={`flex items-center justify-between p-3 sm:p-4 ${guideContentInset}`}>
               <button
                 onClick={() => toggleSection('tour-info')}
                 className="flex items-center flex-1 text-left hover:bg-gray-50 transition-colors rounded -ml-3 sm:-ml-4 px-3 sm:px-4 py-2 -my-2"
@@ -2173,7 +2178,7 @@ export default function GuideTourDetailPage() {
         {/* 투어 스케줄 - 스케줄 탭에만 표시 */}
         {tour.product_id && (
           <div className={`${activeTab === 'schedule' ? 'block' : 'hidden'} lg:block`}>
-            <div className="bg-white rounded-lg shadow mb-3 sm:mb-4 p-3 sm:p-4">
+            <div className={`${guidePanelShell} p-3 sm:p-4`}>
               <TourScheduleSection 
                 productId={tour.product_id} 
                 teamType={tour.team_type as 'guide+driver' | '2guide' | null}
@@ -2198,7 +2203,7 @@ export default function GuideTourDetailPage() {
       </div>
 
       {/* 추가 섹션들 - 아코디언 형태 */}
-      <div className="mt-4 sm:mt-6 space-y-3 sm:space-y-4">
+      <div className="mt-0 lg:mt-6 space-y-0 lg:space-y-4">
 
         {/* 부킹 관리 - 부킹 탭에만 표시 */}
         <div className={`${activeTab === 'bookings' ? 'block' : 'hidden'} lg:block`}>
@@ -2343,7 +2348,11 @@ export default function GuideTourDetailPage() {
         {/* 채팅 - 채팅 탭에만 표시 */}
         <div className={`${activeTab === 'chat' ? 'block' : 'hidden'} lg:block`}>
           {tour && tour.tour_date && currentUserEmail ? (
-            <div className="h-[600px] border border-gray-200 rounded-lg overflow-hidden bg-white">
+            <div className={`h-[600px] overflow-hidden bg-white ${
+              isGuideMobileLayout
+                ? 'border-y border-gray-200 rounded-none'
+                : 'border border-gray-200 rounded-lg'
+            }`}>
               <TourChatRoom
                 tourId={tour.id}
                 guideEmail={currentUserEmail}
@@ -2352,7 +2361,7 @@ export default function GuideTourDetailPage() {
               />
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-8 bg-white rounded-lg shadow">
+            <div className={`flex flex-col items-center justify-center py-8 ${guidePanelShell}`}>
               <MessageSquare className="h-16 w-16 text-gray-300 mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">{locale === 'ko' ? '투어 채팅방' : 'Tour Chat Room'}</h3>
               <p className="text-sm text-gray-500 mb-4">{locale === 'ko' ? '투어 정보를 불러오는 중...' : 'Loading tour information...'}</p>

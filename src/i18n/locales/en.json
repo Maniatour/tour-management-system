@@ -7180,6 +7180,11 @@
     "tourCard": {
       "unassigned": "Unassigned",
       "today": "Today",
+      "viewRentalAgreement": "View rental agreement",
+      "rentalAgreementTitle": "Rental Agreement",
+      "rentalAgreementPreviewUnavailable": "Preview is not available for this file type. Please open in a new window.",
+      "openInNewWindow": "Open in new window",
+      "close": "Close",
       "status": {
         "confirmed": "Confirmed",
         "scheduled": "Scheduled",

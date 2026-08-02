@@ -9,9 +9,11 @@ import {
 import {
   guideScheduleConfirmPopupConfirmLabel,
   guideScheduleConfirmPopupOfficeLine,
+  isGuideScheduleConfirmPopupSchemaMissingError,
 } from '@/lib/guideScheduleConfirmMessage'
 import { confirmTourAssignmentForRecipient } from '@/lib/guideAssignmentStatus'
-import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
+import { canUseAuthenticatedRest, supabase } from '@/lib/supabase'
 
 type PopupRow = {
   id: string
@@ -29,9 +31,11 @@ type GuideScheduleConfirmPopupLayerProps = {
 }
 
 export function GuideScheduleConfirmPopupLayer({ userEmail }: GuideScheduleConfirmPopupLayerProps) {
+  const { isInitialized } = useAuth()
   const [queue, setQueue] = useState<PopupRow[]>([])
   const [acknowledging, setAcknowledging] = useState(false)
   const [guideLocale, setGuideLocale] = useState<SupportedLocale>('ko')
+  const [schemaUnavailable, setSchemaUnavailable] = useState(false)
 
   const emailKey = (userEmail || '').toLowerCase()
 
@@ -56,8 +60,8 @@ export function GuideScheduleConfirmPopupLayer({ userEmail }: GuideScheduleConfi
   }, [userEmail, emailKey])
 
   const loadPending = useCallback(async () => {
-    if (!emailKey) {
-      setQueue([])
+    if (!emailKey || !isInitialized || !canUseAuthenticatedRest() || schemaUnavailable) {
+      if (!emailKey) setQueue([])
       return
     }
     try {
@@ -70,20 +74,29 @@ export function GuideScheduleConfirmPopupLayer({ userEmail }: GuideScheduleConfi
         .limit(5)
 
       if (error) {
-        console.error('GuideScheduleConfirmPopupLayer', error)
+        if (isGuideScheduleConfirmPopupSchemaMissingError(error)) {
+          setSchemaUnavailable(true)
+          setQueue([])
+          return
+        }
+        console.error(
+          'GuideScheduleConfirmPopupLayer',
+          error.message ?? error.code ?? String(error)
+        )
         return
       }
       setQueue((data || []) as PopupRow[])
     } catch (e) {
       console.error('GuideScheduleConfirmPopupLayer', e)
     }
-  }, [emailKey])
+  }, [emailKey, isInitialized, schemaUnavailable])
 
   useEffect(() => {
+    if (!emailKey || !isInitialized || schemaUnavailable) return
     void loadPending()
     const interval = window.setInterval(() => void loadPending(), 60000)
     return () => window.clearInterval(interval)
-  }, [loadPending])
+  }, [emailKey, isInitialized, loadPending, schemaUnavailable])
 
   const current = queue[0] ?? null
 

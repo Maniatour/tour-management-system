@@ -1,9 +1,10 @@
 'use client'
 
 import React from 'react'
-import { Trash2, User, MapPin } from 'lucide-react'
+import { Trash2, User } from 'lucide-react'
 import type { ChatMessage } from '@/types/chat'
 import type { SupportedLanguage } from '@/lib/translation'
+import ChatMessageBody from './ChatMessageBody'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -52,7 +53,7 @@ export default function MessageList({
   return (
     <div 
       ref={messagesScrollRef}
-      className={`flex-1 overflow-y-auto p-2 lg:p-4 space-y-2 lg:space-y-3 min-h-0 bg-gradient-to-b from-transparent to-blue-50 bg-opacity-20 ${!isPublicView && showParticipantsList ? 'mr-64' : ''} ${!isMobileMenuOpen ? 'lg:mt-0' : ''}`}
+      className={`flex-1 overflow-y-auto p-2 lg:p-4 space-y-2 lg:space-y-3 min-h-0 bg-gradient-to-b from-transparent to-blue-50 bg-opacity-20 ${showParticipantsList ? 'mr-64' : ''} ${!isMobileMenuOpen ? 'lg:mt-0' : ''}`}
       style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
     >
       {messages.map((message, index) => {
@@ -199,60 +200,11 @@ export default function MessageList({
                     </div>
                   ) : (
                     <div>
-                      {/* 원본 메시지 */}
-                      <div className="whitespace-pre-wrap break-words">
-                        {message.message.split('\n').map((line, idx) => {
-                          // Google Maps 링크 감지
-                          if (line.includes('Google Maps:') || line.includes('google.com/maps')) {
-                            const urlMatch = line.match(/https?:\/\/[^\s]+/)
-                            if (urlMatch) {
-                              return (
-                                <div key={idx} className="my-1">
-                                  {line.split(urlMatch[0])[0]}
-                                  <a
-                                    href={urlMatch[0]}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-primary hover:text-primary/80 underline flex items-center gap-1 inline-block"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      window.open(urlMatch[0], '_blank')
-                                    }}
-                                  >
-                                    <MapPin size={14} />
-                                    {selectedLanguage === 'ko' ? 'Google Maps에서 보기' : 'View on Google Maps'}
-                                  </a>
-                                </div>
-                              )
-                            }
-                          }
-                          // Naver Maps 링크 감지
-                          if (line.includes('Naver Maps:') || line.includes('map.naver.com')) {
-                            const urlMatch = line.match(/https?:\/\/[^\s]+/)
-                            if (urlMatch) {
-                              return (
-                                <div key={idx} className="my-1">
-                                  {line.split(urlMatch[0])[0]}
-                                  <a
-                                    href={urlMatch[0]}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-green-600 hover:text-green-800 underline flex items-center gap-1 inline-block"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      window.open(urlMatch[0], '_blank')
-                                    }}
-                                  >
-                                    <MapPin size={14} />
-                                    {selectedLanguage === 'ko' ? 'Naver Maps에서 보기' : 'View on Naver Maps'}
-                                  </a>
-                                </div>
-                              )
-                            }
-                          }
-                          return <div key={idx}>{line}</div>
-                        })}
-                      </div>
+                      <ChatMessageBody
+                        message={message.message}
+                        selectedLanguage={selectedLanguage}
+                        isDarkBubble={isMyMessage || isStaffBubble}
+                      />
                       
                       {/* 번역 결과 표시 (저장된 번역이 있을 때 본문 아래에 표시) - 주석 처리 */}
                       {/* {hasTranslation && message.message_type === 'text' && !message.message.startsWith('[EN] ') && (

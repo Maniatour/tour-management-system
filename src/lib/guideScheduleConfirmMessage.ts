@@ -489,6 +489,19 @@ export function guideScheduleConfirmPopupConfirmLabel(locale: SupportedLocale): 
   }
 }
 
+/** 원격 DB에 guide_schedule_confirm_popups 마이그레이션 미적용 시 PostgREST PGRST205 */
+export function isGuideScheduleConfirmPopupSchemaMissingError(
+  error: { code?: string | null; message?: string | null } | null | undefined
+): boolean {
+  if (!error) return false
+  if (error.code === 'PGRST205' || error.code === '42P01') return true
+  const msg = String(error.message ?? '')
+  return (
+    /guide_schedule_confirm_popup/i.test(msg) &&
+    /schema cache|could not find the table/i.test(msg)
+  )
+}
+
 export function guideScheduleConfirmPopupOfficeLine(
   locale: SupportedLocale,
   officeArrivalTime: string,

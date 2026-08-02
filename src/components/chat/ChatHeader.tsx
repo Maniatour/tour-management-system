@@ -157,6 +157,15 @@ export default function ChatHeader({
       })
     }
 
+    actions.push({
+      id: 'participants',
+      label: ko ? '접속' : 'Online',
+      icon: Users,
+      onClick: onShowParticipants,
+      tileClass: 'bg-gradient-to-br from-indigo-500 to-indigo-700',
+      ...(onlineParticipantsCount > 0 ? { badge: onlineParticipantsCount } : {}),
+    })
+
     actions.push(
       {
         id: 'call',
@@ -201,6 +210,8 @@ export default function ChatHeader({
     onShowPhotoGallery,
     onShowTeamInfo,
     onGoToTourDetail,
+    onShowParticipants,
+    onlineParticipantsCount,
     callDisabled,
     callStatus,
     onStartCall,
@@ -236,6 +247,8 @@ export default function ChatHeader({
                 ? { ...action, label: ko ? '가이드 정보' : 'Guide Info' }
                 : action.id === 'tour-detail'
                   ? { ...action, label: ko ? '투어 상세' : 'Tour Details' }
+                  : action.id === 'participants'
+                    ? { ...action, label: ko ? '접속자' : 'Online' }
                   : action
       ),
       {
@@ -325,11 +338,23 @@ export default function ChatHeader({
               <Car size={12} className="lg:w-3.5 lg:h-3.5" />
             </button>
           ) : null}
+          <button
+            onClick={onShowParticipants}
+            className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs rounded border bg-indigo-100 text-indigo-800 border-indigo-200 hover:bg-indigo-200 flex items-center justify-center relative"
+            title={selectedLanguage === 'ko' ? '접속자 목록' : 'Online participants'}
+          >
+            <Users size={12} className="lg:w-3.5 lg:h-3.5" />
+            {onlineParticipantsCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-green-500 text-white text-[8px] rounded-full min-w-4 h-4 px-0.5 flex items-center justify-center">
+                {onlineParticipantsCount > 99 ? '99+' : onlineParticipantsCount}
+              </span>
+            )}
+          </button>
           {!isPublicView && (
             <button
               onClick={onGoToTourDetail}
               className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-purple-100 text-purple-800 rounded border border-purple-200 hover:bg-purple-200 flex items-center justify-center"
-              title={selectedLanguage === 'ko' ? '투어 상세 페이지' : 'Tour Details'}
+              title={selectedLanguage === 'ko' ? '투어 상세' : 'Tour Details'}
             >
               <ExternalLink size={12} className="lg:w-3.5 lg:h-3.5" />
             </button>
@@ -368,20 +393,6 @@ export default function ChatHeader({
           >
             <Phone size={12} className="lg:w-3.5 lg:h-3.5" />
           </button>
-          {!isPublicView && (
-            <button
-              onClick={onShowParticipants}
-              className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs rounded border bg-indigo-100 text-indigo-800 border-indigo-200 hover:bg-indigo-200 flex items-center justify-center relative"
-              title={selectedLanguage === 'ko' ? '참여자 목록' : 'Participants'}
-            >
-              <Users size={12} className="lg:w-3.5 lg:h-3.5" />
-              {onlineParticipantsCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-green-500 text-white text-[8px] rounded-full w-4 h-4 flex items-center justify-center">
-                  {onlineParticipantsCount}
-                </span>
-              )}
-            </button>
-          )}
         </div>
 
         {/* 모바일: 출석 관리와 동일한 앱 아이콘 대시보드 */}

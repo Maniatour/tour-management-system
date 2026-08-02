@@ -42,6 +42,8 @@ export type ScheduleProductGridDailyCell = {
       assigned: number
       max: number
       spotsLeft: number
+      assignmentStatusLabel: string
+      assignmentStatus: string
     }>
     totalAssigned: number
     totalMax: number

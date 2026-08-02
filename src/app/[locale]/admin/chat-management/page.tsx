@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { useRouter } from 'next/navigation'
-import { MessageCircle, Calendar, Search, RefreshCw, Languages, ChevronDown, Cast, Power, PowerOff } from 'lucide-react'
+import { MessageCircle, Calendar, Search, RefreshCw, Languages, ChevronDown, Cast, Power, PowerOff, Users } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 
@@ -23,6 +23,10 @@ import {
   formatTourChatStaffDisplayName,
   type TourChatStaffTeamFields
 } from '@/lib/tourChatStaffDisplay'
+import ChatMessageBody from '@/components/chat/ChatMessageBody'
+import ChatSidebar from '@/components/chat/ChatSidebar'
+import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
+import { useChatParticipants } from '@/hooks/useChatParticipants'
 import {
   ADMIN_TOUR_CHAT_ACTIVE_ROOM_KEY,
   ADMIN_TOUR_CHAT_PENDING_ROOM_KEY
@@ -298,6 +302,9 @@ export default function ChatManagementPage() {
   const [inactiveRoomsData, setInactiveRoomsData] = useState<ChatRoom[]>([])
   const [loadingInactiveRooms, setLoadingInactiveRooms] = useState(false)
   const [roomMessageCounts, setRoomMessageCounts] = useState<Record<string, number>>({})
+  const [showParticipantsList, setShowParticipantsList] = useState(false)
+  const [tourDetailModalOpen, setTourDetailModalOpen] = useState(false)
+  const messagesRef = useRef<ChatMessage[]>([])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -363,6 +370,24 @@ export default function ChatManagementPage() {
       cancelled = true
     }
   }, [messages, user?.email, myTeamProfile])
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
+  const adminStaffDisplayName = useMemo(
+    () => formatTourChatStaffDisplayName(user?.email, myTeamProfile),
+    [user?.email, myTeamProfile]
+  )
+
+  const { onlineParticipants } = useChatParticipants({
+    roomId: selectedRoom?.id ?? null,
+    isPublicView: false,
+    userId: user?.email || 'admin',
+    userName: adminStaffDisplayName,
+    ...(user?.email ? { guideEmail: user.email } : {}),
+    messagesRef,
+  })
 
   // 비활성화된 채팅방 로딩 함수
   const fetchInactiveRooms = useCallback(async () => {
@@ -1999,7 +2024,7 @@ export default function ChatManagementPage() {
     if (!selectedRoom) return
 
     const channel = supabase
-      .channel(`chat_${selectedRoom.id}`)
+      .channel(`chat_mgmt_${selectedRoom.id}_${Date.now()}`)
       .on(
         'postgres_changes',
         {
@@ -2046,9 +2071,11 @@ export default function ChatManagementPage() {
   }
 
   const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString('ko-KR', {
+    return new Date(dateString).toLocaleTimeString('en-US', {
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'America/Los_Angeles',
     })
   }
 
@@ -2366,9 +2393,15 @@ export default function ChatManagementPage() {
       </div>
 
       {/* 가운데: 채팅창 - 모바일에서는 전체 화면 */}
-      <div className={`${selectedRoom ? 'flex' : 'hidden lg:flex'} flex-1 flex-col`}>
+      <div className={`${selectedRoom ? 'flex' : 'hidden lg:flex'} flex-1 flex-col relative`}>
         {selectedRoom ? (
           <>
+            <ChatSidebar
+              isOpen={showParticipantsList}
+              onClose={() => setShowParticipantsList(false)}
+              participants={onlineParticipants}
+              selectedLanguage={selectedLanguage}
+            />
             {/* 채팅 헤더 */}
             <div className="bg-white/90 backdrop-blur-sm border-b border-gray-200 p-4 shadow-sm">
               <div className="flex items-center justify-between">
@@ -2391,6 +2424,20 @@ export default function ChatManagementPage() {
                   </p>
                 </div>
                 <div className="flex items-center space-x-2 lg:space-x-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowParticipantsList((open) => !open)}
+                    className="flex items-center gap-1.5 px-2 lg:px-3 py-2 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-lg hover:bg-indigo-100 text-sm"
+                    title="접속자 목록"
+                  >
+                    <Users size={16} />
+                    <span className="hidden sm:inline">Online</span>
+                    {onlineParticipants.size > 0 ? (
+                      <span className="bg-green-500 text-white text-[10px] font-semibold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">
+                        {onlineParticipants.size > 99 ? '99+' : onlineParticipants.size}
+                      </span>
+                    ) : null}
+                  </button>
                   <div className="text-sm text-gray-500 hidden lg:block">
                     방 코드: {selectedRoom.room_code}
                   </div>
@@ -2473,6 +2520,7 @@ export default function ChatManagementPage() {
                 const hasTranslation = translatedMessages[message.id]
                 const isTranslating = translating[message.id]
                 const needsTrans = needsTranslation(message)
+                const isDarkBubble = message.sender_type === 'admin'
                 
                 return (
                   <div
@@ -2495,7 +2543,11 @@ export default function ChatManagementPage() {
                       )}
                       
                       {/* 원본 메시지 */}
-                      <div className="text-sm">{message.message}</div>
+                      <ChatMessageBody
+                        message={message.message}
+                        selectedLanguage={selectedLanguage}
+                        isDarkBubble={isDarkBubble}
+                      />
                       
                       {/* 번역된 메시지 */}
                       {needsTrans && (
@@ -2590,7 +2642,8 @@ export default function ChatManagementPage() {
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-lg font-semibold text-gray-900">투어 정보</h3>
                 <button
-                  onClick={() => router.push(`/ko/admin/tours/${tourInfo.id}`)}
+                  type="button"
+                  onClick={() => setTourDetailModalOpen(true)}
                   className="px-3 py-1 bg-primary text-primary-foreground text-xs rounded-md hover:bg-primary/90 transition-colors"
                 >
                   상세보기
@@ -2741,6 +2794,22 @@ export default function ChatManagementPage() {
           </div>
         )}
       </div>
+
+      {tourInfo ? (
+        <TourDetailResizableDialog
+          open={tourDetailModalOpen}
+          onOpenChange={setTourDetailModalOpen}
+          tourId={tourInfo.id}
+          onNavigateToTour={(nextTourId) => {
+            if (nextTourId && nextTourId !== tourInfo.id) {
+              router.push(`/ko/admin/tours/${nextTourId}`)
+              setTourDetailModalOpen(false)
+            }
+          }}
+          accessibilityTitle={tourInfo.product?.name_ko || tourInfo.product?.name || '투어 상세'}
+          titleFallback={tourInfo.product?.name_ko || tourInfo.product?.name || '투어 상세'}
+        />
+      ) : null}
     </div>
   )
 }

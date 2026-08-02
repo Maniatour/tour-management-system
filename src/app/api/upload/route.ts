@@ -8,7 +8,8 @@ const BUCKET_MAPPING = {
   company_expenses: 'company-expense-files',
   reservation_expenses: 'reservation-expense-files',
   ticket_bookings: 'ticket-booking-files',
-  tour_hotel_bookings: 'hotel-booking-files'
+  tour_hotel_bookings: 'hotel-booking-files',
+  vehicle_rental: 'vehicle-rental-files',
 } as const
 
 type BucketType = keyof typeof BUCKET_MAPPING

@@ -2,6 +2,17 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Participant } from '@/types/chat'
 
+function makeParticipant(
+  id: string,
+  name: string,
+  type: Participant['type'],
+  email?: string | null
+): Participant {
+  const participant: Participant = { id, name, type, lastSeen: new Date() }
+  if (email) participant.email = email
+  return participant
+}
+
 interface UseChatParticipantsProps {
   roomId: string | null
   isPublicView: boolean
@@ -17,12 +28,12 @@ export function useChatParticipants({
   userId,
   userName,
   guideEmail,
-  messagesRef
+  messagesRef,
 }: UseChatParticipantsProps) {
-  const [onlineParticipants, setOnlineParticipants] = useState<Map<string, Participant>>(new Map())
-  const presenceChannelRef = useRef<any>(null)
-  const roomIdRef = useRef<string | null>(null)
-  const loadChatParticipantsRef = useRef<((roomId: string) => Promise<void>) | null>(null)
+  const [onlineParticipants, setOnlineParticipants] = useState<Map<string, Participant>>(
+    new Map()
+  )
+  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
   const loadChatParticipants = useCallback(async (roomIdParam: string) => {
     try {
@@ -41,9 +52,9 @@ export function useChatParticipants({
         return
       }
 
-      setOnlineParticipants(prev => {
+      setOnlineParticipants((prev) => {
         const updated = new Map<string, Participant>()
-        
+
         participants.forEach((participant) => {
           if (participant.is_active === false) return
           const key = participant.participant_id
@@ -58,19 +69,19 @@ export function useChatParticipants({
           }
           updated.set(key, entry)
         })
-        
+
         prev.forEach((value, key) => {
           if (updated.has(key)) {
             const existing = updated.get(key)!
             updated.set(key, {
               ...existing,
-              lastSeen: value.lastSeen
+              lastSeen: value.lastSeen,
             })
           } else {
             updated.set(key, value)
           }
         })
-        
+
         return updated
       })
     } catch (error) {
@@ -79,72 +90,73 @@ export function useChatParticipants({
   }, [])
 
   useEffect(() => {
-    loadChatParticipantsRef.current = loadChatParticipants
-  }, [loadChatParticipants])
-
-  // Supabase Realtime Presence를 사용하여 채팅방 참여자 추적
-  useEffect(() => {
-    if (!roomId || isPublicView) {
-      roomIdRef.current = null
+    if (!roomId) {
+      setOnlineParticipants(new Map())
+      if (presenceChannelRef.current) {
+        void supabase.removeChannel(presenceChannelRef.current)
+        presenceChannelRef.current = null
+      }
       return
     }
-    
-    if (roomIdRef.current === roomId) {
-      return
-    }
-    
-    roomIdRef.current = roomId
 
-    if (loadChatParticipantsRef.current) {
-      loadChatParticipantsRef.current(roomId)
-    }
+    void loadChatParticipants(roomId)
 
-    const channelName = `chat-presence-${roomId}`
-    const channel = supabase.channel(channelName, {
+    const channel = supabase.channel(`chat_presence_${roomId}_${Date.now()}`, {
       config: {
         presence: {
           key: userId,
-        }
-      }
+        },
+      },
     })
+    presenceChannelRef.current = channel
 
     channel
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState()
-        
-        setOnlineParticipants(prev => {
+
+        setOnlineParticipants((prev) => {
           const updated = new Map(prev)
           const currentMessages = messagesRef.current
 
           Object.entries(state).forEach(([, presences]) => {
             if (Array.isArray(presences) && presences.length > 0) {
-              const presence = presences[0] as any
-              if (presence && presence.userId !== userId) {
-                const userMessage = currentMessages.find((m: any) => 
-                  (presence.userId === m.sender_email) || 
-                  (presence.userId === m.sender_name)
+              const presence = presences[0] as {
+                userId?: string
+                userName?: string
+                userType?: string
+                userEmail?: string
+              }
+              const participantUserId = presence?.userId
+              if (participantUserId && participantUserId !== userId) {
+                const userMessage = currentMessages.find(
+                  (m: { sender_email?: string; sender_name?: string }) =>
+                    participantUserId === m.sender_email ||
+                    participantUserId === m.sender_name
                 )
-                
+
                 if (userMessage) {
-                  updated.set(presence.userId, {
-                    id: presence.userId,
-                    name: userMessage.sender_name,
-                    type:
+                  updated.set(
+                    participantUserId,
+                    makeParticipant(
+                      participantUserId,
+                      userMessage.sender_name,
                       userMessage.sender_type === 'system' ||
-                      userMessage.sender_type === 'admin'
+                        userMessage.sender_type === 'admin'
                         ? 'guide'
                         : userMessage.sender_type,
-                    email: userMessage.sender_email || undefined,
-                    lastSeen: new Date()
-                  })
+                      userMessage.sender_email
+                    )
+                  )
                 } else if (presence.userName) {
-                  updated.set(presence.userId, {
-                    id: presence.userId,
-                    name: presence.userName || presence.userId,
-                    type: presence.userType || 'guide',
-                    email: presence.userEmail || undefined,
-                    lastSeen: new Date()
-                  })
+                  updated.set(
+                    participantUserId,
+                    makeParticipant(
+                      participantUserId,
+                      presence.userName || participantUserId,
+                      (presence.userType as Participant['type']) || 'guide',
+                      presence.userEmail
+                    )
+                  )
                 }
               }
             }
@@ -155,27 +167,35 @@ export function useChatParticipants({
       })
       .on('presence', { event: 'join' }, ({ newPresences }) => {
         if (Array.isArray(newPresences) && newPresences.length > 0) {
-          const presence = newPresences[0] as any
-          if (presence && presence.userId !== userId) {
-            setOnlineParticipants(prev => {
+          const presence = newPresences[0] as {
+            userId?: string
+            userName?: string
+            userType?: string
+            userEmail?: string
+          }
+          const participantUserId = presence?.userId
+          if (participantUserId && participantUserId !== userId) {
+            setOnlineParticipants((prev) => {
               const updated = new Map(prev)
               const currentMessages = messagesRef.current
-              const userMessage = currentMessages.find((m: any) => 
-                (presence.userId === m.sender_email) || 
-                (presence.userId === m.sender_name)
+              const userMessage = currentMessages.find(
+                (m: { sender_email?: string; sender_name?: string }) =>
+                  participantUserId === m.sender_email ||
+                  participantUserId === m.sender_name
               )
-              
-              updated.set(presence.userId, {
-                id: presence.userId,
-                name: userMessage?.sender_name || presence.userName || presence.userId,
-                type:
+
+              updated.set(
+                participantUserId,
+                makeParticipant(
+                  participantUserId,
+                  userMessage?.sender_name || presence.userName || participantUserId,
                   userMessage?.sender_type === 'system' ||
-                  userMessage?.sender_type === 'admin'
+                    userMessage?.sender_type === 'admin'
                     ? 'guide'
-                    : (userMessage?.sender_type || presence.userType || 'guide'),
-                email: userMessage?.sender_email || presence.userEmail || undefined,
-                lastSeen: new Date()
-              })
+                    : (userMessage?.sender_type || presence.userType || 'guide') as Participant['type'],
+                  userMessage?.sender_email || presence.userEmail
+                )
+              )
               return updated
             })
           }
@@ -187,29 +207,39 @@ export function useChatParticipants({
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           await channel.track({
-            userId: userId,
-            userName: userName,
+            userId,
+            userName,
             userType: isPublicView ? 'customer' : 'guide',
-            userEmail: isPublicView ? undefined : guideEmail,
-            onlineAt: new Date().toISOString()
+            ...(isPublicView || !guideEmail ? {} : { userEmail: guideEmail }),
+            onlineAt: new Date().toISOString(),
+          })
+          setOnlineParticipants((prev) => {
+            const updated = new Map(prev)
+            updated.set(
+              userId,
+              makeParticipant(
+                userId,
+                userName,
+                isPublicView ? 'customer' : 'guide',
+                isPublicView ? null : guideEmail
+              )
+            )
+            return updated
           })
         }
       })
 
-    presenceChannelRef.current = channel
-
     return () => {
-      if (presenceChannelRef.current) {
-        presenceChannelRef.current.unsubscribe()
+      void supabase.removeChannel(channel)
+      if (presenceChannelRef.current === channel) {
         presenceChannelRef.current = null
       }
     }
-  }, [roomId, userId, userName, isPublicView, guideEmail])
+  }, [roomId, userId, userName, isPublicView, guideEmail, loadChatParticipants, messagesRef])
 
   return {
     onlineParticipants,
     setOnlineParticipants,
-    loadChatParticipants
+    loadChatParticipants,
   }
 }
-
