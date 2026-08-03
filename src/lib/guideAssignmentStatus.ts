@@ -18,7 +18,7 @@ export function normalizeAssignmentStatus(status: string | null | undefined): st
 
 export function shouldShowAssignmentStatusIcon(status: string | null | undefined): boolean {
   const n = normalizeAssignmentStatus(status)
-  return n === 'assigned' || n === 'confirmed' || n === 'rejected'
+  return n === 'pending' || n === 'assigned' || n === 'confirmed' || n === 'rejected'
 }
 
 type TourAssignmentStatusSource = {
@@ -27,21 +27,12 @@ type TourAssignmentStatusSource = {
   assistant_id?: string | null
 }
 
-/** DB 상태가 pending/null이어도 가이드·어시 배정이 있으면 부여(노랑 라인)로 표시 */
+/** 스케줄뷰·투어 카드에 표시할 배정 상태 (DB assignment_status 기준) */
 export function resolveTourDisplayAssignmentStatus(
   tour: TourAssignmentStatusSource | null | undefined,
 ): string {
   if (!tour) return 'pending'
-  const normalized = normalizeAssignmentStatus(tour.assignment_status)
-  if (normalized === 'assigned' || normalized === 'confirmed' || normalized === 'rejected') {
-    return normalized
-  }
-  const hasGuide = Boolean(String(tour.tour_guide_id || '').trim())
-  const hasAssistant = Boolean(String(tour.assistant_id || '').trim())
-  if (hasGuide || hasAssistant) {
-    return 'assigned'
-  }
-  return normalized
+  return normalizeAssignmentStatus(tour.assignment_status)
 }
 
 export function shouldShowTourAssignmentStatusIcon(
@@ -63,6 +54,8 @@ export function getAssignmentStatusTooltipColorClass(
 ): string {
   const normalized = resolveTourDisplayAssignmentStatus(tour)
   switch (normalized) {
+    case 'pending':
+      return 'text-slate-400'
     case 'assigned':
       return 'text-yellow-400'
     case 'confirmed':
@@ -82,7 +75,7 @@ export function getAssignmentStatusLabel(
   const ko: Record<string, string> = {
     pending: '대기',
     assigned: '부여',
-    confirmed: '확정',
+    confirmed: '배정',
     rejected: '거절',
     cancelled: '취소',
     recruiting: '모집중',

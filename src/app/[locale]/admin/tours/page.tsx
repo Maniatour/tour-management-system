@@ -1516,7 +1516,7 @@ export default function AdminTours() {
                   >
                     <option value="pending">대기</option>
                     <option value="assigned">부여</option>
-                    <option value="confirmed">확정</option>
+                    <option value="confirmed">배정</option>
                     <option value="rejected">거절</option>
                   </select>
                   {updatingAssignment === tour.id && (

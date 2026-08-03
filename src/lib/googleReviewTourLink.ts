@@ -50,6 +50,7 @@ export type GoogleReviewTourSearchItem = {
   productName: string | null
   guideName: string | null
   assistantName: string | null
+  totalPeople: number
   customerNames: string[]
 }
 
@@ -67,8 +68,16 @@ type TourSearchRow = {
 const TOUR_SEARCH_SELECT =
   'id, tour_date, product_id, tour_guide_id, assistant_id, tour_status, reservation_ids, products(name, name_ko, name_en)'
 
-function filterSelectableTourRows<T extends { tour_status?: string | null }>(rows: T[]): T[] {
-  return rows.filter((row) => !isTourCancelled(row.tour_status))
+function hasGuideAssigned(row: { tour_guide_id?: string | null }): boolean {
+  return Boolean(row.tour_guide_id?.trim())
+}
+
+function filterSelectableTourRows<
+  T extends { tour_status?: string | null; tour_guide_id?: string | null },
+>(rows: T[]): T[] {
+  return rows.filter(
+    (row) => !isTourCancelled(row.tour_status) && hasGuideAssigned(row)
+  )
 }
 
 function addDaysYmd(ymd: string, days: number): string {
@@ -100,28 +109,147 @@ function appendUniqueName(names: string[], name: string | null | undefined): voi
   names.push(trimmed)
 }
 
-function resolveReservationRepresentativeName(row: {
-  customers?: { name?: string | null } | null
-  reservation_customers?:
-    | Array<{
-        order_index?: number | null
-        name?: string | null
-        name_ko?: string | null
-        name_en?: string | null
-      }>
-    | null
-}): string | null {
-  const fromCustomer = row.customers?.name?.trim()
-  if (fromCustomer) return fromCustomer
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
 
-  const guests = [...(Array.isArray(row.reservation_customers) ? row.reservation_customers : [])]
-  guests.sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
-  for (const guest of guests) {
-    const name = guest.name?.trim() || guest.name_ko?.trim() || guest.name_en?.trim()
-    if (name) return name
+type CustomerNameFields = {
+  name?: string | null
+  name_ko?: string | null
+  name_en?: string | null
+}
+
+function pickCustomerDisplayName(fields: CustomerNameFields | null | undefined): string | null {
+  if (!fields) return null
+  const name = fields.name?.trim() || fields.name_ko?.trim() || fields.name_en?.trim()
+  return name || null
+}
+
+function pickReservationRepresentativeName(input: {
+  customerId: string | null
+  firstGuest?: CustomerNameFields & { customer_id?: string | null } | null
+  customersById: Map<string, CustomerNameFields>
+}): string | null {
+  if (input.firstGuest?.customer_id) {
+    const fromGuestCustomer = pickCustomerDisplayName(
+      input.customersById.get(input.firstGuest.customer_id)
+    )
+    if (fromGuestCustomer) return fromGuestCustomer
+  }
+
+  const fromGuest = pickCustomerDisplayName(input.firstGuest)
+  if (fromGuest) return fromGuest
+
+  if (input.customerId) {
+    return pickCustomerDisplayName(input.customersById.get(input.customerId))
   }
 
   return null
+}
+
+async function loadReservationRepresentativeNames(
+  operatorId: string,
+  reservationIds: string[]
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>()
+  if (!supabaseAdmin || reservationIds.length === 0) return result
+
+  const uniqueIds = [...new Set(reservationIds.filter(Boolean))]
+  const reservations: Array<{ id: string; customer_id: string | null; status: string | null }> = []
+
+  for (const chunk of chunkArray(uniqueIds, 100)) {
+    const { data, error } = await fromUntypedTable(supabaseAdmin, 'reservations')
+      .select('id, customer_id, status')
+      .eq('operator_id', operatorId)
+      .in('id', chunk)
+      .neq('status', 'deleted')
+
+    if (error) {
+      console.error('[googleReviewTourLink] load reservations for names failed', error.message)
+      continue
+    }
+
+    reservations.push(
+      ...((data ?? []) as Array<{ id: string; customer_id: string | null; status: string | null }>)
+    )
+  }
+
+  if (!reservations.length) return result
+
+  const firstGuestByReservation = new Map<
+    string,
+    CustomerNameFields & { customer_id?: string | null }
+  >()
+
+  for (const chunk of chunkArray(uniqueIds, 100)) {
+    const { data, error } = await fromUntypedTable(supabaseAdmin, 'reservation_customers')
+      .select('reservation_id, customer_id, name, name_ko, name_en, order_index')
+      .in('reservation_id', chunk)
+      .order('order_index', { ascending: true })
+
+    if (error) {
+      console.error('[googleReviewTourLink] load reservation_customers for names failed', error.message)
+      continue
+    }
+
+    for (const row of (data ?? []) as Array<{
+      reservation_id: string
+      customer_id?: string | null
+      name?: string | null
+      name_ko?: string | null
+      name_en?: string | null
+    }>) {
+      if (!firstGuestByReservation.has(row.reservation_id)) {
+        firstGuestByReservation.set(row.reservation_id, row)
+      }
+    }
+  }
+
+  const customerIds = new Set<string>()
+  for (const reservation of reservations) {
+    if (reservation.customer_id) customerIds.add(reservation.customer_id)
+  }
+  for (const guest of firstGuestByReservation.values()) {
+    if (guest.customer_id) customerIds.add(guest.customer_id)
+  }
+
+  const customersById = new Map<string, CustomerNameFields>()
+  if (customerIds.size > 0) {
+    for (const chunk of chunkArray([...customerIds], 100)) {
+      const { data, error } = await supabaseAdmin
+        .from('customers')
+        .select('id, name')
+        .eq('operator_id', operatorId)
+        .in('id', chunk)
+
+      if (error) {
+        console.error('[googleReviewTourLink] load customers for names failed', error.message)
+        continue
+      }
+
+      for (const row of (data ?? []) as Array<{ id: string; name?: string | null }>) {
+        customersById.set(row.id, { name: row.name ?? null })
+      }
+    }
+  }
+
+  for (const reservation of reservations) {
+    if (isReservationCancelledStatus(reservation.status)) continue
+
+    const name = pickReservationRepresentativeName({
+      customerId: reservation.customer_id,
+      firstGuest: firstGuestByReservation.get(reservation.id) ?? null,
+      customersById,
+    })
+
+    if (name) result.set(reservation.id, name)
+  }
+
+  return result
 }
 
 async function findTourIdsByCustomerName(input: {
@@ -249,89 +377,177 @@ async function findTourIdsByCustomerName(input: {
   return [...tourIds]
 }
 
-async function loadCustomerNamesByTourId(
+async function loadReservationMetaById(
   operatorId: string,
-  tourRows: Array<{ id: string; reservation_ids?: unknown }>
-): Promise<Map<string, string[]>> {
-  const result = new Map<string, string[]>()
-  if (!supabaseAdmin || tourRows.length === 0) return result
-
-  const tourToReservationIds = new Map<string, string[]>()
-  const allReservationIds = new Set<string>()
-
-  for (const tour of tourRows) {
-    const assignedIds = normalizeReservationIds(tour.reservation_ids)
-    if (assignedIds.length) {
-      tourToReservationIds.set(tour.id, assignedIds)
-      for (const reservationId of assignedIds) {
-        allReservationIds.add(reservationId)
-      }
+  reservationIds: string[]
+): Promise<
+  Map<
+    string,
+    {
+      status: string | null
+      total_people: number | null
+      product_id: string | null
+      tour_date: string | null
     }
-  }
-
-  const tourIds = tourRows.map((row) => row.id)
-  const { data: linkedReservations, error: linkedError } = await fromUntypedTable(
-    supabaseAdmin,
-    'reservations'
-  )
-    .select('id, tour_id')
-    .eq('operator_id', operatorId)
-    .in('tour_id', tourIds)
-    .neq('status', 'deleted')
-
-  if (!linkedError) {
-    for (const row of (linkedReservations ?? []) as Array<{ id: string; tour_id: string | null }>) {
-      if (!row.tour_id) continue
-      const existing = tourToReservationIds.get(row.tour_id) ?? []
-      if (!existing.includes(row.id)) {
-        tourToReservationIds.set(row.tour_id, [...existing, row.id])
-      }
-      allReservationIds.add(row.id)
+  >
+> {
+  const reservationsById = new Map<
+    string,
+    {
+      status: string | null
+      total_people: number | null
+      product_id: string | null
+      tour_date: string | null
     }
-  }
+  >()
 
-  if (allReservationIds.size === 0) return result
+  if (!supabaseAdmin || reservationIds.length === 0) return reservationsById
 
-  const reservationById = new Map<string, string | null>()
-  const reservationIdList = [...allReservationIds]
-
-  for (let i = 0; i < reservationIdList.length; i += 100) {
-    const chunk = reservationIdList.slice(i, i + 100)
+  for (const chunk of chunkArray(reservationIds, 100)) {
     const { data, error } = await fromUntypedTable(supabaseAdmin, 'reservations')
-      .select(
-        'id, status, customers(name), reservation_customers(order_index, name, name_ko, name_en)'
-      )
+      .select('id, status, total_people, product_id, tour_date')
       .eq('operator_id', operatorId)
       .in('id', chunk)
       .neq('status', 'deleted')
 
     if (error) {
-      console.error('[googleReviewTourLink] loadCustomerNamesByTourId failed', error.message)
+      console.error('[googleReviewTourLink] load reservations failed', error.message)
       continue
     }
 
     for (const row of (data ?? []) as Array<{
       id: string
-      status?: string | null
-      customers?: { name?: string | null } | null
-      reservation_customers?:
-        | Array<{
-            order_index?: number | null
-            name?: string | null
-            name_ko?: string | null
-            name_en?: string | null
-          }>
-        | null
+      status: string | null
+      total_people: number | null
+      product_id: string | null
+      tour_date: string | null
     }>) {
-      if (isReservationCancelledStatus(row.status)) continue
-      reservationById.set(row.id, resolveReservationRepresentativeName(row))
+      reservationsById.set(row.id, row)
     }
   }
 
-  for (const [tourId, reservationIds] of tourToReservationIds) {
+  return reservationsById
+}
+
+function getAssignedReservationIdsForTour(
+  tour: { product_id?: string | null; tour_date?: string | null; reservation_ids?: unknown },
+  reservationsById: Map<
+    string,
+    {
+      status: string | null
+      product_id?: string | null
+      tour_date?: string | null
+    }
+  >
+): string[] {
+  const tourProductId = (tour.product_id ?? '').toString().trim()
+  const tourDate = String(tour.tour_date ?? '').slice(0, 10)
+  const counted = new Set<string>()
+  const ids: string[] = []
+
+  for (const id of normalizeReservationIds(tour.reservation_ids)) {
+    const reservationId = id.trim()
+    if (!reservationId || counted.has(reservationId)) continue
+    counted.add(reservationId)
+
+    const row = reservationsById.get(reservationId)
+    if (!row || isReservationCancelledStatus(row.status)) continue
+
+    if (tourProductId && (row.product_id ?? '').toString().trim() !== tourProductId) continue
+    const reservationDate = String(row.tour_date ?? '').slice(0, 10)
+    if (tourDate && reservationDate && reservationDate !== tourDate) continue
+
+    ids.push(reservationId)
+  }
+
+  return ids
+}
+
+function sumAssignedTourTotalPeople(
+  tour: { product_id?: string | null; tour_date?: string | null; reservation_ids?: unknown },
+  reservationsById: Map<
+    string,
+    {
+      status: string | null
+      total_people: number | null
+      product_id?: string | null
+      tour_date?: string | null
+    }
+  >
+): number {
+  let total = 0
+  for (const reservationId of getAssignedReservationIdsForTour(tour, reservationsById)) {
+    const people = reservationsById.get(reservationId)?.total_people
+    if (typeof people === 'number' && !Number.isNaN(people)) {
+      total += people
+    }
+  }
+  return total
+}
+
+async function loadTotalPeopleByTourId(
+  operatorId: string,
+  tourRows: Array<{
+    id: string
+    reservation_ids?: unknown
+    product_id?: string | null
+    tour_date?: string | null
+  }>
+): Promise<Map<string, number>> {
+  const result = new Map<string, number>()
+  if (!supabaseAdmin || tourRows.length === 0) return result
+
+  const allReservationIds = [
+    ...new Set(tourRows.flatMap((tour) => normalizeReservationIds(tour.reservation_ids))),
+  ]
+  if (allReservationIds.length === 0) return result
+
+  const reservationsById = await loadReservationMetaById(operatorId, allReservationIds)
+
+  for (const tour of tourRows) {
+    result.set(tour.id, sumAssignedTourTotalPeople(tour, reservationsById))
+  }
+
+  return result
+}
+
+async function loadCustomerNamesByTourId(
+  operatorId: string,
+  tourRows: Array<{
+    id: string
+    reservation_ids?: unknown
+    product_id?: string | null
+    tour_date?: string | null
+  }>
+): Promise<Map<string, string[]>> {
+  const result = new Map<string, string[]>()
+  if (!supabaseAdmin || tourRows.length === 0) return result
+
+  const allReservationIds = [
+    ...new Set(tourRows.flatMap((tour) => normalizeReservationIds(tour.reservation_ids))),
+  ]
+  if (allReservationIds.length === 0) return result
+
+  const reservationsById = await loadReservationMetaById(operatorId, allReservationIds)
+  const validatedIdsByTour = new Map<string, string[]>()
+  const validatedReservationIds = new Set<string>()
+
+  for (const tour of tourRows) {
+    const ids = getAssignedReservationIdsForTour(tour, reservationsById)
+    validatedIdsByTour.set(tour.id, ids)
+    for (const id of ids) validatedReservationIds.add(id)
+  }
+
+  if (validatedReservationIds.size === 0) return result
+
+  const reservationNames = await loadReservationRepresentativeNames(operatorId, [
+    ...validatedReservationIds,
+  ])
+
+  for (const [tourId, reservationIds] of validatedIdsByTour) {
     const names: string[] = []
     for (const reservationId of reservationIds) {
-      appendUniqueName(names, reservationById.get(reservationId))
+      appendUniqueName(names, reservationNames.get(reservationId))
     }
     if (names.length) {
       result.set(tourId, names)
@@ -343,7 +559,8 @@ async function loadCustomerNamesByTourId(
 
 async function mapTourRowsToSearchItems(
   operatorId: string,
-  rows: TourSearchRow[]
+  rows: TourSearchRow[],
+  options?: { includeCustomerNames?: boolean }
 ): Promise<GoogleReviewTourSearchItem[]> {
   if (!rows.length) return []
 
@@ -356,7 +573,13 @@ async function mapTourRowsToSearchItems(
   ]
 
   const teamByEmail = await loadTeamNameByEmail(emails)
-  const customerNamesByTour = await loadCustomerNamesByTourId(operatorId, rows)
+  const includeCustomerNames = options?.includeCustomerNames !== false
+  const [customerNamesByTour, totalPeopleByTour] = await Promise.all([
+    includeCustomerNames
+      ? loadCustomerNamesByTourId(operatorId, rows)
+      : Promise.resolve(new Map<string, string[]>()),
+    loadTotalPeopleByTourId(operatorId, rows),
+  ])
 
   return rows.map((row) => {
     const productName = resolveProductInternalName(row.products, row.product_id)
@@ -374,6 +597,7 @@ async function mapTourRowsToSearchItems(
       productName: productName ?? null,
       guideName,
       assistantName,
+      totalPeople: totalPeopleByTour.get(row.id) ?? 0,
       customerNames: customerNamesByTour.get(row.id) ?? [],
     }
   })
@@ -421,12 +645,10 @@ export async function searchNearbyToursForGoogleReviewLink(input: {
     .eq('operator_id', operatorId)
     .gte('tour_date', startDate)
     .lte('tour_date', endDate)
-    .order('tour_date', { ascending: true })
-    .limit(input.limit ?? 30)
-
-  if (input.productId) {
-    dbQuery = dbQuery.eq('product_id', input.productId)
-  }
+    .not('tour_guide_id', 'is', null)
+    .neq('tour_guide_id', '')
+    .order('tour_date', { ascending: false })
+    .limit(input.limit ?? 100)
 
   const { data, error } = await dbQuery
   if (error || !data) return []
@@ -442,10 +664,12 @@ export async function searchNearbyToursForGoogleReviewLink(input: {
   const includeTourId = input.includeTourId?.trim()
   if (includeTourId && !rows.some((row) => row.id === includeTourId)) {
     const extra = await fetchTourSearchRowById(operatorId, includeTourId)
-    if (extra) rows = [extra, ...rows]
+    if (extra && !isTourCancelled(extra.tour_status)) {
+      rows = [extra, ...rows]
+    }
   }
 
-  return mapTourRowsToSearchItems(operatorId, rows)
+  return mapTourRowsToSearchItems(operatorId, rows, { includeCustomerNames: false })
 }
 
 function toDateKey(value: string | null | undefined): string | null {
@@ -696,7 +920,7 @@ export async function linkGoogleReviewToTour(input: {
   })
 }
 
-/** 투어 연결 시 primary 상품이 없으면 해당 투어의 product_id로 자동 분류 */
+/** 투어 연결 시 리뷰 primary 상품을 해당 투어의 product_id로 동기화 */
 export async function syncReviewProductFromTourIfUnclassified(input: {
   operatorId: string
   reviewId: string
@@ -708,8 +932,6 @@ export async function syncReviewProductFromTourIfUnclassified(input: {
   }
 
   const operatorId = resolveOperatorId(input.operatorId)
-  const existingProductId = await loadPrimaryProductIdForReview(input.reviewId)
-  if (existingProductId) return existingProductId
 
   const { data: tour, error: tourError } = await supabaseAdmin
     .from('tours')
@@ -721,9 +943,20 @@ export async function syncReviewProductFromTourIfUnclassified(input: {
   if (tourError) throw new Error(tourError.message)
 
   const productId = tour?.product_id?.trim()
-  if (!productId) return null
+  if (!productId) {
+    return (await loadPrimaryProductIdForReview(input.reviewId)) ?? null
+  }
+
+  const existingProductId = await loadPrimaryProductIdForReview(input.reviewId)
+  if (existingProductId === productId) return productId
 
   const now = new Date().toISOString()
+
+  await fromUntypedTable(supabaseAdmin, 'review_products')
+    .delete()
+    .eq('google_review_id', input.reviewId)
+    .eq('operator_id', operatorId)
+
   const { error: mappingError } = await fromUntypedTable(supabaseAdmin, 'review_products').insert({
     operator_id: operatorId,
     google_review_id: input.reviewId,
@@ -1024,6 +1257,8 @@ export async function searchToursForGoogleReviewLink(input: {
       .select(TOUR_SEARCH_SELECT)
       .eq('operator_id', operatorId)
       .in('id', tourIds)
+      .not('tour_guide_id', 'is', null)
+      .neq('tour_guide_id', '')
       .order('tour_date', { ascending: false })
       .limit(input.limit ?? 30)
 
@@ -1054,6 +1289,8 @@ export async function searchToursForGoogleReviewLink(input: {
     .from('tours')
     .select(TOUR_SEARCH_SELECT)
     .eq('operator_id', operatorId)
+    .not('tour_guide_id', 'is', null)
+    .neq('tour_guide_id', '')
     .order('tour_date', { ascending: false })
     .limit(input.limit ?? 25)
 

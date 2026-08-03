@@ -1535,9 +1535,10 @@ export default function GuideTourDetailPage() {
                 }`}>
                   {(() => {
                     const status = (tour as TourRow & { assignment_status?: string }).assignment_status
-                    if (status === 'assigned') return locale === 'ko' ? '배정됨' : 'Assigned'
-                    if (status === 'confirmed') return locale === 'ko' ? '확인됨' : 'Confirmed'
-                    if (status === 'rejected') return locale === 'ko' ? '거절됨' : 'Rejected'
+                    if (status === 'pending') return locale === 'ko' ? '대기' : 'Pending'
+                    if (status === 'assigned') return locale === 'ko' ? '부여' : 'Assigned'
+                    if (status === 'confirmed') return locale === 'ko' ? '배정' : 'Confirmed'
+                    if (status === 'rejected') return locale === 'ko' ? '거절' : 'Rejected'
                     return status || t('assignmentStatus')
                   })()}
                 </span>

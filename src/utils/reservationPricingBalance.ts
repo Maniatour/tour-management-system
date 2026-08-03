@@ -6,6 +6,12 @@
  */
 
 import { isNotIncludedExcludedReservationStatus } from '@/lib/reservationStatus'
+import { NON_RESIDENT_OPTION_ID } from '@/lib/reservationNoShowEffects'
+import {
+  countResidentLinesFromCustomers,
+  sumResidentFeesFromResidentCounts,
+  type ResidentStatusCounts,
+} from '@/utils/balanceEnvelopeBreakdown'
 import { sumResidentFeesFromPricingChoicesJson } from '@/utils/usResidentChoiceSync'
 
 function roundUsd2(n: number): number {
@@ -428,10 +434,11 @@ export function computeDisplayedOnSiteBalanceLikePricingSection(
   },
   optionsTotalFromOptions: number | null,
   party: PartySizeSource,
-  records: PaymentRecordLike[]
+  records: PaymentRecordLike[],
+  extraResidentFeeUsd?: number | null
 ): number {
   if (!records.length) {
-    return computeRemainingBalanceAmount(pricing, optionsTotalFromOptions, party)
+    return computeRemainingBalanceAmount(pricing, optionsTotalFromOptions, party, extraResidentFeeUsd)
   }
 
   const optsOnly =
@@ -443,8 +450,10 @@ export function computeDisplayedOnSiteBalanceLikePricingSection(
     option_total: optsOnly ? optionsTotalFromOptions : pricing.option_total,
   } as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]
 
-  const grossDue = roundUsd2(
-    computeCustomerPaymentLineGrossWithResidentFees(pricingForGross, party)
+  const grossDue = customerTotalDueForBalanceSettlement(
+    pricingForGross,
+    party,
+    extraResidentFeeUsd
   )
 
   const { depositTotalNet, balanceReceivedTotal, returnedTotal, refundedTotal } =
@@ -457,7 +466,7 @@ export function computeDisplayedOnSiteBalanceLikePricingSection(
 
   return computeRemainingBalanceAfterPaymentRecords(
     totalCustomerPayment,
-    depositTotalNet,
+    depositNetForBalanceSettlement(depositTotalNet, pricing.prepayment_tip),
     balanceReceivedTotal,
     refundCredit
   )
@@ -620,8 +629,13 @@ export function computeCustomerPaymentTotalLineFormula(
  */
 export function inferResidentFeesUsdForBalance(
   pricing: PricingBalanceFields & { total_price?: unknown; choices?: unknown },
-  lineGrossWithoutResidentFees: number
+  lineGrossWithoutResidentFees: number,
+  extraResidentFeeUsd?: number | null
 ): number {
+  if (extraResidentFeeUsd != null && Number(extraResidentFeeUsd) > 0.005) {
+    return roundUsd2(Number(extraResidentFeeUsd))
+  }
+
   const line = roundUsd2(lineGrossWithoutResidentFees)
   const storedTotal = pricingFieldToNumber(pricing.total_price)
   const fromGap = storedTotal > line + 0.01 ? roundUsd2(storedTotal - line) : 0
@@ -633,14 +647,85 @@ export function inferResidentFeesUsdForBalance(
   return 0
 }
 
+/** 레거시 예약 옵션(비거주자 비용 6941b5d0) — 거주 상태 금액으로 이전된 경우 option_total 이중 가산 방지 */
+export function legacyNonResidentOptionAmountInRows(
+  rows: Array<{ option_id?: string | null; total_price?: unknown; status?: string | null }> | null | undefined
+): number {
+  let sum = 0
+  for (const row of rows || []) {
+    const id = String(row.option_id ?? '').trim()
+    if (id !== NON_RESIDENT_OPTION_ID) continue
+    const st = String(row.status ?? 'active').toLowerCase()
+    if (st === 'cancelled' || st === 'refunded') continue
+    sum += paymentRecordAmountToNumber(row.total_price)
+  }
+  return roundUsd2(sum)
+}
+
+export function adjustOptionTotalExcludingLegacyNonResident(
+  optionsTotal: number,
+  residentFeeUsd: number,
+  optionRows?: Array<{ option_id?: string | null; total_price?: unknown; status?: string | null }> | null
+): number {
+  if (residentFeeUsd <= 0.005 || !optionRows?.length) return optionsTotal
+  const legacy = legacyNonResidentOptionAmountInRows(optionRows)
+  if (legacy <= 0.005) return optionsTotal
+  return roundUsd2(Math.max(0, optionsTotal - legacy))
+}
+
 /** 라인 산식 + 거주 상태별 현장 비용(비거주자 $100 등) */
 export function computeCustomerPaymentLineGrossWithResidentFees(
   pricing: Parameters<typeof computeCustomerPaymentTotalLineFormula>[0] &
     PricingBalanceFields & { total_price?: unknown; choices?: unknown },
-  party: PartySizeSource
+  party: PartySizeSource,
+  extraResidentFeeUsd?: number | null
 ): number {
   const lineGross = roundUsd2(computeCustomerPaymentTotalLineFormula(pricing, party))
-  return roundUsd2(lineGross + inferResidentFeesUsdForBalance(pricing, lineGross))
+  return roundUsd2(
+    lineGross + inferResidentFeesUsdForBalance(pricing, lineGross, extraResidentFeeUsd)
+  )
+}
+
+/**
+ * 선결제 팁(`prepayment_tip`) — 가이드 분배·수익 제외. 현장 잔액·배정 카드 지불/수령 산식에서는 제외.
+ */
+export function prepaymentTipUsdForBalance(
+  pricing: Pick<PricingBalanceFields, 'prepayment_tip'>
+): number {
+  return roundUsd2(Math.max(0, pricingFieldToNumber(pricing.prepayment_tip)))
+}
+
+/** ② 잔액(계산)용 고객 총액 — 선결제 팁 제외 */
+export function customerTotalDueForBalanceSettlement(
+  pricing: Parameters<typeof computeCustomerPaymentLineGrossWithResidentFees>[0],
+  party: PartySizeSource,
+  extraResidentFeeUsd?: number | null
+): number {
+  const gross = computeCustomerPaymentLineGrossWithResidentFees(pricing, party, extraResidentFeeUsd)
+  const prepTip = prepaymentTipUsdForBalance(pricing)
+  return roundUsd2(Math.max(0, gross - prepTip))
+}
+
+/** 입금 보증금 순액에서 선결제 팁(이미 수령·가이드 분배) 분리 */
+export function depositNetForBalanceSettlement(
+  depositTotalNet: number,
+  prepaymentTip: unknown
+): number {
+  const tip = roundUsd2(Math.max(0, pricingFieldToNumber(prepaymentTip)))
+  const dep = Math.max(0, roundUsd2(Number(depositTotalNet) || 0))
+  return roundUsd2(Math.max(0, dep - tip))
+}
+
+/** `reservation_customers` 인원으로 거주 현장 비용 추정 (choices·total_price에 없을 때) */
+export function residentFeesUsdFromCustomerRows(
+  rows: Array<{ resident_status?: string | null }> | null | undefined,
+  amountOverrides?: Partial<Record<string, number>> | null
+): number {
+  const counts = countResidentLinesFromCustomers(rows)
+  return sumResidentFeesFromResidentCounts(
+    counts,
+    amountOverrides as ResidentStatusCounts | undefined
+  )
 }
 
 /**
@@ -728,7 +813,8 @@ export function isStoredCustomerTotalMismatchWithFormula(
 export function computeRemainingBalanceAmount(
   pricing: PricingBalanceFields,
   optionsTotalFromOptions: number | null,
-  party: PartySizeSource
+  party: PartySizeSource,
+  extraResidentFeeUsd?: number | null
 ): number {
   const pricingForLine = {
     ...(pricing as PricingBalanceFields & {
@@ -741,16 +827,24 @@ export function computeRemainingBalanceAmount(
         ? optionsTotalFromOptions
         : pricing.option_total,
   } as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]
-  const customerTotal = roundUsd2(
-    computeCustomerPaymentLineGrossWithResidentFees(pricingForLine, party)
+  const customerTotal = customerTotalDueForBalanceSettlement(
+    pricingForLine,
+    party,
+    extraResidentFeeUsd
   )
-  return Math.max(0, roundUsd2(customerTotal - pricingFieldToNumber(pricing.deposit_amount)))
+  const deposit = depositNetForBalanceSettlement(
+    pricingFieldToNumber(pricing.deposit_amount),
+    pricing.prepayment_tip
+  )
+  return Math.max(0, roundUsd2(customerTotal - deposit))
 }
 
 export type GetBalanceDisplayOpts = {
   paymentRecords?: PaymentRecordLike[]
   /** 취소 예약은 잔액 0 (PricingSection displayedOnSiteBalance와 동일) */
   reservationStatus?: string | null
+  /** 거주 상태별 인원·금액(비거주 $100 등) — DB choices/total_price에 없을 때 카드·배정 헤더용 */
+  residentFeeUsd?: number | null
 }
 
 /**
@@ -776,8 +870,18 @@ export function withNormalizedBalanceAmountForDisplay(
 /**
  * 잔액 표시: 입금이 있으면 가격 정보 탭 `displayedOnSiteBalance`와 같은 식(`computeDisplayedOnSiteBalanceLikePricingSection`).
  * `balance_amount`(DB)가 비어 있으면 위 계산·또는(입금 없음) 라인 산식 잔액.
- * 입금이 있을 때 DB에 양수 잔액이 저장돼 있으면 계산값이 ~0이어도 DB값을 표시(배정 카드·DB 잔금 일치).
+ * DB 잔액과 계산값이 0.01 초과로 다르면 계산값 우선(거주자구분 금액 등 반영 후 DB 미동기화 보정).
  */
+function resolveBalanceDisplayAmount(storedNum: number, defaultBalance: number): number {
+  if (Math.abs(defaultBalance - storedNum) > 0.01) {
+    return defaultBalance
+  }
+  if (Math.abs(storedNum) < 0.005 && Math.abs(defaultBalance) > 0.01) {
+    return defaultBalance
+  }
+  return roundUsd2(storedNum)
+}
+
 export function getBalanceAmountForDisplay(
   pricing: PricingBalanceFields | null | undefined,
   optionsTotalFromOptions: number | null,
@@ -806,30 +910,37 @@ export function getBalanceAmountForDisplay(
   } as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]
 
   const records = opts?.paymentRecords
+  const residentFeeUsd = opts?.residentFeeUsd
+  const defaultBalanceNoRecords = computeRemainingBalanceAmount(
+    pricingForLine,
+    optionsTotalFromOptions,
+    party,
+    residentFeeUsd
+  )
+
   if (records && records.length > 0) {
     const defaultBalance = computeDisplayedOnSiteBalanceLikePricingSection(
       pricingForLine,
       optionsTotalFromOptions,
       party,
-      records
+      records,
+      residentFeeUsd
     )
 
     const rawStored = pricing.balance_amount
     if (rawStored === undefined || rawStored === null || rawStored === '') {
       return defaultBalance
     }
-    const storedNum = pricingFieldToNumber(rawStored)
-    if (Math.abs(storedNum) < 0.005) {
-      if (Math.abs(defaultBalance) > 0.01) return defaultBalance
-      return roundUsd2(storedNum)
-    }
-    return roundUsd2(storedNum)
+    return resolveBalanceDisplayAmount(pricingFieldToNumber(rawStored), defaultBalance)
   }
 
   const rawStoredNoRecords = pricing.balance_amount
   if (rawStoredNoRecords !== undefined && rawStoredNoRecords !== null && rawStoredNoRecords !== '') {
-    return roundUsd2(pricingFieldToNumber(rawStoredNoRecords))
+    return resolveBalanceDisplayAmount(
+      pricingFieldToNumber(rawStoredNoRecords),
+      defaultBalanceNoRecords
+    )
   }
 
-  return computeRemainingBalanceAmount(pricing, optionsTotalFromOptions, party)
+  return defaultBalanceNoRecords
 }

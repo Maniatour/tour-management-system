@@ -7,8 +7,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   computeCustomerPaymentTotalLineFormula,
+  customerTotalDueForBalanceSettlement,
+  depositNetForBalanceSettlement,
   inferResidentFeesUsdForBalance,
   pricingFieldToNumber,
+  residentFeesUsdFromCustomerRows,
   summarizePaymentRecordsForBalance,
   type PaymentRecordLike,
   type PartySizeSource,
@@ -138,6 +141,11 @@ export async function syncReservationPricingAggregates(
       .select('payment_status, amount')
       .eq('reservation_id', reservationId)
 
+    const { data: residentCustomerRows } = await supabase
+      .from('reservation_customers')
+      .select('resident_status')
+      .eq('reservation_id', reservationId)
+
     const { data: expenseRows } = await supabase
       .from('reservation_expenses')
       .select('amount, status')
@@ -169,9 +177,11 @@ export async function syncReservationPricingAggregates(
       pricingMerged as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0],
       party
     )
-    const lineGross = roundUsd2(
-      lineGrossBase + inferResidentFeesUsdForBalance(pricingMerged, lineGrossBase)
+    const residentFeeUsd = Math.max(
+      residentFeesUsdFromCustomerRows(residentCustomerRows ?? []),
+      inferResidentFeesUsdForBalance(pricingMerged, lineGrossBase)
     )
+    const lineGross = roundUsd2(lineGrossBase + residentFeeUsd)
 
     let deposit_amount: number
     let balance_amount: number
@@ -183,8 +193,17 @@ export async function syncReservationPricingAggregates(
     } else {
       const { depositTotalNet, depositBucketGross, balanceReceivedTotal, returnedTotal } =
         summarizePaymentRecordsForBalance(records)
-      const customerNet = Math.max(0, roundUsd2(lineGross - returnedTotal))
-      balance_amount = roundUsd2(customerNet - depositTotalNet - balanceReceivedTotal)
+      const dueForBalance = customerTotalDueForBalanceSettlement(
+        pricingMerged as Parameters<typeof customerTotalDueForBalanceSettlement>[0],
+        party,
+        residentFeeUsd
+      )
+      const customerNet = Math.max(0, roundUsd2(dueForBalance - returnedTotal))
+      balance_amount = roundUsd2(
+        customerNet -
+          depositNetForBalanceSettlement(depositTotalNet, pricingMerged.prepayment_tip) -
+          balanceReceivedTotal
+      )
       deposit_amount = depositBucketGross
     }
 

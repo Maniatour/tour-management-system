@@ -293,6 +293,20 @@ function residentAmountsFromCounts(
   return amounts
 }
 
+/** `reservation_customers` 인원 + (선택) 저장 금액 → 비거주·패스 등 현장 비용 USD 합 */
+export function sumResidentFeesFromResidentCounts(
+  counts: ResidentStatusCounts,
+  overrides?: Partial<Record<ResidentLineKey, number>> | null
+): number {
+  const amounts = residentAmountsFromCounts(counts, overrides)
+  let sum = 0
+  for (const key of RESIDENT_FEE_SUM_KEYS) {
+    const v = Number(amounts[key]) || 0
+    if (v > 0) sum += v
+  }
+  return roundUsd2(sum)
+}
+
 export type BalanceEnvelopeOptionInput = {
   labelKo: string
   labelEn: string

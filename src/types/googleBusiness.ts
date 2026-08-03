@@ -60,6 +60,20 @@ export type GoogleReviewStaffStat = {
   oneStarCount: number
 }
 
+export type GoogleReviewStaffMonthlyCell = {
+  month: number
+  reviewCount: number
+  avgRating: number | null
+  totalTourGuests: number
+  reviewRatePercent: number | null
+}
+
+export type GoogleReviewStaffMonthlyStat = {
+  staffEmail: string
+  staffName: string
+  months: GoogleReviewStaffMonthlyCell[]
+}
+
 export type GoogleBusinessAccountItem = {
   name: string
   accountName: string

@@ -9,7 +9,11 @@ import { Sparkles, Wallet, X } from 'lucide-react'
 import { getStatusColor, getStatusText, getAssignmentStatusColor, getAssignmentStatusText } from '@/utils/tourStatusUtils'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import {
+  adjustOptionTotalExcludingLegacyNonResident,
+  computeCustomerPaymentTotalLineFormula,
   getBalanceAmountForDisplay,
+  inferResidentFeesUsdForBalance,
+  residentFeesUsdFromCustomerRows,
   withNormalizedBalanceAmountForDisplay,
   type PartySizeSource,
   type PaymentRecordLike,
@@ -171,18 +175,29 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
     }
 
     try {
-      const [{ data: pricingRows, error: pErr }, { data: payRows, error: payErr }, { data: optRows, error: oErr }] =
-        await Promise.all([
-          supabase.from('reservation_pricing').select('*').in('reservation_id', reservationIds),
-          supabase
-            .from('payment_records')
-            .select('reservation_id, payment_status, amount')
-            .in('reservation_id', reservationIds),
-          supabase.from('reservation_options').select('reservation_id, total_price').in('reservation_id', reservationIds),
-        ])
+      const [
+        { data: pricingRows, error: pErr },
+        { data: payRows, error: payErr },
+        { data: optRows, error: oErr },
+        { data: custRows, error: cErr },
+      ] = await Promise.all([
+        supabase.from('reservation_pricing').select('*').in('reservation_id', reservationIds),
+        supabase
+          .from('payment_records')
+          .select('reservation_id, payment_status, amount')
+          .in('reservation_id', reservationIds),
+        supabase
+          .from('reservation_options')
+          .select('reservation_id, total_price, option_id, status')
+          .in('reservation_id', reservationIds),
+        supabase
+          .from('reservation_customers')
+          .select('reservation_id, resident_status')
+          .in('reservation_id', reservationIds),
+      ])
 
-      if (pErr || payErr || oErr) {
-        console.error('배정 예약 잔금 합계 조회 오류:', pErr || payErr || oErr)
+      if (pErr || payErr || oErr || cErr) {
+        console.error('배정 예약 잔금 합계 조회 오류:', pErr || payErr || oErr || cErr)
         setAssignedBalanceTotal(0)
         setAssignedBalanceById(new Map())
         return
@@ -207,11 +222,30 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
 
       const optSumById = new Map<string, number>()
       const optCountById = new Map<string, number>()
+      const optRowsById = new Map<
+        string,
+        Array<{ option_id?: string | null; total_price?: unknown; status?: string | null }>
+      >()
       for (const row of optRows || []) {
         const id = String((row as { reservation_id: string }).reservation_id)
+        const st = String((row as { status?: string | null }).status ?? 'active').toLowerCase()
+        if (st === 'cancelled' || st === 'refunded') continue
         const tp = Number((row as { total_price?: unknown }).total_price) || 0
         optSumById.set(id, (optSumById.get(id) || 0) + tp)
         optCountById.set(id, (optCountById.get(id) || 0) + 1)
+        const list = optRowsById.get(id) || []
+        list.push(row as { option_id?: string | null; total_price?: unknown; status?: string | null })
+        optRowsById.set(id, list)
+      }
+
+      const customersById = new Map<string, Array<{ resident_status?: string | null }>>()
+      for (const row of custRows || []) {
+        const id = String((row as { reservation_id: string }).reservation_id)
+        const list = customersById.get(id) || []
+        list.push({
+          resident_status: (row as { resident_status?: string | null }).resident_status ?? null,
+        })
+        customersById.set(id, list)
       }
 
       const resById = new Map(assignedReservations.map((r) => [String(r.id), r]))
@@ -238,17 +272,36 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
         }
 
         const nOpts = optCountById.get(id) ?? 0
-        const optionsTotalFromOptions = nOpts > 0 ? (optSumById.get(id) || 0) : null
+        const rawOptionsTotal = nOpts > 0 ? (optSumById.get(id) || 0) : null
 
-        const b = getBalanceAmountForDisplay(
-          withNormalizedBalanceAmountForDisplay(pricing),
-          optionsTotalFromOptions,
-          party,
+        const fromCustomers = residentFeesUsdFromCustomerRows(customersById.get(id) ?? [])
+        const pricingNorm = withNormalizedBalanceAmountForDisplay(pricing)
+        const lineGrossBase = computeCustomerPaymentTotalLineFormula(
           {
-            paymentRecords: paymentsById.get(id) || [],
-            reservationStatus: res.status ?? null,
-          }
+            ...(pricingNorm as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]),
+            required_option_total: rawOptionsTotal !== null ? 0 : (pricingNorm as { required_option_total?: unknown }).required_option_total,
+            option_total: rawOptionsTotal !== null ? rawOptionsTotal : pricingNorm.option_total,
+          },
+          party
         )
+        const residentFeeUsd = Math.max(
+          fromCustomers,
+          inferResidentFeesUsdForBalance(pricingNorm, lineGrossBase)
+        )
+        const optionsTotalFromOptions =
+          rawOptionsTotal !== null
+            ? adjustOptionTotalExcludingLegacyNonResident(
+                rawOptionsTotal,
+                residentFeeUsd,
+                optRowsById.get(id)
+              )
+            : null
+
+        const b = getBalanceAmountForDisplay(pricingNorm, optionsTotalFromOptions, party, {
+          paymentRecords: paymentsById.get(id) || [],
+          reservationStatus: res.status ?? null,
+          residentFeeUsd,
+        })
         balanceById.set(id, b)
         total += b
       }

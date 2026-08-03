@@ -632,6 +632,7 @@ export default function AdminGoogleReviewsPage() {
         reviewSource={activeSource}
         onMessage={notify}
         refreshKey={refreshKey}
+        onReviewSourceChange={setActiveSource}
       />
 
       <GoogleReviewStaffStatsSection

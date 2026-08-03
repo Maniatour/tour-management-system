@@ -1,9 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Loader2, Search } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, Search } from 'lucide-react'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { toLasVegasDateKey } from '@/lib/dailyReport/dateUtils'
+import { addDaysToYmd } from '@/utils/tourUtils'
 
 type TourOption = {
   id: string
@@ -12,6 +13,7 @@ type TourOption = {
   productName: string | null
   guideName: string | null
   assistantName: string | null
+  totalPeople?: number
   customerNames?: string[]
 }
 
@@ -25,17 +27,24 @@ type Props = {
   onChange: (tourId: string | null, tourProduct?: Pick<TourOption, 'productId' | 'productName'> | null) => void
 }
 
-function formatTourTitle(tour: TourOption, isKo: boolean): string {
-  const team = [tour.guideName, tour.assistantName].filter(Boolean).join(' · ')
-  return `${tour.tourDate} · ${tour.productName ?? (isKo ? '투어' : 'Tour')}${team ? ` (${team})` : ''}`
+function formatTeamNames(tour: TourOption): string {
+  const parts: string[] = []
+  if (tour.guideName) parts.push(tour.guideName)
+  if (tour.assistantName) parts.push(tour.assistantName)
+  return parts.join(' · ')
 }
 
-function formatTourLabel(tour: TourOption, isKo: boolean): string {
-  const guests =
-    tour.customerNames && tour.customerNames.length > 0
-      ? ` — ${tour.customerNames.join(', ')}`
-      : ''
-  return `${formatTourTitle(tour, isKo)}${guests}`
+/** 근처 투어 드롭다운 — 날짜·상품·총인원·가이드·드라이버 이름 */
+function formatTourTitle(tour: TourOption, isKo: boolean): string {
+  const team = formatTeamNames(tour)
+  const peopleLabel =
+    tour.totalPeople != null && tour.totalPeople > 0
+      ? isKo
+        ? `${tour.totalPeople}명`
+        : `${tour.totalPeople} pax`
+      : null
+  const meta = [peopleLabel, team].filter(Boolean).join(' · ')
+  return `${tour.tourDate} · ${tour.productName ?? (isKo ? '투어' : 'Tour')}${meta ? ` (${meta})` : ''}`
 }
 
 export default function GoogleReviewTourSelect({
@@ -61,13 +70,30 @@ export default function GoogleReviewTourSelect({
 
   const reviewDateKey = useMemo(() => toLasVegasDateKey(reviewDate), [reviewDate])
 
+  useEffect(() => {
+    if (reviewDateKey) {
+      setTourDate(reviewDateKey)
+    }
+  }, [reviewDateKey])
+
+  const shiftTourDate = useCallback(
+    (delta: number) => {
+      setTourDate((current) => {
+        const base = current || reviewDateKey
+        if (!base) return current
+        const next = addDaysToYmd(base, delta)
+        return next || current
+      })
+    },
+    [reviewDateKey]
+  )
+
   const loadNearby = useCallback(
     async (options?: { background?: boolean }) => {
       if (!options?.background) setLoadingNearby(true)
       try {
-        const params = new URLSearchParams({ mode: 'nearby', day_range: '3' })
+        const params = new URLSearchParams({ mode: 'nearby', day_range: '3', limit: '100' })
         if (reviewDateKey) params.set('review_date', reviewDateKey)
-        if (productId) params.set('product_id', productId)
         if (selectedTourIdRef.current) {
           params.set('include_tour_id', selectedTourIdRef.current)
         }
@@ -83,7 +109,7 @@ export default function GoogleReviewTourSelect({
         setLoadingNearby(false)
       }
     },
-    [productId, reviewDateKey]
+    [reviewDateKey]
   )
 
   useEffect(() => {
@@ -170,13 +196,13 @@ export default function GoogleReviewTourSelect({
           {value && !nearbyTours.some((tour) => tour.id === value) ? (
             <option value={value}>
               {selectedFromList
-                ? formatTourLabel(selectedFromList, isKo)
+                ? formatTourTitle(selectedFromList, isKo)
                 : selectedLabel || value}
             </option>
           ) : null}
           {nearbyTours.map((tour) => (
             <option key={tour.id} value={tour.id}>
-              {formatTourLabel(tour, isKo)}
+              {formatTourTitle(tour, isKo)}
             </option>
           ))}
         </select>
@@ -202,12 +228,34 @@ export default function GoogleReviewTourSelect({
               <span className="text-xs font-medium text-muted-foreground">
                 {isKo ? '투어 날짜' : 'Tour date'}
               </span>
-              <input
-                type="date"
-                value={tourDate}
-                onChange={(e) => setTourDate(e.target.value)}
-                className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
-              />
+              <div className="relative">
+                <input
+                  type="date"
+                  value={tourDate}
+                  onChange={(e) => setTourDate(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-border bg-background pl-3 pr-9 text-sm [color-scheme:light] dark:[color-scheme:dark]"
+                />
+                <div className="absolute inset-y-0 right-0 flex w-8 flex-col items-center justify-center border-l border-border/60">
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => shiftTourDate(1)}
+                    className="flex h-1/2 w-full items-center justify-center text-muted-foreground hover:bg-muted/60 hover:text-foreground disabled:opacity-40"
+                    aria-label={isKo ? '하루 뒤' : 'Next day'}
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => shiftTourDate(-1)}
+                    className="flex h-1/2 w-full items-center justify-center text-muted-foreground hover:bg-muted/60 hover:text-foreground disabled:opacity-40"
+                    aria-label={isKo ? '하루 전' : 'Previous day'}
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                </div>
+              </div>
             </label>
             <label className="block space-y-1">
               <span className="text-xs font-medium text-muted-foreground">
@@ -241,9 +289,13 @@ export default function GoogleReviewTourSelect({
               </li>
             ) : searchTours.length === 0 ? (
               <li className="px-3 py-3 text-sm text-muted-foreground">
-                {isKo
-                  ? '날짜 또는 고객명을 입력해 검색하세요.'
-                  : 'Enter a date or guest name to search.'}
+                {tourDate || customerName.trim() || query.trim()
+                  ? isKo
+                    ? '해당 조건의 투어가 없습니다.'
+                    : 'No tours match your search.'
+                  : isKo
+                    ? '날짜 또는 고객명을 입력해 검색하세요.'
+                    : 'Enter a date or guest name to search.'}
               </li>
             ) : (
               searchTours.map((tour) => (
@@ -270,6 +322,7 @@ export default function GoogleReviewTourSelect({
                     </span>
                     {tour.customerNames && tour.customerNames.length > 0 ? (
                       <span className="block text-xs text-muted-foreground mt-0.5 leading-snug">
+                        {isKo ? '예약자: ' : 'Guests: '}
                         {tour.customerNames.join(', ')}
                       </span>
                     ) : null}

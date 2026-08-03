@@ -44,6 +44,7 @@ import {
   computeEffectiveCustomerPaidTowardDue,
   computeRemainingBalanceAfterPaymentRecords,
   customerRefundCreditAgainstDue,
+  depositNetForBalanceSettlement,
   summarizePaymentRecordsForBalance,
 } from '@/utils/reservationPricingBalance'
 import { splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
@@ -843,7 +844,10 @@ export default function PricingSection({
   /** 잔액(②): 입금 내역이 있으면 depositTotalNet+잔금 수령, 없으면 보증금·환불 휴리스틱 */
   const computeOnSiteBalanceAmount = useCallback(() => {
     if (isNotIncludedExcludedReservationStatus((formData as { status?: string }).status)) return 0
-    const totalCustomerPayment = effectiveTotalCustomerPayment()
+    const prepTip = Math.max(0, Number(formData.prepaymentTip) || 0)
+    const totalCustomerPayment = roundUsd2(
+      Math.max(0, effectiveTotalCustomerPayment() - prepTip)
+    )
     if (hasPaymentRecordsRef.current) {
       const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
       const refundCredit = customerRefundCreditAgainstDue(
@@ -852,7 +856,7 @@ export default function PricingSection({
       )
       return computeRemainingBalanceAfterPaymentRecords(
         totalCustomerPayment,
-        calculatedDepositTotalNet,
+        depositNetForBalanceSettlement(calculatedDepositTotalNet, prepTip),
         calculatedBalanceReceivedTotal,
         refundCredit
       )
@@ -860,7 +864,7 @@ export default function PricingSection({
     const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
     const depositForDue = depositAmountNetOfPartnerReturnedOverlap(
       totalCustomerPayment,
-      formData.depositAmount
+      depositNetForBalanceSettlement(formData.depositAmount, prepTip)
     )
     const totalPaid = computeEffectiveCustomerPaidTowardDue(
       totalCustomerPayment,
@@ -875,6 +879,7 @@ export default function PricingSection({
     calculatedDepositTotalNet,
     calculatedBalanceReceivedTotal,
     formData.depositAmount,
+    formData.prepaymentTip,
     formData.refundAmount,
     refundedAmount,
     depositAmountNetOfPartnerReturnedOverlap,

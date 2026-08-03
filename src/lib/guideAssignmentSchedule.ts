@@ -38,6 +38,66 @@ export function normalizeStaffEmail(value: string | null | undefined): string | 
   return v.length > 0 ? v : null
 }
 
+export function getStaffSnapshotFromTour(tour: {
+  tour_guide_id?: string | null
+  assistant_id?: string | null
+}): TourAssignmentSnapshot {
+  return {
+    tour_guide_id: normalizeStaffEmail(tour.tour_guide_id),
+    assistant_id: normalizeStaffEmail(tour.assistant_id),
+  }
+}
+
+export function staffAssignmentChanged(
+  before: TourAssignmentSnapshot,
+  after: TourAssignmentSnapshot,
+): boolean {
+  return (
+    before.tour_guide_id !== after.tour_guide_id || before.assistant_id !== after.assistant_id
+  )
+}
+
+/** 가이드·어시스턴트 배정이 바뀌면 배정 상태를 대기(pending)로 리셋 */
+export function mergeAssignmentStatusResetOnStaffChange(
+  tourId: string,
+  patch: Record<string, unknown>,
+  baseline: Record<string, TourAssignmentSnapshot>,
+  tourBeforePatch: { tour_guide_id?: string | null; assistant_id?: string | null },
+): Record<string, unknown> {
+  if (!('tour_guide_id' in patch) && !('assistant_id' in patch)) {
+    return patch
+  }
+
+  const base = baseline[tourId] ?? getStaffSnapshotFromTour(tourBeforePatch)
+  const afterGuide =
+    'tour_guide_id' in patch
+      ? normalizeStaffEmail(patch.tour_guide_id as string | null | undefined)
+      : normalizeStaffEmail(tourBeforePatch.tour_guide_id)
+  const afterAsst =
+    'assistant_id' in patch
+      ? normalizeStaffEmail(patch.assistant_id as string | null | undefined)
+      : normalizeStaffEmail(tourBeforePatch.assistant_id)
+
+  if (staffAssignmentChanged(base, { tour_guide_id: afterGuide, assistant_id: afterAsst })) {
+    return { ...patch, assignment_status: 'pending' }
+  }
+  return patch
+}
+
+/** 저장 시점: baseline 대비 현재 투어 스냅샷이 바뀌었으면 대기로 리셋 */
+export function assignmentStatusResetIfBaselineStaffChanged(
+  tourId: string,
+  tourAfterChanges: { tour_guide_id?: string | null; assistant_id?: string | null },
+  baseline: Record<string, TourAssignmentSnapshot>,
+): { assignment_status: 'pending' } | null {
+  const base = baseline[tourId]
+  if (!base) return null
+  if (staffAssignmentChanged(base, getStaffSnapshotFromTour(tourAfterChanges))) {
+    return { assignment_status: 'pending' }
+  }
+  return null
+}
+
 export function buildToursAssignmentBaseline(
   tours: Array<{ id: string; tour_guide_id?: string | null; assistant_id?: string | null }>,
 ): Record<string, TourAssignmentSnapshot> {

@@ -22,16 +22,17 @@ export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get('q')
   const customerName = request.nextUrl.searchParams.get('customer_name')
   const dayRange = Number.parseInt(request.nextUrl.searchParams.get('day_range') ?? '3', 10)
+  const nearbyLimit = Number.parseInt(request.nextUrl.searchParams.get('limit') ?? '100', 10)
 
   try {
     if (mode === 'nearby') {
       const tours = await searchNearbyToursForGoogleReviewLink({
         operatorId: auth.operatorId,
         reviewDate,
-        productId,
+        productId: null,
         includeTourId,
         dayRange: Number.isFinite(dayRange) ? dayRange : 3,
-        limit: 30,
+        limit: Number.isFinite(nearbyLimit) ? Math.min(nearbyLimit, 200) : 100,
       })
       return NextResponse.json({ ok: true, tours })
     }

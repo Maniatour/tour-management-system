@@ -32,7 +32,18 @@ import ReservationEvidenceUpload from '@/components/reservation/ReservationEvide
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { ResidentStatusCardBadge } from '@/components/tour/ResidentStatusCardBadge'
 import { isReservationCancelledStatus } from '@/utils/tourUtils'
-import { getBalanceAmountForDisplay, type PartySizeSource } from '@/utils/reservationPricingBalance'
+import {
+  adjustOptionTotalExcludingLegacyNonResident,
+  computeCustomerPaymentTotalLineFormula,
+  getBalanceAmountForDisplay,
+  inferResidentFeesUsdForBalance,
+  type PartySizeSource,
+} from '@/utils/reservationPricingBalance'
+import {
+  sumResidentFeesFromResidentCounts,
+} from '@/utils/balanceEnvelopeBreakdown'
+import { loadResidentStatusAmountsForReservation } from '@/lib/saveResidentStatusWithPricing'
+import type { ResidentLineKey } from '@/utils/usResidentChoiceSync'
 import {
   displayPaymentRecordNote,
   fetchTeamDisplayNameByEmail,
@@ -223,6 +234,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const [loadingPayments, setLoadingPayments] = useState(false)
   const [reservationPricing, setReservationPricing] = useState<ReservationPricing | null>(null)
   const [optionsTotalFromOptions, setOptionsTotalFromOptions] = useState<number | null>(null)
+  const [optionRowsForBalance, setOptionRowsForBalance] = useState<
+    Array<{ option_id?: string | null; total_price?: unknown; status?: string | null }>
+  >([])
+  const [residentStatusAmounts, setResidentStatusAmounts] = useState<
+    Partial<Record<ResidentLineKey, number>>
+  >({})
   const [showSimplePickupModal, setShowSimplePickupModal] = useState(false)
   const [showReviewModal, setShowReviewModal] = useState(false)
   const [channelInfo, setChannelInfo] = useState<{ name: string; favicon?: string; has_not_included_price?: boolean; commission_base_price_only?: boolean } | null>(null)
@@ -273,6 +290,50 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     reservation.infants,
     (reservation as { infant?: number | null }).infant,
   ])
+
+  const residentFeeUsd = useMemo(() => {
+    const counts = {
+      non_resident: residentStatusCounts.nonResident,
+      non_resident_under_16: residentStatusCounts.nonResidentUnder16,
+      non_resident_with_pass: residentStatusCounts.nonResidentWithPass,
+    }
+    const fromCustomers = sumResidentFeesFromResidentCounts(counts, residentStatusAmounts)
+    if (!reservationPricing) return fromCustomers
+
+    const optsOnly = optionsTotalFromOptions !== null && optionsTotalFromOptions !== undefined
+    const pricingForLine = {
+      ...reservationPricing,
+      required_option_total: optsOnly ? 0 : (reservationPricing as { required_option_total?: unknown }).required_option_total,
+      option_total: optsOnly ? optionsTotalFromOptions : reservationPricing.option_total,
+    } as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]
+    const lineGrossBase = computeCustomerPaymentTotalLineFormula(pricingForLine, balanceParty)
+    const inferred = inferResidentFeesUsdForBalance(reservationPricing, lineGrossBase)
+    return Math.max(fromCustomers, inferred)
+  }, [
+    residentStatusCounts,
+    residentStatusAmounts,
+    reservationPricing,
+    optionsTotalFromOptions,
+    balanceParty,
+  ])
+
+  const optionsTotalForBalance = useMemo(() => {
+    if (optionsTotalFromOptions === null) return null
+    return adjustOptionTotalExcludingLegacyNonResident(
+      optionsTotalFromOptions,
+      residentFeeUsd,
+      optionRowsForBalance
+    )
+  }, [optionsTotalFromOptions, residentFeeUsd, optionRowsForBalance])
+
+  const balanceDisplayOpts = useMemo(
+    () => ({
+      paymentRecords,
+      reservationStatus: reservation.status ?? null,
+      residentFeeUsd,
+    }),
+    [paymentRecords, reservation.status, residentFeeUsd]
+  )
 
   // 패스 장수에 따라 실제 커버되는 인원 수 계산 (패스 1장 = 4인)
   // 실제 예약 인원을 초과할 수 없음
@@ -426,22 +487,41 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         setReservationPricing(pricing)
         const { data: opts } = await supabase
           .from('reservation_options')
-          .select('total_price')
+          .select('total_price, option_id, status')
           .eq('reservation_id', reservation.id)
-        const sum = (opts || []).reduce(
+        const activeOpts = (opts || []).filter((o) => {
+          const st = String((o as { status?: string | null }).status ?? 'active').toLowerCase()
+          return st !== 'cancelled' && st !== 'refunded'
+        })
+        setOptionRowsForBalance(activeOpts)
+        const sum = activeOpts.reduce(
           (s: number, o: { total_price?: number | string | null }) =>
             s + (typeof o.total_price === 'number' ? o.total_price : parseFloat(String(o.total_price || 0)) || 0),
           0
         )
-        setOptionsTotalFromOptions(opts?.length ? sum : null)
+        setOptionsTotalFromOptions(activeOpts.length ? sum : null)
+
+        const productId = reservation.product_id ? String(reservation.product_id) : null
+        if (productId) {
+          const amounts = await loadResidentStatusAmountsForReservation(
+            supabase,
+            reservation.id,
+            productId
+          )
+          setResidentStatusAmounts(amounts)
+        } else {
+          setResidentStatusAmounts({})
+        }
       } else {
         setReservationPricing(null)
         setOptionsTotalFromOptions(null)
+        setOptionRowsForBalance([])
+        setResidentStatusAmounts({})
       }
     } catch (error) {
       if (!isAbortError(error)) console.error('예약 가격 정보 조회 오류:', error)
     }
-  }, [isStaff, reservation.id, isAbortError])
+  }, [isStaff, reservation.id, reservation.product_id, isAbortError])
 
   // 결제 방법 정보 로드
   const loadPaymentMethods = useCallback(async () => {
@@ -1557,9 +1637,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 
     const balanceAmount = getBalanceAmountForDisplay(
       reservationPricing,
-      optionsTotalFromOptions,
+      optionsTotalForBalance,
       balanceParty,
-      { paymentRecords, reservationStatus: reservation.status ?? null }
+      balanceDisplayOpts
     )
     
     if (balanceAmount <= 0) {
@@ -1661,9 +1741,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 
     const balanceAmount = getBalanceAmountForDisplay(
       reservationPricing,
-      optionsTotalFromOptions,
+      optionsTotalForBalance,
       balanceParty,
-      { paymentRecords, reservationStatus: reservation.status ?? null }
+      balanceDisplayOpts
     )
     const refundAmount = Math.abs(balanceAmount)
 
@@ -2177,9 +2257,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             {isStaff && (() => {
               const displayBalanceBadge = getBalanceAmountForDisplay(
                 reservationPricing,
-                optionsTotalFromOptions,
+                optionsTotalForBalance,
                 balanceParty,
-                { paymentRecords, reservationStatus: reservation.status ?? null }
+                balanceDisplayOpts
               )
               if (displayBalanceBadge > 0) {
                 const balStr = formatCurrency(

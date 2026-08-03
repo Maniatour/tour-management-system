@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, EyeOff, Loader2, Star, X } from 'lucide-react'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { OpTodoProductSelect } from '@/components/admin/todo/OpTodoProductSelect'
@@ -10,7 +10,8 @@ import GoogleReviewRecentChangesPanel from '@/components/admin/google-reviews/Go
 import GoogleReviewChangeHistory from '@/components/admin/google-reviews/GoogleReviewChangeHistory'
 import { formatLasVegasDate } from '@/lib/dailyReport/dateUtils'
 import type { ReviewSource } from '@/lib/reviewSources'
-import { getReviewSourceLabel } from '@/lib/reviewSources'
+import { getReviewSourceLabel, isReviewSource } from '@/lib/reviewSources'
+import type { GoogleReviewChangeLogRow } from '@/lib/googleReviewChangeLog'
 import type { AdminGoogleReviewListItem, GoogleReviewStats } from '@/types/googleBusiness'
 
 type ReviewsResponse = {
@@ -28,6 +29,7 @@ type Props = {
   reviewSource: ReviewSource
   onMessage: (message: string) => void
   refreshKey: number
+  onReviewSourceChange?: (source: ReviewSource) => void
 }
 
 const STATUS_FILTERS = ['all', 'pending', 'approved', 'rejected', 'hidden'] as const
@@ -38,6 +40,7 @@ export default function GoogleReviewsManageSection({
   reviewSource,
   onMessage,
   refreshKey,
+  onReviewSourceChange,
 }: Props) {
   const isKo = locale === 'ko'
   const sourceLabel = getReviewSourceLabel(reviewSource, locale)
@@ -53,8 +56,76 @@ export default function GoogleReviewsManageSection({
   const [savingTourReviewId, setSavingTourReviewId] = useState<string | null>(null)
   const [savingExcludeStaffReviewId, setSavingExcludeStaffReviewId] = useState<string | null>(null)
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
+  const [pinnedReview, setPinnedReview] = useState<AdminGoogleReviewListItem | null>(null)
+  const [highlightedReviewId, setHighlightedReviewId] = useState<string | null>(null)
+  const [openingReviewId, setOpeningReviewId] = useState<string | null>(null)
 
   const bumpHistoryRefresh = () => setHistoryRefreshKey((key) => key + 1)
+
+  const displayReviews = useMemo(() => {
+    if (!pinnedReview) return reviews
+    return [pinnedReview, ...reviews.filter((review) => review.id !== pinnedReview.id)]
+  }, [reviews, pinnedReview])
+
+  useEffect(() => {
+    if (!pinnedReview) return
+    const fresh = reviews.find((review) => review.id === pinnedReview.id)
+    if (fresh) setPinnedReview(fresh)
+  }, [reviews, pinnedReview?.id])
+
+  const openReviewFromHistory = useCallback(
+    async (log: GoogleReviewChangeLogRow) => {
+      setOpeningReviewId(log.googleReviewId)
+      try {
+        const nextSource = log.reviewSource
+        if (nextSource && nextSource !== reviewSource && isReviewSource(nextSource)) {
+          onReviewSourceChange?.(nextSource)
+        }
+
+        const res = await fetchApiWithAuth(`/api/admin/google-business/reviews/${log.googleReviewId}`)
+        const data = (await res.json()) as {
+          ok?: boolean
+          review?: AdminGoogleReviewListItem
+          error?: string
+        }
+        if (!res.ok || !data.ok || !data.review) {
+          throw new Error(data.error || 'review_not_found')
+        }
+
+        setStatusFilter('all')
+        setUnclassifiedOnly(false)
+        setPage(1)
+        setPinnedReview(data.review)
+        setHighlightedReviewId(data.review.id)
+        onMessage(
+          isKo
+            ? '변경 이력에서 선택한 리뷰를 표시합니다.'
+            : 'Showing the review selected from change history.'
+        )
+
+        window.setTimeout(() => {
+          document.getElementById(`google-review-${data.review!.id}`)?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+          })
+        }, 200)
+      } catch (error) {
+        onMessage(
+          isKo
+            ? `리뷰를 열지 못했습니다: ${error instanceof Error ? error.message : 'unknown'}`
+            : `Failed to open review: ${error instanceof Error ? error.message : 'unknown'}`
+        )
+      } finally {
+        setOpeningReviewId(null)
+      }
+    },
+    [isKo, onMessage, onReviewSourceChange, reviewSource]
+  )
+
+  const clearPinnedReview = () => {
+    setPinnedReview(null)
+    setHighlightedReviewId(null)
+  }
 
   const loadReviews = useCallback(async (options?: { silent?: boolean }) => {
     if (!enabled) {
@@ -204,16 +275,17 @@ export default function GoogleReviewsManageSection({
     setReviews((prev) =>
       prev.map((review) => {
         if (review.id !== reviewId) return review
-        const shouldFillProduct = tourId && tourProduct?.productId && !review.productId
+        const linkedProduct =
+          tourId && tourProduct?.productId ? tourProduct : null
         return {
           ...review,
           tourId,
           excludeStaffRating: false,
           staff: [],
-          ...(shouldFillProduct
+          ...(linkedProduct
             ? {
-                productId: tourProduct.productId,
-                productName: tourProduct.productName ?? review.productName,
+                productId: linkedProduct.productId,
+                productName: linkedProduct.productName ?? review.productName,
                 classificationMethod: 'tour_link',
               }
             : {}),
@@ -388,7 +460,26 @@ export default function GoogleReviewsManageSection({
         locale={locale}
         enabled={enabled}
         refreshKey={historyRefreshKey}
+        onOpenReview={(log) => void openReviewFromHistory(log)}
+        openingReviewId={openingReviewId}
       />
+
+      {pinnedReview ? (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+          <p className="text-sm text-foreground">
+            {isKo
+              ? `변경 이력에서 선택한 리뷰: ${pinnedReview.authorName ?? 'Google User'}`
+              : `Review from history: ${pinnedReview.authorName ?? 'Google User'}`}
+          </p>
+          <button
+            type="button"
+            onClick={clearPinnedReview}
+            className="text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            {isKo ? '선택 해제' : 'Clear selection'}
+          </button>
+        </div>
+      ) : null}
 
       {selectedIds.size > 0 ? (
         <div className="flex flex-wrap gap-2 p-3 rounded-xl bg-muted/30 border border-border/50">
@@ -429,16 +520,21 @@ export default function GoogleReviewsManageSection({
         <div className="flex justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
-      ) : reviews.length === 0 ? (
+      ) : displayReviews.length === 0 ? (
         <p className="text-sm text-muted-foreground py-8 text-center">
           {isKo ? '표시할 리뷰가 없습니다.' : 'No reviews to show.'}
         </p>
       ) : (
         <div className="space-y-3">
-          {reviews.map((review) => (
+          {displayReviews.map((review) => (
             <article
               key={review.id}
-              className="rounded-xl border border-border/50 p-4 space-y-3 hover:border-border transition-colors"
+              id={`google-review-${review.id}`}
+              className={`rounded-xl border p-4 space-y-3 transition-colors scroll-mt-24 ${
+                highlightedReviewId === review.id
+                  ? 'border-primary/50 bg-primary/5 ring-2 ring-primary/30 shadow-sm'
+                  : 'border-border/50 hover:border-border'
+              }`}
             >
               <div className="flex items-start gap-3">
                 <input

@@ -234,8 +234,8 @@ export const getAssignmentStatusText = (tour: any, locale: string = 'ko') => {
   const translations = {
     ko: {
       undefined: '미정',
-      confirm: '확정',
-      confirmed: '확정',
+      confirm: '배정',
+      confirmed: '배정',
       assigned: '부여',
       rejected: '거절',
       pending: '대기'
@@ -328,9 +328,9 @@ export const tourStatusOptions = [
 
 // 배정 상태 옵션들
 export const assignmentStatusOptions = [
-  { value: 'pending', label: '대기', color: 'bg-yellow-100 text-yellow-800' },
+  { value: 'pending', label: '대기', color: 'bg-amber-100 text-amber-800' },
   { value: 'assigned', label: '부여', color: 'bg-violet-100 text-violet-800' },
-  { value: 'confirmed', label: '확정', color: 'bg-green-100 text-green-800' },
+  { value: 'confirmed', label: '배정', color: 'bg-green-100 text-green-800' },
   { value: 'rejected', label: '거절', color: 'bg-red-100 text-red-800' },
 ]
 

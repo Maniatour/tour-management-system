@@ -11,13 +11,14 @@ type GuideAssignmentStatusStripeProps = {
 }
 
 const STRIPE_BY_STATUS: Record<string, string> = {
+  pending: 'bg-slate-400',
   assigned: 'bg-yellow-400',
   confirmed: 'bg-green-500',
   rejected: 'bg-red-500',
 }
 
 /**
- * 투어 박스 왼쪽 색상 라인 — 부여(노랑) · 확정(녹색) · 거절(빨강)
+ * 투어 박스 왼쪽 색상 라인 — 대기(회색) · 부여(노랑) · 배정(녹색) · 거절(빨강)
  */
 export function GuideAssignmentStatusStripe({
   status,

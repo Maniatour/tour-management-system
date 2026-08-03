@@ -13,6 +13,7 @@ export type GoogleReviewChangeType =
 export type GoogleReviewChangeLogRow = {
   id: string
   googleReviewId: string
+  reviewSource: string | null
   authorName: string | null
   changeType: GoogleReviewChangeType
   oldValue: Record<string, unknown> | null
@@ -244,11 +245,12 @@ function mapChangeLogRow(row: {
   new_value: Record<string, unknown> | null
   changed_by_email: string | null
   created_at: string
-  google_reviews?: { author_name?: string | null } | null
+  google_reviews?: { author_name?: string | null; review_source?: string | null } | null
 }): GoogleReviewChangeLogRow {
   return {
     id: row.id,
     googleReviewId: row.google_review_id,
+    reviewSource: row.google_reviews?.review_source ?? null,
     authorName: row.google_reviews?.author_name ?? null,
     changeType: row.change_type,
     oldValue: row.old_value,
@@ -270,7 +272,7 @@ export async function listGoogleReviewChangeLogs(input: {
 
   let query = fromUntypedTable(supabaseAdmin, 'google_review_change_logs')
     .select(
-      'id, google_review_id, change_type, old_value, new_value, changed_by_email, created_at, google_reviews(author_name)'
+      'id, google_review_id, change_type, old_value, new_value, changed_by_email, created_at, google_reviews(author_name, review_source)'
     )
     .eq('operator_id', operatorId)
     .order('created_at', { ascending: false })

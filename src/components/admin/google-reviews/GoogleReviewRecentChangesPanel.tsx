@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronDown, Clock, Loader2, User } from 'lucide-react'
+import { ChevronDown, Clock, ExternalLink, Loader2, User } from 'lucide-react'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { formatLasVegasDateTime } from '@/lib/dailyReport/dateUtils'
 import {
@@ -13,6 +13,8 @@ type Props = {
   locale: string
   enabled: boolean
   refreshKey: number
+  onOpenReview?: (log: GoogleReviewChangeLogRow) => void
+  openingReviewId?: string | null
 }
 
 type ChangeLogsResponse = {
@@ -25,6 +27,8 @@ export default function GoogleReviewRecentChangesPanel({
   locale,
   enabled,
   refreshKey,
+  onOpenReview,
+  openingReviewId = null,
 }: Props) {
   const isKo = locale === 'ko'
   const [expanded, setExpanded] = useState(false)
@@ -104,27 +108,46 @@ export default function GoogleReviewRecentChangesPanel({
           ) : (
             <ul className="space-y-3 max-h-80 overflow-y-auto pr-1">
               {logs.map((log) => (
-                <li
-                  key={log.id}
-                  className="rounded-lg border border-border/40 bg-background px-3 py-2.5"
-                >
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                    <p className="text-sm font-medium text-foreground">
-                      {log.authorName ?? (isKo ? '익명' : 'Anonymous')}
+                <li key={log.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenReview?.(log)}
+                    disabled={!onOpenReview || openingReviewId === log.googleReviewId}
+                    className="w-full rounded-lg border border-border/40 bg-background px-3 py-2.5 text-left transition-colors hover:border-primary/40 hover:bg-primary/5 disabled:opacity-60 disabled:cursor-wait"
+                  >
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                      <p className="text-sm font-medium text-foreground">
+                        {log.authorName ?? (isKo ? '익명' : 'Anonymous')}
+                      </p>
+                      <time className="text-xs text-muted-foreground tabular-nums">
+                        {formatLasVegasDateTime(log.createdAt, locale) ?? '—'}
+                      </time>
+                    </div>
+                    <p className="text-sm text-foreground mt-1">
+                      {formatGoogleReviewChangeLabel(log, isKo)}
                     </p>
-                    <time className="text-xs text-muted-foreground tabular-nums">
-                      {formatLasVegasDateTime(log.createdAt, locale) ?? '—'}
-                    </time>
-                  </div>
-                  <p className="text-sm text-foreground mt-1">
-                    {formatGoogleReviewChangeLabel(log, isKo)}
-                  </p>
-                  {log.changedByEmail ? (
-                    <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1">
-                      <User className="h-3 w-3" aria-hidden />
-                      {log.changedByEmail}
-                    </p>
-                  ) : null}
+                    {log.changedByEmail ? (
+                      <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1">
+                        <User className="h-3 w-3" aria-hidden />
+                        {log.changedByEmail}
+                      </p>
+                    ) : null}
+                    {onOpenReview ? (
+                      <p className="text-xs font-medium text-primary mt-2 inline-flex items-center gap-1">
+                        {openingReviewId === log.googleReviewId ? (
+                          <>
+                            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                            {isKo ? '리뷰 여는 중…' : 'Opening review…'}
+                          </>
+                        ) : (
+                          <>
+                            <ExternalLink className="h-3 w-3" aria-hidden />
+                            {isKo ? '리뷰 보기 · 수정' : 'View and edit review'}
+                          </>
+                        )}
+                      </p>
+                    ) : null}
+                  </button>
                 </li>
               ))}
             </ul>

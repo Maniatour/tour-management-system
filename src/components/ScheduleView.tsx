@@ -160,9 +160,11 @@ import type { ScheduleGuideDailyData, ScheduleGuideScheduleRow } from '@/lib/sch
 import { isSuperAdminActor } from '@/lib/superAdmin'
 import { isManagerTeamPosition } from '@/lib/roles'
 import {
+  assignmentStatusResetIfBaselineStaffChanged,
   computeGuideAssignmentChanges,
   guideAssignmentChangeTypeLabel,
   guideAssignmentRoleLabel,
+  mergeAssignmentStatusResetOnStaffChange,
   type GuideAssignmentChangeItem,
 } from '@/lib/guideAssignmentSchedule'
 
@@ -2895,7 +2897,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
     try {
       const tourEntries = Object.entries(pendingChanges)
-      for (const [tourId, updateData] of tourEntries) {
+      for (const [tourId, rawUpdateData] of tourEntries) {
+        const tour = tours.find((t) => t.id === tourId)
+        const statusReset = assignmentStatusResetIfBaselineStaffChanged(
+          tourId,
+          tour ?? {},
+          toursAssignmentBaselineRef.current,
+        )
+        const updateData = statusReset ? { ...rawUpdateData, ...statusReset } : rawUpdateData
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { error } = await (supabase as any)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2991,6 +3000,22 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     await fetchData()
     await fetchUnassignedTours()
   }, [fetchData, fetchUnassignedTours])
+
+  const mergeStaffPatchWithAssignmentReset = useCallback(
+    (
+      tourId: string,
+      tourBeforePatch: { tour_guide_id?: string | null; assistant_id?: string | null },
+      patch: Partial<Tour>,
+    ): Partial<Tour> => {
+      return mergeAssignmentStatusResetOnStaffChange(
+        tourId,
+        patch as Record<string, unknown>,
+        toursAssignmentBaselineRef.current,
+        tourBeforePatch,
+      ) as Partial<Tour>
+    },
+    [],
+  )
 
   const requestSaveAfterDragAssignment = useCallback(() => {
     if (scheduleExplorationMode) return
@@ -4198,17 +4223,18 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       } else if (effectiveRole === 'assistant') {
         updateData.assistant_id = teamMemberId
       }
+      const patch = mergeStaffPatchWithAssignmentReset(draggedTour.id, draggedTour, updateData)
 
       setPendingChanges(prev => ({
         ...prev,
         [draggedTour.id]: {
           ...(prev[draggedTour.id] || {}),
-          ...updateData
+          ...patch
         }
       }))
 
       // tours 상태에 즉시 반영하여 화면에서 미리보기 가능하게 함
-      setTours(prev => prev.map(t => t.id === draggedTour.id ? { ...t, ...updateData } : t))
+      setTours(prev => prev.map(t => t.id === draggedTour.id ? { ...t, ...patch } : t))
       requestSaveAfterDragAssignment()
     } finally {
       setDraggedTour(null)
@@ -4248,23 +4274,26 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     if (!draggedTour) return
 
     try {
+      const unassignPatch = mergeStaffPatchWithAssignmentReset(draggedTour.id, draggedTour, {
+        tour_guide_id: null,
+        assistant_id: null,
+      })
       // 즉시 저장 대신 변경 누적 (해제)
       setPendingChanges(prev => ({
         ...prev,
         [draggedTour.id]: {
           ...(prev[draggedTour.id] || {}),
-          tour_guide_id: null,
-          assistant_id: null
+          ...unassignPatch,
         }
       }))
 
       // tours 상태에도 반영
-      setTours(prev => prev.map(t => t.id === draggedTour.id ? { ...t, tour_guide_id: null, assistant_id: null } : t))
+      setTours(prev => prev.map(t => t.id === draggedTour.id ? { ...t, ...unassignPatch } : t))
 
       // 미배정 목록에 추가 (이미 있지 않은 경우)
       setUnassignedTours(prev => {
         const exists = prev.some(t => t.id === draggedTour.id)
-        const updatedTour = { ...draggedTour, tour_guide_id: null, assistant_id: null }
+        const updatedTour = { ...draggedTour, ...unassignPatch }
         return exists ? prev.map(t => t.id === draggedTour.id ? updatedTour : t) : [...prev, updatedTour]
       })
       requestSaveAfterDragAssignment()
@@ -4439,16 +4468,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       } else if (role === 'assistant') {
         updateData.assistant_id = teamMemberId
       }
+      const patch = mergeStaffPatchWithAssignmentReset(tour.id, tour, updateData)
 
       setPendingChanges((prev) => ({
         ...prev,
         [tour.id]: {
           ...(prev[tour.id] || {}),
-          ...updateData,
+          ...patch,
         },
       }))
 
-      setTours((prev) => prev.map((t) => (t.id === tour.id ? { ...t, ...updateData } : t)))
+      setTours((prev) => prev.map((t) => (t.id === tour.id ? { ...t, ...patch } : t)))
 
       setUnassignedTours((prev) => {
         const exists = prev.some((t) => t.id === tour.id)
@@ -4456,7 +4486,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         return prev
           .map((t) => {
             if (t.id !== tour.id) return t
-            const updated = { ...t, ...updateData }
+            const updated = { ...t, ...patch }
             const needsGuide = !updated.tour_guide_id
             const needsAssistant = updated.team_type !== '1guide' && !updated.assistant_id
             return needsGuide || needsAssistant ? updated : null
@@ -4465,7 +4495,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       })
       requestSaveAfterDragAssignment()
     },
-    [requestSaveAfterDragAssignment],
+    [mergeStaffPatchWithAssignmentReset, requestSaveAfterDragAssignment],
   )
 
   // 가이드/어시스턴트 셀에 드롭
@@ -5580,36 +5610,31 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     (tourId: string, guideEmail: string | null) => {
       const tour = tours.find((t) => t.id === tourId)
       if (!tour) return
-      let next: Tour
+      const teamType = tour.team_type || ''
+      const rawPatch: Partial<Tour> =
+        guideEmail === null
+          ? { tour_guide_id: null, assistant_id: null }
+          : {
+              tour_guide_id: guideEmail,
+              ...(teamType === '1guide' ? { assistant_id: null } : {}),
+            }
+      const patch = mergeStaffPatchWithAssignmentReset(tourId, tour, rawPatch)
+      const next: Tour = { ...tour, ...patch }
+
+      setPendingChanges((prev) => ({
+        ...prev,
+        [tourId]: {
+          ...(prev[tourId] || {}),
+          ...patch,
+        },
+      }))
+
       if (guideEmail === null) {
-        next = { ...tour, tour_guide_id: null, assistant_id: null }
-        setPendingChanges((prev) => ({
-          ...prev,
-          [tourId]: {
-            ...(prev[tourId] || {}),
-            tour_guide_id: null,
-            assistant_id: null,
-          },
-        }))
         setUnassignedTours((prev) => {
           const exists = prev.some((t) => t.id === tourId)
           return exists ? prev.map((t) => (t.id === tourId ? next : t)) : [...prev, next]
         })
       } else {
-        const teamType = tour.team_type || ''
-        next = {
-          ...tour,
-          tour_guide_id: guideEmail,
-          ...(teamType === '1guide' ? { assistant_id: null } : {}),
-        }
-        setPendingChanges((prev) => ({
-          ...prev,
-          [tourId]: {
-            ...(prev[tourId] || {}),
-            tour_guide_id: guideEmail,
-            ...(teamType === '1guide' ? { assistant_id: null } : {}),
-          },
-        }))
         setUnassignedTours((prev) => {
           const exists = prev.some((t) => t.id === tourId)
           const needsGuide = !next.tour_guide_id
@@ -5623,17 +5648,20 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       setTours((prev) => prev.map((t) => (t.id === tourId ? next : t)))
       requestSaveAfterDragAssignment()
     },
-    [tours, requestSaveAfterDragAssignment],
+    [tours, mergeStaffPatchWithAssignmentReset, requestSaveAfterDragAssignment],
   )
 
   const applyGuideModalAssistantValue = useCallback(
     (tourId: string, assistantEmail: string | null) => {
       const tour = tours.find((t) => t.id === tourId)
       if (!tour || tour.team_type === '1guide') return
-      const next: Tour = { ...tour, assistant_id: assistantEmail }
+      const patch = mergeStaffPatchWithAssignmentReset(tourId, tour, {
+        assistant_id: assistantEmail,
+      })
+      const next: Tour = { ...tour, ...patch }
       setPendingChanges((prev) => ({
         ...prev,
-        [tourId]: { ...(prev[tourId] || {}), assistant_id: assistantEmail },
+        [tourId]: { ...(prev[tourId] || {}), ...patch },
       }))
       setTours((prev) => prev.map((t) => (t.id === tourId ? next : t)))
       setUnassignedTours((prev) => {
@@ -5647,7 +5675,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       })
       requestSaveAfterDragAssignment()
     },
-    [tours, requestSaveAfterDragAssignment],
+    [tours, mergeStaffPatchWithAssignmentReset, requestSaveAfterDragAssignment],
   )
 
   const applyGuideModalVehicleValue = useCallback(

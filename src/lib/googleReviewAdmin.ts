@@ -7,6 +7,7 @@ import {
   insertGoogleReviewChangeLog,
 } from '@/lib/googleReviewChangeLog'
 import { loadGoogleReviewTourStaffSummaries, linkGoogleReviewToTour, syncReviewProductFromTourIfUnclassified } from '@/lib/googleReviewTourLink'
+import { resolveProductInternalName } from '@/utils/reservationUtils'
 
 export type AdminGoogleReviewRow = {
   id: string
@@ -168,6 +169,87 @@ export async function listAdminGoogleReviews(input: {
   }
 }
 
+export async function getAdminGoogleReviewById(
+  operatorId: string,
+  reviewId: string
+): Promise<AdminGoogleReviewRow | null> {
+  if (!supabaseAdmin) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY is required')
+  }
+
+  const opId = resolveOperatorId(operatorId)
+
+  const { data: review, error } = await fromUntypedTable(supabaseAdmin, 'google_reviews')
+    .select(
+      'id, google_review_id, review_source, author_name, author_photo_url, rating, comment, review_reply, review_created_at, import_status, classification_method, classification_confidence, imported_at, exclude_staff_rating'
+    )
+    .eq('id', reviewId)
+    .eq('operator_id', opId)
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+  if (!review) return null
+
+  const row = review as {
+    id: string
+    google_review_id: string
+    review_source?: string | null
+    author_name: string | null
+    author_photo_url: string | null
+    rating: number | null
+    comment: string | null
+    review_reply: string | null
+    review_created_at: string | null
+    import_status: string
+    classification_method: string | null
+    classification_confidence: number | null
+    imported_at: string
+    exclude_staff_rating: boolean
+  }
+
+  const { data: productRow } = await fromUntypedTable(supabaseAdmin, 'review_products')
+    .select('product_id, products(name, name_ko, name_en)')
+    .eq('google_review_id', reviewId)
+    .eq('operator_id', opId)
+    .eq('is_primary', true)
+    .maybeSingle()
+
+  const product = productRow as {
+    product_id?: string | null
+    products?: { name?: string | null; name_ko?: string | null; name_en?: string | null } | null
+  } | null
+
+  const productId = product?.product_id ?? null
+  const productName = product?.products
+    ? resolveProductInternalName(product.products, productId)
+    : null
+
+  const tourStaffByReview = await loadGoogleReviewTourStaffSummaries([reviewId])
+
+  return mapRpcReviewRow(
+    {
+      id: row.id,
+      google_review_id: row.google_review_id,
+      review_source: row.review_source ?? 'google',
+      author_name: row.author_name,
+      author_photo_url: row.author_photo_url,
+      rating: row.rating,
+      comment: row.comment,
+      review_reply: row.review_reply,
+      review_created_at: row.review_created_at,
+      import_status: row.import_status,
+      classification_method: row.classification_method,
+      classification_confidence: row.classification_confidence,
+      imported_at: row.imported_at,
+      product_id: productId,
+      product_name: productName,
+      exclude_staff_rating: Boolean(row.exclude_staff_rating),
+      total_count: 1,
+    },
+    tourStaffByReview.get(reviewId)
+  )
+}
+
 export async function updateGoogleReviewStatus(input: {
   operatorId: string
   reviewId: string
@@ -305,6 +387,92 @@ export async function updateGoogleReviewStatus(input: {
       changedByEmail: input.updatedByEmail,
     })
   }
+}
+
+function chunkIds<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
+
+/** 투어 미연결 리뷰의 상품 분류를 모두 제거 */
+export async function clearReviewProductsWithoutTourLink(
+  operatorId?: string | null
+): Promise<{ productsRemoved: number; reviewsReset: number }> {
+  if (!supabaseAdmin) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY is required')
+  }
+
+  const operatorIdResolved = resolveOperatorId(operatorId)
+
+  const { data: tourLinks, error: tourLinkError } = await fromUntypedTable(
+    supabaseAdmin,
+    'google_review_tours'
+  )
+    .select('google_review_id')
+    .eq('operator_id', operatorIdResolved)
+
+  if (tourLinkError) throw new Error(tourLinkError.message)
+
+  const linkedReviewIds = new Set(
+    ((tourLinks ?? []) as Array<{ google_review_id: string }>).map((row) => row.google_review_id)
+  )
+
+  const { data: productRows, error: productFetchError } = await fromUntypedTable(
+    supabaseAdmin,
+    'review_products'
+  )
+    .select('id, google_review_id')
+    .eq('operator_id', operatorIdResolved)
+
+  if (productFetchError) throw new Error(productFetchError.message)
+
+  const productIdsToDelete = ((productRows ?? []) as Array<{ id: string; google_review_id: string }>)
+    .filter((row) => !linkedReviewIds.has(row.google_review_id))
+    .map((row) => row.id)
+
+  let productsRemoved = 0
+  for (const chunk of chunkIds(productIdsToDelete, 100)) {
+    const { error } = await fromUntypedTable(supabaseAdmin, 'review_products')
+      .delete()
+      .in('id', chunk)
+    if (error) throw new Error(error.message)
+    productsRemoved += chunk.length
+  }
+
+  const { data: reviewRows, error: reviewFetchError } = await fromUntypedTable(
+    supabaseAdmin,
+    'google_reviews'
+  )
+    .select('id')
+    .eq('operator_id', operatorIdResolved)
+
+  if (reviewFetchError) throw new Error(reviewFetchError.message)
+
+  const reviewIdsToReset = ((reviewRows ?? []) as Array<{ id: string }>)
+    .filter((row) => !linkedReviewIds.has(row.id))
+    .map((row) => row.id)
+
+  const now = new Date().toISOString()
+  let reviewsReset = 0
+  for (const chunk of chunkIds(reviewIdsToReset, 100)) {
+    const { error } = await fromUntypedTable(supabaseAdmin, 'google_reviews')
+      .update({
+        classification_method: null,
+        classification_confidence: null,
+        classified_at: null,
+        classified_by: null,
+        updated_at: now,
+      } as never)
+      .in('id', chunk)
+      .eq('operator_id', operatorIdResolved)
+    if (error) throw new Error(error.message)
+    reviewsReset += chunk.length
+  }
+
+  return { productsRemoved, reviewsReset }
 }
 
 export async function bulkUpdateGoogleReviewStatus(input: {
