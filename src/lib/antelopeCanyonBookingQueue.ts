@@ -11,7 +11,12 @@ import {
 import { isTicketBookingPendingRequestState } from '@/lib/ticketBookingWorkflow'
 import { filterTicketBookingsExcludedFromMainUi } from '@/lib/ticketBookingSoftDelete'
 import type { TourChoiceCounts } from '@/lib/tourChoiceCounts'
-import { canonicalReservationIdKey, normalizeReservationIds } from '@/utils/tourUtils'
+import { tourProductRequiresTicketBookingCount } from '@/lib/ticketBookingCountTourProducts'
+import {
+  canonicalReservationIdKey,
+  isReservationCancelledStatus,
+  normalizeReservationIds,
+} from '@/utils/tourUtils'
 import { isTourCancelled, isTourDeleted } from '@/utils/tourStatusUtils'
 import { ANTELOPE_CANCEL_DUE_CHECKIN_OFFSET_DAYS } from '@/lib/antelopeCanyonBookingTodo'
 
@@ -54,6 +59,8 @@ export type AntelopeCanyonMismatchTourRow = {
   id: string
   tour_date: string
   product_name: string
+  /** 일별 합계 행에서 투어 상세 링크용 */
+  primary_tour_id?: string | null
   tour_people: number
   ticket_ea: number
   ticket_ea_current: number
@@ -130,13 +137,11 @@ export function computeTourAssignedPeople(
   }
   if (assignedCanon.size === 0) return 0
 
-  const st = (s: string | null | undefined) => (s || '').toLowerCase().trim()
   return reservations.reduce((sum, r) => {
     if (String(r.product_id) !== String(productId)) return sum
     const rd = r.tour_date ? String(r.tour_date).trim().slice(0, 10) : ''
     if (rd !== tourDate) return sum
-    const ss = st(r.status)
-    if (ss !== 'confirmed' && ss !== 'recruiting') return sum
+    if (isReservationCancelledStatus(r.status)) return sum
     if (!assignedCanon.has(canonicalReservationIdKey(String(r.id)))) return sum
     return sum + (Number(r.total_people) || 0)
   }, 0)
@@ -186,17 +191,95 @@ function addCalendarDaysYmd(ymd: string, delta: number): string {
   return `${y}-${mo}-${day}`
 }
 
+function tourYmd(tour: AntelopeCanyonTourLite): string {
+  return String(tour.tour_date || '').trim().slice(0, 10)
+}
+
+function ticketCheckInYmd(ticket: AntelopeCanyonTicketLite): string {
+  return String(ticket.check_in_date || '').trim().slice(0, 10)
+}
+
+function isActiveTicketBookingTour(tour: AntelopeCanyonTourLite): boolean {
+  return !isTourDeleted(tour.tour_status) && !isTourCancelled(tour.tour_status)
+}
+
+/** 입장권 달력(투어 N명 / 예약 M개)과 동일: 현재 ea·변경·대기 포함 */
+function hasTicketHeadcountMismatchSignals(
+  tourPeople: number,
+  ticketEaCurrent: number,
+  ticketEaEffective: number,
+  hasPendingChange: boolean,
+  hasVendorPending: boolean
+): boolean {
+  if (hasPendingChange || hasVendorPending) return true
+  if (tourPeople !== ticketEaCurrent) return true
+  if (tourPeople !== ticketEaEffective) return true
+  return false
+}
+
+function ticketCountsForMismatchDay(
+  ticket: AntelopeCanyonTicketLite,
+  toursById: Map<string, AntelopeCanyonTourLite>
+): boolean {
+  if (isAntelopeCanyonTicketBooking(ticket)) return true
+  const tourId = String(ticket.tour_id || '').trim()
+  if (!tourId) return false
+  const tour = toursById.get(tourId)
+  return tour != null && tourProductRequiresTicketBookingCount(tour)
+}
+
+function dayMismatchProductLabel(toursOnDay: AntelopeCanyonTourLite[]): string {
+  if (toursOnDay.length === 1) return productDisplayName(toursOnDay[0]!)
+  const names = [...new Set(toursOnDay.map((t) => productDisplayName(t)))]
+  if (names.length <= 2) return names.join(' · ')
+  return `${names[0]} · +${names.length - 1}`
+}
+
+function collectYmdRange(start: string, end: string): string[] {
+  const out: string[] = []
+  let cursor = start
+  while (cursor <= end) {
+    out.push(cursor)
+    cursor = addCalendarDaysYmd(cursor, 1)
+  }
+  return out
+}
+
+function perTourRowsAlreadyExplainDayMismatch(
+  date: string,
+  tourPeople: number,
+  ticketEaCurrent: number,
+  existingRows: AntelopeCanyonMismatchTourRow[]
+): boolean {
+  const onDate = existingRows.filter(
+    (row) => String(row.tour_date || '').trim().slice(0, 10) === date
+  )
+  if (!onDate.length) return false
+  const accountedPeople = onDate.reduce((sum, row) => sum + row.tour_people, 0)
+  const accountedEa = onDate.reduce((sum, row) => sum + row.ticket_ea_current, 0)
+  return accountedPeople === tourPeople && accountedEa === ticketEaCurrent
+}
+
 export function buildAntelopeCanyonMismatchRows(input: {
   tours: AntelopeCanyonTourLite[]
   reservations: ReservationLite[]
   ticketBookings: AntelopeCanyonTicketLite[]
+  dateStart?: string
+  dateEnd?: string
 }): AntelopeCanyonMismatchTourRow[] {
   const { tours, reservations, ticketBookings } = input
   const rows: AntelopeCanyonMismatchTourRow[] = []
-
+  const toursById = new Map<string, AntelopeCanyonTourLite>()
   for (const tour of tours) {
-    if (isTourDeleted(tour.tour_status) || isTourCancelled(tour.tour_status)) continue
+    if (!tour?.id) continue
+    toursById.set(tour.id, tour)
+  }
 
+  const eligibleTours = tours.filter(
+    (tour) => isActiveTicketBookingTour(tour) && tourProductRequiresTicketBookingCount(tour)
+  )
+
+  for (const tour of eligibleTours) {
     const tourTickets = ticketsForTour(tour.id, ticketBookings)
     if (!tourTickets.length) continue
 
@@ -207,8 +290,26 @@ export function buildAntelopeCanyonMismatchRows(input: {
     const hasVendorPending = tourHasVendorPendingTickets(tourTickets)
     const ticketCounts = aggregateTicketEaByCanyon(tourTickets)
 
-    if (tourPeople <= 0 && ticketEaEffective <= 0 && !hasPendingChange && !hasVendorPending) continue
-    if (tourPeople === ticketEaEffective && !hasPendingChange && !hasVendorPending) continue
+    if (
+      tourPeople <= 0 &&
+      ticketEaCurrent <= 0 &&
+      ticketEaEffective <= 0 &&
+      !hasPendingChange &&
+      !hasVendorPending
+    ) {
+      continue
+    }
+    if (
+      !hasTicketHeadcountMismatchSignals(
+        tourPeople,
+        ticketEaCurrent,
+        ticketEaEffective,
+        hasPendingChange,
+        hasVendorPending
+      )
+    ) {
+      continue
+    }
 
     rows.push({
       id: tour.id,
@@ -222,6 +323,71 @@ export function buildAntelopeCanyonMismatchRows(input: {
       has_vendor_pending: hasVendorPending,
       tickets: tourTickets,
     })
+  }
+
+  const dateStart = input.dateStart || ''
+  const dateEnd = input.dateEnd || ''
+  if (dateStart && dateEnd && dateStart <= dateEnd) {
+    for (const date of collectYmdRange(dateStart, dateEnd)) {
+      const toursStarting = eligibleTours.filter((tour) => tourYmd(tour) === date)
+      const tourPeople = toursStarting.reduce(
+        (sum, tour) => sum + computeTourAssignedPeople(tour, reservations),
+        0
+      )
+
+      const dayTickets = activeTickets(ticketBookings).filter(
+        (ticket) =>
+          ticketCheckInYmd(ticket) === date && ticketCountsForMismatchDay(ticket, toursById)
+      )
+
+      const ticketEaEffective = sumEffectiveTicketEa(dayTickets)
+      const ticketEaCurrent = sumCurrentTicketEa(dayTickets)
+      const hasPendingChange = tourHasPendingTicketChange(dayTickets)
+      const hasVendorPending = tourHasVendorPendingTickets(dayTickets)
+
+      if (
+        !hasTicketHeadcountMismatchSignals(
+          tourPeople,
+          ticketEaCurrent,
+          ticketEaEffective,
+          hasPendingChange,
+          hasVendorPending
+        )
+      ) {
+        continue
+      }
+
+      if (
+        rows.some(
+          (row) =>
+            !row.id.startsWith('day::') &&
+            String(row.tour_date || '').trim().slice(0, 10) === date
+        ) &&
+        !dayTickets.some((ticket) => !String(ticket.tour_id || '').trim())
+      ) {
+        continue
+      }
+
+      if (perTourRowsAlreadyExplainDayMismatch(date, tourPeople, ticketEaCurrent, rows)) {
+        continue
+      }
+
+      rows.push({
+        id: `day::${date}`,
+        tour_date: date,
+        product_name: toursStarting.length
+          ? dayMismatchProductLabel(toursStarting)
+          : date,
+        primary_tour_id: toursStarting[0]?.id ?? dayTickets.find((t) => t.tour_id)?.tour_id ?? null,
+        tour_people: tourPeople,
+        ticket_ea: ticketEaEffective,
+        ticket_ea_current: ticketEaCurrent,
+        ticket_counts: aggregateTicketEaByCanyon(dayTickets),
+        has_pending_change: hasPendingChange,
+        has_vendor_pending: hasVendorPending,
+        tickets: dayTickets,
+      })
+    }
   }
 
   return rows.sort(

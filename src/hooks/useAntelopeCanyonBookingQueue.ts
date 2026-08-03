@@ -103,10 +103,9 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
     }
 
     setLoading(true)
-    const { start, end } = dateRange
 
     try {
-      const cancelDueEnd = cancelDueCheckInYmd
+      const { start, end } = dateRange
 
       const [toursRes, ticketRes] = await Promise.all([
         supabase
@@ -119,8 +118,7 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
           .from('ticket_bookings')
           .select(TICKET_SELECT)
           .gte('check_in_date', start)
-          .lte('check_in_date', cancelDueEnd)
-          .not('tour_id', 'is', null),
+          .lte('check_in_date', end),
       ])
 
       if (toursRes.error) throw toursRes.error
@@ -139,7 +137,7 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
         : start
       const reservationDateEnd = tourDates.length
         ? tourDates.reduce((max, d) => (d > max ? d : max), tourDates[0]!)
-        : cancelDueEnd
+        : end
 
       const { data: reservationsData, error: reservationsErr } = await supabase
         .from('reservations')
@@ -158,6 +156,8 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
           tours,
           reservations,
           ticketBookings: allTickets,
+          dateStart: start,
+          dateEnd: end,
         })
       )
 

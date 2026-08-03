@@ -628,15 +628,15 @@ export function AntelopeCanyonBookingPanel({
 
                               <span className="inline-flex items-center gap-0.5 rounded border border-red-200 bg-red-50 px-1 py-0.5 text-[9px] font-medium text-red-800">
                                 <AlertTriangle className="h-3 w-3" aria-hidden />
-                                {row.has_pending_change && row.tour_people === row.ticket_ea
+                                {row.has_pending_change && row.tour_people === row.ticket_ea_current
                                   ? isKo
                                     ? '변경 요청 확인'
                                     : 'Review change'
-                                  : row.has_vendor_pending && row.tour_people === row.ticket_ea
+                                  : row.has_vendor_pending && row.tour_people === row.ticket_ea_current
                                     ? isKo
                                       ? '벤더 응답 대기'
                                       : 'Vendor pending'
-                                    : `${row.tour_people} ≠ ${row.ticket_ea}`}
+                                    : `${row.tour_people} ≠ ${row.ticket_ea_current}`}
                               </span>
 
                             </div>
@@ -645,13 +645,15 @@ export function AntelopeCanyonBookingPanel({
 
                           <div className="flex shrink-0 flex-col gap-0.5">
 
-                            {onOpenTourDetail ? (
+                            {onOpenTourDetail && (row.primary_tour_id || !row.id.startsWith('day::')) ? (
 
                               <button
 
                                 type="button"
 
-                                onClick={() => onOpenTourDetail(row.id)}
+                                onClick={() =>
+                                  onOpenTourDetail(row.primary_tour_id ?? row.id)
+                                }
 
                                 className="inline-flex h-6 w-6 items-center justify-center rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
 
