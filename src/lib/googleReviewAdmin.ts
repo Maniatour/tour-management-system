@@ -115,6 +115,7 @@ export async function listAdminGoogleReviews(input: {
   productId?: string | null
   unclassifiedOnly?: boolean
   reviewSource?: string | null
+  sort?: 'imported_at' | 'review_created_at' | null
   page?: number
   limit?: number
 }): Promise<{ reviews: AdminGoogleReviewRow[]; total: number }> {
@@ -139,6 +140,7 @@ export async function listAdminGoogleReviews(input: {
     p_page: page,
     p_limit: limit,
     p_review_source: input.reviewSource || null,
+    p_sort: input.sort || null,
   })
 
   if (error) {
@@ -163,8 +165,38 @@ export async function listAdminGoogleReviews(input: {
   const reviewIds = rows.map((row) => row.id)
   const tourStaffByReview = await loadGoogleReviewTourStaffSummaries(reviewIds)
 
+  const patchedRows = await Promise.all(
+    rows.map(async (row) => {
+      if (row.product_id) return row
+
+      const tourId = tourStaffByReview.get(row.id)?.tour?.tourId
+      if (!tourId) return row
+
+      try {
+        const productId = await syncReviewProductFromTourIfUnclassified({
+          operatorId,
+          reviewId: row.id,
+          tourId,
+          updatedByEmail: 'system',
+        })
+        if (!productId) return row
+
+        return {
+          ...row,
+          product_id: productId,
+          product_name:
+            tourStaffByReview.get(row.id)?.tour?.productName ?? row.product_name,
+          classification_method: row.classification_method ?? 'tour_link',
+        }
+      } catch (repairError) {
+        console.error('[listAdminGoogleReviews] repair product from tour failed', repairError)
+        return row
+      }
+    })
+  )
+
   return {
-    reviews: rows.map((row) => mapRpcReviewRow(row, tourStaffByReview.get(row.id))),
+    reviews: patchedRows.map((row) => mapRpcReviewRow(row, tourStaffByReview.get(row.id))),
     total,
   }
 }

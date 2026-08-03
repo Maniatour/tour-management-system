@@ -4,7 +4,7 @@ import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { postgrestIlikeQuoted } from '@/lib/postgrestSearchUtils'
 import { resolveProductInternalName } from '@/utils/reservationUtils'
 import { toLasVegasDateKey } from '@/lib/dailyReport/dateUtils'
-import { isTourCancelled } from '@/utils/tourStatusUtils'
+import { isTourCancelled, isTourConfirmedStatus, isTourStatusForVehicleScheduleDayCount } from '@/utils/tourStatusUtils'
 import { isReservationCancelledStatus, normalizeReservationIds } from '@/utils/tourUtils'
 import {
   findMentionedGuides,
@@ -918,6 +918,13 @@ export async function linkGoogleReviewToTour(input: {
     ...(input.linkedByEmail ? { createdByEmail: input.linkedByEmail } : {}),
     preserveManual: true,
   })
+
+  await syncReviewProductFromTourIfUnclassified({
+    operatorId,
+    reviewId: input.reviewId,
+    tourId: input.tourId,
+    updatedByEmail: input.linkedByEmail ?? 'system',
+  })
 }
 
 /** 투어 연결 시 리뷰 primary 상품을 해당 투어의 product_id로 동기화 */
@@ -1313,39 +1320,210 @@ export async function searchToursForGoogleReviewLink(input: {
   )
 }
 
-export type ReservationReviewLookup = {
-  reservationId: string
-  channelRn: string | null
-  tourId: string | null
-  tourDate: string | null
-  productName: string | null
-  customerName: string | null
-}
-
 type ReservationLookupRow = {
   id: string
   channel_rn: string | null
   tour_id: string | null
   tour_date: string | null
   product_id: string | null
-  customers?: { name?: string | null } | null
-  products: {
-    name?: string | null
-    name_ko?: string | null
-    name_en?: string | null
-  } | null
+  customer_id: string | null
 }
 
-function mapReservationLookupRow(row: ReservationLookupRow): ReservationReviewLookup {
-  const productName = resolveProductInternalName(row.products, row.product_id)
+type ProductLookupRow = {
+  name?: string | null
+  name_ko?: string | null
+  name_en?: string | null
+}
+
+async function loadProductForReservationLookup(
+  operatorId: string,
+  productId: string | null
+): Promise<ProductLookupRow | null> {
+  if (!supabaseAdmin || !productId?.trim()) return null
+
+  const { data, error } = await supabaseAdmin
+    .from('products')
+    .select('name, name_ko, name_en')
+    .eq('operator_id', operatorId)
+    .eq('id', productId.trim())
+    .maybeSingle()
+
+  if (error) {
+    console.error('[googleReviewTourLink] loadProductForReservationLookup failed', error.message)
+    return null
+  }
+
+  return (data as ProductLookupRow | null) ?? null
+}
+
+async function lookupReservationRowByReference(
+  operatorId: string,
+  reference: string
+): Promise<ReservationLookupRow | null> {
+  if (!supabaseAdmin) return null
+
+  const db = supabaseAdmin
+  const select = 'id, channel_rn, tour_id, tour_date, product_id, customer_id'
+
+  const isUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reference)
+
+  const baseQuery = () =>
+    fromUntypedTable(db, 'reservations')
+      .select(select)
+      .eq('operator_id', operatorId)
+      .neq('status', 'deleted')
+      .limit(1)
+
+  if (isUuid) {
+    const { data, error } = await baseQuery()
+      .or(`channel_rn.eq.${reference},id.eq.${reference}`)
+      .maybeSingle()
+    if (error) throw new Error(error.message)
+    if (data) return data as ReservationLookupRow
+    return null
+  }
+
+  const { data: exact, error: exactError } = await baseQuery()
+    .eq('channel_rn', reference)
+    .maybeSingle()
+  if (exactError) throw new Error(exactError.message)
+  if (exact) return exact as ReservationLookupRow
+
+  const { data: fuzzy, error: fuzzyError } = await baseQuery()
+    .ilike('channel_rn', reference)
+    .maybeSingle()
+  if (fuzzyError) throw new Error(fuzzyError.message)
+  return (fuzzy as ReservationLookupRow | null) ?? null
+}
+
+async function loadTourCandidatesForReservation(input: {
+  operatorId: string
+  reservationId: string
+  tourIdFromReservation: string | null
+}): Promise<TourSearchRow[]> {
+  if (!supabaseAdmin) return []
+
+  const byId = new Map<string, TourSearchRow>()
+
+  const { data: overlapRows, error: overlapError } = await supabaseAdmin
+    .from('tours')
+    .select(TOUR_SEARCH_SELECT)
+    .eq('operator_id', input.operatorId)
+    .overlaps('reservation_ids', [input.reservationId])
+    .order('tour_date', { ascending: false })
+    .limit(30)
+
+  if (overlapError) {
+    console.error('[googleReviewTourLink] loadTourCandidatesForReservation failed', overlapError.message)
+  } else {
+    for (const row of (overlapRows ?? []) as TourSearchRow[]) {
+      byId.set(row.id, row)
+    }
+  }
+
+  const tourIdFromReservation = input.tourIdFromReservation?.trim()
+  if (tourIdFromReservation && !byId.has(tourIdFromReservation)) {
+    const extra = await fetchTourSearchRowById(input.operatorId, tourIdFromReservation)
+    if (extra) {
+      byId.set(extra.id, extra)
+    }
+  }
+
+  return [...byId.values()]
+}
+
+function rankTourForReservationLink(
+  tour: TourSearchRow,
+  prefs: { tourDate: string | null; productId: string | null }
+): number {
+  if (isTourCancelled(tour.tour_status) || !hasGuideAssigned(tour)) {
+    return Number.NEGATIVE_INFINITY
+  }
+
+  let score = 0
+  if (isTourConfirmedStatus(tour.tour_status)) {
+    score += 100
+  } else if (isTourStatusForVehicleScheduleDayCount(tour.tour_status)) {
+    score += 50
+  } else {
+    score += 10
+  }
+
+  if (prefs.productId && tour.product_id === prefs.productId) {
+    score += 20
+  }
+  if (prefs.tourDate && tour.tour_date === prefs.tourDate) {
+    score += 15
+  }
+
+  return score
+}
+
+function pickBestTourForReservation(
+  rows: TourSearchRow[],
+  prefs: { tourDate: string | null; productId: string | null }
+): TourSearchRow | null {
+  const selectable = filterSelectableTourRows(rows)
+  if (!selectable.length) return null
+
+  const ranked = [...selectable].sort((a, b) => {
+    const scoreDiff =
+      rankTourForReservationLink(b, prefs) - rankTourForReservationLink(a, prefs)
+    if (scoreDiff !== 0) return scoreDiff
+    return b.tour_date.localeCompare(a.tour_date)
+  })
+
+  return ranked[0] ?? null
+}
+
+async function findBestTourForReservation(input: {
+  operatorId: string
+  reservationId: string
+  tourIdFromReservation: string | null
+  tourDate: string | null
+  productId: string | null
+}): Promise<TourSearchRow | null> {
+  const candidates = await loadTourCandidatesForReservation({
+    operatorId: input.operatorId,
+    reservationId: input.reservationId,
+    tourIdFromReservation: input.tourIdFromReservation,
+  })
+
+  return pickBestTourForReservation(candidates, {
+    tourDate: input.tourDate,
+    productId: input.productId,
+  })
+}
+
+export type ReservationReviewLookup = {
+  reservationId: string
+  channelRn: string | null
+  tourId: string | null
+  tourDate: string | null
+  productId: string | null
+  productName: string | null
+  customerName: string | null
+}
+
+function mapReservationLookupRow(
+  row: ReservationLookupRow,
+  product: ProductLookupRow | null,
+  customerName: string | null,
+  tourId: string | null,
+  productNameOverride?: string | null
+): ReservationReviewLookup {
+  const productName =
+    productNameOverride ?? resolveProductInternalName(product, row.product_id) ?? null
 
   return {
     reservationId: row.id,
     channelRn: row.channel_rn,
-    tourId: row.tour_id,
+    tourId,
     tourDate: row.tour_date,
-    productName: productName ?? null,
-    customerName: row.customers?.name?.trim() || null,
+    productId: row.product_id ?? null,
+    productName,
+    customerName,
   }
 }
 
@@ -1361,40 +1539,66 @@ export async function lookupReservationForReviewLink(input: {
   if (!reference) return null
 
   const operatorId = resolveOperatorId(input.operatorId)
-  const select =
-    'id, channel_rn, tour_id, tour_date, product_id, products(name, name_ko, name_en), customers(name)'
+  const row = await lookupReservationRowByReference(operatorId, reference)
+  if (!row) return null
 
-  const byChannelRn = await fromUntypedTable(supabaseAdmin, 'reservations')
-    .select(select)
-    .eq('operator_id', operatorId)
-    .eq('channel_rn', reference)
-    .neq('status', 'deleted')
-    .limit(1)
-    .maybeSingle()
+  const namesByReservationId = await loadReservationRepresentativeNames(operatorId, [row.id])
+  const customerName = namesByReservationId.get(row.id) ?? null
+  const product = await loadProductForReservationLookup(operatorId, row.product_id)
 
-  if (byChannelRn.error) {
-    throw new Error(byChannelRn.error.message)
+  const bestTour = await findBestTourForReservation({
+    operatorId,
+    reservationId: row.id,
+    tourIdFromReservation: row.tour_id,
+    tourDate: row.tour_date,
+    productId: row.product_id,
+  })
+
+  const tourId = bestTour?.id ?? null
+  let tourDate = row.tour_date
+  let productId = row.product_id ?? null
+  let productName = resolveProductInternalName(product, row.product_id) ?? null
+
+  if (bestTour) {
+    tourDate = bestTour.tour_date ?? tourDate
+    productId = bestTour.product_id ?? productId
+    productName =
+      resolveProductInternalName(bestTour.products, bestTour.product_id) ?? productName
   }
 
-  if (byChannelRn.data) {
-    return mapReservationLookupRow(byChannelRn.data as ReservationLookupRow)
+  return mapReservationLookupRow(
+    { ...row, tour_date: tourDate, product_id: productId },
+    product,
+    customerName,
+    tourId,
+    productName
+  )
+}
+
+export type ReservationReviewLookupResult = {
+  reservation: ReservationReviewLookup | null
+  suggestedTour: GoogleReviewTourSearchItem | null
+}
+
+export async function lookupReservationForReviewLinkWithTour(input: {
+  operatorId: string
+  reference: string
+}): Promise<ReservationReviewLookupResult> {
+  const operatorId = resolveOperatorId(input.operatorId)
+  const reservation = await lookupReservationForReviewLink({
+    operatorId,
+    reference: input.reference,
+  })
+
+  if (!reservation?.tourId || !supabaseAdmin) {
+    return { reservation, suggestedTour: null }
   }
 
-  const byId = await fromUntypedTable(supabaseAdmin, 'reservations')
-    .select(select)
-    .eq('operator_id', operatorId)
-    .eq('id', reference)
-    .neq('status', 'deleted')
-    .limit(1)
-    .maybeSingle()
-
-  if (byId.error) {
-    throw new Error(byId.error.message)
+  const tourRow = await fetchTourSearchRowById(operatorId, reservation.tourId)
+  if (tourRow && filterSelectableTourRows([tourRow]).length > 0) {
+    const items = await mapTourRowsToSearchItems(operatorId, [tourRow])
+    return { reservation, suggestedTour: items[0] ?? null }
   }
 
-  if (byId.data) {
-    return mapReservationLookupRow(byId.data as ReservationLookupRow)
-  }
-
-  return null
+  return { reservation, suggestedTour: null }
 }

@@ -45,7 +45,10 @@ import type {
 } from '@/lib/pricingEngine/analyzeReservation'
 import { analyzeReservationPricingEngine } from '@/lib/pricingEngine/analyzeReservation'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
-import type { BalanceChannelRowInput } from '@/utils/balanceChannelRevenue'
+import {
+  resolveReservationCommissionPercent,
+  type BalanceChannelRowInput,
+} from '@/utils/balanceChannelRevenue'
 
 function fmtUsd(n: number | null | undefined): string {
   if (n == null || Number.isNaN(Number(n))) return '—'
@@ -460,7 +463,7 @@ export default function PricingInfoModal({
         ? supabase
             .from('channels')
             .select(
-              'pricing_type, has_not_included_price, not_included_type, not_included_price, type, category, name, favicon_url'
+              'pricing_type, has_not_included_price, not_included_type, not_included_price, type, category, name, favicon_url, commission_percent, commission'
             )
             .eq('id', reservation.channelId)
             .single()
@@ -601,16 +604,14 @@ export default function PricingInfoModal({
         data.coupon_discount = -data.coupon_discount
       }
 
-      // reservation_pricing에 채널 수수료 $ 가 있으면 채널 수수료 % 역산 (기존 데이터는 $ 만 있는 경우 대비, channels % 는 후순위)
-      const commissionAmount = data.commission_amount ?? 0
-      const commissionPercentFromData = data.commission_percent ?? 0
-      let commissionPercentToUse = commissionPercentFromData
-      if (commissionAmount > 0) {
-        const base = (data.product_price_total ?? 0) || (data.subtotal ?? 0) || 0
-        if (base > 0) {
-          commissionPercentToUse = (commissionAmount / base) * 100
-        }
-      }
+      const commissionPercentToUse = resolveReservationCommissionPercent({
+        storedPercent: data.commission_percent,
+        commissionAmount: data.commission_amount,
+        commissionBasePrice: data.commission_base_price,
+        productPriceTotal: data.product_price_total,
+        subtotal: data.subtotal,
+        channel: channelData,
+      })
       
       // DB 행에서 상품 단가 직접 읽기 (snake_case). Postgres numeric은 문자열로 올 수 있어 toNum 사용
       const raw = data as Record<string, unknown>

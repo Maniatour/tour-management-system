@@ -15,11 +15,50 @@ export type CapacityOptionLike = {
   option_name_en?: string | null
 }
 
-/** 옵션에 유효한 수용 인원이 있는지 */
-export function getOptionCapacity(option: { capacity?: number | null }): number | null {
+function parseCapacityFromOptionName(option: {
+  option_name?: string | null
+  option_name_ko?: string | null
+  option_name_en?: string | null
+}): number | null {
+  const names = [option.option_name_ko, option.option_name, option.option_name_en].filter(
+    Boolean
+  ) as string[]
+
+  for (const name of names) {
+    const koMatch = name.match(/(\d+)\s*인\s*1\s*실|(\d+)\s*인\s*1실|(\d+)\s*인실/)
+    if (koMatch) {
+      const n = parseInt(koMatch[1] || koMatch[2] || koMatch[3] || '', 10)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+
+    const lower = name.toLowerCase()
+    if (/\bsingle\b/.test(lower)) return 1
+    if (/\bdouble\b/.test(lower)) return 2
+    if (/\btriple\b/.test(lower)) return 3
+    if (/\bquad\b/.test(lower)) return 4
+
+    const enMatch = lower.match(/(\d+)\s*(?:person|people|pax)\b/)
+    if (enMatch) {
+      const n = parseInt(enMatch[1], 10)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+  }
+
+  return null
+}
+
+/** 옵션에 유효한 수용 인원이 있는지 (DB capacity 또는 옵션명에서 추론) */
+export function getOptionCapacity(option: {
+  capacity?: number | null
+  option_name?: string | null
+  option_name_ko?: string | null
+  option_name_en?: string | null
+}): number | null {
   const cap = option.capacity
-  if (typeof cap !== 'number' || !Number.isFinite(cap) || cap <= 0) return null
-  return Math.floor(cap)
+  if (typeof cap === 'number' && Number.isFinite(cap) && cap > 0) {
+    return Math.floor(cap)
+  }
+  return parseCapacityFromOptionName(option)
 }
 
 function getChoiceLabelLower(
@@ -82,7 +121,12 @@ export function looksLikePeopleFeeChoiceGroup(
  * capacity가 2 이상이거나 옵션별 capacity가 서로 다르면 true.
  */
 export function hasVariedOrMultiCapacity(
-  options: Array<{ capacity?: number | null }>
+  options: Array<{
+    capacity?: number | null
+    option_name?: string | null
+    option_name_ko?: string | null
+    option_name_en?: string | null
+  }>
 ): boolean {
   const caps = options
     .map((option) => getOptionCapacity(option))
@@ -242,7 +286,20 @@ export function getMaxQuantityForOption(
   return Math.floor(remaining / cap)
 }
 
-/** 인원/패스 옵션 최대 수량 */
+function getOptionPeopleContribution(
+  option: {
+    option_name?: string | null
+    option_name_ko?: string | null
+    option_name_en?: string | null
+  },
+  quantity: number
+): number {
+  if (quantity <= 0) return 0
+  if (isPassCoverQuantityOption(option)) return quantity * 4
+  return quantity
+}
+
+/** 인원/패스 옵션 최대 수량 (그룹 내 다른 옵션 선택을 반영) */
 export function getMaxPeopleQuantityForOption(
   option: {
     option_id: string
@@ -250,13 +307,85 @@ export function getMaxPeopleQuantityForOption(
     option_name_ko?: string | null
     option_name_en?: string | null
   },
+  options: Array<{
+    option_id: string
+    option_name?: string | null
+    option_name_ko?: string | null
+    option_name_en?: string | null
+  }>,
+  quantities: Record<string, number>,
   partySize: number
 ): number {
   if (partySize <= 0) return 0
+
+  const currentQty = quantities[option.option_id] ?? 0
+  const coverageWithout =
+    getPeopleCoverage(options, quantities) - getOptionPeopleContribution(option, currentQty)
+  const remaining = partySize - coverageWithout
+
+  if (remaining <= 0) return currentQty
+
   if (isPassCoverQuantityOption(option)) {
-    return Math.max(1, Math.ceil(partySize / 4))
+    const maxPasses = Math.max(1, Math.ceil(partySize / 4))
+    const additionalPasses = Math.ceil(remaining / 4)
+    return Math.min(maxPasses, currentQty + additionalPasses)
   }
-  return partySize
+
+  return Math.min(partySize, currentQty + remaining)
+}
+
+export function isPeopleCoverageOver(
+  options: Array<{
+    option_id: string
+    option_name?: string | null
+    option_name_ko?: string | null
+    option_name_en?: string | null
+  }>,
+  quantities: Record<string, number>,
+  partySize: number
+): boolean {
+  if (partySize <= 0) return false
+  return getPeopleCoverage(options, quantities) > partySize
+}
+
+/** 인원 초과 시 수량을 예약 인원 이하로 줄임 */
+export function clampPeopleQuantitiesForPartySize(
+  options: Array<{
+    option_id: string
+    option_name?: string | null
+    option_name_ko?: string | null
+    option_name_en?: string | null
+  }>,
+  quantities: Record<string, number>,
+  partySize: number
+): Record<string, number> {
+  if (partySize <= 0) return {}
+
+  let coverage = getPeopleCoverage(options, quantities)
+  if (coverage <= partySize) return quantities
+
+  const next = { ...quantities }
+  const sortedOptionIds = options
+    .map((option) => option.option_id)
+    .sort((a, b) => (next[b] ?? 0) - (next[a] ?? 0))
+
+  for (const optionId of sortedOptionIds) {
+    if (coverage <= partySize) break
+    const option = options.find((item) => item.option_id === optionId)
+    if (!option) continue
+
+    const step = isPassCoverQuantityOption(option) ? 4 : 1
+    while ((next[optionId] ?? 0) > 0 && coverage > partySize) {
+      next[optionId] = (next[optionId] ?? 0) - 1
+      coverage -= step
+    }
+  }
+
+  const result: Record<string, number> = {}
+  for (const [id, qty] of Object.entries(next)) {
+    if (qty > 0) result[id] = qty
+  }
+  return result
 }
 
 export function isCapacityCoverageExact(

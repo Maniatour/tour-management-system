@@ -154,6 +154,7 @@ import {
   resolveCommissionGrossForPricingSave,
   pickFiniteNumber,
 } from '@/utils/channelSettlement'
+import { resolveReservationCommissionPercent } from '@/utils/balanceChannelRevenue'
 import {
   isReturnedPaymentStatus,
   summarizePaymentRecordsForBalance,
@@ -3738,24 +3739,19 @@ export default function ReservationForm({
           })
           console.log('기존 가격 정보 사용:', existingPricing)
 
-          // reservation_pricing에 commission_percent가 있으면 그대로 사용(계산하지 않음). 없을 때만 $ 기준 역산
+          // reservation_pricing 저장 % 우선 → 채널 마스터 % → 없을 때만 $ 역산
           const commissionAmount = (existingPricing as any).commission_amount != null && (existingPricing as any).commission_amount !== ''
             ? Number((existingPricing as any).commission_amount)
             : 0
-          const dbCommissionPercent = (existingPricing as any).commission_percent != null && (existingPricing as any).commission_percent !== ''
-            ? Number((existingPricing as any).commission_percent)
-            : null
-          let commissionPercentToUse: number
-          if (dbCommissionPercent !== null) {
-            // DB에 commission_percent가 있으면 그대로 사용 (절대 역산으로 덮어쓰지 않음)
-            commissionPercentToUse = dbCommissionPercent
-          } else if (commissionAmount > 0) {
-            const base = Number((existingPricing as any).product_price_total) || Number((existingPricing as any).subtotal) || 0
-            commissionPercentToUse = base > 0 ? (commissionAmount / base) * 100 : 0
-            console.log('ReservationForm: 채널 수수료 % 역산 (DB에 % 없음, $ 기준)', { commission_amount: commissionAmount, base, commission_percent: commissionPercentToUse })
-          } else {
-            commissionPercentToUse = 0
-          }
+          const selectedChannelForCommission = channels.find((c) => c.id === channelId)
+          const commissionPercentToUse = resolveReservationCommissionPercent({
+            storedPercent: (existingPricing as any).commission_percent,
+            commissionAmount,
+            commissionBasePrice: (existingPricing as any).commission_base_price,
+            productPriceTotal: (existingPricing as any).product_price_total,
+            subtotal: (existingPricing as any).subtotal,
+            channel: selectedChannelForCommission ?? null,
+          })
 
           console.log('쿠폰 정보 확인:', {
             coupon_code: existingPricing.coupon_code,

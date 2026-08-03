@@ -47,7 +47,11 @@ export default function ProductDetailQuantityChoiceGroup({
       ? getPeopleCoverage(group.options, quantities)
       : 0
   const remaining = Math.max(0, partySize - coverage)
-  const matched = isCapacityGroup ? coverage === partySize : coverage >= partySize && coverage > 0
+  const matched = isCapacityGroup
+    ? coverage === partySize
+    : isPeopleGroup
+      ? coverage === partySize && coverage > 0
+      : false
 
   return (
     <div className="space-y-3">
@@ -62,7 +66,7 @@ export default function ProductDetailQuantityChoiceGroup({
             : t('peopleCoverageStatus', { covered: coverage, total: partySize })}
           {coverage < partySize
             ? ` · ${t('capacityRemaining', { count: remaining })}`
-            : coverage > partySize && isCapacityGroup
+            : coverage > partySize
               ? ` · ${t('capacityOver', { count: coverage - partySize })}`
               : matched
                 ? ` · ${isCapacityGroup ? t('capacityMatched') : t('peopleCoverageMatched')}`
@@ -76,7 +80,7 @@ export default function ProductDetailQuantityChoiceGroup({
           const maxQty = isCapacityGroup
             ? getMaxQuantityForOption(option, group.options, quantities, partySize)
             : isPeopleGroup
-              ? getMaxPeopleQuantityForOption(option, partySize)
+              ? getMaxPeopleQuantityForOption(option, group.options, quantities, partySize)
               : 99
           const optionLabel = option.option_name || option.option_name_ko || ''
           const capacity = getOptionCapacity(option)

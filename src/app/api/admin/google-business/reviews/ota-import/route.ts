@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
   } else if (body.mode === 'csv' && body.text) {
     parsedRows = parseOtaReviewCsv(body.text)
   } else if (body.text) {
-    parsedRows = parseOtaReviewText(body.text)
+    parsedRows = parseOtaReviewText(body.text, isOtaReviewSource(source) ? source : null)
   } else {
     return NextResponse.json({ ok: false, error: 'missing_content' }, { status: 400 })
   }

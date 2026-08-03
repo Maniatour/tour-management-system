@@ -97,6 +97,60 @@ export function commissionPercentFromChannelMaster(
   return n
 }
 
+function hasStoredReservationCommissionPercent(
+  storedPercent: number | string | null | undefined
+): storedPercent is number {
+  if (storedPercent === null || storedPercent === undefined) return false
+  if (typeof storedPercent === 'string' && storedPercent.trim() === '') return false
+  return Number.isFinite(Number(storedPercent))
+}
+
+/**
+ * 예약 로드 시 commission_percent 결정 우선순위:
+ * 1) reservation_pricing 저장값 (사용자 입력·저장, 0 포함)
+ * 2) 채널 마스터 commission %
+ * 3) commission_amount 역산 (1·2 모두 없을 때만)
+ */
+export function resolveReservationCommissionPercent(opts: {
+  storedPercent?: number | string | null
+  commissionAmount?: number | null
+  commissionBasePrice?: number | string | null
+  productPriceTotal?: number | string | null
+  subtotal?: number | string | null
+  channel?:
+    | {
+        commission_percent?: number | null
+        commission_rate?: number | null
+        commission?: number | null
+      }
+    | null
+}): number {
+  const { storedPercent, commissionAmount, commissionBasePrice, productPriceTotal, subtotal, channel } =
+    opts
+
+  if (hasStoredReservationCommissionPercent(storedPercent)) {
+    return Number(storedPercent)
+  }
+
+  const channelPct = commissionPercentFromChannelMaster(channel ?? undefined)
+  if (channelPct != null && channelPct > 0) {
+    return channelPct
+  }
+
+  const amount = Number(commissionAmount) || 0
+  if (amount > 0) {
+    const base =
+      (Number(commissionBasePrice) > 0 ? Number(commissionBasePrice) : 0) ||
+      (Number(productPriceTotal) > 0 ? Number(productPriceTotal) : 0) ||
+      (Number(subtotal) > 0 ? Number(subtotal) : 0)
+    if (base > 0) {
+      return (amount / base) * 100
+    }
+  }
+
+  return 0
+}
+
 export type BalanceChannelMetrics = {
   /** `computeCompanyTotalRevenueLikePricingSection` / ④ 스냅샷용 */
   omitAdditionalDiscountAndCostFromCompanyRevenueSum: boolean

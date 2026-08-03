@@ -47,3 +47,7 @@ export function getReviewSourceLabel(source: ReviewSource, locale: string): stri
 export function otaLocationPlaceholder(source: OtaReviewSource): string {
   return `ota:${source}`
 }
+
+export function defaultAdminGoogleReviewListSort(source: ReviewSource): 'imported_at' | 'review_created_at' {
+  return source === REVIEW_SOURCE_GOOGLE ? 'review_created_at' : 'imported_at'
+}

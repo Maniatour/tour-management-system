@@ -1,4 +1,3 @@
-import { createHash } from 'crypto'
 import { supabaseAdmin } from '@/lib/supabase'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
@@ -11,28 +10,21 @@ import {
 import type { OtaReviewSource } from '@/lib/reviewSources'
 import { otaLocationPlaceholder } from '@/lib/reviewSources'
 import type { ParsedOtaReviewRow } from '@/lib/otaReviewParse'
+import {
+  buildOtaDedupKey,
+  buildOtaExternalId,
+  findExistingOtaReview,
+  normalizeOtaReservationNumber,
+} from '@/lib/otaReviewDedup'
 
 export type OtaReviewImportResult = {
   imported: number
   updated: number
   skipped: number
+  duplicates: number
   classified: number
   autoApproved: number
   toursLinked: number
-}
-
-function buildOtaExternalId(source: OtaReviewSource, row: ParsedOtaReviewRow): string {
-  const key = [
-    source,
-    row.reservationNumber ?? '',
-    row.authorName ?? '',
-    row.reviewCreatedAt ?? '',
-    row.comment ?? '',
-    String(row.rating ?? ''),
-    row.productHint ?? '',
-  ].join('|')
-  const hash = createHash('sha256').update(key).digest('hex').slice(0, 24)
-  return `ota:${source}:${hash}`
 }
 
 export async function importOtaReviews(input: {
@@ -52,23 +44,35 @@ export async function importOtaReviews(input: {
   let imported = 0
   let updated = 0
   let skipped = 0
+  let duplicates = 0
   let toursLinked = 0
   const reviewDbIds: string[] = []
+  const seenInBatch = new Set<string>()
 
   for (const row of input.rows) {
+    const dedupKey = buildOtaDedupKey(input.source, row)
+    if (seenInBatch.has(dedupKey)) {
+      duplicates += 1
+      skipped += 1
+      continue
+    }
+    seenInBatch.add(dedupKey)
+
+    const existing = await findExistingOtaReview({
+      operatorId,
+      source: input.source,
+      row,
+    })
+
+    if (existing) {
+      duplicates += 1
+      skipped += 1
+      continue
+    }
+
     const externalId = buildOtaExternalId(input.source, row)
     const importStatus = resolveGoogleReviewImportStatus(row.rating)
-
-    const { data: existing, error: existingError } = await fromUntypedTable(supabaseAdmin, 'google_reviews')
-      .select('id, import_status')
-      .eq('operator_id', operatorId)
-      .eq('review_source', input.source)
-      .eq('google_review_id', externalId)
-      .maybeSingle()
-
-    if (existingError) {
-      throw new Error(existingError.message)
-    }
+    const normalizedRn = normalizeOtaReservationNumber(row.reservationNumber)
 
     const payload = {
       operator_id: operatorId,
@@ -79,13 +83,13 @@ export async function importOtaReviews(input: {
       rating: row.rating,
       comment: row.comment,
       review_created_at: row.reviewCreatedAt,
-      import_status: existing
-        ? resolveGoogleReviewImportStatus(row.rating, (existing as { import_status: string }).import_status)
-        : importStatus,
+      import_status: importStatus,
       raw_payload: {
         source: input.source,
         productHint: row.productHint,
-        reservationNumber: row.reservationNumber ?? null,
+        reservationNumber: normalizedRn ?? row.reservationNumber ?? null,
+        tourDate: row.tourDate ?? null,
+        productId: row.productId ?? null,
         importedBy: input.importedByEmail ?? null,
         lineNumber: row.lineNumber ?? null,
       },
@@ -94,39 +98,28 @@ export async function importOtaReviews(input: {
 
     let reviewDbId: string | null = null
 
-    if (existing) {
-      const { data: updatedRow, error: updateError } = await fromUntypedTable(supabaseAdmin, 'google_reviews')
-        .update(payload as never)
-        .eq('id', (existing as { id: string }).id)
-        .select('id')
+    const { data: inserted, error: insertError } = await fromUntypedTable(supabaseAdmin, 'google_reviews')
+      .insert({
+        ...payload,
+        imported_at: now,
+      } as never)
+      .select('id')
 
-      if (updateError) throw new Error(updateError.message)
-      if (updatedRow?.length) {
-        updated += 1
-        reviewDbId = (existing as { id: string }).id
-      } else {
+    if (insertError) {
+      if (insertError.message.includes('duplicate') || insertError.code === '23505') {
+        duplicates += 1
         skipped += 1
+        continue
       }
+      throw new Error(insertError.message)
+    }
+
+    if (inserted?.[0]) {
+      imported += 1
+      reviewDbId = (inserted[0] as { id: string }).id
     } else {
-      const { data: inserted, error: insertError } = await fromUntypedTable(supabaseAdmin, 'google_reviews')
-        .insert({
-          ...payload,
-          imported_at: now,
-        } as never)
-        .select('id')
-
-      if (insertError) {
-        if (insertError.message.includes('duplicate') || insertError.code === '23505') {
-          skipped += 1
-          continue
-        }
-        throw new Error(insertError.message)
-      }
-
-      if (inserted?.[0]) {
-        imported += 1
-        reviewDbId = (inserted[0] as { id: string }).id
-      }
+      skipped += 1
+      continue
     }
 
     if (!reviewDbId) {
@@ -135,7 +128,17 @@ export async function importOtaReviews(input: {
 
     reviewDbIds.push(reviewDbId)
 
-    if (row.reservationNumber?.trim()) {
+    if (row.tourId?.trim()) {
+      await linkGoogleReviewToTour({
+        operatorId,
+        reviewId: reviewDbId,
+        tourId: row.tourId.trim(),
+        matchMethod: 'manual',
+        confidence: 1,
+        ...(input.importedByEmail ? { linkedByEmail: input.importedByEmail } : {}),
+      })
+      toursLinked += 1
+    } else if (row.reservationNumber?.trim()) {
       const reservation = await lookupReservationForReviewLink({
         operatorId,
         reference: row.reservationNumber.trim(),
@@ -179,6 +182,7 @@ export async function importOtaReviews(input: {
     imported,
     updated,
     skipped,
+    duplicates,
     classified: classified.classified,
     autoApproved,
     toursLinked: toursLinked + tourLinkResult.linked,

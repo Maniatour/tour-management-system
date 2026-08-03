@@ -15,6 +15,9 @@ export async function GET(request: NextRequest) {
   const unclassifiedOnly = request.nextUrl.searchParams.get('unclassified') === '1'
   const page = Number.parseInt(request.nextUrl.searchParams.get('page') ?? '1', 10)
   const limit = Number.parseInt(request.nextUrl.searchParams.get('limit') ?? '20', 10)
+  const sortParam = request.nextUrl.searchParams.get('sort')
+  const sort =
+    sortParam === 'imported_at' || sortParam === 'review_created_at' ? sortParam : null
 
   try {
     const [{ reviews, total }, stats] = await Promise.all([
@@ -24,6 +27,7 @@ export async function GET(request: NextRequest) {
         productId: productId || null,
         unclassifiedOnly,
         reviewSource: reviewSource || null,
+        sort,
         page: Number.isFinite(page) ? page : 1,
         limit: Number.isFinite(limit) ? limit : 20,
       }),

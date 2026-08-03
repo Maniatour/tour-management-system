@@ -19,6 +19,9 @@ export type GoogleReviewStats = {
   unclassified: number
 }
 
+/** Admin review list sort — imported_at = 최신 입력순 */
+export type AdminGoogleReviewListSort = 'imported_at' | 'review_created_at'
+
 export type AdminGoogleReviewListItem = {
   id: string
   googleReviewId: string
@@ -64,14 +67,33 @@ export type GoogleReviewStaffMonthlyCell = {
   month: number
   reviewCount: number
   avgRating: number | null
+  fiveStarCount: number
+  fourStarCount: number
+  threeStarCount: number
+  twoStarCount: number
+  oneStarCount: number
   totalTourGuests: number
-  reviewRatePercent: number | null
+  reservationGroupCount: number
+  guestReviewRatePercent: number | null
+  groupReviewRatePercent: number | null
 }
 
 export type GoogleReviewStaffMonthlyStat = {
   staffEmail: string
   staffName: string
   months: GoogleReviewStaffMonthlyCell[]
+}
+
+export type GoogleReviewStaffStatReviewItem = {
+  id: string
+  authorName: string | null
+  rating: number | null
+  comment: string | null
+  reviewCreatedAt: string | null
+  importedAt: string
+  reviewSource: string
+  tourDate: string | null
+  productName: string | null
 }
 
 export type GoogleBusinessAccountItem = {

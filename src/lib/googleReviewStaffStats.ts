@@ -1,6 +1,9 @@
 import { supabaseAdmin } from '@/lib/supabase'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
-import type { GoogleReviewStaffMonthlyStat } from '@/types/googleBusiness'
+import type {
+  GoogleReviewStaffMonthlyStat,
+  GoogleReviewStaffStatReviewItem,
+} from '@/types/googleBusiness'
 
 export type GoogleReviewStaffStatRow = {
   staffEmail: string
@@ -20,8 +23,15 @@ export type GoogleReviewStaffMonthlyStatRow = {
   month: number
   reviewCount: number
   avgRating: number | null
+  fiveStarCount: number
+  fourStarCount: number
+  threeStarCount: number
+  twoStarCount: number
+  oneStarCount: number
   totalTourGuests: number
-  reviewRatePercent: number | null
+  reservationGroupCount: number
+  guestReviewRatePercent: number | null
+  groupReviewRatePercent: number | null
 }
 
 export async function getGoogleReviewStaffStats(
@@ -57,7 +67,7 @@ export async function getGoogleReviewStaffStats(
       error.message.includes('Could not find the function')
     ) {
       throw new Error(
-        'admin_google_review_staff_stats RPC is missing. Apply migration 20260803210000_google_reviews_tour_staff_links.sql.'
+        'admin_google_review_staff_stats RPC is missing. Apply migration 20260803350000_google_review_staff_stats_all_platforms.sql.'
       )
     }
     throw new Error(error.message)
@@ -95,8 +105,15 @@ export async function getGoogleReviewStaffMonthlyStats(
         month_num: number | string
         review_count: number | string
         avg_rating: number | string | null
+        five_star_count: number | string
+        four_star_count: number | string
+        three_star_count: number | string
+        two_star_count: number | string
+        one_star_count: number | string
         total_tour_guests: number | string
-        review_rate_percent: number | string | null
+        reservation_group_count: number | string
+        guest_review_rate_percent: number | string | null
+        group_review_rate_percent: number | string | null
       }> | null
       error: { message: string } | null
     }>
@@ -111,7 +128,7 @@ export async function getGoogleReviewStaffMonthlyStats(
       error.message.includes('Could not find the function')
     ) {
       throw new Error(
-        'admin_google_review_staff_stats_monthly RPC is missing. Apply migration 20260803290000_google_review_staff_stats_monthly.sql.'
+        'admin_google_review_staff_stats_monthly RPC is missing. Apply migration 20260803350000_google_review_staff_stats_all_platforms.sql.'
       )
     }
     throw new Error(error.message)
@@ -123,9 +140,77 @@ export async function getGoogleReviewStaffMonthlyStats(
     month: Number(row.month_num ?? 0),
     reviewCount: Number(row.review_count ?? 0),
     avgRating: row.avg_rating == null ? null : Number(row.avg_rating),
+    fiveStarCount: Number(row.five_star_count ?? 0),
+    fourStarCount: Number(row.four_star_count ?? 0),
+    threeStarCount: Number(row.three_star_count ?? 0),
+    twoStarCount: Number(row.two_star_count ?? 0),
+    oneStarCount: Number(row.one_star_count ?? 0),
     totalTourGuests: Number(row.total_tour_guests ?? 0),
-    reviewRatePercent:
-      row.review_rate_percent == null ? null : Number(row.review_rate_percent),
+    reservationGroupCount: Number(row.reservation_group_count ?? 0),
+    guestReviewRatePercent:
+      row.guest_review_rate_percent == null ? null : Number(row.guest_review_rate_percent),
+    groupReviewRatePercent:
+      row.group_review_rate_percent == null ? null : Number(row.group_review_rate_percent),
+  }))
+}
+
+export async function getGoogleReviewStaffStatReviews(input: {
+  operatorId?: string | null
+  staffEmail: string
+  rating: number
+  year?: number | null
+  month?: number | null
+}): Promise<GoogleReviewStaffStatReviewItem[]> {
+  if (!supabaseAdmin) return []
+
+  const { data, error } = await (supabaseAdmin as unknown as {
+    rpc: (
+      fn: string,
+      args: Record<string, unknown>
+    ) => Promise<{
+      data: Array<{
+        id: string
+        author_name: string | null
+        rating: number | null
+        comment: string | null
+        review_created_at: string | null
+        imported_at: string
+        review_source: string
+        tour_date: string | null
+        product_name: string | null
+      }> | null
+      error: { message: string } | null
+    }>
+  }).rpc('admin_google_review_staff_stat_reviews', {
+    p_operator_id: resolveOperatorId(input.operatorId),
+    p_staff_email: input.staffEmail,
+    p_rating: input.rating,
+    p_year: input.year ?? null,
+    p_month: input.month ?? null,
+  })
+
+  if (error) {
+    if (
+      error.message.includes('admin_google_review_staff_stat_reviews') ||
+      error.message.includes('Could not find the function')
+    ) {
+      throw new Error(
+        'admin_google_review_staff_stat_reviews RPC is missing. Apply migration 20260803350000_google_review_staff_stats_all_platforms.sql.'
+      )
+    }
+    throw new Error(error.message)
+  }
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    authorName: row.author_name,
+    rating: row.rating == null ? null : Number(row.rating),
+    comment: row.comment,
+    reviewCreatedAt: row.review_created_at,
+    importedAt: row.imported_at,
+    reviewSource: row.review_source ?? 'google',
+    tourDate: row.tour_date,
+    productName: row.product_name,
   }))
 }
 
@@ -140,8 +225,15 @@ export function pivotGoogleReviewStaffMonthlyStats(
       month: row.month,
       reviewCount: row.reviewCount,
       avgRating: row.avgRating,
+      fiveStarCount: row.fiveStarCount,
+      fourStarCount: row.fourStarCount,
+      threeStarCount: row.threeStarCount,
+      twoStarCount: row.twoStarCount,
+      oneStarCount: row.oneStarCount,
       totalTourGuests: row.totalTourGuests,
-      reviewRatePercent: row.reviewRatePercent,
+      reservationGroupCount: row.reservationGroupCount,
+      guestReviewRatePercent: row.guestReviewRatePercent,
+      groupReviewRatePercent: row.groupReviewRatePercent,
     }
     if (existing) {
       existing.months.push(cell)

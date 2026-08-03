@@ -27,14 +27,18 @@ import {
   isResidentsOnlyOption,
 } from '@/lib/bookingFlowQuantityChoices'
 import {
+  clampPeopleQuantitiesForPartySize,
   filterOptionsByPartySize,
   getCapacityCoverage,
   getDefaultRoomQuantities,
+  getMaxPeopleQuantityForOption,
   getMaxQuantityForOption,
   getPeopleCoverage,
   isCapacityCoverageExact,
+  isPeopleCoverageOver,
   isPeopleCoverageSufficient,
   usesCapacityQuantitySelection,
+  usesPeopleQuantitySelection,
 } from '@/lib/choiceOptionCapacity'
 import {
   calculateChoiceLineTotalFromUnitPrice,
@@ -1286,6 +1290,22 @@ export default function BookingFlow({
         continue
       }
 
+      const peopleLabel =
+        group.options[0]?.choice_name_ko ||
+        group.options[0]?.choice_name ||
+        ''
+      if (usesPeopleQuantitySelection('quantity', group.options, peopleLabel)) {
+        const prevMap = nextQuantities[groupId] ?? {}
+        if (isPeopleCoverageOver(group.options, prevMap, totalParticipants)) {
+          nextQuantities[groupId] = clampPeopleQuantitiesForPartySize(
+            group.options,
+            prevMap,
+            totalParticipants
+          )
+          quantitiesChanged = true
+        }
+      }
+
       const residentsId = findResidentsOptionId(group.options)
       const selectedOptionId = bookingData.selectedOptions[groupId]
 
@@ -2104,6 +2124,17 @@ export default function BookingFlow({
             : `${groupName}: 커버 인원(${covered}명)이 예약 인원(${totalParticipants}명)보다 적습니다. 수량을 늘리거나 패스 옵션을 추가해 주세요.`,
         }
       }
+
+      if (isPeopleCoverageOver(group.options, groupQuantities, totalParticipants)) {
+        const covered = getPeopleCoverage(group.options, groupQuantities)
+        const groupName = group.choice_name_ko || group.choice_name || ''
+        return {
+          valid: false,
+          error: isEnglish
+            ? `${groupName}: selected quantities (${covered}) exceed participants (${totalParticipants}). Please reduce quantities.`
+            : `${groupName}: 선택 수량(${covered}명)이 예약 인원(${totalParticipants}명)을 초과합니다. 수량을 줄여 주세요.`,
+        }
+      }
     }
 
     return { valid: true }
@@ -2651,12 +2682,31 @@ export default function BookingFlow({
         const currentMap = selectedChoiceQuantities[groupId] ?? {}
         const option = group.options.find((item) => item.option_id === optionId)
         const maxQty = getMaxQuantityForOption(
-          { option_id: optionId, capacity: option?.capacity ?? null },
+          option ?? { option_id: optionId, capacity: null },
           group.options,
           currentMap,
           partySize
         )
         safeQuantity = Math.min(safeQuantity, maxQty)
+      } else if (
+        group &&
+        usesPeopleQuantitySelection(
+          group.choice_type,
+          group.options,
+          bookingChoiceLabel(group)
+        )
+      ) {
+        const currentMap = selectedChoiceQuantities[groupId] ?? {}
+        const option = group.options.find((item) => item.option_id === optionId)
+        if (option) {
+          const maxQty = getMaxPeopleQuantityForOption(
+            option,
+            group.options,
+            currentMap,
+            partySize
+          )
+          safeQuantity = Math.min(safeQuantity, maxQty)
+        }
       }
 
       setSelectedChoiceQuantities((prev) => ({
@@ -2820,6 +2870,11 @@ export default function BookingFlow({
                             group.options,
                             bookingChoiceLabel(group)
                           )
+                          const isPeopleGroup = usesPeopleQuantitySelection(
+                            group.choice_type,
+                            group.options,
+                            bookingChoiceLabel(group)
+                          )
                           const visibleOptions = isCapacityGroup
                             ? filterOptionsByPartySize(group.options, partySize)
                             : group.options
@@ -2830,7 +2885,7 @@ export default function BookingFlow({
                             : getPeopleCoverage(visibleOptions, groupQuantities)
                           const coverageMatched = isCapacityGroup
                             ? coverage === partySize
-                            : coverage >= partySize && coverage > 0
+                            : coverage === partySize && coverage > 0
 
                           return (
                         <div className="space-y-3">
@@ -2856,16 +2911,21 @@ export default function BookingFlow({
                                     ` · ${partySize - coverage}명 더 선택하세요`,
                                     ` · Select ${partySize - coverage} more`
                                   )
-                                : coverageMatched
+                                : coverage > partySize
                                   ? translate(
-                                      isCapacityGroup
-                                        ? ' · 인원에 맞게 선택됨'
-                                        : ' · 예약 인원을 커버합니다',
-                                      isCapacityGroup
-                                        ? ' · Matches party size'
-                                        : ' · Covers party size'
+                                      ` · ${coverage - partySize}명 초과 선택됨`,
+                                      ` · ${coverage - partySize} over limit`
                                     )
-                                  : ''}
+                                  : coverageMatched
+                                    ? translate(
+                                        isCapacityGroup
+                                          ? ' · 인원에 맞게 선택됨'
+                                          : ' · 예약 인원을 커버합니다',
+                                        isCapacityGroup
+                                          ? ' · Matches party size'
+                                          : ' · Covers party size'
+                                      )
+                                    : ''}
                             </p>
                           ) : null}
                           {visibleOptions.length === 0 ? (
@@ -2887,7 +2947,14 @@ export default function BookingFlow({
                                   groupQuantities,
                                   partySize
                                 )
-                              : 99
+                              : isPeopleGroup
+                                ? getMaxPeopleQuantityForOption(
+                                    option,
+                                    visibleOptions,
+                                    groupQuantities,
+                                    partySize
+                                  )
+                                : 99
                             const adultPrice = option.option_price || 0
                             const childPrice = option.option_child_price || 0
                             const infantPrice = option.option_infant_price || 0
@@ -3006,7 +3073,7 @@ export default function BookingFlow({
                                         currentQuantity + 1
                                       )
                                     }
-                                    disabled={isCapacityGroup && currentQuantity >= maxQty}
+                                    disabled={currentQuantity >= maxQty}
                                     className="flex h-9 w-9 items-center justify-center rounded-full border border-border hover:bg-muted disabled:opacity-40"
                                     aria-label={`${optionLabel} increase`}
                                   >

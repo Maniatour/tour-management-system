@@ -1,7 +1,16 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Loader2, Star, Users } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Star,
+  Users,
+} from 'lucide-react'
+import GoogleReviewStaffStatReviewsModal, {
+  type StaffStatReviewModalTarget,
+} from '@/components/admin/google-reviews/GoogleReviewStaffStatReviewsModal'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import type {
   GoogleReviewStaffMonthlyCell,
@@ -47,35 +56,160 @@ const MONTH_LABELS_EN = [
   'Dec',
 ] as const
 
-function formatAvgStar(avgRating: number | null, isKo: boolean): string {
-  if (avgRating == null) return '—'
-  const rounded =
-    Math.abs(avgRating - Math.round(avgRating)) < 0.05
-      ? String(Math.round(avgRating))
-      : avgRating.toFixed(1)
-  return isKo ? `${rounded} STAR` : `${rounded}★`
+const STAR_BREAKDOWN_ROWS = [
+  { key: 'fiveStarCount' as const, label: '★★★★★', rating: 5 },
+  { key: 'fourStarCount' as const, label: '★★★★☆', rating: 4 },
+  { key: 'threeStarCount' as const, label: '★★★☆☆', rating: 3 },
+  { key: 'twoStarCount' as const, label: '★★☆☆☆', rating: 2 },
+  { key: 'oneStarCount' as const, label: '★☆☆☆☆', rating: 1 },
+] as const
+
+const OVERALL_STAR_COLUMNS = [
+  { key: 'fiveStarCount' as const, rating: 5, className: 'text-success' },
+  { key: 'fourStarCount' as const, rating: 4, className: '' },
+  { key: 'threeStarCount' as const, rating: 3, className: 'text-muted-foreground' },
+  { key: 'twoStarCount' as const, rating: 2, className: 'text-warning' },
+  { key: 'oneStarCount' as const, rating: 1, className: 'text-danger' },
+] as const
+
+function StarCountButton({
+  count,
+  className,
+  onClick,
+  ariaLabel,
+}: {
+  count: number
+  className?: string
+  onClick?: () => void
+  ariaLabel: string
+}) {
+  if (count <= 0) {
+    return <span className={className}>{count}</span>
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className={`${className ?? ''} rounded px-1 -mx-1 hover:bg-muted/60 hover:underline underline-offset-2 transition-colors`}
+    >
+      {count}
+    </button>
+  )
+}
+
+function formatRateLine(
+  reviews: number,
+  denominator: number,
+  percent: number | null
+): string {
+  if (denominator <= 0) return '—'
+  const pct = percent != null ? `${percent}%` : '—'
+  return `${reviews}/${denominator} ${pct}`
 }
 
 function MonthlyCellContent({
   cell,
   isKo,
+  staffEmail,
+  staffName,
+  year,
+  onStarClick,
 }: {
   cell: GoogleReviewStaffMonthlyCell | null
   isKo: boolean
+  staffEmail: string
+  staffName: string
+  year: number
+  onStarClick: (target: StaffStatReviewModalTarget) => void
 }) {
-  if (!cell || (cell.reviewCount === 0 && cell.totalTourGuests === 0)) {
+  if (
+    !cell ||
+    (cell.reviewCount === 0 &&
+      cell.totalTourGuests === 0 &&
+      cell.reservationGroupCount === 0)
+  ) {
     return <span className="text-muted-foreground/40">—</span>
   }
 
+  const starRows = STAR_BREAKDOWN_ROWS.filter((row) => cell[row.key] > 0)
+
   return (
-    <div className="flex flex-col items-center gap-0.5 leading-tight">
-      <span className="font-semibold tabular-nums text-foreground">{cell.reviewCount}</span>
-      <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 tabular-nums">
-        {formatAvgStar(cell.avgRating, isKo)}
-      </span>
-      <span className="text-[10px] text-muted-foreground tabular-nums">
-        {cell.reviewRatePercent != null ? `${cell.reviewRatePercent}%` : '—'}
-      </span>
+    <div className="flex flex-col items-center gap-1 leading-tight text-center min-w-[5.5rem]">
+      {starRows.length > 0 ? (
+        <div className="space-y-0.5 w-full">
+          {starRows.map((row) => (
+            <div
+              key={row.key}
+              className="flex items-center justify-center gap-1.5 text-xs tabular-nums"
+            >
+              <span className="text-amber-500 tracking-tight text-[13px]">{row.label}</span>
+              <StarCountButton
+                count={cell[row.key]}
+                className="font-semibold text-foreground"
+                ariaLabel={
+                  isKo
+                    ? `${staffName} ${row.rating}점 리뷰 ${cell[row.key]}건 보기`
+                    : `View ${cell[row.key]} ${row.rating}-star reviews for ${staffName}`
+                }
+                onClick={() =>
+                  onStarClick({
+                    staffEmail,
+                    staffName,
+                    rating: row.rating,
+                    year,
+                    month: cell.month,
+                  })
+                }
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div
+        className={`space-y-0.5 w-full ${starRows.length > 0 ? 'border-t border-border/40 pt-1' : ''}`}
+      >
+        <div
+          className="flex items-center justify-center gap-1 text-[10px] text-muted-foreground tabular-nums"
+          title={
+            isKo
+              ? '리뷰 수 ÷ 투어 총인원'
+              : 'Reviews ÷ total tour guests'
+          }
+        >
+          <span className="shrink-0 text-[11px] leading-none" aria-hidden>
+            👥
+          </span>
+          <span>
+            {formatRateLine(
+              cell.reviewCount,
+              cell.totalTourGuests,
+              cell.guestReviewRatePercent
+            )}
+          </span>
+        </div>
+        <div
+          className="flex items-center justify-center gap-1 text-[10px] text-muted-foreground tabular-nums"
+          title={
+            isKo
+              ? '리뷰 수 ÷ 예약 그룹 수'
+              : 'Reviews ÷ reservation groups'
+          }
+        >
+          <span className="shrink-0 text-[11px] leading-none" aria-hidden>
+            📋
+          </span>
+          <span>
+            {formatRateLine(
+              cell.reviewCount,
+              cell.reservationGroupCount,
+              cell.groupReviewRatePercent
+            )}
+          </span>
+        </div>
+      </div>
     </div>
   )
 }
@@ -92,6 +226,9 @@ export default function GoogleReviewStaffStatsSection({
   const [stats, setStats] = useState<GoogleReviewStaffStat[]>([])
   const [monthlyStats, setMonthlyStats] = useState<GoogleReviewStaffMonthlyStat[]>([])
   const [loading, setLoading] = useState(false)
+  const [reviewModalTarget, setReviewModalTarget] = useState<StaffStatReviewModalTarget | null>(
+    null
+  )
 
   const monthLabels = isKo ? MONTH_LABELS_KO : MONTH_LABELS_EN
 
@@ -163,11 +300,11 @@ export default function GoogleReviewStaffStatsSection({
           <p className="text-sm text-muted-foreground mt-1">
             {viewMode === 'overall'
               ? isKo
-                ? '승인된 Google 리뷰 중 투어·이름으로 연결된 직원의 평균 별점입니다.'
-                : 'Average ratings from approved Google reviews linked to staff via tours or name mentions.'
+                ? '모든 플랫폼(Google·OTA 등) 리뷰 중 투어·직원 연결된 평균 별점입니다. 대기·승인 상태 모두 포함됩니다. 숫자를 클릭하면 리뷰 내용을 볼 수 있습니다.'
+                : 'Average ratings from all platform reviews linked to staff via tours (pending and approved). Click counts to read reviews.'
               : isKo
-                ? '월별 리뷰 수, 평균 별점, 투어 인원 대비 리뷰율(%)입니다.'
-                : 'Monthly review count, average rating, and review rate vs tour guests (%).'}
+                ? '월별 리뷰 수, 별점별 개수, 투어 인원·예약 그룹 대비 리뷰율입니다. 대기·승인 등 모든 상태 포함. 별점 숫자를 클릭하면 리뷰를 볼 수 있습니다.'
+                : 'Monthly reviews, star breakdown, and review rates (all import statuses). Click star counts to read reviews.'}
           </p>
         </div>
 
@@ -260,19 +397,29 @@ export default function GoogleReviewStaffStatsSection({
                       {row.avgRating?.toFixed(2) ?? '—'}
                     </span>
                   </td>
-                  <td className="py-3 px-2 text-center tabular-nums text-success">
-                    {row.fiveStarCount}
-                  </td>
-                  <td className="py-3 px-2 text-center tabular-nums">{row.fourStarCount}</td>
-                  <td className="py-3 px-2 text-center tabular-nums text-muted-foreground">
-                    {row.threeStarCount}
-                  </td>
-                  <td className="py-3 px-2 text-center tabular-nums text-warning">
-                    {row.twoStarCount}
-                  </td>
-                  <td className="py-3 px-2 text-center tabular-nums text-danger">
-                    {row.oneStarCount}
-                  </td>
+                  {OVERALL_STAR_COLUMNS.map((col) => (
+                    <td
+                      key={col.key}
+                      className={`py-3 px-2 text-center tabular-nums ${col.className}`}
+                    >
+                      <StarCountButton
+                        count={row[col.key]}
+                        className={col.className}
+                        ariaLabel={
+                          isKo
+                            ? `${row.staffName} ${col.rating}점 리뷰 ${row[col.key]}건 보기`
+                            : `View ${row[col.key]} ${col.rating}-star reviews for ${row.staffName}`
+                        }
+                        onClick={() =>
+                          setReviewModalTarget({
+                            staffEmail: row.staffEmail,
+                            staffName: row.staffName,
+                            rating: col.rating,
+                          })
+                        }
+                      />
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
@@ -280,13 +427,22 @@ export default function GoogleReviewStaffStatsSection({
         </div>
       ) : (
         <div className="space-y-3">
-          <p className="text-xs text-muted-foreground">
-            {isKo
-              ? '각 칸: 리뷰 수 · 평균 별점 · 리뷰율(리뷰 수 ÷ 투어 인원)'
-              : 'Each cell: review count · avg rating · review rate (reviews ÷ tour guests)'}
-          </p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1">
+              <span className="shrink-0 text-[11px] leading-none" aria-hidden>
+                👥
+              </span>
+              {isKo ? '리뷰 ÷ 투어 총인원' : 'Reviews ÷ tour guests'}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="shrink-0 text-[11px] leading-none" aria-hidden>
+                📋
+              </span>
+              {isKo ? '리뷰 ÷ 예약 그룹' : 'Reviews ÷ reservation groups'}
+            </span>
+          </div>
           <div className="overflow-x-auto">
-            <table className="min-w-[960px] w-full text-sm">
+            <table className="min-w-[1200px] w-full text-sm">
               <thead>
                 <tr className="border-b border-border/60 text-muted-foreground">
                   <th className="sticky left-0 z-10 bg-card py-2 pr-3 text-left font-medium min-w-[7rem]">
@@ -295,7 +451,7 @@ export default function GoogleReviewStaffStatsSection({
                   {monthLabels.map((label) => (
                     <th
                       key={label}
-                      className="py-2 px-1 text-center font-medium text-xs min-w-[4.5rem]"
+                      className="py-2 px-1 text-center font-medium text-xs min-w-[6rem]"
                     >
                       {label}
                     </th>
@@ -315,6 +471,10 @@ export default function GoogleReviewStaffStatsSection({
                           <MonthlyCellContent
                             cell={monthMap?.get(month) ?? null}
                             isKo={isKo}
+                            staffEmail={row.staffEmail}
+                            staffName={row.staffName}
+                            year={year}
+                            onStarClick={setReviewModalTarget}
                           />
                         </td>
                       ))}
@@ -326,6 +486,12 @@ export default function GoogleReviewStaffStatsSection({
           </div>
         </div>
       )}
+
+      <GoogleReviewStaffStatReviewsModal
+        locale={locale}
+        target={reviewModalTarget}
+        onClose={() => setReviewModalTarget(null)}
+      />
     </section>
   )
 }

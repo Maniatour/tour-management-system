@@ -10,9 +10,11 @@ import {
   getCapacityCoverage,
   getDefaultPeopleQuantities,
   getDefaultRoomQuantities,
+  clampPeopleQuantitiesForPartySize,
   getMaxPeopleQuantityForOption,
   getMaxQuantityForOption,
   isCapacityCoverageExact,
+  isPeopleCoverageOver,
   isPeopleCoverageSufficient,
   isSimpleAutoQuantityState,
   usesCapacityQuantitySelection,
@@ -102,19 +104,25 @@ export function useProductDetailChoices(
             group.options,
             partySize
           )
+          const clamped = clampPeopleQuantitiesForPartySize(group.options, current, partySize)
+          const overCoverage = isPeopleCoverageOver(group.options, current, partySize)
+
           // 인원 초이스: 비어 있거나, 기본 옵션만 선택된 상태에서 인원 변경 시 동기화
           const shouldApply =
             !hasAnyQty ||
-            (partyChanged && isSimpleAutoQuantityState(current, optionId))
+            (partyChanged && isSimpleAutoQuantityState(current, optionId)) ||
+            overCoverage
+
           if (!shouldApply) continue
 
+          const target = overCoverage ? clamped : peopleDefaults
           const same =
-            optionId != null &&
-            (current[optionId] ?? 0) === (peopleDefaults[optionId] ?? 0) &&
-            Object.entries(current).every(([id, qty]) => qty <= 0 || id === optionId)
+            Object.keys(target).length ===
+              Object.keys(current).filter((k) => (current[k] ?? 0) > 0).length &&
+            Object.entries(target).every(([id, qty]) => current[id] === qty)
 
           if (!same) {
-            next[groupId] = peopleDefaults
+            next[groupId] = target
             changed = true
           }
         }
@@ -183,6 +191,7 @@ export function useProductDetailChoices(
 
       if (usesPeopleQuantitySelection(group.choice_type, group.options, label)) {
         if (!isPeopleCoverageSufficient(group.options, quantities, partySize)) return false
+        if (isPeopleCoverageOver(group.options, quantities, partySize)) return false
       }
     }
     return true
@@ -207,13 +216,13 @@ export function useProductDetailChoices(
     let maxQty = safeQty
     if (usesCapacityQuantitySelection(group.choice_type, group.options, label)) {
       maxQty = getMaxQuantityForOption(
-        { option_id: optionId, capacity: option?.capacity ?? null },
+        option ?? { option_id: optionId, capacity: null },
         group.options,
         currentMap,
         partySize
       )
     } else if (usesPeopleQuantitySelection(group.choice_type, group.options, label) && option) {
-      maxQty = getMaxPeopleQuantityForOption(option, partySize)
+      maxQty = getMaxPeopleQuantityForOption(option, group.options, currentMap, partySize)
     }
 
     const nextQty = Math.min(safeQty, maxQty)

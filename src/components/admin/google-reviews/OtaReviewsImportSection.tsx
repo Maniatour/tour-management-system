@@ -1,20 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import {
-  Calendar,
-  ClipboardPaste,
-  FileUp,
-  Loader2,
-  MapPin,
-  Sparkles,
-  Star,
-  Upload,
-  User,
-} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ClipboardPaste, FileUp, Loader2, Sparkles, Upload } from 'lucide-react'
+import OtaReviewImportPreviewCard, {
+  type LinkedTourPreview,
+} from '@/components/admin/google-reviews/OtaReviewImportPreviewCard'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import {
   OTA_CSV_TEMPLATE_HINTS,
+  isGetYourGuideScrapedText,
   parseOtaReviewCsv,
   parseSingleOtaReviewText,
   validateParsedOtaRows,
@@ -28,6 +22,7 @@ type ImportResult = {
   imported?: number
   updated?: number
   skipped?: number
+  duplicates?: number
   classified?: number
   autoApproved?: number
   toursLinked?: number
@@ -41,6 +36,7 @@ type ReservationLookup = {
   channelRn: string | null
   tourId: string | null
   tourDate: string | null
+  productId: string | null
   productName: string | null
   customerName: string | null
 }
@@ -54,185 +50,27 @@ type Props = {
   onMessage: (message: string) => void
 }
 
-function StarRatingInput({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: number | null
-  onChange: (rating: number) => void
-  disabled?: boolean
-}) {
-  return (
-    <div className="flex items-center gap-1">
-      {[1, 2, 3, 4, 5].map((star) => (
-        <button
-          key={star}
-          type="button"
-          disabled={disabled}
-          onClick={() => onChange(star)}
-          className={`h-10 w-10 rounded-lg border transition-colors ${
-            value !== null && star <= value
-              ? 'border-amber-300 bg-amber-50 text-amber-500'
-              : 'border-border bg-background text-muted-foreground hover:bg-muted/50'
-          } disabled:opacity-50`}
-          aria-label={`${star} stars`}
-        >
-          <Star
-            className={`h-4 w-4 mx-auto ${value !== null && star <= value ? 'fill-current' : ''}`}
-            aria-hidden
-          />
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function ReviewPreviewCard({
-  locale,
-  sourceLabel,
-  draft,
-  ratingOnly,
-  reservation,
-  lookupLoading,
-  lookupError,
-}: {
-  locale: string
-  sourceLabel: string
-  draft: ParsedOtaReviewRow | null
-  ratingOnly: boolean
-  reservation: ReservationLookup | null
-  lookupLoading: boolean
-  lookupError: string | null
-}) {
-  const isKo = locale === 'ko'
-
-  if (!draft) {
-    return (
-      <div className="h-full min-h-[280px] rounded-xl border border-dashed border-border/70 bg-muted/20 p-6 flex items-center justify-center text-center">
-        <p className="text-sm text-muted-foreground">
-          {isKo
-            ? '별점과 내용을 입력하면 미리보기가 표시됩니다.'
-            : 'Enter a rating and content to see the preview.'}
-        </p>
-      </div>
-    )
+function toLinkedTourPreview(
+  tour: {
+    id: string
+    tourDate: string
+    productId?: string | null
+    productName: string | null
+    guideName?: string | null
+    assistantName?: string | null
+    totalPeople?: number
+  } | null
+): LinkedTourPreview | null {
+  if (!tour) return null
+  return {
+    id: tour.id,
+    tourDate: tour.tourDate,
+    productId: tour.productId ?? null,
+    productName: tour.productName,
+    guideName: tour.guideName ?? null,
+    assistantName: tour.assistantName ?? null,
+    totalPeople: tour.totalPeople ?? 0,
   }
-
-  const isValid = draft.rating !== null && draft.rating >= 1 && draft.rating <= 5 &&
-    (ratingOnly || Boolean(draft.comment?.trim()) || Boolean(draft.authorName?.trim()))
-
-  return (
-    <div className="h-full min-h-[280px] rounded-xl border border-border/60 bg-muted/10 p-5 space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {isKo ? '미리보기' : 'Preview'}
-          </p>
-          <p className="text-sm font-semibold text-foreground mt-1">{sourceLabel}</p>
-        </div>
-        <span
-          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-            isValid
-              ? 'bg-success/10 text-success'
-              : 'bg-warning/10 text-warning'
-          }`}
-        >
-          {isValid ? (isKo ? '등록 가능' : 'Ready') : isKo ? '입력 필요' : 'Incomplete'}
-        </span>
-      </div>
-
-      <div className="flex items-center gap-1 text-amber-500">
-        {Array.from({ length: 5 }).map((_, index) => (
-          <Star
-            key={index}
-            className={`h-4 w-4 ${draft.rating !== null && index < draft.rating ? 'fill-current' : 'text-muted-foreground/30'}`}
-            aria-hidden
-          />
-        ))}
-        <span className="ml-2 text-sm text-foreground tabular-nums">{draft.rating ?? '—'}</span>
-      </div>
-
-      <div className="space-y-2 text-sm">
-        <div className="flex items-center gap-2 text-foreground">
-          <User className="h-4 w-4 text-muted-foreground" aria-hidden />
-          <span>{draft.authorName?.trim() || (isKo ? '작성자 미입력' : 'No author')}</span>
-        </div>
-        <div className="flex items-start gap-2 text-foreground">
-          <Calendar className="h-4 w-4 text-muted-foreground mt-0.5" aria-hidden />
-          <span>
-            {draft.reviewCreatedAt
-              ? new Date(draft.reviewCreatedAt).toLocaleDateString(isKo ? 'ko-KR' : 'en-US')
-              : isKo
-                ? '날짜 미입력'
-                : 'No date'}
-          </span>
-        </div>
-      </div>
-
-      <div className="rounded-lg border border-border/50 bg-background p-4">
-        {ratingOnly ? (
-          <p className="text-sm text-muted-foreground italic">
-            {isKo ? '(별점만 기록 — 리뷰 내용 없음)' : '(Rating only — no review text)'}
-          </p>
-        ) : (
-          <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
-            {draft.comment?.trim() || (isKo ? '리뷰 내용 없음' : 'No review text')}
-          </p>
-        )}
-      </div>
-
-      <div className="rounded-lg border border-border/50 bg-background p-4 space-y-2">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {isKo ? '예약 · 투어 연결' : 'Reservation · tour link'}
-        </p>
-        {lookupLoading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            {isKo ? '예약 조회 중…' : 'Looking up reservation…'}
-          </div>
-        ) : lookupError ? (
-          <p className="text-sm text-danger">{lookupError}</p>
-        ) : reservation ? (
-          <div className="space-y-1.5 text-sm">
-            <p>
-              <span className="text-muted-foreground">{isKo ? '예약' : 'Reservation'}: </span>
-              <strong>{reservation.channelRn || reservation.reservationId}</strong>
-            </p>
-            {reservation.customerName ? (
-              <p>
-                <span className="text-muted-foreground">{isKo ? '고객' : 'Guest'}: </span>
-                {reservation.customerName}
-              </p>
-            ) : null}
-            {reservation.tourId ? (
-              <p className="flex items-start gap-1.5 text-success">
-                <MapPin className="h-4 w-4 mt-0.5 shrink-0" aria-hidden />
-                <span>
-                  {reservation.tourDate
-                    ? new Date(reservation.tourDate).toLocaleDateString(isKo ? 'ko-KR' : 'en-US')
-                    : '—'}
-                  {reservation.productName ? ` · ${reservation.productName}` : ''}
-                </span>
-              </p>
-            ) : (
-              <p className="text-sm text-warning">
-                {isKo ? '예약은 찾았지만 연결된 투어가 없습니다.' : 'Reservation found but no tour linked.'}
-              </p>
-            )}
-          </div>
-        ) : draft.reservationNumber?.trim() ? (
-          <p className="text-sm text-warning">
-            {isKo ? '일치하는 예약을 찾지 못했습니다.' : 'No matching reservation found.'}
-          </p>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            {isKo ? '예약 번호를 입력하면 투어가 자동 연결됩니다.' : 'Enter a reservation number to auto-link a tour.'}
-          </p>
-        )}
-      </div>
-    </div>
-  )
 }
 
 export default function OtaReviewsImportSection({
@@ -242,63 +80,63 @@ export default function OtaReviewsImportSection({
   onMessage,
 }: Props) {
   const isKo = locale === 'ko'
+  const isParseOnlyPaste = source === 'getyourguide'
   const [mode, setMode] = useState<ImportMode>('paste')
   const [csvText, setCsvText] = useState('')
   const [importing, setImporting] = useState(false)
   const [classifying, setClassifying] = useState(false)
   const [linkingTours, setLinkingTours] = useState(false)
-
-  const [reservationNumber, setReservationNumber] = useState('')
-  const [authorName, setAuthorName] = useState('')
-  const [rating, setRating] = useState<number | null>(null)
-  const [reviewDate, setReviewDate] = useState('')
   const [pasteText, setPasteText] = useState('')
-  const [ratingOnly, setRatingOnly] = useState(false)
 
   const [reservationLookup, setReservationLookup] = useState<ReservationLookup | null>(null)
+  const [linkedTour, setLinkedTour] = useState<LinkedTourPreview | null>(null)
   const [lookupLoading, setLookupLoading] = useState(false)
   const [lookupError, setLookupError] = useState<string | null>(null)
+  const [alreadyImported, setAlreadyImported] = useState(false)
+  const lookupCacheRef = useRef(
+    new Map<
+      string,
+      {
+        reservation: ReservationLookup | null
+        suggestedTour: LinkedTourPreview | null
+        alreadyImported: boolean
+      }
+    >()
+  )
+  const lookupRequestIdRef = useRef(0)
 
   const sourceLabel = getReviewSourceLabel(source, locale)
   const templateHint = OTA_CSV_TEMPLATE_HINTS[source]
 
   const parsedFromPaste = useMemo(
-    () => (pasteText.trim() ? parseSingleOtaReviewText(pasteText) : null),
-    [pasteText]
+    () => (pasteText.trim() ? parseSingleOtaReviewText(pasteText, source) : null),
+    [pasteText, source]
   )
 
-  const singleDraft = useMemo((): ParsedOtaReviewRow | null => {
-    const baseRating = rating ?? parsedFromPaste?.rating ?? null
-    if (baseRating === null) return null
+  const reservationRef = parsedFromPaste?.reservationNumber?.trim() ?? ''
 
-    const draft: ParsedOtaReviewRow = {
-      authorName: authorName.trim() || parsedFromPaste?.authorName || null,
-      rating: baseRating,
-      comment: ratingOnly ? null : pasteText.trim() || parsedFromPaste?.comment || null,
-      reviewCreatedAt: reviewDate
-        ? new Date(`${reviewDate}T12:00:00`).toISOString()
-        : parsedFromPaste?.reviewCreatedAt || null,
-      productHint: parsedFromPaste?.productHint || reservationLookup?.productName || null,
-      reservationNumber: reservationNumber.trim() || parsedFromPaste?.reservationNumber || null,
+  const singleDraft = useMemo((): ParsedOtaReviewRow | null => {
+    if (!parsedFromPaste?.rating) return null
+
+    return {
+      authorName: reservationLookup?.customerName || parsedFromPaste.authorName || null,
+      rating: parsedFromPaste.rating,
+      comment: parsedFromPaste.comment,
+      reviewCreatedAt: parsedFromPaste.reviewCreatedAt,
+      productHint: reservationLookup?.productName || parsedFromPaste.productHint || null,
+      reservationNumber: parsedFromPaste.reservationNumber || null,
+      tourDate: reservationLookup?.tourDate || parsedFromPaste.tourDate || null,
+      productId: reservationLookup?.productId || parsedFromPaste.productId || null,
+      tourId: reservationLookup?.tourId || null,
     }
-    return draft
-  }, [
-    authorName,
-    parsedFromPaste,
-    pasteText,
-    rating,
-    ratingOnly,
-    reservationLookup?.productName,
-    reservationNumber,
-    reviewDate,
-  ])
+  }, [parsedFromPaste, reservationLookup])
 
   const singleValidation = useMemo(() => {
     if (!singleDraft) {
       return { valid: [] as ParsedOtaReviewRow[], invalid: [] as Array<{ row: ParsedOtaReviewRow; reason: string }> }
     }
-    return validateParsedOtaRows([singleDraft], { ratingOnly })
-  }, [ratingOnly, singleDraft])
+    return validateParsedOtaRows([singleDraft])
+  }, [singleDraft])
 
   const csvParsedRows = useMemo(() => {
     if (!csvText.trim()) return []
@@ -308,62 +146,112 @@ export default function OtaReviewsImportSection({
   const csvValidation = useMemo(() => validateParsedOtaRows(csvParsedRows), [csvParsedRows])
 
   useEffect(() => {
-    const ref = reservationNumber.trim()
-    if (!ref) {
+    if (!reservationRef) {
       setReservationLookup(null)
+      setLinkedTour(null)
+      setAlreadyImported(false)
       setLookupError(null)
+      setLookupLoading(false)
       return
     }
 
+    const cacheKey = `${source}:${reservationRef}`
+    const cached = lookupCacheRef.current.get(cacheKey)
+    if (cached) {
+      setReservationLookup(cached.reservation)
+      setLinkedTour(cached.suggestedTour)
+      setAlreadyImported(cached.alreadyImported)
+      setLookupError(null)
+      setLookupLoading(false)
+      return
+    }
+
+    const isCompleteRef = /^GYG[A-Z0-9]{6,}$/i.test(reservationRef)
+    const delay = isCompleteRef ? 0 : 200
+    const controller = new AbortController()
+
     const timer = window.setTimeout(() => {
+      const requestId = ++lookupRequestIdRef.current
+
       void (async () => {
         setLookupLoading(true)
         setLookupError(null)
         try {
           const res = await fetchApiWithAuth(
-            `/api/admin/google-business/reviews/reservation-lookup?ref=${encodeURIComponent(ref)}`
+            `/api/admin/google-business/reviews/reservation-lookup?ref=${encodeURIComponent(reservationRef)}&source=${encodeURIComponent(source)}`,
+            { signal: controller.signal }
           )
           const data = (await res.json()) as {
             ok?: boolean
             found?: boolean
             reservation?: ReservationLookup | null
+            suggestedTour?: {
+              id: string
+              tourDate: string
+              productId?: string | null
+              productName: string | null
+              guideName?: string | null
+              assistantName?: string | null
+              totalPeople?: number
+            } | null
+            alreadyImported?: boolean
             error?: string
           }
+          if (requestId !== lookupRequestIdRef.current) return
+
           if (!res.ok || !data.ok) {
             throw new Error(data.error || 'lookup_failed')
           }
-          setReservationLookup(data.found ? data.reservation ?? null : null)
+
+          const reservation = data.found ? data.reservation ?? null : null
+          const suggestedTour = toLinkedTourPreview(data.suggestedTour ?? null)
+          const isDuplicate = data.alreadyImported === true
+          lookupCacheRef.current.set(cacheKey, {
+            reservation,
+            suggestedTour,
+            alreadyImported: isDuplicate,
+          })
+          setReservationLookup(reservation)
+          setLinkedTour(suggestedTour)
+          setAlreadyImported(isDuplicate)
         } catch (error) {
+          if (controller.signal.aborted) return
+          if (requestId !== lookupRequestIdRef.current) return
           setReservationLookup(null)
+          setLinkedTour(null)
+          setAlreadyImported(false)
           setLookupError(
             error instanceof Error ? error.message : isKo ? '예약 조회 실패' : 'Lookup failed'
           )
         } finally {
-          setLookupLoading(false)
+          if (requestId === lookupRequestIdRef.current) {
+            setLookupLoading(false)
+          }
         }
       })()
-    }, 400)
+    }, delay)
 
-    return () => window.clearTimeout(timer)
-  }, [isKo, reservationNumber])
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [isKo, reservationRef, source])
 
   const resetSingleForm = useCallback(() => {
-    setReservationNumber('')
-    setAuthorName('')
-    setRating(null)
-    setReviewDate('')
     setPasteText('')
-    setRatingOnly(false)
     setReservationLookup(null)
+    setLinkedTour(null)
+    setAlreadyImported(false)
     setLookupError(null)
+    lookupCacheRef.current.clear()
   }, [])
 
   const runSingleImport = useCallback(async () => {
     if (singleValidation.valid.length === 0) {
       onMessage(
         isKo
-          ? '별점(1~5)을 선택하고, 별점만 기록이 아니면 리뷰 내용을 입력하세요.'
-          : 'Select a rating (1–5) and add review text unless using rating-only mode.'
+          ? 'GetYourGuide 리뷰 텍스트를 붙여넣고 RN#·별점·리뷰 내용이 파싱되는지 확인하세요.'
+          : 'Paste GetYourGuide review text and ensure RN#, rating, and review content are parsed.'
       )
       return
     }
@@ -376,7 +264,6 @@ export default function OtaReviewsImportSection({
         body: JSON.stringify({
           source,
           mode: 'rows',
-          ratingOnly,
           rows: singleValidation.valid,
         }),
       })
@@ -387,10 +274,16 @@ export default function OtaReviewsImportSection({
 
       onMessage(
         isKo
-          ? `리뷰 등록 완료 (투어 연결 ${data.toursLinked ?? 0}건)`
-          : `Review saved (tours linked: ${data.toursLinked ?? 0})`
+          ? data.duplicates
+            ? `이미 등록된 리뷰입니다. (중복 ${data.duplicates}건)`
+            : `리뷰 등록 완료 (투어 연결 ${data.toursLinked ?? 0}건)`
+          : data.duplicates
+            ? `Review already registered. (${data.duplicates} duplicate(s))`
+            : `Review saved (tours linked: ${data.toursLinked ?? 0})`
       )
-      resetSingleForm()
+      if (!data.duplicates) {
+        resetSingleForm()
+      }
       await onRefresh()
     } catch (error) {
       onMessage(
@@ -401,14 +294,12 @@ export default function OtaReviewsImportSection({
     } finally {
       setImporting(false)
     }
-  }, [isKo, onMessage, onRefresh, ratingOnly, resetSingleForm, singleValidation.valid, source])
+  }, [isKo, onMessage, onRefresh, resetSingleForm, singleValidation.valid, source])
 
   const runCsvImport = useCallback(async () => {
     if (csvValidation.valid.length === 0) {
       onMessage(
-        isKo
-          ? '가져올 수 있는 유효한 리뷰가 없습니다.'
-          : 'No valid reviews to import.'
+        isKo ? '가져올 수 있는 유효한 리뷰가 없습니다.' : 'No valid reviews to import.'
       )
       return
     }
@@ -431,8 +322,8 @@ export default function OtaReviewsImportSection({
 
       onMessage(
         isKo
-          ? `${data.imported ?? 0}건 추가, 투어 연결 ${data.toursLinked ?? 0}건`
-          : `${data.imported ?? 0} imported, ${data.toursLinked ?? 0} tours linked`
+          ? `${data.imported ?? 0}건 추가${data.duplicates ? `, 중복 ${data.duplicates}건 건너뜀` : ''}, 투어 연결 ${data.toursLinked ?? 0}건`
+          : `${data.imported ?? 0} imported${data.duplicates ? `, ${data.duplicates} duplicate(s) skipped` : ''}, ${data.toursLinked ?? 0} tours linked`
       )
       setCsvText('')
       await onRefresh()
@@ -504,9 +395,13 @@ export default function OtaReviewsImportSection({
           {isKo ? `${sourceLabel} 리뷰 추가` : `Add ${sourceLabel} reviews`}
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          {isKo
-            ? '1건씩 등록하거나 CSV로 일괄 업로드할 수 있습니다. 예약 번호로 투어를 연결합니다.'
-            : 'Add one review at a time or bulk upload via CSV. Link tours by reservation number.'}
+          {isParseOnlyPaste
+            ? isKo
+              ? 'GetYourGuide 리뷰 페이지 텍스트를 붙여넣으면 RN#·별점·리뷰·고객·상품·투어가 자동으로 처리됩니다.'
+              : 'Paste GetYourGuide review page text — RN#, rating, review, guest, product, and tour are handled automatically.'
+            : isKo
+              ? '1건씩 등록하거나 CSV로 일괄 업로드할 수 있습니다.'
+              : 'Add one review at a time or bulk upload via CSV.'}
         </p>
       </div>
 
@@ -539,104 +434,58 @@ export default function OtaReviewsImportSection({
 
       {mode === 'paste' ? (
         <div className="space-y-5">
-          <label className="block space-y-1.5">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              {isKo ? '예약 번호' : 'Reservation number'}
-            </span>
-            <input
-              type="text"
-              value={reservationNumber}
-              onChange={(e) => setReservationNumber(e.target.value)}
-              placeholder={isKo ? 'OTA 예약 번호 또는 시스템 예약 ID' : 'OTA reference or reservation ID'}
-              className="w-full h-11 rounded-lg border border-input bg-background px-3 text-sm"
-            />
-          </label>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                {isKo ? '작성자' : 'Author'}
-              </span>
-              <input
-                type="text"
-                value={authorName}
-                onChange={(e) => setAuthorName(e.target.value)}
-                placeholder={isKo ? '선택 입력' : 'Optional'}
-                className="w-full h-11 rounded-lg border border-input bg-background px-3 text-sm"
-              />
-            </label>
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                {isKo ? '리뷰 날짜' : 'Review date'}
-              </span>
-              <input
-                type="date"
-                value={reviewDate}
-                onChange={(e) => setReviewDate(e.target.value)}
-                className="w-full h-11 rounded-lg border border-input bg-background px-3 text-sm"
-              />
-            </label>
-          </div>
-
-          <div className="space-y-2">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              {isKo ? '별점' : 'Rating'}
-            </span>
-            <StarRatingInput value={rating} onChange={setRating} />
-          </div>
-
-          <label className="inline-flex items-center gap-2 text-sm text-foreground cursor-pointer">
-            <input
-              type="checkbox"
-              checked={ratingOnly}
-              onChange={(e) => setRatingOnly(e.target.checked)}
-              className="h-4 w-4 rounded border-input"
-            />
-            {isKo ? '내용 없이 별점만 기록' : 'Rating only (no review text)'}
-          </label>
-
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="space-y-2">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                {isKo ? '리뷰 텍스트 붙여넣기' : 'Paste review text'}
+                {isKo ? 'GetYourGuide 리뷰 텍스트 붙여넣기' : 'Paste GetYourGuide review text'}
               </label>
               <textarea
                 value={pasteText}
                 onChange={(e) => setPasteText(e.target.value)}
-                rows={12}
-                disabled={ratingOnly}
+                rows={16}
                 placeholder={
-                  ratingOnly
-                    ? isKo
-                      ? '별점만 기록 모드 — 텍스트 입력 비활성화'
-                      : 'Rating-only mode — text input disabled'
-                    : isKo
-                      ? '리뷰 내용을 붙여넣으세요.\n예: 최고의 투어였습니다! 가이드가 정말 친절했어요.'
-                      : 'Paste the review text here.'
+                  isKo
+                    ? 'GetYourGuide 리뷰 관리 페이지에서 복사한 텍스트를 그대로 붙여넣으세요.\n\n별점 · RN# · 리뷰 날짜 · 리뷰 내용 · 투어 날짜가 자동 추출됩니다.'
+                    : 'Paste the full text copied from the GetYourGuide review page.\n\nRating, RN#, review date, text, and travel date are extracted automatically.'
                 }
-                className="w-full min-h-[280px] rounded-xl border border-input bg-background px-4 py-3 text-sm leading-relaxed disabled:opacity-50 disabled:bg-muted/30"
+                className="w-full min-h-[320px] rounded-xl border border-input bg-background px-4 py-3 text-sm leading-relaxed"
               />
+              {pasteText.trim() && !isGetYourGuideScrapedText(pasteText) ? (
+                <p className="text-xs text-warning">
+                  {isKo
+                    ? 'GetYourGuide 형식이 아닐 수 있습니다. Booking reference·Travel date가 포함된 텍스트인지 확인하세요.'
+                    : 'This may not be GetYourGuide format. Ensure Booking reference and Travel date are included.'}
+                </p>
+              ) : null}
             </div>
 
-            <ReviewPreviewCard
+            <OtaReviewImportPreviewCard
               locale={locale}
-              sourceLabel={sourceLabel}
               draft={singleDraft}
-              ratingOnly={ratingOnly}
               reservation={reservationLookup}
+              linkedTour={linkedTour}
               lookupLoading={lookupLoading}
               lookupError={lookupError}
+              alreadyImported={alreadyImported}
             />
           </div>
 
           <button
             type="button"
             onClick={() => void runSingleImport()}
-            disabled={importing || singleValidation.valid.length === 0}
+            disabled={
+              importing || singleValidation.valid.length === 0 || lookupLoading || alreadyImported
+            }
             className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 disabled:opacity-50"
           >
             {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            {isKo ? '리뷰 1건 등록' : 'Save 1 review'}
+            {alreadyImported
+              ? isKo
+                ? '이미 등록됨'
+                : 'Already registered'
+              : isKo
+                ? '리뷰 1건 등록'
+                : 'Save 1 review'}
           </button>
         </div>
       ) : (

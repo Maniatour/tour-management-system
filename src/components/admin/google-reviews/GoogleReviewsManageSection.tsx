@@ -10,9 +10,9 @@ import GoogleReviewRecentChangesPanel from '@/components/admin/google-reviews/Go
 import GoogleReviewChangeHistory from '@/components/admin/google-reviews/GoogleReviewChangeHistory'
 import { formatLasVegasDate } from '@/lib/dailyReport/dateUtils'
 import type { ReviewSource } from '@/lib/reviewSources'
-import { getReviewSourceLabel, isReviewSource } from '@/lib/reviewSources'
+import { defaultAdminGoogleReviewListSort, getReviewSourceLabel, isReviewSource } from '@/lib/reviewSources'
 import type { GoogleReviewChangeLogRow } from '@/lib/googleReviewChangeLog'
-import type { AdminGoogleReviewListItem, GoogleReviewStats } from '@/types/googleBusiness'
+import type { AdminGoogleReviewListItem, AdminGoogleReviewListSort, GoogleReviewStats } from '@/types/googleBusiness'
 
 type ReviewsResponse = {
   ok?: boolean
@@ -34,6 +34,8 @@ type Props = {
 
 const STATUS_FILTERS = ['all', 'pending', 'approved', 'rejected', 'hidden'] as const
 
+const SORT_OPTIONS: AdminGoogleReviewListSort[] = ['imported_at', 'review_created_at']
+
 export default function GoogleReviewsManageSection({
   locale,
   enabled,
@@ -46,6 +48,9 @@ export default function GoogleReviewsManageSection({
   const sourceLabel = getReviewSourceLabel(reviewSource, locale)
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>('pending')
   const [unclassifiedOnly, setUnclassifiedOnly] = useState(false)
+  const [sortBy, setSortBy] = useState<AdminGoogleReviewListSort>(() =>
+    defaultAdminGoogleReviewListSort(reviewSource)
+  )
   const [reviews, setReviews] = useState<AdminGoogleReviewListItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -142,6 +147,7 @@ export default function GoogleReviewsManageSection({
         page: String(page),
         limit: '15',
         source: reviewSource,
+        sort: sortBy,
       })
       if (statusFilter !== 'all') params.set('status', statusFilter)
       if (unclassifiedOnly) params.set('unclassified', '1')
@@ -166,7 +172,7 @@ export default function GoogleReviewsManageSection({
         setLoading(false)
       }
     }
-  }, [enabled, isKo, onMessage, page, reviewSource, statusFilter, unclassifiedOnly])
+  }, [enabled, isKo, onMessage, page, reviewSource, sortBy, statusFilter, unclassifiedOnly])
 
   useEffect(() => {
     void loadReviews()
@@ -375,6 +381,7 @@ export default function GoogleReviewsManageSection({
   useEffect(() => {
     setPage(1)
     setSelectedIds(new Set())
+    setSortBy(defaultAdminGoogleReviewListSort(reviewSource))
   }, [reviewSource])
 
   if (!enabled) return null
@@ -454,6 +461,35 @@ export default function GoogleReviewsManageSection({
         >
           {isKo ? '미분류만' : 'Unclassified only'}
         </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-muted-foreground">
+          {isKo ? '정렬' : 'Sort'}
+        </span>
+        {SORT_OPTIONS.map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => {
+              setPage(1)
+              setSortBy(option)
+            }}
+            className={`h-9 px-3 rounded-full text-xs font-medium border transition-colors ${
+              sortBy === option
+                ? 'bg-secondary text-secondary-foreground border-secondary'
+                : 'bg-background border-border text-muted-foreground hover:bg-muted/50'
+            }`}
+          >
+            {option === 'imported_at'
+              ? isKo
+                ? '최신 입력순'
+                : 'Latest input'
+              : isKo
+                ? '리뷰 작성일순'
+                : 'Review date'}
+          </button>
+        ))}
       </div>
 
       <GoogleReviewRecentChangesPanel

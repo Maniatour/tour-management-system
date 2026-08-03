@@ -7,6 +7,12 @@ export type ParsedOtaReviewRow = {
   reviewCreatedAt: string | null
   productHint: string | null
   reservationNumber?: string | null
+  /** GetYourGuide Travel date — YYYY-MM-DD */
+  tourDate?: string | null
+  /** Internal product_id (e.g. MDGCSUNRISE) */
+  productId?: string | null
+  /** Explicit tour to link on import */
+  tourId?: string | null
   lineNumber?: number
 }
 
@@ -255,9 +261,14 @@ function parseBlockFormat(text: string): ParsedOtaReviewRow[] {
   return rows
 }
 
-export function parseOtaReviewText(text: string): ParsedOtaReviewRow[] {
+export function parseOtaReviewText(text: string, source?: OtaReviewSource | null): ParsedOtaReviewRow[] {
   const trimmed = text.trim()
   if (!trimmed) return []
+
+  if (source === 'getyourguide' || isGetYourGuideScrapedText(trimmed)) {
+    const gyg = parseGetYourGuideScrapedText(trimmed)
+    if (gyg) return [gyg]
+  }
 
   const delimited = parseDelimitedRows(trimmed)
   if (delimited.length > 0) {
@@ -267,9 +278,248 @@ export function parseOtaReviewText(text: string): ParsedOtaReviewRow[] {
   return parseBlockFormat(trimmed)
 }
 
-/** 단건 붙여넣기용 — 첫 번째 파싱 결과만 반환 */
-export function parseSingleOtaReviewText(text: string): ParsedOtaReviewRow | null {
-  const rows = parseOtaReviewText(text)
+/** GetYourGuide 관리자 화면에서 복사한 리뷰 본문인지 */
+export function isGetYourGuideScrapedText(text: string): boolean {
+  const sample = text.trim()
+  if (!sample) return false
+  return (
+    /booking\s*reference/i.test(sample) ||
+    (/travel\s*date/i.test(sample) && /getyourguide\s*traveler/i.test(sample)) ||
+    /\bGYG[A-Z0-9]{6,}\b/.test(sample)
+  )
+}
+
+const GYG_GENERIC_AUTHORS = new Set([
+  'getyourguide traveler',
+  'getyourguide',
+  'traveler',
+  'g',
+])
+
+const GYG_BODY_PRODUCT_MAP: Array<{ pattern: RegExp; productId: string; productName: string }> = [
+  {
+    pattern: /Zion\s*Bryce\s*Grand\s*Canyon|Las\s*Vegas\s*>\s*Zion\s*Bryce|Zion\s*Bryce\s*&?\s*Antelope/i,
+    productId: 'MNGC1N',
+    productName: '그랜드서클 1박 2일 투어',
+  },
+  {
+    pattern: /Grand\s*Canyon\s*Sunrise|Las\s*Vegas\s*[:>]?\s*Grand\s*Canyon\s*Sunrise/i,
+    productId: 'MDGCSUNRISE',
+    productName: '밤도깨비 그랜드캐년 일출 투어',
+  },
+  {
+    pattern:
+      /Grand\s*Canyon[\s\S]{0,300}?Antelope[\s\S]{0,300}?Horseshoe[\s\S]{0,300}?Lake\s*Powell/i,
+    productId: 'MDGC1D',
+    productName: '그랜드서클 당일 투어',
+  },
+]
+
+export function mapGetYourGuideProduct(text: string): {
+  productId: string
+  productName: string
+} | null {
+  const source = text.trim()
+  if (!source) return null
+  for (const entry of GYG_BODY_PRODUCT_MAP) {
+    if (entry.pattern.test(source)) {
+      return { productId: entry.productId, productName: entry.productName }
+    }
+  }
+  return null
+}
+
+function parseGyGLabelValue(text: string, label: string): string | null {
+  const pattern = new RegExp(
+    `${label}\\s*\\n\\s*([^\\n]+)`,
+    'i'
+  )
+  const match = text.match(pattern)
+  return match?.[1]?.trim() || null
+}
+
+function parseGyGDateLine(value: string | null | undefined): string | null {
+  if (!value?.trim()) return null
+  const parsed = Date.parse(value.trim())
+  if (!Number.isFinite(parsed)) return null
+  return new Date(parsed).toISOString()
+}
+
+function parseGyGDateToYmd(value: string | null | undefined): string | null {
+  if (!value?.trim()) return null
+  const parsed = Date.parse(value.trim())
+  if (!Number.isFinite(parsed)) return null
+  const d = new Date(parsed)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function extractGyGProductLine(text: string): string | null {
+  const labeled = parseGyGLabelValue(text, 'Option')
+  if (labeled && !labeled.toLowerCase().startsWith('default')) {
+    return labeled
+  }
+
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  for (const line of lines) {
+    if (/^las\s+vegas\s*[:>]/i.test(line) && /grand\s+canyon/i.test(line)) {
+      return line.replace(/\s*(hide\s+details|option)$/i, '').trim()
+    }
+  }
+
+  const inline = text.match(
+    /(Las\s+Vegas\s*[:>]\s*Grand\s+Canyon[^\n]*(?:Antelope|Horseshoe)[^\n]*)/i
+  )
+  return inline?.[1]?.trim() || null
+}
+
+function extractGyGComment(lines: string[]): string | null {
+  const stopPatterns = [
+    /^replied\s+on\b/i,
+    /^translate$/i,
+    /^hide\s+details$/i,
+    /^option$/i,
+    /^booking\s+reference$/i,
+    /^travel\s+date$/i,
+    /^las\s+vegas\s*[:>]/i,
+    /^default\s*\|/i,
+  ]
+
+  const commentLines: string[] = []
+  let inComment = false
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) {
+      if (inComment && commentLines.length > 0) break
+      continue
+    }
+
+    if (!inComment) {
+      if (/^[A-Za-z]{3}\s+\d{1,2},\s+\d{4}$/.test(trimmed)) {
+        inComment = true
+      }
+      continue
+    }
+
+    if (stopPatterns.some((pattern) => pattern.test(trimmed))) {
+      break
+    }
+
+    commentLines.push(trimmed)
+  }
+
+  const comment = commentLines.join('\n').trim()
+  return comment || null
+}
+
+function extractGyGReviewDate(lines: string[]): string | null {
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (/^[A-Za-z]{3}\s+\d{1,2},\s+\d{4}$/.test(trimmed)) {
+      return parseGyGDateLine(trimmed)
+    }
+  }
+  return null
+}
+
+function extractGyGAuthor(lines: string[]): string | null {
+  for (let i = 0; i < lines.length; i += 1) {
+    const trimmed = lines[i]?.trim() ?? ''
+    if (/getyourguide\s+traveler/i.test(trimmed)) {
+      return null
+    }
+    if (
+      trimmed &&
+      trimmed.length < 80 &&
+      !/^\d$/.test(trimmed) &&
+      !/out of \d stars/i.test(trimmed) &&
+      !/^[A-Za-z]{3}\s+\d{1,2},\s+\d{4}$/.test(trimmed) &&
+      !trimmed.startsWith('–') &&
+      !trimmed.startsWith('-') &&
+      !GYG_GENERIC_AUTHORS.has(trimmed.toLowerCase())
+    ) {
+      const next = lines[i + 1]?.trim() ?? ''
+      if (/^[-–]/.test(next) || /^[A-Za-z]{3}\s+\d{1,2},\s+\d{4}$/.test(next)) {
+        return null
+      }
+    }
+  }
+  return null
+}
+
+/** GetYourGuide 사이트에서 복사한 리뷰 블록 파싱 */
+export function parseGetYourGuideScrapedText(text: string): ParsedOtaReviewRow | null {
+  const trimmed = text.trim()
+  if (!trimmed || !isGetYourGuideScrapedText(trimmed)) return null
+
+  const lines = trimmed.split(/\r?\n/).map((line) => line.trim())
+
+  let rating: number | null = null
+  for (const line of lines) {
+    if (/^(\d)\s*$/.test(line)) {
+      rating = Number.parseInt(line, 10)
+      break
+    }
+    const starsMatch = line.match(/(\d)\s*out\s*of\s*5\s*stars?/i)
+    if (starsMatch?.[1]) {
+      rating = Number.parseInt(starsMatch[1], 10)
+      break
+    }
+  }
+
+  const bookingRef =
+    parseGyGLabelValue(trimmed, 'Booking reference') ||
+    trimmed.match(/\b(GYG[A-Z0-9]{6,})\b/)?.[1]?.trim() ||
+    null
+
+  const travelDateRaw = parseGyGLabelValue(trimmed, 'Travel date')
+  const tourDate = parseGyGDateToYmd(travelDateRaw)
+  const reviewCreatedAt = extractGyGReviewDate(lines)
+  const productLine = extractGyGProductLine(trimmed)
+  const mappedProduct = mapGetYourGuideProduct(productLine ?? trimmed)
+  const comment = extractGyGComment(lines)
+  const authorName = extractGyGAuthor(lines)
+
+  if (
+    rating === null &&
+    !comment &&
+    !bookingRef &&
+    !tourDate &&
+    !productLine
+  ) {
+    return null
+  }
+
+  return {
+    authorName,
+    rating,
+    comment,
+    reviewCreatedAt,
+    productHint: mappedProduct?.productName ?? productLine,
+    reservationNumber: bookingRef,
+    tourDate,
+    productId: mappedProduct?.productId ?? null,
+    tourId: null,
+    lineNumber: 1,
+  }
+}
+
+export function parseSingleOtaReviewText(
+  text: string,
+  source?: OtaReviewSource | null
+): ParsedOtaReviewRow | null {
+  const trimmed = text.trim()
+  if (!trimmed) return null
+
+  if (source === 'getyourguide' || isGetYourGuideScrapedText(trimmed)) {
+    const gyg = parseGetYourGuideScrapedText(trimmed)
+    if (gyg) return gyg
+  }
+
+  const rows = parseOtaReviewText(trimmed)
   return rows[0] ?? null
 }
 
