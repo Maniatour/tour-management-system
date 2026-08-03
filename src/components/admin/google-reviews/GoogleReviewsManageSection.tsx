@@ -30,6 +30,7 @@ type Props = {
   onMessage: (message: string) => void
   refreshKey: number
   onReviewSourceChange?: (source: ReviewSource) => void
+  onSourceReviewCount?: (source: ReviewSource, total: number) => void
 }
 
 const STATUS_FILTERS = ['all', 'pending', 'approved', 'rejected', 'hidden'] as const
@@ -43,6 +44,7 @@ export default function GoogleReviewsManageSection({
   onMessage,
   refreshKey,
   onReviewSourceChange,
+  onSourceReviewCount,
 }: Props) {
   const isKo = locale === 'ko'
   const sourceLabel = getReviewSourceLabel(reviewSource, locale)
@@ -159,6 +161,9 @@ export default function GoogleReviewsManageSection({
       }
       setReviews(data.reviews ?? [])
       setTotal(data.total ?? 0)
+      if (data.stats?.total != null) {
+        onSourceReviewCount?.(reviewSource, data.stats.total)
+      }
       if (!options?.silent) {
         setSelectedIds(new Set())
       }
@@ -172,7 +177,7 @@ export default function GoogleReviewsManageSection({
         setLoading(false)
       }
     }
-  }, [enabled, isKo, onMessage, page, reviewSource, sortBy, statusFilter, unclassifiedOnly])
+  }, [enabled, isKo, onMessage, onSourceReviewCount, page, reviewSource, sortBy, statusFilter, unclassifiedOnly])
 
   useEffect(() => {
     void loadReviews()

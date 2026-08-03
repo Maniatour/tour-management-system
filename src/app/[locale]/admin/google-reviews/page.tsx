@@ -11,8 +11,10 @@ import OtaReviewsImportSection from '@/components/admin/google-reviews/OtaReview
 import {
   isOtaReviewSource,
   isReviewSource,
+  isReviewSourceTabWithCount,
   REVIEW_SOURCE_TABS,
   type ReviewSource,
+  type ReviewSourceTabWithCount,
 } from '@/lib/reviewSources'
 import type {
   GoogleBusinessAccountItem,
@@ -61,6 +63,8 @@ export default function AdminGoogleReviewsPage() {
   const [activeSource, setActiveSource] = useState<ReviewSource>('google')
   const [statusLoadFailed, setStatusLoadFailed] = useState(false)
   const [connectionPanelOpen, setConnectionPanelOpen] = useState(true)
+  const [sourceReviewCounts, setSourceReviewCounts] = useState<Partial<Record<ReviewSourceTabWithCount, number>>>({})
+  const [loadingSourceCounts, setLoadingSourceCounts] = useState(true)
 
   type GoogleTabStatus = 'loading' | 'connected' | 'warning' | 'error' | 'disconnected'
 
@@ -124,6 +128,29 @@ export default function AdminGoogleReviewsPage() {
         return 'border-border bg-background text-muted-foreground hover:bg-muted/50'
     }
   }
+
+  function getTabCountBadgeClass(tabId: ReviewSource, isActive: boolean): string {
+    if (!isActive) {
+      return 'bg-muted/80 text-muted-foreground'
+    }
+    if (tabId === 'google') {
+      if (googleTabStatus === 'connected' || googleTabStatus === 'warning' || googleTabStatus === 'error') {
+        return 'bg-white/20 text-white'
+      }
+      return 'bg-primary-foreground/15 text-primary-foreground'
+    }
+    return 'bg-primary-foreground/15 text-primary-foreground'
+  }
+
+  const formatTabReviewCount = useCallback(
+    (count: number) => count.toLocaleString(locale === 'ko' ? 'ko-KR' : 'en-US'),
+    [locale]
+  )
+
+  const handleSourceReviewCount = useCallback((source: ReviewSource, total: number) => {
+    if (!isReviewSourceTabWithCount(source)) return
+    setSourceReviewCounts((prev) => ({ ...prev, [source]: total }))
+  }, [])
 
   const didAutoCollapseRef = useRef(false)
 
@@ -194,6 +221,27 @@ export default function AdminGoogleReviewsPage() {
     setRefreshKey((key) => key + 1)
   }, [loadStatus])
 
+  const loadSourceReviewCounts = useCallback(async () => {
+    setLoadingSourceCounts(true)
+    try {
+      const res = await fetchApiWithAuth('/api/admin/google-business/reviews/source-counts')
+      const data = (await res.json()) as {
+        ok?: boolean
+        counts?: Partial<Record<ReviewSourceTabWithCount, number>>
+        error?: string
+      }
+      if (!res.ok || !data.ok) {
+        console.error('[admin/google-reviews] source-counts', data.error)
+        return
+      }
+      setSourceReviewCounts(data.counts ?? {})
+    } catch (error) {
+      console.error('[admin/google-reviews] source-counts', error)
+    } finally {
+      setLoadingSourceCounts(false)
+    }
+  }, [])
+
   const notify = useCallback((_message: string) => {
     // Page-level alert box removed — Google tab color shows connection status.
   }, [])
@@ -259,6 +307,10 @@ export default function AdminGoogleReviewsPage() {
   useEffect(() => {
     void loadStatus()
   }, [loadStatus])
+
+  useEffect(() => {
+    void loadSourceReviewCounts()
+  }, [loadSourceReviewCounts, refreshKey])
 
   useEffect(() => {
     if (searchParams.get('success') === '1') {
@@ -396,6 +448,15 @@ export default function AdminGoogleReviewsPage() {
                 />
               ) : null}
               {isKo ? tab.labelKo : tab.labelEn}
+              {isReviewSourceTabWithCount(tab.id) ? (
+                <span
+                  className={`inline-flex items-center justify-center min-w-[1.75rem] h-5 px-1.5 rounded-md text-xs font-medium tabular-nums ${getTabCountBadgeClass(tab.id, isActive)}`}
+                >
+                  {loadingSourceCounts && sourceReviewCounts[tab.id] == null
+                    ? '…'
+                    : formatTabReviewCount(sourceReviewCounts[tab.id] ?? 0)}
+                </span>
+              ) : null}
             </button>
           )
         })}
@@ -633,6 +694,7 @@ export default function AdminGoogleReviewsPage() {
         onMessage={notify}
         refreshKey={refreshKey}
         onReviewSourceChange={setActiveSource}
+        onSourceReviewCount={handleSourceReviewCount}
       />
 
       <GoogleReviewStaffStatsSection

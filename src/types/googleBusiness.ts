@@ -54,6 +54,8 @@ export type AdminGoogleReviewListItem = {
 export type GoogleReviewStaffStat = {
   staffEmail: string
   staffName: string
+  staffIsActive: boolean
+  firstReviewDate: string | null
   reviewCount: number
   avgRating: number | null
   fiveStarCount: number
@@ -61,6 +63,8 @@ export type GoogleReviewStaffStat = {
   threeStarCount: number
   twoStarCount: number
   oneStarCount: number
+  totalTourGuests: number
+  reservationGroupCount: number
 }
 
 export type GoogleReviewStaffMonthlyCell = {
@@ -81,6 +85,7 @@ export type GoogleReviewStaffMonthlyCell = {
 export type GoogleReviewStaffMonthlyStat = {
   staffEmail: string
   staffName: string
+  staffIsActive: boolean
   months: GoogleReviewStaffMonthlyCell[]
 }
 

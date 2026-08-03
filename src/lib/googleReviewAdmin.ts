@@ -604,3 +604,20 @@ export async function getGoogleReviewStats(
     unclassified: data.unclassified ?? 0,
   }
 }
+
+export async function getGoogleReviewSourceCounts(
+  operatorId: string | null | undefined,
+  sources: readonly string[]
+): Promise<Record<string, number>> {
+  const uniqueSources = [...new Set(sources.filter(Boolean))]
+  if (!uniqueSources.length) return {}
+
+  const entries = await Promise.all(
+    uniqueSources.map(async (source) => {
+      const stats = await getGoogleReviewStats(operatorId, source)
+      return [source, stats.total] as const
+    })
+  )
+
+  return Object.fromEntries(entries)
+}

@@ -8,6 +8,8 @@ import type {
 export type GoogleReviewStaffStatRow = {
   staffEmail: string
   staffName: string
+  staffIsActive: boolean
+  firstReviewDate: string | null
   reviewCount: number
   avgRating: number | null
   fiveStarCount: number
@@ -15,6 +17,8 @@ export type GoogleReviewStaffStatRow = {
   threeStarCount: number
   twoStarCount: number
   oneStarCount: number
+  totalTourGuests: number
+  reservationGroupCount: number
 }
 
 export type GoogleReviewStaffMonthlyStatRow = {
@@ -34,6 +38,31 @@ export type GoogleReviewStaffMonthlyStatRow = {
   groupReviewRatePercent: number | null
 }
 
+async function loadStaffActiveByEmail(emails: string[]): Promise<Map<string, boolean>> {
+  if (!supabaseAdmin || emails.length === 0) return new Map()
+
+  const { data, error } = await supabaseAdmin.from('team').select('email, is_active')
+  if (error) {
+    console.error('[googleReviewStaffStats] team is_active load failed:', error.message)
+    return new Map()
+  }
+
+  const map = new Map<string, boolean>()
+  for (const row of data ?? []) {
+    const email = typeof row.email === 'string' ? row.email.trim().toLowerCase() : ''
+    if (!email) continue
+    map.set(email, row.is_active !== false)
+  }
+  return map
+}
+
+function resolveStaffIsActive(
+  staffEmail: string,
+  activeMap: Map<string, boolean>
+): boolean {
+  return activeMap.get(staffEmail.toLowerCase()) ?? true
+}
+
 export async function getGoogleReviewStaffStats(
   operatorId?: string | null
 ): Promise<GoogleReviewStaffStatRow[]> {
@@ -47,6 +76,7 @@ export async function getGoogleReviewStaffStats(
       data: Array<{
         staff_email: string
         staff_name: string
+        first_review_date: string | null
         review_count: number | string
         avg_rating: number | string | null
         five_star_count: number | string
@@ -54,6 +84,8 @@ export async function getGoogleReviewStaffStats(
         three_star_count: number | string
         two_star_count: number | string
         one_star_count: number | string
+        total_tour_guests: number | string
+        reservation_group_count: number | string
       }> | null
       error: { message: string } | null
     }>
@@ -67,15 +99,16 @@ export async function getGoogleReviewStaffStats(
       error.message.includes('Could not find the function')
     ) {
       throw new Error(
-        'admin_google_review_staff_stats RPC is missing. Apply migration 20260803350000_google_review_staff_stats_all_platforms.sql.'
+        'admin_google_review_staff_stats RPC is missing. Apply migration 20260803370000_google_review_staff_stats_overall_career_totals.sql.'
       )
     }
     throw new Error(error.message)
   }
 
-  return (data ?? []).map((row) => ({
+  const mapped = (data ?? []).map((row) => ({
     staffEmail: row.staff_email,
     staffName: row.staff_name,
+    firstReviewDate: row.first_review_date ?? null,
     reviewCount: Number(row.review_count ?? 0),
     avgRating: row.avg_rating == null ? null : Number(row.avg_rating),
     fiveStarCount: Number(row.five_star_count ?? 0),
@@ -83,6 +116,14 @@ export async function getGoogleReviewStaffStats(
     threeStarCount: Number(row.three_star_count ?? 0),
     twoStarCount: Number(row.two_star_count ?? 0),
     oneStarCount: Number(row.one_star_count ?? 0),
+    totalTourGuests: Number(row.total_tour_guests ?? 0),
+    reservationGroupCount: Number(row.reservation_group_count ?? 0),
+  }))
+
+  const activeMap = await loadStaffActiveByEmail(mapped.map((row) => row.staffEmail))
+  return mapped.map((row) => ({
+    ...row,
+    staffIsActive: resolveStaffIsActive(row.staffEmail, activeMap),
   }))
 }
 
@@ -214,9 +255,9 @@ export async function getGoogleReviewStaffStatReviews(input: {
   }))
 }
 
-export function pivotGoogleReviewStaffMonthlyStats(
+export async function pivotGoogleReviewStaffMonthlyStats(
   rows: GoogleReviewStaffMonthlyStatRow[]
-): GoogleReviewStaffMonthlyStat[] {
+): Promise<GoogleReviewStaffMonthlyStat[]> {
   const byStaff = new Map<string, GoogleReviewStaffMonthlyStat>()
 
   for (const row of rows) {
@@ -241,15 +282,23 @@ export function pivotGoogleReviewStaffMonthlyStats(
       byStaff.set(row.staffEmail, {
         staffEmail: row.staffEmail,
         staffName: row.staffName,
+        staffIsActive: true,
         months: [cell],
       })
     }
   }
 
-  return [...byStaff.values()].sort((a, b) => {
-    const aTotal = a.months.reduce((sum, m) => sum + m.reviewCount, 0)
-    const bTotal = b.months.reduce((sum, m) => sum + m.reviewCount, 0)
-    if (bTotal !== aTotal) return bTotal - aTotal
-    return a.staffName.localeCompare(b.staffName, 'ko')
-  })
+  const activeMap = await loadStaffActiveByEmail([...byStaff.keys()])
+
+  return [...byStaff.values()]
+    .map((stat) => ({
+      ...stat,
+      staffIsActive: resolveStaffIsActive(stat.staffEmail, activeMap),
+    }))
+    .sort((a, b) => {
+      const aTotal = a.months.reduce((sum, m) => sum + m.reviewCount, 0)
+      const bTotal = b.months.reduce((sum, m) => sum + m.reviewCount, 0)
+      if (bTotal !== aTotal) return bTotal - aTotal
+      return a.staffName.localeCompare(b.staffName, 'ko')
+    })
 }

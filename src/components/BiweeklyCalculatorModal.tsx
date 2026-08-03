@@ -1675,25 +1675,6 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
             </table>
           ` : ''}
           
-          ${!isGuideOrDriver && Object.keys(periodMealCounts).length > 0 ? `
-            <div class="section-title">${pr.periodOfficeMeals}</div>
-            <table class="table">
-              <thead><tr><th>Name</th><th>Meals</th></tr></thead>
-              <tbody>
-                ${Object.entries(periodMealCounts)
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([email, n]) => {
-                    const nm =
-                      teamMembers.find((m) => m.email === email)?.display_name ||
-                      teamMembers.find((m) => m.email === email)?.name_ko ||
-                      email
-                    return `<tr><td>${nm}</td><td>${n}</td></tr>`
-                  })
-                  .join('')}
-              </tbody>
-            </table>
-          ` : ''}
-          
           ${tourFees.length > 0 ? `
             <div class="section-title">${pr.tourFee}</div>
             <table class="table">
@@ -1874,7 +1855,6 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       // 프린트용 HTML 생성 (handlePrint 함수의 내용 재사용)
       const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
       const employeeName = selectedMember?.display_name || selectedMember?.name_ko || ''
-      const isGuideOrDriver = isGuideOrDriverPosition(selectedMember?.position)
       
       // Personal Car 소계 계산
       const personalCarTotal = tourFees.reduce((sum, tour) => sum + (tour.personal_car || 0), 0)
@@ -2105,25 +2085,6 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   </tr>
                 `
                 }).join('')}
-              </tbody>
-            </table>
-          ` : ''}
-          
-          ${!isGuideOrDriver && Object.keys(periodMealCounts).length > 0 ? `
-            <div class="section-title">${pr.periodOfficeMeals}</div>
-            <table class="table">
-              <thead><tr><th>Name</th><th>Meals</th></tr></thead>
-              <tbody>
-                ${Object.entries(periodMealCounts)
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([email, n]) => {
-                    const nm =
-                      teamMembers.find((m) => m.email === email)?.display_name ||
-                      teamMembers.find((m) => m.email === email)?.name_ko ||
-                      email
-                    return `<tr><td>${nm}</td><td>${n}</td></tr>`
-                  })
-                  .join('')}
               </tbody>
             </table>
           ` : ''}

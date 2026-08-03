@@ -2,9 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronsUpDown,
   Loader2,
+  MinusCircle,
   Star,
   Users,
 } from 'lucide-react'
@@ -25,6 +30,149 @@ type Props = {
 }
 
 type ViewMode = 'overall' | 'monthly'
+
+type StaffActiveFilter = 'all' | 'active' | 'inactive'
+
+function matchesStaffActiveFilter(
+  isActive: boolean,
+  filter: StaffActiveFilter
+): boolean {
+  if (filter === 'all') return true
+  if (filter === 'active') return isActive
+  return !isActive
+}
+
+type OverallSortKey =
+  | 'staffName'
+  | 'firstReviewDate'
+  | 'reviewCount'
+  | 'avgRating'
+  | 'totalTourGuests'
+  | 'reservationGroupCount'
+  | 'fiveStarCount'
+  | 'fourStarCount'
+  | 'threeStarCount'
+  | 'twoStarCount'
+  | 'oneStarCount'
+
+type SortDir = 'asc' | 'desc'
+
+function compareOverallStats(
+  a: GoogleReviewStaffStat,
+  b: GoogleReviewStaffStat,
+  key: OverallSortKey,
+  dir: SortDir
+): number {
+  let cmp = 0
+  switch (key) {
+    case 'staffName':
+      cmp = a.staffName.localeCompare(b.staffName, 'ko')
+      break
+    case 'firstReviewDate': {
+      const aDate = a.firstReviewDate ?? ''
+      const bDate = b.firstReviewDate ?? ''
+      cmp = aDate.localeCompare(bDate)
+      break
+    }
+    case 'avgRating':
+      cmp = (a.avgRating ?? -1) - (b.avgRating ?? -1)
+      break
+    default:
+      cmp = a[key] - b[key]
+      break
+  }
+  return dir === 'asc' ? cmp : -cmp
+}
+
+function SortableTh({
+  label,
+  sortKey,
+  activeKey,
+  sortDir,
+  onSort,
+  className = '',
+  align = 'left',
+}: {
+  label: string
+  sortKey: OverallSortKey
+  activeKey: OverallSortKey
+  sortDir: SortDir
+  onSort: (key: OverallSortKey) => void
+  className?: string
+  align?: 'left' | 'center' | 'right'
+}) {
+  const isActive = activeKey === sortKey
+  const alignClass =
+    align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : 'text-left'
+
+  return (
+    <th className={`py-2 font-medium ${alignClass} ${className}`}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-0.5 hover:text-foreground transition-colors ${
+          align === 'center' ? 'justify-center w-full' : ''
+        } ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}
+      >
+        <span>{label}</span>
+        {isActive ? (
+          sortDir === 'asc' ? (
+            <ChevronUp className="h-3.5 w-3.5 shrink-0" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+          )
+        ) : (
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-40" />
+        )}
+      </button>
+    </th>
+  )
+}
+
+function formatReviewDate(value: string | null, locale: string): string {
+  if (!value) return '—'
+  const parsed = new Date(`${value}T12:00:00`)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function StaffNameWithStatus({
+  name,
+  isActive,
+  isKo,
+}: {
+  name: string
+  isActive: boolean
+  isKo: boolean
+}) {
+  const statusLabel = isActive ? (isKo ? '활성' : 'Active') : (isKo ? '비활성' : 'Inactive')
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      {isActive ? (
+        <CheckCircle2
+          className="h-4 w-4 shrink-0 text-emerald-500"
+          aria-hidden
+        />
+      ) : (
+        <MinusCircle
+          className="h-4 w-4 shrink-0 text-muted-foreground/55"
+          aria-hidden
+        />
+      )}
+      <span
+        className={isActive ? 'text-foreground' : 'text-muted-foreground'}
+        title={statusLabel}
+      >
+        {name}
+      </span>
+    </span>
+  )
+}
 
 const MONTH_LABELS_KO = [
   '1월',
@@ -226,9 +374,57 @@ export default function GoogleReviewStaffStatsSection({
   const [stats, setStats] = useState<GoogleReviewStaffStat[]>([])
   const [monthlyStats, setMonthlyStats] = useState<GoogleReviewStaffMonthlyStat[]>([])
   const [loading, setLoading] = useState(false)
+  const [sortConfig, setSortConfig] = useState<{ key: OverallSortKey; dir: SortDir }>({
+    key: 'reviewCount',
+    dir: 'desc',
+  })
+  const [staffActiveFilter, setStaffActiveFilter] = useState<StaffActiveFilter>('all')
   const [reviewModalTarget, setReviewModalTarget] = useState<StaffStatReviewModalTarget | null>(
     null
   )
+
+  const handleSort = useCallback((key: OverallSortKey) => {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        return { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+      }
+      const defaultDesc =
+        key !== 'staffName' && key !== 'firstReviewDate'
+      return { key, dir: defaultDesc ? 'desc' : 'asc' }
+    })
+  }, [])
+
+  const sortedStats = useMemo(() => {
+    return [...stats].sort((a, b) =>
+      compareOverallStats(a, b, sortConfig.key, sortConfig.dir)
+    )
+  }, [stats, sortConfig])
+
+  const filteredSortedStats = useMemo(
+    () =>
+      sortedStats.filter((row) =>
+        matchesStaffActiveFilter(row.staffIsActive, staffActiveFilter)
+      ),
+    [sortedStats, staffActiveFilter]
+  )
+
+  const filteredMonthlyStats = useMemo(
+    () =>
+      monthlyStats.filter((row) =>
+        matchesStaffActiveFilter(row.staffIsActive, staffActiveFilter)
+      ),
+    [monthlyStats, staffActiveFilter]
+  )
+
+  const staffFilterCounts = useMemo(() => {
+    const source = viewMode === 'overall' ? stats : monthlyStats
+    const active = source.filter((row) => row.staffIsActive).length
+    return {
+      all: source.length,
+      active,
+      inactive: source.length - active,
+    }
+  }, [stats, monthlyStats, viewMode])
 
   const monthLabels = isKo ? MONTH_LABELS_KO : MONTH_LABELS_EN
 
@@ -286,8 +482,13 @@ export default function GoogleReviewStaffStatsSection({
 
   const hasOverallData = stats.length > 0
   const hasMonthlyData = monthlyStats.length > 0
-  const isEmpty =
-    viewMode === 'overall' ? !loading && !hasOverallData : !loading && !hasMonthlyData
+  const hasRawData = viewMode === 'overall' ? hasOverallData : hasMonthlyData
+  const hasFilteredData =
+    viewMode === 'overall'
+      ? filteredSortedStats.length > 0
+      : filteredMonthlyStats.length > 0
+  const isEmpty = !loading && !hasRawData
+  const isFilteredEmpty = !loading && hasRawData && !hasFilteredData
 
   return (
     <section className="rounded-2xl border border-border/60 bg-card shadow-sm p-6 space-y-4">
@@ -300,8 +501,8 @@ export default function GoogleReviewStaffStatsSection({
           <p className="text-sm text-muted-foreground mt-1">
             {viewMode === 'overall'
               ? isKo
-                ? '모든 플랫폼(Google·OTA 등) 리뷰 중 투어·직원 연결된 평균 별점입니다. 대기·승인 상태 모두 포함됩니다. 숫자를 클릭하면 리뷰 내용을 볼 수 있습니다.'
-                : 'Average ratings from all platform reviews linked to staff via tours (pending and approved). Click counts to read reviews.'
+                ? '모든 플랫폼(Google·OTA 등) 리뷰 중 투어·직원 연결된 평균 별점입니다. 최초 리뷰일 이후 가이드·어시스턴트로 배정된 투어의 총 인원·예약 건수를 함께 표시합니다. 컬럼 헤더를 클릭해 정렬할 수 있습니다.'
+                : 'Average ratings from all platform reviews linked to staff. Shows total tour guests and reservation groups assigned since each person’s first review. Click column headers to sort.'
               : isKo
                 ? '월별 리뷰 수, 별점별 개수, 투어 인원·예약 그룹 대비 리뷰율입니다. 대기·승인 등 모든 상태 포함. 별점 숫자를 클릭하면 리뷰를 볼 수 있습니다.'
                 : 'Monthly reviews, star breakdown, and review rates (all import statuses). Click star counts to read reviews.'}
@@ -333,6 +534,44 @@ export default function GoogleReviewStaffStatsSection({
               </button>
             </div>
           ) : null}
+
+          <div className="inline-flex rounded-lg border border-border bg-muted/30 p-0.5">
+            <button
+              type="button"
+              onClick={() => setStaffActiveFilter('all')}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                staffActiveFilter === 'all'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {isKo ? `전체 (${staffFilterCounts.all})` : `All (${staffFilterCounts.all})`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setStaffActiveFilter('active')}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                staffActiveFilter === 'active'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {isKo ? `활성 (${staffFilterCounts.active})` : `Active (${staffFilterCounts.active})`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setStaffActiveFilter('inactive')}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                staffActiveFilter === 'inactive'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {isKo
+                ? `비활성 (${staffFilterCounts.inactive})`
+                : `Inactive (${staffFilterCounts.inactive})`}
+            </button>
+          </div>
 
           <div className="inline-flex rounded-lg border border-border bg-muted/30 p-0.5">
             <button
@@ -371,25 +610,96 @@ export default function GoogleReviewStaffStatsSection({
             ? '연결된 직원 리뷰가 없습니다. 투어 연결 또는 자동 분류를 실행해 보세요.'
             : 'No linked staff reviews yet. Link tours or run auto-classification.'}
         </p>
+      ) : isFilteredEmpty ? (
+        <p className="text-sm text-muted-foreground py-6 text-center">
+          {staffActiveFilter === 'active'
+            ? isKo
+              ? '활성 직원 중 연결된 리뷰가 없습니다.'
+              : 'No linked reviews for active staff.'
+            : isKo
+              ? '비활성 직원 중 연결된 리뷰가 없습니다.'
+              : 'No linked reviews for inactive staff.'}
+        </p>
       ) : viewMode === 'overall' ? (
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
-              <tr className="border-b border-border/60 text-left text-muted-foreground">
-                <th className="py-2 pr-4 font-medium">{isKo ? '직원' : 'Staff'}</th>
-                <th className="py-2 pr-4 font-medium">{isKo ? '리뷰 수' : 'Reviews'}</th>
-                <th className="py-2 pr-4 font-medium">{isKo ? '평균' : 'Average'}</th>
-                <th className="py-2 px-2 font-medium text-center">5★</th>
-                <th className="py-2 px-2 font-medium text-center">4★</th>
-                <th className="py-2 px-2 font-medium text-center">3★</th>
-                <th className="py-2 px-2 font-medium text-center">2★</th>
-                <th className="py-2 px-2 font-medium text-center">1★</th>
+              <tr className="border-b border-border/60">
+                <SortableTh
+                  label={isKo ? '직원' : 'Staff'}
+                  sortKey="staffName"
+                  activeKey={sortConfig.key}
+                  sortDir={sortConfig.dir}
+                  onSort={handleSort}
+                  className="pr-4"
+                />
+                <SortableTh
+                  label={isKo ? '최초 리뷰일' : 'First review'}
+                  sortKey="firstReviewDate"
+                  activeKey={sortConfig.key}
+                  sortDir={sortConfig.dir}
+                  onSort={handleSort}
+                  className="pr-4"
+                />
+                <SortableTh
+                  label={isKo ? '리뷰 수' : 'Reviews'}
+                  sortKey="reviewCount"
+                  activeKey={sortConfig.key}
+                  sortDir={sortConfig.dir}
+                  onSort={handleSort}
+                  className="pr-4"
+                />
+                <SortableTh
+                  label={isKo ? '평균' : 'Average'}
+                  sortKey="avgRating"
+                  activeKey={sortConfig.key}
+                  sortDir={sortConfig.dir}
+                  onSort={handleSort}
+                  className="pr-4"
+                />
+                <SortableTh
+                  label={isKo ? '총 배정 인원' : 'Total guests'}
+                  sortKey="totalTourGuests"
+                  activeKey={sortConfig.key}
+                  sortDir={sortConfig.dir}
+                  onSort={handleSort}
+                  className="pr-4"
+                />
+                <SortableTh
+                  label={isKo ? '총 예약 건수' : 'Total bookings'}
+                  sortKey="reservationGroupCount"
+                  activeKey={sortConfig.key}
+                  sortDir={sortConfig.dir}
+                  onSort={handleSort}
+                  className="pr-4"
+                />
+                {OVERALL_STAR_COLUMNS.map((col) => (
+                  <SortableTh
+                    key={col.key}
+                    label={`${col.rating}★`}
+                    sortKey={col.key}
+                    activeKey={sortConfig.key}
+                    sortDir={sortConfig.dir}
+                    onSort={handleSort}
+                    className="px-2"
+                    align="center"
+                  />
+                ))}
               </tr>
             </thead>
             <tbody>
-              {stats.map((row) => (
+              {filteredSortedStats.map((row) => (
                 <tr key={row.staffEmail} className="border-b border-border/40">
-                  <td className="py-3 pr-4 font-medium text-foreground">{row.staffName}</td>
+                  <td className="py-3 pr-4 font-medium whitespace-nowrap">
+                    <StaffNameWithStatus
+                      name={row.staffName}
+                      isActive={row.staffIsActive}
+                      isKo={isKo}
+                    />
+                  </td>
+                  <td className="py-3 pr-4 tabular-nums text-muted-foreground whitespace-nowrap">
+                    {formatReviewDate(row.firstReviewDate, locale)}
+                  </td>
                   <td className="py-3 pr-4 tabular-nums">{row.reviewCount}</td>
                   <td className="py-3 pr-4">
                     <span className="inline-flex items-center gap-1 text-amber-500 font-medium tabular-nums">
@@ -397,6 +707,8 @@ export default function GoogleReviewStaffStatsSection({
                       {row.avgRating?.toFixed(2) ?? '—'}
                     </span>
                   </td>
+                  <td className="py-3 pr-4 tabular-nums">{row.totalTourGuests}</td>
+                  <td className="py-3 pr-4 tabular-nums">{row.reservationGroupCount}</td>
                   {OVERALL_STAR_COLUMNS.map((col) => (
                     <td
                       key={col.key}
@@ -459,12 +771,16 @@ export default function GoogleReviewStaffStatsSection({
                 </tr>
               </thead>
               <tbody>
-                {monthlyStats.map((row) => {
+                {filteredMonthlyStats.map((row) => {
                   const monthMap = monthlyCellMap.get(row.staffEmail)
                   return (
                     <tr key={row.staffEmail} className="border-b border-border/40">
-                      <td className="sticky left-0 z-10 bg-card py-2 pr-3 font-medium text-foreground whitespace-nowrap">
-                        {row.staffName}
+                      <td className="sticky left-0 z-10 bg-card py-2 pr-3 font-medium whitespace-nowrap">
+                        <StaffNameWithStatus
+                          name={row.staffName}
+                          isActive={row.staffIsActive}
+                          isKo={isKo}
+                        />
                       </td>
                       {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
                         <td key={month} className="py-2 px-1 text-center align-middle">

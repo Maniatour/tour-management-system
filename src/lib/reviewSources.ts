@@ -19,6 +19,15 @@ export type ReviewSourceTab = {
   labelEn: string
 }
 
+/** Tabs that show total review count badges in admin review integration UI. */
+export const REVIEW_SOURCE_TABS_WITH_COUNT = ['google', 'getyourguide', 'viator'] as const
+
+export type ReviewSourceTabWithCount = (typeof REVIEW_SOURCE_TABS_WITH_COUNT)[number]
+
+export function isReviewSourceTabWithCount(value: string): value is ReviewSourceTabWithCount {
+  return (REVIEW_SOURCE_TABS_WITH_COUNT as readonly string[]).includes(value)
+}
+
 export const REVIEW_SOURCE_TABS: ReviewSourceTab[] = [
   { id: 'google', labelKo: 'Google', labelEn: 'Google' },
   { id: 'getyourguide', labelKo: 'GetYourGuide', labelEn: 'GetYourGuide' },

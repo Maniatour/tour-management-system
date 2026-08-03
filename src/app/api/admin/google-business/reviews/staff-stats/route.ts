@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
         auth.operatorId,
         Number.isFinite(year) ? year : new Date().getFullYear()
       )
-      const monthlyStats = pivotGoogleReviewStaffMonthlyStats(rows)
+      const monthlyStats = await pivotGoogleReviewStaffMonthlyStats(rows)
       return NextResponse.json({
         ok: true,
         year: Number.isFinite(year) ? year : new Date().getFullYear(),
