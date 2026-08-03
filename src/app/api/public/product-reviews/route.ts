@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import {
   computeAverageRating,
+  computeAverageRatingFromNumbers,
+  mapGoogleReviewsToProductItems,
   mapReviewRowsToProductItems,
+  type PublicGoogleReviewRow,
   type PublicProductReviewRow,
 } from '@/lib/productReviewDisplay'
 import { getPublicOperatorId } from '@/lib/operators/getPublicOperatorId'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import type { ProductReviewItem } from '@/components/product/ProductDetailReviewsSection'
 
 const PRODUCT_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/
 
@@ -92,6 +97,95 @@ async function resolveGuestNames(
   return names
 }
 
+async function fetchApprovedGoogleReviewsForProduct(
+  db: NonNullable<typeof supabaseAdmin>,
+  operatorId: string,
+  productId: string,
+  limit: number
+): Promise<PublicGoogleReviewRow[]> {
+  const { data: mappings } = await fromUntypedTable(db, 'review_products')
+    .select('google_review_id')
+    .eq('operator_id', operatorId)
+    .eq('product_id', productId)
+    .eq('is_primary', true)
+    .limit(limit)
+
+  const reviewIds = ((mappings ?? []) as Array<{ google_review_id: string }>).map(
+    (row) => row.google_review_id
+  )
+  if (!reviewIds.length) return []
+
+  const { data: reviews } = await fromUntypedTable(db, 'google_reviews')
+    .select('id, author_name, author_photo_url, rating, comment, review_created_at')
+    .eq('operator_id', operatorId)
+    .eq('import_status', 'approved')
+    .in('id', reviewIds)
+    .not('comment', 'is', null)
+    .order('review_created_at', { ascending: false })
+    .limit(limit)
+
+  return ((reviews ?? []) as PublicGoogleReviewRow[]).filter(
+    (row) => typeof row.comment === 'string' && row.comment.trim().length > 0
+  )
+}
+
+function mergeAndMapProductReviews(input: {
+  normalizedReviews: PublicProductReviewRow[]
+  guestNames: Map<string, string>
+  googleRows: PublicGoogleReviewRow[]
+  locale: string
+  limit: number
+}): { reviews: ProductReviewItem[]; reviewCount: number; averageRating: number | null } {
+  type SortableItem =
+    | { kind: 'reservation'; sortAt: string | null; reservation: PublicProductReviewRow }
+    | { kind: 'google'; sortAt: string | null; google: PublicGoogleReviewRow }
+
+  const sortable: SortableItem[] = [
+    ...input.normalizedReviews.map((reservation) => ({
+      kind: 'reservation' as const,
+      sortAt: reservation.created_at,
+      reservation,
+    })),
+    ...input.googleRows.map((google) => ({
+      kind: 'google' as const,
+      sortAt: google.review_created_at,
+      google,
+    })),
+  ]
+
+  sortable.sort((a, b) => {
+    const aTime = a.sortAt ? Date.parse(a.sortAt) : 0
+    const bTime = b.sortAt ? Date.parse(b.sortAt) : 0
+    return bTime - aTime
+  })
+
+  const sliced = sortable.slice(0, input.limit)
+  const reservationSlice = sliced
+    .filter((item): item is Extract<SortableItem, { kind: 'reservation' }> => item.kind === 'reservation')
+    .map((item) => item.reservation)
+  const googleSlice = sliced
+    .filter((item): item is Extract<SortableItem, { kind: 'google' }> => item.kind === 'google')
+    .map((item) => item.google)
+
+  const reviews = [
+    ...mapReviewRowsToProductItems(reservationSlice, input.guestNames, input.locale),
+    ...mapGoogleReviewsToProductItems(googleSlice, input.locale),
+  ]
+
+  const ratings = [
+    ...input.normalizedReviews.map((row) => row.rating),
+    ...input.googleRows
+      .map((row) => row.rating)
+      .filter((rating): rating is number => typeof rating === 'number'),
+  ]
+
+  return {
+    reviews,
+    reviewCount: input.normalizedReviews.length + input.googleRows.length,
+    averageRating: computeAverageRatingFromNumbers(ratings),
+  }
+}
+
 export async function GET(request: NextRequest) {
   const productId = request.nextUrl.searchParams.get('product_id')?.trim() ?? ''
   const locale = request.nextUrl.searchParams.get('locale')?.trim() || 'en'
@@ -126,6 +220,23 @@ export async function GET(request: NextRequest) {
     if (productError || !productRow) {
       return NextResponse.json(
         { ok: true, reviews: [], averageRating: null, reviewCount: 0 },
+        { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' } }
+      )
+    }
+
+    const googleRows = await fetchApprovedGoogleReviewsForProduct(db, operatorId, productId, limit)
+    const googleItems = mapGoogleReviewsToProductItems(googleRows, locale)
+    if (googleItems.length >= limit) {
+      const ratings = googleRows
+        .map((row) => row.rating)
+        .filter((rating): rating is number => typeof rating === 'number')
+      return NextResponse.json(
+        {
+          ok: true,
+          reviews: googleItems.slice(0, limit),
+          averageRating: computeAverageRatingFromNumbers(ratings),
+          reviewCount: googleRows.length,
+        },
         { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' } }
       )
     }
@@ -187,6 +298,26 @@ export async function GET(request: NextRequest) {
   }
 
   if (!reservations.length) {
+    if (productId) {
+      const googleRows = await fetchApprovedGoogleReviewsForProduct(db, operatorId, productId, limit)
+      const merged = mergeAndMapProductReviews({
+        normalizedReviews: [],
+        guestNames: new Map(),
+        googleRows,
+        locale,
+        limit,
+      })
+      return NextResponse.json(
+        {
+          ok: true,
+          reviews: merged.reviews,
+          averageRating: merged.averageRating,
+          reviewCount: merged.reviewCount,
+        },
+        { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' } }
+      )
+    }
+
     return NextResponse.json(
       { ok: true, reviews: [], averageRating: null, reviewCount: 0 },
       { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' } }
@@ -219,6 +350,26 @@ export async function GET(request: NextRequest) {
   }
 
   if (!reservations.length) {
+    if (productId) {
+      const googleRows = await fetchApprovedGoogleReviewsForProduct(db, operatorId, productId, limit)
+      const merged = mergeAndMapProductReviews({
+        normalizedReviews: [],
+        guestNames: new Map(),
+        googleRows,
+        locale,
+        limit,
+      })
+      return NextResponse.json(
+        {
+          ok: true,
+          reviews: merged.reviews,
+          averageRating: merged.averageRating,
+          reviewCount: merged.reviewCount,
+        },
+        { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' } }
+      )
+    }
+
     return NextResponse.json(
       { ok: true, reviews: [], averageRating: null, reviewCount: 0 },
       { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' } }
@@ -266,6 +417,30 @@ export async function GET(request: NextRequest) {
     relevantReservations,
     locale
   )
+
+  const googleRows = productId
+    ? await fetchApprovedGoogleReviewsForProduct(db, operatorId, productId, limit)
+    : []
+
+  if (productId) {
+    const merged = mergeAndMapProductReviews({
+      normalizedReviews,
+      guestNames,
+      googleRows,
+      locale,
+      limit,
+    })
+
+    return NextResponse.json(
+      {
+        ok: true,
+        reviews: merged.reviews,
+        averageRating: merged.averageRating,
+        reviewCount: merged.reviewCount,
+      },
+      { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' } }
+    )
+  }
 
   const reviews = mapReviewRowsToProductItems(normalizedReviews, guestNames, locale)
   const averageRating = computeAverageRating(normalizedReviews)

@@ -147,6 +147,29 @@ export const getProductName = (productId: string, products: Product[] | null) =>
   return products?.find(p => p.id === productId)?.name || 'Unknown'
 }
 
+const pickProductNameField = (v: string | null | undefined) =>
+  v != null && String(v).trim() !== '' ? String(v).trim() : ''
+
+/** 상품 row에서 내부용 이름(name → name_ko → name_en)만 반환 */
+export function resolveProductInternalName(
+  product:
+    | {
+        name?: string | null
+        name_ko?: string | null
+        name_en?: string | null
+      }
+    | null
+    | undefined,
+  fallback?: string | null
+): string | null {
+  const name =
+    pickProductNameField(product?.name) ||
+    pickProductNameField(product?.name_ko) ||
+    pickProductNameField(product?.name_en) ||
+    pickProductNameField(fallback)
+  return name || null
+}
+
 /** 관리자·업무 카드용 — 고객용 이름 없이 내부용(name → name_ko → name_en)만 */
 export const getProductInternalName = (
   productId: string,
@@ -159,9 +182,7 @@ export const getProductInternalName = (
 ) => {
   const product = products?.find((p) => p.id === productId)
   if (!product) return '—'
-  const pick = (v: string | null | undefined) =>
-    v != null && String(v).trim() !== '' ? String(v).trim() : ''
-  return pick(product.name) || pick(product.name_ko) || pick(product.name_en) || '—'
+  return resolveProductInternalName(product) || '—'
 }
 
 // 상품 이름 가져오기 (locale에 따라 고객용·내부용 이름 우선순위 적용)

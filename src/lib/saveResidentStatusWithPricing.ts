@@ -204,6 +204,12 @@ export async function saveResidentStatusWithPricing(
         option_id: row.option_id,
         quantity: row.quantity ?? 1,
         total_price: row.total_price ?? 0,
+        ...(row.option_name_ko != null && row.option_name_ko !== ''
+          ? { option_name_ko: row.option_name_ko }
+          : {}),
+        ...(row.option_key != null && row.option_key !== ''
+          ? { option_key: row.option_key }
+          : {}),
       })),
     }
 

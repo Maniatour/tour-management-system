@@ -86,3 +86,37 @@ export function computeAverageRating(rows: PublicProductReviewRow[]): number | n
   const sum = rows.reduce((acc, row) => acc + row.rating, 0)
   return sum / rows.length
 }
+
+export type PublicGoogleReviewRow = {
+  id: string
+  author_name: string | null
+  author_photo_url: string | null
+  rating: number | null
+  comment: string | null
+  review_created_at: string | null
+}
+
+export function mapGoogleReviewsToProductItems(
+  rows: PublicGoogleReviewRow[],
+  locale: string
+): ProductReviewItem[] {
+  return rows
+    .filter((row) => typeof row.comment === 'string' && row.comment.trim().length > 0)
+    .map((row) => {
+      const date = formatReviewDate(row.review_created_at, locale)
+      return {
+        name: toPublicGuestName(row.author_name),
+        country: 'Google',
+        rating: row.rating ?? 5,
+        quote: row.comment!.trim(),
+        ...(date ? { date } : {}),
+        source: 'google' as const,
+        ...(row.author_photo_url ? { avatarUrl: row.author_photo_url } : {}),
+      }
+    })
+}
+
+export function computeAverageRatingFromNumbers(ratings: number[]): number | null {
+  if (!ratings.length) return null
+  return ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length
+}

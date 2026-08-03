@@ -16,6 +16,11 @@ type OpTodoProductSelectProps = {
   value: string | undefined
   onChange: (productId: string | undefined) => void
   inputClass?: string
+  /** stacked: 선택 칩 + 검색창 분리(기본), combobox: 선택값이 검색창에 표시 */
+  variant?: 'stacked' | 'combobox'
+  disabled?: boolean
+  /** 목록 로드 전·비활성 상품 등 표시용 라벨 */
+  selectedLabel?: string
 }
 
 function productLabel(p: ProductRow, locale: string): string {
@@ -28,12 +33,16 @@ export function OpTodoProductSelect({
   value,
   onChange,
   inputClass = 'w-full rounded-md border border-gray-300 px-3 py-2 text-sm',
+  variant = 'stacked',
+  disabled = false,
+  selectedLabel: selectedLabelProp,
 }: OpTodoProductSelectProps) {
   const isKo = locale === 'ko'
   const [products, setProducts] = useState<ProductRow[]>([])
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
+  const [isFocused, setIsFocused] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -56,6 +65,9 @@ export function OpTodoProductSelect({
   }, [])
 
   const selected = useMemo(() => products.find((p) => p.id === value), [products, value])
+  const selectedLabel = selected
+    ? productLabel(selected, locale)
+    : selectedLabelProp?.trim() || ''
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -67,6 +79,105 @@ export function OpTodoProductSelect({
       })
       .slice(0, 40)
   }, [products, query, locale])
+
+  const inputValue =
+    variant === 'combobox'
+      ? isFocused || query.length > 0
+        ? query
+        : selectedLabel
+      : query
+
+  const showDropdown =
+    open &&
+    !disabled &&
+    (variant === 'combobox'
+      ? isFocused
+      : query.length > 0 || !selected)
+
+  if (variant === 'combobox') {
+    return (
+      <div className="relative">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+          <input
+            type="search"
+            value={inputValue}
+            disabled={disabled}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setOpen(true)
+            }}
+            onFocus={() => {
+              setIsFocused(true)
+              setOpen(true)
+              if (selectedLabel && !query) {
+                setQuery(selectedLabel)
+              }
+            }}
+            onBlur={() => {
+              window.setTimeout(() => {
+                setIsFocused(false)
+                setQuery('')
+                setOpen(false)
+              }, 150)
+            }}
+            placeholder={isKo ? '상품 검색…' : 'Search product…'}
+            className={`${inputClass} pl-8 pr-8`}
+          />
+          {selected && !disabled ? (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onChange(undefined)
+                setQuery('')
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground px-1"
+              aria-label={isKo ? '상품 분류 해제' : 'Clear product'}
+            >
+              ×
+            </button>
+          ) : null}
+        </div>
+
+        {showDropdown ? (
+          <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-gray-200 bg-white text-sm shadow-lg">
+            {loading ? (
+              <li className="px-3 py-2 text-xs text-gray-500">{isKo ? '로딩...' : 'Loading...'}</li>
+            ) : filtered.length === 0 ? (
+              <li className="px-3 py-2 text-xs text-gray-500">
+                {isKo ? '검색 결과 없음' : 'No results'}
+              </li>
+            ) : (
+              filtered.map((p) => {
+                const label = productLabel(p, locale)
+                const isSelected = p.id === value
+                return (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      className={`w-full px-3 py-2 text-left hover:bg-gray-50 ${
+                        isSelected ? 'bg-primary/5 font-medium' : ''
+                      }`}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        if (p.id !== value) onChange(p.id)
+                        setQuery('')
+                        setOpen(false)
+                        setIsFocused(false)
+                      }}
+                    >
+                      {label}
+                    </button>
+                  </li>
+                )
+              })
+            )}
+          </ul>
+        ) : null}
+      </div>
+    )
+  }
 
   return (
     <div className="relative mt-1">

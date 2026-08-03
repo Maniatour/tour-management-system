@@ -23,6 +23,7 @@ import {
   OFFICE_MEAL_POLICY_START,
 } from '@/lib/attendanceMealPolicy'
 import { calculateEmployeePrepaidTips } from '@/lib/prepaid-tips'
+import { lookupTourOperatorId } from '@/lib/operators/lookupTourOperatorId'
 import type { ExpenseStandardCategoryPickRow } from '@/lib/expenseStandardCategoryPaidFor'
 import {
   applyStandardLeafToCompanyExpense,
@@ -1207,7 +1208,85 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
           }
         }
         return // prepaid_tips는 별도로 처리하므로 여기서 종료
+      } else if (field === 'personal_car') {
+        const amount = value as number
+        const tour = tourFees.find((t) => t.tour_id === tourId)
+        if (!tour) return
+
+        const personalCarPaidFor = 'Rent (Personal Vehicle)'
+        const { data: existingExpenses, error: fetchPersonalCarError } = await supabase
+          .from('tour_expenses')
+          .select('id')
+          .eq('tour_id', tourId)
+          .eq('paid_for', personalCarPaidFor)
+
+        if (fetchPersonalCarError) {
+          console.error('Personal Car 지출 조회 오류:', fetchPersonalCarError)
+          fetchTourFees()
+          return
+        }
+
+        if (amount <= 0) {
+          if (existingExpenses && existingExpenses.length > 0) {
+            const { error: deleteError } = await supabase
+              .from('tour_expenses')
+              .delete()
+              .eq('tour_id', tourId)
+              .eq('paid_for', personalCarPaidFor)
+
+            if (deleteError) {
+              console.error('Personal Car 지출 삭제 오류:', deleteError)
+              fetchTourFees()
+            }
+          }
+          return
+        }
+
+        if (existingExpenses && existingExpenses.length > 0) {
+          const { error: updateError } = await supabase
+            .from('tour_expenses')
+            .update({ amount })
+            .eq('id', existingExpenses[0].id)
+
+          if (updateError) {
+            console.error('Personal Car 지출 업데이트 오류:', updateError)
+            fetchTourFees()
+            return
+          }
+
+          if (existingExpenses.length > 1) {
+            const extraIds = existingExpenses.slice(1).map((expense) => expense.id)
+            await supabase.from('tour_expenses').delete().in('id', extraIds)
+          }
+          return
+        }
+
+        const { data: authData } = await supabase.auth.getUser()
+        const submitBy = authData?.user?.email ?? selectedEmployee
+        const expenseOperatorId = await lookupTourOperatorId(supabase, tourId, activeOperatorId)
+
+        const { error: insertError } = await supabase
+          .from('tour_expenses')
+          .insert({
+            tour_id: tourId,
+            paid_to: selectedEmployee,
+            paid_for: personalCarPaidFor,
+            amount,
+            tour_date: tour.date,
+            submitted_by: submitBy,
+            operator_id: expenseOperatorId,
+            status: 'pending',
+            note: '2주급 계산기',
+          } as never)
+
+        if (insertError) {
+          console.error('Personal Car 지출 생성 오류:', insertError)
+          fetchTourFees()
+        }
+        return
       }
+
+      if (Object.keys(updateData).length === 0) return
 
       // tours 테이블 업데이트
       const { error } = await supabase

@@ -13,6 +13,36 @@ export function todayInLasVegas(): string {
   return dayjs().tz(LV_TZ).format('YYYY-MM-DD')
 }
 
+/** ISO 타임스탬프·YYYY-MM-DD → 라스베가스 기준 날짜 키 */
+export function toLasVegasDateKey(value: string | null | undefined): string | null {
+  if (!value) return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed
+  const parsed = dayjs(trimmed)
+  if (!parsed.isValid()) return trimmed.length >= 10 ? trimmed.slice(0, 10) : null
+  return parsed.tz(LV_TZ).format('YYYY-MM-DD')
+}
+
+export function formatLasVegasDate(
+  value: string | null | undefined,
+  locale: string
+): string | null {
+  const key = toLasVegasDateKey(value)
+  if (!key) return null
+  return new Date(`${key}T12:00:00`).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')
+}
+
+export function formatLasVegasDateTime(
+  value: string | null | undefined,
+  locale: string
+): string | null {
+  if (!value) return null
+  const parsed = dayjs(value)
+  if (!parsed.isValid()) return null
+  return parsed.tz(LV_TZ).format(locale === 'ko' ? 'YYYY-MM-DD HH:mm' : 'MMM D, YYYY h:mm A')
+}
+
 export function tomorrowInLasVegas(fromDate?: string): string {
   const base = fromDate ? dayjs.tz(fromDate, LV_TZ) : dayjs().tz(LV_TZ)
   return base.add(1, 'day').format('YYYY-MM-DD')

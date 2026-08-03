@@ -400,6 +400,9 @@ export function selectedChoiceRowsFromReservationPricingChoices(choicesJson: unk
   option_id: string
   quantity?: number
   total_price?: number
+  option_name_ko?: string
+  option_name?: string
+  option_key?: string
 }> {
   if (!choicesJson || typeof choicesJson !== 'object') return []
   const o = choicesJson as Record<string, unknown>
@@ -410,6 +413,9 @@ export function selectedChoiceRowsFromReservationPricingChoices(choicesJson: unk
     option_id: string
     quantity?: number
     total_price?: number
+    option_name_ko?: string
+    option_name?: string
+    option_key?: string
   }> = []
   for (const item of req) {
     if (!item || typeof item !== 'object') continue
@@ -423,9 +429,37 @@ export function selectedChoiceRowsFromReservationPricingChoices(choicesJson: unk
       option_id: optionId,
       quantity: Number(row.quantity) || 0,
       total_price: Number(row.total_price) || 0,
+      ...(row.option_name_ko != null && row.option_name_ko !== ''
+        ? { option_name_ko: String(row.option_name_ko) }
+        : {}),
+      ...(row.option_name != null && row.option_name !== ''
+        ? { option_name: String(row.option_name) }
+        : {}),
+      ...(row.option_key != null && row.option_key !== ''
+        ? { option_key: String(row.option_key) }
+        : {}),
     })
   }
   return out
+}
+
+/** `reservation_pricing.choices`에 저장된 거주 라인 금액 합(상품 메타 없이 option_name 등으로 분류) */
+export function sumResidentFeesFromPricingChoicesJson(choicesJson: unknown): number {
+  const rows = selectedChoiceRowsFromReservationPricingChoices(choicesJson)
+  let sum = 0
+  for (const row of rows) {
+    if (row.option_id === UNDECIDED_OPTION_ID) continue
+    const line = classifyResidentOption({
+      option_name_ko: row.option_name_ko ?? null,
+      option_name: row.option_name ?? null,
+      option_key: row.option_key ?? null,
+    })
+    if (line && RESIDENT_FEE_SUM_KEYS.includes(line)) {
+      const v = Number(row.total_price) || 0
+      if (v > 0) sum += v
+    }
+  }
+  return Math.round(sum * 100) / 100
 }
 
 export type ProductChoiceRowForResidentFees = {

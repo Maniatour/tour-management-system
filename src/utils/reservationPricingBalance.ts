@@ -6,6 +6,7 @@
  */
 
 import { isNotIncludedExcludedReservationStatus } from '@/lib/reservationStatus'
+import { sumResidentFeesFromPricingChoicesJson } from '@/utils/usResidentChoiceSync'
 
 function roundUsd2(n: number): number {
   return Math.round(n * 100) / 100
@@ -442,7 +443,9 @@ export function computeDisplayedOnSiteBalanceLikePricingSection(
     option_total: optsOnly ? optionsTotalFromOptions : pricing.option_total,
   } as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]
 
-  const grossDue = roundUsd2(computeCustomerPaymentTotalLineFormula(pricingForGross, party))
+  const grossDue = roundUsd2(
+    computeCustomerPaymentLineGrossWithResidentFees(pricingForGross, party)
+  )
 
   const { depositTotalNet, balanceReceivedTotal, returnedTotal, refundedTotal } =
     summarizePaymentRecordsForBalance(records)
@@ -612,6 +615,35 @@ export function computeCustomerPaymentTotalLineFormula(
 }
 
 /**
+ * 거주 상태별 금액(비거주·패스 등)은 라인 산식 `option_total`·`product_price_total`에 없고
+ * `total_price`·`choices`에만 반영되는 경우가 있음 — 잔액·배정 카드와 가격 탭 정합용.
+ */
+export function inferResidentFeesUsdForBalance(
+  pricing: PricingBalanceFields & { total_price?: unknown; choices?: unknown },
+  lineGrossWithoutResidentFees: number
+): number {
+  const line = roundUsd2(lineGrossWithoutResidentFees)
+  const storedTotal = pricingFieldToNumber(pricing.total_price)
+  const fromGap = storedTotal > line + 0.01 ? roundUsd2(storedTotal - line) : 0
+  if (fromGap > 0.005) return fromGap
+
+  const fromChoices = sumResidentFeesFromPricingChoicesJson(pricing.choices)
+  if (fromChoices > 0.005) return fromChoices
+
+  return 0
+}
+
+/** 라인 산식 + 거주 상태별 현장 비용(비거주자 $100 등) */
+export function computeCustomerPaymentLineGrossWithResidentFees(
+  pricing: Parameters<typeof computeCustomerPaymentTotalLineFormula>[0] &
+    PricingBalanceFields & { total_price?: unknown; choices?: unknown },
+  party: PartySizeSource
+): number {
+  const lineGross = roundUsd2(computeCustomerPaymentTotalLineFormula(pricing, party))
+  return roundUsd2(lineGross + inferResidentFeesUsdForBalance(pricing, lineGross))
+}
+
+/**
  * 가격 정보 ④(Self·진행 예약): 고객 총 결제(넷) — 라인 산식 gross 후 Returned 초과분만 추가 차감
  * (`PricingSection` `calculateTotalCustomerPayment` 와 동일 원리)
  */
@@ -709,7 +741,9 @@ export function computeRemainingBalanceAmount(
         ? optionsTotalFromOptions
         : pricing.option_total,
   } as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]
-  const customerTotal = roundUsd2(computeCustomerPaymentTotalLineFormula(pricingForLine, party))
+  const customerTotal = roundUsd2(
+    computeCustomerPaymentLineGrossWithResidentFees(pricingForLine, party)
+  )
   return Math.max(0, roundUsd2(customerTotal - pricingFieldToNumber(pricing.deposit_amount)))
 }
 

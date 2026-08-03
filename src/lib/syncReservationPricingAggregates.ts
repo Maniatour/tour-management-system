@@ -7,6 +7,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   computeCustomerPaymentTotalLineFormula,
+  inferResidentFeesUsdForBalance,
   pricingFieldToNumber,
   summarizePaymentRecordsForBalance,
   type PaymentRecordLike,
@@ -164,6 +165,14 @@ export async function syncReservationPricingAggregates(
     const statusLower = String(res.status || '').toLowerCase().trim()
     const isCancelled = statusLower === 'cancelled' || statusLower === 'canceled'
 
+    const lineGrossBase = computeCustomerPaymentTotalLineFormula(
+      pricingMerged as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0],
+      party
+    )
+    const lineGross = roundUsd2(
+      lineGrossBase + inferResidentFeesUsdForBalance(pricingMerged, lineGrossBase)
+    )
+
     let deposit_amount: number
     let balance_amount: number
 
@@ -172,7 +181,6 @@ export async function syncReservationPricingAggregates(
       deposit_amount = depositBucketGross
       balance_amount = 0
     } else {
-      const lineGross = computeCustomerPaymentTotalLineFormula(pricingMerged as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0], party)
       const { depositTotalNet, depositBucketGross, balanceReceivedTotal, returnedTotal } =
         summarizePaymentRecordsForBalance(records)
       const customerNet = Math.max(0, roundUsd2(lineGross - returnedTotal))
@@ -224,13 +232,12 @@ export async function syncReservationPricingAggregates(
       reservationExpensesTotal
     )
 
-    const linePricing = pricingMerged as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]
     const subtotal = roundUsd2(
       pricingFieldToNumber(pricingMerged.product_price_total) +
         pricingFieldToNumber(pricingMerged.required_option_total) +
         optionSum
     )
-    const total_price = Math.max(0, computeCustomerPaymentTotalLineFormula(linePricing, party))
+    const total_price = Math.max(0, lineGross)
 
     const { error: upErr } = await supabase
       .from('reservation_pricing')
