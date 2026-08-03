@@ -120,6 +120,7 @@ interface ProductOption {
 
 interface ChoiceOption {
   option_id: string
+  option_key?: string | null
   option_name: string
   option_name_ko: string | null
   option_name_en?: string | null
@@ -164,6 +165,7 @@ interface ProductChoice {
   choice_image_url?: string | null
   choice_thumbnail_url?: string | null
   option_id: string
+  option_key?: string | null
   option_name: string
   option_name_ko: string | null
   option_price: number | null
@@ -1399,6 +1401,7 @@ export default function BookingFlow({
     }
     groups[groupKey].options.push({
       option_id: choice.option_id,
+      option_key: (choice as ProductChoice & { option_key?: string | null }).option_key ?? null,
       option_name: choice.option_name,
       option_name_ko: choice.option_name_ko,
       option_name_en: (choice as ProductChoice & { option_name_en?: string | null }).option_name_en || null,

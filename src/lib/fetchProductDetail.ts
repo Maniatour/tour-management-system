@@ -373,6 +373,7 @@ export async function fetchProductPageData(
             choice_thumbnail_url: null,
             choice_sort_order: choiceSortOrder,
             option_id: option.id,
+            option_key: option.option_key ?? null,
             option_name: option.option_name || option.option_key || '',
             option_name_ko: option.option_name_ko || null,
             option_price: option.adult_price ?? null,

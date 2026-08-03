@@ -9,33 +9,69 @@ import {
 
 export type CapacityOptionLike = {
   option_id: string
+  option_key?: string | null
   capacity?: number | null
   option_name?: string | null
   option_name_ko?: string | null
   option_name_en?: string | null
 }
 
+function parseCapacityFromOptionKey(optionKey?: string | null): number | null {
+  if (!optionKey) return null
+  const lower = optionKey.toLowerCase()
+  if (/(?:^|[_-])single(?:$|[_-])/.test(lower) || /(?:^|[_-])1p(?:$|[_-])/.test(lower)) return 1
+  if (/(?:^|[_-])double(?:$|[_-])/.test(lower) || /(?:^|[_-])2p(?:$|[_-])/.test(lower)) return 2
+  if (/(?:^|[_-])triple(?:$|[_-])/.test(lower) || /(?:^|[_-])3p(?:$|[_-])/.test(lower)) return 3
+  if (/(?:^|[_-])quad(?:$|[_-])/.test(lower) || /(?:^|[_-])4p(?:$|[_-])/.test(lower)) return 4
+  const numMatch = lower.match(/(?:room|occupancy|bed)[_-]?(\d+)/)
+  if (numMatch) {
+    const n = parseInt(numMatch[1], 10)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return null
+}
+
 function parseCapacityFromOptionName(option: {
+  option_key?: string | null
   option_name?: string | null
   option_name_ko?: string | null
   option_name_en?: string | null
 }): number | null {
+  const fromKey = parseCapacityFromOptionKey(option.option_key)
+  if (fromKey != null) return fromKey
+
   const names = [option.option_name_ko, option.option_name, option.option_name_en].filter(
     Boolean
   ) as string[]
 
   for (const name of names) {
-    const koMatch = name.match(/(\d+)\s*인\s*1\s*실|(\d+)\s*인\s*1실|(\d+)\s*인실/)
+    const koMatch = name.match(
+      /(\d+)\s*인\s*1\s*실|(\d+)\s*인\s*1실|(\d+)\s*인실|(\d+)\s*인\s*실/
+    )
     if (koMatch) {
-      const n = parseInt(koMatch[1] || koMatch[2] || koMatch[3] || '', 10)
+      const n = parseInt(koMatch[1] || koMatch[2] || koMatch[3] || koMatch[4] || '', 10)
       if (Number.isFinite(n) && n > 0) return n
     }
+
+    if (/싱글|1인실/.test(name)) return 1
+    if (/더블|트윈/.test(name)) return 2
+    if (/트리플/.test(name)) return 3
+    if (/쿼드/.test(name)) return 4
 
     const lower = name.toLowerCase()
     if (/\bsingle\b/.test(lower)) return 1
     if (/\bdouble\b/.test(lower)) return 2
+    if (/\btwin\b/.test(lower)) return 2
     if (/\btriple\b/.test(lower)) return 3
     if (/\bquad\b/.test(lower)) return 4
+
+    const inOneRoom = lower.match(
+      /(\d+)\s*(?:person|people|pax).{0,40}in\s+1\s+(?:hotel\s+)?room/
+    )
+    if (inOneRoom) {
+      const n = parseInt(inOneRoom[1], 10)
+      if (Number.isFinite(n) && n > 0) return n
+    }
 
     const enMatch = lower.match(/(\d+)\s*(?:person|people|pax)\b/)
     if (enMatch) {
@@ -47,18 +83,28 @@ function parseCapacityFromOptionName(option: {
   return null
 }
 
-/** 옵션에 유효한 수용 인원이 있는지 (DB capacity 또는 옵션명에서 추론) */
+/** 옵션에 유효한 수용 인원이 있는지 (DB capacity 또는 옵션명/키에서 추론) */
 export function getOptionCapacity(option: {
+  option_key?: string | null
   capacity?: number | null
   option_name?: string | null
   option_name_ko?: string | null
   option_name_en?: string | null
 }): number | null {
-  const cap = option.capacity
-  if (typeof cap === 'number' && Number.isFinite(cap) && cap > 0) {
-    return Math.floor(cap)
+  const parsed = parseCapacityFromOptionName(option)
+  const dbCap =
+    typeof option.capacity === 'number' && Number.isFinite(option.capacity) && option.capacity > 0
+      ? Math.floor(option.capacity)
+      : null
+
+  // 관리자 기본값 capacity=1이 모든 객실 옵션에 들어가는 경우가 많아, 옵션명이 더 정확하면 우선
+  if (parsed != null && dbCap != null) {
+    if (dbCap === 1 && parsed > 1) return parsed
+    return dbCap
   }
-  return parseCapacityFromOptionName(option)
+  if (dbCap != null) return dbCap
+  if (parsed != null) return parsed
+  return null
 }
 
 function getChoiceLabelLower(
@@ -88,11 +134,28 @@ export function looksLikeRoomChoiceGroup(
   return (
     label.includes('객실') ||
     label.includes('숙박') ||
+    label.includes('숙소') ||
+    label.includes('호텔') ||
     label.includes('room') ||
+    label.includes('hotel') ||
+    label.includes('accommodation') ||
+    label.includes('occupancy') ||
+    label.includes('bedding') ||
     /\d\s*인\s*1\s*실/.test(label) ||
     label.includes('인실') ||
     label.includes('1실')
   )
+}
+
+function countOccupancyNamedOptions(
+  options: Array<{
+    option_key?: string | null
+    option_name?: string | null
+    option_name_ko?: string | null
+    option_name_en?: string | null
+  }>
+): number {
+  return options.filter((option) => parseCapacityFromOptionName(option) != null).length
 }
 
 /** 거주자/입장료/패스 인원 수량 초이스로 보이는지 */
@@ -142,6 +205,7 @@ export function hasVariedOrMultiCapacity(
  */
 export function isAccommodationCapacityGroup(
   options: Array<{
+    option_key?: string | null
     capacity?: number | null
     option_name?: string | null
     option_name_ko?: string | null
@@ -150,8 +214,10 @@ export function isAccommodationCapacityGroup(
   choiceName?: string | null
 ): boolean {
   if (looksLikePeopleFeeChoiceGroup(choiceName, options)) return false
-  if (!looksLikeRoomChoiceGroup(choiceName, options)) return false
-  return hasVariedOrMultiCapacity(options)
+  if (!hasVariedOrMultiCapacity(options)) return false
+  if (looksLikeRoomChoiceGroup(choiceName, options)) return true
+  // 그룹명이 일반적이어도 옵션명이 1인1실·2인1실 패턴이면 객실로 처리
+  return countOccupancyNamedOptions(options) >= 2
 }
 
 /** quantity + 객실 → capacity 필터/합산 UI */

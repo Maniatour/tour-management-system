@@ -73,6 +73,7 @@ export function groupProductChoices(
     const optionLabel = getChoiceOptionLocalizedText(optionSource, 'name', locale)
     acc[groupKey].options.push({
       option_id: choice.option_id,
+      option_key: choice.option_key ?? null,
       option_name: optionLabel || choice.option_name,
       option_name_ko: choice.option_name_ko,
       option_price: choice.option_price,

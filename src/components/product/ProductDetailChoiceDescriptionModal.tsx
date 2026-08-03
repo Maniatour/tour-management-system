@@ -16,6 +16,7 @@ export type ProductChoiceGroup = {
   choice_description_en?: string | null
   options: Array<{
     option_id: string
+    option_key?: string | null
     option_name: string
     option_name_ko: string | null
     option_price: number | null

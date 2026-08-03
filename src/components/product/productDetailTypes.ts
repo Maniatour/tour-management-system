@@ -91,6 +91,7 @@ export type ProductChoice = {
   pricing_unit?: 'per_person' | 'per_unit' | string | null
   choice_description: string | null
   option_id: string
+  option_key?: string | null
   option_name: string
   option_name_ko: string | null
   option_price: number | null
