@@ -1245,7 +1245,6 @@ export async function searchToursForGoogleReviewLink(input: {
     const tourIds = await findTourIdsByCustomerName({
       operatorId,
       customerQuery,
-      ...(input.tourDate !== undefined ? { tourDate: input.tourDate } : {}),
       ...(input.productId !== undefined ? { productId: input.productId } : {}),
       limit: input.limit ?? 40,
     })
@@ -1262,9 +1261,6 @@ export async function searchToursForGoogleReviewLink(input: {
       .order('tour_date', { ascending: false })
       .limit(input.limit ?? 30)
 
-    if (input.tourDate) {
-      tourQuery = tourQuery.eq('tour_date', input.tourDate)
-    }
     if (input.productId) {
       tourQuery = tourQuery.eq('product_id', input.productId)
     }

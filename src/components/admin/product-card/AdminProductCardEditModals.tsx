@@ -20,6 +20,12 @@ import {
 import { ResizableDialogContent } from '@/components/ui/ResizableDialogContent'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import ProductDurationInput from '@/components/product/ProductDurationInput'
+import {
+  formatProductDurationForStorage,
+  isValidProductDuration,
+  parseStoredProductDuration,
+} from '@/lib/productDurationInput'
 
 const PRICING_EDIT_MODAL_STORAGE_KEY = 'admin-product-card-pricing-edit-modal-rect'
 import { supabase } from '@/lib/supabase'
@@ -357,13 +363,18 @@ export default function AdminProductCardEditModals({
 
       if (section === 'tour-details') {
         const maxParticipants = Number(tourForm.maxParticipants)
-        if (!tourForm.duration.trim() || !maxParticipants || maxParticipants <= 0) {
+        const durationParts = parseStoredProductDuration(tourForm.duration)
+        if (
+          !isValidProductDuration(durationParts) ||
+          !maxParticipants ||
+          maxParticipants <= 0
+        ) {
           setError(t('tourValidation'))
           setSaving(false)
           return
         }
         updates = {
-          duration: tourForm.duration.trim(),
+          duration: formatProductDurationForStorage(durationParts),
           max_participants: maxParticipants,
           tour_departure_times: tourForm.tourDepartureTimes,
         }
@@ -743,11 +754,17 @@ export default function AdminProductCardEditModals({
         {section === 'tour-details' ? (
           <div className="grid gap-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label={tBasic('totalTourHours')}>
-                <Input
+              <Field label={tBasic('totalTourDuration')}>
+                <ProductDurationInput
                   value={tourForm.duration}
-                  onChange={(e) => setTourForm((prev) => ({ ...prev, duration: e.target.value }))}
-                  placeholder={tBasic('totalTourHoursPlaceholder')}
+                  onChange={(duration) => setTourForm((prev) => ({ ...prev, duration }))}
+                  labels={{
+                    hours: tBasic('durationHours'),
+                    minutes: tBasic('durationMinutes'),
+                    flexiblePlaceholder: tBasic('durationFlexiblePlaceholder'),
+                    hint: tBasic('totalTourDurationHint'),
+                  }}
+                  idPrefix="admin-card-tour-duration"
                 />
               </Field>
               <Field label={tBasic('maxParticipants')}>

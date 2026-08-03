@@ -125,9 +125,10 @@ export default function GoogleReviewTourSelect({
         setLoadingSearch(true)
         try {
           const params = new URLSearchParams({ mode: 'search' })
-          if (tourDate) params.set('tour_date', tourDate)
+          const trimmedCustomerName = customerName.trim()
+          if (tourDate && !trimmedCustomerName) params.set('tour_date', tourDate)
           if (productId) params.set('product_id', productId)
-          if (customerName.trim()) params.set('customer_name', customerName.trim())
+          if (trimmedCustomerName) params.set('customer_name', trimmedCustomerName)
           if (query.trim()) params.set('q', query.trim())
 
           const res = await fetchApiWithAuth(

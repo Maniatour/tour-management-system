@@ -1743,6 +1743,11 @@
       "totalTourHours": "Total Tour Duration (hours) *",
       "totalTourHoursPlaceholder": "e.g. 3.5 (for overnight tours: 25, 48, etc.)",
       "totalTourHoursHint": "Enter in hours (0.5 = 30 min, max 168 = 7 days)",
+      "totalTourDuration": "Total Tour Duration *",
+      "durationHours": "Hours",
+      "durationMinutes": "Minutes",
+      "durationFlexiblePlaceholder": "e.g. 1h 20m, 80min, 1:20, 1.5",
+      "totalTourDurationHint": "Enter hours and minutes separately, or type 1h 20m, 80min, 1:20, 1.5, etc. (max 7 days)",
       "additionalInfo": "Additional Information"
     },
     "form": {

@@ -1755,6 +1755,11 @@
       "totalTourHours": "총 투어 시간 (시간) *",
       "totalTourHoursPlaceholder": "예: 3.5 (숙박 투어의 경우 25, 48 등)",
       "totalTourHoursHint": "시간 단위로 입력 (0.5시간 = 30분, 최대 168시간 = 7일)",
+      "totalTourDuration": "총 투어 시간 *",
+      "durationHours": "시간",
+      "durationMinutes": "분",
+      "durationFlexiblePlaceholder": "예: 1시간 20분, 80분, 1:20, 1.5",
+      "totalTourDurationHint": "시간·분을 각각 입력하거나, 1시간 20분·80분·1:20·1.5 등으로 직접 입력 (최대 7일)",
       "additionalInfo": "추가 정보"
     },
     "form": {
