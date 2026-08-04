@@ -273,6 +273,66 @@ function formatRateLine(
   return `${reviews}/${denominator} ${pct}`
 }
 
+function aggregateYearlyCell(
+  months: GoogleReviewStaffMonthlyCell[]
+): GoogleReviewStaffMonthlyCell | null {
+  if (months.length === 0) return null
+
+  const totals = {
+    month: 0,
+    reviewCount: 0,
+    fiveStarCount: 0,
+    fourStarCount: 0,
+    threeStarCount: 0,
+    twoStarCount: 0,
+    oneStarCount: 0,
+    totalTourGuests: 0,
+    reservationGroupCount: 0,
+  }
+
+  for (const cell of months) {
+    totals.reviewCount += cell.reviewCount
+    totals.fiveStarCount += cell.fiveStarCount
+    totals.fourStarCount += cell.fourStarCount
+    totals.threeStarCount += cell.threeStarCount
+    totals.twoStarCount += cell.twoStarCount
+    totals.oneStarCount += cell.oneStarCount
+    totals.totalTourGuests += cell.totalTourGuests
+    totals.reservationGroupCount += cell.reservationGroupCount
+  }
+
+  if (
+    totals.reviewCount === 0 &&
+    totals.totalTourGuests === 0 &&
+    totals.reservationGroupCount === 0
+  ) {
+    return null
+  }
+
+  const ratingSum =
+    totals.fiveStarCount * 5 +
+    totals.fourStarCount * 4 +
+    totals.threeStarCount * 3 +
+    totals.twoStarCount * 2 +
+    totals.oneStarCount
+
+  const guestReviewRatePercent =
+    totals.totalTourGuests > 0
+      ? Math.round((totals.reviewCount / totals.totalTourGuests) * 10000) / 100
+      : null
+  const groupReviewRatePercent =
+    totals.reservationGroupCount > 0
+      ? Math.round((totals.reviewCount / totals.reservationGroupCount) * 10000) / 100
+      : null
+
+  return {
+    ...totals,
+    avgRating: totals.reviewCount > 0 ? ratingSum / totals.reviewCount : null,
+    guestReviewRatePercent,
+    groupReviewRatePercent,
+  }
+}
+
 function MonthlyCellContent({
   cell,
   isKo,
@@ -280,6 +340,7 @@ function MonthlyCellContent({
   staffName,
   year,
   onStarClick,
+  reviewMonth,
 }: {
   cell: GoogleReviewStaffMonthlyCell | null
   isKo: boolean
@@ -287,6 +348,8 @@ function MonthlyCellContent({
   staffName: string
   year: number
   onStarClick: (target: StaffStatReviewModalTarget) => void
+  /** undefined: cell.month, null: 연간(월 필터 없음) */
+  reviewMonth?: number | null
 }) {
   if (
     !cell ||
@@ -298,6 +361,7 @@ function MonthlyCellContent({
   }
 
   const starRows = STAR_BREAKDOWN_ROWS.filter((row) => cell[row.key] > 0)
+  const monthForClick = reviewMonth === undefined ? cell.month : reviewMonth
 
   return (
     <div className="flex flex-col items-center gap-1 leading-tight text-center min-w-[5.5rem]">
@@ -323,7 +387,7 @@ function MonthlyCellContent({
                     staffName,
                     rating: row.rating,
                     year,
-                    month: cell.month,
+                    ...(monthForClick != null ? { month: monthForClick } : {}),
                   })
                 }
               />
@@ -808,6 +872,9 @@ export default function GoogleReviewStaffStatsSection({
                   <th className="sticky left-0 z-10 bg-card py-2 pr-3 text-left font-medium min-w-[7rem]">
                     {isKo ? '직원' : 'Staff'}
                   </th>
+                  <th className="py-2 px-1 text-center font-semibold text-xs min-w-[6rem] bg-muted/40 border-r border-border/50 text-foreground">
+                    {isKo ? `${year}년 총합` : `${year} total`}
+                  </th>
                   {monthLabels.map((label) => (
                     <th
                       key={label}
@@ -821,6 +888,7 @@ export default function GoogleReviewStaffStatsSection({
               <tbody>
                 {filteredMonthlyStats.map((row) => {
                   const monthMap = monthlyCellMap.get(row.staffEmail)
+                  const yearlyCell = aggregateYearlyCell(row.months)
                   return (
                     <tr key={row.staffEmail} className="border-b border-border/40">
                       <td className="sticky left-0 z-10 bg-card py-2 pr-3 font-medium whitespace-nowrap">
@@ -828,6 +896,17 @@ export default function GoogleReviewStaffStatsSection({
                           name={row.staffName}
                           isActive={row.staffIsActive}
                           isKo={isKo}
+                        />
+                      </td>
+                      <td className="py-2 px-1 text-center align-middle bg-muted/25 border-r border-border/40">
+                        <MonthlyCellContent
+                          cell={yearlyCell}
+                          isKo={isKo}
+                          staffEmail={row.staffEmail}
+                          staffName={row.staffName}
+                          year={year}
+                          reviewMonth={null}
+                          onStarClick={setReviewModalTarget}
                         />
                       </td>
                       {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (

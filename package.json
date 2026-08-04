@@ -20,6 +20,8 @@
     "clean:win": "node scripts/clean-win.cjs",
     "dev:win": "npm run clean:win && node scripts/dev-win.cjs",
     "dev:3001": "node scripts/dev-win.cjs -- -p 3001",
+    "dev:warmup": "node scripts/dev-warmup.cjs",
+    "defender:exclude": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/add-defender-exclusions.ps1",
     "clean:all": "rm -rf .next out dist node_modules package-lock.json && npm install",
     "generate-thumbnails": "node scripts/generate-thumbnails.js",
     "generate-thumbnails:tour": "node scripts/generate-thumbnails.js",

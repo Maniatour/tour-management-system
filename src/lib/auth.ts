@@ -102,7 +102,7 @@ export async function signInWithGoogle(
       }
     }
 
-    // Supabase Redirect URLs는 경로까지 정확히 일치해야 함 (예: /ko/auth/callback).
+    // Supabase Redirect URLs: /auth/callback (locale은 query). 목록에 없으면 Site URL(localhost)로 감.
     stashOAuthCallbackLocale(locale)
     const redirectTo = getOAuthCallbackRedirectUrl(locale, postAuthPath)
 

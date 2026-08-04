@@ -24,22 +24,26 @@ export function getAppOrigin(): string {
   return 'http://localhost:3000'
 }
 
-/** Supabase Redirect URLs와 정확히 맞추기: /{locale}/auth/callback */
+/**
+ * Supabase Redirect URLs와 맞추기: /auth/callback (locale은 query).
+ * README·대시보드에 등록된 `https://<도메인>/auth/callback`과 일치시킨다.
+ * `/auth/callback` 페이지가 `/{locale}/auth/callback`으로 넘기며 code·hash를 유지한다.
+ */
 export function getOAuthCallbackRedirectUrl(
   locale: string,
   postAuthPath?: string | null
 ): string {
   const loc = locale === 'en' || locale === 'ko' ? locale : 'ko'
-  const base = `${getAppOrigin()}/${loc}/auth/callback`
+  const params = new URLSearchParams({ locale: loc })
   if (
     postAuthPath &&
     postAuthPath.startsWith('/') &&
     !postAuthPath.includes('undefined') &&
     !postAuthPath.includes('/auth')
   ) {
-    return `${base}?redirectTo=${encodeURIComponent(postAuthPath)}`
+    params.set('redirectTo', postAuthPath)
   }
-  return base
+  return `${getAppOrigin()}/auth/callback?${params.toString()}`
 }
 
 export function stashOAuthCallbackLocale(locale: string): void {

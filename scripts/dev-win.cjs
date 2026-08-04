@@ -31,12 +31,17 @@ const requireFlag = `--require=${fsRetryPreload}`
 
 const nodeOptions = [process.env.NODE_OPTIONS, requireFlag].filter(Boolean).join(' ').trim()
 
+const webpackParallelism =
+  process.env.NEXT_DEV_WEBPACK_PARALLELISM ||
+  String(Math.min(4, Math.max(2, require('node:os').cpus()?.length || 2)))
+
 const env = {
   ...process.env,
   PORT: String(devPort),
   NODE_PATH: nodeModules,
   WATCHPACK_POLLING: 'true',
   CHOKIDAR_USEPOLLING: 'true',
+  NEXT_DEV_WEBPACK_PARALLELISM: webpackParallelism,
   ...(nodeOptions ? { NODE_OPTIONS: nodeOptions } : {}),
 }
 
@@ -45,15 +50,14 @@ const extraArgs = process.argv.slice(2)
 if (process.platform === 'win32' && winDistDir) {
   console.warn(
     `[tms dev] Windows distDir: ${winDistDir}\n` +
-      '  -4094(open) 발생 시 Windows Defender 제외: node_modules\\.cache\\tms-next-dev\n' +
-      '    (관리자 PowerShell) Add-MpPreference -ExclusionPath "' +
-      path.join(root, 'node_modules', '.cache', 'tms-next-dev') +
-      '"\n' +
+      `  webpack parallelism: ${webpackParallelism} (override: NEXT_DEV_WEBPACK_PARALLELISM)\n` +
+      '  - Defender 제외(관리자): npm run defender:exclude\n' +
+      '  - 캐시 워밍업(dev 실행 후 다른 터미널): npm run dev:warmup\n' +
       '  - 프로젝트 .next 사용: NEXT_DEV_USE_PROJECT_DIST=1 npm run dev\n' +
       '  - open -4094 재발 시: NEXT_DEV_WIN_EMIT_SETTLE_MS=2500 npm run dev\n' +
       '  - 동시 탭·페이지 더 유지: NEXT_DEV_PAGES_BUFFER_LENGTH=32 npm run dev\n' +
       '  - 캐시 초기화 후 시작: npm run dev:win\n' +
-      '  - 같은 localhost에 브라우저 창/탭이 여러 개면 한쪽 이동·새로고침 시 다른 창에도 Compiling 표시가 뜰 수 있음(HMR 공유)\n' +
+      '  - 같은 localhost에 브라우저 창/탭이 여러 개면 한쪽 이동·새로고침 시 다른 창에도 Compiling 표시가 뜰 수 있음(HMR 공유) — 탭·창은 최소화 권장\n' +
       '  - 완전 분리: npm run dev:3001 (별도 포트·캐시)'
   )
 }
