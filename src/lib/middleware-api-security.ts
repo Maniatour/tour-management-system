@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import type { Database } from '@/lib/database.types'
+import { readAuthAccessTokenFromRequest } from '@/lib/authSessionCookie'
 
 const STAFF_EMAIL_WHITELIST = new Set(['info@maniatour.com', 'wooyong.shim09@gmail.com'])
 
@@ -100,10 +101,9 @@ async function verifyStaffSession(
   req: NextRequest,
   res: NextResponse
 ): Promise<boolean> {
-  const authHeader = req.headers.get('authorization')
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null
+  const token = readAuthAccessTokenFromRequest(req)
 
-  // localStorage JWT(Bearer) — 쿠키 세션이 없어도 authenticated 로 is_staff/team 조회
+  // localStorage JWT(Bearer / tms-auth-access) — 쿠키 세션이 없어도 authenticated 로 is_staff/team 조회
   if (token) {
     const bearerSb = createBearerSupabase(token)
     const {

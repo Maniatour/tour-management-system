@@ -64,6 +64,12 @@ const serwist = new Serwist({
   // Workbox/Serwist에서 no-response가 날 수 있음 → 문서 요청은 네트워크만 사용
   runtimeCaching: [
     {
+      matcher({ url }) {
+        return url.pathname.startsWith('/api/')
+      },
+      handler: new NetworkOnly(),
+    },
+    {
       matcher({ url, request }) {
         if (!url.pathname.startsWith('/chat/')) return false
         return request.mode === 'navigate' || request.destination === 'document'

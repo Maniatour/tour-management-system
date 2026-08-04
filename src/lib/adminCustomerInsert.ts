@@ -1,4 +1,5 @@
 import type { Database } from '@/lib/supabase'
+import { getAccessTokenForApi } from '@/lib/supabase'
 import { fetchApiWithAuth, resolveAccessTokenForApi } from '@/lib/api-client-bearer'
 
 export type CustomerRow = Database['public']['Tables']['customers']['Row']
@@ -11,14 +12,22 @@ export async function insertCustomerViaAdminApi(
   if (!accessToken) {
     return { customer: null, errorMessage: '세션이 없습니다. 다시 로그인해 주세요.' }
   }
-  const res = await fetchApiWithAuth('/api/admin/customers', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify({ customer: customerRow }),
-  })
+
+  const postCustomer = () =>
+    fetchApiWithAuth('/api/admin/customers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customer: customerRow }),
+    })
+
+  let res = await postCustomer()
+  if (res.status === 401) {
+    const refreshed = await getAccessTokenForApi(30)
+    if (refreshed) {
+      res = await postCustomer()
+    }
+  }
+
   const json = (await res.json().catch(() => ({}))) as {
     error?: string
     customer?: CustomerRow
