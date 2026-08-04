@@ -138,6 +138,8 @@ import {
   parseResidentLineStateFromSelections,
   residentLineStateEquals,
   computePassCoveredCount,
+  residentFeeAmountsFromPricingChoicesJson,
+  sumResidentFeeAmountsUsd,
   type ResidentLineState,
   type ResidentLineKey,
 } from '@/utils/usResidentChoiceSync'
@@ -3849,6 +3851,11 @@ export default function ReservationForm({
           
           // DB에 저장된 잔액(가격 정보 모달 「잔액(투어 당일 지불)」 등)은 채널 종류와 관계없이 로드
           const balanceAmount = Number(existingPricing.balance_amount) || 0
+          const residentAmountsFromChoices = {
+            ...emptyResidentStatusAmounts(),
+            ...residentFeeAmountsFromPricingChoicesJson(existingPricing.choices),
+          }
+          const residentFeesFromChoices = sumResidentFeeAmountsUsd(residentAmountsFromChoices)
           const onSiteBalanceAmount = balanceAmount
           
           setFormData(prev => {
@@ -3912,6 +3919,11 @@ export default function ReservationForm({
                 : 0,
               ...(channelSettlementFromDb != null ? { channelSettlementAmount: channelSettlementFromDb } : {}),
               onSiteBalanceAmount: onSiteBalanceAmount,
+              residentStatusAmounts: {
+                ...emptyResidentStatusAmounts(),
+                ...(prev.residentStatusAmounts || {}),
+                ...residentAmountsFromChoices,
+              },
               choices: existingPricing.choices || {},
               choicesTotal: Number(existingPricing.choices_total) || 0
             }
@@ -3974,14 +3986,32 @@ export default function ReservationForm({
                 ? Math.max(0, Math.round(Number(dbTotalRaw) * 100) / 100)
                 : newTotalPrice
             const newBalance = Math.max(0, totalPriceForForm - updated.depositAmount)
+            // 라인 총액(비거주자 미포함) + 초이스 거주비, 또는 DB total_price 기준 잔액 중 큰 쪽
+            const lineBalanceWithResident = Math.max(
+              0,
+              Math.round((newTotalPrice + residentFeesFromChoices - updated.depositAmount) * 100) / 100
+            )
+            const dbTotalBalance = hasDbTotal
+              ? Math.max(
+                  0,
+                  Math.round((Number(dbTotalRaw) - updated.depositAmount) * 100) / 100
+                )
+              : 0
+            const balanceWithResident = Math.max(lineBalanceWithResident, dbTotalBalance, newBalance)
             
-            // 명시 잔액(DB balance_amount)이 있으면 0을 포함해 항상 우선. 없을 때만 총액−보증금 계산값
+            // DB 잔액이 비거주자 비용 누락 등으로 더 작으면 보정값 사용 (190→390 깜빡임 방지)
             const rawBalRow = (existingPricing as any).balance_amount
             const hasStoredBalance =
               rawBalRow !== null && rawBalRow !== undefined && rawBalRow !== ''
-            const finalBalanceAmount = hasStoredBalance
-              ? Number(rawBalRow) || 0
-              : newBalance
+            const storedBalance = hasStoredBalance ? Number(rawBalRow) || 0 : null
+            const finalBalanceAmount =
+              storedBalance != null &&
+              Math.abs(storedBalance - balanceWithResident) > 0.01 &&
+              balanceWithResident > storedBalance + 0.01
+                ? balanceWithResident
+                : storedBalance != null
+                  ? storedBalance
+                  : balanceWithResident
             
             // commission_amount가 데이터베이스에서 불러온 값이면 절대 덮어쓰지 않음
             const finalCommissionAmount = loadedCommissionAmount.current !== null && loadedCommissionAmount.current > 0
@@ -4022,6 +4052,7 @@ export default function ReservationForm({
               subtotal: newSubtotal,
               totalPrice: totalPriceForForm,
               balanceAmount: finalBalanceAmount,
+              onSiteBalanceAmount: finalBalanceAmount,
               // commission_amount와 commission_percent 명시적으로 보존 (데이터베이스 값 우선)
               commission_amount: finalCommissionAmount,
               commission_percent: updated.commission_percent,

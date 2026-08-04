@@ -969,16 +969,10 @@ export default function PricingSection({
       setReturnedAmount(returnedTotal)
       setPartnerReceivedForSettlement(partnerReceivedStrict)
 
-      // depositAmount와 balanceReceivedTotal을 기반으로 잔액 계산 (Returned 반영 순액 = gross − 이번 조회 returnedTotal)
-      const grossDue = calculateTotalCustomerPaymentGrossRef.current()
-      const totalCustomerPayment = Math.max(0, roundUsd2(grossDue - returnedTotal))
-      const totalPaid = depositTotalNet + balanceReceivedTotal
-      const remainingBalance = roundUsd2(totalCustomerPayment - totalPaid)
-
       const fd = formDataRef.current
 
-      // 입금 내역이 있을 때만 보증금·잔액을 입금 합계 기준으로 덮어씀.
-      // 입금 내역이 없으면 DB/사용자가 입력한 보증금·잔액을 유지 (할인가로 덮어쓰면 저장값이 사라지는 버그 방지)
+      // 입금 내역이 있을 때만 보증금을 입금 합계 기준으로 덮어씀.
+      // 입금 내역이 없으면 DB/사용자가 입력한 보증금을 유지 (할인가로 덮어쓰면 저장값이 사라지는 버그 방지)
       const discountedPrice = fd.productPriceTotal - fd.couponDiscount - fd.additionalDiscount
       const notIncludedPrice = splitNotIncludedForDisplay(
         (fd as any).choiceNotIncludedTotal ?? 0,
@@ -999,14 +993,14 @@ export default function PricingSection({
             : 0
 
       if (paymentRecords.length > 0) {
-        // 입금 반영은 폼 상태만 갱신. reservation_pricing 저장은 사용자가「가격 정보 저장」또는 전체 예약 저장 시에만 수행.
-        // OTA도 동일: 잔액은 입금 순효과(depositTotalNet)·Refunded 반영 후 맞추지 않으면 DB 잔액이 남아 −잔액으로 보임.
+        // 입금 반영은 보증금·잔금 수령만 폼에 동기화.
+        // 잔액(onSiteBalanceAmount)은 여기서 덮어쓰지 않음 — 이 시점의 총액에
+        // 비거주자 비용 등이 아직 없으면 $190처럼 잘못된 값으로 깜빡인 뒤
+        // 이후 effect가 $390으로 고치는 현상이 난다. 잔액은 전용 auto-effect가 담당.
         setFormData((prev: typeof formData) => ({
           ...prev,
           balanceReceivedTotal,
           depositAmount: depositToSave,
-          onSiteBalanceAmount: remainingBalance,
-          balanceAmount: remainingBalance,
         }))
       } else {
         setCalculatedDepositTotalNet(0)
@@ -1141,6 +1135,22 @@ export default function PricingSection({
         onSiteBalanceAmount: calculatedBalance,
         balanceAmount: calculatedBalance,
       }))
+      // DB에 남아 있는 구버전 잔액(비거주자 비용 누락 등)을 가격 탭과 동일 값으로 맞춤
+      if (
+        reservationId &&
+        balanceDifference > 0.01 &&
+        Number.isFinite(calculatedBalance)
+      ) {
+        void supabase
+          .from('reservation_pricing')
+          .update({ balance_amount: calculatedBalance })
+          .eq('reservation_id', reservationId)
+          .then(({ error }) => {
+            if (error) {
+              console.warn('PricingSection: balance_amount 동기화 실패', error)
+            }
+          })
+      }
     }
     prevBalanceDepsRef.current = currentDeps
   }, [
@@ -1164,6 +1174,7 @@ export default function PricingSection({
     productSalePriceCommitTick,
     pricingFieldsFromDb.onSiteBalanceAmount,
     markPricingEdited,
+    reservationId,
   ])
 
   // depositAmount를 할인 후 상품가격으로 자동 업데이트 (상품 가격이나 쿠폰 변경 시)

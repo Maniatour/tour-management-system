@@ -16,6 +16,7 @@ import {
   residentFeeAmountsFromPricingChoicesJson,
   residentFeeCountsFromPricingChoicesJson,
 } from '@/utils/usResidentChoiceSync'
+import { loadResidentStatusAmountsForReservation } from '@/lib/saveResidentStatusWithPricing'
 import { getEffectivePickupHotelId, getPickupHotelNameById } from '@/lib/effectivePickupHotel'
 import type { PickupResolveContext } from '@/lib/pickupGroupPreset'
 import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
@@ -286,9 +287,16 @@ export default function TourPrintModal({
       try {
         const { data: rezList } = await supabase
           .from('reservations')
-          .select('id, adults, child, infant, status')
+          .select('id, adults, child, infant, status, product_id')
           .in('id', ids)
-        type RezRow = { id: string; adults?: number; child?: number; infant?: number; status?: string | null }
+        type RezRow = {
+          id: string
+          adults?: number
+          child?: number
+          infant?: number
+          status?: string | null
+          product_id?: string | null
+        }
         const rezById = new Map<string, RezRow>()
         ;(rezList || []).forEach((r) => rezById.set((r as RezRow).id, r as RezRow))
 
@@ -383,6 +391,20 @@ export default function TourPrintModal({
         }
 
         const map = new Map<string, number>()
+        const residentAmountsByResId = new Map<string, Partial<Record<string, number>>>()
+        await Promise.all(
+          ids.map(async (id) => {
+            const pid = rezById.get(id)?.product_id
+            if (!pid) return
+            try {
+              const amounts = await loadResidentStatusAmountsForReservation(supabase, id, String(pid))
+              residentAmountsByResId.set(id, amounts)
+            } catch {
+              /* ignore — fall back to choices JSON */
+            }
+          })
+        )
+
         for (const id of ids) {
           const rez = rezById.get(id)
           const pricingRaw = pricingByResId.get(id) ?? null
@@ -399,7 +421,14 @@ export default function TourPrintModal({
             const key = k as keyof typeof residentCounts
             residentCounts[key] = Math.max(Number(residentCounts[key]) || 0, Number(v) || 0)
           }
-          const residentStatusAmounts = residentFeeAmountsFromPricingChoicesJson(choicesJson)
+          const fromChoicesAmounts = residentFeeAmountsFromPricingChoicesJson(choicesJson)
+          const fromProductAmounts = residentAmountsByResId.get(id) || {}
+          const residentStatusAmounts = { ...fromChoicesAmounts, ...fromProductAmounts }
+          for (const [k, v] of Object.entries(fromChoicesAmounts)) {
+            const cur = Number((residentStatusAmounts as Record<string, number>)[k]) || 0
+            const alt = Number(v) || 0
+            if (alt > cur) (residentStatusAmounts as Record<string, number>)[k] = alt
+          }
           const party = {
             adults: rez?.adults ?? null,
             child: rez?.child ?? null,

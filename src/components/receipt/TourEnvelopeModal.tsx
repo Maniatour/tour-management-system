@@ -18,6 +18,7 @@ import {
   type BalanceEnvelopeLine,
 } from '@/utils/balanceEnvelopeBreakdown'
 import { residentFeeAmountsFromPricingChoicesJson, residentFeeCountsFromPricingChoicesJson } from '@/utils/usResidentChoiceSync'
+import { loadResidentStatusAmountsForReservation } from '@/lib/saveResidentStatusWithPricing'
 
 // ---------------------------------------------------------------------------
 // 상수
@@ -54,6 +55,7 @@ type EnvelopeReservationRow = {
   infant?: number
   total_people?: number
   status?: string | null
+  product_id?: string | null
 }
 
 function customerForReservation(
@@ -350,7 +352,7 @@ export default function TourEnvelopeModal({
 
         const { data: rezList, error: rezErr } = await supabase
           .from('reservations')
-          .select('id, customer_id, adults, child, infant, total_people, status')
+          .select('id, customer_id, adults, child, infant, total_people, status, product_id')
           .in('id', ids)
 
         if (cancelled) return
@@ -452,6 +454,22 @@ export default function TourEnvelopeModal({
           paymentsByResId.set(r.reservation_id, list)
         }
 
+        const residentAmountsByResId = new Map<string, Partial<Record<string, number>>>()
+        if (needsBalanceData) {
+          await Promise.all(
+            ids.map(async (id) => {
+              const pid = rezById.get(id)?.product_id
+              if (!pid) return
+              try {
+                const amounts = await loadResidentStatusAmountsForReservation(supabase, id, String(pid))
+                residentAmountsByResId.set(id, amounts)
+              } catch {
+                /* ignore */
+              }
+            })
+          )
+        }
+
         const results: EnvelopeRow[] = ids.map((id) => {
           const rez = rezById.get(id)
           if (!rez) {
@@ -479,7 +497,17 @@ export default function TourEnvelopeModal({
             const key = k as keyof typeof residentCounts
             residentCounts[key] = Math.max(Number(residentCounts[key]) || 0, Number(v) || 0)
           }
-          const residentStatusAmounts = residentFeeAmountsFromPricingChoicesJson(choicesJson)
+          const fromChoicesAmounts = residentFeeAmountsFromPricingChoicesJson(choicesJson)
+          const fromProductAmounts = residentAmountsByResId.get(id) || {}
+          const residentStatusAmounts: Record<string, number> = {
+            ...fromChoicesAmounts,
+            ...fromProductAmounts,
+          }
+          for (const [k, v] of Object.entries(fromChoicesAmounts)) {
+            const cur = Number(residentStatusAmounts[k]) || 0
+            const alt = Number(v) || 0
+            if (alt > cur) residentStatusAmounts[k] = alt
+          }
           const party = {
             adults: rez.adults ?? null,
             child: rez.child ?? null,

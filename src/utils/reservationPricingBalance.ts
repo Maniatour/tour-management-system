@@ -1,8 +1,7 @@
 /**
- * 배정 카드·Balance 봉투 등에서 동일하게 사용하는 잔액 계산
- * (가격 모달의 balance_amount 우선, 없으면 Grand Total − 보증금)
- *
- * 라인 총액·옵션 소계: 초이스 판매액은 reservation_options/option_total 로 이전되므로 choices_total 은 합산하지 않음(이중 계산 방지).
+ * 배정 카드·Balance 봉투·투어 인쇄 등에서 동일하게 사용하는 잔액 표시.
+ * 예약수정모달 가격정보「잔금」과 맞추기 위해, DB `balance_amount`와 계산값이 다르면
+ * 가격 탭과 같은 계산값(총 결제 − 입금 순효과 등, 비거주자 비용 포함)을 우선한다.
  */
 
 import { isNotIncludedExcludedReservationStatus } from '@/lib/reservationStatus'
@@ -907,9 +906,9 @@ export function withNormalizedBalanceAmountForDisplay(
 }
 
 /**
- * 잔액 표시: 입금이 있으면 가격 정보 탭 `displayedOnSiteBalance`와 같은 식(`computeDisplayedOnSiteBalanceLikePricingSection`).
- * `balance_amount`(DB)가 비어 있으면 위 계산·또는(입금 없음) 라인 산식 잔액.
- * DB 잔액과 계산값이 0.01 초과로 다르면 계산값 우선(거주자구분 금액 등 반영 후 DB 미동기화 보정).
+ * 잔액 표시: 입금이 있으면 가격 정보 탭 `displayedOnSiteBalance`와 같은 식.
+ * DB `balance_amount`와 계산값이 0.01 초과로 다르면 계산값 우선
+ * (비거주자 비용 반영 후 DB 미동기화·구버전 sync 보정).
  */
 function resolveBalanceDisplayAmount(storedNum: number, defaultBalance: number): number {
   if (Math.abs(defaultBalance - storedNum) > 0.01) {
