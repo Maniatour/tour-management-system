@@ -4,7 +4,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { X, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fetchReservationOptionLinesBatch } from '@/lib/reservationOptionsForEmail'
-import { getBalanceAmountForDisplay } from '@/utils/reservationPricingBalance'
+import {
+  adjustOptionTotalExcludingLegacyNonResident,
+  getBalanceAmountForDisplay,
+  paymentRecordAmountToNumber,
+  resolveResidentFeeUsdForBalanceDisplay,
+  withNormalizedBalanceAmountForDisplay,
+} from '@/utils/reservationPricingBalance'
+import { countResidentLinesFromCustomers } from '@/utils/balanceEnvelopeBreakdown'
+import {
+  residentFeeAmountsFromPricingChoicesJson,
+  residentFeeCountsFromPricingChoicesJson,
+} from '@/utils/usResidentChoiceSync'
 import { getEffectivePickupHotelId, getPickupHotelNameById } from '@/lib/effectivePickupHotel'
 import type { PickupResolveContext } from '@/lib/pickupGroupPreset'
 import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
@@ -250,12 +261,23 @@ export default function TourPrintModal({
     [isKo]
   )
 
-  // 잔금 정보 로드
+  // 잔금 정보 로드 (배정 카드·Balance 봉투와 동일: 비거주자 비용 포함)
+  const assignedReservationIdsKey = useMemo(
+    () =>
+      [...new Set(assignedReservations.map((r) => r.id).filter(Boolean))]
+        .sort()
+        .join(','),
+    [assignedReservations]
+  )
+
   useEffect(() => {
     if (!isOpen) return
-    const ids = [...new Set(assignedReservations.map((r) => r.id).filter(Boolean))]
+    const ids = assignedReservationIdsKey
+      ? assignedReservationIdsKey.split(',').filter(Boolean)
+      : []
     if (ids.length === 0) {
       setBalanceByResId(new Map())
+      setLoading(false)
       return
     }
     let cancelled = false
@@ -270,29 +292,63 @@ export default function TourPrintModal({
         const rezById = new Map<string, RezRow>()
         ;(rezList || []).forEach((r) => rezById.set((r as RezRow).id, r as RezRow))
 
-        // 가격 정보 (잔금)
-        const { data: sessionData } = await supabase.auth.getSession()
-        const token = sessionData?.session?.access_token
         const pricingByResId = new Map<string, Record<string, unknown> | null>()
-        if (token) {
-          const res = await fetch(
-            `/api/reservation-pricing?reservation_ids=${encodeURIComponent(ids.join(','))}`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          )
-          if (res.ok) {
-            const json = await res.json()
-            const items = json.items as
-              | Array<{ reservation_id: string; pricing: Record<string, unknown> | null }>
-              | undefined
-            if (Array.isArray(items)) {
-              items.forEach(({ reservation_id, pricing }) => {
-                pricingByResId.set(reservation_id, pricing && typeof pricing === 'object' ? pricing : null)
-              })
+        const { data: sessionData } = await supabase.auth.getSession()
+        const token = sessionData?.session?.access_token?.trim()
+        if (token && typeof window !== 'undefined') {
+          try {
+            const res = await fetch(
+              `/api/reservation-pricing?reservation_ids=${encodeURIComponent(ids.join(','))}`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            )
+            if (res.ok) {
+              const json = (await res.json()) as {
+                items?: Array<{ reservation_id: string; pricing: Record<string, unknown> | null }>
+              }
+              if (Array.isArray(json.items)) {
+                for (const { reservation_id, pricing } of json.items) {
+                  pricingByResId.set(
+                    reservation_id,
+                    pricing && typeof pricing === 'object' ? pricing : null
+                  )
+                }
+              }
             }
+          } catch (e) {
+            console.warn('[TourPrintModal] reservation-pricing API', e)
           }
         }
 
-        const optionLinesByResId = await fetchReservationOptionLinesBatch(supabase, ids)
+        const missing = ids.filter((id) => !pricingByResId.has(id))
+        if (missing.length > 0) {
+          const { data: pricingList, error: pricingErr } = await supabase
+            .from('reservation_pricing')
+            .select('*')
+            .in('reservation_id', missing)
+          if (pricingErr) {
+            console.warn('[TourPrintModal] reservation_pricing direct', pricingErr)
+          }
+          for (const row of pricingList || []) {
+            const rid = (row as { reservation_id?: string }).reservation_id
+            if (rid) pricingByResId.set(rid, row as Record<string, unknown>)
+          }
+        }
+        for (const id of ids) {
+          if (!pricingByResId.has(id)) pricingByResId.set(id, null)
+        }
+
+        const [optionLinesByResId, payResult, rcResult] = await Promise.all([
+          fetchReservationOptionLinesBatch(supabase, ids),
+          supabase
+            .from('payment_records')
+            .select('reservation_id, amount, payment_status')
+            .in('reservation_id', ids),
+          supabase
+            .from('reservation_customers')
+            .select('reservation_id, resident_status')
+            .in('reservation_id', ids),
+        ])
+
         const optionsTotalByResId = new Map<string, number | null>()
         for (const id of ids) {
           const lines = optionLinesByResId.get(id) || []
@@ -302,36 +358,78 @@ export default function TourPrintModal({
           )
         }
 
-        const { data: payRows } = await supabase
-          .from('payment_records')
-          .select('reservation_id, amount, payment_status')
-          .in('reservation_id', ids)
+        const residentsByResId = new Map<string, Array<{ resident_status?: string | null }>>()
+        for (const r of (rcResult.data || []) as Array<{
+          reservation_id: string
+          resident_status?: string | null
+        }>) {
+          const list = residentsByResId.get(r.reservation_id) || []
+          list.push({ resident_status: r.resident_status ?? null })
+          residentsByResId.set(r.reservation_id, list)
+        }
+
         const paymentsByResId = new Map<string, Array<{ payment_status: string; amount: number }>>()
-        for (const r of payRows || []) {
-          const row = r as { reservation_id: string; amount?: unknown; payment_status?: string | null }
-          const list = paymentsByResId.get(row.reservation_id) || []
-          list.push({ payment_status: row.payment_status || '', amount: Number(row.amount) || 0 })
-          paymentsByResId.set(row.reservation_id, list)
+        for (const r of (payResult.data || []) as Array<{
+          reservation_id: string
+          amount?: unknown
+          payment_status?: string | null
+        }>) {
+          const list = paymentsByResId.get(r.reservation_id) || []
+          list.push({
+            payment_status: r.payment_status || '',
+            amount: paymentRecordAmountToNumber(r.amount),
+          })
+          paymentsByResId.set(r.reservation_id, list)
         }
 
         const map = new Map<string, number>()
         for (const id of ids) {
           const rez = rezById.get(id)
-          const pricing = pricingByResId.get(id) ?? null
-          const optionsSum = optionsTotalByResId.get(id) ?? null
-          const balance = getBalanceAmountForDisplay(
-            pricing,
-            optionsSum,
-            {
-              adults: rez?.adults ?? null,
-              child: rez?.child ?? null,
-              infant: rez?.infant ?? null,
-            },
-            {
-              paymentRecords: paymentsByResId.get(id) ?? [],
-              reservationStatus: rez?.status ?? null,
-            }
+          const pricingRaw = pricingByResId.get(id) ?? null
+          const pricing = pricingRaw ? withNormalizedBalanceAmountForDisplay(pricingRaw) : null
+          const optionsSumRaw = optionsTotalByResId.get(id) ?? null
+          const choicesJson =
+            pricing && typeof (pricing as { choices?: unknown }).choices !== 'undefined'
+              ? (pricing as { choices?: unknown }).choices
+              : null
+          const fromCustomers = countResidentLinesFromCustomers(residentsByResId.get(id))
+          const fromChoices = residentFeeCountsFromPricingChoicesJson(choicesJson)
+          const residentCounts = { ...fromChoices }
+          for (const [k, v] of Object.entries(fromCustomers)) {
+            const key = k as keyof typeof residentCounts
+            residentCounts[key] = Math.max(Number(residentCounts[key]) || 0, Number(v) || 0)
+          }
+          const residentStatusAmounts = residentFeeAmountsFromPricingChoicesJson(choicesJson)
+          const party = {
+            adults: rez?.adults ?? null,
+            child: rez?.child ?? null,
+            infant: rez?.infant ?? null,
+          }
+          const residentFeeUsd = resolveResidentFeeUsdForBalanceDisplay(
+            pricing as Parameters<typeof resolveResidentFeeUsdForBalanceDisplay>[0],
+            party,
+            optionsSumRaw,
+            residentCounts,
+            residentStatusAmounts
           )
+          const optionRowsForAdj = (optionLinesByResId.get(id) || []).map((o) => ({
+            option_id: o.optionId,
+            total_price: o.lineTotal,
+            status: 'active',
+          }))
+          const optionsSum =
+            optionsSumRaw === null
+              ? null
+              : adjustOptionTotalExcludingLegacyNonResident(
+                  optionsSumRaw,
+                  residentFeeUsd,
+                  optionRowsForAdj
+                )
+          const balance = getBalanceAmountForDisplay(pricing, optionsSum, party, {
+            paymentRecords: paymentsByResId.get(id) ?? [],
+            reservationStatus: rez?.status ?? null,
+            residentFeeUsd,
+          })
           map.set(id, balance)
         }
         if (!cancelled) setBalanceByResId(map)
@@ -346,7 +444,7 @@ export default function TourPrintModal({
     return () => {
       cancelled = true
     }
-  }, [isOpen, assignedReservations])
+  }, [isOpen, assignedReservationIdsKey])
 
   // 픽업 호텔별 그룹화 + 정렬
   const pickupGroups = useMemo(() => {

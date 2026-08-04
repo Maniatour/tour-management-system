@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { User, Car, CreditCard, Shield, FileText, Plus, Download, Edit, Trash2, ImagePlus, StickyNote } from 'lucide-react'
+import { User, Car, CreditCard, Shield, FileText, Upload, Download, Edit, Trash2, ImagePlus, StickyNote } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 
@@ -16,8 +16,38 @@ const TEAM_POSITION_OPTIONS = [
   { value: 'op', labelKo: '운영자', labelEn: 'op' },
 ] as const
 
+const TEAM_DOCUMENT_TYPE_OPTIONS = [
+  { type: 'contract', label: '계약서', accept: '.pdf,.doc,.docx,.jpg,.jpeg,.png,.webp' },
+  { type: 'id_copy', label: '신분증 사본', accept: '.pdf,.jpg,.jpeg,.png,.webp' },
+  { type: 'bank_info', label: 'W9', accept: '.pdf,.jpg,.jpeg,.png,.webp' },
+  { type: 'other', label: '기타 문서', accept: '.pdf,.doc,.docx,.jpg,.jpeg,.png,.webp' },
+] as const
+
+type TeamDocumentType = (typeof TEAM_DOCUMENT_TYPE_OPTIONS)[number]['type']
+
 function teamPositionOptionLabel(ko: string, en: string) {
   return `${ko} (${en})`
+}
+
+function teamDocumentTypeLabel(type: string): string {
+  return TEAM_DOCUMENT_TYPE_OPTIONS.find((o) => o.type === type)?.label || type
+}
+
+function fileExtensionFromName(name: string): string {
+  const parts = name.split('.')
+  return parts.length > 1 ? (parts.pop() || '').toLowerCase() : ''
+}
+
+function isImageDocument(name: string, url?: string): boolean {
+  const ext = fileExtensionFromName(name) || fileExtensionFromName(url || '')
+  return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(ext)
+}
+
+/** 카드 표시명: 계약서.pdf 형태 */
+function teamDocumentDisplayName(type: string, name: string): string {
+  const label = teamDocumentTypeLabel(type)
+  const ext = fileExtensionFromName(name)
+  return ext ? `${label}.${ext}` : label
 }
 
 /** 팀원 문서(documents 버킷) 업로드 최대 크기 — storage.buckets.file_size_limit 과 맞출 것 */
@@ -64,6 +94,8 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
   
   const [uploadedDocuments, setUploadedDocuments] = useState<{[key: string]: DocumentItem[]}>({})
   const [uploading, setUploading] = useState<{[key: string]: boolean}>({})
+  const [uploadDocumentType, setUploadDocumentType] = useState<TeamDocumentType>('contract')
+  const documentUploadInputRef = useRef<HTMLInputElement>(null)
   
   // 컴포넌트 마운트 시 기존 문서 불러오기
   useEffect(() => {
@@ -71,6 +103,15 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
       loadExistingDocuments()
     }
   }, [member?.email])
+
+  const selectedUploadOption =
+    TEAM_DOCUMENT_TYPE_OPTIONS.find((o) => o.type === uploadDocumentType) || TEAM_DOCUMENT_TYPE_OPTIONS[0]
+
+  const flatDocuments = TEAM_DOCUMENT_TYPE_OPTIONS.flatMap(({ type }) =>
+    (uploadedDocuments[type] || []).map((doc) => ({ ...doc, documentType: type }))
+  )
+
+  const isAnyDocumentUploading = Object.values(uploading).some(Boolean)
 
   // 기존 문서 불러오기
   const loadExistingDocuments = async () => {
@@ -445,7 +486,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1200]">
-      <div className="bg-white rounded-lg p-4 w-full max-w-2xl max-h-[85vh] overflow-y-auto">
+      <div className="bg-white rounded-lg p-4 w-full max-w-3xl max-h-[85vh] overflow-y-auto">
         <h2 className="text-xl font-bold mb-4">
           {member ? '팀원 정보 수정' : '새 팀원 추가'}
         </h2>
@@ -948,107 +989,154 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
             <p className="text-xs text-gray-500 mb-3">
               PDF, Word, 이미지 파일 (파일당 최대 {TEAM_DOCUMENT_MAX_LABEL})
             </p>
-            
-            {/* 문서 타입별 섹션 */}
-            {[
-              { type: 'contract', label: '계약서', accept: '.pdf,.doc,.docx' },
-              { type: 'id_copy', label: '신분증 사본', accept: '.pdf,.jpg,.jpeg,.png' },
-              { type: 'bank_info', label: 'W9', accept: '.pdf,.jpg,.jpeg,.png' },
-              { type: 'other', label: '기타 문서', accept: '.pdf,.doc,.docx,.jpg,.jpeg,.png' }
-            ].map(({ type, label, accept }) => (
-              <div key={type} className="mb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-700">
-                    {label}
+
+            {/* 단일 업로드 영역 */}
+            <div className="rounded-xl border border-border/60 bg-muted/20 p-3 sm:p-4 mb-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                <div className="flex-1 min-w-0">
+                  <label htmlFor="team-document-type" className="block text-sm font-medium text-gray-700 mb-1">
+                    문서 유형
                   </label>
-                  <span className="text-xs text-gray-500">
-                    {(uploadedDocuments[type] || []).length}개 업로드됨
-                  </span>
-                </div>
-                
-                {/* 업로드 영역 */}
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-3 mb-2">
-                  <input
-                    type="file"
-                    accept={accept}
-                    multiple
-                    onChange={(e) => handleDocumentUpload(e.target.files, type)}
-                    className="hidden"
-                    id={`${type}-upload`}
-                    disabled={uploading[type]}
-                  />
-                  <label
-                    htmlFor={`${type}-upload`}
-                    className={`flex items-center justify-center cursor-pointer ${uploading[type] ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'} rounded p-2`}
+                  <select
+                    id="team-document-type"
+                    value={uploadDocumentType}
+                    onChange={(e) => setUploadDocumentType(e.target.value as TeamDocumentType)}
+                    disabled={isAnyDocumentUploading}
+                    className="w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm focus:ring-1 focus:ring-ring focus:border-transparent bg-white"
                   >
-                    <Plus className="w-4 h-4 mr-2 text-gray-400" />
-                    <span className="text-sm text-gray-600">
-                      {uploading[type] ? '업로드 중...' : '문서 추가'}
-                    </span>
-                  </label>
+                    {TEAM_DOCUMENT_TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.type} value={opt.type}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                
-                {/* 업로드된 문서 목록 */}
-                {(uploadedDocuments[type] || []).length > 0 && (
-                  <div className="space-y-2">
-                    {uploadedDocuments[type].map((doc) => (
-                      <div
-                        key={doc.id}
-                        className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200"
+                <button
+                  type="button"
+                  disabled={isAnyDocumentUploading || !member?.email}
+                  onClick={() => documentUploadInputRef.current?.click()}
+                  className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 shrink-0"
+                >
+                  <Upload className="w-4 h-4" />
+                  {uploading[uploadDocumentType] ? '업로드 중…' : '파일 업로드'}
+                </button>
+                <input
+                  ref={documentUploadInputRef}
+                  type="file"
+                  accept={selectedUploadOption.accept}
+                  multiple
+                  className="hidden"
+                  disabled={isAnyDocumentUploading}
+                  onChange={(e) => {
+                    void handleDocumentUpload(e.target.files, uploadDocumentType)
+                    e.target.value = ''
+                  }}
+                />
+              </div>
+              {!member?.email ? (
+                <p className="text-xs text-amber-700">문서를 업로드하려면 먼저 이메일을 저장해 주세요.</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  선택한 유형으로 저장됩니다. 이미지를 올리면 썸네일로 미리볼 수 있습니다.
+                </p>
+              )}
+            </div>
+
+            {/* 업로드된 문서 카드뷰 */}
+            {flatDocuments.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500">
+                업로드된 문서가 없습니다.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {flatDocuments.map((doc) => {
+                  const displayName = teamDocumentDisplayName(doc.documentType, doc.name)
+                  const imagePreview = isImageDocument(doc.name, doc.url)
+                  return (
+                    <div
+                      key={doc.id}
+                      className="group relative flex flex-col rounded-xl border border-border/60 bg-white shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-200"
+                    >
+                      <a
+                        href={doc.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="relative aspect-[4/3] bg-muted/40 flex items-center justify-center overflow-hidden"
+                        title="열기"
                       >
-                        <div className="flex items-center flex-1 min-w-0">
-                          <FileText className="w-4 h-4 mr-2 text-gray-400 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm text-gray-700 truncate" title={doc.name}>
-                              {doc.name}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {(doc.size / 1024).toFixed(1)} KB
-                            </p>
+                        {imagePreview ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={doc.url}
+                            alt={displayName}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center gap-1.5 text-muted-foreground px-3">
+                            <FileText className="w-8 h-8" />
+                            <span className="text-[10px] font-medium uppercase tracking-wide">
+                              {fileExtensionFromName(doc.name) || 'FILE'}
+                            </span>
                           </div>
+                        )}
+                      </a>
+                      <div className="p-2.5 space-y-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate" title={displayName}>
+                            {displayName}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate" title={doc.name}>
+                            {(doc.size / 1024).toFixed(1)} KB
+                          </p>
                         </div>
-                        <div className="flex items-center space-x-2 ml-2">
+                        <div className="flex items-center gap-1">
                           <a
                             href={doc.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1.5 text-primary hover:bg-muted/50 rounded"
+                            className="p-1.5 text-primary hover:bg-muted/50 rounded-lg"
                             title="다운로드"
                           >
                             <Download className="w-4 h-4" />
                           </a>
-                          <label className="p-1.5 text-green-600 hover:bg-green-50 rounded cursor-pointer" title="교체">
+                          <label
+                            className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg cursor-pointer"
+                            title="교체"
+                          >
                             <Edit className="w-4 h-4" />
                             <input
                               type="file"
-                              accept={accept}
+                              accept={
+                                TEAM_DOCUMENT_TYPE_OPTIONS.find((o) => o.type === doc.documentType)?.accept ||
+                                selectedUploadOption.accept
+                              }
                               onChange={(e) => {
                                 const file = e.target.files?.[0]
                                 if (file) {
-                                  handleDocumentReplace(file, type, doc.id, doc.path)
-                                  e.target.value = '' // 같은 파일을 다시 선택할 수 있도록
+                                  void handleDocumentReplace(file, doc.documentType, doc.id, doc.path)
+                                  e.target.value = ''
                                 }
                               }}
                               className="hidden"
-                              disabled={uploading[type]}
+                              disabled={uploading[doc.documentType]}
                             />
                           </label>
                           <button
                             type="button"
-                            onClick={(e) => handleDocumentDelete(e, type, doc.id, doc.path)}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                            onClick={(e) => handleDocumentDelete(e, doc.documentType, doc.id, doc.path)}
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
                             title="삭제"
-                            disabled={uploading[type]}
+                            disabled={uploading[doc.documentType]}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    </div>
+                  )
+                })}
               </div>
-            ))}
+            )}
           </div>
 
           {/* 버튼 */}
