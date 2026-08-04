@@ -163,7 +163,6 @@ import {
   buildSimpleCardStatusTransitionMapFromCachedAuditRows,
   collectReservationActivityDateKeys,
   localYmdSetWhereBecameCancelledFromAuditRows,
-  isIntoCancelledLikeTransition,
   statusTransitionSortIndex,
 } from '@/lib/reservationStatusAudit'
 import {
@@ -3906,7 +3905,17 @@ export default function AdminReservations() {
       isReservationCancelledStatus(status) || isReservationDeletedStatus(status)
 
     const useWeekRegRollup =
-      regCancelGranularity === 'week' && weekRegRollupByYmd != null && weekRegRollupByYmd.size > 0
+      regCancelGranularity === 'week' &&
+      weekRegRollupByYmd != null &&
+      weekRegRollupByYmd.size > 0 &&
+      /** 통계 목록이 있으면 카드·헤더와 같은 totalPeople 기준으로 등록을 다시 셈(롤업 party_size와 어긋남 방지) */
+      statisticsReservations.length === 0
+
+    const partyForStats = (r: Reservation) => {
+      const tp = Number(r.totalPeople) || 0
+      if (tp > 0) return tp
+      return getReservationPartySize(r as unknown as Record<string, unknown>)
+    }
 
     const aggregateIntoKeys = (keys: string[], keyFromCreated: (ck: string) => string | null, keyFromUpdated: (uk: string) => string | null) => {
       const rowByKey = new Map<string, Row>()
@@ -3936,7 +3945,7 @@ export default function AdminReservations() {
         }
       }
       for (const r of statisticsReservations) {
-        const p = getReservationPartySize(r as unknown as Record<string, unknown>)
+        const p = partyForStats(r)
         const id = String(r.id ?? '').trim()
         const isRebookingCancel = isRebookingReservationByReasonMap(id, cancellationReasonByReservationId)
         if (!useWeekRegRollup) {
@@ -4369,16 +4378,6 @@ export default function AdminReservations() {
     const dayDen = Math.max(calendarKeys.length, 1)
     const round1 = (n: number) => Math.round(n * 10) / 10
 
-    let regBookings = 0
-    let regPeople = 0
-    for (const r of reservationsForStatistics) {
-      const ck = isoToLocalCalendarDateKey(r.addedTime)
-      if (ck && ck >= startYmd && ck <= endYmd) {
-        regBookings += 1
-        regPeople += getReservationPartySize(r as unknown as Record<string, unknown>)
-      }
-    }
-
     let cancelBookings = 0
     let cancelPeople = 0
     const useAuditCancel = groupByDate && regCancelChartAuditReady
@@ -4388,7 +4387,8 @@ export default function AdminReservations() {
         if (!id) continue
         if (isRebookingReservationByReasonMap(id, cancellationReasonByReservationId)) continue
         const ymds = localYmdSetWhereBecameCancelledFromAuditRows(regCancelChartAuditRowsByRecordId[id])
-        const p = getReservationPartySize(r as unknown as Record<string, unknown>)
+        const tp = Number(r.totalPeople) || 0
+        const p = tp > 0 ? tp : getReservationPartySize(r as unknown as Record<string, unknown>)
         for (const ymd of ymds) {
           if (ymd >= startYmd && ymd <= endYmd) {
             cancelBookings += 1
@@ -4404,7 +4404,19 @@ export default function AdminReservations() {
         if (!uk || uk < startYmd || uk > endYmd) continue
         if (!isReservationCancelledStatus(r.status) && !isReservationDeletedStatus(r.status)) continue
         cancelBookings += 1
-        cancelPeople += getReservationPartySize(r as unknown as Record<string, unknown>)
+        const tp = Number(r.totalPeople) || 0
+        cancelPeople += tp > 0 ? tp : getReservationPartySize(r as unknown as Record<string, unknown>)
+      }
+    }
+
+    let regBookings = 0
+    let regPeople = 0
+    for (const r of reservationsForStatistics) {
+      const ck = isoToLocalCalendarDateKey(r.addedTime)
+      if (ck && ck >= startYmd && ck <= endYmd) {
+        regBookings += 1
+        const tp = Number(r.totalPeople) || 0
+        regPeople += tp > 0 ? tp : getReservationPartySize(r as unknown as Record<string, unknown>)
       }
     }
 
@@ -4449,7 +4461,11 @@ export default function AdminReservations() {
     const allReservations = statisticsWeekReservations
     const { startYmd, endYmd } = statisticsWeekBoundary
     const useAuditCancel = groupByDate && regCancelChartAuditReady
-    const party = (r: Reservation) => getReservationPartySize(r as unknown as Record<string, unknown>)
+    const party = (r: Reservation) => {
+      const tp = Number(r.totalPeople) || 0
+      if (tp > 0) return tp
+      return getReservationPartySize(r as unknown as Record<string, unknown>)
+    }
 
     type FlowPair = { reg: number; cancel: number; regBookings: number; cancelBookings: number }
     const prodMap = new Map<string, FlowPair>()
@@ -4544,6 +4560,14 @@ export default function AdminReservations() {
           party: (res: unknown) => party(res as Reservation),
           auditRowsByReservationId: regCancelChartAuditRowsByRecordId,
           dayKeys: browserLocalInclusiveDateKeys(startYmd, endYmd),
+          excludeFromCancelledReservationIds: new Set(
+            reservationsForStatistics
+              .map((r) => String(r.id ?? '').trim())
+              .filter(
+                (id) =>
+                  !!id && isRebookingReservationByReasonMap(id, cancellationReasonByReservationId)
+              )
+          ),
         })
       : undefined
 
@@ -6440,13 +6464,17 @@ export default function AdminReservations() {
                   ? ({ mode: 'audit-loading' as const } as const)
                   : ({
                       mode: 'audit' as const,
+                      /**
+                       * 당일 최종 도착이 취소/삭제/노쇼면 모두 포함 (completed→취소 포함).
+                       * 카드 섹션 등록/상태변경 분리는 그대로 — 요약·순인원만 전체 취소 반영.
+                       */
                       reservations: dayReservations.filter((r) => {
-                        const st = (r.status || '').toLowerCase()
-                        if (st !== 'cancelled' && st !== 'canceled' && st !== 'deleted') return false
-                        /** 당일 등록 건은 등록 집계에만 포함 — 취소 집계에서 중복 제외 */
-                        if (isoToLocalCalendarDateKey(r.addedTime) === date) return false
-                        const tr = simpleCardStatusTransitionMap[`${r.id}|${date}`]
-                        return isIntoCancelledLikeTransition(tr)
+                        const id = String(r.id ?? '').trim()
+                        if (!id) return false
+                        const ymds = localYmdSetWhereBecameCancelledFromAuditRows(
+                          regCancelChartAuditRowsByRecordId[id]
+                        )
+                        return ymds.has(date)
                       }),
                     } as const)
 

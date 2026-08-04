@@ -10,6 +10,7 @@ export type GoogleReviewStaffStatRow = {
   staffName: string
   staffIsActive: boolean
   firstReviewDate: string | null
+  lastReviewDate: string | null
   reviewCount: number
   avgRating: number | null
   fiveStarCount: number
@@ -19,6 +20,7 @@ export type GoogleReviewStaffStatRow = {
   oneStarCount: number
   totalTourGuests: number
   reservationGroupCount: number
+  tourDepartureCount: number
 }
 
 export type GoogleReviewStaffMonthlyStatRow = {
@@ -77,6 +79,7 @@ export async function getGoogleReviewStaffStats(
         staff_email: string
         staff_name: string
         first_review_date: string | null
+        last_review_date: string | null
         review_count: number | string
         avg_rating: number | string | null
         five_star_count: number | string
@@ -86,6 +89,7 @@ export async function getGoogleReviewStaffStats(
         one_star_count: number | string
         total_tour_guests: number | string
         reservation_group_count: number | string
+        tour_departure_count: number | string
       }> | null
       error: { message: string } | null
     }>
@@ -99,7 +103,7 @@ export async function getGoogleReviewStaffStats(
       error.message.includes('Could not find the function')
     ) {
       throw new Error(
-        'admin_google_review_staff_stats RPC is missing. Apply migration 20260803370000_google_review_staff_stats_overall_career_totals.sql.'
+        'admin_google_review_staff_stats RPC is missing. Apply migration 20260803400000_google_review_staff_stats_all_tour_history.sql.'
       )
     }
     throw new Error(error.message)
@@ -109,6 +113,7 @@ export async function getGoogleReviewStaffStats(
     staffEmail: row.staff_email,
     staffName: row.staff_name,
     firstReviewDate: row.first_review_date ?? null,
+    lastReviewDate: row.last_review_date ?? null,
     reviewCount: Number(row.review_count ?? 0),
     avgRating: row.avg_rating == null ? null : Number(row.avg_rating),
     fiveStarCount: Number(row.five_star_count ?? 0),
@@ -118,6 +123,7 @@ export async function getGoogleReviewStaffStats(
     oneStarCount: Number(row.one_star_count ?? 0),
     totalTourGuests: Number(row.total_tour_guests ?? 0),
     reservationGroupCount: Number(row.reservation_group_count ?? 0),
+    tourDepartureCount: Number(row.tour_departure_count ?? 0),
   }))
 
   const activeMap = await loadStaffActiveByEmail(mapped.map((row) => row.staffEmail))

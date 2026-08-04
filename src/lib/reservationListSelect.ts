@@ -32,9 +32,11 @@ export const RESERVATION_LIST_SELECT = [
   'customer_communication_channel',
 ].join(',') + ',channels(name)'
 
-/** 통계·등록/취소 차트 전용 — embed·JSON 없이 전송량 최소화 */
+/** 통계·등록/취소 차트 전용 — embed·JSON 없이 전송량 최소화 (상품·채널 분해용 id 포함) */
 export const RESERVATION_STATS_SELECT = [
   'id',
+  'product_id',
+  'channel_id',
   'adults',
   'child',
   'infant',

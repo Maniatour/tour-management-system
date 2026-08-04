@@ -19,6 +19,12 @@ export type GoogleReviewStats = {
   unclassified: number
 }
 
+/** Per-source tab badge: review count + average star rating */
+export type GoogleReviewSourceTabSummary = {
+  total: number
+  avgRating: number | null
+}
+
 /** Admin review list sort — imported_at = 최신 입력순 */
 export type AdminGoogleReviewListSort = 'imported_at' | 'review_created_at'
 
@@ -56,6 +62,7 @@ export type GoogleReviewStaffStat = {
   staffName: string
   staffIsActive: boolean
   firstReviewDate: string | null
+  lastReviewDate: string | null
   reviewCount: number
   avgRating: number | null
   fiveStarCount: number
@@ -65,6 +72,7 @@ export type GoogleReviewStaffStat = {
   oneStarCount: number
   totalTourGuests: number
   reservationGroupCount: number
+  tourDepartureCount: number
 }
 
 export type GoogleReviewStaffMonthlyCell = {

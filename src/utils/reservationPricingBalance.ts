@@ -12,7 +12,7 @@ import {
   sumResidentFeesFromResidentCounts,
   type ResidentStatusCounts,
 } from '@/utils/balanceEnvelopeBreakdown'
-import { sumResidentFeesFromPricingChoicesJson } from '@/utils/usResidentChoiceSync'
+import { sumResidentFeeAmountsUsd, sumResidentFeesFromPricingChoicesJson } from '@/utils/usResidentChoiceSync'
 
 function roundUsd2(n: number): number {
   return Math.round(n * 100) / 100
@@ -726,6 +726,45 @@ export function residentFeesUsdFromCustomerRows(
     counts,
     amountOverrides as ResidentStatusCounts | undefined
   )
+}
+
+/**
+ * Balance 봉투·배정 카드와 동일: 고객 인원·저장 금액·total_price/choices 갭 중 최대값.
+ * (`TourEnvelopeModal` / 가이드 픽업 인쇄에서 `residentFeeUsd` 누락 방지)
+ */
+export function resolveResidentFeeUsdForBalanceDisplay(
+  pricing:
+    | (Parameters<typeof computeCustomerPaymentTotalLineFormula>[0] &
+        PricingBalanceFields & { total_price?: unknown; choices?: unknown })
+    | null
+    | undefined,
+  party: PartySizeSource,
+  optionsTotalFromOptions: number | null,
+  residentCounts: ResidentStatusCounts,
+  residentStatusAmounts?: Partial<Record<string, number>> | null
+): number {
+  const fromCustomers = sumResidentFeesFromResidentCounts(
+    residentCounts,
+    residentStatusAmounts as ResidentStatusCounts | undefined
+  )
+  const fromStoredAmounts = sumResidentFeeAmountsUsd(
+    residentStatusAmounts as Parameters<typeof sumResidentFeeAmountsUsd>[0]
+  )
+  const fromFees = roundUsd2(Math.max(fromCustomers, fromStoredAmounts))
+  if (!pricing) return fromFees
+
+  const optsOnly =
+    optionsTotalFromOptions !== null && optionsTotalFromOptions !== undefined
+  const pricingForLine = {
+    ...pricing,
+    required_option_total: optsOnly
+      ? 0
+      : (pricing as { required_option_total?: unknown }).required_option_total,
+    option_total: optsOnly ? optionsTotalFromOptions : pricing.option_total,
+  } as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]
+  const lineGrossBase = computeCustomerPaymentTotalLineFormula(pricingForLine, party)
+  const inferred = inferResidentFeesUsdForBalance(pricing, lineGrossBase)
+  return roundUsd2(Math.max(fromFees, inferred))
 }
 
 /**

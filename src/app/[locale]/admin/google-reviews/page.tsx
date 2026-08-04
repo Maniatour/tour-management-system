@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
-import { CheckCircle2, ChevronDown, Link2, Loader2, MapPin, Star, Unlink } from 'lucide-react'
+import { CheckCircle2, ChevronDown, Link2, Loader2, MapPin, Star, Unlink, Users } from 'lucide-react'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import GoogleReviewsImportSection from '@/components/admin/google-reviews/GoogleReviewsImportSection'
 import GoogleReviewsManageSection from '@/components/admin/google-reviews/GoogleReviewsManageSection'
-import GoogleReviewStaffStatsSection from '@/components/admin/google-reviews/GoogleReviewStaffStatsSection'
+import GoogleReviewStaffStatsModal from '@/components/admin/google-reviews/GoogleReviewStaffStatsModal'
 import OtaReviewsImportSection from '@/components/admin/google-reviews/OtaReviewsImportSection'
 import {
   isOtaReviewSource,
@@ -20,6 +20,7 @@ import type {
   GoogleBusinessAccountItem,
   GoogleBusinessConnectionStatus,
   GoogleBusinessLocationItem,
+  GoogleReviewSourceTabSummary,
   GoogleReviewStats,
 } from '@/types/googleBusiness'
 
@@ -63,8 +64,11 @@ export default function AdminGoogleReviewsPage() {
   const [activeSource, setActiveSource] = useState<ReviewSource>('google')
   const [statusLoadFailed, setStatusLoadFailed] = useState(false)
   const [connectionPanelOpen, setConnectionPanelOpen] = useState(true)
-  const [sourceReviewCounts, setSourceReviewCounts] = useState<Partial<Record<ReviewSourceTabWithCount, number>>>({})
+  const [sourceReviewSummaries, setSourceReviewSummaries] = useState<
+    Partial<Record<ReviewSourceTabWithCount, GoogleReviewSourceTabSummary>>
+  >({})
   const [loadingSourceCounts, setLoadingSourceCounts] = useState(true)
+  const [staffStatsOpen, setStaffStatsOpen] = useState(false)
 
   type GoogleTabStatus = 'loading' | 'connected' | 'warning' | 'error' | 'disconnected'
 
@@ -147,9 +151,17 @@ export default function AdminGoogleReviewsPage() {
     [locale]
   )
 
+  const formatTabAvgRating = useCallback((avgRating: number | null | undefined) => {
+    if (avgRating == null) return null
+    return `★${avgRating.toFixed(2)}`
+  }, [])
+
   const handleSourceReviewCount = useCallback((source: ReviewSource, total: number) => {
     if (!isReviewSourceTabWithCount(source)) return
-    setSourceReviewCounts((prev) => ({ ...prev, [source]: total }))
+    setSourceReviewSummaries((prev) => ({
+      ...prev,
+      [source]: { total, avgRating: prev[source]?.avgRating ?? null },
+    }))
   }, [])
 
   const didAutoCollapseRef = useRef(false)
@@ -228,13 +240,25 @@ export default function AdminGoogleReviewsPage() {
       const data = (await res.json()) as {
         ok?: boolean
         counts?: Partial<Record<ReviewSourceTabWithCount, number>>
+        summaries?: Partial<Record<ReviewSourceTabWithCount, GoogleReviewSourceTabSummary>>
         error?: string
       }
       if (!res.ok || !data.ok) {
         console.error('[admin/google-reviews] source-counts', data.error)
         return
       }
-      setSourceReviewCounts(data.counts ?? {})
+      if (data.summaries) {
+        setSourceReviewSummaries(data.summaries)
+      } else if (data.counts) {
+        setSourceReviewSummaries(
+          Object.fromEntries(
+            Object.entries(data.counts).map(([source, total]) => [
+              source,
+              { total: total ?? 0, avgRating: null },
+            ])
+          ) as Partial<Record<ReviewSourceTabWithCount, GoogleReviewSourceTabSummary>>
+        )
+      }
     } catch (error) {
       console.error('[admin/google-reviews] source-counts', error)
     } finally {
@@ -396,26 +420,48 @@ export default function AdminGoogleReviewsPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 md:py-12 space-y-6">
       <div className="mb-4">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Star className="h-5 w-5" aria-hidden />
+        <div className="flex items-start justify-between gap-4 mb-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Star className="h-5 w-5" aria-hidden />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-foreground">
+                {isKo ? '리뷰 연동 관리' : 'Review integration'}
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1">
+                {isKo
+                  ? 'Google·OTA 채널별 리뷰를 가져오고 승인·분류·투어 연결을 관리합니다.'
+                  : 'Import and moderate reviews per channel — Google, GetYourGuide, Viator, and more.'}
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-foreground">
-              {isKo ? '리뷰 연동 관리' : 'Review integration'}
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              {isKo
-                ? 'Google·OTA 채널별 리뷰를 가져오고 승인·분류·투어 연결을 관리합니다.'
-                : 'Import and moderate reviews per channel — Google, GetYourGuide, Viator, and more.'}
-            </p>
-          </div>
+          <button
+            type="button"
+            onClick={() => setStaffStatsOpen(true)}
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-card text-foreground shadow-sm transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={isKo ? '가이드·어시스턴트 리뷰 점수' : 'Guide & assistant review scores'}
+            title={isKo ? '가이드·어시스턴트 리뷰 점수' : 'Guide & assistant review scores'}
+          >
+            <Users className="h-5 w-5" aria-hidden />
+          </button>
         </div>
       </div>
+
+      <GoogleReviewStaffStatsModal
+        locale={locale}
+        open={staffStatsOpen}
+        onOpenChange={setStaffStatsOpen}
+        refreshKey={refreshKey}
+      />
 
       <div className="flex flex-wrap gap-2 border-b border-border/60 pb-4">
         {REVIEW_SOURCE_TABS.map((tab) => {
           const isActive = activeSource === tab.id
+          const tabSummary = isReviewSourceTabWithCount(tab.id)
+            ? sourceReviewSummaries[tab.id]
+            : undefined
+          const tabAvgLabel = formatTabAvgRating(tabSummary?.avgRating)
           return (
             <button
               key={tab.id}
@@ -450,11 +496,16 @@ export default function AdminGoogleReviewsPage() {
               {isKo ? tab.labelKo : tab.labelEn}
               {isReviewSourceTabWithCount(tab.id) ? (
                 <span
-                  className={`inline-flex items-center justify-center min-w-[1.75rem] h-5 px-1.5 rounded-md text-xs font-medium tabular-nums ${getTabCountBadgeClass(tab.id, isActive)}`}
+                  className={`inline-flex items-center gap-1 justify-center min-w-[1.75rem] h-5 px-1.5 rounded-md text-xs font-medium tabular-nums ${getTabCountBadgeClass(tab.id, isActive)}`}
                 >
-                  {loadingSourceCounts && sourceReviewCounts[tab.id] == null
-                    ? '…'
-                    : formatTabReviewCount(sourceReviewCounts[tab.id] ?? 0)}
+                  {loadingSourceCounts && tabSummary == null ? (
+                    '…'
+                  ) : (
+                    <>
+                      <span>{formatTabReviewCount(tabSummary?.total ?? 0)}</span>
+                      {tabAvgLabel ? <span className="opacity-90">{tabAvgLabel}</span> : null}
+                    </>
+                  )}
                 </span>
               ) : null}
             </button>
@@ -695,12 +746,6 @@ export default function AdminGoogleReviewsPage() {
         refreshKey={refreshKey}
         onReviewSourceChange={setActiveSource}
         onSourceReviewCount={handleSourceReviewCount}
-      />
-
-      <GoogleReviewStaffStatsSection
-        locale={locale}
-        enabled
-        refreshKey={refreshKey}
       />
     </div>
   )

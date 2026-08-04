@@ -8,6 +8,9 @@ import {
 } from '@/lib/googleReviewChangeLog'
 import { loadGoogleReviewTourStaffSummaries, linkGoogleReviewToTour, syncReviewProductFromTourIfUnclassified } from '@/lib/googleReviewTourLink'
 import { resolveProductInternalName } from '@/utils/reservationUtils'
+import type { GoogleReviewSourceTabSummary } from '@/types/googleBusiness'
+
+const SOURCE_SUMMARY_PAGE_SIZE = 1000
 
 export type AdminGoogleReviewRow = {
   id: string
@@ -605,19 +608,65 @@ export async function getGoogleReviewStats(
   }
 }
 
+export async function getGoogleReviewSourceSummaries(
+  operatorId: string | null | undefined,
+  sources: readonly string[]
+): Promise<Record<string, GoogleReviewSourceTabSummary>> {
+  const uniqueSources = [...new Set(sources.filter(Boolean))]
+  if (!uniqueSources.length || !supabaseAdmin) return {}
+
+  const opId = resolveOperatorId(operatorId)
+  const buckets = new Map<string, { total: number; ratingSum: number; ratingCount: number }>()
+  for (const source of uniqueSources) {
+    buckets.set(source, { total: 0, ratingSum: 0, ratingCount: 0 })
+  }
+
+  let from = 0
+  while (true) {
+    const { data, error } = await fromUntypedTable(supabaseAdmin, 'google_reviews')
+      .select('review_source, rating')
+      .eq('operator_id', opId)
+      .in('review_source', uniqueSources)
+      .range(from, from + SOURCE_SUMMARY_PAGE_SIZE - 1)
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    const rows = (data ?? []) as Array<{ review_source: string; rating: number | null }>
+    for (const row of rows) {
+      const bucket = buckets.get(row.review_source)
+      if (!bucket) continue
+      bucket.total += 1
+      if (row.rating != null) {
+        bucket.ratingSum += Number(row.rating)
+        bucket.ratingCount += 1
+      }
+    }
+
+    if (rows.length < SOURCE_SUMMARY_PAGE_SIZE) break
+    from += SOURCE_SUMMARY_PAGE_SIZE
+  }
+
+  const result: Record<string, GoogleReviewSourceTabSummary> = {}
+  for (const [source, bucket] of buckets) {
+    result[source] = {
+      total: bucket.total,
+      avgRating:
+        bucket.ratingCount > 0
+          ? Math.round((bucket.ratingSum / bucket.ratingCount) * 100) / 100
+          : null,
+    }
+  }
+  return result
+}
+
 export async function getGoogleReviewSourceCounts(
   operatorId: string | null | undefined,
   sources: readonly string[]
 ): Promise<Record<string, number>> {
-  const uniqueSources = [...new Set(sources.filter(Boolean))]
-  if (!uniqueSources.length) return {}
-
-  const entries = await Promise.all(
-    uniqueSources.map(async (source) => {
-      const stats = await getGoogleReviewStats(operatorId, source)
-      return [source, stats.total] as const
-    })
+  const summaries = await getGoogleReviewSourceSummaries(operatorId, sources)
+  return Object.fromEntries(
+    Object.entries(summaries).map(([source, summary]) => [source, summary.total])
   )
-
-  return Object.fromEntries(entries)
 }

@@ -24,6 +24,7 @@ const COLUMN_ALIASES: Record<ColumnKey, string[]> = {
   comment: [
     'comment',
     'review',
+    'reviews',
     'text',
     'content',
     'message',
@@ -34,7 +35,18 @@ const COLUMN_ALIASES: Record<ColumnKey, string[]> = {
     '내용',
     '코멘트',
   ],
-  date: ['date', 'review_date', 'created', 'created_at', 'reviewed_at', 'submitted', '날짜', '작성일'],
+  date: [
+    'date',
+    'review_date',
+    'revieweddate',
+    'reviewed',
+    'created',
+    'created_at',
+    'reviewed_at',
+    'submitted',
+    '날짜',
+    '작성일',
+  ],
   product: ['product', 'tour', 'activity', 'product_name', 'tour_name', '상품', '투어'],
   reservation: [
     'reservation',
@@ -42,6 +54,9 @@ const COLUMN_ALIASES: Record<ColumnKey, string[]> = {
     'booking',
     'booking_ref',
     'booking_reference',
+    'bookingreference',
+    'bookingreferenceid',
+    'bookingid',
     'channel_rn',
     'reference',
     'order_id',
@@ -95,6 +110,66 @@ function parseCsvLine(line: string, delimiter: string): string[] {
 
   cells.push(current.trim())
   return cells
+}
+
+/** Quoted fields may contain newlines — parse full text into row/cell matrix. */
+function parseDelimitedRecords(text: string, delimiter: string): string[][] {
+  const records: string[][] = []
+  let currentRow: string[] = []
+  let currentCell = ''
+  let inQuotes = false
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i]
+    const next = text[i + 1]
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        currentCell += '"'
+        i += 1
+      } else {
+        inQuotes = !inQuotes
+      }
+      continue
+    }
+
+    if (!inQuotes && char === delimiter) {
+      currentRow.push(currentCell.trim())
+      currentCell = ''
+      continue
+    }
+
+    if (!inQuotes && (char === '\n' || char === '\r')) {
+      if (char === '\r' && next === '\n') {
+        i += 1
+      }
+      currentRow.push(currentCell.trim())
+      currentCell = ''
+      if (currentRow.some((cell) => cell.length > 0)) {
+        records.push(currentRow)
+      }
+      currentRow = []
+      continue
+    }
+
+    currentCell += char
+  }
+
+  if (currentCell.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentCell.trim())
+    if (currentRow.some((cell) => cell.length > 0)) {
+      records.push(currentRow)
+    }
+  }
+
+  return records
+}
+
+function detectDelimiterFromText(text: string): ',' | '\t' | '|' | ';' {
+  const sampleLines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 5)
+  const tabScore = sampleLines.reduce((sum, line) => sum + (line.match(/\t/g)?.length ?? 0), 0)
+  if (tabScore >= 2) return '\t'
+  return detectDelimiter(sampleLines[0] ?? text)
 }
 
 function mapHeaders(headers: string[]): Partial<Record<ColumnKey, number>> {
@@ -173,19 +248,18 @@ function rowFromCells(
 }
 
 function parseDelimitedRows(text: string): ParsedOtaReviewRow[] {
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
+  const trimmed = text.trim().replace(/^\uFEFF/, '')
+  if (!trimmed) return []
 
-  if (lines.length === 0) return []
+  const delimiter = detectDelimiterFromText(trimmed)
+  const records = parseDelimitedRecords(trimmed, delimiter)
+  if (records.length === 0) return []
 
-  const delimiter = detectDelimiter(lines[0] ?? '')
-  const firstCells = parseCsvLine(lines[0] ?? '', delimiter)
+  const firstCells = records[0] ?? []
   const headerMapping = mapHeaders(firstCells)
   const hasHeader = Object.keys(headerMapping).length >= 2
 
-  const dataLines = hasHeader ? lines.slice(1) : lines
+  const dataRecords = hasHeader ? records.slice(1) : records
   const mapping = hasHeader
     ? headerMapping
     : ({
@@ -198,11 +272,270 @@ function parseDelimitedRows(text: string): ParsedOtaReviewRow[] {
       } satisfies Partial<Record<ColumnKey, number>>)
 
   const rows: ParsedOtaReviewRow[] = []
-  dataLines.forEach((line, index) => {
-    const cells = parseCsvLine(line, delimiter)
+  dataRecords.forEach((cells, index) => {
     const row = rowFromCells(cells, mapping, hasHeader ? index + 2 : index + 1)
     if (row) rows.push(row)
   })
+
+  return rows
+}
+
+const KLOOK_HEADER_WORDS = new Set([
+  'booking',
+  'reference',
+  'reviewed',
+  'date',
+  'stars',
+  'star',
+  'reviews',
+  'review',
+])
+
+function isLikelyKlookBookingRef(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.length < 6) return false
+  if (KLOOK_HEADER_WORDS.has(trimmed.toLowerCase())) return false
+  if (/^[A-Z]{1,6}\d{4,}[A-Z0-9]*$/i.test(trimmed)) return true
+  if (/^\d{8,}$/.test(trimmed)) return true
+  if (/^[A-Z]{2,4}\d{5,}$/i.test(trimmed)) return true
+  return false
+}
+
+function mapKlookHeaders(headers: string[]): Partial<Record<ColumnKey, number>> | null {
+  const normalized = headers.map(normalizeHeader)
+  const findIndex = (predicate: (header: string) => boolean) =>
+    normalized.findIndex(predicate)
+
+  const reservation = findIndex(
+    (header) =>
+      header.includes('bookingreference') ||
+      header.includes('bookingid') ||
+      header.includes('예약번호') ||
+      header === 'reference'
+  )
+  const date = findIndex(
+    (header) =>
+      header.includes('revieweddate') ||
+      header.includes('reviewdate') ||
+      (header.includes('reviewed') && header.includes('date')) ||
+      header.includes('작성일')
+  )
+  const rating = findIndex(
+    (header) => header === 'stars' || header === 'star' || header.includes('별점') || header.includes('평점')
+  )
+  const product = findIndex(
+    (header) =>
+      header.includes('activity') ||
+      header.includes('product') ||
+      header.includes('tour') ||
+      header.includes('package') ||
+      header.includes('상품') ||
+      header.includes('투어')
+  )
+  const comment = findIndex(
+    (header) =>
+      header === 'reviews' ||
+      header === 'review' ||
+      header.includes('리뷰') ||
+      header.includes('내용') ||
+      header.includes('comment')
+  )
+
+  if (reservation < 0 && rating < 0 && comment < 0) return null
+
+  const mapping: Partial<Record<ColumnKey, number>> = {}
+  if (reservation >= 0) mapping.reservation = reservation
+  if (date >= 0) mapping.date = date
+  if (rating >= 0) mapping.rating = rating
+  if (comment >= 0) mapping.comment = comment
+  if (product >= 0) mapping.product = product
+  return mapping
+}
+
+/**
+ * Excel/시트 붙여넣기: 탭 행은 새 리뷰, 줄바꿈만 있는 줄은 이전 리뷰 본문에 이어붙임.
+ */
+function buildKlookRecordsFromPaste(text: string): string[][] {
+  const lines = text.split(/\r?\n/)
+  const records: string[][] = []
+  let current: string[] | null = null
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\r$/, '')
+    if (!line.trim()) continue
+
+    const tabCells = line.split('\t').map((cell) => cell.trim())
+    const firstCell = tabCells[0] ?? ''
+
+    if (isKlookHeaderRow(tabCells) || /booking\s*reference/i.test(line)) {
+      if (current) {
+        records.push(current)
+        current = null
+      }
+      records.push(tabCells)
+      continue
+    }
+
+    if (isLikelyKlookBookingRef(firstCell)) {
+      if (current) records.push(current)
+      current = tabCells
+      continue
+    }
+
+    if (current) {
+      const lastIdx = Math.max(current.length - 1, 0)
+      current[lastIdx] = [current[lastIdx], line.trim()].filter(Boolean).join('\n')
+      continue
+    }
+
+    const refIdx = tabCells.findIndex((cell) => isLikelyKlookBookingRef(cell))
+    if (refIdx >= 0 && tabCells.length >= 3) {
+      records.push(tabCells)
+    }
+  }
+
+  if (current) records.push(current)
+
+  return records
+}
+
+function mergeKlookRow(
+  cells: string[],
+  headerMapping: Partial<Record<ColumnKey, number>> | null,
+  lineNumber: number
+): ParsedOtaReviewRow | null {
+  const heuristic = parseKlookDataRow(cells)
+  if (!headerMapping || Object.keys(headerMapping).length < 2) {
+    return heuristic ? { ...heuristic, lineNumber } : null
+  }
+
+  const mapped = rowFromCells(cells, headerMapping, lineNumber)
+  if (!heuristic) return mapped
+
+  return {
+    authorName: mapped?.authorName ?? null,
+    rating: heuristic.rating ?? mapped?.rating ?? null,
+    comment: heuristic.comment ?? mapped?.comment ?? null,
+    reviewCreatedAt: heuristic.reviewCreatedAt ?? mapped?.reviewCreatedAt ?? null,
+    productHint:
+      (headerMapping.product !== undefined
+        ? cells[headerMapping.product]?.trim()
+        : null) ||
+      mapped?.productHint ||
+      heuristic.productHint ||
+      null,
+    reservationNumber: heuristic.reservationNumber ?? mapped?.reservationNumber ?? null,
+    lineNumber,
+  }
+}
+
+function isKlookHeaderRow(cells: string[]): boolean {
+  const joined = cells.join(' ').toLowerCase()
+  return (
+    /booking\s*reference/i.test(joined) ||
+    (/reviewed\s*date/i.test(joined) && /\bstars\b/i.test(joined))
+  )
+}
+
+/** Klook 관리자/엑셀에서 복사한 리뷰 테이블인지 */
+export function isKlookTableText(text: string): boolean {
+  const sample = text.trim()
+  if (!sample) return false
+  if (/booking\s*reference\s*id/i.test(sample) && /reviewed\s*date/i.test(sample)) {
+    return true
+  }
+  if (/\bstars\b/i.test(sample) && /\breviews\b/i.test(sample) && /booking/i.test(sample)) {
+    return true
+  }
+
+  const lines = sample.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  let refCount = 0
+  for (const line of lines.slice(0, 25)) {
+    if (/booking\s*reference/i.test(line)) continue
+    const delimiter = detectDelimiter(line)
+    const cells = parseCsvLine(line, delimiter)
+    if (cells.some((cell) => isLikelyKlookBookingRef(cell.trim()))) {
+      refCount += 1
+    }
+  }
+  return refCount >= 2
+}
+
+function parseKlookDataRow(cells: string[]): ParsedOtaReviewRow | null {
+  let reservationNumber: string | null = null
+  let reviewCreatedAt: string | null = null
+  let rating: number | null = null
+  let comment: string | null = null
+  let longestText = ''
+
+  for (const raw of cells) {
+    const trimmed = raw.trim()
+    if (!trimmed) continue
+
+    if (!reservationNumber && isLikelyKlookBookingRef(trimmed)) {
+      reservationNumber = trimmed.toUpperCase()
+      continue
+    }
+    if (
+      !reviewCreatedAt &&
+      ( /^\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/.test(trimmed) ||
+        (trimmed.length < 40 && parseDate(trimmed)))
+    ) {
+      reviewCreatedAt = parseDate(trimmed)
+      continue
+    }
+    if (rating === null && /^[1-5]$/.test(trimmed)) {
+      rating = Number.parseInt(trimmed, 10)
+      continue
+    }
+    if (trimmed.length > longestText.length) {
+      longestText = trimmed
+    }
+  }
+
+  comment = longestText || null
+
+  if (!reservationNumber && rating === null && !comment) {
+    return null
+  }
+
+  return {
+    authorName: null,
+    rating,
+    comment,
+    reviewCreatedAt,
+    productHint: null,
+    reservationNumber,
+  }
+}
+
+/** Klook 리뷰 테이블(엑셀/시트 복사) — 여러 행 파싱 */
+export function parseKlookTableText(text: string): ParsedOtaReviewRow[] {
+  const trimmed = text.trim().replace(/^\uFEFF/, '')
+  if (!trimmed) return []
+
+  const records = buildKlookRecordsFromPaste(trimmed)
+  if (records.length === 0) return []
+
+  let startIndex = 0
+  let headerMapping = mapKlookHeaders(records[0] ?? [])
+  if (headerMapping && isKlookHeaderRow(records[0] ?? [])) {
+    startIndex = 1
+  } else {
+    headerMapping = null
+  }
+
+  const rows: ParsedOtaReviewRow[] = []
+  for (let i = startIndex; i < records.length; i += 1) {
+    const cells = records[i] ?? []
+    if (isKlookHeaderRow(cells)) continue
+    if (cells.every((cell) => !cell.trim())) continue
+
+    const row = mergeKlookRow(cells, headerMapping, i + 1)
+    if (row && (row.reservationNumber || row.rating !== null || row.comment?.trim())) {
+      rows.push(row)
+    }
+  }
 
   return rows
 }
@@ -262,8 +595,17 @@ function parseBlockFormat(text: string): ParsedOtaReviewRow[] {
 }
 
 export function parseOtaReviewText(text: string, source?: OtaReviewSource | null): ParsedOtaReviewRow[] {
-  const trimmed = text.trim()
+  const trimmed = text.trim().replace(/^\uFEFF/, '')
   if (!trimmed) return []
+
+  const isKlook = source === 'klook' || isKlookTableText(trimmed)
+  if (isKlook) {
+    const klookRows = parseKlookTableText(trimmed)
+    if (klookRows.length > 0) return klookRows
+    const delimited = parseDelimitedRows(trimmed)
+    if (delimited.length > 0) return delimited
+    return []
+  }
 
   if (source === 'getyourguide' || isGetYourGuideScrapedText(trimmed)) {
     const gyg = parseGetYourGuideScrapedText(trimmed)
@@ -511,7 +853,7 @@ export function parseSingleOtaReviewText(
   text: string,
   source?: OtaReviewSource | null
 ): ParsedOtaReviewRow | null {
-  const trimmed = text.trim()
+  const trimmed = text.trim().replace(/^\uFEFF/, '')
   if (!trimmed) return null
 
   if (source === 'getyourguide' || isGetYourGuideScrapedText(trimmed)) {
@@ -519,11 +861,20 @@ export function parseSingleOtaReviewText(
     if (gyg) return gyg
   }
 
-  const rows = parseOtaReviewText(trimmed)
+  if (source === 'klook' || isKlookTableText(trimmed)) {
+    const klookRows = parseKlookTableText(trimmed)
+    if (klookRows.length > 0) return klookRows[0] ?? null
+  }
+
+  const rows = parseOtaReviewText(trimmed, source)
   return rows[0] ?? null
 }
 
-export function parseOtaReviewCsv(text: string): ParsedOtaReviewRow[] {
+export function parseOtaReviewCsv(text: string, source?: OtaReviewSource | null): ParsedOtaReviewRow[] {
+  if (source === 'klook' || isKlookTableText(text)) {
+    const klookRows = parseKlookTableText(text)
+    if (klookRows.length > 0) return klookRows
+  }
   return parseDelimitedRows(text)
 }
 
@@ -581,8 +932,10 @@ export const OTA_CSV_TEMPLATE_HINTS: Record<OtaReviewSource, OtaCsvTemplateHint>
   },
   klook: {
     source: 'klook',
-    columnsKo: 'customer, score, comment, date, product',
-    columnsEn: 'customer, score, comment, date, product',
+    columnsKo:
+      'Booking reference ID, Reviewed date, Stars, Reviews (엑셀/시트에서 표 전체 복사·붙여넣기)',
+    columnsEn:
+      'Booking reference ID, Reviewed date, Stars, Reviews (paste full table from Excel/sheet)',
   },
   kkday: {
     source: 'kkday',

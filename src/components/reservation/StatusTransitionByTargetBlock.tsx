@@ -43,6 +43,8 @@ export function StatusTransitionByTargetBlock({
         return t('stats.statusBucketInquiryTitle')
       case 'pending':
         return t('stats.statusBucketPendingTitle')
+      case 'completed':
+        return t('stats.statusBucketCompletedTitle')
       case 'cancelled':
         return t('stats.statusBucketCancelledTitle')
       default:
@@ -58,11 +60,25 @@ export function StatusTransitionByTargetBlock({
         return t('stats.statusBucketTotalInquiryPeople')
       case 'pending':
         return t('stats.statusBucketTotalPeople')
+      case 'completed':
+        return t('stats.statusBucketTotalCompletedPeople')
       case 'cancelled':
         return t('stats.statusBucketTotalCancelPeople')
       default:
         return ''
     }
+  }
+
+  const formatPath = (pathStatuses: string[] | undefined, displayFrom: string, displayTo: string) => {
+    const path =
+      pathStatuses && pathStatuses.length >= 2 ? pathStatuses : [displayFrom, displayTo]
+    return path
+      .map((raw) =>
+        raw === STATUS_TRANSITION_NEW_FROM_MARKER
+          ? t('stats.statusTransitionFromNew')
+          : getStatusLabel(raw, (k) => t(k))
+      )
+      .join(' > ')
   }
 
   const gap = compact ? 'space-y-2' : 'space-y-3'
@@ -71,24 +87,24 @@ export function StatusTransitionByTargetBlock({
     : 'rounded-lg border border-gray-200 bg-gray-50/90 px-3 py-2.5'
   const titleCls = compact ? 'text-[11px] font-semibold text-gray-900' : 'text-sm font-semibold text-gray-900'
   const lineCls = compact ? 'text-[10px] text-gray-700 leading-snug pl-2' : 'text-xs text-gray-700 leading-snug pl-2'
-  const totalCls = compact ? 'text-[11px] font-semibold text-gray-900 mt-1 pl-2' : 'text-xs font-semibold text-gray-900 mt-1.5 pl-2'
+  const totalCls = compact
+    ? 'text-[11px] font-semibold text-gray-900 mt-1 pl-2'
+    : 'text-xs font-semibold text-gray-900 mt-1.5 pl-2'
+  const hintCls = compact ? 'text-[10px] text-gray-500 mt-0.5 mb-1' : 'text-[11px] text-gray-500 mt-0.5 mb-1.5'
 
   return (
     <div className={gap}>
+      <p className={hintCls}>{t('stats.statusTransitionHistoryHint')}</p>
       {buckets.map((bucket) => (
         <div key={bucket.target} className={bucketBox}>
           <div className={titleCls}>{bucketTitle(bucket.target)}</div>
           <ul className="mt-1 list-none space-y-0.5">
             {bucket.lines.map((line) => {
-              const fromLab =
-                line.displayFrom === STATUS_TRANSITION_NEW_FROM_MARKER
-                  ? t('stats.statusTransitionFromNew')
-                  : getStatusLabel(line.displayFrom, (k) => t(k))
-              const toLab = getStatusLabel(line.displayTo, (k) => t(k))
+              const pathLabel = formatPath(line.pathStatuses, line.displayFrom, line.displayTo)
               const note = bucket.target === 'confirmed' ? t('stats.statusBucketLineNetPeopleNote') : ''
               return (
                 <li key={line.key} className={lineCls}>
-                  {fromLab} {'>'} {toLab} : {line.people}
+                  {pathLabel} : {line.people}
                   {people}
                   {note ? <span className="text-gray-500"> {note}</span> : null}
                 </li>

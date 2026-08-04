@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { User, Car, CreditCard, Shield, FileText, Plus, Download, Edit, Trash2, ImagePlus } from 'lucide-react'
+import { User, Car, CreditCard, Shield, FileText, Plus, Download, Edit, Trash2, ImagePlus, StickyNote } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 
@@ -332,7 +332,8 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
     cdl_driver_license: member?.cdl_driver_license || false,
     medical_report: member?.medical_report || false,
     medical_acquired: member?.medical_acquired || '',
-    medical_expired: member?.medical_expired || ''
+    medical_expired: member?.medical_expired || '',
+    notes: member?.notes || '',
   })
 
   const removeStoredTeamAvatarIfManaged = async (publicUrl: string | null | undefined) => {
@@ -436,6 +437,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
       phone: formData.phone || null,
       home_address: formData.home_address?.trim() || null,
       avatar_url: formData.avatar_url?.trim() || null,
+      notes: formData.notes?.trim() || null,
     }
 
     onSubmit(processedData)
@@ -449,9 +451,9 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
         </h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* 프로필 사진 — 카드·목록 왼쪽 원형 영역 */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-4 pb-4 border-b border-gray-100">
-            <div className="flex items-center gap-4">
+          {/* 프로필 사진 + 노트 */}
+          <div className="flex flex-col sm:flex-row sm:items-stretch gap-4 pb-4 border-b border-gray-100">
+            <div className="flex items-center gap-4 shrink-0">
               <div className="h-20 w-20 rounded-full bg-gray-100 border-2 border-gray-200 overflow-hidden flex-shrink-0 flex items-center justify-center">
                 {formData.avatar_url?.trim() ? (
                   <img
@@ -470,6 +472,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                     type="button"
                     disabled={avatarUploading}
                     onClick={() => avatarInputRef.current?.click()}
+                    title="이메일을 입력한 뒤 JPG·PNG·WebP·GIF 이미지를 올릴 수 있습니다. (최대 5MB)"
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-800 hover:bg-gray-50 disabled:opacity-50"
                   >
                     <ImagePlus className="w-4 h-4 flex-shrink-0" />
@@ -486,9 +489,6 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                     </button>
                   ) : null}
                 </div>
-                <p className="text-xs text-gray-500">
-                  이메일을 입력한 뒤 JPG·PNG·WebP·GIF 이미지를 올릴 수 있습니다. (최대 5MB)
-                </p>
                 <input
                   ref={avatarInputRef}
                   type="file"
@@ -497,6 +497,24 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                   onChange={(ev) => void handleAvatarFileChange(ev)}
                 />
               </div>
+            </div>
+
+            <div className="flex-1 min-w-0 flex flex-col">
+              <label
+                htmlFor="team-member-notes"
+                className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700"
+              >
+                <StickyNote className="h-4 w-4 shrink-0" aria-hidden />
+                노트
+              </label>
+              <textarea
+                id="team-member-notes"
+                value={formData.notes || ''}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                rows={3}
+                className="w-full flex-1 min-h-[80px] px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-ring focus:border-transparent text-sm resize-y"
+                placeholder="스케줄 뷰에서 가이드 이름에 마우스를 올리면 표시됩니다."
+              />
             </div>
           </div>
 

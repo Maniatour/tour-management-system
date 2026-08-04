@@ -38,14 +38,9 @@ export function statusFromReservationAuditJson(json: unknown): string | null {
   return typeof v === 'string' && v.trim() ? v.trim() : null
 }
 
-function isCancelledLikeReservationStatus(s: string): boolean {
-  const t = s.toLowerCase().trim()
-  return t === 'cancelled' || t === 'canceled' || t === 'deleted' || t === 'no_show'
-}
-
 /**
- * 예약 목록(심플 카드) 「상태 변경」에 노출할 전환.
- * `reservation_status_events.occurred_at`의 로컬 달력일로 묶는다(브라우저 TZ = 등록·수정일 그룹과 동일).
+ * 심플 카드 「상태 변경」·헤더에 노출할 전환.
+ * 실제 상태 변경(from ≠ to)은 모두 표시 — completed→cancelled 포함.
  */
 export function isSimpleCardListedReservationStatusTransition(tr: {
   from: string
@@ -53,17 +48,8 @@ export function isSimpleCardListedReservationStatusTransition(tr: {
 }): boolean {
   const from = tr.from.toLowerCase().trim()
   const to = tr.to.toLowerCase().trim()
-  if (from === to) return false
-  if (from === 'pending' && to === 'confirmed') return true
-  if (from === 'inquiry' && (to === 'pending' || to === 'confirmed')) return true
-  if (from === 'recruiting' && (to === 'pending' || to === 'confirmed')) return true
-  if (
-    (from === 'pending' || from === 'confirmed' || from === 'inquiry' || from === 'recruiting') &&
-    isCancelledLikeReservationStatus(to)
-  ) {
-    return true
-  }
-  return false
+  if (!from || !to || from === to) return false
+  return true
 }
 
 /** 그날 마지막 유효 status 변경 1건(심플 카드 등) */
@@ -85,7 +71,7 @@ export function pickReservationStatusTransitionForDay(
 
 /**
  * 그날 감사 로그 중, 심플 카드 「상태 변경」에 표시할 전환만 모은 뒤
- * 가장 최근 시각 1건을 반환한다. (당일 확정 후 완료 등은 제외)
+ * 가장 최근 시각 1건을 반환한다.
  */
 export function pickReservationStatusTransitionForSimpleCardDay(
   rows: ReservationStatusAuditRow[],
@@ -279,7 +265,10 @@ export function isIntoCancelledLikeTransition(tr: { from: string; to: string } |
   return toTerm && !fromTerm
 }
 
-/** 예약별: 로컬 YMD 목록 중 그날 감사상 상태가 취소/삭제로 바뀐 날만 */
+/**
+ * 예약별: 로컬 YMD 목록 중 **그날 최종 도착**이 취소/삭제/노쇼인 날만.
+ * (대기→확정→취소면 취소로 집계. 중간에만 취소 후 복구되면 제외.)
+ */
 export function localYmdSetWhereBecameCancelledFromAuditRows(
   rows: ReservationStatusAuditRow[] | undefined
 ): Set<string> {
@@ -292,8 +281,17 @@ export function localYmdSetWhereBecameCancelledFromAuditRows(
     if (dk && dk.length >= 10) dayKeys.add(dk)
   }
   for (const dk of dayKeys) {
-    const tr = pickReservationStatusTransitionForDay(rows, dk)
-    if (isIntoCancelledLikeTransition(tr)) out.add(dk)
+    const transitions = listAllReservationStatusTransitionsOnLocalDay(rows, dk)
+    if (!transitions.length) continue
+    const lastTo = transitions[transitions.length - 1]!.to.toLowerCase().trim()
+    if (
+      lastTo === 'cancelled' ||
+      lastTo === 'canceled' ||
+      lastTo === 'deleted' ||
+      lastTo === 'no_show'
+    ) {
+      out.add(dk)
+    }
   }
   return out
 }
@@ -314,6 +312,9 @@ const STATUS_TRANSITION_SORT_ORDER = new Map<string, number>([
   ['confirmed:canceled', 51],
   ['confirmed:completed', 60],
   ['pending:completed', 65],
+  ['completed:cancelled', 70],
+  ['completed:canceled', 71],
+  ['completed:deleted', 72],
   ['inquiry:cancelled', 68],
   ['inquiry:canceled', 69],
 ])

@@ -2737,9 +2737,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       setInactiveTeamMembers((prev) =>
         prev.map((m) => (m.email === updated.email ? { ...m, ...updated } : m))
       )
-      void fetchData()
     },
-    [fetchData]
+    []
   )
 
   const openRentalVehicleAddFromSchedule = useCallback(() => {

@@ -59,9 +59,22 @@ export function buildResidentFeeDisplayLines(
   const lines: BalanceEnvelopeLine[] = []
 
   for (const key of RESIDENT_FEE_SUM_KEYS) {
-    const qty = Math.max(0, Math.floor(Number(residentCounts[key]) || 0))
-    const subtotal = roundUsd2(Number(amounts[key]) || 0)
-    if (qty <= 0 || subtotal < 0.005) continue
+    let qty = Math.max(0, Math.floor(Number(residentCounts[key]) || 0))
+    let subtotal = roundUsd2(Number(amounts[key]) || 0)
+    // 금액만 저장된 경우(인원 행 없음): 단가로 수량 추정
+    if (qty <= 0) {
+      const override = residentStatusAmounts?.[key]
+      if (override !== undefined && Number(override) > 0.005) {
+        subtotal = roundUsd2(Number(override))
+        const unit = RESIDENT_LINE_USD_PER_UNIT[key] ?? 0
+        qty = unit > 0.005 ? Math.max(1, Math.round(subtotal / unit)) : 1
+      }
+    }
+    if (qty <= 0) continue
+    if (subtotal < 0.005) {
+      subtotal = residentLineDefaultAmountUsd(key, qty)
+    }
+    if (subtotal < 0.005) continue
     const defaultUnit = RESIDENT_LINE_USD_PER_UNIT[key] ?? 0
     const unitPrice =
       qty > 0 && subtotal > 0 ? roundUsd2(subtotal / qty) : defaultUnit

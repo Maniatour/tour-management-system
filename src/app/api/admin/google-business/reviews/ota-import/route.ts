@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   if (body.mode === 'rows' && Array.isArray(body.rows)) {
     parsedRows = body.rows
   } else if (body.mode === 'csv' && body.text) {
-    parsedRows = parseOtaReviewCsv(body.text)
+    parsedRows = parseOtaReviewCsv(body.text, isOtaReviewSource(source) ? source : null)
   } else if (body.text) {
     parsedRows = parseOtaReviewText(body.text, isOtaReviewSource(source) ? source : null)
   } else {

@@ -156,6 +156,8 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
   const canMoveDown = selectedIndex >= 0 && selectedIndex < selectedTeamMembers.length - 1
   const isCdlDriver = cdlDriverEmailSet.has(teamMemberId)
   const isCdlKoreanDriver = cdlKoreanDriverEmailSet.has(teamMemberId)
+  const guideNameHoverContent =
+    teamMembers.find((m) => m.email === teamMemberId)?.notes?.trim() || ''
   // 멀티데이 투어 정보를 미리 계산
   const multiDayTours: { [dateString: string]: { startDate: string; endDate: string; days: number; extendsToNextMonth: boolean; dayData: ScheduleGuideDailyData } } = {}
   
@@ -332,15 +334,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
               <ChevronDown className="w-3 h-3" />
             </button>
           </div>
-          <ScheduleHoverTooltip
-            content={
-              canEditTeamFromSchedule
-                ? locale === 'ko'
-                  ? '클릭하여 팀원 정보 수정'
-                  : 'Click to edit team member'
-                : guide.team_member_name
-            }
-          >
+          <ScheduleHoverTooltip content={guideNameHoverContent}>
             <button
               type="button"
               className={`min-w-0 flex-1 truncate text-left ${

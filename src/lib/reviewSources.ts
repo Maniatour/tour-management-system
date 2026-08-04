@@ -20,7 +20,10 @@ export type ReviewSourceTab = {
 }
 
 /** Tabs that show total review count badges in admin review integration UI. */
-export const REVIEW_SOURCE_TABS_WITH_COUNT = ['google', 'getyourguide', 'viator'] as const
+export const REVIEW_SOURCE_TABS_WITH_COUNT = [
+  REVIEW_SOURCE_GOOGLE,
+  ...OTA_REVIEW_SOURCES,
+] as const
 
 export type ReviewSourceTabWithCount = (typeof REVIEW_SOURCE_TABS_WITH_COUNT)[number]
 

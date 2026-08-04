@@ -367,7 +367,11 @@ function DateGroupHeaderInner({
   const statusTransitionBuckets = useAuditStatusTransitions
     ? aggregateStatusTransitionBucketsForReservationWindow({
         reservations: reservationsForActivityBreakdown,
-        party: (r) => getReservationPartySize(r as unknown as Record<string, unknown>),
+        party: (r) => {
+          const tp = Number((r as Reservation).totalPeople) || 0
+          if (tp > 0) return tp
+          return getReservationPartySize(r as unknown as Record<string, unknown>)
+        },
         auditRowsByReservationId,
         dayKeys: [date],
       })

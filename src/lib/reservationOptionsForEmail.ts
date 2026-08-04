@@ -9,6 +9,7 @@ export type ReservationOptionLineForEmail = {
 }
 
 export type ReservationOptionLineBilingual = {
+  optionId: string
   labelKo: string
   labelEn: string
   unitPrice: number
@@ -112,7 +113,7 @@ function reservationOptionRowToLine(
     ea > 0 && lineTotal > 0
       ? Math.round((lineTotal / ea) * 100) / 100
       : Math.round(price * 100) / 100 || lineTotal
-  return { labelKo, labelEn, unitPrice, quantity: qty, lineTotal }
+  return { optionId: oid, labelKo, labelEn, unitPrice, quantity: qty, lineTotal }
 }
 
 async function loadOptionsNameMap(

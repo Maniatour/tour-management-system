@@ -608,11 +608,23 @@ export default function AdminWorkFloatingWidget({ locale }: AdminWorkFloatingWid
                           )}
                         </div>
 
-                        <button
-                          type="button"
-                          disabled={!hasManual}
-                          onClick={() => manualCtx?.openManual(task.linked_hub_article_id)}
-                          className={`w-full min-w-0 text-left ${hasManual ? 'cursor-pointer hover:opacity-90' : 'cursor-default'}`}
+                        <div
+                          role={hasManual ? 'button' : undefined}
+                          tabIndex={hasManual ? 0 : undefined}
+                          onClick={() => {
+                            if (!hasManual) return
+                            const selected = window.getSelection()?.toString()
+                            if (selected) return
+                            manualCtx?.openManual(task.linked_hub_article_id)
+                          }}
+                          onKeyDown={(e) => {
+                            if (!hasManual) return
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              manualCtx?.openManual(task.linked_hub_article_id)
+                            }
+                          }}
+                          className={`w-full min-w-0 select-text text-left ${hasManual ? 'cursor-pointer hover:opacity-90' : 'cursor-default'}`}
                         >
                           <div className="flex flex-wrap items-center gap-1">
                             <span
@@ -641,7 +653,7 @@ export default function AdminWorkFloatingWidget({ locale }: AdminWorkFloatingWid
                               ? ` · ${new Date(task.due_date).toLocaleString(isKo ? 'ko-KR' : 'en-US')}`
                               : ''}
                           </p>
-                        </button>
+                        </div>
                       </div>
                     )
                   })
@@ -734,11 +746,23 @@ export default function AdminWorkFloatingWidget({ locale }: AdminWorkFloatingWid
                 )}
               </div>
 
-              <button
-                type="button"
-                disabled={!hasManual}
-                onClick={() => manualCtx?.openManual(announcement.linked_hub_article_id)}
-                className={`w-full min-w-0 text-left ${hasManual ? 'cursor-pointer hover:opacity-90' : 'cursor-default'}`}
+              <div
+                role={hasManual ? 'button' : undefined}
+                tabIndex={hasManual ? 0 : undefined}
+                onClick={() => {
+                  if (!hasManual) return
+                  const selected = window.getSelection()?.toString()
+                  if (selected) return
+                  manualCtx?.openManual(announcement.linked_hub_article_id)
+                }}
+                onKeyDown={(e) => {
+                  if (!hasManual) return
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    manualCtx?.openManual(announcement.linked_hub_article_id)
+                  }
+                }}
+                className={`w-full min-w-0 select-text text-left ${hasManual ? 'cursor-pointer hover:opacity-90' : 'cursor-default'}`}
               >
                 <div className="flex flex-wrap items-center gap-1">
                   {announcement.is_pinned && (
@@ -770,7 +794,7 @@ export default function AdminWorkFloatingWidget({ locale }: AdminWorkFloatingWid
                   {getTeamMemberDisplayName(announcement.created_by, work.teamMembers)} ·{' '}
                   {new Date(announcement.created_at).toLocaleString(isKo ? 'ko-KR' : 'en-US')}
                 </p>
-              </button>
+              </div>
             </div>
           )
         })

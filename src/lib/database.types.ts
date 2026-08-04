@@ -8209,6 +8209,7 @@ export type Database = {
           name_en: string | null
           nick_name: string | null
           name_ko: string
+          notes: string | null
           personal_car_model: string | null
           phone: string | null
           position: string | null
@@ -8244,6 +8245,7 @@ export type Database = {
           name_en?: string | null
           nick_name?: string | null
           name_ko: string
+          notes?: string | null
           personal_car_model?: string | null
           phone?: string | null
           position?: string | null
@@ -8279,6 +8281,7 @@ export type Database = {
           name_en?: string | null
           nick_name?: string | null
           name_ko?: string
+          notes?: string | null
           personal_car_model?: string | null
           phone?: string | null
           position?: string | null

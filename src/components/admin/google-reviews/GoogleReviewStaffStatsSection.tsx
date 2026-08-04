@@ -27,6 +27,8 @@ type Props = {
   locale: string
   enabled: boolean
   refreshKey: number
+  /** section: 페이지 카드, embedded: 모달 내부 */
+  variant?: 'section' | 'embedded'
 }
 
 type ViewMode = 'overall' | 'monthly'
@@ -45,8 +47,10 @@ function matchesStaffActiveFilter(
 type OverallSortKey =
   | 'staffName'
   | 'firstReviewDate'
+  | 'lastReviewDate'
   | 'reviewCount'
   | 'avgRating'
+  | 'tourDepartureCount'
   | 'totalTourGuests'
   | 'reservationGroupCount'
   | 'fiveStarCount'
@@ -74,6 +78,12 @@ function compareOverallStats(
       cmp = aDate.localeCompare(bDate)
       break
     }
+    case 'lastReviewDate': {
+      const aDate = a.lastReviewDate ?? ''
+      const bDate = b.lastReviewDate ?? ''
+      cmp = aDate.localeCompare(bDate)
+      break
+    }
     case 'avgRating':
       cmp = (a.avgRating ?? -1) - (b.avgRating ?? -1)
       break
@@ -92,6 +102,7 @@ function SortableTh({
   onSort,
   className = '',
   align = 'left',
+  title,
 }: {
   label: string
   sortKey: OverallSortKey
@@ -100,6 +111,7 @@ function SortableTh({
   onSort: (key: OverallSortKey) => void
   className?: string
   align?: 'left' | 'center' | 'right'
+  title?: string
 }) {
   const isActive = activeKey === sortKey
   const alignClass =
@@ -110,6 +122,7 @@ function SortableTh({
       <button
         type="button"
         onClick={() => onSort(sortKey)}
+        title={title}
         className={`inline-flex items-center gap-0.5 hover:text-foreground transition-colors ${
           align === 'center' ? 'justify-center w-full' : ''
         } ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}
@@ -129,15 +142,18 @@ function SortableTh({
   )
 }
 
-function formatReviewDate(value: string | null, locale: string): string {
+function formatReviewDate(value: string | null): string {
   if (!value) return '—'
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
+  if (match) {
+    return `${match[2]}/${match[3]}/${match[1]}`
+  }
   const parsed = new Date(`${value}T12:00:00`)
   if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
+  const month = String(parsed.getMonth() + 1).padStart(2, '0')
+  const day = String(parsed.getDate()).padStart(2, '0')
+  const year = parsed.getFullYear()
+  return `${month}/${day}/${year}`
 }
 
 function StaffNameWithStatus({
@@ -366,8 +382,10 @@ export default function GoogleReviewStaffStatsSection({
   locale,
   enabled,
   refreshKey,
+  variant = 'section',
 }: Props) {
   const isKo = locale === 'ko'
+  const embedded = variant === 'embedded'
   const currentYear = new Date().getFullYear()
   const [viewMode, setViewMode] = useState<ViewMode>('overall')
   const [year, setYear] = useState(currentYear)
@@ -490,24 +508,29 @@ export default function GoogleReviewStaffStatsSection({
   const isEmpty = !loading && !hasRawData
   const isFilteredEmpty = !loading && hasRawData && !hasFilteredData
 
-  return (
-    <section className="rounded-2xl border border-border/60 bg-card shadow-sm p-6 space-y-4">
+  const descriptionText =
+    viewMode === 'overall'
+      ? isKo
+        ? '모든 플랫폼(Google·OTA 등) 리뷰 중 투어·직원 연결된 평균 별점입니다. 최초·마지막 리뷰일, 전체 투어 이력 기준 진행 횟수·배정 인원·예약 건수를 표시합니다. 컬럼 헤더를 클릭해 정렬할 수 있습니다.'
+        : 'Average ratings from all platform reviews linked to staff. Shows first/last review dates and full tour-history departure count, guest totals, and booking groups. Click column headers to sort.'
+      : isKo
+        ? '월별 리뷰 수, 별점별 개수, 투어 인원·예약 그룹 대비 리뷰율입니다. 대기·승인 등 모든 상태 포함. 별점 숫자를 클릭하면 리뷰를 볼 수 있습니다.'
+        : 'Monthly reviews, star breakdown, and review rates (all import statuses). Click star counts to read reviews.'
+
+  const content = (
+    <>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" />
-            {isKo ? '가이드·어시스턴트 리뷰 점수' : 'Guide & assistant review scores'}
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            {viewMode === 'overall'
-              ? isKo
-                ? '모든 플랫폼(Google·OTA 등) 리뷰 중 투어·직원 연결된 평균 별점입니다. 최초 리뷰일 이후 가이드·어시스턴트로 배정된 투어의 총 인원·예약 건수를 함께 표시합니다. 컬럼 헤더를 클릭해 정렬할 수 있습니다.'
-                : 'Average ratings from all platform reviews linked to staff. Shows total tour guests and reservation groups assigned since each person’s first review. Click column headers to sort.'
-              : isKo
-                ? '월별 리뷰 수, 별점별 개수, 투어 인원·예약 그룹 대비 리뷰율입니다. 대기·승인 등 모든 상태 포함. 별점 숫자를 클릭하면 리뷰를 볼 수 있습니다.'
-                : 'Monthly reviews, star breakdown, and review rates (all import statuses). Click star counts to read reviews.'}
-          </p>
-        </div>
+        {!embedded ? (
+          <div>
+            <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              {isKo ? '가이드·어시스턴트 리뷰 점수' : 'Guide & assistant review scores'}
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">{descriptionText}</p>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground sm:flex-1 sm:pr-4">{descriptionText}</p>
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
           {viewMode === 'monthly' ? (
@@ -642,8 +665,37 @@ export default function GoogleReviewStaffStatsSection({
                   className="pr-4"
                 />
                 <SortableTh
-                  label={isKo ? '리뷰 수' : 'Reviews'}
-                  sortKey="reviewCount"
+                  label={isKo ? '마지막 리뷰일' : 'Last review'}
+                  sortKey="lastReviewDate"
+                  activeKey={sortConfig.key}
+                  sortDir={sortConfig.dir}
+                  onSort={handleSort}
+                  className="pr-4"
+                />
+                <SortableTh
+                  label={isKo ? '투어 진행' : 'Tours led'}
+                  sortKey="tourDepartureCount"
+                  activeKey={sortConfig.key}
+                  sortDir={sortConfig.dir}
+                  onSort={handleSort}
+                  className="pr-4"
+                  title={
+                    isKo
+                      ? '확정·예정(scheduled)·완료 상태이며 실제 출발한 투어 수 (가이드·어시스턴트 배정 기준)'
+                      : 'Confirmed, scheduled, or completed tours that have departed (guide or assistant assignment)'
+                  }
+                />
+                <SortableTh
+                  label={isKo ? '총 배정 인원' : 'Total guests'}
+                  sortKey="totalTourGuests"
+                  activeKey={sortConfig.key}
+                  sortDir={sortConfig.dir}
+                  onSort={handleSort}
+                  className="pr-4"
+                />
+                <SortableTh
+                  label={isKo ? '총 예약 건수' : 'Total bookings'}
+                  sortKey="reservationGroupCount"
                   activeKey={sortConfig.key}
                   sortDir={sortConfig.dir}
                   onSort={handleSort}
@@ -658,16 +710,8 @@ export default function GoogleReviewStaffStatsSection({
                   className="pr-4"
                 />
                 <SortableTh
-                  label={isKo ? '총 배정 인원' : 'Total guests'}
-                  sortKey="totalTourGuests"
-                  activeKey={sortConfig.key}
-                  sortDir={sortConfig.dir}
-                  onSort={handleSort}
-                  className="pr-4"
-                />
-                <SortableTh
-                  label={isKo ? '총 예약 건수' : 'Total bookings'}
-                  sortKey="reservationGroupCount"
+                  label={isKo ? '리뷰 수' : 'Reviews'}
+                  sortKey="reviewCount"
                   activeKey={sortConfig.key}
                   sortDir={sortConfig.dir}
                   onSort={handleSort}
@@ -698,17 +742,21 @@ export default function GoogleReviewStaffStatsSection({
                     />
                   </td>
                   <td className="py-3 pr-4 tabular-nums text-muted-foreground whitespace-nowrap">
-                    {formatReviewDate(row.firstReviewDate, locale)}
+                    {formatReviewDate(row.firstReviewDate)}
                   </td>
-                  <td className="py-3 pr-4 tabular-nums">{row.reviewCount}</td>
+                  <td className="py-3 pr-4 tabular-nums text-muted-foreground whitespace-nowrap">
+                    {formatReviewDate(row.lastReviewDate)}
+                  </td>
+                  <td className="py-3 pr-4 tabular-nums">{row.tourDepartureCount}</td>
+                  <td className="py-3 pr-4 tabular-nums">{row.totalTourGuests}</td>
+                  <td className="py-3 pr-4 tabular-nums">{row.reservationGroupCount}</td>
                   <td className="py-3 pr-4">
                     <span className="inline-flex items-center gap-1 text-amber-500 font-medium tabular-nums">
                       <Star className="h-3.5 w-3.5 fill-current" />
                       {row.avgRating?.toFixed(2) ?? '—'}
                     </span>
                   </td>
-                  <td className="py-3 pr-4 tabular-nums">{row.totalTourGuests}</td>
-                  <td className="py-3 pr-4 tabular-nums">{row.reservationGroupCount}</td>
+                  <td className="py-3 pr-4 tabular-nums">{row.reviewCount}</td>
                   {OVERALL_STAR_COLUMNS.map((col) => (
                     <td
                       key={col.key}
@@ -808,6 +856,16 @@ export default function GoogleReviewStaffStatsSection({
         target={reviewModalTarget}
         onClose={() => setReviewModalTarget(null)}
       />
+    </>
+  )
+
+  if (embedded) {
+    return <div className="space-y-4">{content}</div>
+  }
+
+  return (
+    <section className="rounded-2xl border border-border/60 bg-card shadow-sm p-6 space-y-4">
+      {content}
     </section>
   )
 }

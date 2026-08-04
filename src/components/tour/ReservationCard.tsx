@@ -2253,7 +2253,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               )
             })()}
             
-            {/* 잔액/환불 뱃지 및 처리 버튼 - reservation_pricing.balance_amount 사용(실제 예약 잔금과 일치) */}
+            {/* 잔액/환불 뱃지 — 클릭 시 수령/환불 처리 */}
             {isStaff && (() => {
               const displayBalanceBadge = getBalanceAmountForDisplay(
                 reservationPricing,
@@ -2267,42 +2267,35 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                   reservationPricing?.currency || 'USD'
                 )
                 return (
-                  <div className="flex items-center space-x-2 shrink-0">
-                    <div
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-200"
-                      title={tCard('balanceDueBadgeTitle')}
-                      aria-label={`${tCard('balanceDueBadgeTitle')}: ${balStr}`}
-                    >
-                      <Wallet className="w-3.5 h-3.5 shrink-0" aria-hidden />
-                      <span>{balStr}</span>
-                    </div>
-                    <button
-                      onClick={handleReceiveBalance}
-                      className="px-2 py-1 text-xs font-medium bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors flex items-center space-x-1"
-                      title="Balance 수령"
-                    >
-                      <Wallet size={12} />
-                      <span>수령</span>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={handleReceiveBalance}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-200 hover:border-purple-300 transition-colors shrink-0"
+                    title={tCard('balanceDueReceiveTitle')}
+                    aria-label={`${tCard('balanceDueReceiveTitle')}: ${balStr}`}
+                  >
+                    <Wallet className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                    <span>{balStr}</span>
+                  </button>
                 )
               }
               if (displayBalanceBadge < 0) {
                 const refundAmount = Math.abs(displayBalanceBadge)
+                const refundStr = formatCurrency(
+                  refundAmount,
+                  reservationPricing?.currency || 'USD'
+                )
                 return (
-                  <div className="flex items-center space-x-2 shrink-0">
-                    <div className="px-2 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-200">
-                      -{formatCurrency(refundAmount, reservationPricing?.currency || 'USD')}
-                    </div>
-                    <button
-                      onClick={handleRefundNegativeBalance}
-                      className="px-2 py-1 text-xs font-medium bg-rose-600 text-white rounded hover:bg-rose-700 transition-colors flex items-center space-x-1"
-                      title="현금 환불 지불 완료"
-                    >
-                      <HandCoins size={12} />
-                      <span>지불</span>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRefundNegativeBalance}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-200 hover:bg-rose-200 hover:border-rose-300 transition-colors shrink-0"
+                    title={tCard('balanceRefundPayTitle')}
+                    aria-label={`${tCard('balanceRefundPayTitle')}: -${refundStr}`}
+                  >
+                    <HandCoins className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                    <span>-{refundStr}</span>
+                  </button>
                 )
               }
               return null

@@ -5,8 +5,10 @@ import { X, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fetchReservationOptionLinesBatch, type ReservationOptionLineBilingual } from '@/lib/reservationOptionsForEmail'
 import {
+  adjustOptionTotalExcludingLegacyNonResident,
   getBalanceAmountForDisplay,
   paymentRecordAmountToNumber,
+  resolveResidentFeeUsdForBalanceDisplay,
   withNormalizedBalanceAmountForDisplay,
 } from '@/utils/reservationPricingBalance'
 import {
@@ -15,6 +17,7 @@ import {
   formatBalanceEnvelopeLine,
   type BalanceEnvelopeLine,
 } from '@/utils/balanceEnvelopeBreakdown'
+import { residentFeeAmountsFromPricingChoicesJson, residentFeeCountsFromPricingChoicesJson } from '@/utils/usResidentChoiceSync'
 
 // ---------------------------------------------------------------------------
 // 상수
@@ -464,21 +467,52 @@ export default function TourEnvelopeModal({
           const customer = customerForReservation(rez, customerMap)
           const pricingRaw = pricingByResId.get(id) ?? null
           const pricing = pricingRaw ? withNormalizedBalanceAmountForDisplay(pricingRaw) : null
-          const optionsSum = optionsTotalByResId.get(id) ?? null
-          const balanceAmount = needsBalanceData
-            ? getBalanceAmountForDisplay(
-                pricing,
-                optionsSum,
-                {
-                  adults: rez.adults ?? null,
-                  child: rez.child ?? null,
-                  infant: rez.infant ?? null,
-                },
-                {
-                  paymentRecords: paymentsByResId.get(id) ?? [],
-                  reservationStatus: rez.status ?? null,
-                }
+          const optionsSumRaw = optionsTotalByResId.get(id) ?? null
+          const choicesJson =
+            pricing && typeof (pricing as { choices?: unknown }).choices !== 'undefined'
+              ? (pricing as { choices?: unknown }).choices
+              : null
+          const fromCustomers = countResidentLinesFromCustomers(residentsByResId.get(id))
+          const fromChoices = residentFeeCountsFromPricingChoicesJson(choicesJson)
+          const residentCounts = { ...fromChoices }
+          for (const [k, v] of Object.entries(fromCustomers)) {
+            const key = k as keyof typeof residentCounts
+            residentCounts[key] = Math.max(Number(residentCounts[key]) || 0, Number(v) || 0)
+          }
+          const residentStatusAmounts = residentFeeAmountsFromPricingChoicesJson(choicesJson)
+          const party = {
+            adults: rez.adults ?? null,
+            child: rez.child ?? null,
+            infant: rez.infant ?? null,
+          }
+          const residentFeeUsd = needsBalanceData
+            ? resolveResidentFeeUsdForBalanceDisplay(
+                pricing as Parameters<typeof resolveResidentFeeUsdForBalanceDisplay>[0],
+                party,
+                optionsSumRaw,
+                residentCounts,
+                residentStatusAmounts
               )
+            : 0
+          const optionRowsForAdj = (optionLinesByResId.get(id) || []).map((o: ReservationOptionLineBilingual) => ({
+            option_id: o.optionId,
+            total_price: o.lineTotal,
+            status: 'active',
+          }))
+          const optionsSum =
+            optionsSumRaw === null
+              ? null
+              : adjustOptionTotalExcludingLegacyNonResident(
+                  optionsSumRaw,
+                  residentFeeUsd,
+                  optionRowsForAdj
+                )
+          const balanceAmount = needsBalanceData
+            ? getBalanceAmountForDisplay(pricing, optionsSum, party, {
+                paymentRecords: paymentsByResId.get(id) ?? [],
+                reservationStatus: rez.status ?? null,
+                residentFeeUsd,
+              })
             : 0
           const currency =
             pricing && typeof (pricing as { currency?: unknown }).currency === 'string'
@@ -497,7 +531,6 @@ export default function TourEnvelopeModal({
               ? Math.max(0, Math.floor(Number(pricingAdultsRaw)))
               : rez.adults ?? 0
           const notIncludedPerPerson = Number(p?.not_included_price) || 0
-          const residentCounts = countResidentLinesFromCustomers(residentsByResId.get(id))
           const reservationOptions = (optionLinesByResId.get(id) || []).map((o: ReservationOptionLineBilingual) => ({
             labelKo: o.labelKo,
             labelEn: o.labelEn,
@@ -514,6 +547,7 @@ export default function TourEnvelopeModal({
                   child: rez.child ?? 0,
                   infant: rez.infant ?? 0,
                   residentCounts,
+                  residentStatusAmounts,
                   reservationOptions,
                 })
               : []

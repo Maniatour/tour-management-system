@@ -49,7 +49,9 @@ import {
 } from '@/utils/tourUtils'
 import { fetchReservationOptionLinesBatch } from '@/lib/reservationOptionsForEmail'
 import {
+  adjustOptionTotalExcludingLegacyNonResident,
   getBalanceAmountForDisplay,
+  resolveResidentFeeUsdForBalanceDisplay,
   withNormalizedBalanceAmountForDisplay,
 } from '@/utils/reservationPricingBalance'
 import {
@@ -57,6 +59,7 @@ import {
   countResidentLinesFromCustomers,
   formatBalanceEnvelopeLine,
 } from '@/utils/balanceEnvelopeBreakdown'
+import { residentFeeAmountsFromPricingChoicesJson, residentFeeCountsFromPricingChoicesJson } from '@/utils/usResidentChoiceSync'
 
 // 타입 정의 (DB 스키마 기반) — 픽업 잔액 헬퍼보다 먼저 두어 타입 순서 유지
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -204,19 +207,53 @@ async function computeGuidePickupBalanceBreakdowns(
     const pricing = pricingRaw ? withNormalizedBalanceAmountForDisplay(pricingRaw) : null
 
     const lines = optionLinesByResId.get(id) || []
-    const optionsSum = lines.length
+    const optionsSumRaw = lines.length
       ? lines.reduce((s, o) => s + (Number(o.lineTotal) || 0), 0)
       : null
 
-    const displayBalance = getBalanceAmountForDisplay(
-      pricing,
-      optionsSum,
-      { adults: rez.adults ?? null, child: rez.child ?? null, infant: rez.infant ?? null },
-      {
-        paymentRecords: paymentsByResId.get(id) ?? [],
-        reservationStatus: rez.status ?? null,
-      }
+    const residentCountsFromCustomers = countResidentLinesFromCustomers(residentsByResId.get(id))
+    const choicesJson =
+      pricing && typeof (pricing as { choices?: unknown }).choices !== 'undefined'
+        ? (pricing as { choices?: unknown }).choices
+        : null
+    const fromChoices = residentFeeCountsFromPricingChoicesJson(choicesJson)
+    const residentCounts = { ...fromChoices }
+    for (const [k, v] of Object.entries(residentCountsFromCustomers)) {
+      const key = k as keyof typeof residentCounts
+      residentCounts[key] = Math.max(Number(residentCounts[key]) || 0, Number(v) || 0)
+    }
+    const residentStatusAmounts = residentFeeAmountsFromPricingChoicesJson(choicesJson)
+    const party = {
+      adults: rez.adults ?? null,
+      child: rez.child ?? null,
+      infant: rez.infant ?? null,
+    }
+    const residentFeeUsd = resolveResidentFeeUsdForBalanceDisplay(
+      pricing as Parameters<typeof resolveResidentFeeUsdForBalanceDisplay>[0],
+      party,
+      optionsSumRaw,
+      residentCounts,
+      residentStatusAmounts
     )
+    const optionRowsForAdj = lines.map((o) => ({
+      option_id: o.optionId,
+      total_price: o.lineTotal,
+      status: 'active',
+    }))
+    const optionsSum =
+      optionsSumRaw === null
+        ? null
+        : adjustOptionTotalExcludingLegacyNonResident(
+            optionsSumRaw,
+            residentFeeUsd,
+            optionRowsForAdj
+          )
+
+    const displayBalance = getBalanceAmountForDisplay(pricing, optionsSum, party, {
+      paymentRecords: paymentsByResId.get(id) ?? [],
+      reservationStatus: rez.status ?? null,
+      residentFeeUsd,
+    })
 
     const currency =
       pricing && typeof (pricing as { currency?: unknown }).currency === 'string'
@@ -237,7 +274,6 @@ async function computeGuidePickupBalanceBreakdowns(
         ? Math.max(0, Math.floor(Number(pricingAdultsRaw)))
         : rez.adults ?? 0
     const notIncludedPerPerson = Number(p?.not_included_price) || 0
-    const residentCounts = countResidentLinesFromCustomers(residentsByResId.get(id))
     const reservationOptions = lines.map((o) => ({
       labelKo: o.labelKo,
       labelEn: o.labelEn,
@@ -255,6 +291,7 @@ async function computeGuidePickupBalanceBreakdowns(
             child: rez.child ?? 0,
             infant: rez.infant ?? 0,
             residentCounts,
+            residentStatusAmounts,
             reservationOptions,
           })
         : []

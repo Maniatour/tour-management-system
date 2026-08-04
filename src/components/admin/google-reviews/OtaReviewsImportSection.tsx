@@ -9,7 +9,9 @@ import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import {
   OTA_CSV_TEMPLATE_HINTS,
   isGetYourGuideScrapedText,
+  isKlookTableText,
   parseOtaReviewCsv,
+  parseOtaReviewText,
   parseSingleOtaReviewText,
   validateParsedOtaRows,
   type ParsedOtaReviewRow,
@@ -81,6 +83,7 @@ export default function OtaReviewsImportSection({
 }: Props) {
   const isKo = locale === 'ko'
   const isParseOnlyPaste = source === 'getyourguide'
+  const isBulkTablePaste = source === 'klook'
   const [mode, setMode] = useState<ImportMode>('paste')
   const [csvText, setCsvText] = useState('')
   const [importing, setImporting] = useState(false)
@@ -108,9 +111,20 @@ export default function OtaReviewsImportSection({
   const sourceLabel = getReviewSourceLabel(source, locale)
   const templateHint = OTA_CSV_TEMPLATE_HINTS[source]
 
-  const parsedFromPaste = useMemo(
-    () => (pasteText.trim() ? parseSingleOtaReviewText(pasteText, source) : null),
-    [pasteText, source]
+  const parsedFromPaste = useMemo(() => {
+    if (!pasteText.trim()) return null
+    if (isBulkTablePaste) return null
+    return parseSingleOtaReviewText(pasteText, source)
+  }, [isBulkTablePaste, pasteText, source])
+
+  const bulkPasteRows = useMemo(() => {
+    if (!isBulkTablePaste || !pasteText.trim()) return []
+    return parseOtaReviewText(pasteText, source)
+  }, [isBulkTablePaste, pasteText, source])
+
+  const bulkPasteValidation = useMemo(
+    () => validateParsedOtaRows(bulkPasteRows),
+    [bulkPasteRows]
   )
 
   const reservationRef = parsedFromPaste?.reservationNumber?.trim() ?? ''
@@ -140,8 +154,8 @@ export default function OtaReviewsImportSection({
 
   const csvParsedRows = useMemo(() => {
     if (!csvText.trim()) return []
-    return parseOtaReviewCsv(csvText)
-  }, [csvText])
+    return parseOtaReviewCsv(csvText, source)
+  }, [csvText, source])
 
   const csvValidation = useMemo(() => validateParsedOtaRows(csvParsedRows), [csvParsedRows])
 
@@ -296,6 +310,50 @@ export default function OtaReviewsImportSection({
     }
   }, [isKo, onMessage, onRefresh, resetSingleForm, singleValidation.valid, source])
 
+  const runBulkPasteImport = useCallback(async () => {
+    if (bulkPasteValidation.valid.length === 0) {
+      onMessage(
+        isKo
+          ? 'Klook 리뷰 테이블을 붙여넣고 Booking reference·Stars·Reviews가 파싱되는지 확인하세요.'
+          : 'Paste the Klook review table and ensure booking reference, stars, and reviews are parsed.'
+      )
+      return
+    }
+
+    setImporting(true)
+    try {
+      const res = await fetchApiWithAuth('/api/admin/google-business/reviews/ota-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source,
+          mode: 'rows',
+          rows: bulkPasteValidation.valid,
+        }),
+      })
+      const data = (await res.json()) as ImportResult
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || 'import_failed')
+      }
+
+      onMessage(
+        isKo
+          ? `가져오기 완료: 신규 ${data.imported ?? 0}건, 중복 ${data.duplicates ?? 0}건, 투어 연결 ${data.toursLinked ?? 0}건`
+          : `Import done: ${data.imported ?? 0} new, ${data.duplicates ?? 0} duplicate(s), ${data.toursLinked ?? 0} tour link(s)`
+      )
+      setPasteText('')
+      await onRefresh()
+    } catch (error) {
+      onMessage(
+        isKo
+          ? `가져오기 실패: ${error instanceof Error ? error.message : 'unknown'}`
+          : `Import failed: ${error instanceof Error ? error.message : 'unknown'}`
+      )
+    } finally {
+      setImporting(false)
+    }
+  }, [bulkPasteValidation.valid, isKo, onMessage, onRefresh, source])
+
   const runCsvImport = useCallback(async () => {
     if (csvValidation.valid.length === 0) {
       onMessage(
@@ -371,10 +429,17 @@ export default function OtaReviewsImportSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
-      const data = (await res.json()) as { ok?: boolean; linked?: number; error?: string }
+      const data = (await res.json()) as {
+        ok?: boolean
+        linked?: number
+        authorsBackfilled?: number
+        error?: string
+      }
       if (!res.ok || !data.ok) throw new Error(data.error || 'link_failed')
       onMessage(
-        isKo ? `투어 자동 연결 ${data.linked ?? 0}건` : `Auto-linked ${data.linked ?? 0} tours`
+        isKo
+          ? `투어 자동 연결 ${data.linked ?? 0}건${data.authorsBackfilled ? `, 고객명 보정 ${data.authorsBackfilled}건` : ''}`
+          : `Auto-linked ${data.linked ?? 0} tours${data.authorsBackfilled ? `, ${data.authorsBackfilled} guest name(s) filled` : ''}`
       )
       await onRefresh()
     } catch (error) {
@@ -399,9 +464,13 @@ export default function OtaReviewsImportSection({
             ? isKo
               ? 'GetYourGuide 리뷰 페이지 텍스트를 붙여넣으면 RN#·별점·리뷰·고객·상품·투어가 자동으로 처리됩니다.'
               : 'Paste GetYourGuide review page text — RN#, rating, review, guest, product, and tour are handled automatically.'
-            : isKo
-              ? '1건씩 등록하거나 CSV로 일괄 업로드할 수 있습니다.'
-              : 'Add one review at a time or bulk upload via CSV.'}
+            : isBulkTablePaste
+              ? isKo
+                ? 'Klook 리뷰 표(엑셀/시트)를 통째로 붙여넣으면 예약번호로 투어를 연결해 저장합니다.'
+                : 'Paste the full Klook review table from Excel/sheet — tours are linked via booking reference.'
+              : isKo
+                ? '1건씩 등록하거나 CSV로 일괄 업로드할 수 있습니다.'
+                : 'Add one review at a time or bulk upload via CSV.'}
         </p>
       </div>
 
@@ -416,7 +485,7 @@ export default function OtaReviewsImportSection({
           }`}
         >
           <ClipboardPaste className="h-3.5 w-3.5" aria-hidden />
-          {isKo ? '1건 등록' : 'Single entry'}
+          {isBulkTablePaste ? (isKo ? '표 붙여넣기' : 'Paste table') : isKo ? '1건 등록' : 'Single entry'}
         </button>
         <button
           type="button"
@@ -434,6 +503,52 @@ export default function OtaReviewsImportSection({
 
       {mode === 'paste' ? (
         <div className="space-y-5">
+          {isBulkTablePaste ? (
+            <>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  {isKo ? 'Klook 리뷰 테이블 붙여넣기' : 'Paste Klook review table'}
+                </label>
+                <textarea
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  rows={16}
+                  placeholder={
+                    isKo
+                      ? 'Booking reference ID · Reviewed date · Stars · Reviews 열이 포함된 표를 엑셀/시트에서 복사해 붙여넣으세요.\n\n예약번호(channel_rn)로 투어가 자동 연결됩니다.'
+                      : 'Copy the table with Booking reference ID, Reviewed date, Stars, and Reviews from Excel/sheet and paste here.\n\nTours are auto-linked via booking reference (channel_rn).'
+                  }
+                  className="w-full min-h-[320px] rounded-xl border border-input bg-background px-4 py-3 text-sm leading-relaxed font-mono"
+                />
+                {pasteText.trim() && !isKlookTableText(pasteText) ? (
+                  <p className="text-xs text-warning">
+                    {isKo
+                      ? 'Klook 표 형식이 아닐 수 있습니다. Booking reference ID·Reviewed date·Stars·Reviews 열이 있는지 확인하세요.'
+                      : 'This may not be a Klook table. Ensure Booking reference ID, Reviewed date, Stars, and Reviews columns are included.'}
+                  </p>
+                ) : null}
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                {isKo
+                  ? `파싱 ${bulkPasteRows.length}건 · 유효 ${bulkPasteValidation.valid.length}건 · 무효 ${bulkPasteValidation.invalid.length}건 · 예약번호 ${bulkPasteValidation.valid.filter((row) => row.reservationNumber).length}건`
+                  : `Parsed ${bulkPasteRows.length} · valid ${bulkPasteValidation.valid.length} · invalid ${bulkPasteValidation.invalid.length} · with booking ref ${bulkPasteValidation.valid.filter((row) => row.reservationNumber).length}`}
+              </p>
+
+              <button
+                type="button"
+                onClick={() => void runBulkPasteImport()}
+                disabled={importing || bulkPasteValidation.valid.length === 0}
+                className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 disabled:opacity-50"
+              >
+                {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                {isKo
+                  ? `${bulkPasteValidation.valid.length}건 가져오기`
+                  : `Import ${bulkPasteValidation.valid.length}`}
+              </button>
+            </>
+          ) : (
+            <>
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="space-y-2">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -487,6 +602,8 @@ export default function OtaReviewsImportSection({
                 ? '리뷰 1건 등록'
                 : 'Save 1 review'}
           </button>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-5">
