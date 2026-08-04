@@ -66,6 +66,7 @@ export type CustomerBookingLineInput = {
   child: number
   infant: number
   selectedOptions: Record<string, string>
+  optionQuantities?: Record<string, number>
   pickupHotelId?: string | null
   variantKey?: string | null
 }
@@ -131,6 +132,17 @@ export function parseCustomerBookingLine(raw: unknown): CustomerBookingLineInput
     }
   }
 
+  const optionQuantitiesRaw = o.optionQuantities
+  const optionQuantities: Record<string, number> = {}
+  if (optionQuantitiesRaw && typeof optionQuantitiesRaw === 'object' && !Array.isArray(optionQuantitiesRaw)) {
+    for (const [k, v] of Object.entries(optionQuantitiesRaw as Record<string, unknown>)) {
+      const qty = Number(v)
+      if (typeof k === 'string' && k.trim() && Number.isFinite(qty) && qty > 0) {
+        optionQuantities[k.trim()] = Math.floor(qty)
+      }
+    }
+  }
+
   return {
     productId,
     tourDate,
@@ -139,6 +151,7 @@ export function parseCustomerBookingLine(raw: unknown): CustomerBookingLineInput
     child: Math.floor(child),
     infant: Math.floor(infant),
     selectedOptions,
+    ...(Object.keys(optionQuantities).length > 0 ? { optionQuantities } : {}),
     pickupHotelId:
       typeof o.pickupHotelId === 'string' && o.pickupHotelId.trim() ? o.pickupHotelId.trim() : null,
     variantKey: typeof o.variantKey === 'string' && o.variantKey.trim() ? o.variantKey.trim() : null,
@@ -249,6 +262,22 @@ async function assertDateSaleAvailable(
   if (!anyAvailable) {
     throw new Error('선택한 날짜는 판매 중이 아닙니다.')
   }
+}
+
+function calculateAdditionalOptionLineTotal(
+  option: {
+    adult_price_adjustment?: number | null
+    child_price_adjustment?: number | null
+    infant_price_adjustment?: number | null
+  },
+  line: Pick<CustomerBookingLineInput, 'adults' | 'child' | 'infant'>,
+  quantity: number
+): number {
+  const adult = Number(option.adult_price_adjustment) || 0
+  const child = Number(option.child_price_adjustment) || 0
+  const infant = Number(option.infant_price_adjustment) || 0
+  const perBooking = adult * line.adults + child * line.child + infant * line.infant
+  return roundMoney(perBooking * quantity)
 }
 
 async function classifySelectedOptions(
@@ -364,12 +393,12 @@ async function calculateCatalogFallbackPrice(
   if (additionalOptionIds.length > 0) {
     const { data: productOptions } = await admin
       .from('product_options')
-      .select('id, adult_price_adjustment')
+      .select('id, adult_price_adjustment, child_price_adjustment, infant_price_adjustment')
       .in('id', additionalOptionIds)
 
     for (const option of productOptions || []) {
-      const unit = Number(option.adult_price_adjustment) || 0
-      additionalOptionsPrice += unit * totalPeople
+      const qty = line.optionQuantities?.[option.id] ?? 1
+      additionalOptionsPrice += calculateAdditionalOptionLineTotal(option, line, qty)
     }
     additionalOptionsPrice = roundMoney(additionalOptionsPrice)
   }
@@ -891,24 +920,35 @@ async function insertReservationChoicesAndOptions(
   if (additionalOptionIds.length > 0) {
     const { data: optionsMeta } = await admin
       .from('product_options')
-      .select('id, adult_price_adjustment')
+      .select('id, adult_price_adjustment, child_price_adjustment, infant_price_adjustment')
       .in('id', additionalOptionIds)
 
-    const priceById = new Map<string, number>()
+    const priceById = new Map<
+      string,
+      {
+        adult_price_adjustment?: number | null
+        child_price_adjustment?: number | null
+        infant_price_adjustment?: number | null
+      }
+    >()
     for (const opt of optionsMeta || []) {
-      const price = Number(opt.adult_price_adjustment ?? 0) || 0
-      priceById.set(opt.id, price)
+      priceById.set(opt.id, opt)
     }
 
     const rows = additionalOptionIds.map((optionId) => {
-      const unit = priceById.get(optionId) || 0
-      const lineTotal = roundMoney(unit * totalPeople)
+      const meta = priceById.get(optionId)
+      const qty = line.optionQuantities?.[optionId] ?? 1
+      const lineTotal = meta
+        ? calculateAdditionalOptionLineTotal(meta, line, qty)
+        : 0
       optionTotal += lineTotal
+      const unitPrice =
+        qty > 0 ? roundMoney(lineTotal / qty) : Number(meta?.adult_price_adjustment ?? 0) || 0
       return {
         reservation_id: reservationId,
         option_id: optionId,
-        ea: totalPeople,
-        price: unit,
+        ea: qty,
+        price: unitPrice,
         total_price: lineTotal,
         status: 'active',
       }

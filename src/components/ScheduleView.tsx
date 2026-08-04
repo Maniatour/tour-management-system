@@ -7870,6 +7870,13 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           </DialogHeader>
 
           <div className="mt-3 space-y-5">
+            {scheduleHealthIssueCount === 0 ? (
+              <p className="rounded-lg border border-gray-200 bg-gray-50/80 px-4 py-6 text-center text-sm text-gray-500">
+                {locale === 'ko' ? '점검 항목 모두 해당 없음' : 'No issues found in any check'}
+              </p>
+            ) : null}
+
+            {scheduleCapacityOverflowItems.length > 0 ? (
             <section className="rounded-lg border border-red-200 bg-red-50/50 p-3">
               <h4 className="text-sm font-bold text-red-800">
                 1. {locale === 'ko' ? '투어 정원 초과 (이번 달·오늘 이후)' : 'Tour capacity exceeded (this month, from today)'}
@@ -7879,9 +7886,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   ? '배정 인원 합이 수용 합을 넘는 상품·날짜입니다.'
                   : 'Product/date cells where assigned pax exceed total capacity.'}
               </p>
-              {scheduleCapacityOverflowItems.length === 0 ? (
-                <p className="mt-2 text-sm text-gray-500">{locale === 'ko' ? '해당 없음' : 'None'}</p>
-              ) : (
                 <ul className="mt-2 max-h-40 space-y-2 overflow-y-auto pr-1">
                   {scheduleCapacityOverflowItems.map((item) => {
                     const ck = `${item.productId}__${item.dateString}`
@@ -7934,16 +7938,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                     )
                   })}
                 </ul>
-              )}
             </section>
+            ) : null}
 
+            {scheduleHealthFromFetch.vehicleMismatch.length > 0 ? (
             <section className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
               <h4 className="text-sm font-bold text-amber-900">
                 2. {locale === 'ko' ? '차량 배정 · 투어 건수 불일치 (7일)' : 'Vehicle vs tour counts (7 days)'}
               </h4>
-              {scheduleHealthFromFetch.vehicleMismatch.length === 0 ? (
-                <p className="mt-2 text-sm text-gray-500">{locale === 'ko' ? '해당 없음' : 'None'}</p>
-              ) : (
                 <div className="mt-2 max-h-36 overflow-auto rounded border border-amber-100 bg-white/80">
                   <table className="w-full text-xs">
                     <thead>
@@ -7968,9 +7970,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                     </tbody>
                   </table>
                 </div>
-              )}
             </section>
+            ) : null}
 
+            {scheduleHealthFromFetch.incompleteTours.length > 0 ? (
             <section className="rounded-lg border border-violet-200 bg-violet-50/50 p-3">
               <h4 className="text-sm font-bold text-violet-900">
                 3.{' '}
@@ -7978,9 +7981,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   ? '7일 이내 · 가이드·어시·차량 미배정 투어'
                   : 'Within 7 days — missing guide, assistant, or vehicle'}
               </h4>
-              {scheduleHealthFromFetch.incompleteTours.length === 0 ? (
-                <p className="mt-2 text-sm text-gray-500">{locale === 'ko' ? '해당 없음' : 'None'}</p>
-              ) : (
                 <ul className="mt-2 max-h-40 space-y-1.5 overflow-y-auto pr-1 text-sm">
                   {scheduleHealthFromFetch.incompleteTours.map((row) => (
                     <li key={row.tourId}>
@@ -8005,9 +8005,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                     </li>
                   ))}
                 </ul>
-              )}
             </section>
+            ) : null}
 
+            {scheduleHealthFromFetch.ticketPeopleMismatch.length > 0 ? (
             <section className="rounded-lg border border-sky-200 bg-sky-50/50 p-3">
               <h4 className="text-sm font-bold text-sky-900">
                 4.{' '}
@@ -8015,9 +8016,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   ? '4일 이내 · 투어 인원 ≠ 입장권 합(EA)'
                   : 'Within 4 days — tour pax ≠ ticket EA sum'}
               </h4>
-              {scheduleHealthFromFetch.ticketPeopleMismatch.length === 0 ? (
-                <p className="mt-2 text-sm text-gray-500">{locale === 'ko' ? '해당 없음' : 'None'}</p>
-              ) : (
                 <ul className="mt-2 max-h-40 space-y-1.5 overflow-y-auto pr-1 text-sm">
                   {scheduleHealthFromFetch.ticketPeopleMismatch.map((row) => (
                     <li key={row.tourId}>
@@ -8039,9 +8037,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                     </li>
                   ))}
                 </ul>
-              )}
             </section>
+            ) : null}
 
+            {scheduleHealthFromFetch.unconfirmedToursWithPendingOrConfirmedRes.length > 0 ? (
             <section className="rounded-lg border border-orange-200 bg-orange-50/50 p-3">
               <h4 className="text-sm font-bold text-orange-900">
                 5.{' '}
@@ -8054,9 +8053,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   ? '투어에 배정된 예약 중 대기(pending) 또는 확정(confirmed)이 있고, 투어 상태가 확정이 아닌 경우입니다.'
                   : 'Assigned reservations include pending or confirmed, while tour status is not confirmed.'}
               </p>
-              {scheduleHealthFromFetch.unconfirmedToursWithPendingOrConfirmedRes.length === 0 ? (
-                <p className="mt-2 text-sm text-gray-500">{locale === 'ko' ? '해당 없음' : 'None'}</p>
-              ) : (
                 <ul className="mt-2 max-h-48 space-y-1.5 overflow-y-auto pr-1 text-sm">
                   {scheduleHealthFromFetch.unconfirmedToursWithPendingOrConfirmedRes.map((row) => {
                     const statusOptions = buildTourStatusSelectOptions(row.tourStatus, locale)
@@ -8126,8 +8122,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                     )
                   })}
                 </ul>
-              )}
             </section>
+            ) : null}
 
             <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-3">
               <p className="text-xs font-semibold text-gray-800">

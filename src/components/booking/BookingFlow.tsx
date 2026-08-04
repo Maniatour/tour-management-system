@@ -148,6 +148,7 @@ interface ChoiceGroup {
   choice_image_url?: string | null
   choice_thumbnail_url?: string | null
   is_required: boolean
+  allows_multiple?: boolean
   options: ChoiceOption[]
 }
 
@@ -323,6 +324,7 @@ type BookingCheckoutRequestBody = {
   children: number
   infants: number
   selectedOptions: Record<string, string>
+  optionQuantities?: Record<string, number>
   pickupHotelId?: string | null
   couponCode?: string | null
   customerInfo: BookingData['customerInfo'] & {
@@ -1471,13 +1473,14 @@ export default function BookingFlow({
     choice_name: isEnglish ? (option.option_name_en || option.option_name || option.name) : (option.option_name_ko || option.option_name || option.name),
     choice_name_ko: option.option_name_ko || option.option_name || option.name,
     choice_name_en: option.option_name_en || option.option_name || option.name,
-    choice_type: 'optional',
+    choice_type: option.is_multiple ? 'optional_quantity' : 'optional',
     choice_description: isEnglish ? (option.option_description_en || option.option_description || option.description) : (option.option_description_ko || option.option_description || option.description),
     choice_description_ko: option.option_description_ko || option.option_description || option.description || null,
     choice_description_en: option.option_description_en || option.option_description || option.description || null,
     choice_image_url: option.option_image_url || option.option_thumbnail_url || null,
     choice_thumbnail_url: option.option_thumbnail_url || option.option_image_url || null,
     is_required: false,
+    allows_multiple: option.is_multiple,
     options: [{
       option_id: option.id,
       option_name: isEnglish ? (option.option_name_en || option.option_name || option.name) : (option.option_name_ko || option.option_name || option.name),
@@ -1546,6 +1549,56 @@ export default function BookingFlow({
       return basePrice * totalParticipants
     }
   }
+
+  const calculateOptionalOptionLineTotal = useCallback(
+    (option: ChoiceOption, quantity: number) => {
+      if (quantity <= 0) return 0
+      const adultPrice = option.option_price || 0
+      const childPrice = option.option_child_price || 0
+      const infantPrice = option.option_infant_price || 0
+      const perBooking =
+        adultPrice * bookingData.participants.adults +
+        childPrice * bookingData.participants.children +
+        infantPrice * bookingData.participants.infants
+      return perBooking * quantity
+    },
+    [bookingData.participants]
+  )
+
+  const buildOptionQuantitiesPayload = useCallback(() => {
+    const optionQuantities: Record<string, number> = {}
+    optionalChoices.forEach((group) => {
+      if (group.choice_type !== 'optional_quantity') return
+      const groupQuantities = selectedChoiceQuantities[group.choice_id] ?? {}
+      Object.entries(groupQuantities).forEach(([optionId, qty]) => {
+        if (qty > 0) optionQuantities[optionId] = qty
+      })
+    })
+    return optionQuantities
+  }, [optionalChoices, selectedChoiceQuantities])
+
+  const applyOptionalQuantityChange = useCallback(
+    (groupId: string, optionId: string, newQuantity: number, maxQty: number) => {
+      const safeQuantity = Math.max(0, Math.min(newQuantity, maxQty))
+      setSelectedChoiceQuantities((prev) => ({
+        ...prev,
+        [groupId]: {
+          ...(prev[groupId] || {}),
+          [optionId]: safeQuantity,
+        },
+      }))
+      setBookingData((prev) => {
+        const nextOptions = { ...prev.selectedOptions }
+        if (safeQuantity > 0) {
+          nextOptions[groupId] = optionId
+        } else if (nextOptions[groupId] === optionId) {
+          delete nextOptions[groupId]
+        }
+        return { ...prev, selectedOptions: nextOptions }
+      })
+    },
+    []
+  )
 
   // 초이스 가격 계산 (애뉴얼 패스 로직 포함)
   const calculateChoicesPrice = () => {
@@ -1619,6 +1672,17 @@ export default function BookingFlow({
             if (quantity > 0 && option.option_price) {
               // quantity UI: 단가 × 선택 수량 (인원 패스·객실·차량 대수 공통)
               choicesTotal += option.option_price * quantity
+            }
+          })
+          return
+        }
+
+        if (group.choice_type === 'optional_quantity') {
+          const groupQuantities = selectedChoiceQuantities[group.choice_id] ?? {}
+          group.options.forEach((option) => {
+            const quantity = groupQuantities[option.option_id] ?? 0
+            if (quantity > 0) {
+              choicesTotal += calculateOptionalOptionLineTotal(option, quantity)
             }
           })
           return
@@ -1999,6 +2063,25 @@ export default function BookingFlow({
     }
 
     allChoices.forEach((group: ChoiceGroup) => {
+      if (group.choice_type === 'optional_quantity') {
+        const groupQuantities = selectedChoiceQuantities[group.choice_id] ?? {}
+        group.options.forEach((option) => {
+          const quantity = groupQuantities[option.option_id] ?? 0
+          if (quantity <= 0) return
+          const amount = calculateOptionalOptionLineTotal(option, quantity)
+          if (amount <= 0) return
+          lines.push({
+            label: getChoiceGroupLabel(group),
+            description: [
+              getChoiceOptionLabel(option),
+              translate(`수량 ${quantity}`, `Qty ${quantity}`),
+            ].join(' · '),
+            amount,
+          })
+        })
+        return
+      }
+
       const selectedOptionId = bookingData.selectedOptions[group.choice_id]
       if (!selectedOptionId) return
 
@@ -2032,6 +2115,31 @@ export default function BookingFlow({
     return country ? `${country.phoneCode}${bookingData.customerInfo.phone}` : ''
   }
 
+  const getCustomerInfoValidationErrors = useCallback(() => {
+    const { name, email, phone, customerLanguage, country } = bookingData.customerInfo
+    const errors: string[] = []
+
+    if (!name?.trim()) {
+      errors.push(translate('이름', 'Name'))
+    }
+    if (!email?.trim()) {
+      errors.push(translate('이메일', 'Email'))
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      errors.push(translate('올바른 이메일 형식', 'Valid email address'))
+    }
+    if (!country) {
+      errors.push(translate('국가', 'Country'))
+    }
+    if (!phone?.trim()) {
+      errors.push(translate('전화번호', 'Phone number'))
+    }
+    if (!customerLanguage) {
+      errors.push(translate('고객의 국가 언어', "Customer's native language"))
+    }
+
+    return errors
+  }, [bookingData.customerInfo, translate])
+
   const handleNext = () => {
     // 통합된 첫 단계(날짜+인원+필수 초이스)에서 애뉴얼 패스 검증
     if (currentStep === 0) {
@@ -2045,6 +2153,18 @@ export default function BookingFlow({
       const quantityValidation = validateQuantityChoices()
       if (!quantityValidation.valid) {
         showValidationAlert(quantityValidation.error)
+        return
+      }
+    }
+
+    if (currentStep === 2) {
+      const customerInfoErrors = getCustomerInfoValidationErrors()
+      if (customerInfoErrors.length > 0) {
+        showValidationAlert(
+          isEnglish
+            ? `Please complete the required fields to continue as a guest: ${customerInfoErrors.join(', ')}. Login is optional.`
+            : `비회원 예약을 위해 다음 필수 항목을 입력해 주세요: ${customerInfoErrors.join(', ')}. (로그인은 선택사항입니다)`
+        )
         return
       }
     }
@@ -2248,7 +2368,7 @@ export default function BookingFlow({
 
       // 추가 선택에서 선택된 항목 찾기
       optionalChoices.forEach((group) => {
-        if (group.choice_type === 'quantity') {
+        if (group.choice_type === 'quantity' || group.choice_type === 'optional_quantity') {
           const groupQuantities = selectedChoiceQuantities[group.choice_id] ?? {}
           group.options.forEach((option) => {
             const quantity = groupQuantities[option.option_id] ?? 0
@@ -2315,6 +2435,7 @@ export default function BookingFlow({
 
   const buildCheckoutBody = useCallback((): BookingCheckoutRequestBody => {
     const fullPhoneNumber = getFullPhoneNumber()
+    const optionQuantities = buildOptionQuantitiesPayload()
     return {
       productId: product.id,
       tourDate: bookingData.tourDate,
@@ -2323,6 +2444,7 @@ export default function BookingFlow({
       children: bookingData.participants.children,
       infants: bookingData.participants.infants,
       selectedOptions: bookingData.selectedOptions,
+      ...(Object.keys(optionQuantities).length > 0 ? { optionQuantities } : {}),
       pickupHotelId: bookingData.pickupHotelId || null,
       couponCode: appliedCoupon?.coupon_code || null,
       customerInfo: {
@@ -2332,7 +2454,7 @@ export default function BookingFlow({
         alternativeDates: bookingData.alternativeDates,
       },
     }
-  }, [product.id, bookingData, appliedCoupon])
+  }, [product.id, bookingData, appliedCoupon, buildOptionQuantitiesPayload])
 
   // 카드 결제 완료: 서버에서 이미 예약·결제·이메일을 처리함 → confirmation 페이지로 이동
   const handlePaymentComplete = async (result: BookingPaymentCompleteResult) => {
@@ -2620,19 +2742,8 @@ export default function BookingFlow({
         )
       case 1: // 추가 선택
         return true // 추가 선택은 선택사항
-      case 2: // 고객 정보
-        const { name, email, phone, customerLanguage, country } = bookingData.customerInfo
-        return !!(
-          name && 
-          name.trim() &&
-          email && 
-          email.trim() &&
-          /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && // 이메일 형식 검증
-          country &&
-          phone && 
-          phone.trim() &&
-          customerLanguage
-        )
+      case 2: // 고객 정보 (비회원 예약 가능 — 연락처 필수)
+        return getCustomerInfoValidationErrors().length === 0
       case 3: // 결제
         // Stripe Elements가 자동으로 카드 정보를 검증하므로 여기서는 항상 true
         // 카드 결제는 PaymentForm에서 처리
@@ -2640,7 +2751,7 @@ export default function BookingFlow({
       default:
         return false
     }
-  }, [currentStep, bookingData, requiredChoices])
+  }, [currentStep, bookingData, requiredChoices, getCustomerInfoValidationErrors])
 
   const handleDateStringChange = useCallback(
     (dateString: string) => {
@@ -3799,124 +3910,180 @@ export default function BookingFlow({
                   <p className="text-gray-600">{translate('추가 선택사항을 불러오는 중...', 'Loading optional add-ons...')}</p>
                 </div>
               ) : optionalChoices.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {optionalChoices.map((group) => (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {optionalChoices.map((group) =>
                     group.options.map((option) => {
                       const adultPrice = option.option_price || 0
                       const childPrice = option.option_child_price || 0
                       const infantPrice = option.option_infant_price || 0
                       const hasPrice = adultPrice > 0 || childPrice > 0 || infantPrice > 0
-                      
+                      const supportsQuantity = group.choice_type === 'optional_quantity'
+                      const maxQty = supportsQuantity ? 99 : 1
+                      const currentQuantity =
+                        selectedChoiceQuantities[group.choice_id]?.[option.option_id] || 0
+                      const lineTotal = supportsQuantity
+                        ? calculateOptionalOptionLineTotal(option, currentQuantity)
+                        : currentQuantity > 0
+                          ? calculateOptionalOptionLineTotal(option, 1)
+                          : 0
+                      const isActive = currentQuantity > 0
+
                       return (
-                        <label 
-                          key={option.option_id} 
-                          className={`relative flex flex-col cursor-pointer rounded-lg border-2 bg-white hover:border-green-400 hover:shadow-lg transition-all ${
-                            bookingData.selectedOptions[group.choice_id] === option.option_id 
-                              ? 'border-green-500 shadow-md' 
-                              : 'border-gray-200'
+                        <div
+                          key={option.option_id}
+                          className={`relative flex flex-col rounded-xl border-2 bg-white transition-all ${
+                            isActive
+                              ? 'border-green-500 shadow-md'
+                              : 'border-gray-200 hover:border-green-400 hover:shadow-lg'
                           }`}
                         >
-                          <input
-                            type="checkbox"
-                            checked={bookingData.selectedOptions[group.choice_id] === option.option_id}
-                            onChange={() => {
-                              setBookingData(prev => {
-                                // 이미 선택된 옵션이면 선택 취소
-                                if (prev.selectedOptions[group.choice_id] === option.option_id) {
-                                  const newSelectedOptions = { ...prev.selectedOptions }
-                                  delete newSelectedOptions[group.choice_id]
-                                  return {
-                                    ...prev,
-                                    selectedOptions: newSelectedOptions
-                                  }
-                                } else {
-                                  // 새로운 옵션 선택
-                                  return {
-                                    ...prev,
-                                    selectedOptions: {
-                                      ...prev.selectedOptions,
-                                      [group.choice_id]: option.option_id
-                                    }
-                                  }
-                                }
-                              })
-                            }}
-                            className="absolute top-3 right-3 w-5 h-5 text-green-600"
-                          />
-                          
-                          {/* 이미지 */}
-                          {group.choice_image_url && (
-                            <div className="w-full h-48 overflow-hidden rounded-t-lg relative">
+                          {group.choice_image_url ? (
+                            <div className="relative h-48 w-full overflow-hidden rounded-t-xl">
                               <Image
                                 src={group.choice_thumbnail_url || group.choice_image_url}
-                                alt={isEnglish ? group.choice_name_en || group.choice_name : group.choice_name_ko || group.choice_name}
+                                alt={
+                                  isEnglish
+                                    ? group.choice_name_en || group.choice_name
+                                    : group.choice_name_ko || group.choice_name
+                                }
                                 fill
-                                sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                                sizes="(max-width: 768px) 100vw, 50vw"
                                 className="object-cover"
-                                onError={() => {
-                                  // 이미지 로드 실패 시 처리
-                                }}
                               />
                             </div>
-                          )}
-                          
-                          {/* 내용 영역 */}
-                          <div className="flex flex-col flex-1 p-4">
-                            {/* 제목 */}
-                            <h4 className="font-semibold text-gray-900 text-lg mb-2 pr-8">
-                              {isEnglish ? group.choice_name_en || group.choice_name : group.choice_name_ko || group.choice_name}
+                          ) : null}
+
+                          <div className="flex flex-1 flex-col p-4">
+                            <h4 className="mb-2 pr-2 text-lg font-semibold text-gray-900">
+                              {isEnglish
+                                ? group.choice_name_en || group.choice_name
+                                : group.choice_name_ko || group.choice_name}
                             </h4>
-                            
-                            {/* 설명 */}
-                            {group.choice_description && (
-                              <p className="text-sm text-gray-600 mb-3 line-clamp-3">
-                                {isEnglish ? group.choice_description_en || group.choice_description : group.choice_description_ko || group.choice_description}
+
+                            {group.choice_description ? (
+                              <p className="mb-3 line-clamp-3 text-sm text-gray-600">
+                                {isEnglish
+                                  ? group.choice_description_en || group.choice_description
+                                  : group.choice_description_ko || group.choice_description}
                               </p>
-                            )}
-                            
-                            {/* 가격 정보 */}
-                            {hasPrice && (
-                              <div className="mt-auto pt-3 border-t border-gray-200">
+                            ) : null}
+
+                            {hasPrice ? (
+                              <div className="mb-4 border-t border-gray-200 pt-3">
                                 <div className="space-y-1">
-                                  {adultPrice > 0 && (
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-xs text-gray-600">{translate('성인', 'Adult')}</span>
-                                      <span className="text-green-600 font-semibold text-sm">
+                                  {adultPrice > 0 ? (
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs text-gray-600">
+                                        {translate('성인', 'Adult')}
+                                      </span>
+                                      <span className="text-sm font-semibold text-green-600">
                                         +${adultPrice.toFixed(2)}
                                       </span>
                                     </div>
-                                  )}
-                                  {childPrice > 0 && (
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-xs text-gray-600">{translate('아동', 'Child')}</span>
-                                      <span className="text-green-600 font-medium text-xs">
+                                  ) : null}
+                                  {childPrice > 0 ? (
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs text-gray-600">
+                                        {translate('아동', 'Child')}
+                                      </span>
+                                      <span className="text-xs font-medium text-green-600">
                                         +${childPrice.toFixed(2)}
                                       </span>
                                     </div>
-                                  )}
-                                  {infantPrice > 0 && (
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-xs text-gray-600">{translate('유아', 'Infant')}</span>
-                                      <span className="text-green-600 font-medium text-xs">
+                                  ) : null}
+                                  {infantPrice > 0 ? (
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs text-gray-600">
+                                        {translate('유아', 'Infant')}
+                                      </span>
+                                      <span className="text-xs font-medium text-green-600">
                                         +${infantPrice.toFixed(2)}
                                       </span>
                                     </div>
-                                  )}
+                                  ) : null}
                                 </div>
                               </div>
-                            )}
-                            
-                            {/* 기본 옵션 배지 */}
-                            {option.is_default && (
-                              <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded mt-3 inline-block self-start">
+                            ) : null}
+
+                            <div className="mt-auto flex items-center justify-between gap-3 border-t border-gray-200 pt-4">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    applyOptionalQuantityChange(
+                                      group.choice_id,
+                                      option.option_id,
+                                      currentQuantity - 1,
+                                      maxQty
+                                    )
+                                  }
+                                  disabled={currentQuantity <= 0}
+                                  className="flex h-9 w-9 items-center justify-center rounded-full border border-border hover:bg-muted disabled:opacity-40"
+                                  aria-label={translate('수량 줄이기', 'Decrease quantity')}
+                                >
+                                  <Minus className="h-4 w-4" />
+                                </button>
+                                <div className="flex items-center overflow-hidden rounded-lg border border-border">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={maxQty}
+                                    value={currentQuantity}
+                                    onChange={(e) =>
+                                      applyOptionalQuantityChange(
+                                        group.choice_id,
+                                        option.option_id,
+                                        Math.max(0, parseInt(e.target.value, 10) || 0),
+                                        maxQty
+                                      )
+                                    }
+                                    className="w-14 border-0 bg-white px-2 py-2 text-center text-sm font-semibold focus:outline-none focus:ring-0"
+                                    aria-label={translate('수량', 'Quantity')}
+                                  />
+                                  <span className="border-l border-border bg-muted/40 px-2 py-2 text-xs font-medium text-muted-foreground">
+                                    {translate('개', 'ea')}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    applyOptionalQuantityChange(
+                                      group.choice_id,
+                                      option.option_id,
+                                      currentQuantity + 1,
+                                      maxQty
+                                    )
+                                  }
+                                  disabled={currentQuantity >= maxQty}
+                                  className="flex h-9 w-9 items-center justify-center rounded-full border border-border hover:bg-muted disabled:opacity-40"
+                                  aria-label={translate('수량 늘리기', 'Increase quantity')}
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </button>
+                              </div>
+
+                              {lineTotal > 0 ? (
+                                <div className="text-right">
+                                  <p className="text-xs text-muted-foreground">
+                                    {translate('합계', 'Total')}
+                                  </p>
+                                  <p className="text-sm font-semibold text-green-700">
+                                    +${lineTotal.toFixed(2)}
+                                  </p>
+                                </div>
+                              ) : null}
+                            </div>
+
+                            {option.is_default ? (
+                              <span className="mt-3 inline-block self-start rounded bg-gray-200 px-2 py-1 text-xs text-gray-500">
                                 {translate('기본', 'Default')}
                               </span>
-                            )}
+                            ) : null}
                           </div>
-                        </label>
+                        </div>
                       )
                     })
-                  ))}
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-8">
@@ -3932,100 +4099,121 @@ export default function BookingFlow({
         return (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">{translate('고객 정보', 'Guest Information')}</h3>
-              <BookingFlowGuestDetailsSection
-                isEnglish={isEnglish}
-                translate={translate}
-                customerInfo={bookingData.customerInfo}
-                countries={countries}
-                allLanguages={allLanguages}
-                tourLanguages={tourLanguages}
-                selectedTourDate={bookingData.tourDate}
-                productId={product.id}
-                pickupHotelId={bookingData.pickupHotelId}
-                pickupHotelCustom={bookingData.pickupHotelCustom}
-                alternativeDates={bookingData.alternativeDates}
-                onCustomerInfoChange={(patch) =>
-                  setBookingData((prev) => ({
-                    ...prev,
-                    customerInfo: { ...prev.customerInfo, ...patch },
-                  }))
-                }
-                onPickupHotelIdChange={(hotelId, label) =>
-                  setBookingData((prev) => ({
-                    ...prev,
-                    pickupHotelId: hotelId,
-                    pickupHotelLabel: label || '',
-                  }))
-                }
-                onPickupHotelCustomChange={(value) =>
-                  setBookingData((prev) => ({
-                    ...prev,
-                    pickupHotelCustom: value,
-                    ...(value ? { pickupHotelLabel: '' } : {}),
-                  }))
-                }
-                onAlternativeDatesChange={(dates) =>
-                  setBookingData((prev) => ({ ...prev, alternativeDates: dates }))
-                }
-                stripSpacesFromContactInput={stripSpacesFromContactInput}
-              />
-            </div>
-              
-              {/* 로그인/회원가입 섹션 */}
-              <div className="border-t border-gray-200 pt-4 mt-4">
-                {!isAuthenticated ? (
-                  <div className="bg-muted/50 border border-border rounded-lg p-4">
-                    <p className="text-sm text-primary mb-3">
-                      {translate('회원으로 로그인하시면 정보를 자동으로 입력해드립니다.', 'Log in as a member to automatically fill in your information.')}
-                    </p>
-                    <div className="flex space-x-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAuthMode('login')
-                          setShowAuthModal(true)
-                        }}
-                        className="flex-1 bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
-                      >
-                        {translate('로그인', 'Log In')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAuthMode('signup')
-                          setShowAuthModal(true)
-                        }}
-                        className="flex-1 rounded-lg border border-primary bg-background px-4 py-2 text-sm font-medium text-primary transition-colors hover:bg-muted/50"
-                      >
-                        {translate('회원가입', 'Sign Up')}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-green-800">
-                          {translate('로그인됨', 'Logged in')}: {userEmail}
-                        </p>
-                        {bookingData.customerInfo.name && (
-                          <p className="text-xs text-green-700 mt-1">
-                            {translate('이름', 'Name')}: {bookingData.customerInfo.name}
-                          </p>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleLogout}
-                        className="text-green-700 hover:text-green-900 text-sm font-medium"
-                      >
-                        {translate('로그아웃', 'Log Out')}
-                      </button>
-                    </div>
-                  </div>
+              <h3 className="text-lg font-semibold text-gray-900">{translate('고객 정보', 'Guest Information')}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {translate(
+                  '로그인 없이도 예약할 수 있습니다. 아래 연락처 정보를 입력해 주세요.',
+                  'You can book without logging in. Please enter your contact details below.'
                 )}
+              </p>
+            </div>
+
+            {!isAuthenticated ? (
+              <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {translate('선택', 'Optional')}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {translate(
+                    '회원이시면 로그인하면 정보가 자동으로 입력됩니다.',
+                    'Members can log in to auto-fill their details.'
+                  )}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('login')
+                      setShowAuthModal(true)
+                    }}
+                    className="rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
+                  >
+                    {translate('로그인', 'Log In')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('signup')
+                      setShowAuthModal(true)
+                    }}
+                    className="rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
+                  >
+                    {translate('회원가입', 'Sign Up')}
+                  </button>
+                </div>
               </div>
+            ) : (
+              <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-green-800">
+                      {translate('로그인됨', 'Logged in')}: {userEmail}
+                    </p>
+                    {bookingData.customerInfo.name ? (
+                      <p className="mt-1 text-xs text-green-700">
+                        {translate('이름', 'Name')}: {bookingData.customerInfo.name}
+                      </p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="text-sm font-medium text-green-700 hover:text-green-900"
+                  >
+                    {translate('로그아웃', 'Log Out')}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <BookingFlowGuestDetailsSection
+              isEnglish={isEnglish}
+              translate={translate}
+              customerInfo={bookingData.customerInfo}
+              countries={countries}
+              allLanguages={allLanguages}
+              tourLanguages={tourLanguages}
+              selectedTourDate={bookingData.tourDate}
+              productId={product.id}
+              pickupHotelId={bookingData.pickupHotelId}
+              pickupHotelCustom={bookingData.pickupHotelCustom}
+              alternativeDates={bookingData.alternativeDates}
+              onCustomerInfoChange={(patch) =>
+                setBookingData((prev) => ({
+                  ...prev,
+                  customerInfo: { ...prev.customerInfo, ...patch },
+                }))
+              }
+              onPickupHotelIdChange={(hotelId, label) =>
+                setBookingData((prev) => ({
+                  ...prev,
+                  pickupHotelId: hotelId,
+                  pickupHotelLabel: label || '',
+                }))
+              }
+              onPickupHotelCustomChange={(value) =>
+                setBookingData((prev) => ({
+                  ...prev,
+                  pickupHotelCustom: value,
+                  ...(value ? { pickupHotelLabel: '' } : {}),
+                }))
+              }
+              onAlternativeDatesChange={(dates) =>
+                setBookingData((prev) => ({ ...prev, alternativeDates: dates }))
+              }
+              stripSpacesFromContactInput={stripSpacesFromContactInput}
+            />
+
+            {getCustomerInfoValidationErrors().length > 0 ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <p className="text-sm font-medium text-amber-900">
+                  {translate('다음으로 진행하려면 필수 항목을 입력해 주세요', 'Complete these required fields to continue')}
+                </p>
+                <p className="mt-1 text-sm text-amber-800">
+                  {getCustomerInfoValidationErrors().join(', ')}
+                </p>
+              </div>
+            ) : null}
           </div>
         )
 
@@ -4498,9 +4686,9 @@ export default function BookingFlow({
                     ) : (
                       <button
                         onClick={handleNext}
-                        disabled={!isStepValid()}
+                        disabled={currentStep === 2 ? false : !isStepValid()}
                         className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
-                          isStepValid()
+                          currentStep === 2 || isStepValid()
                             ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                             : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                         }`}

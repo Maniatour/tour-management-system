@@ -192,8 +192,18 @@ export async function handleApiSecurity(
   return null
 }
 
-export function applySecurityHeaders(response: NextResponse): NextResponse {
-  response.headers.set('X-Frame-Options', 'DENY')
+/** 관리자 고객 페이지 작업·위치 미리보기 iframe (`?preview=1`) */
+export function isCustomerPagePreviewEmbedRequest(req: NextRequest): boolean {
+  return req.nextUrl.searchParams.get('preview') === '1'
+}
+
+export function applySecurityHeaders(
+  response: NextResponse,
+  req?: NextRequest
+): NextResponse {
+  const frameOptions =
+    req && isCustomerPagePreviewEmbedRequest(req) ? 'SAMEORIGIN' : 'DENY'
+  response.headers.set('X-Frame-Options', frameOptions)
   response.headers.set('X-Content-Type-Options', 'nosniff')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
   response.headers.set(

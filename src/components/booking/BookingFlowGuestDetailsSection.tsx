@@ -149,6 +149,12 @@ export default function BookingFlowGuestDetailsSection({
   return (
     <div className="space-y-6">
       <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          {translate(
+            '비회원 예약을 위해 연락처 정보를 입력해 주세요.',
+            'Enter your contact details to continue as a guest.'
+          )}
+        </p>
         <div>
           <label className="mb-1 block text-sm font-medium text-gray-700">
             {translate('이름 *', 'Name *')}

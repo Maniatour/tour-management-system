@@ -11,6 +11,7 @@ import {
   normalizeTeamBoardPosition,
   STAFF_SITE_ALERT_POSITION_TABS,
   STAFF_SITE_ALERT_TARGET_GROUPS,
+  staffSiteAlertLocalizedTitle,
   staffSiteAlertTargetSummary,
   type StaffSiteAlertRecipientMode,
   type StaffSiteAlertRecipientRow,
@@ -340,7 +341,7 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-800">
-                    {isKo ? '제목 (영문)' : 'Title (English)'}
+                    {isKo ? '제목 (영문, 선택)' : 'Title (English, optional)'}
                   </label>
                   <input
                     value={form.titleEn}
@@ -364,7 +365,7 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-800">
-                    {isKo ? '내용 (영문)' : 'Body (English)'}
+                    {isKo ? '내용 (영문, 선택)' : 'Body (English, optional)'}
                   </label>
                   <textarea
                     value={form.bodyEn}
@@ -583,7 +584,7 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate font-medium text-gray-900">
-                          {isKo ? item.title_ko : item.title_en}
+                          {staffSiteAlertLocalizedTitle(item, locale)}
                         </p>
                         <p className="mt-1 text-xs text-gray-500">
                           {new Date(item.created_at).toLocaleString(locale)} ·{' '}
@@ -702,9 +703,7 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
               disabled={
                 sending ||
                 !form.titleKo.trim() ||
-                !form.titleEn.trim() ||
                 !form.bodyKo.trim() ||
-                !form.bodyEn.trim() ||
                 !hasRecipients
               }
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"

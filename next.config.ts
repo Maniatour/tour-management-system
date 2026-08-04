@@ -121,7 +121,7 @@ const nextConfig = {
 
 	async headers() {
 		const securityHeaders = [
-			{ key: 'X-Frame-Options', value: 'DENY' },
+			// X-Frame-Options는 middleware에서 preview=1(관리자 iframe) 여부에 따라 설정
 			{ key: 'X-Content-Type-Options', value: 'nosniff' },
 			{ key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
 			{

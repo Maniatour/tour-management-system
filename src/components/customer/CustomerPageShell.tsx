@@ -16,12 +16,12 @@ function measurePreviewHeight() {
   return Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0)
 }
 
-/** 고객-facing 페이지 공통 래퍼 — 본문 + 사이트 푸터 */
+/** 고객-facing 페이지 공통 래퍼 — 본문 + 사이트 푸터 (기본 표시) */
 export default function CustomerPageShell({
   locale,
   children,
   className = '',
-  hideFooter = true,
+  hideFooter = false,
 }: CustomerPageShellProps) {
   const footerBleedClass = 'customer-site-footer-bleed w-full'
 

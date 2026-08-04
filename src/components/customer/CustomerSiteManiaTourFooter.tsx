@@ -49,7 +49,7 @@ export default function CustomerSiteManiaTourFooter({ locale: localeProp }: Prop
   const instagramUrl = getPublicInstagramProfileUrl()
 
   return (
-    <footer className="kv-footer">
+    <footer className="kv-footer pb-[calc(var(--footer-height)+env(safe-area-inset-bottom,0px))] lg:pb-0">
       <div className="kv-container kv-footer-main">
         <div className="kv-footer-brand">
           <CustomerSiteLogo

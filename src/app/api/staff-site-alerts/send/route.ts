@@ -96,8 +96,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Judy 계정으로 발송할 권한이 없습니다.' }, { status: 403 })
   }
 
-  if (!titleKo || !titleEn || !bodyKo || !bodyEn) {
-    return NextResponse.json({ error: '한글·영문 제목과 내용을 모두 입력해 주세요.' }, { status: 400 })
+  if (!titleKo || !bodyKo) {
+    return NextResponse.json({ error: '한글 제목과 내용을 입력해 주세요.' }, { status: 400 })
   }
   if (recipientMode === 'group' && targetGroups.length === 0) {
     return NextResponse.json({ error: '수신 대상 그룹을 하나 이상 선택해 주세요.' }, { status: 400 })

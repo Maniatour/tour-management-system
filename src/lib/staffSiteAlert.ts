@@ -250,11 +250,15 @@ export function staffSiteAlertSentAsSuperFlag(senderProxy: StaffSiteAlertSenderP
 }
 
 export function staffSiteAlertLocalizedTitle(alert: StaffSiteAlertRow, locale: string): string {
-  return locale.startsWith('ko') ? alert.title_ko : alert.title_en
+  if (locale.startsWith('ko')) return alert.title_ko
+  const en = (alert.title_en || '').trim()
+  return en || alert.title_ko
 }
 
 export function staffSiteAlertLocalizedBody(alert: StaffSiteAlertRow, locale: string): string {
-  return locale.startsWith('ko') ? alert.body_ko : alert.body_en
+  if (locale.startsWith('ko')) return alert.body_ko
+  const en = (alert.body_en || '').trim()
+  return en || alert.body_ko
 }
 
 export function staffSiteAlertTargetGroupLabel(group: string, locale: string): string {

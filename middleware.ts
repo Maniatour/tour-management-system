@@ -61,7 +61,7 @@ export async function middleware(req: NextRequest) {
     pathname.includes('.') ||
     pathname === '/favicon.ico'
   ) {
-    return applySecurityHeaders(NextResponse.next())
+    return applySecurityHeaders(NextResponse.next(), req)
   }
 
   const resolvedPublicOperator = await resolvePublicOperatorForRequest(req)
@@ -69,7 +69,8 @@ export async function middleware(req: NextRequest) {
   const apiSecurityResponse = await handleApiSecurity(req)
   if (apiSecurityResponse) {
     return applySecurityHeaders(
-      withPublicOperator(apiSecurityResponse, null, resolvedPublicOperator)
+      withPublicOperator(apiSecurityResponse, null, resolvedPublicOperator),
+      req
     )
   }
 
@@ -83,7 +84,7 @@ export async function middleware(req: NextRequest) {
     stampTenantRequestHeaders(requestHeaders, req, resolvedPublicOperator)
     const res = NextResponse.next({ request: { headers: requestHeaders } })
     setPublicOperatorResponseCookie(res, resolvedPublicOperator)
-    return applySecurityHeaders(res)
+    return applySecurityHeaders(res, req)
   }
 
   // PWA/홈 화면 바로가기: start_url이 예전에 `/` 이거나, 쿠키에 저장된 경로가 있으면
@@ -95,7 +96,8 @@ export async function middleware(req: NextRequest) {
       const url = req.nextUrl.clone()
       url.pathname = savedPath
       return applySecurityHeaders(
-        withPublicOperator(NextResponse.redirect(url), null, resolvedPublicOperator)
+        withPublicOperator(NextResponse.redirect(url), null, resolvedPublicOperator),
+        req
       )
     }
     // 쿠키 없음: RootPage(클라이언트)에서 localStorage / 역할 기반 분기
@@ -104,7 +106,7 @@ export async function middleware(req: NextRequest) {
     stampTenantRequestHeaders(requestHeaders, req, resolvedPublicOperator)
     const res = NextResponse.next({ request: { headers: requestHeaders } })
     setPublicOperatorResponseCookie(res, resolvedPublicOperator)
-    return applySecurityHeaders(res)
+    return applySecurityHeaders(res, req)
   }
 
   // API: locale 없이 통과하되 public + active-operator 헤더·쿠키 스탬프
@@ -113,13 +115,14 @@ export async function middleware(req: NextRequest) {
     stampTenantRequestHeaders(requestHeaders, req, resolvedPublicOperator)
     const res = NextResponse.next({ request: { headers: requestHeaders } })
     setPublicOperatorResponseCookie(res, resolvedPublicOperator)
-    return applySecurityHeaders(res)
+    return applySecurityHeaders(res, req)
   }
 
   // Serwist 오프라인 폴백 (next-intl 접두 없음)
   if (req.nextUrl.pathname === '/~offline') {
     return applySecurityHeaders(
-      withPublicOperator(NextResponse.next(), null, resolvedPublicOperator)
+      withPublicOperator(NextResponse.next(), null, resolvedPublicOperator),
+      req
     )
   }
 
@@ -131,7 +134,7 @@ export async function middleware(req: NextRequest) {
     const response = NextResponse.next({ request: { headers: requestHeaders } })
     response.headers.set('x-pathname', req.nextUrl.pathname)
     setPublicOperatorResponseCookie(response, resolvedPublicOperator)
-    return applySecurityHeaders(response)
+    return applySecurityHeaders(response, req)
   }
 
   // /photos/ 경로는 로케일이 필요 없으므로 미들웨어를 건너뛰도록 처리
@@ -141,7 +144,7 @@ export async function middleware(req: NextRequest) {
     const response = NextResponse.next({ request: { headers: requestHeaders } })
     response.headers.set('x-pathname', req.nextUrl.pathname)
     setPublicOperatorResponseCookie(response, resolvedPublicOperator)
-    return applySecurityHeaders(response)
+    return applySecurityHeaders(response, req)
   }
 
   // 개발 환경에서만 로그 출력
@@ -161,14 +164,16 @@ export async function middleware(req: NextRequest) {
   // 리다이렉트인 경우 그대로 반환 (pathname은 다음 요청에서 설정됨)
   if (response.status >= 300 && response.status < 400) {
     return applySecurityHeaders(
-      withPublicOperator(response, null, resolvedPublicOperator)
+      withPublicOperator(response, null, resolvedPublicOperator),
+      req
     )
   }
 
   const adminAuthRedirect = handleAdminRouteAuth(req)
   if (adminAuthRedirect) {
     return applySecurityHeaders(
-      withPublicOperator(adminAuthRedirect, null, resolvedPublicOperator)
+      withPublicOperator(adminAuthRedirect, null, resolvedPublicOperator),
+      req
     )
   }
 
@@ -233,7 +238,7 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  return applySecurityHeaders(res)
+  return applySecurityHeaders(res, req)
 }
 
 export const config = {
