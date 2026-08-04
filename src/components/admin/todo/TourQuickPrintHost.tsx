@@ -1,11 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
-import TourEnvelopeModal, { type EnvelopeVariant } from '@/components/receipt/TourEnvelopeModal'
-import TourPrintModal from '@/components/tour/modals/TourPrintModal'
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { filterTicketBookingsExcludedFromMainUi } from '@/lib/ticketBookingSoftDelete'
 import {
@@ -16,6 +14,20 @@ import {
   type PickupGroupPresetWithReps,
 } from '@/lib/pickupGroupPreset'
 import { normalizeReservationIds } from '@/utils/tourUtils'
+import type { EnvelopeVariant } from '@/components/receipt/TourEnvelopeModal'
+
+const CustomerReceiptModal = dynamic(() => import('@/components/receipt/CustomerReceiptModal'), {
+  ssr: false,
+  loading: () => null,
+})
+const TourEnvelopeModal = dynamic(() => import('@/components/receipt/TourEnvelopeModal'), {
+  ssr: false,
+  loading: () => null,
+})
+const TourPrintModal = dynamic(() => import('@/components/tour/modals/TourPrintModal'), {
+  ssr: false,
+  loading: () => null,
+})
 
 export type TourQuickPrintKind = 'tourInfo' | 'receipts' | 'tip' | 'balance'
 

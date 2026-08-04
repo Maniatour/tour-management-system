@@ -7233,6 +7233,11 @@
       }
     },
     "simulation": "시뮬레이션",
+    "reviews": {
+      "title": "내 리뷰",
+      "subtitle": "투어에 연결된 승인된 리뷰를 최신순으로 확인합니다.",
+      "loadError": "리뷰를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."
+    },
     "quickActions": {
       "title": "빠른 액션",
       "offSchedule": "오프 스케줄",

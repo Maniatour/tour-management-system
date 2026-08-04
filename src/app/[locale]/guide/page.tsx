@@ -15,6 +15,7 @@ import {
   GuideAssignmentStatusBadge,
 } from '@/components/guide/GuideAssignmentResponseButtons'
 import GuideVehicleBadge from '@/components/guide/GuideVehicleBadge'
+import GuideReviewsSection from '@/components/guide/GuideReviewsSection'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Omit<Tour, 'assignment_status'> & {
@@ -1153,6 +1154,8 @@ export default function GuideDashboard() {
           }
         </p>
       </div>
+
+      <GuideReviewsSection locale={locale} />
 
       {/* 투어 탭 */}
       <div className="bg-white rounded-lg shadow">

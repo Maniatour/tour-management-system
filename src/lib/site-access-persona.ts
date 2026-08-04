@@ -1,4 +1,5 @@
 import type { UserRole } from '@/lib/roles'
+import { isManagerTeamPosition } from '@/lib/roles'
 import { isSuperAdminEmail } from '@/lib/superAdmin'
 
 /** 사이트 구조 CRUD 표·DB 오버라이드 공통 페르소나 축 */
@@ -32,7 +33,7 @@ export function resolveSiteAccessPersona(ctx: SiteAccessPersonaContext): SiteAcc
   const email = (authUserEmail || '').trim().toLowerCase()
 
   if (isSuper || pos === 'super' || isSuperAdminEmail(email)) return 'super'
-  if (userRole === 'manager' || pos === 'office manager' || pos === '매니저') return 'office_manager'
+  if (userRole === 'manager' || isManagerTeamPosition(userPosition)) return 'office_manager'
   if (userRole === 'admin' && pos === 'op') return 'op'
   if (userRole === 'team_member' || pos === 'tour guide' || pos === 'tourguide' || pos === 'guide' || pos === 'driver')
     return 'guide'

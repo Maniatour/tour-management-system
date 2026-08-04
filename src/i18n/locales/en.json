@@ -7183,6 +7183,11 @@
       }
     },
     "simulation": "Simulation",
+    "reviews": {
+      "title": "My Reviews",
+      "subtitle": "Approved reviews linked to your tours, sorted by most recent.",
+      "loadError": "Could not load reviews. Please try again later."
+    },
     "quickActions": {
       "title": "Quick Actions",
       "offSchedule": "Off Schedule",

@@ -35,27 +35,26 @@ import { fetchOpTodoPendingCount, runOpTodoResetsIfDue } from '@/lib/teamBoard/t
 import { OpTodoFormModal } from '@/components/admin/todo/OpTodoFormModal'
 import { EMPTY_OP_TODO_FORM, type OpTodoFormValues } from '@/components/admin/todo/OpTodoFormFields'
 import { TodoPanelStatusButtons } from '@/components/admin/todo/TodoPanelStatusButtons'
-import { TourEnvelopePrintPanel } from '@/components/admin/todo/TourEnvelopePrintPanel'
-import { PickupNotificationPanel } from '@/components/admin/todo/PickupNotificationPanel'
-import { GuideScheduleConfirmPanel } from '@/components/admin/todo/GuideScheduleConfirmPanel'
-import { CustomerInfoReviewPanel } from '@/components/admin/todo/CustomerInfoReviewPanel'
-import { CancelRebookingFollowUpPanel } from '@/components/admin/todo/CancelRebookingFollowUpPanel'
-import { PendingCustomerManagementPanel } from '@/components/admin/todo/PendingCustomerManagementPanel'
-import { OtaClosurePanel } from '@/components/admin/todo/OtaClosurePanel'
-import { TourHotelManagementPanel } from '@/components/admin/todo/TourHotelManagementPanel'
-import { TourHotelPriceCheckPanel } from '@/components/admin/todo/TourHotelPriceCheckPanel'
-import { TourSettlementPanel } from '@/components/admin/todo/TourSettlementPanel'
-import { ReservationAgencyManagementPanel } from '@/components/admin/todo/ReservationAgencyManagementPanel'
-import { AntelopeCanyonBookingPanel } from '@/components/admin/todo/AntelopeCanyonBookingPanel'
-import { BentoCheckPanel } from '@/components/admin/todo/BentoCheckPanel'
 import {
-  TourQuickPrintHost,
-  type TourQuickPrintRequest,
-} from '@/components/admin/todo/TourQuickPrintHost'
-import {
-  TourPickupNotificationHost,
-  type TourPickupNotificationRequest,
-} from '@/components/admin/todo/TourPickupNotificationHost'
+  AntelopeCanyonBookingPanel,
+  BentoCheckPanel,
+  CancelRebookingFollowUpPanel,
+  CustomerInfoReviewPanel,
+  GuideScheduleConfirmPanel,
+  LazyReservationCardItem,
+  LazyTourPickupNotificationHost,
+  LazyTourQuickPrintHost,
+  OtaClosurePanel,
+  PendingCustomerManagementPanel,
+  PickupNotificationPanel,
+  ReservationAgencyManagementPanel,
+  TourEnvelopePrintPanel,
+  TourHotelManagementPanel,
+  TourHotelPriceCheckPanel,
+  TourSettlementPanel,
+} from '@/components/admin/todo/adminTodoLazyPanels'
+import type { TourPickupNotificationRequest } from '@/components/admin/todo/TourPickupNotificationHost'
+import type { TourQuickPrintRequest } from '@/components/admin/todo/TourQuickPrintHost'
 import { shouldHideTodoChipForEnvelopePrintPanel, findTourEnvelopePrintLinkedTodo, readTourEnvelopePrintLocalCompleted, tourEnvelopePrintTargetDate, tourEnvelopePrintTodoFormSeed } from '@/lib/tourEnvelopePrintTodo'
 import {
   shouldHideTodoChipForPickupNotificationPanel,
@@ -182,7 +181,6 @@ import { useReservationFollowUpSnapshots } from '@/hooks/useReservationFollowUpS
 import { pickReservationsForOperationalQueue } from '@/lib/operationalQueueFetch'
 import { getGroupColorClassesForReservations } from '@/utils/groupColors'
 import type { Reservation, Customer } from '@/types/reservation'
-import { ReservationCardItem } from '@/components/reservation/ReservationCardItem'
 
 const ReservationActionRequiredModal = dynamic(
   () => import('@/components/reservation/ReservationActionRequiredModal'),
@@ -1909,16 +1907,20 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
   const createTodoModal = (
     <>
       {todoFormModals}
-      <TourQuickPrintHost
-        locale={locale}
-        request={tourQuickPrint}
-        onClose={() => setTourQuickPrint(null)}
-      />
-      <TourPickupNotificationHost
-        locale={locale}
-        request={tourPickupNotification}
-        onClose={() => setTourPickupNotification(null)}
-      />
+      {tourQuickPrint ? (
+        <LazyTourQuickPrintHost
+          locale={locale}
+          request={tourQuickPrint}
+          onClose={() => setTourQuickPrint(null)}
+        />
+      ) : null}
+      {tourPickupNotification ? (
+        <LazyTourPickupNotificationHost
+          locale={locale}
+          request={tourPickupNotification}
+          onClose={() => setTourPickupNotification(null)}
+        />
+      ) : null}
       <TourDetailResizableDialog
         open={Boolean(tourHotelDetailModalId)}
         onOpenChange={(open) => !open && setTourHotelDetailModalId(null)}
@@ -2742,7 +2744,7 @@ export function AdminTodoActionHost({ locale }: { locale: string }) {
 
   const renderFollowUpCard = useCallback(
     (reservation: Reservation) => (
-      <ReservationCardItem
+      <LazyReservationCardItem
         reservation={reservation}
         customers={(queue.customers as Customer[]) || []}
         products={(queue.products as Array<{ id: string; name: string }>) || []}

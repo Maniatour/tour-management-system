@@ -1,16 +1,19 @@
 'use client'
 
-
-
 import { useCallback, useEffect, useState } from 'react'
-
+import dynamic from 'next/dynamic'
 import { Loader2 } from 'lucide-react'
-
 import { supabase } from '@/lib/supabase'
-
-import TicketBookingForm from '@/components/booking/TicketBookingForm'
-
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+
+const TicketBookingForm = dynamic(() => import('@/components/booking/TicketBookingForm'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+      <Loader2 className="h-5 w-5 animate-spin" />
+    </div>
+  ),
+})
 
 
 
