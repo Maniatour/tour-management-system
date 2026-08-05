@@ -16,6 +16,7 @@ import {
   findUsResidentClassificationChoice,
   mergeResidentRowsIntoSelectedChoices,
   parseResidentLineStateFromSelections,
+  recoverResidentStatusAmounts,
   selectedChoiceRowsFromReservationPricingChoices,
   sumResidentFeeAmountsUsd,
   type ResidentLineKey,
@@ -350,8 +351,9 @@ export async function loadResidentStatusAmountsForReservation(
     .eq('product_id', productId)
   if (!productChoices?.length) return amounts
 
-  const rows = selectedChoiceRowsFromReservationPricingChoices(pricing.choices)
-  const parsed = parseResidentLineStateFromSelections(productChoices, rows)
-  if (!parsed) return amounts
-  return { ...amounts, ...parsed.residentStatusAmounts }
+  const recovered = recoverResidentStatusAmounts({
+    choicesJson: pricing.choices,
+    productChoices: productChoices as never,
+  })
+  return { ...amounts, ...recovered }
 }
