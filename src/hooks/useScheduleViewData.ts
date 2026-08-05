@@ -161,6 +161,128 @@ export function useScheduleViewData({
     }
   }, [firstDayOfMonth, lastDayOfMonth, activeOperatorId])
 
+  const mapVehiclesBasic = useCallback((sortedVehicles: ScheduleVehicleRow[]): ScheduleViewScheduleVehicle[] => {
+    return sortedVehicles.map((v) => {
+      const fallbackMileage =
+        v.recent_engine_oil_change_mileage != null && v.recent_engine_oil_change_mileage > 0
+          ? v.recent_engine_oil_change_mileage
+          : null
+      return {
+        id: v.id,
+        label: ((v.nick && v.nick.trim()) || v.vehicle_number || v.id).toString().trim() || v.id,
+        vehicle_category: v.vehicle_category ?? null,
+        rental_start_date: v.rental_start_date ?? null,
+        rental_end_date: v.rental_end_date ?? null,
+        engine_oil_change_cycle: v.engine_oil_change_cycle ?? null,
+        recent_engine_oil_change_mileage: fallbackMileage,
+        recent_engine_oil_change_date: null,
+        current_mileage:
+          v.current_mileage != null && v.current_mileage > 0 ? v.current_mileage : null,
+      }
+    })
+  }, [])
+
+  /** 오일·비활성 팀·미배정 — 그리드 최초 페인트 이후에만 (초기 스피너 비차단) */
+  const enrichAdminScheduleSecondary = useCallback(
+    async (sortedVehicles: ScheduleVehicleRow[]) => {
+      const companyVehicleIds = sortedVehicles
+        .filter((v) => (v.vehicle_category || 'company').toString().toLowerCase() !== 'rental')
+        .map((v) => v.id)
+
+      const inactivePromise = supabase.from('team').select('*').eq('is_active', false).order('name_ko')
+
+      const oilChangeByVehicleId = new Map<string, { date: string; mileage: number | null }>()
+      let oilHistTours: ScheduleTourForOil[] = []
+
+      if (companyVehicleIds.length > 0) {
+        const oilHistStart = firstDayOfMonth.subtract(6, 'month').format('YYYY-MM-DD')
+        const oilHistEnd = lastDayOfMonth.add(1, 'day').format('YYYY-MM-DD')
+
+        const fetchMaintenance = async () => {
+          const MAINT_PAGE = 1000
+          let maintenanceRows: VehicleMaintenanceOilRecord[] = []
+          for (let from = 0; ; from += MAINT_PAGE) {
+            const { data: batch, error: maintErr } = await supabase
+              .from('vehicle_maintenance')
+              .select('vehicle_id, maintenance_date, mileage, subcategory')
+              .eq('operator_id', activeOperatorId)
+              .in('vehicle_id', companyVehicleIds)
+              .order('maintenance_date', { ascending: false })
+              .order('mileage', { ascending: false })
+              .range(from, from + MAINT_PAGE - 1)
+            if (maintErr) {
+              console.error('Error fetching vehicle maintenance for oil change:', maintErr)
+              break
+            }
+            const b = (batch || []) as VehicleMaintenanceOilRecord[]
+            maintenanceRows = maintenanceRows.concat(b)
+            if (b.length < MAINT_PAGE) break
+          }
+          return maintenanceRows
+        }
+
+        const fetchOilHistTours = async () => {
+          let rows: ScheduleTourForOil[] = []
+          for (let from = 0; ; from += SCHEDULE_TOURS_PAGE_SIZE) {
+            const { data: batch, error: oilToursErr } = await supabase
+              .from('tours')
+              .select('id, tour_date, tour_status, tour_car_id, product_id, products(name)')
+              .eq('operator_id', activeOperatorId)
+              .gte('tour_date', oilHistStart)
+              .lte('tour_date', oilHistEnd)
+              .in('tour_car_id', companyVehicleIds)
+              .order('tour_date', { ascending: true })
+              .order('id', { ascending: true })
+              .range(from, from + SCHEDULE_TOURS_PAGE_SIZE - 1)
+            if (oilToursErr) {
+              console.error('Error fetching vehicle oil calc tours:', oilToursErr)
+              break
+            }
+            const b = (batch || []) as ScheduleTourForOil[]
+            rows = rows.concat(b)
+            if (b.length < SCHEDULE_TOURS_PAGE_SIZE) break
+          }
+          return rows
+        }
+
+        const [maintenanceRows, histTours] = await Promise.all([fetchMaintenance(), fetchOilHistTours()])
+        for (const [vehicleId, latest] of pickLatestEngineOilByVehicle(maintenanceRows)) {
+          oilChangeByVehicleId.set(vehicleId, latest)
+        }
+        oilHistTours = histTours
+      }
+
+      const [{ data: inactiveTeamData }] = await Promise.all([inactivePromise, fetchUnassignedTours()])
+      setInactiveTeamMembers((inactiveTeamData || []) as Team[])
+
+      if (oilChangeByVehicleId.size > 0) {
+        setScheduleVehicles(
+          sortedVehicles.map((v) => {
+            const fromMaintenance = oilChangeByVehicleId.get(v.id)
+            const fallbackMileage =
+              v.recent_engine_oil_change_mileage != null && v.recent_engine_oil_change_mileage > 0
+                ? v.recent_engine_oil_change_mileage
+                : null
+            return {
+              id: v.id,
+              label: ((v.nick && v.nick.trim()) || v.vehicle_number || v.id).toString().trim() || v.id,
+              vehicle_category: v.vehicle_category ?? null,
+              rental_start_date: v.rental_start_date ?? null,
+              rental_end_date: v.rental_end_date ?? null,
+              engine_oil_change_cycle: v.engine_oil_change_cycle ?? null,
+              recent_engine_oil_change_mileage: fromMaintenance?.mileage ?? fallbackMileage,
+              recent_engine_oil_change_date: fromMaintenance?.date ?? null,
+              current_mileage:
+                v.current_mileage != null && v.current_mileage > 0 ? v.current_mileage : null,
+            }
+          }),
+        )
+      }
+      setVehicleOilCalcTours(oilHistTours)
+    },
+    [activeOperatorId, fetchUnassignedTours, firstDayOfMonth, lastDayOfMonth],
+  )
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
@@ -187,110 +309,13 @@ export function useScheduleViewData({
         reservationSelect: isDisplayMode ? 'display' : 'admin',
       })
 
-      const inactiveTeamData = isDisplayMode
-        ? []
-        : (
-            await supabase.from('team').select('*').eq('is_active', false).order('name_ko')
-          ).data || []
-
       const sortedVehicles = core.sortedVehiclesForMonth as ScheduleVehicleRow[]
-
-      if (isDisplayMode) {
-        setScheduleVehicles(buildScheduleVehiclesForDisplayGrid(sortedVehicles))
-        setVehicleOilCalcTours([])
-      } else {
-        const companyVehicleIds = sortedVehicles
-          .filter((v) => (v.vehicle_category || 'company').toString().toLowerCase() !== 'rental')
-          .map((v) => v.id)
-
-        const oilChangeByVehicleId = new Map<string, { date: string; mileage: number | null }>()
-        if (companyVehicleIds.length > 0) {
-          const MAINT_PAGE = 1000
-          let maintenanceRows: VehicleMaintenanceOilRecord[] = []
-          for (let from = 0; ; from += MAINT_PAGE) {
-            const { data: batch, error: maintErr } = await supabase
-              .from('vehicle_maintenance')
-              .select('vehicle_id, maintenance_date, mileage, subcategory')
-              .eq('operator_id', activeOperatorId)
-              .in('vehicle_id', companyVehicleIds)
-              .order('maintenance_date', { ascending: false })
-              .order('mileage', { ascending: false })
-              .range(from, from + MAINT_PAGE - 1)
-            if (maintErr) {
-              console.error('Error fetching vehicle maintenance for oil change:', maintErr)
-              break
-            }
-            const b = (batch || []) as VehicleMaintenanceOilRecord[]
-            maintenanceRows = maintenanceRows.concat(b)
-            if (b.length < MAINT_PAGE) break
-          }
-          for (const [vehicleId, latest] of pickLatestEngineOilByVehicle(maintenanceRows)) {
-            oilChangeByVehicleId.set(vehicleId, latest)
-          }
-        }
-
-        setScheduleVehicles(
-          sortedVehicles.map((v) => {
-            const fromMaintenance = oilChangeByVehicleId.get(v.id)
-            const fallbackMileage =
-              v.recent_engine_oil_change_mileage != null && v.recent_engine_oil_change_mileage > 0
-                ? v.recent_engine_oil_change_mileage
-                : null
-            return {
-              id: v.id,
-              label: ((v.nick && v.nick.trim()) || v.vehicle_number || v.id).toString().trim() || v.id,
-              vehicle_category: v.vehicle_category ?? null,
-              rental_start_date: v.rental_start_date ?? null,
-              rental_end_date: v.rental_end_date ?? null,
-              engine_oil_change_cycle: v.engine_oil_change_cycle ?? null,
-              recent_engine_oil_change_mileage: fromMaintenance?.mileage ?? fallbackMileage,
-              recent_engine_oil_change_date: fromMaintenance?.date ?? null,
-              current_mileage:
-                v.current_mileage != null && v.current_mileage > 0 ? v.current_mileage : null,
-            }
-          }),
-        )
-
-        if (companyVehicleIds.length > 0) {
-          const oilHistStart = firstDayOfMonth.subtract(6, 'month').format('YYYY-MM-DD')
-          const oilHistEnd = lastDayOfMonth.add(1, 'day').format('YYYY-MM-DD')
-          let oilHistTours: ScheduleTourForOil[] = []
-          for (let from = 0; ; from += SCHEDULE_TOURS_PAGE_SIZE) {
-            const { data: batch, error: oilToursErr } = await supabase
-              .from('tours')
-              .select('id, tour_date, tour_status, tour_car_id, product_id, products(name)')
-              .eq('operator_id', activeOperatorId)
-              .gte('tour_date', oilHistStart)
-              .lte('tour_date', oilHistEnd)
-              .in('tour_car_id', companyVehicleIds)
-              .order('tour_date', { ascending: true })
-              .order('id', { ascending: true })
-              .range(from, from + SCHEDULE_TOURS_PAGE_SIZE - 1)
-            if (oilToursErr) {
-              console.error('Error fetching vehicle oil calc tours:', oilToursErr)
-              break
-            }
-            const b = (batch || []) as ScheduleTourForOil[]
-            oilHistTours = oilHistTours.concat(b)
-            if (b.length < SCHEDULE_TOURS_PAGE_SIZE) break
-          }
-          setVehicleOilCalcTours(oilHistTours)
-        } else {
-          setVehicleOilCalcTours([])
-        }
-      }
 
       setProducts(core.products as Product[])
       setTeamMembers(core.teamMembers)
-      setInactiveTeamMembers(inactiveTeamData as Team[])
       setTours(normalizeScheduleDisplayTours(core.tours as Tour[]) as Tour[])
       toursAssignmentBaselineRef.current = buildToursAssignmentBaseline(core.tours as Tour[])
       setReservations(normalizeScheduleDisplayReservations(core.reservations as Reservation[]) as Reservation[])
-
-      if (isDisplayMode) {
-        setLoading(false)
-      }
-
       setReservationChoices(core.reservationChoices)
       setCustomers(core.customers as Customer[])
       setTicketBookings(core.ticketBookings)
@@ -298,29 +323,43 @@ export function useScheduleViewData({
       setOffSchedules(core.offSchedules)
       setDateNotes(core.dateNotes)
 
+      if (isDisplayMode) {
+        setScheduleVehicles(buildScheduleVehiclesForDisplayGrid(sortedVehicles))
+        setVehicleOilCalcTours([])
+        setInactiveTeamMembers([])
+      } else {
+        // 오일 정비 이력 조회 전에 기본 차량 행을 먼저 표시
+        setScheduleVehicles(mapVehiclesBasic(sortedVehicles))
+      }
+
       try {
         await loadUserSettingsRef.current()
       } catch (settingsError) {
         console.warn('Failed to load user settings, continuing with default values:', settingsError)
       }
 
+      // 코어 그리드 + 필터 설정까지 오면 즉시 표시 (오일·미배정은 백그라운드)
+      setLoading(false)
+
       if (!isDisplayMode) {
-        await fetchUnassignedTours()
+        void enrichAdminScheduleSecondary(sortedVehicles).catch((error) => {
+          console.error('Error enriching admin schedule secondary data:', error)
+        })
       }
     } catch (error) {
       console.error('Error fetching data:', error)
-    } finally {
       setLoading(false)
     }
   }, [
     firstDayOfMonth,
     lastDayOfMonth,
     loadUserSettingsRef,
-    fetchUnassignedTours,
     activeOperatorId,
     isDisplayMode,
     displayDayCount,
     toursAssignmentBaselineRef,
+    mapVehiclesBasic,
+    enrichAdminScheduleSecondary,
   ])
 
   const applyPrefetchedScheduleData = useCallback(

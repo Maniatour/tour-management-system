@@ -119,8 +119,11 @@ export default function AdminTours() {
 
   useEffect(() => {
     router.prefetch(`/${locale}/admin/schedule-display`)
-    void prefetchScheduleDisplayData(activeOperatorId, 15)
-  }, [router, locale, activeOperatorId])
+    // 스케줄 뷰 dynamic chunk를 페이지 마운트와 병렬로 미리 받아 스켈레톤 대기 단축
+    void import('@/components/ScheduleView')
+    // 스케줄 디스플레이 API는 마운트 시 호출하지 않음 — 스케줄 뷰 코어 조회와 대역폭 경쟁 방지
+    // (호버/포커스 시에만 prefetch)
+  }, [router, locale])
 
   const prefetchScheduleDisplay = useCallback(() => {
     void prefetchScheduleDisplayData(activeOperatorId, 15)
@@ -281,7 +284,25 @@ export default function AdminTours() {
 
   useEffect(() => {
     if (!tourUiHydrated) return
-    void refreshNeedCheckStats()
+    // Need-check는 전체 투어·지출·잔액 등을 훑는 무거운 작업 — 배지용이므로 유휴 후 실행
+    let cancelled = false
+    const run = () => {
+      if (!cancelled) void refreshNeedCheckStats()
+    }
+    let idleId: number | undefined
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      idleId = window.requestIdleCallback(run, { timeout: 4000 })
+    } else {
+      timeoutId = setTimeout(run, 1500)
+    }
+    return () => {
+      cancelled = true
+      if (idleId != null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(idleId)
+      }
+      if (timeoutId) clearTimeout(timeoutId)
+    }
   }, [tourUiHydrated, refreshNeedCheckStats])
 
   const handleNeedCheckDataLoaded = useCallback(
@@ -426,7 +447,9 @@ export default function AdminTours() {
     },
     cacheKey: `products:${activeOperatorId}`,
     cacheTime: 30 * 60 * 1000, // 30분 캐시 — 상품 마스터, SWR 로 자동 갱신
-    dependencies: [activeOperatorId],
+    // 스케줄 뷰는 ScheduleView가 상품을 자체 조회 — 목록/캘린더·신규 투어 모달일 때만 부모에서 로드
+    enabled: tourUiHydrated && (viewMode !== 'schedule' || showNewTourModal),
+    dependencies: [activeOperatorId, tourUiHydrated, viewMode, showNewTourModal],
     defaultToEmptyArray: true,
   })
 
@@ -436,8 +459,10 @@ export default function AdminTours() {
     [productsData]
   )
 
-  // 통합 로딩 상태 (스케줄 뷰 기본 시 전체 투어 스피너에 막히지 않음)
-  const loading = (toursQueryEnabled && toursLoading) || employeesLoading || productsLoading
+  // 통합 로딩 상태 (스케줄 뷰는 ScheduleView가 자체 로드 — 부모 마스터 조회에 스피너 막지 않음)
+  const loading =
+    (toursQueryEnabled && toursLoading) ||
+    (viewMode !== 'schedule' && (employeesLoading || productsLoading))
 
   // 달력 뷰: processToursData가 끝나기 전에는 빈 달력이 깜빡이지 않도록, 데이터 준비됐을 때만 렌더
   const calendarDataReady = !loading && (
