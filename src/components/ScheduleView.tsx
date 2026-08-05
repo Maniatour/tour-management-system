@@ -5976,9 +5976,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   }
 
   const scheduleMainPanel = (
-    <div className={`bg-white rounded-lg shadow-md border px-1 py-2 sm:p-2 ${isDisplayMode ? 'min-w-0 lg:flex-1 lg:overflow-auto' : ''}`}>
+    <div className={`bg-white rounded-none border-0 shadow-none px-0 py-2 sm:rounded-lg sm:border sm:shadow-md sm:p-2 ${isDisplayMode ? 'min-w-0 lg:flex-1 lg:overflow-auto' : ''}`}>
       {/* 헤더 */}
-      <div className="mb-2">
+      <div className="mb-2 px-2 sm:px-0">
         {isDisplayMode ? (
           <ScheduleDisplayToolbar
             locale={locale}
@@ -5994,8 +5994,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         {/* 첫 번째 줄: 좌 아이콘 | 가운데 월·오늘 | 우 저장·취소 */}
         <div className="relative flex flex-wrap items-center gap-y-2 min-h-10 sm:min-h-11 mb-2">
           {/* 왼쪽: 선택 버튼들 */}
-          <div className="relative z-10 flex shrink-0 items-center gap-2">
-            <div className="flex gap-2">
+          <div className="relative z-10 flex shrink-0 items-center gap-0.5 sm:gap-2">
+            <div className="flex gap-0.5 sm:gap-2">
               {/* 상품 선택 버튼 */}
               <button
                 onClick={() => setShowProductModal(true)}
@@ -6287,10 +6287,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       <div className="mb-4">
         {/* 드래그 가능한 스크롤 컨테이너 */}
         <div 
-          className="relative overflow-x-visible overflow-y-visible border-2 border-dashed border-gray-300 rounded-lg p-2 bg-gray-50"
+          className="relative overflow-x-visible overflow-y-visible border-y-2 border-x-0 border-dashed border-gray-300 rounded-none p-0 bg-gray-50 sm:border-2 sm:rounded-lg sm:p-2"
           id="unified-schedule-scroll"
         >
-          <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center justify-between gap-2 leading-tight">
+          <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center justify-between gap-2 leading-tight px-2 sm:px-0">
             <div className="flex items-center">
               <MapPin className="w-4 h-4 mr-1 text-primary" />
               스케쥴뷰

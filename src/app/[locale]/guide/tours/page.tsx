@@ -514,9 +514,9 @@ export default function GuideTours({}: GuideToursProps) {
   }
 
   return (
-    <div className="-mx-4 sm:mx-0 px-0 sm:px-6 py-2 sm:py-6">
+    <div className="px-0 sm:px-6 py-2 sm:py-6">
       {/* 헤더 */}
-      <div className="mb-6 px-[10px] sm:px-0">
+      <div className="mb-6 px-3 sm:px-0">
         {/* 가이드 대시보드로 돌아가기 버튼 */}
         <div className="mb-3">
           <button

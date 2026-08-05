@@ -27,6 +27,10 @@ CREATE INDEX IF NOT EXISTS idx_guide_schedule_confirm_popups_recipient_pending
 
 ALTER TABLE public.guide_schedule_confirm_popups ENABLE ROW LEVEL SECURITY;
 
+REVOKE ALL ON TABLE public.guide_schedule_confirm_popups FROM anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.guide_schedule_confirm_popups TO authenticated;
+GRANT ALL ON TABLE public.guide_schedule_confirm_popups TO service_role;
+
 DROP POLICY IF EXISTS "guide_schedule_confirm_popups_select_own" ON public.guide_schedule_confirm_popups;
 CREATE POLICY "guide_schedule_confirm_popups_select_own" ON public.guide_schedule_confirm_popups
   FOR SELECT TO authenticated

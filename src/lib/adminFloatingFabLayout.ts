@@ -1,8 +1,11 @@
 import { getLayoutTopInset } from '@/lib/resizableRect'
 
 export const FAB_SIZE = 56
+/** lg 미만(모바일 푸터 표시 구간) FAB 지름 */
+export const FAB_SIZE_MOBILE = 44
 export const FAB_RIGHT_PX = 16
 export const FAB_GAP_PX = 12
+export const FAB_GAP_MOBILE_PX = 8
 /** FAB `bottom` = footer + safe-area + 4.5rem */
 export const FAB_BASE_BOTTOM_EXTRA_PX = 72
 export const PANEL_GAP_ABOVE_FAB_PX = 12
@@ -19,8 +22,17 @@ export const ADMIN_TODO_DOCK_WIDTH_CSS_VAR = '--admin-todo-dock-width'
 export const ADMIN_TODO_DOCKED_HTML_CLASS = 'admin-todo-docked'
 export const ADMIN_TODO_DOCK_MAX_WIDTH_RATIO = 0.5
 
+/** 현재 뷰포트 기준 FAB 지름 (모바일 축소) */
+export function getFabSize(): number {
+  return isAdminMobileViewport() ? FAB_SIZE_MOBILE : FAB_SIZE
+}
+
+export function getFabGapPx(): number {
+  return isAdminMobileViewport() ? FAB_GAP_MOBILE_PX : FAB_GAP_PX
+}
+
 export function fabBottomExtraPx(stackIndex: number): number {
-  return FAB_BASE_BOTTOM_EXTRA_PX + stackIndex * (FAB_SIZE + FAB_GAP_PX)
+  return FAB_BASE_BOTTOM_EXTRA_PX + stackIndex * (getFabSize() + getFabGapPx())
 }
 
 export function readViewportHeight(): number {
@@ -84,7 +96,7 @@ export function fabBottomCss(stackIndex = 0): string {
 export function getFloatingPanelBottomReservePx(stackIndex = 0): number {
   const footer = readEffectiveFooterOffsetPx()
   const safeBottom = readSafeAreaBottomPx()
-  return footer + safeBottom + fabBottomExtraPx(stackIndex) + FAB_SIZE + PANEL_GAP_ABOVE_FAB_PX
+  return footer + safeBottom + fabBottomExtraPx(stackIndex) + getFabSize() + PANEL_GAP_ABOVE_FAB_PX
 }
 
 export function fabTopPx(stackIndex = 0): number {

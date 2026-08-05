@@ -11,7 +11,8 @@ import GlobalAudioPlayer from '@/components/GlobalAudioPlayer'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, usePathname, useParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { Calendar, MessageSquare, FileText, BookOpen, Home } from 'lucide-react'
+import { Calendar, MessageSquare, FileText, BookOpen, Home, Star } from 'lucide-react'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { useTranslations } from 'next-intl'
 import TourPhotoUploadModal from '@/components/TourPhotoUploadModal'
 import TourPhotoUploadProgressOverlay from '@/components/TourPhotoUploadProgressOverlay'
@@ -58,6 +59,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
   const [showDocumentUploadModal, setShowDocumentUploadModal] = useState(false)
   const [documentUploadType, setDocumentUploadType] = useState<'medical' | 'cpr'>('medical')
   const [unreadMessageCount, setUnreadMessageCount] = useState(0)
+  const [unreadReviewCount, setUnreadReviewCount] = useState(0)
   const [, setUncompletedReportCount] = useState(0)
 
   const isSimulationRestoring = isSimulating && !simulatedUser
@@ -237,10 +239,19 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
     
     // 안읽은 메시지 카운트 로드
     loadUnreadMessageCount()
+
+    // 안읽은 리뷰 카운트 로드
+    loadUnreadReviewCount()
     
     // 미작성 리포트 카운트 로드
     loadUncompletedReportCount()
-   }, [user, userRole, isLoading, router, isSimulating, simulatedUser, isSimulationRestoring, isInitialized])
+  }, [user, userRole, isLoading, router, isSimulating, simulatedUser, isSimulationRestoring, isInitialized])
+
+  useEffect(() => {
+    const onRefresh = () => void loadUnreadReviewCount()
+    window.addEventListener('guide-reviews-refresh', onRefresh)
+    return () => window.removeEventListener('guide-reviews-refresh', onRefresh)
+  }, [user, isSimulating, simulatedUser])
 
   // 시뮬레이션 상태 변화 감지 (언어 전환 시 시뮬레이션 상태 복원 확인)
   useEffect(() => {
@@ -320,6 +331,35 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
       setUnreadMessageCount(totalUnreadCount)
     } catch (error) {
       console.error('안읽은 메시지 카운트 로드 오류:', error)
+    }
+  }
+
+  const loadUnreadReviewCount = async () => {
+    try {
+      const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
+      if (!currentUserEmail) {
+        setUnreadReviewCount(0)
+        return
+      }
+
+      const headers: Record<string, string> = {}
+      if (isSimulating && simulatedUser?.email) {
+        headers['x-simulated-user-email'] = simulatedUser.email
+      }
+
+      const res = await fetchApiWithAuth('/api/guide/reviews', { headers })
+      const data = (await res.json()) as {
+        ok?: boolean
+        summary?: { unreadCount?: number }
+      }
+      if (!res.ok || !data.ok) {
+        setUnreadReviewCount(0)
+        return
+      }
+      setUnreadReviewCount(data.summary?.unreadCount ?? 0)
+    } catch (error) {
+      console.error('안읽은 리뷰 카운트 로드 오류:', error)
+      setUnreadReviewCount(0)
     }
   }
 
@@ -427,7 +467,6 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
   const currentUser = isSimulating && simulatedUser ? simulatedUser : user
   const currentUserRole = isSimulating && simulatedUser ? simulatedUser.role : userRole
-  const isTourDetailPage = /\/guide\/tours\/[^/]+$/.test(pathname)
 
   if (!currentUser || !['admin', 'manager', 'team_member'].includes(currentUserRole || '')) {
     return (
@@ -472,12 +511,8 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
          <GuideOfflineBanner />
          {/* 상단 Navigation은 [locale]/layout.tsx(가이드 분기)에서만 렌더 */}
 
-         {/* 메인: main-safe-area로 고정 푸터(lg 미만) 높이 + safe-area 만큼 하단 여백 확보 */}
-         <main
-           className={`main-safe-area flex-1 max-w-7xl mx-auto w-full pt-2 sm:pt-4 ${
-             isTourDetailPage ? 'px-0 lg:px-4' : 'px-2 sm:px-2 lg:px-4'
-           }`}
-         >
+         {/* 메인: 모바일 풀블리드(px-0), 데스크톱만 좌우 여백 */}
+         <main className="main-safe-area flex-1 max-w-7xl mx-auto w-full px-0 pt-0 sm:pt-2 lg:px-4 lg:pt-4">
            {children}
          </main>
 
@@ -492,20 +527,20 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
             minHeight: 'calc(var(--footer-height) + env(safe-area-inset-bottom, 0px))',
           }}
         >
-        <div className="grid h-[var(--footer-height)] grid-cols-5 shrink-0 py-2">
+        <div className="grid h-[var(--footer-height)] grid-cols-6 shrink-0 py-2">
           <button
             onClick={() => {
               const currentLocale = pathname.split('/')[1] || 'ko'
               router.push(`/${currentLocale}/guide`)
             }}
-            className={`flex flex-col items-center py-1 px-1 transition-colors ${
+            className={`flex flex-col items-center py-1 px-0.5 transition-colors ${
               pathname === `/${locale}/guide` || pathname === `/${locale}/guide/`
                 ? 'text-purple-600'
                 : 'text-gray-600 hover:text-purple-600'
             }`}
           >
             <Home className="w-5 h-5 mb-1" />
-            <span className="text-xs">{t('footer.home')}</span>
+            <span className="text-[10px] sm:text-xs">{t('footer.home')}</span>
           </button>
           
           <button
@@ -513,14 +548,14 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
               const currentLocale = pathname.split('/')[1] || 'ko'
               router.push(`/${currentLocale}/guide/tours?view=calendar`)
             }}
-            className={`flex flex-col items-center py-1 px-1 transition-colors ${
+            className={`flex flex-col items-center py-1 px-0.5 transition-colors ${
               pathname.includes('/guide/tours') && pathname.includes('calendar')
                 ? 'text-primary'
                 : 'text-gray-600 hover:text-primary'
             }`}
           >
             <Calendar className="w-5 h-5 mb-1" />
-            <span className="text-xs">{t('footer.tours')}</span>
+            <span className="text-[10px] sm:text-xs">{t('footer.tours')}</span>
           </button>
           
           <button
@@ -528,14 +563,14 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
               const currentLocale = pathname.split('/')[1] || 'ko'
               router.push(`/${currentLocale}/guide/chat`)
             }}
-            className={`flex flex-col items-center py-1 px-1 transition-colors relative ${
+            className={`flex flex-col items-center py-1 px-0.5 transition-colors relative ${
               pathname.includes('/guide/chat')
                 ? 'text-green-600'
                 : 'text-gray-600 hover:text-green-600'
             }`}
           >
             <MessageSquare className="w-5 h-5 mb-1" />
-            <span className="text-xs">{t('footer.chat')}</span>
+            <span className="text-[10px] sm:text-xs">{t('footer.chat')}</span>
             {unreadMessageCount > 0 && (
               <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium">
                 {unreadMessageCount > 99 ? '99+' : unreadMessageCount}
@@ -548,14 +583,14 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
               const currentLocale = pathname.split('/')[1] || 'ko'
               router.push(`/${currentLocale}/guide/operations-hub`)
             }}
-            className={`flex flex-col items-center py-1 px-1 transition-colors ${
+            className={`flex flex-col items-center py-1 px-0.5 transition-colors ${
               pathname.includes('/guide/operations-hub')
                 ? 'text-indigo-600'
                 : 'text-gray-600 hover:text-indigo-600'
             }`}
           >
             <BookOpen className="w-5 h-5 mb-1" />
-            <span className="text-xs">{t('footer.manual')}</span>
+            <span className="text-[10px] sm:text-xs">{t('footer.manual')}</span>
           </button>
 
           <button
@@ -563,17 +598,35 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
               const currentLocale = pathname.split('/')[1] || 'ko'
               router.push(`/${currentLocale}/guide/tour-materials`)
             }}
-            className={`flex flex-col items-center py-1 px-1 transition-colors ${
+            className={`flex flex-col items-center py-1 px-0.5 transition-colors ${
               pathname.includes('/guide/tour-materials')
                 ? 'text-primary'
                 : 'text-gray-600 hover:text-primary'
             }`}
           >
             <FileText className="w-5 h-5 mb-1" />
-            <span className="text-xs">{t('footer.tourMaterials')}</span>
+            <span className="text-[10px] sm:text-xs">{t('footer.tourMaterials')}</span>
           </button>
 
-
+          <button
+            onClick={() => {
+              const currentLocale = pathname.split('/')[1] || 'ko'
+              router.push(`/${currentLocale}/guide/reviews`)
+            }}
+            className={`flex flex-col items-center py-1 px-0.5 transition-colors relative ${
+              pathname.includes('/guide/reviews')
+                ? 'text-amber-600'
+                : 'text-gray-600 hover:text-amber-600'
+            }`}
+          >
+            <Star className="w-5 h-5 mb-1" />
+            <span className="text-[10px] sm:text-xs">{t('footer.reviews')}</span>
+            {unreadReviewCount > 0 && (
+              <span className="absolute -top-1 right-0 bg-red-500 text-white text-[10px] rounded-full min-w-5 h-5 px-1 flex items-center justify-center font-medium">
+                {unreadReviewCount > 99 ? '99+' : unreadReviewCount}
+              </span>
+            )}
+          </button>
         </div>
       </footer>
 

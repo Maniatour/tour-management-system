@@ -34,6 +34,14 @@ export default function AbortErrorHandler() {
         event.preventDefault()
         return true
       }
+      // 포인터 캡처가 이미 해제된 뒤 releasePointerCapture 호출 시 브라우저 NotFoundError
+      if (
+        msg.includes('releasePointerCapture') ||
+        (event.error?.name === 'NotFoundError' && /pointer/i.test(msg))
+      ) {
+        event.preventDefault()
+        return true
+      }
       return false
     }
     window.addEventListener('unhandledrejection', rejectionHandler, true)

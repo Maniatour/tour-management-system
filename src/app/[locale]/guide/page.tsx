@@ -15,7 +15,6 @@ import {
   GuideAssignmentStatusBadge,
 } from '@/components/guide/GuideAssignmentResponseButtons'
 import GuideVehicleBadge from '@/components/guide/GuideVehicleBadge'
-import GuideReviewsSection from '@/components/guide/GuideReviewsSection'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Omit<Tour, 'assignment_status'> & {
@@ -1136,9 +1135,9 @@ export default function GuideDashboard() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 lg:space-y-8">
+    <div className="space-y-0 lg:space-y-8">
       {/* 환영 메시지 */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg p-4 sm:p-6 text-white">
+      <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-none lg:rounded-lg p-4 sm:p-6 text-white">
         <h1 className="text-xl sm:text-2xl font-bold mb-2">
 {t('greeting')}, {isSimulating && simulatedUser ? simulatedUser.name_ko : currentUserEmail}!
           {isSimulating && simulatedUser && (
@@ -1155,10 +1154,8 @@ export default function GuideDashboard() {
         </p>
       </div>
 
-      <GuideReviewsSection locale={locale} />
-
       {/* 투어 탭 */}
-      <div className="bg-white rounded-lg shadow">
+      <div className="bg-white rounded-none lg:rounded-lg shadow-none lg:shadow border-b border-gray-200 lg:border-0">
         {/* 탭 헤더 */}
         <div className="border-b border-gray-200">
           <nav className="flex space-x-4 sm:space-x-8 px-4 sm:px-6 overflow-x-auto" aria-label="Tabs">
@@ -1247,7 +1244,7 @@ export default function GuideDashboard() {
       </div>
 
       {/* 오프 스케줄 */}
-      <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+      <div className="bg-white rounded-none lg:rounded-lg shadow-none lg:shadow border-b border-gray-200 lg:border-0 p-3 sm:p-4">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-gray-900 flex items-center">
             <CalendarOff className="w-5 h-5 mr-2 text-purple-500" />
@@ -1431,7 +1428,7 @@ export default function GuideDashboard() {
       </div>
 
       {/* 채팅 섹션 */}
-      <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+      <div className="bg-white rounded-none lg:rounded-lg shadow-none lg:shadow border-b border-gray-200 lg:border-0 p-3 sm:p-4">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-gray-900 flex items-center">
             <MessageSquare className="w-5 h-5 mr-2 text-green-500" />

@@ -9,7 +9,6 @@ import {
   isCustomerPageZoneEditMessage,
   isCustomerPagePreviewHeightMessage,
   notifyIframeCustomerPageEditMode,
-  notifyIframeCustomerPageReload,
 } from '@/lib/customerPageEditMessaging'
 import {
   CUSTOMER_PAGE_BINDINGS_UPDATE_EVENT,
@@ -150,12 +149,8 @@ function CustomerPageEditWorkbenchInner({
   }, [locale, pageId, productId, previewLocale, iframeKey])
 
   const refreshPreview = useCallback(() => {
-    if (iframeRef.current?.contentWindow) {
-      notifyIframeCustomerPageReload(iframeRef.current)
-      notifyIframeCustomerPageEditMode(iframeRef.current)
-      notifyIframeCustomerPageBindingsUpdate(iframeRef.current)
-      return
-    }
+    // Soft reload alone does not remount next-intl messages after DB translation saves.
+    // Hard remount the iframe so locale copy (hero etc.) reflects the latest values.
     setIframeLoading(true)
     setIframeKey((k) => k + 1)
   }, [])

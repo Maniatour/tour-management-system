@@ -148,9 +148,9 @@ export default function GuideTourMaterialsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-0 lg:space-y-4">
       {/* 헤더와 검색 */}
-      <div className="bg-white rounded-lg shadow p-4">
+      <div className="bg-white rounded-none lg:rounded-lg shadow-none lg:shadow border-b border-gray-200 lg:border-0 p-3 sm:p-4">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-bold text-gray-900">{t('tourMaterialsTitle')}</h1>
           <div className="relative w-32">
@@ -167,7 +167,7 @@ export default function GuideTourMaterialsPage() {
       </div>
 
       {/* 오디오 자료만 표시 */}
-      <div className="bg-white rounded-lg shadow">
+      <div className="bg-white rounded-none lg:rounded-lg shadow-none lg:shadow">
 
         {/* 컨텐츠 */}
         <div className="px-3 py-6">

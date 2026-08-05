@@ -14,6 +14,7 @@ import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { OperatorProvider } from "@/contexts/OperatorContext";
 import AbortErrorHandler from "@/components/AbortErrorHandler";
+import SafePointerCaptureGuard from "@/components/SafePointerCaptureGuard";
 import AppToaster from "@/components/AppToaster";
 import LazySopComplianceGate from "@/components/layout/LazySopComplianceGate";
 import DevServiceWorkerCleanup from "@/components/DevServiceWorkerCleanup";
@@ -119,6 +120,7 @@ export default function RootLayout({
         <AuthSessionCookieInlineScript />
         <DevBootRecoveryInlineScript />
         <AbortErrorHandler />
+        <SafePointerCaptureGuard />
         {process.env.NODE_ENV === "development" ? (
           <>
             <DevServiceWorkerCleanup />

@@ -1151,7 +1151,7 @@ export default function AdminTours() {
   // 삭제 기능은 카드뷰 간소화 요구에 따라 제거됨
 
   return (
-    <div className="px-1 pt-0 pb-1.5 sm:px-0 sm:pb-3">
+    <div className="px-0 pt-0 pb-1.5 sm:pb-3">
       {loading && (
         <div
           className="fixed top-2 right-2 z-[1200] flex items-center gap-2 rounded-full bg-white/90 backdrop-blur-sm border border-gray-200 shadow-sm px-3 py-1.5 text-xs text-gray-600"
@@ -1162,8 +1162,8 @@ export default function AdminTours() {
           <span>투어 데이터 불러오는 중…</span>
         </div>
       )}
-      {/* 헤더 */}
-      <div className="mb-4 sm:mb-6">
+      {/* 헤더 — 모바일에서도 컨트롤만 살짝 안쪽, 스케줄 그리드는 풀블리드 */}
+      <div className="mb-4 px-2 sm:mb-6 sm:px-0">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 m-0 truncate">{t('title')}</h1>
           <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
@@ -1390,7 +1390,7 @@ export default function AdminTours() {
 
       {/* 달력 보기 */}
       {viewMode === 'calendar' && (
-        <div className="relative">
+        <div className="relative px-2 sm:px-0">
           {!calendarDataReady && (
             <div className="flex items-center justify-center min-h-[400px] bg-gray-50 rounded-lg">
               <div className="text-center">
@@ -1432,7 +1432,7 @@ export default function AdminTours() {
 
       {/* 리스트(카드) 뷰 */}
       {viewMode === 'list' && (
-        <>
+        <div className="px-2 sm:px-0">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
             <div className="flex items-center justify-between sm:justify-start gap-2">
               {listViewDateFilter === 'month' && (
@@ -1570,7 +1570,7 @@ export default function AdminTours() {
             </div>
           )}
           </div>
-        </>
+        </div>
       )}
 
       <TourDetailResizableDialog

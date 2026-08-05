@@ -203,7 +203,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
       <div
         ref={productScheduleHeaderScrollRef}
         onScroll={onProductScheduleHeaderScroll}
-        className="sticky z-[1010] scrollbar-hide min-w-0 overflow-x-auto overflow-y-visible bg-primary/5"
+        className="sticky z-[1010] scrollbar-hide min-w-0 overflow-x-auto overflow-y-visible bg-[color-mix(in_oklch,var(--primary)_5%,white)]"
         style={{
           top: productScheduleStickyTopPx,
           scrollbarWidth: 'none',
@@ -215,10 +215,10 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
           className="w-full border-separate border-spacing-0"
           style={{ tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px` }}
         >
-          <thead className="bg-primary/5">
+          <thead className="bg-[color-mix(in_oklch,var(--primary)_5%,white)]">
             <tr className="align-top">
               <th
-                className="px-2 py-0.5 text-left text-xs font-medium text-gray-700 align-top sticky left-0 z-[1011] bg-primary/5 border-b border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]"
+                className="px-2 py-0.5 text-left text-xs font-medium text-gray-700 align-top sticky left-0 z-[1011] bg-[color-mix(in_oklch,var(--primary)_5%,white)] border-b border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]"
                 style={{ width: '96px', minWidth: '96px', maxWidth: '96px' }}
               >
                 상품명
@@ -232,10 +232,10 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
                     key={dateString}
                     className={`p-0 text-center text-xs font-medium align-top border-b border-gray-200 ${
                       isEdgePadding
-                        ? 'bg-slate-100/90 text-gray-700'
+                        ? 'bg-slate-100 text-gray-700'
                         : healthHeaderAlert
                           ? 'bg-red-600 text-[#ffff00]'
-                          : 'bg-primary/5 text-gray-700'
+                          : 'bg-[color-mix(in_oklch,var(--primary)_5%,white)] text-gray-700'
                     }`}
                     style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                   >
@@ -303,7 +303,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
                 )
               })}
               <th
-                className="px-2 py-0.5 text-center text-xs font-medium text-gray-700 align-top bg-primary/5 border-b border-gray-200"
+                className="px-2 py-0.5 text-center text-xs font-medium text-gray-700 align-top bg-[color-mix(in_oklch,var(--primary)_5%,white)] border-b border-gray-200"
                 style={{ width: '80px', minWidth: '80px', maxWidth: '80px' }}
               >
                 합계
@@ -328,9 +328,9 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
         >
           <tbody ref={productRowsAnchorRef} className="divide-y divide-gray-200">
             {renderRows()}
-            <tr className="bg-primary/10 font-semibold">
+            <tr className="bg-[color-mix(in_oklch,var(--primary)_10%,white)] font-semibold">
               <td
-                className="px-2 py-0.5 text-xs text-gray-900 sticky left-0 z-40 bg-primary/10 border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]"
+                className="px-2 py-0.5 text-xs text-gray-900 sticky left-0 z-40 bg-[color-mix(in_oklch,var(--primary)_10%,white)] border-r border-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]"
                 style={{ width: '96px', minWidth: '96px', maxWidth: '96px' }}
               >
                 일별 합계

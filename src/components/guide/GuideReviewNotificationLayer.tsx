@@ -1,12 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Bell, Check, Loader2, Star } from 'lucide-react'
+import { Bell, Check, ChevronLeft, ChevronRight, Loader2, Star } from 'lucide-react'
 import GoogleReviewCommentPreview from '@/components/admin/google-reviews/GoogleReviewCommentPreview'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import type { GuideLinkedReviewRow, GuideReviewSummary } from '@/lib/guideReviews'
 import { getReviewSourceLabel, isReviewSource } from '@/lib/reviewSources'
-import { formatLasVegasDate } from '@/lib/dailyReport/dateUtils'
+import { formatLasVegasDate, todayInLasVegas, toLasVegasDateKey } from '@/lib/dailyReport/dateUtils'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   detectGuidePreferredLanguage,
@@ -37,6 +37,7 @@ export function GuideReviewNotificationLayer({
     locale === 'en' ? 'en' : 'ko'
   )
   const [queue, setQueue] = useState<GuideLinkedReviewRow[]>([])
+  const [activeIndex, setActiveIndex] = useState(0)
   const [acknowledging, setAcknowledging] = useState(false)
 
   const emailKey = (isSimulating && simulatedUser?.email
@@ -67,6 +68,7 @@ export function GuideReviewNotificationLayer({
   const loadUnread = useCallback(async () => {
     if (!emailKey || !isInitialized) {
       setQueue([])
+      setActiveIndex(0)
       return
     }
 
@@ -80,14 +82,18 @@ export function GuideReviewNotificationLayer({
       const data = (await res.json()) as ApiResponse
       if (!res.ok || !data.ok) return
 
-      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
+      // 오늘(LV) 이후 업로드된 미확인 리뷰만 알림 모달 대상
+      const todayYmd = todayInLasVegas()
       const unread = (data.reviews ?? []).filter((review) => {
         if (review.isRead) return false
-        const importedMs = new Date(review.importedAt).getTime()
-        if (Number.isNaN(importedMs)) return true
-        return importedMs >= thirtyDaysAgo
+        const importedYmd = toLasVegasDateKey(review.importedAt)
+        if (!importedYmd) return false
+        return importedYmd >= todayYmd
       })
       setQueue(unread)
+      setActiveIndex((idx) =>
+        unread.length === 0 ? 0 : Math.min(idx, unread.length - 1)
+      )
     } catch (e) {
       console.error('GuideReviewNotificationLayer', e)
     }
@@ -100,7 +106,9 @@ export function GuideReviewNotificationLayer({
     return () => window.clearInterval(interval)
   }, [emailKey, isInitialized, loadUnread])
 
-  const current = queue[0] ?? null
+  const current = queue[activeIndex] ?? null
+  const canGoPrev = activeIndex > 0
+  const canGoNext = activeIndex < queue.length - 1
 
   const handleAcknowledge = async () => {
     if (!current) return
@@ -123,7 +131,11 @@ export function GuideReviewNotificationLayer({
         throw new Error(data.error || 'ack_failed')
       }
 
-      setQueue((prev) => prev.filter((review) => review.id !== current.id))
+      const nextQueue = queue.filter((review) => review.id !== current.id)
+      setQueue(nextQueue)
+      setActiveIndex((idx) =>
+        nextQueue.length === 0 ? 0 : Math.min(idx, nextQueue.length - 1)
+      )
       window.dispatchEvent(new CustomEvent('guide-reviews-refresh'))
       onReviewsRead?.()
     } catch (e) {
@@ -149,15 +161,22 @@ export function GuideReviewNotificationLayer({
 
   return (
     <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center gap-2 border-b px-5 py-4">
-          <Bell className="h-5 w-5 text-primary" aria-hidden />
-          <h2 className="text-lg font-semibold text-gray-900">
-            {isKo ? '새 리뷰가 연결되었습니다' : 'New review linked to you'}
-          </h2>
+      <div className="flex w-full max-w-lg max-h-[min(90dvh,920px)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b px-5 py-4">
+          <div className="flex items-center gap-2 min-w-0">
+            <Bell className="h-5 w-5 shrink-0 text-primary" aria-hidden />
+            <h2 className="text-lg font-semibold text-gray-900 truncate">
+              {isKo ? '새로운 리뷰가 접수 되었습니다.' : 'A new review has been received.'}
+            </h2>
+          </div>
+          {queue.length > 1 ? (
+            <span className="shrink-0 text-xs font-medium tabular-nums text-muted-foreground">
+              {activeIndex + 1} / {queue.length}
+            </span>
+          ) : null}
         </div>
 
-        <div className="space-y-3 px-5 py-4">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-5 py-4">
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1 text-amber-500">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -193,28 +212,34 @@ export function GuideReviewNotificationLayer({
           ) : null}
 
           {current.comment ? (
-            <GoogleReviewCommentPreview comment={current.comment} isKo={isKo} />
+            <GoogleReviewCommentPreview
+              key={current.id}
+              comment={current.comment}
+              isKo={isKo}
+            />
           ) : (
             <p className="text-sm text-muted-foreground italic">
               {isKo ? '리뷰 내용 없음' : 'No review text'}
             </p>
           )}
-
-          {queue.length > 1 ? (
-            <p className="text-xs text-muted-foreground">
-              {isKo
-                ? `추가 ${queue.length - 1}건의 새 리뷰가 있습니다.`
-                : `${queue.length - 1} more new review(s) waiting.`}
-            </p>
-          ) : null}
         </div>
 
-        <div className="flex justify-end border-t px-5 py-4">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-t px-4 py-4">
+          <button
+            type="button"
+            disabled={!canGoPrev || acknowledging}
+            onClick={() => setActiveIndex((idx) => Math.max(0, idx - 1))}
+            aria-label={isKo ? '이전 리뷰' : 'Previous review'}
+            className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-border/60 text-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+          >
+            <ChevronLeft className="h-5 w-5" aria-hidden />
+          </button>
+
           <button
             type="button"
             disabled={acknowledging}
             onClick={() => void handleAcknowledge()}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            className="inline-flex min-w-[7.5rem] items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             {acknowledging ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -222,6 +247,18 @@ export function GuideReviewNotificationLayer({
               <Check className="h-4 w-4" aria-hidden />
             )}
             {isKo ? '확인' : 'OK'}
+          </button>
+
+          <button
+            type="button"
+            disabled={!canGoNext || acknowledging}
+            onClick={() =>
+              setActiveIndex((idx) => Math.min(queue.length - 1, idx + 1))
+            }
+            aria-label={isKo ? '다음 리뷰' : 'Next review'}
+            className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-border/60 text-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+          >
+            <ChevronRight className="h-5 w-5" aria-hidden />
           </button>
         </div>
       </div>

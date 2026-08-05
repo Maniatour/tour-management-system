@@ -7185,8 +7185,11 @@
     "simulation": "Simulation",
     "reviews": {
       "title": "My Reviews",
-      "subtitle": "Approved reviews linked to your tours, sorted by most recent.",
-      "loadError": "Could not load reviews. Please try again later."
+      "subtitle": "Reviews linked to your tours, sorted by most recent.",
+      "loadError": "Could not load reviews. Please try again later.",
+      "pagePrev": "Previous",
+      "pageNext": "Next",
+      "showingRange": "{start}–{end} of {total}"
     },
     "quickActions": {
       "title": "Quick Actions",
@@ -7213,6 +7216,7 @@
       "chat": "Chat",
       "home": "Home",
       "tours": "Tours",
+      "reviews": "Reviews",
       "manual": "Manual",
       "tourMaterials": "Data",
       "documents": "Documents"

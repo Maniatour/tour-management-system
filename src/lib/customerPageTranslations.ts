@@ -163,9 +163,30 @@ export async function saveCustomerPageTranslations(
 ): Promise<void> {
   for (const [keyPath, localeValues] of Object.entries(form)) {
     for (const locale of locales) {
-      await upsertTranslationValue(namespace, keyPath, locale, localeValues[locale] ?? '')
+      const raw = localeValues[locale] ?? ''
+      // Avoid locking English file copy into the Korean locale when the form was
+      // prefilled from an untranslated ko.json default (or a previous bad DB row).
+      const valueToSave =
+        locale === 'ko' ? resolveKoreanValueForSave(namespace, keyPath, raw) : raw
+      await upsertTranslationValue(namespace, keyPath, locale, valueToSave)
     }
   }
+}
+
+function resolveKoreanValueForSave(namespace: string, keyPath: string, raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed) return raw
+  const enDefault = readFileDefault(namespace, keyPath, 'en').trim()
+  const koDefault = readFileDefault(namespace, keyPath, 'ko').trim()
+  if (
+    enDefault &&
+    koDefault &&
+    koDefault !== enDefault &&
+    trimmed === enDefault
+  ) {
+    return koDefault
+  }
+  return raw
 }
 
 export async function invalidateTranslationCache(): Promise<void> {

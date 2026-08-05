@@ -2038,7 +2038,7 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
         <button
         type="button"
         onClick={openWidget}
-        className={`fixed ${ADMIN_FLOATING_FAB_Z_CLASS} flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-emerald-600 to-emerald-700 text-white shadow-2xl ring-2 ring-white/20 transition hover:scale-105 hover:shadow-emerald-900/30 active:scale-95`}
+        className={`fixed ${ADMIN_FLOATING_FAB_Z_CLASS} flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-emerald-600 to-emerald-700 text-white shadow-xl ring-2 ring-white/20 transition hover:scale-105 hover:shadow-emerald-900/30 active:scale-95 lg:h-14 lg:w-14 lg:shadow-2xl`}
         style={{
           right: '1rem',
           bottom: fabBottomCss(FAB_STACK_INDEX),
@@ -2046,9 +2046,9 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
         aria-label={isKo ? '업무 Todo 열기' : 'Open work todos'}
         title={headerTitle}
       >
-        <ClipboardList className="h-6 w-6" />
+        <ClipboardList className="h-5 w-5 lg:h-6 lg:w-6" />
         {pendingCount > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-bold text-white">
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full border-2 border-white bg-red-500 px-0.5 text-[9px] font-bold leading-none text-white lg:h-5 lg:min-w-[1.25rem] lg:px-1 lg:text-[10px]">
             {pendingCount > 99 ? '99+' : pendingCount}
           </span>
         )}

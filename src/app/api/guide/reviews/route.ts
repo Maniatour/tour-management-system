@@ -4,7 +4,7 @@ import { getGuideLinkedReviews } from '@/lib/guideReviews'
 
 /**
  * GET /api/guide/reviews
- * Returns linked approved reviews and summary stats for the logged-in guide.
+ * Returns linked reviews and summary stats for the logged-in guide.
  */
 export async function GET(request: NextRequest) {
   const auth = await resolveGuideApiAuth(request)
