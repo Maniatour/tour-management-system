@@ -48,6 +48,7 @@ import {
   normalizeReservationIds,
 } from '@/utils/tourUtils'
 import { fetchReservationOptionLinesBatch } from '@/lib/reservationOptionsForEmail'
+import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
 import {
   adjustOptionTotalExcludingLegacyNonResident,
   getBalanceAmountForDisplay,
@@ -1135,12 +1136,8 @@ export default function GuideTourDetailPage() {
     const member = teamMembers.find(m => m.email === email)
     if (!member) return email // 팀 멤버 정보가 없으면 이메일 표시
     
-    // 한국어 페이지에서는 name_ko, 영어 페이지에서는 name_en 표시
-    if (locale === 'ko') {
-      return member.name_ko || member.name_en || email
-    } else {
-      return member.name_en || member.name_ko || email
-    }
+    // 한국어: nick/name_ko, 영어: name_en 우선 (한글 nick이 덮지 않음)
+    return teamMemberNameForLocale(member, locale) || email
   }
 
   // 팀 멤버 전화번호 가져오기 함수
@@ -1444,9 +1441,9 @@ export default function GuideTourDetailPage() {
   }
 
   return (
-    <div className="w-full lg:max-w-5xl lg:mx-auto lg:px-2">
+    <div className="w-full">
       {/* 헤더 - 모바일 최적화 */}
-      <div className={`mb-4 sm:mb-6 ${guideContentInset} lg:px-0`}>
+      <div className={`mb-4 sm:mb-6 ${guideContentInset}`}>
         <button
           onClick={() => router.push(`/${locale}/guide/tours`)}
           className="flex items-center text-gray-600 hover:text-gray-900 text-sm sm:text-base"

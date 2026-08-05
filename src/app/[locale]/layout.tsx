@@ -8,7 +8,7 @@ import LazyStripeErrorHandler from "@/components/layout/LazyStripeErrorHandler";
 import LazyModalBackdropGuard from "@/components/layout/LazyModalBackdropGuard";
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, setRequestLocale } from 'next-intl/server';
-import { headers } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import CartProviderWrapper from '@/components/CartProviderWrapper';
 import { CustomerPageEditModeProvider } from '@/components/product/CustomerPageEditModeProvider';
@@ -21,6 +21,29 @@ import { isSiteLocale, siteLocalePathTest } from '@/lib/siteLocales';
 
 export async function generateMetadata(): Promise<Metadata> {
   return getLocaleLayoutMetadata();
+}
+
+function resolvePathname(
+  headerPath: string | null,
+  cookiePath: string | undefined
+): string {
+  const fromHeader = headerPath?.trim() ?? ''
+  if (fromHeader) return fromHeader
+  return cookiePath?.trim() ?? ''
+}
+
+function pathIsGuide(path: string): boolean {
+  if (!path) return false
+  return (
+    siteLocalePathTest(path, '/guide(/|$)') || /\/guide(\/|$)/.test(path)
+  )
+}
+
+function pathIsAdmin(path: string): boolean {
+  if (!path) return false
+  return (
+    siteLocalePathTest(path, '/admin(/|$)') || /\/admin(\/|$)/.test(path)
+  )
 }
 
 export default async function LocaleLayout({
@@ -46,25 +69,46 @@ export default async function LocaleLayout({
     messages = {};
   }
   
-  // Admin/가이드 분기: 미들웨어가 넣은 요청 헤더만 사용 (x-pathname 쿠키는 이전 페이지 값이 남아 /ko 홈이 admin 레이아웃으로 가는 등 오류 유발)
+  // Admin/가이드 분기: 경로 신호가 있으면 가이드 (헤더 '0'이어도 /guide 경로면 가이드)
   const headersList = await headers();
-  const pathname = headersList.get('x-pathname') ?? '';
-  const isAdminPage = pathname.includes('/admin');
-  const isEmbedPage = pathname.includes('/embed');
+  const cookieStore = await cookies();
+  const headerPath = headersList.get('x-pathname')?.trim() ?? '';
+  const cookiePath = cookieStore.get('x-pathname')?.value?.trim() ?? '';
+  const pathname = resolvePathname(
+    headersList.get('x-pathname'),
+    cookieStore.get('x-pathname')?.value
+  );
+  const guideHeader = headersList.get('x-is-guide-route')?.trim() ?? null;
+  const guideCookie = cookieStore.get('x-is-guide-route')?.value?.trim();
   const isGuidePage =
-    pathname.includes('/guide') || headersList.get('x-is-guide-route') === '1';
+    pathIsGuide(pathname) ||
+    pathIsGuide(headerPath) ||
+    pathIsGuide(cookiePath) ||
+    guideHeader === '1' ||
+    (guideHeader !== '0' && guideCookie === '1');
+  const isAdminPage =
+    pathIsAdmin(pathname) ||
+    pathIsAdmin(headerPath) ||
+    pathIsAdmin(cookiePath);
+  const isEmbedPage = pathname.includes('/embed');
   const isPhotosPage = pathname.includes('/photos/'); // 사진 공유 링크 페이지
   const isAuthPage = /\/auth(\/|$)/.test(pathname);
+  const residentHeader = headersList.get('x-is-resident-check-route');
   const isResidentCheckGuestPage =
-    headersList.get('x-is-resident-check-route') === '1' ||
+    residentHeader === '1' ||
+    (residentHeader == null &&
+      cookieStore.get('x-is-resident-check-route')?.value === '1') ||
     siteLocalePathTest(pathname, '/resident-check(/|$)') ||
     siteLocalePathTest(pathname, '/dashboard/resident-check(/|$)');
   const isCustomerHome = siteLocalePathTest(pathname, '/?$');
   const isCustomerProductsListing = siteLocalePathTest(pathname, '/products/?$');
   const isCustomerProductDetail = siteLocalePathTest(pathname, '/products/[^/]+/?$');
   const isCustomerTravelGuide = siteLocalePathTest(pathname, '/travel-guide(/|$)');
+  const fullWidthHeader = headersList.get('x-is-full-width-customer-page');
   const isFullWidthCustomerPage =
-    headersList.get('x-is-full-width-customer-page') === '1' ||
+    fullWidthHeader === '1' ||
+    (fullWidthHeader == null &&
+      cookieStore.get('x-is-full-width-customer-page')?.value === '1') ||
     isCustomerHome ||
     isCustomerProductsListing ||
     isCustomerProductDetail ||
@@ -104,7 +148,7 @@ export default async function LocaleLayout({
           <FloatingChatProvider>
             <LazyStripeErrorHandler />
             <LazyModalBackdropGuard />
-            <div className="min-h-screen app-page-bg">
+            <div className="min-h-screen w-full bg-white">
               <LazyNavigation />
               {children}
               <LazyFloatingChatContainer />
@@ -132,7 +176,9 @@ export default async function LocaleLayout({
                 <LazySidebar />
                 <main
                   className={`flex-1 main-safe-area ${
-                    isFullWidthCustomerPage ? 'px-0 pt-0' : 'px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6'
+                    isFullWidthCustomerPage || isGuidePage
+                      ? 'px-0 pt-0'
+                      : 'px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6'
                   }`}
                 >
                   {children}

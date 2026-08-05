@@ -138,7 +138,8 @@ import {
   parseResidentLineStateFromSelections,
   residentLineStateEquals,
   computePassCoveredCount,
-  residentFeeAmountsFromPricingChoicesJson,
+  recoverResidentStatusAmounts,
+  selectedChoicesToPricingChoicesJson,
   sumResidentFeeAmountsUsd,
   type ResidentLineState,
   type ResidentLineKey,
@@ -1084,7 +1085,9 @@ export default function ReservationForm({
       Array.isArray(prev.selectedChoices) ? prev.selectedChoices : [],
       rows
     )
-    return { ...prev, selectedChoices, choicesTotal, residentStatusAmounts: ra }
+    // reservation_pricing.choices 와 동기화 — savePricingInfo가 fd.choices를 그대로 저장함
+    const choices = selectedChoicesToPricingChoicesJson(selectedChoices as any)
+    return { ...prev, selectedChoices, choicesTotal, residentStatusAmounts: ra, choices }
   }, [])
 
   const applyResidentParticipantPatch = useCallback(
@@ -3851,10 +3854,18 @@ export default function ReservationForm({
           
           // DB에 저장된 잔액(가격 정보 모달 「잔액(투어 당일 지불)」 등)은 채널 종류와 관계없이 로드
           const balanceAmount = Number(existingPricing.balance_amount) || 0
-          const residentAmountsFromChoices = {
-            ...emptyResidentStatusAmounts(),
-            ...residentFeeAmountsFromPricingChoicesJson(existingPricing.choices),
-          }
+          // 옵션명 없는 choices JSON·상품 메타·폼 selectedChoices에서 양수 금액만 복원
+          // (empty 0 스프레드로 기존 금액을 지우던 버그 방지)
+          const fdSnap = formDataRef.current
+          const residentAmountsFromChoices = recoverResidentStatusAmounts({
+            choicesJson: existingPricing.choices,
+            productChoices: (fdSnap.productChoices || formData.productChoices || []) as any,
+            selectedChoices: Array.isArray(fdSnap.selectedChoices)
+              ? (fdSnap.selectedChoices as any)
+              : Array.isArray(formData.selectedChoices)
+                ? (formData.selectedChoices as any)
+                : [],
+          })
           const residentFeesFromChoices = sumResidentFeeAmountsUsd(residentAmountsFromChoices)
           const onSiteBalanceAmount = balanceAmount
           
@@ -3924,7 +3935,15 @@ export default function ReservationForm({
                 ...(prev.residentStatusAmounts || {}),
                 ...residentAmountsFromChoices,
               },
-              choices: existingPricing.choices || {},
+              // required 배열이 있을 때만 pricing choices JSON 유지 (옵션 단가 맵으로 덮어쓰지 않음)
+              choices:
+                existingPricing.choices &&
+                typeof existingPricing.choices === 'object' &&
+                Array.isArray((existingPricing.choices as { required?: unknown }).required)
+                  ? existingPricing.choices
+                  : prev.choices?.required
+                    ? prev.choices
+                    : existingPricing.choices || prev.choices || {},
               choicesTotal: Number(existingPricing.choices_total) || 0
             }
             
@@ -5678,6 +5697,20 @@ export default function ReservationForm({
       const prepaymentTipSave = Math.round(toNum(fd.prepaymentTip) * 100) / 100
 
       // DB에 저장할 전체 컬럼을 명시적으로 구성 (타입 필터로 누락 방지)
+      const choicesJsonForSave = (() => {
+        const selected = Array.isArray(fd.selectedChoices) ? fd.selectedChoices : []
+        if (selected.length > 0) {
+          return selectedChoicesToPricingChoicesJson(selected as any)
+        }
+        if (
+          fd.choices &&
+          typeof fd.choices === 'object' &&
+          Array.isArray((fd.choices as { required?: unknown }).required)
+        ) {
+          return fd.choices
+        }
+        return fd.choices || {}
+      })()
       const pricingData = {
         id: pricingId,
         reservation_id: reservationId,
@@ -5688,7 +5721,7 @@ export default function ReservationForm({
         not_included_price: resolveNotIncludedForSave(newNotIncluded),
         required_options: fd.requiredOptions,
         required_option_total: keep(newRequiredOptionTotal, (existing as any)?.required_option_total),
-        choices: fd.choices,
+        choices: choicesJsonForSave,
         choices_total: keep(newChoicesTotal, (existing as any)?.choices_total),
         subtotal: keep(newSubtotal, (existing as any)?.subtotal),
         coupon_code: fd.couponCode ?? '',
@@ -5962,9 +5995,10 @@ export default function ReservationForm({
       }
       
       // 새로운 간결한 초이스 시스템 사용
-      const choicesData: any = {
-        required: []
-      }
+      const choicesData =
+        Array.isArray(formData.selectedChoices) && formData.selectedChoices.length > 0
+          ? selectedChoicesToPricingChoicesJson(formData.selectedChoices as any)
+          : ({ required: [] } as { required: Array<Record<string, unknown>> })
       
       console.log('ReservationForm: 초이스 데이터 준비 시작', {
         selectedChoicesType: Array.isArray(formData.selectedChoices) ? 'array' : typeof formData.selectedChoices,
@@ -5974,26 +6008,8 @@ export default function ReservationForm({
       
       // "미정"(__undecided__)은 reservation_choices FK에 없으나 reservations.choices JSON에는 보관
       const UNDECIDED_OPTION_ID = '__undecided__'
-      if (Array.isArray(formData.selectedChoices) && formData.selectedChoices.length > 0) {
-        formData.selectedChoices.forEach(choice => {
-          if (!choice.choice_id || !choice.option_id) return
-          if (choice.option_id === UNDECIDED_OPTION_ID) {
-            choicesData.required.push({
-              choice_id: choice.choice_id,
-              option_id: UNDECIDED_OPTION_ID,
-              quantity: choice.quantity || 1,
-              total_price: choice.total_price || 0
-            })
-            return
-          }
-          choicesData.required.push({
-            choice_id: choice.choice_id,
-            option_id: choice.option_id,
-            quantity: choice.quantity || 1,
-            total_price: choice.total_price || 0
-          })
-        })
-      } else if (formData.selectedChoices && typeof formData.selectedChoices === 'object') {
+      if (!(Array.isArray(formData.selectedChoices) && formData.selectedChoices.length > 0) &&
+          formData.selectedChoices && typeof formData.selectedChoices === 'object') {
         // 기존 객체 형태의 selectedChoices 처리
         Object.entries(formData.selectedChoices).forEach(([choiceId, choiceData]) => {
           if (choiceData && typeof choiceData === 'object' && 'selected' in choiceData) {

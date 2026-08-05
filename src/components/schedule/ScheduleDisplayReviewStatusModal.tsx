@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2, Star, Trophy } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Loader2, Maximize2, Minimize2, Star, Trophy } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { cn } from '@/lib/utils'
 import type {
   GoogleReviewStaffMonthlyCell,
   GoogleReviewStaffMonthlyStat,
@@ -97,30 +98,60 @@ function formatPercent(value: number | null): string {
   return `${value.toFixed(0)}%`
 }
 
-function RankBadge({ rank }: { rank: number }) {
+function formatRateDetail(
+  reviews: number,
+  denominator: number,
+  percent: number | null
+): string {
+  if (denominator <= 0) return '—'
+  return `${reviews}/${denominator} ${formatPercent(percent)}`
+}
+
+function RankBadge({ rank, large }: { rank: number; large?: boolean }) {
+  const size = large ? 'h-9 w-9 text-sm' : 'h-7 w-7 text-xs'
   if (rank === 1) {
     return (
-      <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-amber-100 text-xs font-bold text-amber-700">
+      <span
+        className={cn(
+          'inline-flex items-center justify-center rounded-full bg-amber-100 font-bold text-amber-700',
+          size
+        )}
+      >
         1
       </span>
     )
   }
   if (rank === 2) {
     return (
-      <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
+      <span
+        className={cn(
+          'inline-flex items-center justify-center rounded-full bg-slate-200 font-bold text-slate-700',
+          size
+        )}
+      >
         2
       </span>
     )
   }
   if (rank === 3) {
     return (
-      <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-orange-100 text-xs font-bold text-orange-800">
+      <span
+        className={cn(
+          'inline-flex items-center justify-center rounded-full bg-orange-100 font-bold text-orange-800',
+          size
+        )}
+      >
         3
       </span>
     )
   }
   return (
-    <span className="inline-flex h-7 w-7 items-center justify-center text-xs font-semibold tabular-nums text-muted-foreground">
+    <span
+      className={cn(
+        'inline-flex items-center justify-center font-semibold tabular-nums text-muted-foreground',
+        size
+      )}
+    >
       {rank}
     </span>
   )
@@ -141,8 +172,49 @@ export default function ScheduleDisplayReviewStatusModal({
   const [loading, setLoading] = useState(false)
   const [monthlyStats, setMonthlyStats] = useState<GoogleReviewStaffMonthlyStat[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const contentRef = useRef<HTMLDivElement>(null)
 
   const monthLabels = isKo ? MONTH_LABELS_KO : MONTH_LABELS_EN
+
+  const exitBrowserFullscreen = useCallback(async () => {
+    if (typeof document === 'undefined') return
+    if (!document.fullscreenElement) return
+    try {
+      await document.exitFullscreen()
+    } catch {
+      // ignore — CSS fullscreen still applies
+    }
+  }, [])
+
+  const enterBrowserFullscreen = useCallback(async () => {
+    const el = contentRef.current
+    if (!el || typeof el.requestFullscreen !== 'function') return
+    try {
+      await el.requestFullscreen()
+    } catch {
+      // CSS fullscreen still applies without native API
+    }
+  }, [])
+
+  const setFullscreen = useCallback(
+    async (next: boolean) => {
+      setIsFullscreen(next)
+      if (next) {
+        await enterBrowserFullscreen()
+      } else {
+        await exitBrowserFullscreen()
+      }
+    },
+    [enterBrowserFullscreen, exitBrowserFullscreen]
+  )
+
+  useEffect(() => {
+    if (!open) {
+      setIsFullscreen(false)
+      void exitBrowserFullscreen()
+    }
+  }, [open, exitBrowserFullscreen])
 
   const loadStats = useCallback(async () => {
     if (!open) return
@@ -218,31 +290,126 @@ export default function ScheduleDisplayReviewStatusModal({
     }
   }, [availableMonths, selectedMonth])
 
+  const handleOpenChange = (next: boolean) => {
+    if (!next) {
+      setIsFullscreen(false)
+      void exitBrowserFullscreen()
+    }
+    onOpenChange(next)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[92vh] w-[min(96vw,56rem)] max-w-none flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="shrink-0 border-b border-border/60 px-5 py-4 text-left sm:px-6">
-          <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
-            <Trophy className="h-5 w-5 text-amber-500" aria-hidden />
-            {isKo ? '리뷰 현황' : 'Review status'}
-          </DialogTitle>
-          <DialogDescription>
-            {isKo
-              ? '활성 가이드·어시스턴트의 월별 리뷰 점수 순위입니다. 평균 별점이 높은 순으로 표시됩니다.'
-              : 'Monthly review ranking for active guides and assistants, sorted by average rating.'}
-          </DialogDescription>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        ref={contentRef}
+        className={cn(
+          'flex flex-col gap-0 overflow-hidden bg-background p-0',
+          isFullscreen
+            ? 'fixed inset-0 left-0 top-0 h-[100dvh] w-screen max-w-none translate-x-0 translate-y-0 rounded-none border-0 shadow-none data-[state=open]:zoom-in-100'
+            : 'max-h-[92vh] w-[min(96vw,64rem)] max-w-none'
+        )}
+      >
+        <DialogHeader
+          className={cn(
+            'shrink-0 border-b border-border/60 text-left',
+            isFullscreen ? 'px-6 py-5 sm:px-8' : 'px-5 py-4 sm:px-6'
+          )}
+        >
+          <div className="flex items-start justify-between gap-3 pr-10">
+            <div className="min-w-0 space-y-1.5">
+              <DialogTitle
+                className={cn(
+                  'flex items-center gap-2 font-semibold',
+                  isFullscreen ? 'text-2xl md:text-3xl' : 'text-lg'
+                )}
+              >
+                <Trophy
+                  className={cn(
+                    'shrink-0 text-amber-500',
+                    isFullscreen ? 'h-7 w-7' : 'h-5 w-5'
+                  )}
+                  aria-hidden
+                />
+                {isKo ? '리뷰 현황' : 'Review status'}
+                {isFullscreen ? (
+                  <span className="ml-1 text-base font-medium text-muted-foreground md:text-lg">
+                    · {year}
+                    {isKo ? '년' : ''} {monthLabels[selectedMonth - 1]}
+                  </span>
+                ) : null}
+              </DialogTitle>
+              {!isFullscreen ? (
+                <DialogDescription>
+                  {isKo
+                    ? '활성 가이드·어시스턴트의 월별 리뷰 점수 순위입니다. 평균 별점이 높은 순으로 표시됩니다.'
+                    : 'Monthly review ranking for active guides and assistants, sorted by average rating.'}
+                </DialogDescription>
+              ) : (
+                <DialogDescription className="text-base text-muted-foreground">
+                  {isKo
+                    ? '인원별 리뷰율 = 리뷰 ÷ 투어 총인원 · 예약건별 리뷰율 = 리뷰 ÷ 예약 건수'
+                    : 'By guests = reviews ÷ tour guests · By bookings = reviews ÷ reservation groups'}
+                </DialogDescription>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void setFullscreen(!isFullscreen)}
+              className={cn(
+                'inline-flex shrink-0 items-center gap-2 rounded-xl border border-border/60 bg-muted/40 font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                isFullscreen ? 'h-11 px-4 text-sm' : 'h-9 px-3 text-xs'
+              )}
+              aria-pressed={isFullscreen}
+              title={
+                isFullscreen
+                  ? isKo
+                    ? '전체 화면 종료'
+                    : 'Exit fullscreen'
+                  : isKo
+                    ? '전체 화면 보기'
+                    : 'Fullscreen'
+              }
+            >
+              {isFullscreen ? (
+                <>
+                  <Minimize2 className="h-4 w-4" aria-hidden />
+                  {isKo ? '축소' : 'Exit'}
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="h-4 w-4" aria-hidden />
+                  {isKo ? '전체 화면' : 'Fullscreen'}
+                </>
+              )}
+            </button>
+          </div>
         </DialogHeader>
 
-        <div className="shrink-0 space-y-3 border-b border-border/40 px-5 py-3 sm:px-6">
+        <div
+          className={cn(
+            'shrink-0 space-y-3 border-b border-border/40',
+            isFullscreen ? 'px-6 py-4 sm:px-8' : 'px-5 py-3 sm:px-6'
+          )}
+        >
           <div className="flex flex-wrap items-center gap-2">
-            <label className="text-xs font-medium text-muted-foreground" htmlFor="review-status-year">
+            <label
+              className={cn(
+                'font-medium text-muted-foreground',
+                isFullscreen ? 'text-sm' : 'text-xs'
+              )}
+              htmlFor="review-status-year"
+            >
               {isKo ? '연도' : 'Year'}
             </label>
             <select
               id="review-status-year"
               value={year}
               onChange={(e) => setYear(Number.parseInt(e.target.value, 10))}
-              className="h-9 rounded-lg border border-border bg-background px-2.5 text-sm font-medium"
+              className={cn(
+                'rounded-lg border border-border bg-background font-medium',
+                isFullscreen ? 'h-11 px-3 text-base' : 'h-9 px-2.5 text-sm'
+              )}
             >
               {Array.from({ length: 4 }, (_, i) => currentYear - i).map((y) => (
                 <option key={y} value={y}>
@@ -250,7 +417,12 @@ export default function ScheduleDisplayReviewStatusModal({
                 </option>
               ))}
             </select>
-            <span className="text-xs text-muted-foreground">
+            <span
+              className={cn(
+                'text-muted-foreground',
+                isFullscreen ? 'text-sm' : 'text-xs'
+              )}
+            >
               {isKo
                 ? `활성 ${rankedRows.length}명`
                 : `${rankedRows.length} active`}
@@ -271,11 +443,13 @@ export default function ScheduleDisplayReviewStatusModal({
                   role="tab"
                   aria-selected={selected}
                   onClick={() => setSelectedMonth(month)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                  className={cn(
+                    'rounded-full font-medium transition-colors',
+                    isFullscreen ? 'px-4 py-2 text-sm' : 'px-3 py-1.5 text-xs',
                     selected
                       ? 'bg-primary text-primary-foreground shadow-sm'
                       : 'border border-border/60 bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground'
-                  }`}
+                  )}
                 >
                   {monthLabels[month - 1]}
                 </button>
@@ -284,7 +458,12 @@ export default function ScheduleDisplayReviewStatusModal({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
+        <div
+          className={cn(
+            'min-h-0 flex-1 overflow-y-auto',
+            isFullscreen ? 'px-6 py-5 sm:px-8' : 'px-5 py-4 sm:px-6'
+          )}
+        >
           {loading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -308,14 +487,16 @@ export default function ScheduleDisplayReviewStatusModal({
             </p>
           ) : (
             <>
-              <div className="mb-3 hidden text-xs text-muted-foreground sm:block">
-                {isKo
-                  ? `${year}년 ${monthLabels[selectedMonth - 1]} · 평균 별점 → 리뷰 수 → 5점 순`
-                  : `${monthLabels[selectedMonth - 1]} ${year} · avg rating → reviews → 5★`}
-              </div>
+              {!isFullscreen ? (
+                <div className="mb-3 hidden text-xs text-muted-foreground sm:block">
+                  {isKo
+                    ? `${year}년 ${monthLabels[selectedMonth - 1]} · 평균 별점 → 리뷰 수 → 5점 순 · 인원별 = 리뷰÷총인원 · 예약건별 = 리뷰÷예약건수`
+                    : `${monthLabels[selectedMonth - 1]} ${year} · avg rating → reviews → 5★ · by guests = reviews÷guests · by bookings = reviews÷groups`}
+                </div>
+              ) : null}
 
-              {/* Mobile cards */}
-              <ul className="space-y-2 sm:hidden">
+              {/* Mobile cards — hide in board/fullscreen mode (TV is landscape) */}
+              <ul className={cn('space-y-2', isFullscreen ? 'hidden' : 'sm:hidden')}>
                 {rankedRows.map((row) => {
                   const cell = row.cell ?? { ...EMPTY_CELL, month: selectedMonth }
                   return (
@@ -346,10 +527,28 @@ export default function ScheduleDisplayReviewStatusModal({
                                 {cell.fiveStarCount}
                               </span>
                             </span>
-                            <span>
-                              {isKo ? '리뷰율' : 'Rate'}{' '}
+                            <span
+                              title={
+                                isKo
+                                  ? '리뷰 수 ÷ 투어 총인원'
+                                  : 'Reviews ÷ total tour guests'
+                              }
+                            >
+                              {isKo ? '인원별' : 'By guests'}{' '}
                               <span className="font-medium tabular-nums text-foreground">
                                 {formatPercent(cell.guestReviewRatePercent)}
+                              </span>
+                            </span>
+                            <span
+                              title={
+                                isKo
+                                  ? '리뷰 수 ÷ 예약 건수'
+                                  : 'Reviews ÷ reservation groups'
+                              }
+                            >
+                              {isKo ? '예약건별' : 'By bookings'}{' '}
+                              <span className="font-medium tabular-nums text-foreground">
+                                {formatPercent(cell.groupReviewRatePercent)}
                               </span>
                             </span>
                           </div>
@@ -360,22 +559,90 @@ export default function ScheduleDisplayReviewStatusModal({
                 })}
               </ul>
 
-              {/* Desktop table */}
-              <div className="hidden overflow-x-auto sm:block">
-                <table className="min-w-full text-sm">
+              {/* Desktop / board table */}
+              <div className={cn(isFullscreen ? 'block' : 'hidden overflow-x-auto sm:block')}>
+                <table
+                  className={cn(
+                    'min-w-full',
+                    isFullscreen ? 'w-full text-base md:text-lg' : 'text-sm'
+                  )}
+                >
                   <thead>
                     <tr className="border-b border-border/60 text-left text-muted-foreground">
-                      <th className="py-2 pr-3 font-medium">{isKo ? '순위' : 'Rank'}</th>
-                      <th className="py-2 pr-4 font-medium">{isKo ? '가이드' : 'Guide'}</th>
-                      <th className="py-2 pr-4 font-medium">{isKo ? '평균' : 'Avg'}</th>
-                      <th className="py-2 pr-4 font-medium">{isKo ? '리뷰 수' : 'Reviews'}</th>
-                      <th className="py-2 px-2 text-center font-medium">5★</th>
-                      <th className="py-2 px-2 text-center font-medium">4★</th>
-                      <th className="py-2 px-2 text-center font-medium">3★</th>
-                      <th className="py-2 px-2 text-center font-medium">2★</th>
-                      <th className="py-2 px-2 text-center font-medium">1★</th>
-                      <th className="py-2 pl-3 font-medium">
-                        {isKo ? '게스트 리뷰율' : 'Guest rate'}
+                      <th className={cn('font-medium', isFullscreen ? 'py-3 pr-4' : 'py-2 pr-3')}>
+                        {isKo ? '순위' : 'Rank'}
+                      </th>
+                      <th className={cn('font-medium', isFullscreen ? 'py-3 pr-5' : 'py-2 pr-4')}>
+                        {isKo ? '가이드' : 'Guide'}
+                      </th>
+                      <th className={cn('font-medium', isFullscreen ? 'py-3 pr-5' : 'py-2 pr-4')}>
+                        {isKo ? '평균' : 'Avg'}
+                      </th>
+                      <th className={cn('font-medium', isFullscreen ? 'py-3 pr-5' : 'py-2 pr-4')}>
+                        {isKo ? '리뷰 수' : 'Reviews'}
+                      </th>
+                      <th
+                        className={cn(
+                          'text-center font-medium',
+                          isFullscreen ? 'px-3 py-3' : 'px-2 py-2'
+                        )}
+                      >
+                        5★
+                      </th>
+                      <th
+                        className={cn(
+                          'text-center font-medium',
+                          isFullscreen ? 'px-3 py-3' : 'px-2 py-2'
+                        )}
+                      >
+                        4★
+                      </th>
+                      <th
+                        className={cn(
+                          'text-center font-medium',
+                          isFullscreen ? 'px-3 py-3' : 'px-2 py-2'
+                        )}
+                      >
+                        3★
+                      </th>
+                      <th
+                        className={cn(
+                          'text-center font-medium',
+                          isFullscreen ? 'px-3 py-3' : 'px-2 py-2'
+                        )}
+                      >
+                        2★
+                      </th>
+                      <th
+                        className={cn(
+                          'text-center font-medium',
+                          isFullscreen ? 'px-3 py-3' : 'px-2 py-2'
+                        )}
+                      >
+                        1★
+                      </th>
+                      <th
+                        className={cn(
+                          'font-medium',
+                          isFullscreen ? 'py-3 pl-4 pr-3' : 'py-2 pl-3 pr-2'
+                        )}
+                        title={
+                          isKo
+                            ? '리뷰 수 ÷ 투어 총인원'
+                            : 'Reviews ÷ total tour guests'
+                        }
+                      >
+                        {isKo ? '인원별 리뷰율' : 'By guests'}
+                      </th>
+                      <th
+                        className={cn('pl-2 font-medium', isFullscreen ? 'py-3' : 'py-2')}
+                        title={
+                          isKo
+                            ? '리뷰 수 ÷ 예약 건수'
+                            : 'Reviews ÷ reservation groups'
+                        }
+                      >
+                        {isKo ? '예약건별 리뷰율' : 'By bookings'}
                       </th>
                     </tr>
                   </thead>
@@ -386,38 +653,116 @@ export default function ScheduleDisplayReviewStatusModal({
                       return (
                         <tr
                           key={row.staffEmail}
-                          className={`border-b border-border/40 ${
-                            topThree ? 'bg-amber-50/40' : ''
-                          }`}
+                          className={cn(
+                            'border-b border-border/40',
+                            topThree && 'bg-amber-50/40'
+                          )}
                         >
-                          <td className="py-2.5 pr-3">
-                            <RankBadge rank={row.rank} />
+                          <td className={cn(isFullscreen ? 'py-3.5 pr-4' : 'py-2.5 pr-3')}>
+                            <RankBadge rank={row.rank} large={isFullscreen} />
                           </td>
-                          <td className="py-2.5 pr-4 font-medium whitespace-nowrap">
+                          <td
+                            className={cn(
+                              'font-medium whitespace-nowrap',
+                              isFullscreen ? 'py-3.5 pr-5 text-lg md:text-xl' : 'py-2.5 pr-4'
+                            )}
+                          >
                             {row.staffName}
                           </td>
-                          <td className="py-2.5 pr-4">
-                            <span className="inline-flex items-center gap-1 font-semibold tabular-nums text-amber-600">
-                              <Star className="h-3.5 w-3.5 fill-current" aria-hidden />
+                          <td className={cn(isFullscreen ? 'py-3.5 pr-5' : 'py-2.5 pr-4')}>
+                            <span
+                              className={cn(
+                                'inline-flex items-center gap-1 font-semibold tabular-nums text-amber-600',
+                                isFullscreen && 'text-lg'
+                              )}
+                            >
+                              <Star
+                                className={cn(
+                                  'fill-current',
+                                  isFullscreen ? 'h-4 w-4' : 'h-3.5 w-3.5'
+                                )}
+                                aria-hidden
+                              />
                               {cell.avgRating?.toFixed(2) ?? '—'}
                             </span>
                           </td>
-                          <td className="py-2.5 pr-4 tabular-nums">{cell.reviewCount}</td>
-                          <td className="py-2.5 px-2 text-center tabular-nums text-emerald-700">
+                          <td
+                            className={cn(
+                              'tabular-nums',
+                              isFullscreen ? 'py-3.5 pr-5 font-medium' : 'py-2.5 pr-4'
+                            )}
+                          >
+                            {cell.reviewCount}
+                          </td>
+                          <td
+                            className={cn(
+                              'text-center tabular-nums text-emerald-700',
+                              isFullscreen ? 'px-3 py-3.5' : 'px-2 py-2.5'
+                            )}
+                          >
                             {cell.fiveStarCount}
                           </td>
-                          <td className="py-2.5 px-2 text-center tabular-nums">{cell.fourStarCount}</td>
-                          <td className="py-2.5 px-2 text-center tabular-nums text-amber-700">
+                          <td
+                            className={cn(
+                              'text-center tabular-nums',
+                              isFullscreen ? 'px-3 py-3.5' : 'px-2 py-2.5'
+                            )}
+                          >
+                            {cell.fourStarCount}
+                          </td>
+                          <td
+                            className={cn(
+                              'text-center tabular-nums text-amber-700',
+                              isFullscreen ? 'px-3 py-3.5' : 'px-2 py-2.5'
+                            )}
+                          >
                             {cell.threeStarCount}
                           </td>
-                          <td className="py-2.5 px-2 text-center tabular-nums text-orange-700">
+                          <td
+                            className={cn(
+                              'text-center tabular-nums text-orange-700',
+                              isFullscreen ? 'px-3 py-3.5' : 'px-2 py-2.5'
+                            )}
+                          >
                             {cell.twoStarCount}
                           </td>
-                          <td className="py-2.5 px-2 text-center tabular-nums text-red-600">
+                          <td
+                            className={cn(
+                              'text-center tabular-nums text-red-600',
+                              isFullscreen ? 'px-3 py-3.5' : 'px-2 py-2.5'
+                            )}
+                          >
                             {cell.oneStarCount}
                           </td>
-                          <td className="py-2.5 pl-3 tabular-nums text-muted-foreground">
+                          <td
+                            className={cn(
+                              'tabular-nums text-muted-foreground',
+                              isFullscreen
+                                ? 'py-3.5 pl-4 pr-3 font-semibold text-foreground'
+                                : 'py-2.5 pl-3 pr-2'
+                            )}
+                            title={formatRateDetail(
+                              cell.reviewCount,
+                              cell.totalTourGuests,
+                              cell.guestReviewRatePercent
+                            )}
+                          >
                             {formatPercent(cell.guestReviewRatePercent)}
+                          </td>
+                          <td
+                            className={cn(
+                              'pl-2 tabular-nums text-muted-foreground',
+                              isFullscreen
+                                ? 'py-3.5 font-semibold text-foreground'
+                                : 'py-2.5'
+                            )}
+                            title={formatRateDetail(
+                              cell.reviewCount,
+                              cell.reservationGroupCount,
+                              cell.groupReviewRatePercent
+                            )}
+                          >
+                            {formatPercent(cell.groupReviewRatePercent)}
                           </td>
                         </tr>
                       )

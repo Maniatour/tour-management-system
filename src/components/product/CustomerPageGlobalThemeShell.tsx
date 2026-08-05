@@ -21,8 +21,11 @@ export default function CustomerPageGlobalThemeShell({
   const { ready } = useCustomerPageFieldBindings()
   const isCustomerHome = siteLocalePathTest(pathname, '/?$')
   const isCustomerProductDetail = siteLocalePathTest(pathname, '/products/[^/]+/?$')
+  const isGuidePath = siteLocalePathTest(pathname, '/guide(/|$)')
   const pageBackground =
-    isCustomerHome || isCustomerProductDetail ? '#ffffff' : theme.pageBackground
+    isGuidePath || isCustomerHome || isCustomerProductDetail
+      ? '#ffffff'
+      : theme.pageBackground
 
   return (
     <div

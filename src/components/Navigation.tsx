@@ -95,7 +95,7 @@ const NavigationContent = () => {
     )
   }
 
-  const navShellClass = 'bg-white shadow-lg border-b'
+  const navShellClass = 'bg-white border-b border-gray-200'
 
   const linkClass = 'flex items-center text-gray-600 hover:text-gray-900 transition-colors'
 

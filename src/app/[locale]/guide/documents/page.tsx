@@ -223,7 +223,7 @@ export default function DocumentsPage() {
   
   if (loading) {
     return (
-      <div className="min-h-screen app-page-bg flex items-center justify-center">
+      <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">Loading...</p>
@@ -233,8 +233,8 @@ export default function DocumentsPage() {
   }
   
   return (
-    <div className="min-h-screen app-page-bg">
-      <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="min-h-screen bg-white">
+      <div className="w-full px-3 py-6 sm:px-4 sm:py-8">
         {/* 헤더 */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
           <div className="flex items-center justify-between">

@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Plus, Users, DollarSign, Eye, Clock, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal, CalendarPlus, CalendarX } from 'lucide-react'
+import { Plus, Users, DollarSign, Eye, Clock, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal, CalendarPlus, CalendarX, Send } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - react-country-flag may lack types
@@ -35,6 +35,7 @@ import { ReservationCardSmsMenuButton } from '@/components/reservation/Reservati
 import type { ReservationSmsLogSummary } from '@/lib/reservationSmsLogSummaries'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import { ADMIN_FLOATING_PORTAL_Z_INDEX } from '@/lib/adminFloatingFabLayout'
+import { QuickPaymentRequestModal } from '@/components/customer/QuickPaymentRequestForm'
 
 function getLanguageFlagCountryCode(language: string | undefined | null): string {
   if (!language) return 'US'
@@ -435,6 +436,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [followUpModalOpen, setFollowUpModalOpen] = useState(false)
   const [simpleMoreMenuOpen, setSimpleMoreMenuOpen] = useState(false)
+  const [quickPaymentOpen, setQuickPaymentOpen] = useState(false)
   const [pickupSummaryModalOpen, setPickupSummaryModalOpen] = useState(false)
   const [pickupSummaryPortalReady, setPickupSummaryPortalReady] = useState(false)
   const [tourChatRoomPreviewOpen, setTourChatRoomPreviewOpen] = useState(false)
@@ -1110,6 +1112,18 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                         className={menuBtnClass}
                         onClick={() => {
                           closeMenu()
+                          setQuickPaymentOpen(true)
+                        }}
+                      >
+                        <Send className="h-3.5 w-3.5 shrink-0 text-teal-600" />
+                        {locale === 'en' ? 'Quick Payment' : '빠른 금액 청구'}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={menuBtnClass}
+                        onClick={() => {
+                          closeMenu()
                           onDetailClick(reservation)
                         }}
                       >
@@ -1340,6 +1354,27 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
         reservationId={reservation.id}
         tourDate={reservation.tourDate}
         tourId={effectiveTourId || linkedTourId || null}
+      />
+
+      <QuickPaymentRequestModal
+        open={quickPaymentOpen}
+        onClose={() => setQuickPaymentOpen(false)}
+        locale={locale === 'en' ? 'en' : 'ko'}
+        initials={(() => {
+          const customer = customers.find((c) => c.id === reservation.customerId)
+          const productName = getProductName(reservation.productId, (products as any) || [])
+          const tourDate = reservation.tourDate || ''
+          const rn = reservation.channelRN || reservation.id
+          const description =
+            locale === 'en'
+              ? [productName, tourDate, rn ? `RN ${rn}` : ''].filter(Boolean).join(' · ')
+              : [productName, tourDate, rn ? `RN ${rn}` : ''].filter(Boolean).join(' · ')
+          return {
+            email: customer?.email || '',
+            recipientName: customer?.name || getCustomerName(reservation.customerId, customers || []),
+            description,
+          }
+        })()}
       />
     </div>
   )

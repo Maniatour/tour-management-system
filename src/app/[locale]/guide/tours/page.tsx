@@ -13,6 +13,7 @@ import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { useAuth } from '@/contexts/AuthContext'
 import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
 import { chunkStrings } from '@/lib/supabaseInChunks'
+import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 
@@ -419,10 +420,10 @@ export default function GuideTours({}: GuideToursProps) {
           assigned_children: assignedChildren,
           assigned_infants: assignedInfants,
           unassigned_people: unassignedPeople,
-          guide_name: guide?.nick_name || guide?.name_ko || null,
-          guide_name_en: guide?.nick_name || guide?.name_en || null,
-          assistant_name: assistant?.nick_name || assistant?.name_ko || null,
-          assistant_name_en: assistant?.nick_name || assistant?.name_en || null,
+          guide_name: teamMemberNameForLocale(guide, 'ko'),
+          guide_name_en: teamMemberNameForLocale(guide, 'en'),
+          assistant_name: teamMemberNameForLocale(assistant, 'ko'),
+          assistant_name_en: teamMemberNameForLocale(assistant, 'en'),
           is_private_tour: tour.is_private_tour === true,
           vehicle_number: tour.tour_car_id ? (vehicleMap.get(tour.tour_car_id as unknown as string) || null) : null
         }
@@ -514,9 +515,9 @@ export default function GuideTours({}: GuideToursProps) {
   }
 
   return (
-    <div className="px-0 sm:px-6 py-2 sm:py-6">
+    <div className="px-0 py-2 sm:py-4">
       {/* 헤더 */}
-      <div className="mb-6 px-3 sm:px-0">
+      <div className="mb-6 px-3">
         {/* 가이드 대시보드로 돌아가기 버튼 */}
         <div className="mb-3">
           <button

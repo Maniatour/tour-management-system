@@ -110,7 +110,7 @@ export default function GuideSopReadClient() {
       : version.title
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
+    <div className="w-full space-y-4 p-3 sm:p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-gray-900">{isEn ? 'Company SOP' : '회사 SOP'}</h1>

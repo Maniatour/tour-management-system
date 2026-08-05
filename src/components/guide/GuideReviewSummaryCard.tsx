@@ -3,16 +3,41 @@
 import { useMemo } from 'react'
 import type { GuideReviewSummary } from '@/lib/guideReviews'
 
+export type GuideReviewRatingFilter = 'five' | 'four' | 'three' | 'two' | 'one'
+
 type Props = {
   summary: GuideReviewSummary
   locale: string
+  selectedFilter?: GuideReviewRatingFilter | null
+  onFilterChange?: (filter: GuideReviewRatingFilter | null) => void
 }
 
 type DistributionRow = {
-  key: 'five' | 'four' | 'three' | 'two' | 'one'
+  key: GuideReviewRatingFilter
   labelEn: string
   labelKo: string
   count: number
+}
+
+export function matchesGuideReviewRatingFilter(
+  rating: number,
+  filter: GuideReviewRatingFilter | null | undefined
+): boolean {
+  if (!filter) return true
+  switch (filter) {
+    case 'five':
+      return rating >= 5
+    case 'four':
+      return rating >= 4 && rating < 5
+    case 'three':
+      return rating >= 3 && rating < 4
+    case 'two':
+      return rating >= 2 && rating < 3
+    case 'one':
+      return rating < 2
+    default:
+      return true
+  }
 }
 
 function overallLabel(avg: number, isKo: boolean): string {
@@ -57,16 +82,35 @@ function DistributionBar({
   label,
   count,
   maxCount,
+  selected,
+  onSelect,
 }: {
   label: string
   count: number
   maxCount: number
+  selected: boolean
+  onSelect: () => void
 }) {
   const widthPercent = maxCount > 0 ? Math.round((count / maxCount) * 100) : 0
 
   return (
-    <div className="flex items-center gap-3 text-sm">
-      <span className="w-20 shrink-0 text-muted-foreground">{label}</span>
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={`flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-sm text-left transition-colors ${
+        selected
+          ? 'bg-emerald-50 ring-1 ring-emerald-600/40'
+          : 'hover:bg-muted/60'
+      }`}
+    >
+      <span
+        className={`w-20 shrink-0 font-medium ${
+          selected ? 'text-emerald-800' : 'text-muted-foreground'
+        }`}
+      >
+        {label}
+      </span>
       <div className="flex-1 h-2.5 rounded-full bg-gray-200 overflow-hidden">
         <div
           className="h-full rounded-full bg-emerald-700 transition-all duration-300"
@@ -76,11 +120,16 @@ function DistributionBar({
       <span className="w-6 shrink-0 text-right tabular-nums text-foreground font-medium">
         {count}
       </span>
-    </div>
+    </button>
   )
 }
 
-export default function GuideReviewSummaryCard({ summary, locale }: Props) {
+export default function GuideReviewSummaryCard({
+  summary,
+  locale,
+  selectedFilter = null,
+  onFilterChange,
+}: Props) {
   const isKo = locale === 'ko'
   const avg = summary.avgRating ?? 0
 
@@ -124,18 +173,18 @@ export default function GuideReviewSummaryCard({ summary, locale }: Props) {
 
   if (summary.reviewCount === 0) {
     return (
-      <div className="rounded-2xl border border-border/60 bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+      <div className="border-b border-border/60 bg-muted/20 px-3 py-6 text-center text-sm text-muted-foreground sm:px-4">
         {isKo ? '아직 연결된 리뷰가 없습니다.' : 'No linked reviews yet.'}
       </div>
     )
   }
 
   return (
-    <div className="rounded-2xl border border-border/60 bg-white p-4 sm:p-6 shadow-sm">
-      <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-        <div className="flex shrink-0 flex-col items-center justify-center rounded-xl bg-gray-50 px-6 py-5 sm:min-w-[140px]">
+    <div className="border-b border-border/60 bg-white px-3 py-4 sm:px-4 sm:py-5">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-6">
+        <div className="flex shrink-0 flex-col items-center justify-center bg-gray-50 px-4 py-5 sm:min-w-[140px] sm:rounded-xl">
           <p className="text-4xl font-bold tabular-nums text-foreground leading-none">
-            {avg.toFixed(1)}
+            {avg.toFixed(2)}
           </p>
           <p className="mt-2 text-sm font-medium text-muted-foreground">
             {overallLabel(avg, isKo)}
@@ -145,13 +194,18 @@ export default function GuideReviewSummaryCard({ summary, locale }: Props) {
           </div>
         </div>
 
-        <div className="flex-1 space-y-2.5 min-w-0">
+        <div className="flex-1 space-y-1 min-w-0" role="group" aria-label={isKo ? '평점 필터' : 'Rating filter'}>
           {distribution.map((row) => (
             <DistributionBar
               key={row.key}
               label={isKo ? row.labelKo : row.labelEn}
               count={row.count}
               maxCount={maxCount}
+              selected={selectedFilter === row.key}
+              onSelect={() => {
+                if (!onFilterChange) return
+                onFilterChange(selectedFilter === row.key ? null : row.key)
+              }}
             />
           ))}
         </div>

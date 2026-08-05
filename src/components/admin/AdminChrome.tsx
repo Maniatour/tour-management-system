@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import AdminSidebarAndHeader from '@/components/AdminSidebarAndHeader'
 import AdminPwaInstallFab from '@/components/admin/AdminPwaInstallFab'
@@ -31,11 +31,22 @@ export default function AdminChrome({ locale, children }: AdminChromeProps) {
   const bareChrome = isAdminBareChromePath(pathname)
   const { authUser } = useAuth()
 
+  // 가이드와 동일: 부모 padded main에 중첩돼도 풀블리드가 되도록 html 클래스 부여
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.add('is-admin-route')
+    return () => {
+      root.classList.remove('is-admin-route')
+    }
+  }, [])
+
   if (bareChrome) {
     return (
       <SiteAccessMatrixPatchProvider>
         <OpsModuleRouteGuard>
-          <div className="min-h-screen bg-background">{children}</div>
+          <div className="admin-shell min-h-screen w-full bg-background px-0">
+            {children}
+          </div>
         </OpsModuleRouteGuard>
       </SiteAccessMatrixPatchProvider>
     )
@@ -45,7 +56,7 @@ export default function AdminChrome({ locale, children }: AdminChromeProps) {
     <SiteAccessMatrixPatchProvider>
       <AdminPageTitle locale={locale} />
       <TeamBoardManualProvider locale={locale}>
-        <div className="min-h-screen">
+        <div className="admin-shell min-h-screen w-full px-0">
           <AdminSidebarAndHeader locale={locale}>
             <OpsModuleRouteGuard>{children}</OpsModuleRouteGuard>
           </AdminSidebarAndHeader>

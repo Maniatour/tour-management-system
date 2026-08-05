@@ -56,6 +56,7 @@ import {
 } from '@/lib/adminHeaderBadgeCache'
 import SimulationModal from './SimulationModal'
 import CustomerSimulationModal from './CustomerSimulationModal'
+import { QuickPaymentRequestModal } from '@/components/customer/QuickPaymentRequestForm'
 
 const AdminWeatherWidget = dynamic(() => import('./AdminWeatherWidget'), { ssr: false, loading: () => null })
 const OperatorSwitcher = dynamic(() => import('./admin/OperatorSwitcher'), {
@@ -80,6 +81,10 @@ const PriceInventoryHeaderButton = dynamic(
 )
 const ScheduleDisplayHeaderButton = dynamic(
   () => import('./schedule/ScheduleDisplayHeaderButton'),
+  { ssr: false, loading: () => null }
+)
+const QuickPaymentHeaderButton = dynamic(
+  () => import('./schedule/QuickPaymentHeaderButton'),
   { ssr: false, loading: () => null }
 )
 const StaffSiteAlertHeaderButton = dynamic(
@@ -121,7 +126,6 @@ const ADMIN_SIDEBAR_COLLAPSED_KEY = 'tms-admin-sidebar-collapsed'
 
 export default function AdminSidebarAndHeader({ locale, children }: AdminSidebarAndHeaderProps) {
   const pathname = usePathname()
-  const isAdminToursPage = /\/admin\/tours\/?$/.test(pathname)
   const router = useRouter()
   const { signOut, authUser, userRole, userPosition, isSimulating, stopSimulation, teamChatUnreadCount } = useAuth()
   const { operationsEnabled } = useOperator()
@@ -140,6 +144,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const [teamBoardCount, setTeamBoardCount] = useState(0)
   const [showSimulationModal, setShowSimulationModal] = useState(false)
   const [showCustomerSimulationModal, setShowCustomerSimulationModal] = useState(false)
+  const [quickPaymentModalOpen, setQuickPaymentModalOpen] = useState(false)
   const [expiringDocumentsCount, setExpiringDocumentsCount] = useState(0)
   // AuthContext에서 팀 채팅 안읽은 메시지 수 가져오기
   const { patchMap, loading: siteAccessPatchesLoading } = useSiteAccessMatrixPatchContext()
@@ -581,21 +586,15 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
     const isTeamChat = item.href.includes('/admin/team-chat')
     const isDocuments = item.href.includes('/admin/documents')
-    return (
-      <Link
-        key={item.id}
-        href={item.href}
-        prefetch={true}
-        title={opts.collapsed ? item.name : undefined}
-        {...(opts.onNavigate ? { onClick: opts.onNavigate } : {})}
-        className={`relative mb-1 flex items-center rounded-lg text-sm font-medium transition-colors ${
-          opts.collapsed ? 'justify-center px-2 py-2' : 'w-full px-2.5 py-1.5'
-        } ${
-          isActive
-            ? 'bg-primary/10 text-primary'
-            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-        }`}
-      >
+    const itemClassName = `relative mb-1 flex items-center rounded-lg text-sm font-medium transition-colors ${
+      opts.collapsed ? 'justify-center px-2 py-2' : 'w-full px-2.5 py-1.5'
+    } ${
+      isActive
+        ? 'bg-primary/10 text-primary'
+        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+    }`
+    const iconBadge = (
+      <>
         <Icon size={opts.collapsed ? 20 : 16} className={`shrink-0 ${opts.collapsed ? '' : 'mr-3'}`} />
         {!opts.collapsed && (
           <>
@@ -622,6 +621,36 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
             {expiringDocumentsCount > 9 ? '9+' : expiringDocumentsCount}
           </span>
         )}
+      </>
+    )
+
+    if (item.id === 'quick-payment') {
+      return (
+        <button
+          key={item.id}
+          type="button"
+          title={opts.collapsed ? item.name : undefined}
+          onClick={() => {
+            setQuickPaymentModalOpen(true)
+            opts.onNavigate?.()
+          }}
+          className={itemClassName}
+        >
+          {iconBadge}
+        </button>
+      )
+    }
+
+    return (
+      <Link
+        key={item.id}
+        href={item.href}
+        prefetch={true}
+        title={opts.collapsed ? item.name : undefined}
+        {...(opts.onNavigate ? { onClick: opts.onNavigate } : {})}
+        className={itemClassName}
+      >
+        {iconBadge}
       </Link>
     )
   }
@@ -704,13 +733,23 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 <Menu size={20} />
               </button>
               
-              {/* 시스템 제목 */}
+              {/* 시스템 제목: 모바일=파비콘만, 데스크탑(lg+)=텍스트 로고 */}
               <button
+                type="button"
                 onClick={() => router.push(`/${locale}/admin`)}
-                className="text-sm sm:text-lg md:text-xl font-bold text-gray-800 truncate hover:text-primary"
+                className="flex shrink-0 items-center hover:opacity-90"
                 title="대시보드로 이동"
+                aria-label={t('systemTitle')}
               >
-                {t('systemTitle')}
+                <img
+                  src="/favicon.png"
+                  alt=""
+                  aria-hidden
+                  className="h-7 w-7 object-contain lg:hidden"
+                />
+                <span className="hidden text-lg font-bold text-gray-800 truncate hover:text-primary md:text-xl lg:inline">
+                  {t('systemTitle')}
+                </span>
               </button>
               
               {/* 데스크톱 전용 빠른 이동 — 레지스트리 + site_access_matrix 패치 */}
@@ -780,6 +819,10 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                     <ScheduleDisplayHeaderButton
                       locale={locale}
                       className="relative z-10 flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-md border border-slate-700 text-slate-800 transition-colors hover:bg-slate-800 hover:text-white"
+                    />
+                    <QuickPaymentHeaderButton
+                      locale={locale}
+                      className="relative z-10 flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-md border border-teal-600 text-teal-700 transition-colors hover:bg-teal-600 hover:text-white"
                     />
                   </>
                 )}
@@ -1260,23 +1303,9 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
           sidebarCollapsed ? 'admin-main-shell--collapsed' : ''
         }`}
       >
-        {/* 페이지 콘텐츠 — 예약 관리는 좌우 패딩을 줄여 카드 열을 더 확보 */}
-        <main
-          className={`main-safe-area min-w-0 max-w-full overflow-x-clip ${
-            isAdminToursPage ? 'pt-0' : 'pt-2 sm:pt-3 lg:pt-4'
-          }`}
-        >
-          <div
-            className={`mx-auto w-full min-w-0 max-w-full ${
-              pathname.includes('/admin/reservations')
-                ? 'px-0'
-                : pathname.includes('/admin/reservation-imports')
-                  ? 'px-[calc(var(--admin-main-gutter-x)/2)] sm:px-2'
-                  : isAdminToursPage
-                    ? 'px-0'
-                    : 'px-[var(--admin-main-gutter-x)] sm:px-2'
-            }`}
-          >
+        {/* 모바일: 풀블리드 / 데스크탑: .admin-main-content 에서 통일 여백 */}
+        <main className="main-safe-area min-w-0 max-w-full overflow-x-clip px-0 pt-0">
+          <div className="admin-main-content">
             {children}
           </div>
         </main>
@@ -1297,6 +1326,12 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
           setShowAttendanceModal(false)
           setShowDailyReportModal(true)
         }}
+      />
+
+      <QuickPaymentRequestModal
+        open={quickPaymentModalOpen}
+        onClose={() => setQuickPaymentModalOpen(false)}
+        locale={locale.startsWith('ko') ? 'ko' : 'en'}
       />
 
       {/* 시뮬레이션 모달 */}

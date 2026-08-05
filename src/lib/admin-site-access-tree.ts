@@ -385,6 +385,7 @@ const DOC_SPEC: Record<
   expenses: { readGate: 'canViewAdmin', manage: 'canViewFinance' },
   'company-expense-paid-for-labels': { readGate: 'canViewAdmin', manage: 'canViewFinance' },
   'partner-funds': { readGate: 'canViewAdmin', manage: 'canViewFinance' },
+  'quick-payment': { readGate: 'canViewAdmin', manage: 'canViewFinance' },
   'payment-methods': { readGate: 'canViewAdmin', manage: 'canViewFinance' },
   'expense-payment-method-normalize': { readGate: 'canViewAdmin', manage: 'canViewFinance' },
   'tour-materials': { readGate: 'canViewAdmin', manage: 'canManageTours' },

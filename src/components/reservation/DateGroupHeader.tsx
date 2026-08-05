@@ -380,9 +380,9 @@ function DateGroupHeaderInner({
   const showStatusTransitionAuditUi = statusAuditLoading || statusTransitionBuckets != null
 
   return (
-    <div className="bg-gray-50 px-2 sm:px-4 py-2 sm:py-3 rounded-lg border border-gray-200">
+    <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 sm:px-4 sm:py-3">
       <div
-        className="flex items-center justify-between cursor-pointer hover:bg-gray-100 rounded-lg p-1 sm:p-2 -m-1 sm:-m-2 transition-colors"
+        className="flex cursor-pointer items-center justify-between rounded-lg p-1 transition-colors hover:bg-gray-100 sm:-m-2 sm:p-2"
         onClick={onToggleCollapse}
       >
         <div className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-3 flex-1 min-w-0">

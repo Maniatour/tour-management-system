@@ -464,6 +464,85 @@ export function residentFeeAmountsFromPricingChoicesJson(
   return amounts
 }
 
+/**
+ * 거주 라인 금액 복원: 옵션명만 있는 JSON·상품 메타(option_id)·폼 selectedChoices를 합친다.
+ * 양수 금액만 반영해 empty(0) 스프레드로 기존 값을 지우는 실수를 막는다.
+ */
+export function recoverResidentStatusAmounts(params: {
+  choicesJson?: unknown
+  productChoices?: Parameters<typeof parseResidentLineStateFromSelections>[0]
+  selectedChoices?: Array<{
+    choice_id: string
+    option_id: string
+    quantity?: number
+    total_price?: number
+    option_name_ko?: string
+    option_name?: string
+    option_key?: string
+  }>
+}): Partial<Record<ResidentLineKey, number>> {
+  const out: Partial<Record<ResidentLineKey, number>> = {}
+  const applyPositive = (src: Partial<Record<ResidentLineKey, number>> | undefined | null) => {
+    if (!src) return
+    for (const key of Object.keys(src) as ResidentLineKey[]) {
+      const v = Number(src[key])
+      if (!Number.isFinite(v) || v <= 0) continue
+      out[key] = Math.round(v * 100) / 100
+    }
+  }
+
+  applyPositive(residentFeeAmountsFromPricingChoicesJson(params.choicesJson))
+
+  const pcs = params.productChoices
+  if (pcs?.length) {
+    if (params.choicesJson != null) {
+      const rows = selectedChoiceRowsFromReservationPricingChoices(params.choicesJson)
+      applyPositive(parseResidentLineStateFromSelections(pcs, rows)?.residentStatusAmounts)
+    }
+    if (Array.isArray(params.selectedChoices) && params.selectedChoices.length > 0) {
+      applyPositive(
+        parseResidentLineStateFromSelections(pcs, params.selectedChoices)?.residentStatusAmounts
+      )
+    }
+  }
+
+  return out
+}
+
+/** selectedChoices → reservation_pricing.choices.required 저장 형태 */
+export function selectedChoicesToPricingChoicesJson(
+  selectedChoices: Array<{
+    choice_id?: string
+    option_id?: string
+    quantity?: number
+    total_price?: number
+    option_key?: string
+    option_name_ko?: string
+    option_name?: string
+  }>
+): { required: Array<Record<string, unknown>> } {
+  const required: Array<Record<string, unknown>> = []
+  for (const choice of selectedChoices || []) {
+    if (!choice.choice_id || !choice.option_id) continue
+    required.push({
+      choice_id: choice.choice_id,
+      option_id: choice.option_id,
+      quantity: choice.quantity || 1,
+      total_price: Number(choice.total_price) || 0,
+      ...(choice.option_key != null && choice.option_key !== ''
+        ? { option_key: choice.option_key }
+        : {}),
+      ...(choice.option_name_ko != null && choice.option_name_ko !== ''
+        ? { option_name_ko: choice.option_name_ko }
+        : {}),
+      ...(choice.option_name != null && choice.option_name !== ''
+        ? { option_name: choice.option_name }
+        : {}),
+    })
+  }
+  return { required }
+}
+
 /** `reservation_pricing.choices`에 저장된 거주 라인별 인원(수량) */
 export function residentFeeCountsFromPricingChoicesJson(
   choicesJson: unknown

@@ -8,7 +8,7 @@ export default function GuideReviewsPage() {
   const locale = (params.locale as string) || 'ko'
 
   return (
-    <div className="pb-0 lg:pb-4">
+    <div className="w-full min-h-full bg-white">
       <GuideReviewsSection locale={locale === 'en' ? 'en' : 'ko'} />
     </div>
   )

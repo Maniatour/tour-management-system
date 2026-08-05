@@ -69,6 +69,15 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
     void recoverAuthSession()
   }, [recoverAuthSession])
 
+  // 부모 locale layout이 고객용 padded main에 중첩해도 풀블리드가 되도록 html 클래스 부여
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.add('is-guide-route')
+    return () => {
+      root.classList.remove('is-guide-route')
+    }
+  }, [])
+
   // 홈 화면에 추가 시 복원용: 가이드 구간 URL을 localStorage + 쿠키에 저장
   // (manifest start_url이 `/`였던 기존 바로가기가 `/` → 고객홈으로 가는 것 방지)
   useEffect(() => {
@@ -453,7 +462,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
 
   if (isLoading || !isInitialized || isSimulationRestoring) {
     return (
-      <div className="min-h-screen app-page-bg flex flex-col">
+      <div className="guide-shell min-h-screen bg-white flex flex-col">
         <div className="flex flex-1 items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
@@ -470,7 +479,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
 
   if (!currentUser || !['admin', 'manager', 'team_member'].includes(currentUserRole || '')) {
     return (
-      <div className="min-h-screen app-page-bg flex flex-col">
+      <div className="guide-shell min-h-screen bg-white flex flex-col">
         <div className="flex flex-1 items-center justify-center px-4">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">접근 권한이 없습니다</h1>
@@ -507,12 +516,12 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
          guideEmail={currentUser.email}
          locale={locale === 'en' ? 'en' : 'ko'}
        >
-       <div className="min-h-screen app-page-bg flex flex-col">
+       <div className="guide-shell min-h-screen bg-white flex flex-col">
          <GuideOfflineBanner />
          {/* 상단 Navigation은 [locale]/layout.tsx(가이드 분기)에서만 렌더 */}
 
-         {/* 메인: 모바일 풀블리드(px-0), 데스크톱만 좌우 여백 */}
-         <main className="main-safe-area flex-1 max-w-7xl mx-auto w-full px-0 pt-0 sm:pt-2 lg:px-4 lg:pt-4">
+         {/* 메인: 부모 패딩 없음 — 풀블리드 */}
+         <main className="main-safe-area flex-1 w-full px-0 pt-0 bg-white">
            {children}
          </main>
 

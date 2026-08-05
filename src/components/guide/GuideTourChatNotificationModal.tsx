@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createClientSupabase, supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { Car, User, Users } from 'lucide-react'
+import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
 
 type TourInfo = {
   id: string
@@ -176,7 +177,7 @@ export default function GuideTourChatNotificationModal({ userEmail, locale }: Pr
       const memberMap = new Map(
         (membersData || []).map((member) => [
           member.email,
-          member.nick_name || (locale === 'en' ? member.name_en || member.name_ko : member.name_ko || member.name_en) || member.email,
+          teamMemberNameForLocale(member, locale) || member.email,
         ])
       )
       const vehicleMap = new Map(

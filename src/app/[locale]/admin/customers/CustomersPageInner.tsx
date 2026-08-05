@@ -24,8 +24,10 @@ import {
   X,
   Upload,
   XCircle,
-  Store
+  Store,
+  CreditCard,
 } from 'lucide-react'
+import { QuickPaymentRequestModal } from '@/components/customer/QuickPaymentRequestForm'
 import { supabase } from '@/lib/supabase'
 import { insertCustomerViaAdminApi } from '@/lib/adminCustomerInsert'
 import { generateReservationId, generateCustomerId } from '@/lib/entityIds'
@@ -337,6 +339,7 @@ export default function AdminCustomers() {
   const [selectedCustomerForReservation, setSelectedCustomerForReservation] = useState<Customer | null>(null)
   const [newReservationId, setNewReservationId] = useState<string | null>(null)
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
+  const [showQuickPaymentModal, setShowQuickPaymentModal] = useState(false)
   const [selectedCustomerForInvoice, setSelectedCustomerForInvoice] = useState<Customer | null>(null)
   const [showInvoiceListModal, setShowInvoiceListModal] = useState(false)
   const [selectedCustomerForInvoiceList, setSelectedCustomerForInvoiceList] = useState<Customer | null>(null)
@@ -1373,14 +1376,24 @@ export default function AdminCustomers() {
       {/* 페이지 헤더 */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
-        <button
-          onClick={openForm}
-          className="bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 flex items-center gap-1.5 text-sm font-medium flex-shrink-0"
-        >
-          <Plus size={16} />
-          <span className="hidden sm:inline">{t('addCustomer')}</span>
-          <span className="sm:hidden">추가</span>
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowQuickPaymentModal(true)}
+            className="border border-teal-600 text-teal-700 px-3 py-1.5 rounded-md hover:bg-teal-600 hover:text-white flex items-center gap-1.5 text-sm font-medium"
+          >
+            <CreditCard className="h-4 w-4" aria-hidden />
+            <span className="hidden sm:inline">{locale === 'ko' ? '빠른 금액 청구' : 'Quick Pay'}</span>
+          </button>
+          <button
+            onClick={openForm}
+            className="bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 flex items-center gap-1.5 text-sm font-medium"
+          >
+            <Plus size={16} />
+            <span className="hidden sm:inline">{t('addCustomer')}</span>
+            <span className="sm:hidden">추가</span>
+          </button>
+        </div>
       </div>
 
       {/* 검색 및 필터 */}
@@ -2110,6 +2123,12 @@ export default function AdminCustomers() {
           savedInvoiceId={selectedInvoiceId}
         />
       )}
+
+      <QuickPaymentRequestModal
+        open={showQuickPaymentModal}
+        onClose={() => setShowQuickPaymentModal(false)}
+        locale={locale === 'en' ? 'en' : 'ko'}
+      />
 
       {/* 문서 목록 모달 (인보이스 + Estimate) */}
       {showInvoiceListModal && selectedCustomerForInvoiceList && (

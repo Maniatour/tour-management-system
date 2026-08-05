@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { MapPin, RotateCcw, Star, Users } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowLeft, MapPin, RotateCcw, Star, Users } from 'lucide-react'
 import ScheduleDisplayReviewStatusModal from '@/components/schedule/ScheduleDisplayReviewStatusModal'
 
 export type ScheduleDisplayToolbarProps = {
@@ -30,6 +31,13 @@ export default function ScheduleDisplayToolbar({
     <>
       <div className="relative flex flex-wrap items-center justify-between gap-y-2 min-h-10 sm:min-h-11 mb-2">
         <div className="flex shrink-0 items-center gap-2 text-muted-foreground">
+          <Link
+            href={`/${locale}/admin/tours`}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border/60 bg-white px-2.5 text-[11px] font-medium text-foreground shadow-sm transition hover:bg-muted sm:h-9 sm:px-3 sm:text-xs"
+          >
+            <ArrowLeft className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" aria-hidden />
+            <span>{isKo ? '투어 관리' : 'Tours'}</span>
+          </Link>
           <span
             className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-muted/40 px-2 py-1 text-[11px] font-medium tabular-nums"
             title={isKo ? '표시 중인 상품' : 'Visible products'}

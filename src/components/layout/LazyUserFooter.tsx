@@ -1,6 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
+import { usePathname } from 'next/navigation'
 
 const UserFooter = dynamic(() => import('@/components/UserFooter'), {
   ssr: false,
@@ -13,5 +14,7 @@ const UserFooter = dynamic(() => import('@/components/UserFooter'), {
 })
 
 export default function LazyUserFooter({ locale }: { locale: string }) {
+  const pathname = usePathname()
+  if (pathname?.includes('/guide')) return null
   return <UserFooter locale={locale} />
 }

@@ -23,6 +23,7 @@ import {
   Mail,
   MessageCircle,
   Replace,
+  Send,
   Settings,
   Star,
   Tag,
@@ -318,6 +319,13 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: Users,
     visibility: { type: 'email_allowlist', emailsLower: ['info@maniatour.com'] },
     requiresOperationsModule: true,
+  },
+  {
+    id: 'quick-payment',
+    path: 'quick-payment',
+    sidebarTranslationKey: 'quickPaymentRequest',
+    icon: Send,
+    visibility: { type: 'always' },
   },
   {
     id: 'payment-methods',

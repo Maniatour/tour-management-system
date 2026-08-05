@@ -11,7 +11,7 @@
   --mobile-page-x: 1rem;   /* 16px — matches px-4 container gutter */
   --app-sidebar-width: 14.125rem; /* 226px — legacy 16rem(256px)에서 30px 축소 */
   --app-sidebar-width-collapsed: 4rem;
-  --admin-main-gutter-x: 0.375rem; /* 본문 좌우 여백 (기존 px-2 대비 축소) */
+  --admin-main-gutter-x: 2rem; /* 데스크탑 본문 좌우 여백 (모바일은 0 / 풀블리드) */
 
   /* ── Mania Tour design foundation: radius ── */
   --radius-sm: 0.375rem;
@@ -415,6 +415,71 @@
 @media (min-width: 1024px) {
   .main-safe-area {
     padding-bottom: 1.5rem !important;
+  }
+}
+
+/*
+ * 가이드 셸: 부모(locale layout main)에 px-* 가 있어도 화면 전체 폭으로 붙임.
+ * isGuidePage 분기 실패로 일반 레이아웃에 중첩돼도 좌우 회색 거터가 생기지 않게 함.
+ */
+.guide-shell {
+  width: 100vw;
+  max-width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  background-color: #ffffff;
+  box-sizing: border-box;
+}
+
+/* 가이드·관리자 라우트: 부모 main 패딩·회색 테마 배경을 강제로 제거 (서버 분기 실패 대비) */
+html.is-guide-route,
+html:has(.guide-shell),
+html.is-admin-route,
+html:has(.admin-shell) {
+  overflow-x: hidden;
+  scrollbar-gutter: auto;
+}
+html.is-guide-route body,
+html:has(.guide-shell) body {
+  background-color: #ffffff !important;
+}
+html.is-guide-route .customer-page-theme-root,
+html:has(.guide-shell) .customer-page-theme-root,
+html.is-admin-route .customer-page-theme-root,
+html:has(.admin-shell) .customer-page-theme-root {
+  background-color: #ffffff !important;
+}
+html.is-guide-route main.main-safe-area,
+html:has(.guide-shell) main.main-safe-area,
+html.is-admin-route main.main-safe-area,
+html:has(.admin-shell) main.main-safe-area {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  padding-top: 0 !important;
+}
+
+/* 관리자 셸: 라우트 감지용. 가로 패딩은 .admin-main-content 에서만 적용 */
+.admin-shell {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* 모바일: 좌우 풀블리드 + 상단 소폭 여백 / 데스크탑(lg+): 통일 좌우·상단 여백 */
+.admin-main-content {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding-left: 0;
+  padding-right: 0;
+  padding-top: 0.5rem;
+}
+@media (min-width: 1024px) {
+  .admin-main-content {
+    padding-left: var(--admin-main-gutter-x);
+    padding-right: var(--admin-main-gutter-x);
+    padding-top: 1.5rem;
   }
 }
 

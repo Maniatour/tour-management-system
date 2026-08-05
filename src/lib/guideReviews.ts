@@ -1,3 +1,4 @@
+import { todayInLasVegas, toLasVegasDateKey } from '@/lib/dailyReport/dateUtils'
 import { supabaseAdmin } from '@/lib/supabase'
 
 export type GuideLinkedReviewRow = {
@@ -80,7 +81,8 @@ function buildSummary(reviews: GuideLinkedReviewRow[]): GuideReviewSummary {
   const reviewCount = reviews.length
   return {
     reviewCount,
-    avgRating: reviewCount > 0 ? Math.round((ratingSum / reviewCount) * 10) / 10 : null,
+    avgRating:
+      reviewCount > 0 ? Math.round((ratingSum / reviewCount) * 100) / 100 : null,
     fiveStarCount: counts.five,
     fourStarCount: counts.four,
     threeStarCount: counts.three,
@@ -88,6 +90,19 @@ function buildSummary(reviews: GuideLinkedReviewRow[]): GuideReviewSummary {
     oneStarCount: counts.one,
     unreadCount,
   }
+}
+
+/** 라스베가스 기준 오늘 이전에 업로드된 리뷰는 새 리뷰(미확인)에서 제외 */
+function applyNewReviewCutoff(reviews: GuideLinkedReviewRow[]): GuideLinkedReviewRow[] {
+  const todayYmd = todayInLasVegas()
+  return reviews.map((review) => {
+    if (review.isRead) return review
+    const importedYmd = toLasVegasDateKey(review.importedAt)
+    if (!importedYmd || importedYmd < todayYmd) {
+      return { ...review, isRead: true }
+    }
+    return review
+  })
 }
 
 export async function getGuideLinkedReviews(staffEmail: string): Promise<GuideReviewsPayload> {
@@ -142,9 +157,11 @@ export async function getGuideLinkedReviews(staffEmail: string): Promise<GuideRe
     throw new Error(error.message)
   }
 
-  const reviews = (data ?? [])
-    .map((row) => mapRow(row))
-    .filter((row): row is GuideLinkedReviewRow => row != null)
+  const reviews = applyNewReviewCutoff(
+    (data ?? [])
+      .map((row) => mapRow(row))
+      .filter((row): row is GuideLinkedReviewRow => row != null)
+  )
 
   return {
     summary: buildSummary(reviews),

@@ -367,9 +367,9 @@ export default function GuideTeamChatPage() {
   }
 
   return (
-    <div className="flex h-[90vh] bg-gradient-to-br from-green-50 via-white to-blue-50">
+    <div className="flex h-[90vh] bg-white">
       {/* 왼쪽: 채팅방 목록 */}
-      <div className={`${selectedRoom ? 'hidden lg:flex' : 'flex'} lg:w-80 w-full bg-white/80 backdrop-blur-sm border-r border-gray-200 flex-col shadow-lg`}>
+      <div className={`${selectedRoom ? 'hidden lg:flex' : 'flex'} lg:w-80 w-full bg-white border-r border-gray-200 flex-col`}>
         {/* 헤더 */}
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">

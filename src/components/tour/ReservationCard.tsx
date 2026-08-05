@@ -19,6 +19,7 @@ import {
   HandCoins,
   CalendarPlus,
   CalendarX,
+  CreditCard,
 } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import Image from 'next/image'
@@ -55,6 +56,7 @@ import type { PickupHotelAssignmentOption } from '@/utils/pickupHotelUtils'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import { useTourDetailSectionChrome } from './TourDetailModalChromeContext'
+import { QuickPaymentRequestModal } from '@/components/customer/QuickPaymentRequestForm'
 
 function getReservationCommunicationChannel(reservation: Reservation): string | null {
   const r = reservation as Record<string, unknown>
@@ -242,6 +244,13 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   >({})
   const [showSimplePickupModal, setShowSimplePickupModal] = useState(false)
   const [showReviewModal, setShowReviewModal] = useState(false)
+  const [quickPaymentOpen, setQuickPaymentOpen] = useState(false)
+  const [quickPaymentInitials, setQuickPaymentInitials] = useState<{
+    email?: string
+    recipientName?: string
+    description?: string
+    amountUsd?: number | string
+  }>({})
   const [channelInfo, setChannelInfo] = useState<{ name: string; favicon?: string; has_not_included_price?: boolean; commission_base_price_only?: boolean } | null>(null)
   const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
   // setResidentStatusDropdownOpen는 사용되지만 residentStatusDropdownOpen은 현재 읽히지 않음
@@ -1053,6 +1062,44 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       fetchPaymentRecords()
     }
     setShowPaymentRecords(!showPaymentRecords)
+  }
+
+  const openQuickPayment = async () => {
+    let email = ''
+    if (reservation.customer_id) {
+      const { data } = await supabase
+        .from('customers')
+        .select('email, name')
+        .eq('id', reservation.customer_id)
+        .maybeSingle()
+      email = (data?.email || '').trim()
+      const name = (data?.name || customerName || '').trim()
+      const balance = reservationPricing?.balance_amount
+      const balanceNum =
+        balance != null && Number.isFinite(Number(balance)) && Number(balance) > 0
+          ? Number(balance)
+          : undefined
+      const tourDate = reservation.tour_date || ''
+      const description = [customerName, tourDate, reservation.id].filter(Boolean).join(' · ')
+      const nextInitials: {
+        email?: string
+        recipientName?: string
+        description?: string
+        amountUsd?: number | string
+      } = {
+        email,
+        recipientName: name,
+        description,
+      }
+      if (balanceNum != null) nextInitials.amountUsd = balanceNum
+      setQuickPaymentInitials(nextInitials)
+    } else {
+      setQuickPaymentInitials({
+        recipientName: customerName,
+        description: [customerName, reservation.tour_date || '', reservation.id].filter(Boolean).join(' · '),
+      })
+    }
+    setQuickPaymentOpen(true)
   }
 
   // 픽업 정보 저장
@@ -2336,6 +2383,21 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             data-no-drag
             data-no-card-click
           >
+            {/* 빠른 금액 청구 */}
+            {isStaff && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void openQuickPayment()
+                }}
+                className="p-1 text-teal-600 hover:bg-teal-50 rounded"
+                title={locale === 'en' ? 'Quick Payment' : '빠른 금액 청구'}
+              >
+                <CreditCard size={14} />
+              </button>
+            )}
+
             {/* 입금 내역 버튼 */}
             {isStaff && (
               <button
@@ -2754,6 +2816,13 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           onClose={() => setShowReviewModal(false)}
         />
       )}
+
+      <QuickPaymentRequestModal
+        open={quickPaymentOpen}
+        onClose={() => setQuickPaymentOpen(false)}
+        locale={locale === 'en' ? 'en' : 'ko'}
+        initials={quickPaymentInitials}
+      />
     </div>
   )
 }

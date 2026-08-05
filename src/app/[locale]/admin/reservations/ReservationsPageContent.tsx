@@ -6090,7 +6090,7 @@ export default function AdminReservations() {
   )
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-4 px-4 sm:space-y-6 lg:px-0">
       {/* ??? - ????????*/}
       <ReservationsHeader
         customerIdFromUrl={customerIdFromUrl}
@@ -6514,7 +6514,7 @@ export default function AdminReservations() {
                               <div className="rounded-lg border border-gray-200 bg-white">
                                 <button
                                   type="button"
-                                  className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                                  className="flex w-full items-center justify-between gap-2 px-2 py-2.5 text-left hover:bg-gray-50 transition-colors sm:px-3"
                                   onClick={() => toggleSimpleCardAccordion(accRegKey, defaultRegOpen)}
                                   aria-expanded={regOpen}
                                 >
@@ -6533,7 +6533,7 @@ export default function AdminReservations() {
                                   />
                                 </button>
                                 {regOpen && (
-                                  <div className="border-t border-gray-100 pl-3 pr-2 pb-3 pt-2">
+                                  <div className="border-t border-gray-100 px-0 pb-2 pt-1 sm:pl-3 sm:pr-2 sm:pb-3 sm:pt-2">
                                     {regList.length > 0 ? (
                                       <AdminReservationCardVirtualGrid
                                         reservations={regList}
@@ -6555,7 +6555,7 @@ export default function AdminReservations() {
                               <div className="rounded-lg border border-gray-200 bg-white">
                                 <button
                                   type="button"
-                                  className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                                  className="flex w-full items-center justify-between gap-2 px-2 py-2.5 text-left hover:bg-gray-50 transition-colors sm:px-3"
                                   onClick={() => toggleSimpleCardAccordion(accStatusKey, defaultStatusOpen)}
                                   aria-expanded={statusOpen}
                                 >
@@ -6581,7 +6581,7 @@ export default function AdminReservations() {
                                   />
                                 </button>
                                 {statusOpen && (
-                                  <div className="border-t border-gray-100 pl-3 pr-2 pb-3 pt-2 space-y-3">
+                                  <div className="border-t border-gray-100 space-y-3 px-0 pb-2 pt-1 sm:pl-3 sm:pr-2 sm:pb-3 sm:pt-2">
                                     {statusList.length > 0 ? (
                                       simpleCardStatusTransitionLoadingEffective ? (
                                         <p className="text-xs text-gray-500 px-1 py-2 leading-relaxed">
@@ -6628,7 +6628,7 @@ export default function AdminReservations() {
                                                 />
                                               </button>
                                               {subOpen && (
-                                                <div className="border-t border-gray-100 bg-white pl-3 pr-2 pb-2 pt-2">
+                                                <div className="border-t border-gray-100 bg-white px-0 pb-2 pt-1 sm:pl-3 sm:pr-2 sm:pt-2">
                                                   <AdminReservationCardVirtualGrid
                                                     reservations={g.items}
                                                     gridClassName={gridClass}

@@ -92,6 +92,7 @@ const FALLBACK_TITLES: Record<string, { ko: string; en: string }> = {
   'sidebar.expenseManagement': { ko: '입금-지출 관리', en: 'Expense Management' },
   'sidebar.paidForLabelManagement': { ko: '지출 대상 관리', en: 'Paid-For Labels' },
   'sidebar.partnerFundManagement': { ko: '파트너 자금 관리', en: 'Partner Funds' },
+  'sidebar.quickPaymentRequest': { ko: '빠른 금액 청구', en: 'Quick Payment' },
   'sidebar.paymentMethodManagement': { ko: '결제 방법 관리', en: 'Payment Methods' },
   'sidebar.expensePaymentMethodNormalize': { ko: '결제 방법 정규화', en: 'Payment Normalize' },
   'sidebar.tourMaterials': { ko: '투어 자료', en: 'Tour Materials' },

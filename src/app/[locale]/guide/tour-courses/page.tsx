@@ -308,7 +308,7 @@ export default function GuideTourCoursesPage() {
   }
 
   return (
-    <div className="p-4 max-w-4xl mx-auto">
+    <div className="p-3 sm:p-4 w-full">
       {/* 헤더 */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">투어 코스 정보</h1>

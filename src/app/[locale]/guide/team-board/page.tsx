@@ -397,7 +397,7 @@ export default function GuideTeamBoard() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-0">
       {currentUserEmail ? (
         <OpTodoNotificationLayer
           supabase={supabase}
@@ -407,7 +407,7 @@ export default function GuideTeamBoard() {
         />
       ) : null}
       {/* 헤더 */}
-      <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 rounded-lg p-4 sm:p-6 text-white">
+      <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 rounded-none p-4 sm:p-6 text-white">
         <h1 className="text-xl sm:text-2xl font-bold mb-2">
           {getText('팀 보드', 'Team Board')}
         </h1>
@@ -417,7 +417,7 @@ export default function GuideTeamBoard() {
       </div>
 
       {/* 탭 네비게이션 */}
-      <div className="bg-white rounded-lg shadow">
+      <div className="bg-white rounded-none shadow-none border-b border-gray-200">
         <div className="border-b border-gray-200">
           <nav className="flex space-x-4 sm:space-x-8 px-4 sm:px-6 overflow-x-auto" aria-label="Tabs">
             <button
