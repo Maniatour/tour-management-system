@@ -3941,7 +3941,9 @@ export default function ReservationForm({
                 typeof existingPricing.choices === 'object' &&
                 Array.isArray((existingPricing.choices as { required?: unknown }).required)
                   ? existingPricing.choices
-                  : prev.choices?.required
+                  : prev.choices &&
+                      typeof prev.choices === 'object' &&
+                      Array.isArray((prev.choices as { required?: unknown }).required)
                     ? prev.choices
                     : existingPricing.choices || prev.choices || {},
               choicesTotal: Number(existingPricing.choices_total) || 0
