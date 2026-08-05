@@ -5995,25 +5995,33 @@ export default function ReservationForm({
         alert('고객을 선택해주세요.')
         return
       }
+
+      // 저장 직전: 거주 상태별 금액·인원을 selectedChoices / choices JSON에 반영
+      const fdSynced = syncResidentChoicesInFormState(formDataRef.current)
+      if (fdSynced !== formDataRef.current) {
+        formDataRef.current = fdSynced
+        setFormDataState(fdSynced)
+      }
+      const fdForChoices = formDataRef.current
       
       // 새로운 간결한 초이스 시스템 사용
       const choicesData =
-        Array.isArray(formData.selectedChoices) && formData.selectedChoices.length > 0
-          ? selectedChoicesToPricingChoicesJson(formData.selectedChoices as any)
+        Array.isArray(fdForChoices.selectedChoices) && fdForChoices.selectedChoices.length > 0
+          ? selectedChoicesToPricingChoicesJson(fdForChoices.selectedChoices as any)
           : ({ required: [] } as { required: Array<Record<string, unknown>> })
       
       console.log('ReservationForm: 초이스 데이터 준비 시작', {
-        selectedChoicesType: Array.isArray(formData.selectedChoices) ? 'array' : typeof formData.selectedChoices,
-        selectedChoicesCount: Array.isArray(formData.selectedChoices) ? formData.selectedChoices.length : 'not array',
-        selectedChoices: formData.selectedChoices
+        selectedChoicesType: Array.isArray(fdForChoices.selectedChoices) ? 'array' : typeof fdForChoices.selectedChoices,
+        selectedChoicesCount: Array.isArray(fdForChoices.selectedChoices) ? fdForChoices.selectedChoices.length : 'not array',
+        selectedChoices: fdForChoices.selectedChoices
       })
       
       // "미정"(__undecided__)은 reservation_choices FK에 없으나 reservations.choices JSON에는 보관
       const UNDECIDED_OPTION_ID = '__undecided__'
-      if (!(Array.isArray(formData.selectedChoices) && formData.selectedChoices.length > 0) &&
-          formData.selectedChoices && typeof formData.selectedChoices === 'object') {
+      if (!(Array.isArray(fdForChoices.selectedChoices) && fdForChoices.selectedChoices.length > 0) &&
+          fdForChoices.selectedChoices && typeof fdForChoices.selectedChoices === 'object') {
         // 기존 객체 형태의 selectedChoices 처리
-        Object.entries(formData.selectedChoices).forEach(([choiceId, choiceData]) => {
+        Object.entries(fdForChoices.selectedChoices).forEach(([choiceId, choiceData]) => {
           if (choiceData && typeof choiceData === 'object' && 'selected' in choiceData) {
             const choice = choiceData as { selected: string; timestamp?: string }
             if (choice.selected && choice.selected !== UNDECIDED_OPTION_ID) {
@@ -6043,15 +6051,15 @@ export default function ReservationForm({
         const freeText = String(fd.pickUpHotelSearch || formData.pickUpHotelSearch || id || '').trim()
         return freeText
       })()
-      // 예약 정보와 가격 정보를 함께 제출 (customerId 업데이트)
+      // 예약 정보와 가격 정보를 함께 제출 (customerId 업데이트) — fd = 거주 초이스 동기화 후 formDataRef
       const reservationPayload = {
-        ...formData,
+        ...fd,
         pickUpHotel: resolvedPickUpHotel,
         id: reservation?.id, // 예약 ID 포함 (새 예약 모드에서 미리 생성된 ID)
-        customerId: finalCustomerId || formData.customerId,
+        customerId: finalCustomerId || fd.customerId,
         totalPeople,
         choices: choicesData,
-        selectedChoices: formData.selectedChoices as any,
+        selectedChoices: fd.selectedChoices as any,
         // 새 예약 시 저장 전에 추가한 옵션 목록 (예약 저장 시 함께 저장)
         pendingReservationOptions: isNewReservation ? pendingReservationOptions : undefined,
         importSelectedTourId: isImportMode ? importSelectedTourId : undefined,
