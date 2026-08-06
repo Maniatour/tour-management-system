@@ -9850,6 +9850,8 @@ export type Database = {
           event_date: string
           hotel: string
           id: string
+          name_change_confirmed_at: string | null
+          name_change_confirmed_by: string | null
           payment_method: string | null
           reservation_name: string
           rn_number: string | null
@@ -9881,6 +9883,8 @@ export type Database = {
           event_date: string
           hotel: string
           id?: string
+          name_change_confirmed_at?: string | null
+          name_change_confirmed_by?: string | null
           payment_method?: string | null
           reservation_name: string
           rn_number?: string | null
@@ -9912,6 +9916,8 @@ export type Database = {
           event_date?: string
           hotel?: string
           id?: string
+          name_change_confirmed_at?: string | null
+          name_change_confirmed_by?: string | null
           payment_method?: string | null
           reservation_name?: string
           rn_number?: string | null

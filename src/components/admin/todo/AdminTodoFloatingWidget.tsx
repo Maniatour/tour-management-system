@@ -51,6 +51,7 @@ import {
   TourEnvelopePrintPanel,
   TourHotelManagementPanel,
   TourHotelPriceCheckPanel,
+  TourHotelCcFormPanel,
   TourSettlementPanel,
 } from '@/components/admin/todo/adminTodoLazyPanels'
 import type { TourPickupNotificationRequest } from '@/components/admin/todo/TourPickupNotificationHost'
@@ -115,6 +116,13 @@ import {
   tourHotelPriceCheckCompletionDateKey,
   tourHotelPriceCheckTodoFormSeed,
 } from '@/lib/tourHotelPriceCheckTodo'
+import {
+  shouldHideTodoChipForTourHotelCcFormPanel,
+  findTourHotelCcFormLinkedTodo,
+  readTourHotelCcFormLocalCompleted,
+  tourHotelCcFormCompletionDateKey,
+  tourHotelCcFormTodoFormSeed,
+} from '@/lib/tourHotelCcFormTodo'
 import {
   shouldHideTodoChipForTourSettlementPanel,
   findTourSettlementLinkedTodo,
@@ -364,6 +372,7 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
   const otaClosureCompletionKey = useMemo(() => otaClosureCompletionDateKey(), [])
   const tourHotelManagementCompletionKey = useMemo(() => tourHotelManagementCompletionDateKey(), [])
   const tourHotelPriceCheckCompletionKey = useMemo(() => tourHotelPriceCheckCompletionDateKey(), [])
+  const tourHotelCcFormCompletionKey = useMemo(() => tourHotelCcFormCompletionDateKey(), [])
   const tourSettlementCompletionKey = useMemo(() => tourSettlementCompletionDateKey(), [])
   const reservationAgencyManagementCompletionKey = useMemo(
     () => reservationAgencyManagementCompletionDateKey(),
@@ -400,6 +409,9 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
   )
   const [tourHotelPriceCheckCompleted, setTourHotelPriceCheckCompleted] = useState(() =>
     readTourHotelPriceCheckLocalCompleted(tourHotelPriceCheckCompletionKey)
+  )
+  const [tourHotelCcFormCompleted, setTourHotelCcFormCompleted] = useState(() =>
+    readTourHotelCcFormLocalCompleted(tourHotelCcFormCompletionKey)
   )
   const [tourSettlementCompleted, setTourSettlementCompleted] = useState(() =>
     readTourSettlementLocalCompleted(tourSettlementCompletionKey)
@@ -484,6 +496,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
       linked?.completed ?? readTourHotelPriceCheckLocalCompleted(tourHotelPriceCheckCompletionKey)
     )
   }, [todos, tourHotelPriceCheckCompletionKey])
+
+  useEffect(() => {
+    const linked = findTourHotelCcFormLinkedTodo(todos)
+    setTourHotelCcFormCompleted(
+      linked?.completed ?? readTourHotelCcFormLocalCompleted(tourHotelCcFormCompletionKey)
+    )
+  }, [todos, tourHotelCcFormCompletionKey])
 
   useEffect(() => {
     const linked = findTourSettlementLinkedTodo(todos)
@@ -620,6 +639,12 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     (activeListTab === 'pending' && !tourHotelPriceCheckOnHold) ||
     (activeListTab === 'on_hold' && tourHotelPriceCheckOnHold) ||
     (activeListTab === 'completed' && tourHotelPriceCheckCompleted)
+
+  const showTourHotelCcFormInList = panelVisibleInTab(
+    activeListTab,
+    tourHotelCcFormCompleted,
+    findTourHotelCcFormLinkedTodo(todos)?.on_hold ?? false
+  )
 
   const todoToFormValues = useCallback(
     (todo: OpTodoWithAction): OpTodoFormValues => {
@@ -1018,6 +1043,47 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     setNewTodo({
       ...EMPTY_OP_TODO_FORM,
       ...tourHotelPriceCheckTodoFormSeed(locale),
+    })
+    setCreateOpen(true)
+  }, [todos, openEditTodo, locale])
+
+  const handleTourHotelCcFormToggleLinkedTodo = useCallback(
+    async (todo: { id: string; completed: boolean }, completed: boolean) => {
+      const full = todos.find((t) => t.id === todo.id)
+      if (!full) return
+      setSubmittingId(full.id)
+      try {
+        const { data, error } = await toggleOpTodoCompletion(full, completed)
+        if (error) throw error
+        const patch = {
+          completed: data?.completed ?? completed,
+          completed_at: data?.completed_at ?? (completed ? new Date().toISOString() : null),
+          next_notify_at: data?.next_notify_at ?? full.next_notify_at ?? null,
+          on_hold: data?.on_hold ?? false,
+        }
+        setTodos((prev) => prev.map((t) => (t.id === full.id ? { ...t, ...patch } : t)))
+        adjustPendingCount(full, { completed: patch.completed, on_hold: !!patch.on_hold })
+        dispatchOpTodoRefresh()
+      } catch (e) {
+        console.error(e)
+        alert(isKo ? '완료 처리에 실패했습니다.' : 'Failed to update todo.')
+        throw e
+      } finally {
+        setSubmittingId(null)
+      }
+    },
+    [adjustPendingCount, isKo, todos]
+  )
+
+  const openEditTourHotelCcFormTodo = useCallback(() => {
+    const linked = findTourHotelCcFormLinkedTodo(todos)
+    if (linked) {
+      openEditTodo(linked)
+      return
+    }
+    setNewTodo({
+      ...EMPTY_OP_TODO_FORM,
+      ...tourHotelCcFormTodoFormSeed(locale),
     })
     setCreateOpen(true)
   }, [todos, openEditTodo, locale])
@@ -1571,6 +1637,7 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
           !shouldHideTodoChipForOtaClosurePanel(t) &&
           !shouldHideTodoChipForTourHotelManagementPanel(t) &&
           !shouldHideTodoChipForTourHotelPriceCheckPanel(t) &&
+          !shouldHideTodoChipForTourHotelCcFormPanel(t) &&
           !shouldHideTodoChipForTourSettlementPanel(t) &&
           !shouldHideTodoChipForReservationAgencyManagementPanel(t) &&
           !shouldHideTodoChipForAntelopeCanyonBookingPanel(t) &&
@@ -1665,6 +1732,7 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
   const otaClosureLinkedTodo = useMemo(() => findOtaClosureLinkedTodo(todos), [todos])
   const tourHotelMgmtLinkedTodo = useMemo(() => findTourHotelManagementLinkedTodo(todos), [todos])
   const tourHotelPriceLinkedTodo = useMemo(() => findTourHotelPriceCheckLinkedTodo(todos), [todos])
+  const tourHotelCcFormLinkedTodo = useMemo(() => findTourHotelCcFormLinkedTodo(todos), [todos])
   const tourSettlementLinkedTodo = useMemo(() => findTourSettlementLinkedTodo(todos), [todos])
   const reservationAgencyLinkedTodo = useMemo(
     () => findReservationAgencyManagementLinkedTodo(todos),
@@ -2151,6 +2219,7 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
           !showOtaClosureInList &&
           !showTourHotelManagementInList &&
           !showTourHotelPriceCheckInList &&
+          !showTourHotelCcFormInList &&
           !showTourSettlementInList &&
           !showReservationAgencyManagementInList &&
           !showAntelopeCanyonBookingInList &&
@@ -2345,6 +2414,26 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   onEditRequest={openEditTourHotelPriceCheckTodo}
                   onOpenTourDetail={setTourHotelDetailModalId}
                   {...panelHoldProps(tourHotelPriceLinkedTodo)}
+                />
+              </li>
+            ) : null}
+            {showTourHotelCcFormInList ? (
+              <li
+                className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
+                  'daily',
+                  tourHotelCcFormCompleted,
+                  tourHotelCcFormLinkedTodo?.on_hold ?? false
+                )}`}
+              >
+                <TourHotelCcFormPanel
+                  locale={locale}
+                  variant="list"
+                  linkedTodos={todos as never}
+                  onCompletedChange={setTourHotelCcFormCompleted}
+                  onToggleLinkedTodo={handleTourHotelCcFormToggleLinkedTodo}
+                  onEditRequest={openEditTourHotelCcFormTodo}
+                  onOpenTourDetail={setTourHotelDetailModalId}
+                  {...panelHoldProps(tourHotelCcFormLinkedTodo)}
                 />
               </li>
             ) : null}

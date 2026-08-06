@@ -51,6 +51,11 @@ export const TourHotelPriceCheckPanel = dynamic(
   { ssr: false, loading: () => <TodoPanelLoading /> }
 )
 
+export const TourHotelCcFormPanel = dynamic(
+  () => import('./TourHotelCcFormPanel').then((m) => m.TourHotelCcFormPanel),
+  { ssr: false, loading: () => <TodoPanelLoading /> }
+)
+
 export const TourSettlementPanel = dynamic(
   () => import('./TourSettlementPanel').then((m) => m.TourSettlementPanel),
   { ssr: false, loading: () => <TodoPanelLoading /> }

@@ -250,6 +250,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     recipientName?: string
     description?: string
     amountUsd?: number | string
+    reservationId?: string
   }>({})
   const [channelInfo, setChannelInfo] = useState<{ name: string; favicon?: string; has_not_included_price?: boolean; commission_base_price_only?: boolean } | null>(null)
   const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
@@ -1086,10 +1087,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         recipientName?: string
         description?: string
         amountUsd?: number | string
+        reservationId?: string
       } = {
         email,
         recipientName: name,
         description,
+        reservationId: reservation.id,
       }
       if (balanceNum != null) nextInitials.amountUsd = balanceNum
       setQuickPaymentInitials(nextInitials)
@@ -1097,6 +1100,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       setQuickPaymentInitials({
         recipientName: customerName,
         description: [customerName, reservation.tour_date || '', reservation.id].filter(Boolean).join(' · '),
+        reservationId: reservation.id,
       })
     }
     setQuickPaymentOpen(true)

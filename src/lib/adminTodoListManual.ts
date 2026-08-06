@@ -247,6 +247,33 @@ export const ADMIN_TODO_LIST_MANUAL_SECTIONS: AdminTodoListManualSection[] = [
     completeEn: 'Verify price/website, then mark bookings done.',
   },
   {
+    id: 'tour-hotel-cc-form',
+    titleKo: '투어 호텔 CC Form',
+    titleEn: 'Tour hotel CC Form',
+    categoryKo: '일일 · 고정 패널',
+    categoryEn: 'Daily · built-in panel',
+    departmentKo: 'Office',
+    departmentEn: 'Office',
+    filterLinesKo: [
+      '체크인일: 다음날(라스베가스 기준).',
+      '투어 호텔 부킹 상태가 확정인 건만.',
+      '삭제 요청 부킹 제외.',
+      '카드에서 CC 상태(미발송·발송 완료·필요없음) 바로 수정.',
+      'CC 발송 후 호텔 전화로 예약자 이름 변경 확인 → 「이름 변경 확인」.',
+    ],
+    filterLinesEn: [
+      'Check-in: tomorrow (Las Vegas time).',
+      'Confirmed tour hotel bookings only.',
+      'Excludes deletion-requested bookings.',
+      'Edit CC status on the card (not sent / sent / not needed).',
+      'After CC send, call hotel to confirm guest name change → “Confirm name”.',
+    ],
+    completeKo:
+      '부킹별: CC 필요없음, 또는 CC 발송 완료 + 이름 변경 확인까지 끝나면 완료. 패널 완료는 일일 체크용.',
+    completeEn:
+      'Per booking: done when CC is not needed, or CC sent + name-change confirmed. Panel complete is the daily checklist mark.',
+  },
+  {
     id: 'tour-settlement',
     titleKo: '투어 정산',
     titleEn: 'Tour settlement',

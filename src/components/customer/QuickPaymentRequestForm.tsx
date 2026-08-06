@@ -21,6 +21,7 @@ export type QuickPaymentFormInitials = {
   recipientName?: string
   description?: string
   amountUsd?: number | string
+  reservationId?: string
 }
 
 type QuickPaymentResult = {
@@ -126,6 +127,9 @@ export default function QuickPaymentRequestForm({
           amountUsd,
           locale,
           sendEmail,
+          ...(initials?.reservationId?.trim()
+            ? { reservationId: initials.reservationId.trim() }
+            : {}),
         }),
       })
       const data = await response.json()
@@ -269,6 +273,15 @@ export default function QuickPaymentRequestForm({
               className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               placeholder="guest@example.com"
             />
+            <p className="text-xs leading-5 text-muted-foreground">
+              {locale === 'ko'
+                ? initials?.reservationId?.trim()
+                  ? `결제 완료 시 예약(${initials.reservationId.trim().slice(0, 8)}…)에 입금·잔금이 자동 반영됩니다.`
+                  : '결제 완료 시 이 이메일과 연결된 예약에 입금·잔금이 자동 반영됩니다.'
+                : initials?.reservationId?.trim()
+                  ? `When paid, deposit and balance update on reservation ${initials.reservationId.trim().slice(0, 8)}…`
+                  : 'When paid, deposit and balance update on the reservation matched by this email.'}
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -420,6 +433,7 @@ type HistoryItem = {
   description: string
   email: string
   recipientName: string
+  reservationId: string | null
   createdAt: string | null
   sentAt: string | null
   paidAt: string | null
@@ -655,7 +669,7 @@ export function QuickPaymentRequestModal({
     setView('form')
     setFormInitials(initials)
     setFormKey((k) => k + 1)
-  }, [open, initials?.email, initials?.recipientName, initials?.description, initials?.amountUsd])
+  }, [open, initials?.email, initials?.recipientName, initials?.description, initials?.amountUsd, initials?.reservationId])
 
   if (!open) return null
 
@@ -732,6 +746,7 @@ export function QuickPaymentRequestModal({
                 description: item.description,
               }
               if (item.total > 0) next.amountUsd = item.total
+              if (item.reservationId?.trim()) next.reservationId = item.reservationId.trim()
               setFormInitials(next)
               setFormKey((k) => k + 1)
               setView('form')

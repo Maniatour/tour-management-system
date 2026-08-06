@@ -23,6 +23,7 @@ import { PendingCustomerManagementPanel } from '@/components/admin/todo/PendingC
 import { OtaClosurePanel } from '@/components/admin/todo/OtaClosurePanel'
 import { TourHotelManagementPanel } from '@/components/admin/todo/TourHotelManagementPanel'
 import { TourHotelPriceCheckPanel } from '@/components/admin/todo/TourHotelPriceCheckPanel'
+import { TourHotelCcFormPanel } from '@/components/admin/todo/TourHotelCcFormPanel'
 import { TourSettlementPanel } from '@/components/admin/todo/TourSettlementPanel'
 import { ReservationAgencyManagementPanel } from '@/components/admin/todo/ReservationAgencyManagementPanel'
 import { AntelopeCanyonBookingPanel } from '@/components/admin/todo/AntelopeCanyonBookingPanel'
@@ -104,6 +105,13 @@ import {
   tourHotelPriceCheckCompletionDateKey,
   tourHotelPriceCheckTodoFormSeed,
 } from '@/lib/tourHotelPriceCheckTodo'
+import {
+  shouldHideTodoChipForTourHotelCcFormPanel,
+  findTourHotelCcFormLinkedTodo,
+  readTourHotelCcFormLocalCompleted,
+  tourHotelCcFormCompletionDateKey,
+  tourHotelCcFormTodoFormSeed,
+} from '@/lib/tourHotelCcFormTodo'
 import {
   shouldHideTodoChipForTourSettlementPanel,
   findTourSettlementLinkedTodo,
@@ -574,6 +582,16 @@ export default function TeamBoardPageInner() {
       return
     }
     setTodoCreateFormSeed(tourHotelPriceCheckTodoFormSeed(uiLocale))
+    setShowTodoCreateModal(true)
+  }
+
+  const handleEditTourHotelCcFormTodo = () => {
+    const linked = findTourHotelCcFormLinkedTodo(opTodos)
+    if (linked) {
+      setEditTodoId(linked.id)
+      return
+    }
+    setTodoCreateFormSeed(tourHotelCcFormTodoFormSeed(uiLocale))
     setShowTodoCreateModal(true)
   }
 
@@ -1589,6 +1607,7 @@ export default function TeamBoardPageInner() {
               onEditOtaClosureTodo={handleEditOtaClosureTodo}
               onEditTourHotelManagementTodo={handleEditTourHotelManagementTodo}
               onEditTourHotelPriceCheckTodo={handleEditTourHotelPriceCheckTodo}
+              onEditTourHotelCcFormTodo={handleEditTourHotelCcFormTodo}
               onEditTourSettlementTodo={handleEditTourSettlementTodo}
               onEditReservationAgencyManagementTodo={handleEditReservationAgencyManagementTodo}
               onEditAntelopeCanyonBookingTodo={handleEditAntelopeCanyonBookingTodo}
@@ -3314,7 +3333,7 @@ function DeferredDailyPanel({
   )
 }
 
-function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAddTodo, onManageNotifications, onEditTodo, onEditEnvelopePrintTodo, onEditPickupNotificationTodo, onEditGuideScheduleConfirmTodo, onEditCustomerInfoReviewTodo, onEditCancelRebookingFollowUpTodo, onEditPendingCustomerManagementTodo, onCancelFollowUpManualChange, onOpenReservation, onEditOtaClosureTodo, onEditTourHotelManagementTodo, onEditTourHotelPriceCheckTodo, onEditTourSettlementTodo, onEditReservationAgencyManagementTodo, onEditAntelopeCanyonBookingTodo, onEditBentoCheckTodo, onOpenTourDetail, onQuickPrint, onPickupAction, locale, toggleTodoCompletion, openHistoryModal }: { 
+function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAddTodo, onManageNotifications, onEditTodo, onEditEnvelopePrintTodo, onEditPickupNotificationTodo, onEditGuideScheduleConfirmTodo, onEditCustomerInfoReviewTodo, onEditCancelRebookingFollowUpTodo, onEditPendingCustomerManagementTodo, onCancelFollowUpManualChange, onOpenReservation, onEditOtaClosureTodo, onEditTourHotelManagementTodo, onEditTourHotelPriceCheckTodo, onEditTourHotelCcFormTodo, onEditTourSettlementTodo, onEditReservationAgencyManagementTodo, onEditAntelopeCanyonBookingTodo, onEditBentoCheckTodo, onOpenTourDetail, onQuickPrint, onPickupAction, locale, toggleTodoCompletion, openHistoryModal }: { 
   opTodos: OpTodo[]; 
   selectedDepartment: 'all' | 'office' | 'guide' | 'common';
   onDepartmentChange: (department: 'all' | 'office' | 'guide' | 'common') => void;
@@ -3336,6 +3355,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
   onEditOtaClosureTodo: () => void;
   onEditTourHotelManagementTodo: () => void;
   onEditTourHotelPriceCheckTodo: () => void;
+  onEditTourHotelCcFormTodo: () => void;
   onEditTourSettlementTodo: () => void;
   onEditReservationAgencyManagementTodo: () => void;
   onEditAntelopeCanyonBookingTodo: () => void;
@@ -3522,6 +3542,27 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
     }
   }, [linkedTourHotelPriceCheckTodo?.id, linkedTourHotelPriceCheckTodo?.completed])
 
+  const tourHotelCcFormDateKey = useMemo(() => tourHotelCcFormCompletionDateKey(), [])
+  const linkedTourHotelCcFormTodo = useMemo(
+    () => findTourHotelCcFormLinkedTodo(opTodos),
+    [opTodos]
+  )
+  const [tourHotelCcFormLocalCompleted, setTourHotelCcFormLocalCompleted] = useState(() =>
+    readTourHotelCcFormLocalCompleted(tourHotelCcFormDateKey)
+  )
+  const tourHotelCcFormCompleted =
+    linkedTourHotelCcFormTodo?.completed ?? tourHotelCcFormLocalCompleted
+
+  useEffect(() => {
+    setTourHotelCcFormLocalCompleted(readTourHotelCcFormLocalCompleted(tourHotelCcFormDateKey))
+  }, [tourHotelCcFormDateKey])
+
+  useEffect(() => {
+    if (linkedTourHotelCcFormTodo) {
+      setTourHotelCcFormLocalCompleted(linkedTourHotelCcFormTodo.completed)
+    }
+  }, [linkedTourHotelCcFormTodo?.id, linkedTourHotelCcFormTodo?.completed])
+
   const tourSettlementDateKey = useMemo(() => tourSettlementCompletionDateKey(), [])
   const linkedTourSettlementTodo = useMemo(
     () => findTourSettlementLinkedTodo(opTodos),
@@ -3643,6 +3684,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
         !shouldHideTodoChipForOtaClosurePanel(todo) &&
         !shouldHideTodoChipForTourHotelManagementPanel(todo) &&
         !shouldHideTodoChipForTourHotelPriceCheckPanel(todo) &&
+        !shouldHideTodoChipForTourHotelCcFormPanel(todo) &&
         !shouldHideTodoChipForTourSettlementPanel(todo) &&
         !shouldHideTodoChipForReservationAgencyManagementPanel(todo) &&
         !shouldHideTodoChipForAntelopeCanyonBookingPanel(todo) &&
@@ -3992,6 +4034,33 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
               {(queryEnabled) => (
               <div
                 className={`${dailyCollageItemClass} rounded border p-2 ${
+                  tourHotelCcFormCompleted
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <TourHotelCcFormPanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setTourHotelCcFormLocalCompleted}
+                  onEditRequest={onEditTourHotelCcFormTodo}
+                  onOpenTourDetail={onOpenTourDetail}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={10} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
                   tourSettlementCompleted
                     ? 'border-emerald-300 bg-emerald-50'
                     : 'border-gray-300 bg-white'
@@ -4015,7 +4084,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
             </DeferredDailyPanel>
           )}
           {category === 'daily' && (
-            <DeferredDailyPanel panelIndex={10} className={dailyCollageItemClass}>
+            <DeferredDailyPanel panelIndex={11} className={dailyCollageItemClass}>
               {(queryEnabled) => (
               <div
                 className={`${dailyCollageItemClass} rounded border p-2 ${
@@ -4041,7 +4110,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
             </DeferredDailyPanel>
           )}
           {category === 'daily' && (
-            <DeferredDailyPanel panelIndex={11} className={dailyCollageItemClass}>
+            <DeferredDailyPanel panelIndex={12} className={dailyCollageItemClass}>
               {(queryEnabled) => (
               <div
                 className={`${dailyCollageItemClass} rounded border p-2 ${
@@ -4068,7 +4137,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
             </DeferredDailyPanel>
           )}
           {category === 'daily' && (
-            <DeferredDailyPanel panelIndex={12} className={dailyCollageItemClass}>
+            <DeferredDailyPanel panelIndex={13} className={dailyCollageItemClass}>
               {(queryEnabled) => (
               <div
                 className={`${dailyCollageItemClass} rounded border p-2 ${

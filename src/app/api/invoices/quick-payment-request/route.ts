@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
   const email = typeof body.email === 'string' ? body.email : ''
   const description = typeof body.description === 'string' ? body.description : ''
   const recipientName = typeof body.recipientName === 'string' ? body.recipientName : ''
+  const reservationId = typeof body.reservationId === 'string' ? body.reservationId : ''
   const amountRaw = body.amountUsd ?? body.amount
   const amountUsd = typeof amountRaw === 'number' ? amountRaw : Number(amountRaw)
   const locale = body.locale === 'ko' ? 'ko' : 'en'
@@ -72,6 +73,7 @@ export async function POST(request: NextRequest) {
       recipientName,
       locale,
       createdBy: auth.userEmail,
+      ...(reservationId.trim() ? { reservationId: reservationId.trim() } : {}),
     })
 
     let emailId: string | null = null

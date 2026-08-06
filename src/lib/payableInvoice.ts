@@ -5,12 +5,16 @@ import type { Database } from '@/lib/database.types'
 import { getStripeClient } from '@/lib/customerBookingCheckout'
 import { generateCustomerId } from '@/lib/entityIds'
 import { operatorIdInsert, resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
+import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
+import { isReservationCancelledStatus } from '@/utils/tourUtils'
 
 export const STAFF_PAYABLE_INVOICE_PURPOSE = 'staff_payable_invoice'
 
 /** invoices.notes 마커 — 빠른 금액 청구 내역 조회용 */
 export const QUICK_PAYMENT_INVOICE_NOTES = 'quick_payment_request'
 const QUICK_PAYMENT_NOTES_LEGACY = ['빠른 금액 청구', 'Quick payment request'] as const
+const STRIPE_INVOICE_NOTE_PREFIX = 'stripe_invoice_id:'
 
 export function isQuickPaymentInvoiceNotes(notes: string | null | undefined): boolean {
   const n = (notes || '').trim()
@@ -29,6 +33,7 @@ type InvoiceItemRow = {
   quantity?: number | null
   unitPrice?: number | null
   total?: number | null
+  reservationId?: string | null
 }
 
 function roundMoney(n: number): number {
@@ -203,6 +208,10 @@ export async function createOrRefreshStripePayableInvoice(
   })
 
   const items = (Array.isArray(invoice.items) ? invoice.items : []) as InvoiceItemRow[]
+  const reservationIdFromItems = items
+    .map((it) => (typeof it.reservationId === 'string' ? it.reservationId.trim() : ''))
+    .find((id) => Boolean(id))
+
   const lineAmounts: { description: string; amountCents: number }[] = []
 
   for (const item of items) {
@@ -238,6 +247,9 @@ export async function createOrRefreshStripePayableInvoice(
       invoice_id: invoiceId,
       invoice_number: invoice.invoice_number,
       customer_id: invoice.customer_id || '',
+      ...(reservationIdFromItems
+        ? { reservation_id: reservationIdFromItems }
+        : {}),
     },
     pending_invoice_items_behavior: 'exclude',
     auto_advance: false,
@@ -312,7 +324,14 @@ export async function createOrRefreshStripePayableInvoice(
 export async function markInvoicePaidFromStripeWebhook(
   admin: AdminClient,
   stripeInvoice: Stripe.Invoice
-): Promise<{ ok: boolean; invoiceId?: string; alreadyPaid?: boolean }> {
+): Promise<{
+  ok: boolean
+  invoiceId?: string
+  alreadyPaid?: boolean
+  paymentApplied?: boolean
+  reservationId?: string | null
+  paymentSkippedReason?: string | null
+}> {
   const purpose = stripeInvoice.metadata?.purpose
   const invoiceId = stripeInvoice.metadata?.invoice_id
   if (purpose !== STAFF_PAYABLE_INVOICE_PURPOSE || !invoiceId) {
@@ -321,49 +340,309 @@ export async function markInvoicePaidFromStripeWebhook(
 
   const { data: existing } = await admin
     .from('invoices')
-    .select('id, status')
+    .select('id, status, notes, total, items, customer_id, stripe_invoice_id')
     .eq('id', invoiceId)
     .maybeSingle()
 
+  let targetId = existing?.id
+  let alreadyPaid = existing?.status === 'paid'
+  let invoiceRow = existing
+
   if (!existing) {
-    // fallback by stripe_invoice_id
     const { data: byStripe } = await admin
       .from('invoices')
-      .select('id, status')
+      .select('id, status, notes, total, items, customer_id, stripe_invoice_id')
       .eq('stripe_invoice_id', stripeInvoice.id)
       .maybeSingle()
     if (!byStripe) return { ok: false }
-    if (byStripe.status === 'paid') {
-      return { ok: true, invoiceId: byStripe.id, alreadyPaid: true }
-    }
+    targetId = byStripe.id
+    alreadyPaid = byStripe.status === 'paid'
+    invoiceRow = byStripe
+  }
+
+  if (!targetId || !invoiceRow) return { ok: false }
+
+  if (!alreadyPaid) {
     await admin
       .from('invoices')
       .update({
         status: 'paid',
         paid_at: new Date().toISOString(),
+        stripe_invoice_id: stripeInvoice.id,
         stripe_invoice_status: 'paid',
         hosted_invoice_url: stripeInvoice.hosted_invoice_url || undefined,
       } as never)
-      .eq('id', byStripe.id)
-    return { ok: true, invoiceId: byStripe.id }
+      .eq('id', targetId)
   }
 
-  if (existing.status === 'paid') {
-    return { ok: true, invoiceId: existing.id, alreadyPaid: true }
+  const apply = await applyPaidStaffInvoiceToReservation(admin, {
+    invoiceId: targetId,
+    notes: invoiceRow.notes,
+    total: Number(invoiceRow.total) || 0,
+    items: invoiceRow.items,
+    customerId: invoiceRow.customer_id,
+    stripeInvoice,
+  })
+
+  return {
+    ok: true,
+    invoiceId: targetId,
+    alreadyPaid,
+    paymentApplied: apply.applied,
+    reservationId: apply.reservationId,
+    paymentSkippedReason: apply.skippedReason,
+  }
+}
+
+function paymentStatusForQuickDescription(description: string): string {
+  const d = description.trim().toLowerCase()
+  if (d === 'guide tips' || d.includes('guide tip')) return 'Deposit Received'
+  return 'Balance Received'
+}
+
+function reservationIdFromInvoiceItems(items: unknown): string | null {
+  if (!Array.isArray(items)) return null
+  for (const raw of items) {
+    const id = (raw as InvoiceItemRow)?.reservationId
+    if (typeof id === 'string' && id.trim()) return id.trim()
+  }
+  return null
+}
+
+function descriptionFromInvoiceItemsQuick(items: unknown): string {
+  if (!Array.isArray(items) || items.length === 0) return ''
+  const first = items[0] as InvoiceItemRow
+  return (first.description || first.productName || '').trim()
+}
+
+function stripeInvoicePaidAmountUsd(stripeInvoice: Stripe.Invoice, fallbackTotal: number): number {
+  const paid =
+    typeof stripeInvoice.amount_paid === 'number'
+      ? stripeInvoice.amount_paid
+      : typeof (stripeInvoice as { amount_due?: number }).amount_due === 'number'
+        ? (stripeInvoice as { amount_due: number }).amount_due
+        : null
+  if (paid != null && Number.isFinite(paid)) return roundMoney(paid / 100)
+  return roundMoney(fallbackTotal)
+}
+
+async function resolveReservationForQuickPayment(
+  admin: AdminClient,
+  params: {
+    reservationIdHint: string | null
+    customerId: string | null
+    email: string | null
+    amountUsd: number
+  }
+): Promise<{ reservationId: string | null; reason: string | null }> {
+  const hint = (params.reservationIdHint || '').trim()
+  if (hint) {
+    const { data } = await admin.from('reservations').select('id, status').eq('id', hint).maybeSingle()
+    if (data?.id) return { reservationId: data.id, reason: null }
   }
 
-  await admin
-    .from('invoices')
-    .update({
-      status: 'paid',
-      paid_at: new Date().toISOString(),
-      stripe_invoice_id: stripeInvoice.id,
-      stripe_invoice_status: 'paid',
-      hosted_invoice_url: stripeInvoice.hosted_invoice_url || undefined,
-    } as never)
-    .eq('id', existing.id)
+  const customerIds = new Set<string>()
+  if (params.customerId) customerIds.add(params.customerId)
 
-  return { ok: true, invoiceId: existing.id }
+  const email = (params.email || '').trim().toLowerCase()
+  if (email) {
+    const { data: customers } = await admin
+      .from('customers')
+      .select('id')
+      .ilike('email', email)
+      .eq('archive', false)
+      .limit(20)
+    for (const c of customers || []) {
+      if (c.id) customerIds.add(c.id)
+    }
+  }
+
+  if (customerIds.size === 0) {
+    return { reservationId: null, reason: 'no_customer_match' }
+  }
+
+  const ids = [...customerIds]
+  const { data: reservations } = await admin
+    .from('reservations')
+    .select('id, status, tour_date, customer_id')
+    .in('customer_id', ids)
+    .order('tour_date', { ascending: false })
+    .limit(40)
+
+  const open = (reservations || []).filter((r) => !isReservationCancelledStatus(r.status))
+  if (open.length === 0) {
+    return { reservationId: null, reason: 'no_open_reservation' }
+  }
+
+  const openIds = open.map((r) => r.id)
+  const { data: pricingRows } = await admin
+    .from('reservation_pricing')
+    .select('reservation_id, balance_amount')
+    .in('reservation_id', openIds)
+
+  const balanceById = new Map<string, number>()
+  for (const row of pricingRows || []) {
+    balanceById.set(row.reservation_id, roundMoney(Number(row.balance_amount) || 0))
+  }
+
+  const withBalance = open
+    .map((r) => ({
+      id: r.id,
+      tourDate: r.tour_date || '',
+      balance: balanceById.get(r.id) ?? 0,
+    }))
+    .filter((r) => r.balance > 0.009)
+
+  if (withBalance.length === 1) {
+    return { reservationId: withBalance[0]!.id, reason: null }
+  }
+
+  if (withBalance.length > 1) {
+    const amountMatches = withBalance.filter(
+      (r) => Math.abs(r.balance - params.amountUsd) < 0.02
+    )
+    if (amountMatches.length === 1) {
+      return { reservationId: amountMatches[0]!.id, reason: null }
+    }
+    // soonest upcoming / latest tour with balance
+    const sorted = [...withBalance].sort((a, b) => {
+      const today = lasVegasDateString()
+      const aFuture = a.tourDate >= today ? 0 : 1
+      const bFuture = b.tourDate >= today ? 0 : 1
+      if (aFuture !== bFuture) return aFuture - bFuture
+      return b.tourDate.localeCompare(a.tourDate)
+    })
+    return { reservationId: sorted[0]!.id, reason: null }
+  }
+
+  // no positive balance — attach to most recent open reservation so payment is still recorded
+  return { reservationId: open[0]!.id, reason: null }
+}
+
+/**
+ * 빠른 금액 청구(및 스태프 payable) 결제 완료 시 payment_records + 잔금 sync.
+ * idempotent: 동일 stripe invoice note가 있으면 skip.
+ */
+export async function applyPaidStaffInvoiceToReservation(
+  admin: AdminClient,
+  params: {
+    invoiceId: string
+    notes: string | null
+    total: number
+    items: unknown
+    customerId: string | null
+    stripeInvoice: Stripe.Invoice
+  }
+): Promise<{
+  applied: boolean
+  reservationId: string | null
+  skippedReason: string | null
+}> {
+  // 빠른 금액 청구만 자동 입금 반영 (정식 인보이스는 수동 입금 유지)
+  if (!isQuickPaymentInvoiceNotes(params.notes)) {
+    return { applied: false, reservationId: null, skippedReason: 'not_quick_payment' }
+  }
+
+  const stripeInvoiceId = params.stripeInvoice.id
+  const noteMarker = `${STRIPE_INVOICE_NOTE_PREFIX}${stripeInvoiceId}`
+
+  const { data: existingPay } = await admin
+    .from('payment_records')
+    .select('id, reservation_id')
+    .ilike('note', `%${noteMarker}%`)
+    .limit(1)
+    .maybeSingle()
+
+  if (existingPay?.id) {
+    return {
+      applied: false,
+      reservationId: existingPay.reservation_id,
+      skippedReason: 'already_applied',
+    }
+  }
+
+  const amountUsd = stripeInvoicePaidAmountUsd(params.stripeInvoice, params.total)
+  if (amountUsd <= 0) {
+    return { applied: false, reservationId: null, skippedReason: 'zero_amount' }
+  }
+
+  let email: string | null = null
+  if (params.customerId) {
+    const { data: customer } = await admin
+      .from('customers')
+      .select('email')
+      .eq('id', params.customerId)
+      .maybeSingle()
+    email = (customer?.email || '').trim().toLowerCase() || null
+  }
+  if (!email && params.stripeInvoice.customer_email) {
+    email = params.stripeInvoice.customer_email.trim().toLowerCase()
+  }
+
+  const metaRid = (params.stripeInvoice.metadata?.reservation_id || '').trim() || null
+  const itemRid = reservationIdFromInvoiceItems(params.items)
+  const description = descriptionFromInvoiceItemsQuick(params.items) || 'Quick payment'
+
+  const resolved = await resolveReservationForQuickPayment(admin, {
+    reservationIdHint: metaRid || itemRid,
+    customerId: params.customerId,
+    email,
+    amountUsd,
+  })
+
+  if (!resolved.reservationId) {
+    console.warn('[payableInvoice] quick payment paid but no reservation matched', {
+      invoiceId: params.invoiceId,
+      email,
+      reason: resolved.reason,
+    })
+    return {
+      applied: false,
+      reservationId: null,
+      skippedReason: resolved.reason || 'reservation_not_found',
+    }
+  }
+
+  const paymentStatus = paymentStatusForQuickDescription(description)
+  const operatorId = await lookupReservationOperatorId(admin, resolved.reservationId)
+  const paymentId = `payment_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+  const note = [
+    description,
+    noteMarker,
+    `invoice_id:${params.invoiceId}`,
+    email ? `email:${email}` : '',
+  ]
+    .filter(Boolean)
+    .join(' | ')
+
+  const { error: insertError } = await admin.from('payment_records').insert({
+    id: paymentId,
+    operator_id: operatorId,
+    reservation_id: resolved.reservationId,
+    payment_status: paymentStatus,
+    amount: amountUsd,
+    payment_method: 'card',
+    note,
+    submit_by: 'stripe_webhook',
+    submit_on: new Date().toISOString(),
+  } as never)
+
+  if (insertError) {
+    console.error('[payableInvoice] payment_records insert failed', insertError)
+    return {
+      applied: false,
+      reservationId: resolved.reservationId,
+      skippedReason: 'payment_insert_failed',
+    }
+  }
+
+  try {
+    await syncReservationPricingAggregates(admin, resolved.reservationId)
+  } catch (err) {
+    console.error('[payableInvoice] syncReservationPricingAggregates failed', err)
+  }
+
+  return { applied: true, reservationId: resolved.reservationId, skippedReason: null }
 }
 
 function lasVegasDateString(offsetDays = 0): string {
@@ -459,6 +738,7 @@ export async function createQuickPayableInvoice(
     locale?: 'ko' | 'en'
     operatorId?: string | null
     createdBy?: string | null
+    reservationId?: string | null
   }
 ): Promise<{
   invoiceId: string
@@ -473,6 +753,7 @@ export async function createQuickPayableInvoice(
   description: string
   email: string
   recipientName: string
+  reservationId: string | null
 }> {
   const locale = params.locale === 'ko' ? 'ko' : 'en'
   const email = params.email.trim().toLowerCase()
@@ -535,6 +816,8 @@ export async function createQuickPayableInvoice(
   const invoiceDate = lasVegasDateString()
   const dueDate = lasVegasDateString(7)
 
+  const reservationId = (params.reservationId || '').trim() || null
+
   const items = [
     {
       id: randomUUID(),
@@ -547,6 +830,7 @@ export async function createQuickPayableInvoice(
       total: amountUsd,
       editable: true,
       itemType: 'product',
+      ...(reservationId ? { reservationId } : {}),
     },
   ]
 
@@ -594,6 +878,7 @@ export async function createQuickPayableInvoice(
     description,
     email,
     recipientName,
+    reservationId,
   }
 }
 
@@ -605,6 +890,7 @@ export type QuickPaymentHistoryItem = {
   description: string
   email: string
   recipientName: string
+  reservationId: string | null
   createdAt: string | null
   sentAt: string | null
   paidAt: string | null
@@ -660,6 +946,7 @@ export async function listQuickPaymentInvoices(
       description: descriptionFromInvoiceItems(row.items, locale),
       email: (customer?.email || '').trim(),
       recipientName: (customer?.name || '').trim(),
+      reservationId: reservationIdFromInvoiceItems(row.items),
       createdAt: row.created_at ?? null,
       sentAt: row.sent_at ?? null,
       paidAt: row.paid_at ?? null,

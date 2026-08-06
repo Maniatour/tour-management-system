@@ -1365,14 +1365,14 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           const productName = getProductName(reservation.productId, (products as any) || [])
           const tourDate = reservation.tourDate || ''
           const rn = reservation.channelRN || reservation.id
-          const description =
-            locale === 'en'
-              ? [productName, tourDate, rn ? `RN ${rn}` : ''].filter(Boolean).join(' · ')
-              : [productName, tourDate, rn ? `RN ${rn}` : ''].filter(Boolean).join(' · ')
+          const description = [productName, tourDate, rn ? `RN ${rn}` : '']
+            .filter(Boolean)
+            .join(' · ')
           return {
             email: customer?.email || '',
             recipientName: customer?.name || getCustomerName(reservation.customerId, customers || []),
             description,
+            reservationId: reservation.id,
           }
         })()}
       />
