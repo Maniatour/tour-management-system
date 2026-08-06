@@ -6,10 +6,12 @@ import {
 import {
   closeWyndhamSession,
   ensureWyndhamLogin,
+  gotoWyndham,
   openWyndhamSession,
   WyndhamAutomationError,
 } from '@/lib/hotels/suppliers/wyndham/session'
 import { WYNDHAM_SELECTORS, WYNDHAM_URLS } from '@/lib/hotels/suppliers/wyndham/selectors'
+import { fillWyndhamSearchForm } from '@/lib/hotels/suppliers/wyndham/search'
 import { enumerateStayDates } from '@/lib/hotels/suppliers/dry-run-supplier'
 import type { HotelSupplier } from '@/lib/hotels/suppliers/types'
 import type {
@@ -33,7 +35,7 @@ import type {
  *
  * Live automation requires:
  * - playwright + chromium installed
- * - WYNDHAM_LOGIN_EMAIL / WYNDHAM_LOGIN_PASSWORD
+ * - WYNDHAM_LOGIN_USERNAME / WYNDHAM_LOGIN_PASSWORD
  * - Prefer running on a worker/host that supports browsers (not typical Vercel serverless)
  *
  * When live is disabled or automation fails with CAPTCHA, returns needs_manual.
@@ -67,26 +69,20 @@ export function createWyndhamProvider(opts?: {
       try {
         session = await openWyndhamSession(artifact)
         await ensureWyndhamLogin(session, artifact)
-        await session.page.goto(WYNDHAM_URLS.home, { waitUntil: 'domcontentloaded' })
+        await gotoWyndham(session.page, WYNDHAM_URLS.home, artifact)
+        await session.page.waitForTimeout(2_000)
 
-        if (params.city || params.query) {
-          const dest = params.query || params.city || ''
-          await session.page.fill(WYNDHAM_SELECTORS.searchDestination, dest)
-        }
-        await session.page.fill(WYNDHAM_SELECTORS.checkIn, params.checkIn)
-        await session.page.fill(WYNDHAM_SELECTORS.checkOut, params.checkOut)
-        if (params.rooms != null) {
-          await session.page
-            .fill(WYNDHAM_SELECTORS.rooms, String(params.rooms))
-            .catch(() => undefined)
-        }
-        if (params.guests != null) {
-          await session.page
-            .fill(WYNDHAM_SELECTORS.guests, String(params.guests))
-            .catch(() => undefined)
-        }
-        await session.page.click(WYNDHAM_SELECTORS.searchSubmit)
+        await fillWyndhamSearchForm(
+          session.page,
+          {
+            destination: params.query || params.city || undefined,
+            checkIn: params.checkIn,
+            checkOut: params.checkOut,
+          },
+          artifact
+        )
         await session.page.waitForLoadState('networkidle').catch(() => undefined)
+        await session.page.waitForTimeout(2_000).catch(() => undefined)
 
         if (await session.page.$(WYNDHAM_SELECTORS.captcha)) {
           throw new WyndhamAutomationError(
@@ -98,7 +94,9 @@ export function createWyndhamProvider(opts?: {
         // Site-specific result parsing lives here; selectors may need updates over time.
         const results: HotelSearchResult[] = await session.page.evaluate(() => {
           const cards = Array.from(
-            document.querySelectorAll('[data-hotel-id], .hotel-card, .property-card')
+            document.querySelectorAll(
+              '[data-hotel-id], .hotel-card, .property-card, .hotel-listing'
+            )
           )
           return cards.slice(0, 20).map((el, index) => {
             const id =
@@ -129,14 +127,20 @@ export function createWyndhamProvider(opts?: {
     async getRates(params: RateQueryParams): Promise<HotelRateQuote[]> {
       if (!live) {
         throw new WyndhamAutomationError(
-          'Wyndham Live가 꺼져 있습니다. .env.local에 HOTEL_WYNDHAM_LIVE=1 과 WYNDHAM_LOGIN_EMAIL / WYNDHAM_LOGIN_PASSWORD를 설정하거나, 관리 화면에서 「멤버 요금 가져오기」로 강제 조회하세요.',
+          'Wyndham Live가 꺼져 있습니다. .env.local에 HOTEL_WYNDHAM_LIVE=1 과 WYNDHAM_LOGIN_USERNAME / WYNDHAM_LOGIN_PASSWORD를 설정하거나, 관리 화면에서 「멤버 요금 가져오기」로 강제 조회하세요.',
           'needs_manual'
         )
       }
 
-      if (!process.env.WYNDHAM_LOGIN_EMAIL || !process.env.WYNDHAM_LOGIN_PASSWORD) {
+      if (
+        !(
+          process.env.WYNDHAM_LOGIN_USERNAME?.trim() ||
+          process.env.WYNDHAM_LOGIN_EMAIL?.trim()
+        ) ||
+        !process.env.WYNDHAM_LOGIN_PASSWORD?.trim()
+      ) {
         throw new WyndhamAutomationError(
-          'WYNDHAM_LOGIN_EMAIL / WYNDHAM_LOGIN_PASSWORD가 없습니다. 멤버 요금을 보려면 Wyndham Rewards 계정으로 로그인해야 합니다.',
+          'WYNDHAM_LOGIN_USERNAME / WYNDHAM_LOGIN_PASSWORD가 없습니다. 멤버 요금을 보려면 Wyndham Rewards username으로 로그인해야 합니다.',
           'needs_manual'
         )
       }
@@ -148,7 +152,8 @@ export function createWyndhamProvider(opts?: {
         await appendWyndhamLog(artifact, 'Logging in for member rates…')
         await ensureWyndhamLogin(session, artifact)
 
-        await session.page.goto(WYNDHAM_URLS.home, { waitUntil: 'domcontentloaded' })
+        await gotoWyndham(session.page, WYNDHAM_URLS.home, artifact)
+        await session.page.waitForTimeout(2_000)
 
         const destination =
           params.destination ||
@@ -156,33 +161,17 @@ export function createWyndhamProvider(opts?: {
             ? params.supplierHotelId
             : '')
 
-        if (destination) {
-          await session.page
-            .fill(WYNDHAM_SELECTORS.searchDestination, destination)
-            .catch(() => undefined)
-        }
-
-        await session.page.fill(WYNDHAM_SELECTORS.checkIn, params.checkIn).catch(async () => {
-          await session!.page.locator(WYNDHAM_SELECTORS.checkIn).fill(params.checkIn)
-        })
-        await session.page.fill(WYNDHAM_SELECTORS.checkOut, params.checkOut).catch(async () => {
-          await session!.page.locator(WYNDHAM_SELECTORS.checkOut).fill(params.checkOut)
-        })
-
-        if (params.rooms != null) {
-          await session.page
-            .fill(WYNDHAM_SELECTORS.rooms, String(params.rooms))
-            .catch(() => undefined)
-        }
-        if (params.guests != null) {
-          await session.page
-            .fill(WYNDHAM_SELECTORS.guests, String(params.guests))
-            .catch(() => undefined)
-        }
-
-        await session.page.click(WYNDHAM_SELECTORS.searchSubmit)
+        await fillWyndhamSearchForm(
+          session.page,
+          {
+            destination: destination || undefined,
+            checkIn: params.checkIn,
+            checkOut: params.checkOut,
+          },
+          artifact
+        )
         await session.page.waitForLoadState('networkidle').catch(() => undefined)
-        await session.page.waitForTimeout(2_000).catch(() => undefined)
+        await session.page.waitForTimeout(3_000).catch(() => undefined)
 
         if (await session.page.$(WYNDHAM_SELECTORS.captcha)) {
           throw new WyndhamAutomationError(
@@ -205,20 +194,25 @@ export function createWyndhamProvider(opts?: {
                 '.room-card',
                 '[class*="RoomRate"]',
                 '[class*="member-rate"]',
+                '.hotel-listing',
+                '.property-card',
               ].join(', ')
             )
           )
 
-          const rows = cards.slice(0, 20).map((card, index) => {
+          const rows = cards.slice(0, 30).map((card, index) => {
             const fullText = textOf(card)
             const isMember = /member|rewards|wyndham.?rewards|멤버/i.test(fullText)
-            const priceMatch = fullText.match(/\$\s*([0-9]+(?:\.[0-9]{1,2})?)/)
+            const priceMatch =
+              fullText.match(/\$\s*([0-9]+(?:\.[0-9]{1,2})?)/) ||
+              fullText.match(/£\s*([0-9]+(?:\.[0-9]{1,2})?)/)
             const priceFromSel =
               card.querySelector(sel.ratePrice)?.textContent?.replace(/[^0-9.]/g, '') || ''
             const price = Number(priceFromSel || priceMatch?.[1] || 0)
             const roomType =
-              textOf(card.querySelector('.room-name, h3, h4, [class*="room-type"]')) ||
-              (isMember ? 'Member rate' : 'Room')
+              textOf(
+                card.querySelector('.room-name, h3, h4, [class*="room-type"], .hotel-name')
+              ) || (isMember ? 'Member rate' : 'Room / property')
             return {
               supplierRoomId: card.getAttribute('data-room-id') || `room-${index}`,
               roomType: isMember ? `Member · ${roomType}` : roomType,
@@ -227,7 +221,6 @@ export function createWyndhamProvider(opts?: {
             }
           })
 
-          // Prefer member-priced rows; fall back to any priced row
           const memberRows = rows.filter((r) => r.isMember && r.price > 0)
           const priced = rows.filter((r) => r.price > 0)
           return (memberRows.length ? memberRows : priced).slice(0, 10)

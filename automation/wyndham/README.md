@@ -15,7 +15,7 @@ npx playwright install chromium
 
 ```
 HOTEL_WYNDHAM_LIVE=0          # set 1 only on a browser-capable worker
-WYNDHAM_LOGIN_EMAIL=
+WYNDHAM_LOGIN_USERNAME=
 WYNDHAM_LOGIN_PASSWORD=
 WYNDHAM_AUTH_STATE_PATH=automation/wyndham/auth-state/storage.json
 WYNDHAM_ARTIFACTS_DIR=automation/wyndham/artifacts

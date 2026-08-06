@@ -1,24 +1,50 @@
 /**
  * Wyndham site selectors — isolate DOM fragility here.
- * When Wyndham.com changes, update only this file (+ related flow modules).
+ * Primary site: https://www.wyndhamhotels.com/en-uk
+ * Auth host: https://login.wyndhamhotels.com/u/login
+ *
+ * Booking widget (en-uk home):
+ * - destination: input[name=destination]
+ * - check-in / check-out: calendar BUTTONS (not inputs)
+ * - search: button.search-btn
  */
 export const WYNDHAM_SELECTORS = {
-  loginEmail: 'input[type="email"], input[name="email"], #email',
-  loginPassword: 'input[type="password"], input[name="password"], #password',
-  loginSubmit: 'button[type="submit"], button:has-text("Sign In")',
-  searchDestination: 'input[name="destination"], input[placeholder*="Destination"]',
-  checkIn: 'input[name="checkIn"], input[data-testid="check-in"]',
-  checkOut: 'input[name="checkOut"], input[data-testid="check-out"]',
-  rooms: 'select[name="rooms"], input[name="rooms"]',
-  guests: 'select[name="adults"], input[name="adults"]',
-  searchSubmit: 'button[type="submit"], button:has-text("Search")',
-  rateCard: '[data-testid="rate-card"], .rate-card, .room-rate',
-  ratePrice: '[data-testid="price"], .price, .rate-amount',
-  confirmationNumber: '[data-testid="confirmation"], .confirmation-number, text=/Confirmation/i',
+  signInLink:
+    'a[href$="#login"]:has-text("Sign In"), a:has-text("Sign In"), button:has-text("Sign In")',
+
+  loginUsername: 'input#username[name="username"], input#username, input[name="username"]',
+  loginPassword: 'input#password[name="password"], input#password, input[name="password"]',
+  loginSubmit:
+    'button:has-text("CONTINUE"), button:has-text("Continue"), button[type="submit"]',
+
+  /**
+   * Classic en-uk booking bar only.
+   * After focus, Wyndham clears the placeholder attribute — do NOT require placeholder
+   * in the locator used for fill. Exclude the aria-hidden duplicate.
+   */
+  searchDestination:
+    'input.destination.ui-autocomplete-input:not([aria-hidden="true"])',
+  destinationSuggestion:
+    'ul.ui-autocomplete:not([style*="display: none"]) li.ui-menu-item, ul.ui-autocomplete li.ui-menu-item, .ui-autocomplete li',
+
+  checkInButton: 'button.check-in-button.check-in.calendar-button, button.check-in-button',
+  checkOutButton: 'button.check-out-button.check-out.calendar-button, button.check-out-button',
+  calendarDay: 'td[aria-label]',
+  calendarNext: '.ui-datepicker-next, a.ui-datepicker-next, button.ui-datepicker-next',
+  calendarPrev: '.ui-datepicker-prev, a.ui-datepicker-prev, button.ui-datepicker-prev',
+  calendarTitle: '.ui-datepicker-title',
+
+  roomsGuestsButton: 'button.rooms-and-guests-button, button.rooms-and-guests',
+  searchSubmit: 'button.search-btn.btn-primary, button.search-btn',
+
+  rateCard: '[data-testid="rate-card"], .rate-card, .room-rate, [class*="RoomRate"], .hotel-listing, .property-card',
+  ratePrice: '[data-testid="price"], .price, .rate-amount, .rate, [class*="price"]',
+  confirmationNumber:
+    '[data-testid="confirmation"], .confirmation-number, text=/Confirmation/i',
   captcha: 'iframe[src*="captcha"], .g-recaptcha, #captcha',
 } as const
 
 export const WYNDHAM_URLS = {
-  home: process.env.WYNDHAM_HOME_URL || 'https://www.wyndhamhotels.com',
-  login: process.env.WYNDHAM_LOGIN_URL || 'https://www.wyndhamhotels.com/login',
+  home: process.env.WYNDHAM_HOME_URL || 'https://www.wyndhamhotels.com/en-uk',
+  login: process.env.WYNDHAM_LOGIN_URL || 'https://www.wyndhamhotels.com/en-uk',
 } as const

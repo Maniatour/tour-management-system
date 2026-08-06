@@ -4,9 +4,12 @@
  */
 export async function getWyndhamAutomationStatus() {
   const liveFlag = process.env.HOTEL_WYNDHAM_LIVE === '1'
-  const hasEmail = Boolean(process.env.WYNDHAM_LOGIN_EMAIL?.trim())
+  const hasUsername = Boolean(
+    process.env.WYNDHAM_LOGIN_USERNAME?.trim() ||
+      process.env.WYNDHAM_LOGIN_EMAIL?.trim()
+  )
   const hasPassword = Boolean(process.env.WYNDHAM_LOGIN_PASSWORD?.trim())
-  const credentialsConfigured = hasEmail && hasPassword
+  const credentialsConfigured = hasUsername && hasPassword
 
   let playwrightInstalled = false
   let playwrightError: string | null = null
@@ -22,7 +25,7 @@ export async function getWyndhamAutomationStatus() {
   const blockers: string[] = []
   if (!credentialsConfigured) {
     blockers.push(
-      '.env.local에 WYNDHAM_LOGIN_EMAIL / WYNDHAM_LOGIN_PASSWORD를 넣으세요.'
+      '.env.local에 WYNDHAM_LOGIN_USERNAME / WYNDHAM_LOGIN_PASSWORD를 넣으세요. (이메일 아님 · username)'
     )
   }
   if (!playwrightInstalled) {

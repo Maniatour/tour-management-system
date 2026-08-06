@@ -13,6 +13,7 @@ import {
   Loader2,
   Plus,
   RefreshCw,
+  Trash2,
   TriangleAlert,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -114,6 +115,7 @@ export default function HotelManagementPage() {
   const [checkOut, setCheckOut] = useState('')
   const [rateBusyId, setRateBusyId] = useState<string | null>(null)
   const [enrichBusyId, setEnrichBusyId] = useState<string | null>(null)
+  const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null)
 
   const [newName, setNewName] = useState('Super 8 by Wyndham Page')
   const [newCity, setNewCity] = useState('Page')
@@ -128,7 +130,7 @@ export default function HotelManagementPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const db = supabase as any
       const [h, r, res, a, asn] = await Promise.all([
-        db.from('hotels').select('*').order('name').limit(200),
+        db.from('hotels').select('*').eq('is_active', true).order('name').limit(200),
         db
           .from('hotel_rates')
           .select('*, hotels(name)')
@@ -299,6 +301,32 @@ export default function HotelManagementPage() {
     }
   }
 
+  async function removeHotel(hotel: HotelRow) {
+    const ok = window.confirm(
+      `"${hotel.name}"을(를) 카탈로그에서 제거할까요?\n\n목록에서만 숨깁니다. 이미 가져온 요금·예약 기록은 남습니다.`
+    )
+    if (!ok) return
+
+    setDeleteBusyId(hotel.hotel_id)
+    const toastId = toast.loading(`${hotel.name} 삭제 중…`)
+    try {
+      const headers = await authHeaders()
+      const res = await fetch('/api/hotels', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action: 'delete', hotelId: hotel.hotel_id }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || '삭제 실패')
+      toast.success(`${hotel.name}을(를) 카탈로그에서 제거했습니다.`, { id: toastId })
+      await load()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '삭제 실패', { id: toastId })
+    } finally {
+      setDeleteBusyId(null)
+    }
+  }
+
   const tabs: Array<{ id: TabId; label: string; icon: typeof Building2 }> = [
     { id: 'catalog', label: '호텔 목록', icon: Building2 },
     { id: 'rates', label: '요금', icon: CalendarRange },
@@ -362,6 +390,7 @@ export default function HotelManagementPage() {
               <li>
                 로그인 계정:{' '}
                 <StatusDot ok={wyndhamStatus.credentialsConfigured} />
+                <span className="text-xs"> (username)</span>
               </li>
               <li>
                 Playwright:{' '}
@@ -382,7 +411,9 @@ export default function HotelManagementPage() {
             <p className="text-xs pt-1">
               `.env.local` 예:{' '}
               <code className="text-[11px]">
-                WYNDHAM_LOGIN_EMAIL=… WYNDHAM_LOGIN_PASSWORD=… HOTEL_WYNDHAM_LIVE=1
+                WYNDHAM_LOGIN_USERNAME=… WYNDHAM_LOGIN_PASSWORD=… HOTEL_WYNDHAM_LIVE=1
+                <br />
+                사이트: https://www.wyndhamhotels.com/en-uk
               </code>
             </p>
           </div>
@@ -586,6 +617,20 @@ export default function HotelManagementPage() {
                               ) : (
                                 '메타데이터 (StayAPI · 선택)'
                               )}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={deleteBusyId === hotel.hotel_id}
+                              onClick={() => void removeHotel(hotel)}
+                              className="inline-flex items-center justify-center gap-1.5 h-10 px-3 rounded-xl border border-danger/30 text-xs text-danger hover:bg-danger/5 disabled:opacity-50"
+                              title="카탈로그에서 제거"
+                            >
+                              {deleteBusyId === hotel.hotel_id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3.5 w-3.5" />
+                              )}
+                              삭제
                             </button>
                           </div>
                         </td>

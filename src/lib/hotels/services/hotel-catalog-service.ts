@@ -59,6 +59,50 @@ export async function upsertHotel(input: {
   return data as HotelRow
 }
 
+/**
+ * Remove hotel from active catalog.
+ * - soft (default): is_active=false — list hides it; rates/reservations kept
+ * - hard: delete row (blocked if supplier reservations still reference it)
+ */
+export async function deleteHotel(
+  hotelId: string,
+  opts?: { hard?: boolean }
+): Promise<{ deleted: boolean; mode: 'soft' | 'hard'; hotelId: string }> {
+  const db = getHotelAdminClient()
+
+  const { data: existing, error: findError } = await db
+    .from('hotels')
+    .select('hotel_id, name')
+    .eq('hotel_id', hotelId)
+    .maybeSingle()
+  if (findError) throw new Error(findError.message)
+  if (!existing) throw new Error('Hotel not found')
+
+  if (opts?.hard) {
+    const { count, error: resError } = await db
+      .from('hotel_reservations')
+      .select('reservation_id', { count: 'exact', head: true })
+      .eq('hotel_id', hotelId)
+    if (resError) throw new Error(resError.message)
+    if ((count ?? 0) > 0) {
+      throw new Error(
+        '이 호텔에 연결된 공급사 예약이 있어 완전 삭제할 수 없습니다. 카탈로그에서 숨기기(일반 삭제)를 사용하세요.'
+      )
+    }
+
+    const { error } = await db.from('hotels').delete().eq('hotel_id', hotelId)
+    if (error) throw new Error(error.message)
+    return { deleted: true, mode: 'hard', hotelId }
+  }
+
+  const { error } = await db
+    .from('hotels')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq('hotel_id', hotelId)
+  if (error) throw new Error(error.message)
+  return { deleted: true, mode: 'soft', hotelId }
+}
+
 export async function listRooms(hotelId: string): Promise<HotelRoomRow[]> {
   const db = getHotelAdminClient()
   const { data, error } = await db

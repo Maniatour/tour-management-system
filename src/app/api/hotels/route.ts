@@ -4,6 +4,7 @@ import {
   listHotels,
   enrichHotelMetadata,
   upsertHotel,
+  deleteHotel,
 } from '@/lib/hotels/services/hotel-catalog-service'
 import type { HotelSupplierCode } from '@/lib/hotels/types'
 import { HOTEL_SUPPLIERS } from '@/lib/hotels/types'
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as {
       action?: string
       hotelId?: string
+      hard?: boolean
       supplier?: HotelSupplierCode
       supplierHotelId?: string
       name?: string
@@ -51,6 +53,11 @@ export async function POST(request: NextRequest) {
 
     if (body.action === 'enrich' && body.hotelId) {
       const result = await enrichHotelMetadata(body.hotelId)
+      return NextResponse.json({ success: true, ...result })
+    }
+
+    if (body.action === 'delete' && body.hotelId) {
+      const result = await deleteHotel(body.hotelId, { hard: body.hard === true })
       return NextResponse.json({ success: true, ...result })
     }
 

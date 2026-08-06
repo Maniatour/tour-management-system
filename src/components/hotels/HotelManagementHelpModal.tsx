@@ -45,19 +45,28 @@ export function HotelManagementHelpModal({
             <h3 className="font-semibold mb-2">Wyndham 멤버 요금 (권장 순서)</h3>
             <ol className="list-decimal space-y-2 pl-5 text-muted-foreground">
               <li>
-                <strong className="text-foreground">.env.local</strong>에 Wyndham Rewards 계정과
-                Live 플래그를 넣습니다.
+                <strong className="text-foreground">.env.local</strong>에 Wyndham Rewards{' '}
+                <strong className="text-foreground">username</strong>(이메일이 아님)과 Live 플래그를
+                넣습니다.
                 <pre className="mt-2 rounded-lg bg-muted/50 p-3 text-[11px] overflow-x-auto">
-{`WYNDHAM_LOGIN_EMAIL=you@example.com
+{`WYNDHAM_LOGIN_USERNAME=your_wyndham_username
 WYNDHAM_LOGIN_PASSWORD=********
-HOTEL_WYNDHAM_LIVE=1`}
+HOTEL_WYNDHAM_LIVE=1
+WYNDHAM_HOME_URL=https://www.wyndhamhotels.com/en-uk`}
                 </pre>
               </li>
               <li>
                 Playwright 설치:{' '}
                 <code className="text-xs">npm i -D playwright && npx playwright install chromium</code>
               </li>
-              <li>dev 서버를 재시작합니다. (env 변경 반영)</li>
+              <li>
+                자동 로그인이 봇 차단(403)되면, 터미널에서 한 번 수동 로그인 세션을 저장합니다:
+                <pre className="mt-2 rounded-lg bg-muted/50 p-3 text-[11px] overflow-x-auto">
+{`npx tsx --env-file=.env.local automation/wyndham/save-auth.ts`}
+                </pre>
+                브라우저에서 Sign In 완료 → 터미널 Enter → 이후 「멤버 요금 가져오기」가 저장된
+                세션을 사용합니다.
+              </li>
               <li>
                 페이지 상단 <strong className="text-foreground">1단계 준비 상태</strong>가 OK인지
                 확인합니다.
