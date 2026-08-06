@@ -42,6 +42,12 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Wyndham / hotel automation secrets & artifacts
+/automation/wyndham/auth-state/
+/automation/wyndham/artifacts/
+!/automation/wyndham/auth-state/.gitkeep
+!/automation/wyndham/artifacts/.gitkeep
+
 # Serwist (빌드 시 생성되는 서비스 워커)
 public/sw.js
 public/sw.js.map
@@ -53,3 +59,5 @@ public/swe-worker-*.js.map
 /.next/static/
 /analyze/
 bundle-analyzer-report.html
+
+.vercel

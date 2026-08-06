@@ -105,6 +105,8 @@ export default function ProductDetailQuantityChoiceGroup({
                   ) : null}
                   {option.option_price && option.option_price > 0 ? (
                     <span>+${option.option_price}</span>
+                  ) : isCapacityGroup ? (
+                    <span className="font-medium text-emerald-700">{t('capacityIncluded')}</span>
                   ) : null}
                 </div>
               </div>

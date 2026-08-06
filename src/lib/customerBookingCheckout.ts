@@ -93,7 +93,7 @@ let stripeInstance: Stripe | null = null
 
 export function getStripeClient(): Stripe {
   if (!stripeInstance) {
-    const secretKey = process.env.STRIPE_SECRET_KEY
+    const secretKey = process.env.STRIPE_SECRET_KEY?.trim()
     if (!secretKey) {
       throw new Error('STRIPE_SECRET_KEY가 환경 변수에 설정되지 않았습니다.')
     }

@@ -162,6 +162,7 @@ import {
   buildSimpleCardStatusChangeAuditRequestFromFiltered,
   buildSimpleCardStatusTransitionMapFromCachedAuditRows,
   collectReservationActivityDateKeys,
+  isIntoCancelledLikeTransition,
   localYmdSetWhereBecameCancelledFromAuditRows,
   statusTransitionSortIndex,
 } from '@/lib/reservationStatusAudit'
@@ -6467,14 +6468,35 @@ export default function AdminReservations() {
                       /**
                        * 당일 최종 도착이 취소/삭제/노쇼면 모두 포함 (completed→취소 포함).
                        * 카드 섹션 등록/상태변경 분리는 그대로 — 요약·순인원만 전체 취소 반영.
+                       * 차트 감사 rows가 비어 있어도 심플 카드 전환 맵·당일 등록 후 취소 현재상태로 보완.
                        */
                       reservations: dayReservations.filter((r) => {
                         const id = String(r.id ?? '').trim()
                         if (!id) return false
-                        const ymds = localYmdSetWhereBecameCancelledFromAuditRows(
-                          regCancelChartAuditRowsByRecordId[id]
-                        )
-                        return ymds.has(date)
+                        if (regCancelChartAuditReady) {
+                          const ymds = localYmdSetWhereBecameCancelledFromAuditRows(
+                            regCancelChartAuditRowsByRecordId[id]
+                          )
+                          if (ymds.has(date)) return true
+                        }
+                        const tr = simpleCardStatusTransitionMap[`${id}|${date}`]
+                        if (isIntoCancelledLikeTransition(tr)) return true
+                        /** 당일 등록 후 당일 취소 — 상태변경 섹션에 안 넣지만 순예약에서는 차감 */
+                        const createdKey = isoToLocalCalendarDateKey(r.addedTime)
+                        if (createdKey === date) {
+                          const st = String(r.status ?? '')
+                            .toLowerCase()
+                            .trim()
+                          if (
+                            st === 'cancelled' ||
+                            st === 'canceled' ||
+                            st === 'deleted' ||
+                            st === 'no_show'
+                          ) {
+                            return true
+                          }
+                        }
+                        return false
                       }),
                     } as const)
 

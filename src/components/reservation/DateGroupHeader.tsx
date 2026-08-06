@@ -315,7 +315,7 @@ function DateGroupHeaderInner({
   }
   if (cancelStatsPending) {
     summarySegments.push(t('groupingLabels.cancellationLinePending'))
-  } else if (cancelCount > 0 || rebookingCancelCount > 0) {
+  } else {
     if (cancelCount > 0) {
       summarySegments.push(t('groupingLabels.cancellationLine', { count: cancelCount, people: cancelPeople }))
     }
@@ -327,7 +327,8 @@ function DateGroupHeaderInner({
         })
       )
     }
-    if (cancelCount > 0 || rebookingCancelCount > 0) {
+    /** 등록 또는 취소가 있으면 순예약(등록−취소) 항상 표시 */
+    if (regCount > 0 || cancelCount > 0 || rebookingCancelCount > 0) {
       summarySegments.push(
         t('groupingLabels.netRegistrationLine', {
           people: dayRegCancelNetPeople,

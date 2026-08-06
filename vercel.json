@@ -17,6 +17,14 @@
     {
       "path": "/api/cron/remind-tour-checklists",
       "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/hotel-rate-check",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/hotel-reservation-monitor",
+      "schedule": "0 */4 * * *"
     }
   ]
 }

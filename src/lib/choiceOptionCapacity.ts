@@ -97,13 +97,10 @@ export function getOptionCapacity(option: {
       ? Math.floor(option.capacity)
       : null
 
-  // 관리자 기본값 capacity=1이 모든 객실 옵션에 들어가는 경우가 많아, 옵션명이 더 정확하면 우선
-  if (parsed != null && dbCap != null) {
-    if (dbCap === 1 && parsed > 1) return parsed
-    return dbCap
-  }
-  if (dbCap != null) return dbCap
+  // 옵션명·키에서 인실(1인1실, 2 people per room 등)이 파싱되면 항상 우선.
+  // 관리자 기본값 capacity=1, 잘못 입력된 99 등으로 4인1실이 숨겨지는 것을 방지.
   if (parsed != null) return parsed
+  if (dbCap != null) return dbCap
   return null
 }
 

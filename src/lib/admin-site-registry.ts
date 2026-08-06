@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   BarChart3,
+  BedDouble,
   BookOpen,
   Building,
   Calculator,
@@ -206,6 +207,14 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
   { id: 'coupons', path: 'coupons', sidebarTranslationKey: 'coupons', icon: Ticket, visibility: { type: 'always' } },
   { id: 'tag-translations', path: 'tag-translations', sidebarTranslationKey: 'tagTranslationManagement', icon: Tag, visibility: { type: 'always' } },
   { id: 'pickup-hotels', path: 'pickup-hotels', sidebarTranslationKey: 'pickupHotels', icon: Building, visibility: { type: 'always' } },
+  {
+    id: 'hotels',
+    path: 'hotels',
+    sidebarTranslationKey: 'hotelManagement',
+    icon: BedDouble,
+    visibility: { type: 'always' },
+    requiresOperationsModule: true,
+  },
   {
     id: 'vehicles',
     path: 'vehicles',

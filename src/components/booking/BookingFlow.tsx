@@ -33,6 +33,7 @@ import {
   getDefaultRoomQuantities,
   getMaxPeopleQuantityForOption,
   getMaxQuantityForOption,
+  getOptionCapacity,
   getPeopleCoverage,
   isCapacityCoverageExact,
   isPeopleCoverageOver,
@@ -3072,6 +3073,7 @@ export default function BookingFlow({
                             const adultPrice = option.option_price || 0
                             const childPrice = option.option_child_price || 0
                             const infantPrice = option.option_infant_price || 0
+                            const roomCapacity = isCapacityGroup ? getOptionCapacity(option) : null
                             const optionLabel = isEnglish
                               ? option.option_name_en ||
                                 option.option_name ||
@@ -3109,11 +3111,11 @@ export default function BookingFlow({
                                         {translate('선택됨', 'Selected')}
                                       </span>
                                     ) : null}
-                                    {isCapacityGroup && option.capacity ? (
+                                    {isCapacityGroup && roomCapacity != null ? (
                                       <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                                         {translate(
-                                          `${option.capacity}인 1실`,
-                                          `${option.capacity} per room`
+                                          `${roomCapacity}인 1실`,
+                                          `${roomCapacity} per room`
                                         )}
                                       </span>
                                     ) : null}
@@ -3136,6 +3138,11 @@ export default function BookingFlow({
                                         : ''}
                                     </p>
                                   )}
+                                  {isCapacityGroup && adultPrice <= 0 && childPrice <= 0 && infantPrice <= 0 ? (
+                                    <p className="mt-1 text-xs font-medium text-emerald-700">
+                                      {translate('추가 요금 없음 (포함)', 'No surcharge (included)')}
+                                    </p>
+                                  ) : null}
                                   {optionDescription?.trim() ? (
                                     <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                                       {optionDescription}

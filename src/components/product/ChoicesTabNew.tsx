@@ -13,10 +13,12 @@ import ChoiceTemplatePickerModal, {
   type ChoiceTemplatePickResult,
 } from '@/components/product/ChoiceTemplatePickerModal'
 import {
+  getChoiceGroupExactLocaleText,
   getChoiceGroupLocalizedText,
-  getChoiceOptionLocalizedText,
+  getChoiceOptionExactLocaleText,
   mergeChoiceGroupI18n,
   mergeChoiceOptionI18n,
+  trimChoiceContentI18n,
   type ChoiceContentI18n,
 } from '@/lib/productChoiceLocales'
 import {
@@ -630,7 +632,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           choice_group_en: choice.choice_group_en?.trim() || null,
           description_ko: choice.description_ko?.trim() || null,
           description_en: choice.description_en?.trim() || null,
-          content_i18n: choice.content_i18n || {},
+          content_i18n: trimChoiceContentI18n(choice.content_i18n),
           choice_type: choice.choice_type,
           pricing_unit: choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person',
           is_required: choice.is_required,
@@ -701,11 +703,11 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
             const payload = {
               choice_id: choiceData.id,
               option_key: option.option_key,
-              option_name: option.option_name,
-              option_name_ko: option.option_name_ko,
-              description: option.description,
-              description_ko: option.description_ko,
-              content_i18n: option.content_i18n || {},
+              option_name: option.option_name?.trim() || '',
+              option_name_ko: option.option_name_ko?.trim() || '',
+              description: option.description?.trim() || null,
+              description_ko: option.description_ko?.trim() || null,
+              content_i18n: trimChoiceContentI18n(option.content_i18n),
               adult_price: option.adult_price,
               child_price: option.child_price,
               infant_price: option.infant_price,
@@ -1569,12 +1571,12 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                       </label>
                       <input
                         type="text"
-                        value={getChoiceGroupLocalizedText(choice, 'name', editLocale)}
+                        value={getChoiceGroupExactLocaleText(choice, 'name', editLocale)}
                         onChange={(e) =>
                           updateChoiceGroupLocaleText(
                             groupIndex,
                             e.target.value,
-                            getChoiceGroupLocalizedText(choice, 'description', editLocale)
+                            getChoiceGroupExactLocaleText(choice, 'description', editLocale)
                           )
                         }
                         className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
@@ -1633,11 +1635,11 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                       설명 ({getSiteLocaleMeta(editLocale).label})
                     </label>
                     <textarea
-                      value={getChoiceGroupLocalizedText(choice, 'description', editLocale)}
+                      value={getChoiceGroupExactLocaleText(choice, 'description', editLocale)}
                       onChange={(e) =>
                         updateChoiceGroupLocaleText(
                           groupIndex,
-                          getChoiceGroupLocalizedText(choice, 'name', editLocale),
+                          getChoiceGroupExactLocaleText(choice, 'name', editLocale),
                           e.target.value
                         )
                       }
@@ -1674,7 +1676,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                    const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
                    const isFirst = actualIndex === 0
                    const isLast = actualIndex === sortedOptions.length - 1
-                   const descLines = (option.description_ko || '')
+                   const descLines = getChoiceOptionExactLocaleText(option, 'description', editLocale)
                      .split('\n')
                      .map((line) => line.replace(new RegExp('^[\\s✓✔✅•\\-*]+'), '').trim())
                      .filter(Boolean)
@@ -1729,7 +1731,10 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                        <div className="flex items-start justify-between gap-2">
                          <div className="min-w-0 flex-1">
                            <h4 className="text-base font-semibold text-gray-900 leading-snug">
-                             {option.option_name_ko || option.option_name || `초이스 ${actualIndex + 1}`}
+                             {getChoiceOptionExactLocaleText(option, 'name', editLocale) ||
+                               option.option_name_ko ||
+                               option.option_name ||
+                               `초이스 ${actualIndex + 1}`}
                            </h4>
                            {option.option_name ? (
                              <p className="mt-0.5 text-xs text-gray-500 truncate">{option.option_name}</p>
@@ -2060,13 +2065,13 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                     </label>
                     <input
                       type="text"
-                      value={getChoiceOptionLocalizedText(option, 'name', editLocale)}
+                      value={getChoiceOptionExactLocaleText(option, 'name', editLocale)}
                       onChange={(e) =>
                         updateChoiceOptionLocaleText(
                           groupIndex,
                           option.id,
                           e.target.value,
-                          getChoiceOptionLocalizedText(option, 'description', editLocale)
+                          getChoiceOptionExactLocaleText(option, 'description', editLocale)
                         )
                       }
                       placeholder="초이스명"
@@ -2078,12 +2083,12 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                       설명 ({getSiteLocaleMeta(editLocale).label})
                     </label>
                     <textarea
-                      value={getChoiceOptionLocalizedText(option, 'description', editLocale)}
+                      value={getChoiceOptionExactLocaleText(option, 'description', editLocale)}
                       onChange={(e) =>
                         updateChoiceOptionLocaleText(
                           groupIndex,
                           option.id,
-                          getChoiceOptionLocalizedText(option, 'name', editLocale),
+                          getChoiceOptionExactLocaleText(option, 'name', editLocale),
                           e.target.value
                         )
                       }

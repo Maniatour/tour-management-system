@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams } from 'next/navigation'
 import {
   CreditCard,
@@ -69,6 +70,7 @@ export default function QuickPaymentRequestForm({
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    // 모달이 새로 열리며 initials가 바뀔 때만 필드 동기화 (제출 중/결과 화면에서 리셋되지 않도록)
     setEmail(initials?.email ?? '')
     setRecipientName(initials?.recipientName ?? '')
     setDescription(initials?.description ?? '')
@@ -80,7 +82,8 @@ export default function QuickPaymentRequestForm({
     setResult(null)
     setError(null)
     setSendEmail(true)
-  }, [initials?.email, initials?.recipientName, initials?.description, initials?.amountUsd])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- remount via key handles open; avoid wiping result on parent re-renders
+  }, [initials?.email, initials?.recipientName, initials?.description, initials?.amountUsd, initials?.reservationId])
 
   const resetForm = () => {
     setEmail(initials?.email ?? '')
@@ -96,8 +99,11 @@ export default function QuickPaymentRequestForm({
     setError(null)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault()
+    e?.stopPropagation()
+    if (submitting) return
+
     setError(null)
     setResult(null)
 
@@ -125,16 +131,20 @@ export default function QuickPaymentRequestForm({
           recipientName: recipientName.trim() || undefined,
           description: description.trim(),
           amountUsd,
-          locale,
+          // 고객 이메일·결제 페이지는 스태프 UI 언어와 무관하게 기본 영문
+          locale: 'en',
           sendEmail,
           ...(initials?.reservationId?.trim()
             ? { reservationId: initials.reservationId.trim() }
             : {}),
         }),
       })
-      const data = await response.json()
+      const data = await response.json().catch(() => ({} as Record<string, unknown>))
       if (!response.ok) {
-        throw new Error(data.error || (locale === 'ko' ? '청구 실패' : 'Request failed'))
+        throw new Error(
+          (typeof data.error === 'string' && data.error) ||
+            (locale === 'ko' ? '청구 실패' : 'Request failed')
+        )
       }
       setResult({
         invoiceId: String(data.invoiceId),
@@ -252,7 +262,10 @@ export default function QuickPaymentRequestForm({
         </div>
       ) : (
         <form
-          onSubmit={handleSubmit}
+          onSubmit={(e) => {
+            void handleSubmit(e)
+          }}
+          noValidate
           className={
             isModal
               ? 'space-y-5'
@@ -384,8 +397,11 @@ export default function QuickPaymentRequestForm({
           )}
 
           <button
-            type="submit"
+            type="button"
             disabled={submitting}
+            onClick={(e) => {
+              void handleSubmit(e)
+            }}
             className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
           >
             {submitting ? (
@@ -663,20 +679,39 @@ export function QuickPaymentRequestModal({
   const [view, setView] = useState<'form' | 'history'>('form')
   const [formInitials, setFormInitials] = useState<QuickPaymentFormInitials | undefined>(initials)
   const [formKey, setFormKey] = useState(0)
+  const [mounted, setMounted] = useState(false)
+  const wasOpenRef = useRef(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  // 모달이 열릴 때만 폼을 리셋 — 열린 동안 initials 참조 변경으로 전체 리마운트/새로고침처럼 보이는 현상 방지
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setView('form')
+      setFormInitials(initials)
+      setFormKey((k) => k + 1)
+    }
+    wasOpenRef.current = open
+  }, [open, initials])
 
   useEffect(() => {
     if (!open) return
-    setView('form')
-    setFormInitials(initials)
-    setFormKey((k) => k + 1)
-  }, [open, initials?.email, initials?.recipientName, initials?.description, initials?.amountUsd, initials?.reservationId])
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [open, onClose])
 
-  if (!open) return null
+  if (!open || !mounted) return null
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4"
       onClick={(e) => {
+        e.preventDefault()
         e.stopPropagation()
         onClose()
       }}
@@ -689,6 +724,7 @@ export function QuickPaymentRequestModal({
           view === 'history' ? 'max-w-2xl' : 'max-w-lg'
         }`}
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -762,6 +798,7 @@ export function QuickPaymentRequestModal({
           />
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

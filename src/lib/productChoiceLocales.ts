@@ -133,6 +133,26 @@ export function getChoiceOptionLocalizedText(
   return getChoiceLocalizedText(getChoiceOptionI18nMap(source, field), locale)
 }
 
+/**
+ * 관리자 입력 폼용: 폴백·trim 없이 해당 로케일 값만 반환.
+ * (폴백/trim 사용 시 Enter·공백 입력이 즉시 되돌아가 수정이 안 되는 것처럼 보임)
+ */
+export function getChoiceGroupExactLocaleText(
+  source: ChoiceGroupI18nSource,
+  field: ChoiceI18nField,
+  locale: SiteLocale
+): string {
+  return getChoiceGroupI18nMap(source, field)[locale] ?? ''
+}
+
+export function getChoiceOptionExactLocaleText(
+  source: ChoiceOptionI18nSource,
+  field: ChoiceI18nField,
+  locale: SiteLocale
+): string {
+  return getChoiceOptionI18nMap(source, field)[locale] ?? ''
+}
+
 export function setChoiceI18nField(
   current: ChoiceContentI18n | null | undefined,
   field: ChoiceI18nField,
@@ -141,10 +161,29 @@ export function setChoiceI18nField(
 ): ChoiceContentI18n {
   const next: ChoiceContentI18n = { ...(current || {}) }
   const fieldMap: ChoiceLocaleTextMap = { ...(next[field] || {}) }
-  const trimmed = value.trim()
-  if (trimmed) fieldMap[locale] = trimmed
+  // 편집 중 끝 공백/줄바꿈을 trim 하면 줄바꿈·스페이스 입력이 즉시 취소됨
+  if (value.length > 0) fieldMap[locale] = value
   else delete fieldMap[locale]
   next[field] = fieldMap
+  return next
+}
+
+/** DB 저장 직전: 로케일 문자열 trim 및 빈 값 제거 */
+export function trimChoiceContentI18n(
+  content: ChoiceContentI18n | null | undefined
+): ChoiceContentI18n {
+  const next: ChoiceContentI18n = {}
+  for (const field of ['name', 'description'] as const) {
+    const map = content?.[field]
+    if (!map) continue
+    const trimmed: ChoiceLocaleTextMap = {}
+    for (const [locale, value] of Object.entries(map)) {
+      if (typeof value !== 'string') continue
+      const t = value.trim()
+      if (t) trimmed[locale as SiteLocale] = t
+    }
+    if (Object.keys(trimmed).length > 0) next[field] = trimmed
+  }
   return next
 }
 
@@ -155,13 +194,15 @@ export function legacyChoiceGroupColumnsFromI18n(i18n: ChoiceContentI18n): {
   description_en: string | null
   choice_group: string
 } {
-  const nameKo = i18n.name?.ko?.trim() || ''
-  const nameEn = i18n.name?.en?.trim() || null
+  const nameKo = i18n.name?.ko ?? ''
+  const nameEn = i18n.name?.en ?? ''
+  const descKo = i18n.description?.ko
+  const descEn = i18n.description?.en
   return {
     choice_group_ko: nameKo || nameEn || '',
-    choice_group_en: nameEn,
-    description_ko: i18n.description?.ko?.trim() || null,
-    description_en: i18n.description?.en?.trim() || null,
+    choice_group_en: nameEn || null,
+    description_ko: descKo != null && descKo.length > 0 ? descKo : null,
+    description_en: descEn != null && descEn.length > 0 ? descEn : null,
     choice_group: nameKo || nameEn || 'choice',
   }
 }
@@ -172,13 +213,15 @@ export function legacyChoiceOptionColumnsFromI18n(i18n: ChoiceContentI18n): {
   description_ko: string | null
   description: string | null
 } {
-  const nameKo = i18n.name?.ko?.trim() || ''
-  const nameEn = i18n.name?.en?.trim() || ''
+  const nameKo = i18n.name?.ko ?? ''
+  const nameEn = i18n.name?.en ?? ''
+  const descKo = i18n.description?.ko
+  const descEn = i18n.description?.en
   return {
     option_name_ko: nameKo || nameEn || '',
     option_name: nameEn || nameKo || '',
-    description_ko: i18n.description?.ko?.trim() || null,
-    description: i18n.description?.en?.trim() || null,
+    description_ko: descKo != null && descKo.length > 0 ? descKo : null,
+    description: descEn != null && descEn.length > 0 ? descEn : null,
   }
 }
 

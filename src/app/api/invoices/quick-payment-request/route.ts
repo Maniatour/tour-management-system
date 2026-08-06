@@ -62,6 +62,7 @@ export async function POST(request: NextRequest) {
   const reservationId = typeof body.reservationId === 'string' ? body.reservationId : ''
   const amountRaw = body.amountUsd ?? body.amount
   const amountUsd = typeof amountRaw === 'number' ? amountRaw : Number(amountRaw)
+  // 고객 발송(이메일·결제 링크) 기본 영문. 한글은 body.locale === 'ko'일 때만.
   const locale = body.locale === 'ko' ? 'ko' : 'en'
   const sendEmail = body.sendEmail !== false
 
