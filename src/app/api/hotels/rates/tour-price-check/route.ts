@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireStaffApiAuth } from '@/lib/api-security'
 import { getHotelSupplier } from '@/lib/hotels/suppliers/registry'
 import {
-  pickQuotesForHotel,
-  resolveTourHotelPriceCheckDestination,
-} from '@/lib/hotels/suppliers/wyndham/match-hotel'
+  enrichJobsWithDestination,
+  hydrateTourPriceCheckResults,
+  persistTourPriceCheckQuotes,
+} from '@/lib/hotels/services/tour-price-check-service'
 import type {
   TourPriceCheckJob,
-  TourPriceCheckRateItem,
   TourPriceCheckResult,
 } from '@/lib/hotels/tour-price-check-types'
 import type { HotelRateQuote } from '@/lib/hotels/types'
@@ -16,37 +16,53 @@ export const runtime = 'nodejs'
 /** Many unique check-in dates × Page/Kanab — allow several minutes */
 export const maxDuration = 300
 
-export type { TourPriceCheckJob, TourPriceCheckRateItem, TourPriceCheckResult }
+export type { TourPriceCheckJob, TourPriceCheckResult }
 
 /**
  * POST /api/hotels/rates/tour-price-check
- * One Playwright scrape per unique (destination, checkIn, checkOut), then match each booking.
+ * - { hydrate: true, jobs } → rebuild badges from hotel_rates (no scrape)
+ * - { jobs } → scrape Wyndham, persist to hotel_rates, return matches
  */
 export async function POST(request: NextRequest) {
   const auth = await requireStaffApiAuth(request)
   if (!auth.ok) return auth.response
 
   try {
-    const body = (await request.json()) as { jobs?: TourPriceCheckJob[] }
+    const body = (await request.json()) as {
+      jobs?: TourPriceCheckJob[]
+      hydrate?: boolean
+    }
     const jobs = Array.isArray(body.jobs) ? body.jobs : []
     if (!jobs.length) {
       return NextResponse.json({ error: 'jobs[] required' }, { status: 400 })
     }
 
+    if (body.hydrate === true) {
+      const results = await hydrateTourPriceCheckResults(jobs)
+      const okCount = results.filter((r) => r.ok).length
+      return NextResponse.json({
+        success: true,
+        hydrated: true,
+        okCount,
+        total: results.length,
+        results,
+      })
+    }
+
     type GroupJob = TourPriceCheckJob & { destination: string }
+    const enriched = enrichJobsWithDestination(jobs)
     const groups = new Map<string, GroupJob[]>()
-    for (const job of jobs) {
-      if (!job.bookingId || !job.checkIn || !job.checkOut || !job.hotel) continue
-      const destination = resolveTourHotelPriceCheckDestination(job.hotel, job.city)
-      const key = `${destination}|${job.checkIn}|${job.checkOut}`
+    for (const job of enriched) {
+      const key = `${job.destination}|${job.checkIn}|${job.checkOut}`
       const list = groups.get(key) || []
-      list.push({ ...job, destination })
+      list.push(job)
       groups.set(key, list)
     }
 
     const supplier = getHotelSupplier('wyndham', { forceLive: true })
     const results: TourPriceCheckResult[] = []
     let scrapeCount = 0
+    const savedHotelIds = new Set<string>()
 
     for (const [, group] of groups) {
       const sample = group[0]!
@@ -75,60 +91,13 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // Unique properties for hover list (lowest price per roomType)
-      const propertyRates: TourPriceCheckRateItem[] = []
-      const seen = new Set<string>()
-      for (const q of allQuotes) {
-        const key = q.roomType || q.supplierRoomId || ''
-        if (!key || seen.has(key)) continue
-        seen.add(key)
-        if (q.price > 0) {
-          propertyRates.push({ roomType: q.roomType, price: q.price })
-        }
-      }
-      propertyRates.sort((a, b) => a.price - b.price)
-
-      for (const job of group) {
-        const matched = pickQuotesForHotel(
-          { name: job.hotel, supplierHotelId: job.hotel },
-          allQuotes
-        )
-        const marketPrice = matched[0]?.price
-        const roomType = matched[0]?.roomType
-        const bookedUnit =
-          job.bookedUnitPrice != null && Number.isFinite(job.bookedUnitPrice)
-            ? Number(job.bookedUnitPrice)
-            : null
-
-        if (marketPrice == null || !(marketPrice > 0)) {
-          results.push({
-            bookingId: job.bookingId,
-            ok: false,
-            error: '검색 결과에서 해당 호텔을 찾지 못했습니다.',
-            destination: job.destination,
-            bookedUnit,
-            rates: propertyRates,
-          })
-          continue
-        }
-
-        const diff =
-          bookedUnit != null ? Math.round((marketPrice - bookedUnit) * 100) / 100 : null
-
-        results.push({
-          bookingId: job.bookingId,
-          ok: true,
-          marketPrice,
-          roomType,
-          bookedUnit,
-          diff,
-          destination: job.destination,
-          rates: propertyRates.map((r) => ({
-            ...r,
-            matched: r.roomType === roomType,
-          })),
-        })
-      }
+      const persisted = await persistTourPriceCheckQuotes({
+        destination: sample.destination,
+        allQuotes,
+        jobs: group,
+      })
+      results.push(...persisted.results)
+      for (const id of persisted.savedHotelIds) savedHotelIds.add(id)
     }
 
     const okCount = results.filter((r) => r.ok).length
@@ -138,6 +107,7 @@ export async function POST(request: NextRequest) {
       total: results.length,
       scrapeCount,
       groupCount: groups.size,
+      savedHotels: savedHotelIds.size,
       results,
     })
   } catch (error) {

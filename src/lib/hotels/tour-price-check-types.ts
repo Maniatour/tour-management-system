@@ -24,4 +24,7 @@ export type TourPriceCheckResult = {
   rates?: TourPriceCheckRateItem[]
   error?: string
   destination?: string
+  /** Linked hotels.hotel_id when persisted / hydrated from hotel_rates */
+  hotelId?: string
+  checkedAt?: string
 }

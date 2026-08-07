@@ -96,3 +96,74 @@ export function resolveTourHotelPriceCheckDestination(
   }
   return c.trim() || h.trim() || 'Page AZ'
 }
+
+/** Whether a catalog hotel belongs to a Wyndham scrape destination (Page AZ / Kanab UT). */
+export function hotelMatchesDestination(
+  hotel: { name?: string | null; city?: string | null; state?: string | null },
+  destination: string
+): boolean {
+  const resolved = resolveTourHotelPriceCheckDestination(
+    hotel.name || '',
+    [hotel.city, hotel.state].filter(Boolean).join(' ')
+  )
+  return resolved.toLowerCase() === destination.trim().toLowerCase()
+}
+
+/**
+ * Match a tour_hotel_bookings.hotel label (e.g. P-Wingate) to a hotels catalog row.
+ */
+export function findBestCatalogHotel<
+  T extends {
+    hotel_id: string
+    name: string
+    supplier_hotel_id?: string | null
+    city?: string | null
+    state?: string | null
+  },
+>(hotels: T[], bookingHotel: string, destination?: string | null): T | null {
+  if (!hotels.length || !String(bookingHotel || '').trim()) return null
+
+  const candidates =
+    destination && destination.trim()
+      ? hotels.filter((h) => hotelMatchesDestination(h, destination))
+      : hotels
+  const pool = candidates.length > 0 ? candidates : hotels
+
+  let best: T | null = null
+  let bestScore = -1
+  for (const h of pool) {
+    const hay = `${h.name} ${h.supplier_hotel_id || ''}`
+    const score = Math.max(
+      scoreHotelQuoteMatch({ name: bookingHotel, supplierHotelId: bookingHotel }, hay),
+      scoreHotelQuoteMatch(
+        {
+          name: h.name,
+          ...(h.supplier_hotel_id ? { supplierHotelId: h.supplier_hotel_id } : {}),
+        },
+        bookingHotel
+      )
+    )
+    if (score > bestScore) {
+      bestScore = score
+      best = h
+    }
+  }
+  return bestScore >= 20 ? best : null
+}
+
+export function parseDestinationCityState(destination: string): {
+  city: string
+  state: string
+} {
+  const d = destination.trim()
+  if (/page/i.test(d)) return { city: 'Page', state: 'AZ' }
+  if (/kanab/i.test(d)) return { city: 'Kanab', state: 'UT' }
+  const parts = d.split(/\s+/)
+  if (parts.length >= 2) {
+    return {
+      city: parts.slice(0, -1).join(' '),
+      state: parts[parts.length - 1] || '',
+    }
+  }
+  return { city: d, state: '' }
+}

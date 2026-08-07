@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  AlertTriangle,
   DollarSign,
   ExternalLink,
   Loader2,
@@ -150,6 +151,7 @@ export function TourHotelPriceCheckPanel({
   const [completing, setCompleting] = useState(false)
   const [editBookingId, setEditBookingId] = useState<string | null>(null)
   const [batchBusy, setBatchBusy] = useState(false)
+  const [hydrateBusy, setHydrateBusy] = useState(false)
   const [fetchByBookingId, setFetchByBookingId] = useState<
     Record<string, TourPriceCheckResult>
   >({})
@@ -198,6 +200,75 @@ export function TourHotelPriceCheckPanel({
     return keys.size
   }, [rows])
 
+  /** True when last successful price check is missing or older than 24h */
+  const ratesStaleOver24h = useMemo(() => {
+    if (!rows.length) return false
+    const STALE_MS = 24 * 60 * 60 * 1000
+    const cutoff = Date.now() - STALE_MS
+    let latestOk = 0
+    for (const row of rows) {
+      const fetched = fetchByBookingId[row.id]
+      if (!fetched?.ok || !fetched.checkedAt) continue
+      const t = Date.parse(fetched.checkedAt)
+      if (Number.isFinite(t) && t > latestOk) latestOk = t
+    }
+    return latestOk === 0 || latestOk < cutoff
+  }, [rows, fetchByBookingId])
+
+  const buildJobsPayload = useCallback(
+    () =>
+      rows.map((row) => ({
+        bookingId: row.id,
+        hotel: row.hotel,
+        city: row.city,
+        checkIn: row.check_in_date,
+        checkOut: row.check_out_date,
+        bookedUnitPrice: getTourHotelPriceCheckUnitPrice(
+          row.total_price,
+          row.unit_price,
+          row.rooms
+        ),
+        rooms: row.rooms,
+      })),
+    [rows]
+  )
+
+  const applyResultsMap = useCallback((list: TourPriceCheckResult[]) => {
+    const map: Record<string, TourPriceCheckResult> = {}
+    for (const r of list) {
+      map[r.bookingId] = r
+    }
+    setFetchByBookingId(map)
+  }, [])
+
+  const hydrateFromDb = useCallback(async () => {
+    if (!rows.length) {
+      setFetchByBookingId({})
+      return
+    }
+    setHydrateBusy(true)
+    try {
+      const headers = await authHeaders()
+      const res = await fetch('/api/hotels/rates/tour-price-check', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ hydrate: true, jobs: buildJobsPayload() }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'hydrate failed')
+      applyResultsMap((json.results || []) as TourPriceCheckResult[])
+    } catch {
+      // Keep previous badges if hydrate fails silently for UX
+    } finally {
+      setHydrateBusy(false)
+    }
+  }, [rows, buildJobsPayload, applyResultsMap])
+
+  useEffect(() => {
+    if (loading) return
+    void hydrateFromDb()
+  }, [loading, rows, hydrateFromDb])
+
   const handleToggleComplete = useCallback(async () => {
     const next = !completed
     setCompleting(true)
@@ -236,38 +307,21 @@ export function TourHotelPriceCheckPanel({
         method: 'POST',
         headers,
         signal: controller.signal,
-        body: JSON.stringify({
-          jobs: rows.map((row) => ({
-            bookingId: row.id,
-            hotel: row.hotel,
-            city: row.city,
-            checkIn: row.check_in_date,
-            checkOut: row.check_out_date,
-            bookedUnitPrice: getTourHotelPriceCheckUnitPrice(
-              row.total_price,
-              row.unit_price,
-              row.rooms
-            ),
-            rooms: row.rooms,
-          })),
-        }),
+        body: JSON.stringify({ jobs: buildJobsPayload() }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || (isKo ? '요금 조회 실패' : 'Rate fetch failed'))
 
-      const map: Record<string, TourPriceCheckResult> = {}
-      for (const r of (json.results || []) as TourPriceCheckResult[]) {
-        map[r.bookingId] = r
-      }
-      setFetchByBookingId(map)
+      applyResultsMap((json.results || []) as TourPriceCheckResult[])
 
       const ok = json.okCount ?? 0
       const total = json.total ?? rows.length
       const scrapes = json.scrapeCount ?? uniqueScrapeEstimate
+      const saved = json.savedHotels ?? 0
       toast.success(
         isKo
-          ? `시세 매칭 ${ok}/${total} · Playwright ${scrapes}회`
-          : `Matched ${ok}/${total} · ${scrapes} scrapes`,
+          ? `시세 매칭 ${ok}/${total} · 저장 ${saved}곳 · Playwright ${scrapes}회`
+          : `Matched ${ok}/${total} · saved ${saved} · ${scrapes} scrapes`,
         { id: toastId }
       )
     } catch (err) {
@@ -288,8 +342,7 @@ export function TourHotelPriceCheckPanel({
       window.clearTimeout(abortTimer)
       setBatchBusy(false)
     }
-  }, [rows, isKo, uniqueScrapeEstimate])
-
+  }, [rows, isKo, uniqueScrapeEstimate, buildJobsPayload, applyResultsMap])
   return (
     <>
       <div
@@ -346,11 +399,15 @@ export function TourHotelPriceCheckPanel({
                   type="button"
                   disabled={batchBusy || loading || rows.length === 0}
                   onClick={() => void handleFetchAllRates()}
-                  className="rounded p-1 text-sky-700 hover:bg-sky-50 disabled:opacity-40"
+                  className="inline-flex items-center gap-0.5 rounded p-1 text-sky-700 hover:bg-sky-50 disabled:opacity-40"
                   title={
-                    isKo
-                      ? `주요 호텔 요금 한 번에 가져오기 · 고유 날짜·도시 ${uniqueScrapeEstimate}회 (순차)`
-                      : `Fetch all rates · ${uniqueScrapeEstimate} unique date/city scrapes`
+                    ratesStaleOver24h
+                      ? isKo
+                        ? `요금 조회가 24시간 이상 지났거나 없습니다. 다시 가져오세요 · 고유 날짜·도시 ${uniqueScrapeEstimate}회`
+                        : `Rates are over 24h old or missing. Fetch again · ${uniqueScrapeEstimate} scrapes`
+                      : isKo
+                        ? `주요 호텔 요금 한 번에 가져오기 · 고유 날짜·도시 ${uniqueScrapeEstimate}회 (순차)`
+                        : `Fetch all rates · ${uniqueScrapeEstimate} unique date/city scrapes`
                   }
                   aria-label={
                     isKo ? '주요 호텔 요금 한 번에 가져오기' : 'Fetch all hotel rates'
@@ -359,7 +416,15 @@ export function TourHotelPriceCheckPanel({
                   {batchBusy ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <DollarSign className="h-3.5 w-3.5" />
+                    <>
+                      <DollarSign className="h-3.5 w-3.5" />
+                      {ratesStaleOver24h ? (
+                        <AlertTriangle
+                          className="h-3.5 w-3.5 text-amber-500"
+                          aria-hidden
+                        />
+                      ) : null}
+                    </>
                   )}
                 </button>
                 <button
@@ -368,7 +433,9 @@ export function TourHotelPriceCheckPanel({
                   className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-sky-800"
                   title={isKo ? '목록 새로고침' : 'Refresh list'}
                 >
-                  <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${loading || hydrateBusy ? 'animate-spin' : ''}`}
+                  />
                 </button>
               </div>
             </div>

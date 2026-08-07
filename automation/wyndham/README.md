@@ -22,6 +22,8 @@ npx playwright install chromium
 HOTEL_WYNDHAM_LIVE=1
 WYNDHAM_HEADLESS=1
 WYNDHAM_HOME_URL=https://www.wyndhamhotels.com/en-uk
+# FROM $ → all-in (taxes & fees). Default 16.89% → e.g. 81.84 → 95.66
+# WYNDHAM_TAX_FEE_PERCENT=16.89
 # Leave WYNDHAM_WORKER_URL empty so Playwright runs in-process
 ```
 

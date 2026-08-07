@@ -53,6 +53,9 @@ Vercel cannot run Playwright. Use:
 
 Locally, leave `WYNDHAM_WORKER_URL` empty so Chromium runs in-process.
 
+Tour hotel price-check (업무 TODO) and 호텔 관리 rates both read/write `hotel_rates`
+via the same Wyndham catalog hotels — refresh keeps badges after scrape.
+
 ## Crons
 
 - `GET /api/cron/hotel-rate-check` — daily 06:00 UTC

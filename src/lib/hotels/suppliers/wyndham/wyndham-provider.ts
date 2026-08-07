@@ -17,6 +17,7 @@ import {
   fetchRatesViaWyndhamWorker,
   shouldUseWyndhamWorker,
 } from '@/lib/hotels/suppliers/wyndham/worker-client'
+import { roundMoneyUsd, toWyndhamAllInPrice } from '@/lib/hotels/suppliers/wyndham/pricing'
 import { enumerateStayDates } from '@/lib/hotels/suppliers/dry-run-supplier'
 import type { HotelSupplier } from '@/lib/hotels/suppliers/types'
 import type {
@@ -407,14 +408,24 @@ async function scrapePublicRates(
         const priceMatch =
           fullText.match(/FROM\\s*\\$\\s*([0-9]+(?:\\.[0-9]{1,2})?)/i) ||
           fullText.match(/\\$\\s*([0-9]+(?:\\.[0-9]{1,2})?)/);
-        const price = Number((priceMatch && priceMatch[1]) || 0);
+        const basePrice = Number((priceMatch && priceMatch[1]) || 0);
+        const taxMatch =
+          fullText.match(/Taxes?\\s*&\\s*Fees?\\s*[:+]?\\s*\\$?\\s*([0-9]+(?:\\.[0-9]{1,2})?)/i) ||
+          fullText.match(/\\+\\s*Taxes?\\s*&\\s*Fees?\\s*\\$?\\s*([0-9]+(?:\\.[0-9]{1,2})?)/i);
+        const taxesAndFees = taxMatch ? Number(taxMatch[1]) : null;
+        const totalMatch =
+          fullText.match(/Total\\s*(?:with\\s*taxes?)?\\s*[:+]?\\s*\\$?\\s*([0-9]+(?:\\.[0-9]{1,2})?)/i) ||
+          fullText.match(/Including\\s*taxes?\\s*[:+]?\\s*\\$?\\s*([0-9]+(?:\\.[0-9]{1,2})?)/i);
+        const totalFromPage = totalMatch ? Number(totalMatch[1]) : null;
         return {
           supplierRoomId:
             card.getAttribute('data-hotel-id') ||
             card.getAttribute('data-property-id') ||
             ('property-' + index),
           roomType: name,
-          price: price,
+          price: basePrice,
+          taxesAndFees,
+          totalFromPage,
           isMember: false,
         };
       });
@@ -432,12 +443,16 @@ async function scrapePublicRates(
         supplierRoomId: 'page-price-' + index,
         roomType: 'Listed rate',
         price: price,
+        taxesAndFees: null,
+        totalFromPage: null,
         isMember: false,
       }));
     })()`)) as Array<{
       supplierRoomId: string
       roomType: string
       price: number
+      taxesAndFees: number | null
+      totalFromPage: number | null
       isMember: boolean
     }>
 
@@ -473,21 +488,38 @@ async function scrapePublicRates(
     const quotes: HotelRateQuote[] = []
     for (const night of nights) {
       for (const room of ordered) {
+        let allIn = toWyndhamAllInPrice(room.price, room.taxesAndFees)
+        if (
+          room.totalFromPage != null &&
+          Number.isFinite(room.totalFromPage) &&
+          room.totalFromPage > room.price
+        ) {
+          allIn = {
+            basePrice: allIn.basePrice,
+            taxesAndFees: roundMoneyUsd(room.totalFromPage - room.price),
+            totalPrice: roundMoneyUsd(room.totalFromPage),
+            taxesFromPage: true,
+          }
+        }
         quotes.push({
           supplier: 'wyndham',
           supplierHotelId: params.supplierHotelId || destination || 'wyndham',
           supplierRoomId: room.supplierRoomId,
           roomType: room.roomType,
           stayDate: night,
-          price: room.price,
+          price: allIn.totalPrice,
           currency: 'USD',
-          cancellationPolicy: 'Public rate (guest scrape)',
+          cancellationPolicy: 'Public rate (guest scrape, taxes & fees included)',
           raw: {
             source: 'public',
             isMember: room.isMember,
             url: pageUrl,
             artifact: artifact.dir,
             direct: Boolean(directUrl),
+            basePrice: allIn.basePrice,
+            taxesAndFees: allIn.taxesAndFees,
+            taxesFromPage: allIn.taxesFromPage,
+            taxFeePercent: Number(process.env.WYNDHAM_TAX_FEE_PERCENT ?? '16.89'),
           },
         })
       }
