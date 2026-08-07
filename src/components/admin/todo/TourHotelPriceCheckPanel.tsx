@@ -68,13 +68,17 @@ function formatUsd(amount: number | null | undefined): string {
   return `$${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
 }
 
-function formatDiffBadge(diff: number | null | undefined, isKo: boolean): {
+function formatDiffBadge(
+  diff: number | null | undefined,
+  isKo: boolean,
+  opts?: { emptyLabel?: string }
+): {
   label: string
   className: string
 } {
   if (diff == null || !Number.isFinite(diff)) {
     return {
-      label: isKo ? '미조회' : 'No fetch',
+      label: opts?.emptyLabel || (isKo ? '미조회' : 'No fetch'),
       className: 'bg-gray-100 text-gray-600',
     }
   }
@@ -188,16 +192,24 @@ export function TourHotelPriceCheckPanel({
   }, [dateRange])
 
   const uniqueScrapeEstimate = useMemo(() => {
-    const keys = new Set<string>()
+    const needsPage = new Set<string>()
+    const needsKanab = new Set<string>()
     for (const row of rows) {
-      const destHint = /^p-/i.test(row.hotel)
-        ? 'page'
-        : /^k-/i.test(row.hotel)
-          ? 'kanab'
-          : row.city || row.hotel
-      keys.add(`${destHint}|${row.check_in_date}|${row.check_out_date}`)
+      const key = `${row.check_in_date}|${row.check_out_date}`
+      const isPage =
+        /^p-/i.test(row.hotel) || /\bpage\b/i.test(row.hotel) || /\bpage\b/i.test(row.city)
+      const isKanab =
+        /^k-/i.test(row.hotel) || /\bkanab\b/i.test(row.hotel) || /\bkanab\b/i.test(row.city)
+      if (isPage) {
+        needsPage.add(key)
+        needsKanab.add(key)
+      } else if (isKanab) {
+        needsKanab.add(key)
+      } else {
+        needsPage.add(key)
+      }
     }
-    return keys.size
+    return needsPage.size + needsKanab.size
   }, [rows])
 
   /** True when last successful price check is missing or older than 24h */
@@ -468,7 +480,17 @@ export function TourHotelPriceCheckPanel({
                 row.rooms
               )
               const fetched = fetchByBookingId[row.id]
-              const diffBadge = formatDiffBadge(fetched?.ok ? fetched.diff : null, isKo)
+              const showAltBadge =
+                Boolean(fetched?.compareAltCities) ||
+                /^p-/i.test(row.hotel) ||
+                /\bpage\b/i.test(row.hotel) ||
+                /\bpage\b/i.test(row.city)
+              const sameBadge = formatDiffBadge(fetched?.ok ? fetched.diff : null, isKo)
+              const cheapBadge = formatDiffBadge(
+                fetched?.cheapestDiff != null ? fetched.cheapestDiff : null,
+                isKo,
+                { emptyLabel: isKo ? '최저가?' : 'Low?' }
+              )
               const hoverRates = fetched?.rates || []
               const rowTitle = [
                 formatShortDate(row.check_in_date),
@@ -476,7 +498,12 @@ export function TourHotelPriceCheckPanel({
                 tourLabel,
                 formatUsd(row.display_price),
                 fetched?.ok
-                  ? `${isKo ? '시세' : 'Mkt'} ${formatUsd(fetched.marketPrice)}`
+                  ? `${isKo ? '같은호텔' : 'Same'} ${formatUsd(fetched.marketPrice)}`
+                  : null,
+                fetched?.cheapestPrice != null
+                  ? `${isKo ? '최저' : 'Low'} ${formatUsd(fetched.cheapestPrice)}${
+                      fetched.cheapestHotel ? ` (${fetched.cheapestHotel})` : ''
+                    }`
                   : null,
               ]
                 .filter(Boolean)
@@ -519,10 +546,38 @@ export function TourHotelPriceCheckPanel({
                       ) : null}
                       <span className="text-gray-400"> , </span>
                       <span
-                        className={`inline-flex rounded px-1 py-0.5 text-[10px] font-semibold tabular-nums ${diffBadge.className}`}
+                        className={`inline-flex rounded px-1 py-0.5 text-[10px] font-semibold tabular-nums ${sameBadge.className}`}
+                        title={
+                          isKo
+                            ? `같은 호텔 시세 ${formatUsd(fetched?.marketPrice)}`
+                            : `Same hotel ${formatUsd(fetched?.marketPrice)}`
+                        }
                       >
-                        {diffBadge.label}
+                        {sameBadge.label}
                       </span>
+                      {showAltBadge ? (
+                        <>
+                          <span className="text-gray-400"> </span>
+                          <span
+                            className={`inline-flex rounded px-1 py-0.5 text-[10px] font-semibold tabular-nums ring-1 ring-violet-200 ${cheapBadge.className}`}
+                            title={
+                              fetched?.cheapestHotel
+                                ? isKo
+                                  ? `Page+Kanab 최저가 ${formatUsd(fetched.cheapestPrice)} · ${fetched.cheapestHotel}${
+                                      fetched.cheapestDestination
+                                        ? ` (${fetched.cheapestDestination})`
+                                        : ''
+                                    }`
+                                  : `Cheapest Page+Kanab ${formatUsd(fetched.cheapestPrice)} · ${fetched.cheapestHotel}`
+                                : isKo
+                                  ? 'Page+Kanab 최저가 (예약가 대비)'
+                                  : 'Cheapest Page+Kanab vs booked'
+                            }
+                          >
+                            {cheapBadge.label}
+                          </span>
+                        </>
+                      ) : null}
                     </p>
                     <div className="flex shrink-0 items-center gap-0.5">
                       <button
@@ -556,18 +611,37 @@ export function TourHotelPriceCheckPanel({
                           {isKo ? '조회된 공개 요금' : 'Fetched public rates'}
                           {fetched?.destination ? ` · ${fetched.destination}` : ''}
                           {fetched?.marketPrice != null
-                            ? ` · ${isKo ? '매칭' : 'match'} ${formatUsd(fetched.marketPrice)}`
+                            ? ` · ${isKo ? '같은호텔' : 'same'} ${formatUsd(fetched.marketPrice)}`
+                            : ''}
+                          {fetched?.cheapestPrice != null
+                            ? ` · ${isKo ? '최저' : 'low'} ${formatUsd(fetched.cheapestPrice)}`
                             : ''}
                         </p>
                         <ul className="max-h-40 space-y-0.5 overflow-y-auto">
                           {hoverRates.map((rate) => (
                             <li
-                              key={`${rate.roomType}-${rate.price}`}
+                              key={`${rate.destination || ''}-${rate.roomType}-${rate.price}`}
                               className={`flex items-start justify-between gap-2 text-[10px] ${
-                                rate.matched ? 'font-semibold text-sky-900' : 'text-gray-700'
+                                rate.matched
+                                  ? 'font-semibold text-sky-900'
+                                  : rate.cheapest
+                                    ? 'font-semibold text-violet-800'
+                                    : 'text-gray-700'
                               }`}
                             >
-                              <span className="min-w-0 flex-1 truncate">{rate.roomType}</span>
+                              <span className="min-w-0 flex-1 truncate">
+                                {rate.destination ? `${rate.destination} · ` : ''}
+                                {rate.roomType}
+                                {rate.matched
+                                  ? isKo
+                                    ? ' (같은호텔)'
+                                    : ' (same)'
+                                  : rate.cheapest
+                                    ? isKo
+                                      ? ' (최저)'
+                                      : ' (low)'
+                                    : ''}
+                              </span>
                               <span className="shrink-0 tabular-nums">{formatUsd(rate.price)}</span>
                             </li>
                           ))}

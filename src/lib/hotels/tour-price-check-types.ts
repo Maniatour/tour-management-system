@@ -12,6 +12,9 @@ export type TourPriceCheckRateItem = {
   roomType: string
   price: number
   matched?: boolean
+  cheapest?: boolean
+  /** Page AZ / Kanab UT */
+  destination?: string
 }
 
 export type TourPriceCheckResult = {
@@ -20,11 +23,21 @@ export type TourPriceCheckResult = {
   marketPrice?: number
   roomType?: string
   bookedUnit?: number | null
+  /** Same-hotel market − booked (primary badge) */
   diff?: number | null
   rates?: TourPriceCheckRateItem[]
   error?: string
   destination?: string
-  /** Linked hotels.hotel_id when persisted / hydrated from hotel_rates */
   hotelId?: string
   checkedAt?: string
+  /**
+   * Page bookings: compare booked unit vs cheapest Page+Kanab property.
+   * When set, UI shows a second badge.
+   */
+  compareAltCities?: boolean
+  cheapestPrice?: number
+  cheapestHotel?: string
+  cheapestDestination?: string
+  /** cheapest − booked */
+  cheapestDiff?: number | null
 }

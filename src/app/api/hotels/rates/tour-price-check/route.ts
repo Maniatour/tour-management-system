@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireStaffApiAuth } from '@/lib/api-security'
 import { getHotelSupplier } from '@/lib/hotels/suppliers/registry'
 import {
+  destinationsToScrapeForJobs,
   enrichJobsWithDestination,
   hydrateTourPriceCheckResults,
   persistTourPriceCheckQuotes,
@@ -22,6 +23,9 @@ export type { TourPriceCheckJob, TourPriceCheckResult }
  * POST /api/hotels/rates/tour-price-check
  * - { hydrate: true, jobs } → rebuild badges from hotel_rates (no scrape)
  * - { jobs } → scrape Wyndham, persist to hotel_rates, return matches
+ *
+ * Page bookings always scrape both Page AZ + Kanab UT for the same dates
+ * so the UI can show same-hotel and cheapest-alt-city badges.
  */
 export async function POST(request: NextRequest) {
   const auth = await requireStaffApiAuth(request)
@@ -51,12 +55,14 @@ export async function POST(request: NextRequest) {
 
     type GroupJob = TourPriceCheckJob & { destination: string }
     const enriched = enrichJobsWithDestination(jobs)
-    const groups = new Map<string, GroupJob[]>()
+
+    /** One scrape plan per check-in/out (Page jobs pull Page+Kanab). */
+    const byDates = new Map<string, GroupJob[]>()
     for (const job of enriched) {
-      const key = `${job.destination}|${job.checkIn}|${job.checkOut}`
-      const list = groups.get(key) || []
+      const key = `${job.checkIn}|${job.checkOut}`
+      const list = byDates.get(key) || []
       list.push(job)
-      groups.set(key, list)
+      byDates.set(key, list)
     }
 
     const supplier = getHotelSupplier('wyndham', { forceLive: true })
@@ -64,37 +70,56 @@ export async function POST(request: NextRequest) {
     let scrapeCount = 0
     const savedHotelIds = new Set<string>()
 
-    for (const [, group] of groups) {
+    for (const [, group] of byDates) {
       const sample = group[0]!
-      scrapeCount += 1
-      let allQuotes: HotelRateQuote[] = []
-      try {
-        allQuotes = await supplier.getRates({
-          supplierHotelId: `todo-price-check:${sample.destination}`,
-          destination: sample.destination,
-          checkIn: sample.checkIn,
-          checkOut: sample.checkOut,
-          rooms: 1,
-          guests: 2,
-        })
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Rate fetch failed'
-        for (const job of group) {
+      const destinations = destinationsToScrapeForJobs(group)
+      const requiredDests = new Set(group.map((j) => j.destination))
+      const quotesByDestination: Record<string, HotelRateQuote[]> = {}
+      const failedRequired = new Map<string, string>()
+
+      for (const destination of destinations) {
+        scrapeCount += 1
+        try {
+          quotesByDestination[destination] = await supplier.getRates({
+            supplierHotelId: `todo-price-check:${destination}`,
+            destination,
+            checkIn: sample.checkIn,
+            checkOut: sample.checkOut,
+            rooms: 1,
+            guests: 2,
+          })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Rate fetch failed'
+          quotesByDestination[destination] = []
+          if (requiredDests.has(destination)) {
+            failedRequired.set(destination, message)
+          } else {
+            console.warn(
+              `[tour-price-check] optional scrape failed ${destination}: ${message}`
+            )
+          }
+        }
+      }
+
+      const jobsToPersist = group.filter((j) => !failedRequired.has(j.destination))
+      for (const job of group) {
+        const err = failedRequired.get(job.destination)
+        if (err) {
           results.push({
             bookingId: job.bookingId,
             ok: false,
-            error: message,
+            error: err,
             destination: job.destination,
             bookedUnit: job.bookedUnitPrice ?? null,
           })
         }
-        continue
       }
 
+      if (!jobsToPersist.length) continue
+
       const persisted = await persistTourPriceCheckQuotes({
-        destination: sample.destination,
-        allQuotes,
-        jobs: group,
+        quotesByDestination,
+        jobs: jobsToPersist,
       })
       results.push(...persisted.results)
       for (const id of persisted.savedHotelIds) savedHotelIds.add(id)
@@ -106,7 +131,7 @@ export async function POST(request: NextRequest) {
       okCount,
       total: results.length,
       scrapeCount,
-      groupCount: groups.size,
+      groupCount: byDates.size,
       savedHotels: savedHotelIds.size,
       results,
     })
