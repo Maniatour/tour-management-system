@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   DollarSign,
   ExternalLink,
-  Globe,
   Loader2,
   Pencil,
   RefreshCw,
@@ -17,7 +16,6 @@ import {
   findTourHotelPriceCheckLinkedTodo,
   getTourHotelPriceCheckUnitPrice,
   isTourHotelPriceCheckHighUnitPrice,
-  normalizeTourHotelWebsiteUrl,
   readTourHotelPriceCheckLocalCompleted,
   tourHotelPriceCheckCompletionDateKey,
   tourHotelPriceCheckPanelTitle,
@@ -343,48 +341,36 @@ export function TourHotelPriceCheckPanel({
                   <span className="shrink-0 text-[10px] font-medium text-sky-800">{progressLabel}</span>
                 ) : null}
               </div>
-              <button
-                type="button"
-                onClick={() => void reload()}
-                className="shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-sky-800"
-                title={isKo ? '목록 새로고침' : 'Refresh list'}
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
-
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                disabled={batchBusy || loading || rows.length === 0}
-                onClick={() => void handleFetchAllRates()}
-                className="inline-flex h-7 items-center gap-1 rounded-lg bg-sky-700 px-2 text-[10px] font-semibold text-white hover:bg-sky-800 disabled:opacity-50"
-                title={
-                  isKo
-                    ? `고유 날짜·도시 ${uniqueScrapeEstimate}회 스크랩 (순차). 날짜가 많으면 수 분 걸립니다.`
-                    : `${uniqueScrapeEstimate} unique date/city scrapes (sequential).`
-                }
-              >
-                {batchBusy ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <DollarSign className="h-3 w-3" />
-                )}
-                {batchBusy
-                  ? isKo
-                    ? '요금 조회 중…'
-                    : 'Fetching…'
-                  : isKo
-                    ? `주요 호텔 요금 한 번에 가져오기 (${rows.length})`
-                    : `Fetch all rates (${rows.length})`}
-              </button>
-              {uniqueScrapeEstimate > 0 ? (
-                <span className="text-[9px] text-gray-500">
-                  {isKo
-                    ? `≈${uniqueScrapeEstimate}회 조회 · 호버 시 요금 목록`
-                    : `≈${uniqueScrapeEstimate} scrapes · hover for rates`}
-                </span>
-              ) : null}
+              <div className="flex shrink-0 items-center gap-0.5">
+                <button
+                  type="button"
+                  disabled={batchBusy || loading || rows.length === 0}
+                  onClick={() => void handleFetchAllRates()}
+                  className="rounded p-1 text-sky-700 hover:bg-sky-50 disabled:opacity-40"
+                  title={
+                    isKo
+                      ? `주요 호텔 요금 한 번에 가져오기 · 고유 날짜·도시 ${uniqueScrapeEstimate}회 (순차)`
+                      : `Fetch all rates · ${uniqueScrapeEstimate} unique date/city scrapes`
+                  }
+                  aria-label={
+                    isKo ? '주요 호텔 요금 한 번에 가져오기' : 'Fetch all hotel rates'
+                  }
+                >
+                  {batchBusy ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <DollarSign className="h-3.5 w-3.5" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void reload()}
+                  className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-sky-800"
+                  title={isKo ? '목록 새로고침' : 'Refresh list'}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -408,7 +394,6 @@ export function TourHotelPriceCheckPanel({
           ) : (
             displayRows.map((row) => {
               const rowStatus = getTodoPanelTourStatus(row.id, tourState)
-              const websiteUrl = normalizeTourHotelWebsiteUrl(row.website)
               const tourLabel = row.tour_name || row.reservation_name || '—'
               const highPrice = isTourHotelPriceCheckHighUnitPrice(
                 row.total_price,
@@ -473,19 +458,6 @@ export function TourHotelPriceCheckPanel({
                       </span>
                     </p>
                     <div className="flex shrink-0 items-center gap-0.5">
-                      {websiteUrl ? (
-                        <a
-                          href={websiteUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex h-6 w-6 items-center justify-center rounded border border-gray-200 bg-white text-sky-700 hover:bg-sky-50"
-                          title={isKo ? '예약 사이트에서 가격 확인' : 'Check price on booking site'}
-                          aria-label={isKo ? '예약 사이트 열기' : 'Open booking site'}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Globe className="h-3.5 w-3.5" />
-                        </a>
-                      ) : null}
                       <button
                         type="button"
                         onClick={() => setEditBookingId(row.id)}
