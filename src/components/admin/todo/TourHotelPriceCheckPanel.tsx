@@ -200,10 +200,8 @@ export function TourHotelPriceCheckPanel({
         /^p-/i.test(row.hotel) || /\bpage\b/i.test(row.hotel) || /\bpage\b/i.test(row.city)
       const isKanab =
         /^k-/i.test(row.hotel) || /\bkanab\b/i.test(row.hotel) || /\bkanab\b/i.test(row.city)
-      if (isPage) {
+      if (isPage || isKanab) {
         needsPage.add(key)
-        needsKanab.add(key)
-      } else if (isKanab) {
         needsKanab.add(key)
       } else {
         needsPage.add(key)
@@ -483,8 +481,11 @@ export function TourHotelPriceCheckPanel({
               const showAltBadge =
                 Boolean(fetched?.compareAltCities) ||
                 /^p-/i.test(row.hotel) ||
+                /^k-/i.test(row.hotel) ||
                 /\bpage\b/i.test(row.hotel) ||
-                /\bpage\b/i.test(row.city)
+                /\bpage\b/i.test(row.city) ||
+                /\bkanab\b/i.test(row.hotel) ||
+                /\bkanab\b/i.test(row.city)
               const sameBadge = formatDiffBadge(fetched?.ok ? fetched.diff : null, isKo)
               const cheapBadge = formatDiffBadge(
                 fetched?.cheapestDiff != null ? fetched.cheapestDiff : null,

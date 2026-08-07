@@ -337,8 +337,8 @@ export const ADMIN_TODO_LIST_MANUAL_SECTIONS: AdminTodoListManualSection[] = [
       'Due date: cancel deadline with check-in = today + 2 days.',
       'Excludes cancelled/deleted tours.',
     ],
-    completeKo: '불일치·마감 건 처리 후 패널 완료.',
-    completeEn: 'Resolve mismatches and due items, then mark panel done.',
+    completeKo: '각 투어(행)별 완료/보류 처리 또는 연결된 DB Todo·패널 전체 완료. 당일 로컬 저장 키로 진행률 관리.',
+    completeEn: 'Mark each tour row done/on hold, or complete the linked DB todo / whole panel. Progress stored per day in local storage.',
   },
   {
     id: 'bento-check',

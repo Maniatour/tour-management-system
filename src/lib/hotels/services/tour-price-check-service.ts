@@ -41,21 +41,32 @@ export function isKanabTourDestination(destination: string): boolean {
   return /kanab/i.test(destination)
 }
 
+/** Page ↔ Kanab dual compare (same-hotel + cheapest across both cities). */
+export function usesPageKanabCompare(destination: string): boolean {
+  return isPageTourDestination(destination) || isKanabTourDestination(destination)
+}
+
 /** Destinations that must be scraped for a job set on one check-in/out. */
 export function destinationsToScrapeForJobs(
   jobs: Array<{ destination: string }>
 ): string[] {
   const set = new Set<string>()
-  let hasPage = false
+  let needsBoth = false
   for (const job of jobs) {
     set.add(job.destination)
-    if (isPageTourDestination(job.destination)) hasPage = true
+    if (usesPageKanabCompare(job.destination)) needsBoth = true
   }
-  if (hasPage) {
+  if (needsBoth) {
     set.add(PAGE_DEST)
     set.add(KANAB_DEST)
   }
   return [...set]
+}
+
+function altDestinationFor(primary: string): string {
+  if (isPageTourDestination(primary)) return KANAB_DEST
+  if (isKanabTourDestination(primary)) return PAGE_DEST
+  return ''
 }
 
 function tagQuotes(
@@ -240,10 +251,12 @@ export async function persistTourPriceCheckQuotes(input: {
       quotesByDestination[job.destination] || [],
       job.destination
     )
-    const compareAlt = isPageTourDestination(job.destination)
-    const altQuotes = compareAlt
-      ? tagQuotes(quotesByDestination[KANAB_DEST] || [], KANAB_DEST)
-      : []
+    const compareAlt = usesPageKanabCompare(job.destination)
+    const altDest = altDestinationFor(job.destination)
+    const altQuotes =
+      compareAlt && altDest
+        ? tagQuotes(quotesByDestination[altDest] || [], altDest)
+        : []
     const combinedQuotes = compareAlt
       ? [...primaryQuotes, ...altQuotes]
       : primaryQuotes
@@ -373,7 +386,7 @@ export async function hydrateTourPriceCheckResults(
   for (const job of jobs) {
     const destination = resolveTourHotelPriceCheckDestination(job.hotel, job.city)
     const bookedUnit = bookedUnitOf(job)
-    const compareAlt = isPageTourDestination(destination)
+    const compareAlt = usesPageKanabCompare(destination)
     const catalogHotel = findBestCatalogHotel(catalog, job.hotel, destination)
 
     const destList = compareAlt ? [PAGE_DEST, KANAB_DEST] : [destination]

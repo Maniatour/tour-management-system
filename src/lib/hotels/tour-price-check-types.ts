@@ -31,7 +31,7 @@ export type TourPriceCheckResult = {
   hotelId?: string
   checkedAt?: string
   /**
-   * Page bookings: compare booked unit vs cheapest Page+Kanab property.
+   * Page / Kanab bookings: compare booked unit vs cheapest across both cities.
    * When set, UI shows a second badge.
    */
   compareAltCities?: boolean

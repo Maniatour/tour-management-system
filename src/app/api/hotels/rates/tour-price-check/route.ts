@@ -24,7 +24,7 @@ export type { TourPriceCheckJob, TourPriceCheckResult }
  * - { hydrate: true, jobs } → rebuild badges from hotel_rates (no scrape)
  * - { jobs } → scrape Wyndham, persist to hotel_rates, return matches
  *
- * Page bookings always scrape both Page AZ + Kanab UT for the same dates
+ * Page / Kanab bookings always scrape both Page AZ + Kanab UT for the same dates
  * so the UI can show same-hotel and cheapest-alt-city badges.
  */
 export async function POST(request: NextRequest) {

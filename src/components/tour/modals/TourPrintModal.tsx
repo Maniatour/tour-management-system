@@ -103,9 +103,35 @@ export interface TourPrintModalProps {
 // 유틸
 // ---------------------------------------------------------------------------
 
+/** 배정 헤더·카드 badge와 동일 포맷 ($0.00 / -$1.23) */
 function formatMoney(amount: number): string {
-  if (!amount || amount <= 0) return '$0'
-  return `$${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+  if (!Number.isFinite(amount) || Math.abs(amount) < 0.005) return '$0.00'
+  const abs = Math.abs(amount)
+  const formatted = abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return amount < 0 ? `-$${formatted}` : `$${formatted}`
+}
+
+/** DB `pricing_adults` 우선 — ReservationCard / AssignmentManagement 와 동일 */
+function partyFromPricingAndRez(
+  pricing: Record<string, unknown> | null | undefined,
+  rez: { adults?: number | null; child?: number | null; infant?: number | null } | null | undefined
+): { adults: number | null; children: number | null; infants: number | null; child: number | null; infant: number | null } {
+  const raw = pricing?.pricing_adults
+  const hasPa =
+    raw !== undefined &&
+    raw !== null &&
+    raw !== '' &&
+    Number.isFinite(Number(raw)) &&
+    Math.floor(Number(raw)) >= 0
+  const child = rez?.child ?? null
+  const infant = rez?.infant ?? null
+  return {
+    adults: hasPa ? Math.floor(Number(raw)) : (rez?.adults ?? null),
+    children: child,
+    infants: infant,
+    child,
+    infant,
+  }
 }
 
 function getPeopleCount(r: PrintReservation): { total: number; adults: number; children: number; infants: number } {
@@ -429,11 +455,10 @@ export default function TourPrintModal({
             const alt = Number(v) || 0
             if (alt > cur) (residentStatusAmounts as Record<string, number>)[k] = alt
           }
-          const party = {
-            adults: rez?.adults ?? null,
-            child: rez?.child ?? null,
-            infant: rez?.infant ?? null,
-          }
+          const party = partyFromPricingAndRez(
+            pricingRaw && typeof pricingRaw === 'object' ? pricingRaw : null,
+            rez
+          )
           const residentFeeUsd = resolveResidentFeeUsdForBalanceDisplay(
             pricing as Parameters<typeof resolveResidentFeeUsdForBalanceDisplay>[0],
             party,
@@ -475,14 +500,18 @@ export default function TourPrintModal({
     }
   }, [isOpen, assignedReservationIdsKey])
 
-  // 픽업 호텔별 그룹화 + 정렬
+  // 픽업 호텔별 그룹화 + 정렬 (픽업 미지정 예약도 총 잔금과 줄 합이 맞도록 포함)
   const pickupGroups = useMemo(() => {
     const hotelsForResolve = pickupHotels as PickupHotelUtil[]
     const resolveCtx = pickupResolveContext ?? useRepresentativePickup
     const groups = new Map<string, PrintReservation[]>()
+    const noPickup: PrintReservation[] = []
     for (const r of assignedReservations) {
       const requestedKey = r.pickup_hotel || ''
-      if (!requestedKey) continue
+      if (!requestedKey) {
+        noPickup.push(r)
+        continue
+      }
       const key =
         getEffectivePickupHotelId(requestedKey, hotelsForResolve, resolveCtx) ||
         requestedKey
@@ -503,12 +532,26 @@ export default function TourPrintModal({
         totalPeople,
       }
     })
-    return result.sort(
+    const sortedHotels = result.sort(
       (a, b) =>
         pickupSortValue(a.reservations[0]?.pickup_time || null) -
         pickupSortValue(b.reservations[0]?.pickup_time || null)
     )
-  }, [assignedReservations, pickupHotels, useRepresentativePickup, pickupResolveContext])
+    if (noPickup.length > 0) {
+      const sortedNoPickup = [...noPickup].sort(
+        (a, b) => pickupSortValue(a.pickup_time) - pickupSortValue(b.pickup_time)
+      )
+      sortedHotels.push({
+        hotelId: '__no_pickup__',
+        hotelName: isKo ? '픽업 미지정' : 'No pickup assigned',
+        location: '',
+        earliestTime: '',
+        reservations: sortedNoPickup,
+        totalPeople: sortedNoPickup.reduce((s, r) => s + getPeopleCount(r).total, 0),
+      })
+    }
+    return sortedHotels
+  }, [assignedReservations, pickupHotels, useRepresentativePickup, pickupResolveContext, isKo])
 
   const totalTourBalance = useMemo(() => {
     let sum = 0
@@ -586,27 +629,47 @@ export default function TourPrintModal({
     iframeDoc.close()
 
     const printWin = iframe.contentWindow
-    if (printWin) {
-      printWin.onload = () => {
-        // 내용 높이를 측정해 한 페이지(Letter)에 맞게 축소
-        // (transform이 아닌 zoom: Chromium에서 레이아웃·인쇄 페이지 분할에 실제 반영됨)
-        const fit = iframeDoc.getElementById('tp-fit')
-        if (fit) {
-          const contentH = fit.scrollHeight
-          // 6px 안전 여백을 두어 반올림으로 2페이지로 넘어가는 것 방지
-          if (contentH > availH - 6) {
-            const scale = Math.max(0.4, (availH - 6) / contentH)
-            ;(fit.style as CSSStyleDeclaration & { zoom?: string }).zoom = String(scale)
+    if (!printWin) {
+      document.body.removeChild(iframe)
+      return
+    }
+
+    const runPrint = () => {
+      // 내용 높이를 측정해 한 페이지(Letter)에 맞게 축소
+      // (transform이 아닌 zoom: Chromium에서 레이아웃·인쇄 페이지 분할에 실제 반영됨)
+      const fit = iframeDoc.getElementById('tp-fit')
+      if (fit) {
+        const contentH = fit.scrollHeight
+        // 6px 안전 여백을 두어 반올림으로 2페이지로 넘어가는 것 방지
+        if (contentH > availH - 6) {
+          const scale = Math.max(0.4, (availH - 6) / contentH)
+          ;(fit.style as CSSStyleDeclaration & { zoom?: string }).zoom = String(scale)
+        }
+      }
+      printWin.focus()
+      setTimeout(() => {
+        try {
+          printWin.print()
+        } catch {
+          /* ignore */
+        }
+        const cleanup = () => {
+          try {
+            if (iframe.parentNode) document.body.removeChild(iframe)
+          } catch {
+            /* ignore */
           }
         }
-        printWin.focus()
-        setTimeout(() => {
-          printWin.print()
-          document.body.removeChild(iframe)
-        }, 250)
-      }
+        printWin.addEventListener('afterprint', cleanup, { once: true })
+        setTimeout(cleanup, 3000)
+      }, 250)
+    }
+
+    // document.write 직후 onload가 이미 끝난 경우가 있어 readyState로 분기
+    if (iframeDoc.readyState === 'complete') {
+      requestAnimationFrame(() => requestAnimationFrame(runPrint))
     } else {
-      document.body.removeChild(iframe)
+      printWin.addEventListener('load', runPrint, { once: true })
     }
   }
 
@@ -810,7 +873,8 @@ export default function TourPrintModal({
           <button
             type="button"
             onClick={handlePrint}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2"
+            disabled={loading}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
           >
             <Printer className="w-4 h-4" />
             {L.print}

@@ -508,10 +508,26 @@ export default function TourEnvelopeModal({
             const alt = Number(v) || 0
             if (alt > cur) residentStatusAmounts[k] = alt
           }
+          const p = pricing as {
+            not_included_price?: unknown
+            pricing_adults?: unknown
+          } | null
+          const pricingAdultsRaw = p?.pricing_adults
+          const hasPricingAdults =
+            pricingAdultsRaw !== undefined &&
+            pricingAdultsRaw !== null &&
+            pricingAdultsRaw !== '' &&
+            Number.isFinite(Number(pricingAdultsRaw)) &&
+            Math.floor(Number(pricingAdultsRaw)) >= 0
+          const pricingAdults = hasPricingAdults
+            ? Math.floor(Number(pricingAdultsRaw))
+            : rez.adults ?? 0
           const party = {
-            adults: rez.adults ?? null,
+            adults: hasPricingAdults ? pricingAdults : (rez.adults ?? null),
             child: rez.child ?? null,
             infant: rez.infant ?? null,
+            children: rez.child ?? null,
+            infants: rez.infant ?? null,
           }
           const residentFeeUsd = needsBalanceData
             ? resolveResidentFeeUsdForBalanceDisplay(
@@ -546,18 +562,6 @@ export default function TourEnvelopeModal({
             pricing && typeof (pricing as { currency?: unknown }).currency === 'string'
               ? ((pricing as { currency: string }).currency || 'USD')
               : 'USD'
-          const p = pricing as {
-            not_included_price?: unknown
-            pricing_adults?: unknown
-          } | null
-          const pricingAdultsRaw = p?.pricing_adults
-          const pricingAdults =
-            pricingAdultsRaw !== undefined &&
-            pricingAdultsRaw !== null &&
-            pricingAdultsRaw !== '' &&
-            Number.isFinite(Number(pricingAdultsRaw))
-              ? Math.max(0, Math.floor(Number(pricingAdultsRaw)))
-              : rez.adults ?? 0
           const notIncludedPerPerson = Number(p?.not_included_price) || 0
           const reservationOptions = (optionLinesByResId.get(id) || []).map((o: ReservationOptionLineBilingual) => ({
             labelKo: o.labelKo,

@@ -6,6 +6,7 @@ export type TodoPanelTourCompletionNamespace =
   | 'tour-hotel-management'
   | 'tour-settlement'
   | 'bento-check'
+  | 'antelope-canyon-booking'
 
 export type TodoPanelTourItemStatus = 'completed' | 'on_hold'
 export type TodoPanelTourItemState = 'pending' | TodoPanelTourItemStatus
