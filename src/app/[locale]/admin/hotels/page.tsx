@@ -44,7 +44,7 @@ type RateRow = {
   price: number
   currency: string
   checked_at: string
-  hotels?: { name: string } | null
+  hotels?: { name: string; city: string | null; state: string | null } | null
 }
 
 type ReservationRow = {
@@ -81,7 +81,12 @@ type WyndhamStatus = {
   liveFlag: boolean
   credentialsConfigured: boolean
   playwrightInstalled: boolean
+  authStateSaved?: boolean
+  authStateAgeMinutes?: number | null
   readyForLive: boolean
+  canScrapeRates?: boolean
+  mode?: 'public' | 'worker'
+  workerUrl?: string | null
   blockers: string[]
   hint: string
 }
@@ -114,6 +119,7 @@ export default function HotelManagementPage() {
   const [checkIn, setCheckIn] = useState('')
   const [checkOut, setCheckOut] = useState('')
   const [rateBusyId, setRateBusyId] = useState<string | null>(null)
+  const [batchBusy, setBatchBusy] = useState(false)
   const [enrichBusyId, setEnrichBusyId] = useState<string | null>(null)
   const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null)
 
@@ -133,7 +139,7 @@ export default function HotelManagementPage() {
         db.from('hotels').select('*').eq('is_active', true).order('name').limit(200),
         db
           .from('hotel_rates')
-          .select('*, hotels(name)')
+          .select('*, hotels(name, city, state)')
           .order('checked_at', { ascending: false })
           .limit(100),
         db
@@ -236,18 +242,26 @@ export default function HotelManagementPage() {
     }
     setRateBusyId(hotel.hotel_id)
     const toastId = toast.loading(
-      `${hotel.name}: Wyndham 로그인 후 멤버 요금 조회 중… (1~2분 걸릴 수 있음)`
+      `${hotel.name}: 공개 요금 조회 중… (최대 약 2분)`
     )
+    const controller = new AbortController()
+    const abortTimer = window.setTimeout(() => controller.abort(), 110_000)
     try {
       const headers = await authHeaders()
+      // Prefer city/state for Wyndham autocomplete — full hotel names often stall suggestions
+      const destination =
+        [hotel.city, hotel.state].filter(Boolean).join(' ').trim() ||
+        hotel.supplier_hotel_id ||
+        hotel.name
       const res = await fetch('/api/hotels/rates', {
         method: 'POST',
         headers,
+        signal: controller.signal,
         body: JSON.stringify({
           supplier: hotel.supplier,
           hotelId: hotel.hotel_id,
           supplierHotelId: hotel.supplier_hotel_id,
-          destination: hotel.name,
+          destination,
           checkIn,
           checkOut,
           rooms: 1,
@@ -269,9 +283,99 @@ export default function HotelManagementPage() {
       await load()
       setTab('rates')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '요금 조회 실패', { id: toastId })
+      const aborted =
+        err instanceof DOMException && err.name === 'AbortError'
+      toast.error(
+        aborted
+          ? '요금 조회 시간 초과(110초). 다시 시도해 주세요.'
+          : err instanceof Error
+            ? err.message
+            : '요금 조회 실패',
+        { id: toastId }
+      )
     } finally {
+      window.clearTimeout(abortTimer)
       setRateBusyId(null)
+    }
+  }
+
+  async function fetchAllWyndhamRates() {
+    if (!checkIn || !checkOut) {
+      toast.error('체크인/체크아웃 날짜를 먼저 선택하세요.')
+      return
+    }
+    const targets = hotels.filter((h) => h.supplier === 'wyndham')
+    if (targets.length === 0) {
+      toast.error('Wyndham 호텔이 카탈로그에 없습니다.')
+      return
+    }
+
+    setBatchBusy(true)
+    const toastId = toast.loading(
+      `주요 Wyndham ${targets.length}곳 요금 일괄 조회 중… (Page·Kanab 목적지별 1회)`
+    )
+    const controller = new AbortController()
+    const abortTimer = window.setTimeout(() => controller.abort(), 170_000)
+    try {
+      const headers = await authHeaders()
+      const res = await fetch('/api/hotels/rates', {
+        method: 'POST',
+        headers,
+        signal: controller.signal,
+        body: JSON.stringify({
+          batch: true,
+          forceLive: true,
+          checkIn,
+          checkOut,
+          hotels: targets.map((h) => ({
+            hotelId: h.hotel_id,
+            supplier: h.supplier,
+            supplierHotelId: h.supplier_hotel_id,
+            name: h.name,
+            city: h.city,
+            state: h.state,
+          })),
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || '일괄 요금 조회 실패')
+
+      const ok = json.okCount ?? 0
+      const total = json.total ?? targets.length
+      const lines = (json.results || [])
+        .map(
+          (r: {
+            name: string
+            ok: boolean
+            price?: number
+            error?: string
+          }) =>
+            r.ok
+              ? `✓ ${r.name}: $${Number(r.price || 0).toFixed(0)}`
+              : `✗ ${r.name}: ${r.error || '실패'}`
+        )
+        .join('\n')
+
+      if (ok === 0) {
+        toast.error(`일괄 조회 실패 (0/${total})\n${lines}`, { id: toastId })
+      } else {
+        toast.success(`일괄 저장 ${ok}/${total}\n${lines}`, { id: toastId })
+        await load()
+        setTab('rates')
+      }
+    } catch (err) {
+      const aborted = err instanceof DOMException && err.name === 'AbortError'
+      toast.error(
+        aborted
+          ? '일괄 요금 조회 시간 초과. 다시 시도해 주세요.'
+          : err instanceof Error
+            ? err.message
+            : '일괄 요금 조회 실패',
+        { id: toastId }
+      )
+    } finally {
+      window.clearTimeout(abortTimer)
+      setBatchBusy(false)
     }
   }
 
@@ -346,8 +450,8 @@ export default function HotelManagementPage() {
             호텔 관리 (투어 숙박)
           </h1>
           <p className="mt-2 text-base text-muted-foreground max-w-2xl leading-7">
-            Wyndham에 로그인해 <strong className="text-foreground font-medium">멤버 요금</strong>을
-            가져와 비교합니다. 고객 예약 사이트·픽업 호텔과는 별개입니다.
+            Wyndham 사이트에서 <strong className="text-foreground font-medium">공개 요금</strong>을
+            가져와 비교합니다. (로그인/멤버가는 Rate Support로 막혀 현재 사용하지 않습니다)
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -381,40 +485,44 @@ export default function HotelManagementPage() {
         }`}
       >
         <h2 className="text-base font-semibold tracking-tight mb-2">
-          1단계 · Wyndham 준비 상태
+          1단계 · Wyndham 준비 (로그인 없음 · 공개 요금)
         </h2>
         {wyndhamStatus ? (
-          <div className="space-y-2 text-sm text-muted-foreground">
+          <div className="space-y-3 text-sm text-muted-foreground">
             <p className="text-foreground">{wyndhamStatus.hint}</p>
-            <ul className="grid gap-1 sm:grid-cols-3">
-              <li>
-                로그인 계정:{' '}
-                <StatusDot ok={wyndhamStatus.credentialsConfigured} />
-                <span className="text-xs"> (username)</span>
-              </li>
-              <li>
-                Playwright:{' '}
-                <StatusDot ok={wyndhamStatus.playwrightInstalled} />
-              </li>
+            <ul className="grid gap-1 sm:grid-cols-2">
+              {wyndhamStatus.mode === 'worker' ? (
+                <li>
+                  원격 worker:{' '}
+                  <StatusDot ok={Boolean(wyndhamStatus.canScrapeRates)} labelOk="연결 설정됨" labelNo="SECRET 필요" />
+                </li>
+              ) : (
+                <li>
+                  Playwright:{' '}
+                  <StatusDot ok={wyndhamStatus.playwrightInstalled} />
+                </li>
+              )}
               <li>
                 HOTEL_WYNDHAM_LIVE:{' '}
                 <StatusDot ok={wyndhamStatus.liveFlag} labelOk="on" labelNo="off (수동은 가능)" />
               </li>
             </ul>
+            {wyndhamStatus.mode === 'worker' && wyndhamStatus.workerUrl ? (
+              <p className="text-xs font-mono break-all text-muted-foreground">
+                {wyndhamStatus.workerUrl}
+              </p>
+            ) : null}
             {wyndhamStatus.blockers.length > 0 ? (
-              <ul className="list-disc pl-5 space-y-1 mt-2">
+              <ul className="list-disc pl-5 space-y-1">
                 {wyndhamStatus.blockers.map((b) => (
                   <li key={b}>{b}</li>
                 ))}
               </ul>
             ) : null}
-            <p className="text-xs pt-1">
-              `.env.local` 예:{' '}
-              <code className="text-[11px]">
-                WYNDHAM_LOGIN_USERNAME=… WYNDHAM_LOGIN_PASSWORD=… HOTEL_WYNDHAM_LIVE=1
-                <br />
-                사이트: https://www.wyndhamhotels.com/en-uk
-              </code>
+            <p className="text-xs leading-5 pt-1">
+              Rewards 로그인은 현재 Rate Support(
+              <code className="text-[11px]">improper-route</code>)로 막혀 사용하지 않습니다. 날짜
+              선택 후 호텔 행의 「요금 가져오기」만 누르면 됩니다.
             </p>
           </div>
         ) : (
@@ -429,7 +537,7 @@ export default function HotelManagementPage() {
             2단계 · 숙박 날짜 (요금 조회에 사용)
           </h2>
           <p className="text-sm text-muted-foreground mb-3">
-            아래에서 「멤버 요금 가져오기」를 누르면 이 날짜로 Wyndham에 로그인·검색합니다.
+            「요금 가져오기」는 이 날짜로 Wyndham 공개가를 검색합니다. 로그인 불필요합니다.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg">
             <label className="text-sm font-medium space-y-1.5">
@@ -533,11 +641,34 @@ export default function HotelManagementPage() {
       </div>
 
       {tab === 'catalog' ? (
-        <p className="text-sm text-muted-foreground mb-3">
-          4단계 · 호텔 행에서{' '}
-          <strong className="text-foreground font-medium">멤버 요금 가져오기</strong>를 누르세요.
-          (로그인 → 멤버가 → Rates 탭에 저장)
-        </p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+          <p className="text-sm text-muted-foreground">
+            4단계 ·{' '}
+            <strong className="text-foreground font-medium">주요 호텔 요금 한 번에 가져오기</strong>
+            로 Page·Kanab 공개가를 저장합니다. (행별 조회도 가능)
+          </p>
+          <button
+            type="button"
+            disabled={
+              batchBusy ||
+              !!rateBusyId ||
+              !checkIn ||
+              !checkOut ||
+              hotels.filter((h) => h.supplier === 'wyndham').length === 0
+            }
+            onClick={() => void fetchAllWyndhamRates()}
+            className="inline-flex items-center justify-center gap-2 h-11 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50 hover:opacity-95 transition duration-200 shrink-0"
+          >
+            {batchBusy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <DollarSign className="h-4 w-4" />
+            )}
+            {batchBusy
+              ? '일괄 조회 중…'
+              : `주요 호텔 요금 한 번에 가져오기 (${hotels.filter((h) => h.supplier === 'wyndham').length}곳)`}
+          </button>
+        </div>
       ) : null}
 
       {error ? (
@@ -594,7 +725,12 @@ export default function HotelManagementPage() {
                           <div className="flex flex-col sm:flex-row gap-2">
                             <button
                               type="button"
-                              disabled={rateBusyId === hotel.hotel_id || !checkIn || !checkOut}
+                              disabled={
+                                rateBusyId === hotel.hotel_id ||
+                                batchBusy ||
+                                !checkIn ||
+                                !checkOut
+                              }
                               onClick={() => void fetchMemberRates(hotel)}
                               className="inline-flex items-center justify-center gap-1.5 h-10 px-3 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 hover:opacity-95 transition duration-200"
                             >
@@ -603,7 +739,7 @@ export default function HotelManagementPage() {
                               ) : (
                                 <DollarSign className="h-4 w-4" />
                               )}
-                              멤버 요금 가져오기
+                              요금 가져오기
                             </button>
                             <button
                               type="button"
@@ -644,10 +780,11 @@ export default function HotelManagementPage() {
 
           {tab === 'rates' && (
             <DataTable
-              empty="아직 저장된 요금이 없습니다. 호텔 목록에서 「멤버 요금 가져오기」를 실행하세요."
-              headers={['호텔', '공급사', '날짜', '가격', '조회 시각']}
+              empty="아직 저장된 요금이 없습니다. 호텔 목록에서 「요금 가져오기」를 실행하세요."
+              headers={['호텔', '도시', '공급사', '날짜', '가격', '조회 시각']}
               rows={rates.map((rate) => [
                 rate.hotels?.name || rate.hotel_id.slice(0, 8),
+                [rate.hotels?.city, rate.hotels?.state].filter(Boolean).join(', ') || '—',
                 rate.supplier,
                 rate.stay_date,
                 `${rate.currency} ${Number(rate.price).toFixed(2)}`,

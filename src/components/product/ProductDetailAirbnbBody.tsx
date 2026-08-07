@@ -19,13 +19,18 @@ import TourHighlightItemLabel from '@/components/product/TourHighlightItemLabel'
 import { formatProductDepartureArrivalHighlight } from '@/lib/productDetailDisplay'
 import { buildTourLanguageHighlightChips } from '@/lib/tourHighlightLanguages'
 import {
+  buildCustomTourHighlightItems,
   buildTourHighlightItems,
+  collectCustomTourHighlightIds,
   filterVisibleTourHighlightItems,
+  orderTourHighlightItems,
   parseTourHighlightIcons,
   parseTourHighlightLabels,
+  parseTourHighlightOrder,
   parseTourHighlightVisibility,
   resolveTourHighlightIconComponent,
   resolveTourHighlightLabel,
+  resolveTourHighlightOrder,
 } from '@/lib/tourHighlightIcons'
 import type {
   ProductDetailsFields,
@@ -101,47 +106,65 @@ export default function ProductDetailAirbnbBody({
     showDetail
   )
   const locationLine = product.departure_city || 'Las Vegas'
-  const highlightIcons = parseTourHighlightIcons(
-    (product as { tour_highlight_icons?: unknown }).tour_highlight_icons
-  )
+  const rawHighlightIcons = (product as { tour_highlight_icons?: unknown }).tour_highlight_icons
+  const highlightIcons = parseTourHighlightIcons(rawHighlightIcons)
   const highlightLabels = parseTourHighlightLabels(
     (product as { tour_highlight_labels?: unknown }).tour_highlight_labels
   )
   const highlightVisibility = parseTourHighlightVisibility(
     (product as { tour_highlight_visibility?: unknown }).tour_highlight_visibility
   )
+  const customIds = collectCustomTourHighlightIds(
+    highlightIcons,
+    highlightLabels,
+    highlightVisibility
+  )
+  const highlightOrder = resolveTourHighlightOrder(
+    parseTourHighlightOrder(rawHighlightIcons),
+    customIds
+  )
 
   const languageChips = buildTourLanguageHighlightChips(product.languages, locale)
   const departureArrivalLabel = formatProductDepartureArrivalHighlight(product, locale)
+  const customItems = buildCustomTourHighlightItems(
+    customIds,
+    highlightLabels,
+    highlightIcons,
+    locale
+  )
 
   const highlightItems = filterVisibleTourHighlightItems(
-    buildTourHighlightItems({
-      durationLabel,
-      groupSize: groupSize ?? null,
-      categoryLabel,
-      locationLine,
-      languageChips,
-      departureArrivalLabel,
-      trustLicensedOperator: resolveTourHighlightLabel(
-        highlightLabels,
-        'trustLicensedOperator',
-        locale,
-        t('trustLicensedOperator')
-      ),
-      trustSmallGroup: resolveTourHighlightLabel(
-        highlightLabels,
-        'trustSmallGroup',
-        locale,
-        t('trustSmallGroup')
-      ),
-      trustFreeCancellation: resolveTourHighlightLabel(
-        highlightLabels,
-        'trustFreeCancellation',
-        locale,
-        t('trustFreeCancellation')
-      ),
-      icons: highlightIcons,
-    }),
+    orderTourHighlightItems(
+      buildTourHighlightItems({
+        durationLabel,
+        groupSize: groupSize ?? null,
+        categoryLabel,
+        locationLine,
+        languageChips,
+        departureArrivalLabel,
+        trustLicensedOperator: resolveTourHighlightLabel(
+          highlightLabels,
+          'trustLicensedOperator',
+          locale,
+          t('trustLicensedOperator')
+        ),
+        trustSmallGroup: resolveTourHighlightLabel(
+          highlightLabels,
+          'trustSmallGroup',
+          locale,
+          t('trustSmallGroup')
+        ),
+        trustFreeCancellation: resolveTourHighlightLabel(
+          highlightLabels,
+          'trustFreeCancellation',
+          locale,
+          t('trustFreeCancellation')
+        ),
+        icons: highlightIcons,
+        customItems,
+      }),
+      highlightOrder
+    ),
     highlightVisibility
   )
 

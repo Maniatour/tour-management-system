@@ -27,6 +27,7 @@ import {
   RESERVATION_EDIT_MODAL_DEFAULT_SIZE,
   RESERVATION_EDIT_MODAL_RECT_KEY,
 } from '@/lib/adminModalRectStorage'
+import { formatLasVegasDateTime } from '@/lib/dailyReport/dateUtils'
 
 /** 브라우저에서 customers INSERT 시 RLS(team↔is_staff 재귀 등)로 실패할 때 API+service role 경로 사용 */
 async function insertCustomerForReservationForm(
@@ -6700,23 +6701,34 @@ export default function ReservationForm({
               <div className="lg:flex lg:flex-col lg:gap-4 lg:min-h-0 max-lg:contents">
               {/* 예약 정보 (투어 정보, 참가자) */}
               <div className="space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:pt-4 sm:px-4 sm:pb-1 bg-gray-50/50 max-lg:order-2 lg:min-h-0 lg:flex-none lg:h-auto">
-                <div className="max-lg:flex max-lg:items-center max-lg:justify-between max-lg:gap-2 lg:block mb-2 lg:mb-0">
-                  <h3 className="text-sm font-medium text-gray-900 max-lg:mb-0">
+                <div className="flex items-center justify-between gap-2 mb-2 lg:mb-0">
+                  <h3 className="text-sm font-medium text-gray-900 shrink-0">
                     예약 정보
                   </h3>
-                  {/* 모바일/태블릿 전용: 타이틀과 같은 줄 오른쪽 끝 정렬 */}
-                  <div className="hidden max-lg:block lg:hidden flex-shrink-0">
-                    <label className="sr-only" htmlFor="reservation-status-section">{t('form.status')}</label>
-                    <select
-                      id="reservation-status-section"
-                      value={formData.status}
-                      onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as ReservationStatusCode }))}
-                      className="min-w-[6.5rem] px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-ring focus:border-transparent"
-                    >
-                      {RESERVATION_STATUS_I18N_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>
-                      ))}
-                    </select>
+                  <div className="flex items-center justify-end gap-2 min-w-0 flex-shrink-0 ml-auto">
+                    {formData.addedTime ? (
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-medium tabular-nums whitespace-nowrap"
+                        title={locale === 'ko' ? '최초 등록일' : 'Registered at'}
+                      >
+                        {locale === 'ko' ? '최초 등록일' : 'Registered'}{' '}
+                        {formatLasVegasDateTime(formData.addedTime, locale) ?? String(formData.addedTime).replace('T', ' ').slice(0, 16)}
+                      </span>
+                    ) : null}
+                    {/* 모바일/태블릿 전용: 타이틀과 같은 줄 오른쪽 끝 정렬 */}
+                    <div className="hidden max-lg:block lg:hidden flex-shrink-0">
+                      <label className="sr-only" htmlFor="reservation-status-section">{t('form.status')}</label>
+                      <select
+                        id="reservation-status-section"
+                        value={formData.status}
+                        onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as ReservationStatusCode }))}
+                        className="min-w-[6.5rem] px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-ring focus:border-transparent"
+                      >
+                        {RESERVATION_STATUS_I18N_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
                 {/* 1번째 줄: 상품명 및 초이스 */}

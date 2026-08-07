@@ -12,6 +12,11 @@ import {
 } from '@/lib/hotels/suppliers/wyndham/session'
 import { WYNDHAM_SELECTORS, WYNDHAM_URLS } from '@/lib/hotels/suppliers/wyndham/selectors'
 import { fillWyndhamSearchForm } from '@/lib/hotels/suppliers/wyndham/search'
+import { buildWyndhamResultsUrl } from '@/lib/hotels/suppliers/wyndham/search-url'
+import {
+  fetchRatesViaWyndhamWorker,
+  shouldUseWyndhamWorker,
+} from '@/lib/hotels/suppliers/wyndham/worker-client'
 import { enumerateStayDates } from '@/lib/hotels/suppliers/dry-run-supplier'
 import type { HotelSupplier } from '@/lib/hotels/suppliers/types'
 import type {
@@ -35,10 +40,9 @@ import type {
  *
  * Live automation requires:
  * - playwright + chromium installed
- * - WYNDHAM_LOGIN_USERNAME / WYNDHAM_LOGIN_PASSWORD
  * - Prefer running on a worker/host that supports browsers (not typical Vercel serverless)
  *
- * When live is disabled or automation fails with CAPTCHA, returns needs_manual.
+ * Default: guest/public rates (no login). Rewards login currently hits Rate Support.
  */
 export function createWyndhamProvider(opts?: {
   live?: boolean
@@ -127,141 +131,42 @@ export function createWyndhamProvider(opts?: {
     async getRates(params: RateQueryParams): Promise<HotelRateQuote[]> {
       if (!live) {
         throw new WyndhamAutomationError(
-          'Wyndham Live가 꺼져 있습니다. .env.local에 HOTEL_WYNDHAM_LIVE=1 과 WYNDHAM_LOGIN_USERNAME / WYNDHAM_LOGIN_PASSWORD를 설정하거나, 관리 화면에서 「멤버 요금 가져오기」로 강제 조회하세요.',
+          'Wyndham Live가 꺼져 있습니다. .env.local에 HOTEL_WYNDHAM_LIVE=1 을 넣거나, 관리 화면에서 「요금 가져오기」로 강제 조회하세요.',
           'needs_manual'
         )
       }
 
-      if (
-        !(
-          process.env.WYNDHAM_LOGIN_USERNAME?.trim() ||
-          process.env.WYNDHAM_LOGIN_EMAIL?.trim()
-        ) ||
-        !process.env.WYNDHAM_LOGIN_PASSWORD?.trim()
-      ) {
-        throw new WyndhamAutomationError(
-          'WYNDHAM_LOGIN_USERNAME / WYNDHAM_LOGIN_PASSWORD가 없습니다. 멤버 요금을 보려면 Wyndham Rewards username으로 로그인해야 합니다.',
-          'needs_manual'
-        )
+      // Vercel / serverless → remote Playwright worker
+      if (shouldUseWyndhamWorker()) {
+        return fetchRatesViaWyndhamWorker(params)
       }
 
-      const artifact = await createWyndhamArtifactDir('getRates-member')
-      let session: Awaited<ReturnType<typeof openWyndhamSession>> | null = null
+      // Public / guest rates only — Rewards login currently redirects to
+      // ratesupport.wyndhamhotels.com/?improper-route and is not usable for scraping.
+      const artifact = await createWyndhamArtifactDir('getRates-public')
+      const overallMs = Number(process.env.WYNDHAM_SCRAPE_TIMEOUT_MS || 75_000)
+
+      let timeoutId: ReturnType<typeof setTimeout> | undefined
       try {
-        session = await openWyndhamSession(artifact)
-        await appendWyndhamLog(artifact, 'Logging in for member rates…')
-        await ensureWyndhamLogin(session, artifact)
-
-        await gotoWyndham(session.page, WYNDHAM_URLS.home, artifact)
-        await session.page.waitForTimeout(2_000)
-
-        const destination =
-          params.destination ||
-          (params.supplierHotelId && !params.supplierHotelId.startsWith('wyndham-offline')
-            ? params.supplierHotelId
-            : '')
-
-        await fillWyndhamSearchForm(
-          session.page,
-          {
-            destination: destination || undefined,
-            checkIn: params.checkIn,
-            checkOut: params.checkOut,
-          },
-          artifact
-        )
-        await session.page.waitForLoadState('networkidle').catch(() => undefined)
-        await session.page.waitForTimeout(3_000).catch(() => undefined)
-
-        if (await session.page.$(WYNDHAM_SELECTORS.captcha)) {
-          throw new WyndhamAutomationError(
-            'CAPTCHA 감지 — 브라우저에서 수동 로그인 후 auth-state를 저장하거나 다시 시도하세요.',
-            'needs_manual'
-          )
-        }
-
-        const scraped = await session.page.evaluate((sel: typeof WYNDHAM_SELECTORS) => {
-          const textOf = (el: Element | null | undefined) =>
-            el?.textContent?.replace(/\s+/g, ' ').trim() || ''
-
-          const cards = Array.from(
-            document.querySelectorAll(
-              [
-                sel.rateCard,
-                '[data-testid*="rate"]',
-                '.rate-card',
-                '.room-rate',
-                '.room-card',
-                '[class*="RoomRate"]',
-                '[class*="member-rate"]',
-                '.hotel-listing',
-                '.property-card',
-              ].join(', ')
-            )
-          )
-
-          const rows = cards.slice(0, 30).map((card, index) => {
-            const fullText = textOf(card)
-            const isMember = /member|rewards|wyndham.?rewards|멤버/i.test(fullText)
-            const priceMatch =
-              fullText.match(/\$\s*([0-9]+(?:\.[0-9]{1,2})?)/) ||
-              fullText.match(/£\s*([0-9]+(?:\.[0-9]{1,2})?)/)
-            const priceFromSel =
-              card.querySelector(sel.ratePrice)?.textContent?.replace(/[^0-9.]/g, '') || ''
-            const price = Number(priceFromSel || priceMatch?.[1] || 0)
-            const roomType =
-              textOf(
-                card.querySelector('.room-name, h3, h4, [class*="room-type"], .hotel-name')
-              ) || (isMember ? 'Member rate' : 'Room / property')
-            return {
-              supplierRoomId: card.getAttribute('data-room-id') || `room-${index}`,
-              roomType: isMember ? `Member · ${roomType}` : roomType,
-              price,
-              isMember,
-            }
-          })
-
-          const memberRows = rows.filter((r) => r.isMember && r.price > 0)
-          const priced = rows.filter((r) => r.price > 0)
-          return (memberRows.length ? memberRows : priced).slice(0, 10)
-        }, WYNDHAM_SELECTORS)
-
-        await appendWyndhamLog(
-          artifact,
-          `Scraped ${scraped.length} rate row(s); member-preferred`
-        )
-
-        if (scraped.length === 0) {
-          await saveWyndhamScreenshot(artifact, session.page, 'no-rates.png')
-          throw new WyndhamAutomationError(
-            '로그인 후 요금 카드를 찾지 못했습니다. 셀렉터/페이지 구조 변경 가능 — artifacts 스크린샷을 확인하세요.',
-            'needs_manual'
-          )
-        }
-
-        const nights = enumerateStayDates(params.checkIn, params.checkOut)
-        const quotes: HotelRateQuote[] = []
-        for (const night of nights) {
-          for (const room of scraped) {
-            quotes.push({
-              supplier: 'wyndham',
-              supplierHotelId: params.supplierHotelId,
-              supplierRoomId: room.supplierRoomId,
-              roomType: room.roomType,
-              stayDate: night,
-              price: room.price,
-              currency: 'USD',
-              cancellationPolicy: 'Member rate (logged-in scrape)',
-              raw: { scraped: true, isMember: room.isMember, artifact: artifact.dir },
-            })
-          }
-        }
-        return quotes
+        return await Promise.race([
+          scrapePublicRates(params, artifact),
+          new Promise<HotelRateQuote[]>((_, reject) => {
+            timeoutId = setTimeout(() => {
+              reject(
+                new WyndhamAutomationError(
+                  `Wyndham 요금 조회가 ${Math.round(overallMs / 1000)}초를 초과했습니다. 네트워크·사이트 응답을 확인 후 다시 시도하세요.`,
+                  'failed'
+                )
+              )
+            }, overallMs)
+          }),
+        ])
       } catch (error) {
-        await captureFailure(session, artifact, error)
-        throw error
+        if (error instanceof WyndhamAutomationError) throw error
+        const message = error instanceof Error ? error.message : String(error)
+        throw new WyndhamAutomationError(`Wyndham 공개 요금 조회 실패: ${message}`, 'failed')
       } finally {
-        if (session) await closeWyndhamSession(session)
+        if (timeoutId) clearTimeout(timeoutId)
       }
     },
 
@@ -274,7 +179,7 @@ export function createWyndhamProvider(opts?: {
           supplier: 'wyndham',
           supplierHotelId: params.supplierHotelId,
           quotes,
-          message: available ? 'Member rates found' : 'No priced rooms found',
+          message: available ? 'Public rates found' : 'No priced rooms found',
         }
       } catch (error) {
         if (error instanceof WyndhamAutomationError && error.kind === 'needs_manual') {
@@ -393,6 +298,206 @@ export function createWyndhamProvider(opts?: {
           : 'Wyndham live mode disabled',
       }
     },
+  }
+}
+
+async function scrapePublicRates(
+  params: RateQueryParams,
+  artifact: Awaited<ReturnType<typeof createWyndhamArtifactDir>>
+): Promise<HotelRateQuote[]> {
+  let session: Awaited<ReturnType<typeof openWyndhamSession>> | null = null
+  try {
+    session = await openWyndhamSession(artifact, { useAuthState: false })
+    session.page.setDefaultTimeout(20_000)
+    session.page.setDefaultNavigationTimeout(45_000)
+
+    const destination =
+      params.destination ||
+      (params.supplierHotelId && !params.supplierHotelId.startsWith('wyndham-offline')
+        ? params.supplierHotelId
+        : '')
+
+    await appendWyndhamLog(
+      artifact,
+      `Guest scrape destination="${destination}" ${params.checkIn}→${params.checkOut}`
+    )
+
+    const directUrl = buildWyndhamResultsUrl({
+      destination,
+      checkIn: params.checkIn,
+      checkOut: params.checkOut,
+      adults: params.guests || 1,
+      rooms: params.rooms || 1,
+    })
+
+    if (directUrl) {
+      await appendWyndhamLog(artifact, `Direct results URL: ${directUrl}`)
+      await gotoWyndham(session.page, directUrl, artifact, {
+        attempts: 2,
+        timeoutMs: 45_000,
+      })
+    } else {
+      await appendWyndhamLog(artifact, 'No destination preset — using home search form')
+      await gotoWyndham(session.page, WYNDHAM_URLS.home, artifact, {
+        attempts: 2,
+        timeoutMs: 45_000,
+      })
+      await session.page.waitForTimeout(1_000)
+      await fillWyndhamSearchForm(
+        session.page,
+        {
+          destination: destination || undefined,
+          checkIn: params.checkIn,
+          checkOut: params.checkOut,
+        },
+        artifact
+      )
+      await session.page
+        .waitForURL(/\/hotels/i, { timeout: 40_000 })
+        .catch(() => undefined)
+    }
+
+    // Prices hydrate after first paint — wait for property cards / FROM $
+    await session.page.waitForLoadState('domcontentloaded').catch(() => undefined)
+    await session.page
+      .locator('.cmp-property-card')
+      .or(session.page.getByText(/FROM\s*\$/i))
+      .first()
+      .waitFor({ state: 'visible', timeout: 25_000 })
+      .catch(() => undefined)
+    await session.page.waitForTimeout(2_000)
+
+    const pageUrl = session.page.url()
+    await appendWyndhamLog(artifact, `Results URL: ${pageUrl}`)
+
+    if (/ratesupport\.wyndhamhotels\.com/i.test(pageUrl)) {
+      throw new WyndhamAutomationError(
+        'Rate Support 페이지로 이동했습니다. 게스트(비로그인) 조회로 다시 시도하세요.',
+        'needs_manual'
+      )
+    }
+    if (/404|page not found/i.test(await session.page.title().catch(() => ''))) {
+      throw new WyndhamAutomationError(
+        'Wyndham 검색 결과 페이지를 찾지 못했습니다 (404).',
+        'failed'
+      )
+    }
+    if (await session.page.$(WYNDHAM_SELECTORS.captcha)) {
+      throw new WyndhamAutomationError('CAPTCHA 감지 — 잠시 후 다시 시도하세요.', 'needs_manual')
+    }
+
+    const scraped = (await session.page.evaluate(`(() => {
+      const textOf = (el) => (el && el.textContent ? el.textContent.replace(/\\s+/g, ' ').trim() : '');
+      const cards = Array.from(document.querySelectorAll('.cmp-property-card, .hotel-details-wrapper'));
+      const fromCard = cards.slice(0, 25).map((card, index) => {
+        const fullText = textOf(card);
+        const nameEl = card.querySelector('.hotel-name, .property-name, h2, h3, a.hotel-url');
+        let name = textOf(nameEl);
+        if (!name) {
+          const split = fullText.split(/FROM\\s*\\$/i)[0] || '';
+          name = split.trim().slice(0, 120) || ('Hotel ' + (index + 1));
+        }
+        name = name
+          .replace(/^Photos\\s*/i, '')
+          .replace(/^\\+?1[-.\\s]?\\d{3}[-.\\s]?\\d{3}[-.\\s]?\\d{4}\\s*/i, '')
+          .replace(/\\s+\\d+(?:\\.\\d+)?\\s*Miles.*$/i, '')
+          .replace(/\\s+Wyndham Green\\s+/i, ' ')
+          .trim()
+          .slice(0, 100);
+        const priceMatch =
+          fullText.match(/FROM\\s*\\$\\s*([0-9]+(?:\\.[0-9]{1,2})?)/i) ||
+          fullText.match(/\\$\\s*([0-9]+(?:\\.[0-9]{1,2})?)/);
+        const price = Number((priceMatch && priceMatch[1]) || 0);
+        return {
+          supplierRoomId:
+            card.getAttribute('data-hotel-id') ||
+            card.getAttribute('data-property-id') ||
+            ('property-' + index),
+          roomType: name,
+          price: price,
+          isMember: false,
+        };
+      });
+      const priced = fromCard.filter((r) => r.price > 0);
+      if (priced.length) return priced;
+      const body = textOf(document.body);
+      const prices = [];
+      const re = /FROM\\s*\\$\\s*([0-9]+(?:\\.[0-9]{1,2})?)/gi;
+      let m;
+      while ((m = re.exec(body))) {
+        const n = Number(m[1]);
+        if (n > 20 && n < 5000) prices.push(n);
+      }
+      return Array.from(new Set(prices)).slice(0, 10).map((price, index) => ({
+        supplierRoomId: 'page-price-' + index,
+        roomType: 'Listed rate',
+        price: price,
+        isMember: false,
+      }));
+    })()`)) as Array<{
+      supplierRoomId: string
+      roomType: string
+      price: number
+      isMember: boolean
+    }>
+
+    await appendWyndhamLog(artifact, `Scraped ${scraped.length} public rate row(s)`)
+
+    if (scraped.length === 0) {
+      await saveWyndhamScreenshot(artifact, session.page, 'no-rates.png')
+      throw new WyndhamAutomationError(
+        '검색 결과에서 요금을 찾지 못했습니다. artifacts 스크린샷을 확인하세요.',
+        'needs_manual'
+      )
+    }
+
+    // Prefer matching hotel name when catalog name/supplier id is available
+    const needle = (params.supplierHotelId || destination || '').toLowerCase()
+    const brandHint = needle.includes('wingate')
+      ? 'wingate'
+      : needle.includes('super 8') || needle.includes('super8')
+        ? 'super 8'
+        : needle.includes('la quinta')
+          ? 'la quinta'
+          : needle.includes('travelodge')
+            ? 'travelodge'
+            : needle.split(/\s+/)[0] || ''
+    const ordered = [...scraped].sort((a, b) => {
+      const aHit = Boolean(brandHint && a.roomType.toLowerCase().includes(brandHint))
+      const bHit = Boolean(brandHint && b.roomType.toLowerCase().includes(brandHint))
+      if (aHit === bHit) return a.price - b.price
+      return aHit ? -1 : 1
+    })
+
+    const nights = enumerateStayDates(params.checkIn, params.checkOut)
+    const quotes: HotelRateQuote[] = []
+    for (const night of nights) {
+      for (const room of ordered) {
+        quotes.push({
+          supplier: 'wyndham',
+          supplierHotelId: params.supplierHotelId || destination || 'wyndham',
+          supplierRoomId: room.supplierRoomId,
+          roomType: room.roomType,
+          stayDate: night,
+          price: room.price,
+          currency: 'USD',
+          cancellationPolicy: 'Public rate (guest scrape)',
+          raw: {
+            source: 'public',
+            isMember: room.isMember,
+            url: pageUrl,
+            artifact: artifact.dir,
+            direct: Boolean(directUrl),
+          },
+        })
+      }
+    }
+    return quotes
+  } catch (error) {
+    if (session) await captureFailure(session, artifact, error)
+    throw error
+  } finally {
+    if (session) await closeWyndhamSession(session)
   }
 }
 

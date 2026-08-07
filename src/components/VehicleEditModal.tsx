@@ -909,11 +909,10 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
     return monthly + additional
   }
 
+  /** 할부 금액 필드 = 현재 남은 잔액(갱신 시점 기준) */
   const calculateRemainingAmount = () => {
     if (!formData.is_installment) return 0
-    const total = formData.installment_amount || 0
-    const paid = calculateTotalPayment()
-    return Math.max(0, total - paid)
+    return Math.max(0, formData.installment_amount || 0)
   }
 
   const rentalBookingImplied = useMemo(
@@ -1714,7 +1713,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                   {formData.is_installment && (
                     <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700">할부 금액 (USD)</label>
+                        <label className="block text-sm font-medium text-gray-700">남은 할부 금액 (USD)</label>
                         <input
                           type="number"
                           name="installment_amount"
@@ -1723,6 +1722,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                           min="0"
                           step="0.01"
                           className={fieldClass}
+                          placeholder="오늘 기준 잔액"
                         />
                       </div>
                       <div>
@@ -1797,12 +1797,12 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                   {formData.is_installment && (
                     <div className="grid grid-cols-2 gap-3 rounded-xl border border-gray-100 bg-slate-50/90 p-3">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700">총 납부 금액</label>
-                        <p className="mt-1 text-sm text-gray-900">${calculateTotalPayment().toLocaleString()} (자동 계산)</p>
+                        <label className="block text-sm font-medium text-gray-700">이번 달 납부 금액</label>
+                        <p className="mt-1 text-sm text-gray-900">${calculateTotalPayment().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (월납 + 추가)</p>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700">남은 할부금</label>
-                        <p className="mt-1 text-sm text-gray-900">${calculateRemainingAmount().toLocaleString()} (자동 계산)</p>
+                        <p className="mt-1 text-sm text-gray-900">${calculateRemainingAmount().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                       </div>
                     </div>
                   )}

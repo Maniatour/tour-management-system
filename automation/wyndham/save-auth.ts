@@ -34,11 +34,15 @@ async function main() {
   const browser = await chromium.launch({
     headless: false,
     ...(useChrome ? { channel: 'chrome' as const } : {}),
-    args: ['--disable-blink-features=AutomationControlled'],
+    chromiumSandbox: true,
+    ignoreDefaultArgs: ['--enable-automation', '--no-sandbox', '--disable-setuid-sandbox'],
+    args: ['--disable-blink-features=AutomationControlled', '--no-first-run', '--no-default-browser-check'],
   }).catch(async () =>
     chromium.launch({
       headless: false,
-      args: ['--disable-blink-features=AutomationControlled'],
+      chromiumSandbox: true,
+      ignoreDefaultArgs: ['--enable-automation', '--no-sandbox', '--disable-setuid-sandbox'],
+      args: ['--disable-blink-features=AutomationControlled', '--no-first-run', '--no-default-browser-check'],
     })
   )
 

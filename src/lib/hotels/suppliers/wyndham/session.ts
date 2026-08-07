@@ -16,6 +16,17 @@ export type WyndhamBrowserSession = {
   page: any
 }
 
+/**
+ * Playwright injects --no-sandbox by default in some setups; real Chrome then shows
+ * "You are using an unsupported command-line flag: --no-sandbox".
+ * Strip it (and automation banner flags) for headed/manual Chrome.
+ */
+const CHROME_IGNORE_DEFAULT_ARGS = [
+  '--enable-automation',
+  '--no-sandbox',
+  '--disable-setuid-sandbox',
+] as const
+
 function resolveLaunchOptions() {
   /**
    * Next.js API routes: headed Chrome (WYNDHAM_HEADLESS=0) often flakes
@@ -41,11 +52,12 @@ function resolveLaunchOptions() {
 
   return {
     headless,
+    chromiumSandbox: true,
+    ignoreDefaultArgs: [...CHROME_IGNORE_DEFAULT_ARGS],
     ...(channel ? { channel } : {}),
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--disable-dev-shm-usage',
-    ],
+    // Do NOT pass --disable-blink-features=AutomationControlled — Chrome shows a
+    // yellow "unsupported command-line flag" bar and Wyndham may route to Rate Support.
+    args: ['--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check'],
   }
 }
 
@@ -100,9 +112,13 @@ export async function gotoWyndham(
 /**
  * Launch Playwright with optional saved auth state.
  * Credentials must come from env refs — never hardcode secrets.
+ *
+ * @param opts.useAuthState — default false for public rate scrapes (saved login often
+ *   lands on ratesupport.wyndhamhotels.com / improper-route). Set true only for member flows.
  */
 export async function openWyndhamSession(
-  artifact?: WyndhamArtifactMeta
+  artifact?: WyndhamArtifactMeta,
+  opts?: { useAuthState?: boolean }
 ): Promise<WyndhamBrowserSession> {
   let playwright: typeof import('playwright')
   try {
@@ -127,13 +143,16 @@ export async function openWyndhamSession(
     if (launchOpts.channel) {
       return playwright.chromium.launch({
         headless: launchOpts.headless,
+        chromiumSandbox: true,
+        ignoreDefaultArgs: [...CHROME_IGNORE_DEFAULT_ARGS],
         args: launchOpts.args,
       })
     }
     throw error
   })
 
-  const hasAuth = await fileExists(AUTH_STATE_PATH)
+  const useAuth = opts?.useAuthState === true
+  const hasAuth = useAuth && (await fileExists(AUTH_STATE_PATH))
   const context = await browser.newContext({
     ...(hasAuth ? { storageState: AUTH_STATE_PATH } : {}),
     locale: 'en-GB',
@@ -157,7 +176,7 @@ export async function openWyndhamSession(
       artifact,
       hasAuth
         ? `Loaded auth state from ${AUTH_STATE_PATH}`
-        : `No saved auth state (headless=${launchOpts.headless}, channel=${launchOpts.channel || 'chromium'})`
+        : `Guest session (no auth-state) headless=${launchOpts.headless}`
     )
   }
 
@@ -182,13 +201,6 @@ export async function ensureWyndhamLogin(
     process.env.WYNDHAM_LOGIN_EMAIL?.trim()
   const password = process.env.WYNDHAM_LOGIN_PASSWORD?.trim()
 
-  if (!username || !password) {
-    throw new WyndhamAutomationError(
-      'WYNDHAM_LOGIN_USERNAME / WYNDHAM_LOGIN_PASSWORD not configured',
-      'needs_manual'
-    )
-  }
-
   const { page, context } = session
 
   // If saved session already works on en-uk, skip credential login
@@ -210,12 +222,18 @@ export async function ensureWyndhamLogin(
     .catch(() => false)
 
   if (alreadySignedIn || !signInVisible) {
-    // Double-check: if Sign In is gone, treat as logged in
     if (!signInVisible || alreadySignedIn) {
       if (artifact) await appendWyndhamLog(artifact, 'Session already authenticated — skip login')
       await persistAuthState(context, artifact)
       return
     }
+  }
+
+  if (!username || !password) {
+    throw new WyndhamAutomationError(
+      '저장된 로그인 세션이 없거나 만료되었습니다. 관리 화면에서 「Wyndham 로그인」을 눌러 Chrome에서 Sign In하세요.',
+      'needs_manual'
+    )
   }
 
   let sawForbidden = false
@@ -301,24 +319,19 @@ export async function ensureWyndhamLogin(
 
   if (sawForbidden || looksLikeRateSupport) {
     throw new WyndhamAutomationError(
-      'Wyndham 로그인이 봇 차단(403) 또는 Rate Support 페이지로 막혔습니다. ' +
-        '한 번 수동 로그인해 auth-state를 저장하세요: ' +
-        'npx tsx --env-file=.env.local automation/wyndham/save-auth.ts ' +
-        '(창이 열리면 Sign In 후 브라우저를 닫지 말고 안내대로 Enter). ' +
-        '또는 .env에 WYNDHAM_HEADLESS=0 / WYNDHAM_USE_CHROME=1 후 재시도.',
+      'Wyndham 로그인이 봇 차단(403)되었습니다. 관리 화면 「Wyndham 로그인」으로 Chrome에서 직접 Sign In하세요.',
       'needs_manual'
     )
   }
 
   if (hasLoginError || (stillOnAuth && /wrong|invalid|incorrect|try again/i.test(bodyText))) {
     throw new WyndhamAutomationError(
-      'Wyndham username/password가 거부되었습니다. .env.local의 WYNDHAM_LOGIN_USERNAME / PASSWORD를 확인하세요.',
+      'Wyndham username/password가 거부되었습니다. 「Wyndham 로그인」으로 수동 로그인하거나 .env 계정을 확인하세요.',
       'needs_manual'
     )
   }
 
   if (stillOnAuth) {
-    // Wait a bit more for redirect after CONTINUE
     await authPage
       .waitForURL((url: URL) => !/login\.wyndhamhotels\.com/i.test(url.href), {
         timeout: 30_000,
@@ -328,7 +341,7 @@ export async function ensureWyndhamLogin(
 
   if (/login\.wyndhamhotels\.com/i.test(authPage.url())) {
     throw new WyndhamAutomationError(
-      '로그인 후에도 Auth 페이지에 있습니다. 수동 auth-state 저장을 권장합니다: automation/wyndham/save-auth.ts',
+      '로그인 후에도 Auth 페이지에 있습니다. 「Wyndham 로그인」으로 수동 세션을 저장하세요.',
       'needs_manual'
     )
   }
@@ -377,4 +390,303 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 export function getWyndhamAuthStatePath() {
   return AUTH_STATE_PATH
+}
+
+export async function hasWyndhamAuthState(): Promise<boolean> {
+  return fileExists(AUTH_STATE_PATH)
+}
+
+export async function getWyndhamAuthStateMeta(): Promise<{
+  exists: boolean
+  path: string
+  mtimeMs: number | null
+  ageMinutes: number | null
+}> {
+  try {
+    const stat = await fs.stat(AUTH_STATE_PATH)
+    const ageMinutes = Math.round((Date.now() - stat.mtimeMs) / 60_000)
+    return {
+      exists: true,
+      path: AUTH_STATE_PATH,
+      mtimeMs: stat.mtimeMs,
+      ageMinutes,
+    }
+  } catch {
+    return { exists: false, path: AUTH_STATE_PATH, mtimeMs: null, ageMinutes: null }
+  }
+}
+
+/** Prevent overlapping headed login windows from the admin UI. */
+let manualLoginInFlight: Promise<ManualLoginResult> | null = null
+
+export type ManualLoginResult = {
+  saved: true
+  path: string
+  waitedMs: number
+}
+
+/**
+ * Open headed Chrome for the admin to Sign In manually, then save storageState.
+ * Detects login by Sign Out / account UI (no terminal Enter needed).
+ */
+export async function runManualWyndhamLogin(opts?: {
+  timeoutMs?: number
+}): Promise<ManualLoginResult> {
+  if (manualLoginInFlight) {
+    return manualLoginInFlight
+  }
+
+  manualLoginInFlight = (async () => {
+    const timeoutMs = opts?.timeoutMs ?? 5 * 60_000
+    let playwright: typeof import('playwright')
+    try {
+      playwright = await import('playwright')
+    } catch {
+      throw new WyndhamAutomationError(
+        'Playwright가 없습니다. 터미널에서: npx playwright install chromium',
+        'needs_manual'
+      )
+    }
+
+    const useChrome = process.env.WYNDHAM_USE_CHROME !== '0'
+    const launchArgs = [
+      '--disable-dev-shm-usage',
+      '--no-first-run',
+      '--no-default-browser-check',
+    ]
+
+    // Persistent profile avoids Windows "URL in omnibox, blank page" with channel:chrome
+    const profileDir =
+      process.env.WYNDHAM_CHROME_PROFILE_DIR ||
+      path.join(process.cwd(), 'automation', 'wyndham', 'chrome-profile')
+    await fs.mkdir(profileDir, { recursive: true })
+
+    const context = await playwright.chromium
+      .launchPersistentContext(profileDir, {
+        headless: false,
+        ...(useChrome ? { channel: 'chrome' as const } : {}),
+        chromiumSandbox: true,
+        ignoreDefaultArgs: [...CHROME_IGNORE_DEFAULT_ARGS],
+        args: launchArgs,
+        locale: 'en-GB',
+        viewport: { width: 1440, height: 900 },
+        userAgent:
+          process.env.WYNDHAM_USER_AGENT ||
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        extraHTTPHeaders: { 'Accept-Language': 'en-GB,en;q=0.9' },
+        ignoreHTTPSErrors: true,
+      })
+      .catch(() =>
+        playwright.chromium.launchPersistentContext(profileDir, {
+          headless: false,
+          chromiumSandbox: true,
+          ignoreDefaultArgs: [...CHROME_IGNORE_DEFAULT_ARGS],
+          args: launchArgs,
+          locale: 'en-GB',
+          viewport: { width: 1440, height: 900 },
+          ignoreHTTPSErrors: true,
+        })
+      )
+
+    const page = context.pages()[0] || (await context.newPage())
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
+    })
+
+    const started = Date.now()
+    try {
+      // Windows + channel:chrome often shows URL in omnibox without loading until Enter.
+      await ensurePageActuallyLoads(page, WYNDHAM_URLS.home)
+
+      // Open Sign In so the admin lands on the Auth0 form quickly
+      const hashSignIn = page
+        .locator('a[href$="#login"]')
+        .filter({ hasText: /^Sign In$/i })
+        .first()
+      if (await hashSignIn.isVisible().catch(() => false)) {
+        await hashSignIn.click().catch(() => undefined)
+        await page.waitForTimeout(1_000)
+      }
+
+      await waitForManualLoginSuccess(context, timeoutMs)
+
+      await fs.mkdir(path.dirname(AUTH_STATE_PATH), { recursive: true })
+      await context.storageState({ path: AUTH_STATE_PATH })
+
+      return {
+        saved: true as const,
+        path: AUTH_STATE_PATH,
+        waitedMs: Date.now() - started,
+      }
+    } finally {
+      await context.close().catch(() => undefined)
+      manualLoginInFlight = null
+    }
+  })()
+
+  try {
+    return await manualLoginInFlight
+  } catch (error) {
+    manualLoginInFlight = null
+    throw error
+  }
+}
+
+/**
+ * Make sure the document actually loads — not just URL sitting in the address bar.
+ */
+async function ensurePageActuallyLoads(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  page: any,
+  url: string
+): Promise<void> {
+  await page.bringToFront().catch(() => undefined)
+  // Let the headed window finish creating the window (Windows quirk)
+  await page.waitForTimeout(800)
+
+  const looksLoaded = async () => {
+    try {
+      const ready = await page.evaluate(() => document.readyState)
+      const href = page.url()
+      const textLen = await page
+        .locator('body')
+        .innerText()
+        .then((t: string) => t.replace(/\s+/g, '').length)
+        .catch(() => 0)
+      return (
+        /wyndhamhotels\.com/i.test(href) &&
+        ready !== 'loading' &&
+        textLen > 80
+      )
+    } catch {
+      return false
+    }
+  }
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await page.goto(url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 90_000,
+      })
+    } catch {
+      // Fall through to force navigation
+    }
+
+    if (await looksLoaded()) return
+
+    // Force reload — fixes "URL in bar, blank page until Enter" on Windows Chrome
+    try {
+      await page.evaluate((target: string) => {
+        window.location.replace(target)
+      }, url)
+      await page.waitForLoadState('domcontentloaded', { timeout: 60_000 })
+    } catch {
+      /* continue */
+    }
+
+    if (await looksLoaded()) return
+
+    try {
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 })
+    } catch {
+      /* continue */
+    }
+
+    if (await looksLoaded()) return
+
+    await page.waitForTimeout(500 * attempt)
+  }
+
+  // Last resort: F5 after focusing the page
+  await page.bringToFront().catch(() => undefined)
+  await page.mouse.click(200, 200).catch(() => undefined)
+  await page.keyboard.press('F5').catch(() => undefined)
+  await page.waitForLoadState('domcontentloaded', { timeout: 60_000 }).catch(() => undefined)
+
+  // If still blank, leave the window open — admin can press Enter in the address bar.
+  // waitForManualLoginSuccess will still detect Sign In afterwards.
+}
+
+/**
+ * Wait until the admin has clearly finished Wyndham Rewards login.
+ *
+ * IMPORTANT: Never treat Auth0 copy like "Don't have an account?" as signed-in
+ * (`has-text("Account")` was a false positive that closed the Chrome window
+ * while the admin was still typing credentials).
+ */
+async function waitForManualLoginSuccess(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  context: any,
+  timeoutMs: number
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() < deadline) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pages: any[] = context.pages()
+
+    for (const p of pages) {
+      const url: string = p.url()
+
+      // Still on Auth0 / login host — never finish here
+      if (/login\.wyndhamhotels\.com/i.test(url)) continue
+      if (!/wyndhamhotels\.com/i.test(url)) continue
+
+      const signedOutVisible = await p
+        .getByRole('link', { name: /^Sign Out$/i })
+        .or(p.getByRole('button', { name: /^Sign Out$/i }))
+        .first()
+        .isVisible()
+        .catch(() => false)
+
+      const myAccountVisible = await p
+        .getByRole('link', { name: /^My Account$/i })
+        .first()
+        .isVisible()
+        .catch(() => false)
+
+      // Member greeting / rewards UI (avoid bare "Account" substring)
+      const rewardsVisible = await p
+        .locator('[data-testid*="sign-out"], [aria-label*="Sign Out" i], a[href*="signout" i], a[href*="sign-out" i]')
+        .first()
+        .isVisible()
+        .catch(() => false)
+
+      if (signedOutVisible || myAccountVisible || rewardsVisible) {
+        // Re-check after a short delay so we don't close on a transient flash
+        await new Promise((r) => setTimeout(r, 2_000))
+        const stillOk =
+          (await p
+            .getByRole('link', { name: /^Sign Out$/i })
+            .or(p.getByRole('button', { name: /^Sign Out$/i }))
+            .first()
+            .isVisible()
+            .catch(() => false)) ||
+          (await p
+            .getByRole('link', { name: /^My Account$/i })
+            .first()
+            .isVisible()
+            .catch(() => false)) ||
+          (await p
+            .locator(
+              '[data-testid*="sign-out"], [aria-label*="Sign Out" i], a[href*="signout" i], a[href*="sign-out" i]'
+            )
+            .first()
+            .isVisible()
+            .catch(() => false))
+
+        if (stillOk && !/login\.wyndhamhotels\.com/i.test(p.url())) {
+          return
+        }
+      }
+    }
+
+    await new Promise((r) => setTimeout(r, 2_000))
+  }
+
+  throw new WyndhamAutomationError(
+    '로그인 대기 시간이 초과되었습니다. Chrome에서 Sign In을 완료한 뒤(Sign Out이 보일 때까지) 기다려 주세요. 창이 먼저 닫히면 다시 「Wyndham 로그인」을 눌러 주세요.',
+    'needs_manual'
+  )
 }

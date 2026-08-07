@@ -45,6 +45,7 @@ next-env.d.ts
 # Wyndham / hotel automation secrets & artifacts
 /automation/wyndham/auth-state/
 /automation/wyndham/artifacts/
+/automation/wyndham/chrome-profile/
 !/automation/wyndham/auth-state/.gitkeep
 !/automation/wyndham/artifacts/.gitkeep
 

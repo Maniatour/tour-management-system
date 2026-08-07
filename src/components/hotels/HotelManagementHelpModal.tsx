@@ -35,59 +35,31 @@ export function HotelManagementHelpModal({
           <section className="rounded-xl border border-warning/30 bg-warning/5 p-4">
             <h3 className="font-semibold mb-2">가장 중요한 것</h3>
             <p className="text-muted-foreground">
-              요금은 <strong className="text-foreground">「멤버 요금 가져오기」</strong>로만
-              가져옵니다. StayAPI Enrich는 이미지·설명용이며 가격과 무관합니다. Enrich를 눌러도
-              요금은 변하지 않습니다.
+              요금은 <strong className="text-foreground">「요금 가져오기」</strong>로 가져옵니다.
+              로그인 없이 Wyndham 공개가를 스크랩합니다. (Rewards 로그인은 Rate Support로 막혀
+              사용하지 않습니다.) StayAPI Enrich는 이미지·설명용이며 가격과 무관합니다.
             </p>
           </section>
 
           <section>
-            <h3 className="font-semibold mb-2">Wyndham 멤버 요금 (권장 순서)</h3>
+            <h3 className="font-semibold mb-2">Wyndham 공개 요금 (권장 순서)</h3>
             <ol className="list-decimal space-y-2 pl-5 text-muted-foreground">
-              <li>
-                <strong className="text-foreground">.env.local</strong>에 Wyndham Rewards{' '}
-                <strong className="text-foreground">username</strong>(이메일이 아님)과 Live 플래그를
-                넣습니다.
-                <pre className="mt-2 rounded-lg bg-muted/50 p-3 text-[11px] overflow-x-auto">
-{`WYNDHAM_LOGIN_USERNAME=your_wyndham_username
-WYNDHAM_LOGIN_PASSWORD=********
-HOTEL_WYNDHAM_LIVE=1
-WYNDHAM_HOME_URL=https://www.wyndhamhotels.com/en-uk`}
-                </pre>
-              </li>
               <li>
                 Playwright 설치:{' '}
                 <code className="text-xs">npm i -D playwright && npx playwright install chromium</code>
               </li>
               <li>
-                자동 로그인이 봇 차단(403)되면, 터미널에서 한 번 수동 로그인 세션을 저장합니다:
-                <pre className="mt-2 rounded-lg bg-muted/50 p-3 text-[11px] overflow-x-auto">
-{`npx tsx --env-file=.env.local automation/wyndham/save-auth.ts`}
-                </pre>
-                브라우저에서 Sign In 완료 → 터미널 Enter → 이후 「멤버 요금 가져오기」가 저장된
-                세션을 사용합니다.
-              </li>
-              <li>
-                페이지 상단 <strong className="text-foreground">1단계 준비 상태</strong>가 OK인지
-                확인합니다.
+                (선택) <code className="text-xs">HOTEL_WYNDHAM_LIVE=1</code>
               </li>
               <li>
                 <strong className="text-foreground">2단계</strong>에서 체크인·체크아웃을 고릅니다.
               </li>
               <li>
-                <strong className="text-foreground">3단계</strong>에서 호텔을 카탈로그에 추가합니다
-                (예: Super 8 Page).
+                <strong className="text-foreground">3단계</strong>에서 호텔을 카탈로그에 추가합니다.
               </li>
               <li>
-                호텔 목록에서{' '}
-                <strong className="text-foreground">멤버 요금 가져오기</strong>를 누릅니다.
-                <br />
-                → 서버가 Wyndham에 로그인 → 멤버가 화면을 읽어 →{' '}
-                <strong className="text-foreground">요금</strong> 탭에 저장합니다.
-              </li>
-              <li>
-                토스트에 가격이 보이면 성공입니다. 실패하면 메시지와{' '}
-                <code className="text-xs">automation/wyndham/artifacts</code> 스크린샷을 확인하세요.
+                호텔 목록에서 <strong className="text-foreground">요금 가져오기</strong>를 누릅니다.
+                <br />→ 검색·스크랩 → <strong className="text-foreground">요금</strong> 탭에 저장.
               </li>
             </ol>
           </section>

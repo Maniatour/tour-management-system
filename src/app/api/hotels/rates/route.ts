@@ -5,9 +5,13 @@ import { listRates, listRecentPriceAlerts } from '@/lib/hotels/services/rate-ser
 import type { HotelSupplierCode } from '@/lib/hotels/types'
 import { HOTEL_SUPPLIERS } from '@/lib/hotels/types'
 
+export const runtime = 'nodejs'
+/** Batch Page + Kanab scrapes need headroom */
+export const maxDuration = 180
+
 /**
  * GET /api/hotels/rates?hotelId=&fromDate=&toDate=
- * POST /api/hotels/rates — compare & persist rates via supplier
+ * POST /api/hotels/rates — single hotel or batch (body.batch=true)
  */
 export async function GET(request: NextRequest) {
   const auth = await requireStaffApiAuth(request)
@@ -41,6 +45,15 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = (await request.json()) as {
+      batch?: boolean
+      hotels?: Array<{
+        hotelId: string
+        supplier: HotelSupplierCode
+        supplierHotelId: string
+        name: string
+        city?: string | null
+        state?: string | null
+      }>
       supplier?: HotelSupplierCode
       hotelId?: string
       supplierHotelId?: string
@@ -49,14 +62,30 @@ export async function POST(request: NextRequest) {
       rooms?: number
       guests?: number
       destination?: string
-      /** Manual trigger from admin UI — run live Wyndham path for this call */
       forceLive?: boolean
+    }
+
+    if (!body.checkIn || !body.checkOut) {
+      return NextResponse.json({ error: 'checkIn, checkOut required' }, { status: 400 })
+    }
+
+    if (body.batch === true) {
+      if (!body.hotels?.length) {
+        return NextResponse.json({ error: 'hotels[] required for batch' }, { status: 400 })
+      }
+      const result = await hotelManager.compareRatesBatch({
+        checkIn: body.checkIn,
+        checkOut: body.checkOut,
+        forceLive: body.forceLive !== false,
+        hotels: body.hotels,
+      })
+      return NextResponse.json(result)
     }
 
     if (!body.supplier || !HOTEL_SUPPLIERS.includes(body.supplier)) {
       return NextResponse.json({ error: 'Invalid supplier' }, { status: 400 })
     }
-    if (!body.hotelId || !body.supplierHotelId || !body.checkIn || !body.checkOut) {
+    if (!body.hotelId || !body.supplierHotelId) {
       return NextResponse.json(
         { error: 'hotelId, supplierHotelId, checkIn, checkOut required' },
         { status: 400 }

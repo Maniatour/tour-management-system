@@ -692,13 +692,19 @@ export default function VehiclesPage() {
   }, [selectedVehicle, vehicles, activeOperatorId])
 
 
+  /** 할부 금액(installment_amount) = 현재 남은 잔액. 월납×12 가정 차감은 하지 않음. */
   const calculateRemainingInstallment = useCallback((vehicle: Vehicle) => {
     if (!vehicle.is_installment) return 0
-    
-    const monthlyPayment = vehicle.monthly_payment || 0
+
     const installmentAmount = vehicle.installment_amount || 0
-    const totalPaid = monthlyPayment * 12 // 간단한 계산
-    return Math.max(0, installmentAmount - totalPaid)
+    if (vehicle.installment_end_date) {
+      const end = new Date(`${vehicle.installment_end_date}T00:00:00`)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      if (!Number.isNaN(end.getTime()) && today > end) return 0
+    }
+
+    return Math.max(0, installmentAmount)
   }, [])
 
   const needsOilChange = useCallback((vehicle: Vehicle) => {
@@ -967,7 +973,7 @@ export default function VehiclesPage() {
                     <>
                       {vehicle.is_installment && (
                         <p className="text-orange-600">
-                          <span className="font-medium">할부중</span> (남은 금액: ${calculateRemainingInstallment(vehicle).toLocaleString()})
+                          <span className="font-medium">할부중</span> (남은 금액: ${calculateRemainingInstallment(vehicle).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                         </p>
                       )}
                       

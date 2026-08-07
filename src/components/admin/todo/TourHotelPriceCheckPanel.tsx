@@ -2,17 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  DollarSign,
   ExternalLink,
   Globe,
   Loader2,
   Pencil,
   RefreshCw,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { TodoPanelStatusButtons } from '@/components/admin/todo/TodoPanelStatusButtons'
 import { TodoPanelTourStatusButtons } from '@/components/admin/todo/TodoPanelTourStatusButtons'
 import { TourHotelPriceCheckEditModal } from '@/components/admin/todo/TourHotelPriceCheckEditModal'
 import {
   findTourHotelPriceCheckLinkedTodo,
+  getTourHotelPriceCheckUnitPrice,
   isTourHotelPriceCheckHighUnitPrice,
   normalizeTourHotelWebsiteUrl,
   readTourHotelPriceCheckLocalCompleted,
@@ -29,6 +32,8 @@ import {
 } from '@/lib/todoPanelTourCompletion'
 import { useTodoPanelTourCompletion } from '@/hooks/useTodoPanelTourCompletion'
 import { useTourHotelPriceCheckQueue } from '@/hooks/useTourHotelPriceCheckQueue'
+import { supabase } from '@/lib/supabase'
+import type { TourPriceCheckResult } from '@/lib/hotels/tour-price-check-types'
 
 type TourHotelPriceCheckPanelProps = {
   locale: string
@@ -59,33 +64,38 @@ function formatShortDate(raw: string): string {
   return `${month}/${day}`
 }
 
-function formatUsd(amount: number | null): string {
+function formatUsd(amount: number | null | undefined): string {
   if (amount == null || !Number.isFinite(amount)) return '—'
   return `$${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
 }
 
-function formatTourHotelPriceCheckRowLabel(
-  row: {
-    check_in_date: string
-    hotel: string
-    tour_name: string | null
-    reservation_name: string | null
-    tour_date: string | null
-    display_price: number | null
-    rooms: number
-  },
-  isKo: boolean
-): string {
-  const tourLabel = row.tour_name || row.reservation_name || '—'
-  const priceLabel = formatUsd(row.display_price) + (row.rooms > 1 ? ` ×${row.rooms}` : '')
-  const parts = [
-    formatShortDate(row.check_in_date),
-    row.hotel,
-    tourLabel,
-    priceLabel,
-    row.tour_date ? `${isKo ? '투어' : 'Tour'} ${formatShortDate(row.tour_date)}` : null,
-  ].filter((part): part is string => Boolean(part))
-  return parts.join(' , ')
+function formatDiffBadge(diff: number | null | undefined, isKo: boolean): {
+  label: string
+  className: string
+} {
+  if (diff == null || !Number.isFinite(diff)) {
+    return {
+      label: isKo ? '미조회' : 'No fetch',
+      className: 'bg-gray-100 text-gray-600',
+    }
+  }
+  const rounded = Math.round(diff)
+  if (rounded === 0) {
+    return {
+      label: '$0',
+      className: 'bg-slate-100 text-slate-700',
+    }
+  }
+  if (rounded > 0) {
+    return {
+      label: `+$${rounded}`,
+      className: 'bg-orange-50 text-orange-700',
+    }
+  }
+  return {
+    label: `−$${Math.abs(rounded)}`,
+    className: 'bg-blue-50 text-blue-700',
+  }
 }
 
 function tourHotelPriceCheckRowBorderClassName(
@@ -99,6 +109,17 @@ function tourHotelPriceCheckRowBorderClassName(
     return 'border-sky-200/80 bg-white/80 shadow-[inset_0_0_0_1px] shadow-sky-300/40'
   }
   return todoPanelTourRowClassName(rowStatus)
+}
+
+async function authHeaders(): Promise<HeadersInit> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  const headers: HeadersInit = { 'Content-Type': 'application/json' }
+  if (session?.access_token) {
+    headers.Authorization = `Bearer ${session.access_token}`
+  }
+  return headers
 }
 
 export function TourHotelPriceCheckPanel({
@@ -130,6 +151,10 @@ export function TourHotelPriceCheckPanel({
   const [localCompleted, setLocalCompleted] = useState(false)
   const [completing, setCompleting] = useState(false)
   const [editBookingId, setEditBookingId] = useState<string | null>(null)
+  const [batchBusy, setBatchBusy] = useState(false)
+  const [fetchByBookingId, setFetchByBookingId] = useState<
+    Record<string, TourPriceCheckResult>
+  >({})
 
   useEffect(() => {
     setLocalCompleted(readTourHotelPriceCheckLocalCompleted(completionDateKey))
@@ -162,6 +187,19 @@ export function TourHotelPriceCheckPanel({
     return `${fmt(dateRange.start)} – ${fmt(dateRange.end)}`
   }, [dateRange])
 
+  const uniqueScrapeEstimate = useMemo(() => {
+    const keys = new Set<string>()
+    for (const row of rows) {
+      const destHint = /^p-/i.test(row.hotel)
+        ? 'page'
+        : /^k-/i.test(row.hotel)
+          ? 'kanab'
+          : row.city || row.hotel
+      keys.add(`${destHint}|${row.check_in_date}|${row.check_out_date}`)
+    }
+    return keys.size
+  }, [rows])
+
   const handleToggleComplete = useCallback(async () => {
     const next = !completed
     setCompleting(true)
@@ -178,6 +216,81 @@ export function TourHotelPriceCheckPanel({
       setCompleting(false)
     }
   }, [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey])
+
+  const handleFetchAllRates = useCallback(async () => {
+    if (!rows.length) {
+      toast.error(isKo ? '조회할 부킹이 없습니다.' : 'No bookings to check.')
+      return
+    }
+
+    setBatchBusy(true)
+    const toastId = toast.loading(
+      isKo
+        ? `Wyndham 공개가 조회 중… (고유 날짜·도시 ${uniqueScrapeEstimate}회, 수 분 소요 가능)`
+        : `Fetching Wyndham rates… (${uniqueScrapeEstimate} unique date/city scrapes)`
+    )
+    const controller = new AbortController()
+    const abortTimer = window.setTimeout(() => controller.abort(), 290_000)
+
+    try {
+      const headers = await authHeaders()
+      const res = await fetch('/api/hotels/rates/tour-price-check', {
+        method: 'POST',
+        headers,
+        signal: controller.signal,
+        body: JSON.stringify({
+          jobs: rows.map((row) => ({
+            bookingId: row.id,
+            hotel: row.hotel,
+            city: row.city,
+            checkIn: row.check_in_date,
+            checkOut: row.check_out_date,
+            bookedUnitPrice: getTourHotelPriceCheckUnitPrice(
+              row.total_price,
+              row.unit_price,
+              row.rooms
+            ),
+            rooms: row.rooms,
+          })),
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || (isKo ? '요금 조회 실패' : 'Rate fetch failed'))
+
+      const map: Record<string, TourPriceCheckResult> = {}
+      for (const r of (json.results || []) as TourPriceCheckResult[]) {
+        map[r.bookingId] = r
+      }
+      setFetchByBookingId(map)
+
+      const ok = json.okCount ?? 0
+      const total = json.total ?? rows.length
+      const scrapes = json.scrapeCount ?? uniqueScrapeEstimate
+      toast.success(
+        isKo
+          ? `시세 매칭 ${ok}/${total} · Playwright ${scrapes}회`
+          : `Matched ${ok}/${total} · ${scrapes} scrapes`,
+        { id: toastId }
+      )
+    } catch (err) {
+      const aborted = err instanceof DOMException && err.name === 'AbortError'
+      toast.error(
+        aborted
+          ? isKo
+            ? '요금 조회 시간 초과. 날짜가 많으면 범위를 줄이거나 다시 시도하세요.'
+            : 'Rate fetch timed out. Try again or reduce date span.'
+          : err instanceof Error
+            ? err.message
+            : isKo
+              ? '요금 조회 실패'
+              : 'Rate fetch failed',
+        { id: toastId }
+      )
+    } finally {
+      window.clearTimeout(abortTimer)
+      setBatchBusy(false)
+    }
+  }, [rows, isKo, uniqueScrapeEstimate])
 
   return (
     <>
@@ -239,6 +352,40 @@ export function TourHotelPriceCheckPanel({
                 <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
               </button>
             </div>
+
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                disabled={batchBusy || loading || rows.length === 0}
+                onClick={() => void handleFetchAllRates()}
+                className="inline-flex h-7 items-center gap-1 rounded-lg bg-sky-700 px-2 text-[10px] font-semibold text-white hover:bg-sky-800 disabled:opacity-50"
+                title={
+                  isKo
+                    ? `고유 날짜·도시 ${uniqueScrapeEstimate}회 스크랩 (순차). 날짜가 많으면 수 분 걸립니다.`
+                    : `${uniqueScrapeEstimate} unique date/city scrapes (sequential).`
+                }
+              >
+                {batchBusy ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <DollarSign className="h-3 w-3" />
+                )}
+                {batchBusy
+                  ? isKo
+                    ? '요금 조회 중…'
+                    : 'Fetching…'
+                  : isKo
+                    ? `주요 호텔 요금 한 번에 가져오기 (${rows.length})`
+                    : `Fetch all rates (${rows.length})`}
+              </button>
+              {uniqueScrapeEstimate > 0 ? (
+                <span className="text-[9px] text-gray-500">
+                  {isKo
+                    ? `≈${uniqueScrapeEstimate}회 조회 · 호버 시 요금 목록`
+                    : `≈${uniqueScrapeEstimate} scrapes · hover for rates`}
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -263,17 +410,31 @@ export function TourHotelPriceCheckPanel({
               const rowStatus = getTodoPanelTourStatus(row.id, tourState)
               const websiteUrl = normalizeTourHotelWebsiteUrl(row.website)
               const tourLabel = row.tour_name || row.reservation_name || '—'
-              const rowLabel = formatTourHotelPriceCheckRowLabel(row, isKo)
               const highPrice = isTourHotelPriceCheckHighUnitPrice(
                 row.total_price,
                 row.unit_price,
                 row.rooms
               )
+              const fetched = fetchByBookingId[row.id]
+              const diffBadge = formatDiffBadge(fetched?.ok ? fetched.diff : null, isKo)
+              const hoverRates = fetched?.rates || []
+              const rowTitle = [
+                formatShortDate(row.check_in_date),
+                row.hotel,
+                tourLabel,
+                formatUsd(row.display_price),
+                fetched?.ok
+                  ? `${isKo ? '시세' : 'Mkt'} ${formatUsd(fetched.marketPrice)}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')
+
               return (
                 <div
                   key={row.id}
                   className={[
-                    'rounded-md border p-1.5',
+                    'group relative rounded-md border p-1.5',
                     tourHotelPriceCheckRowBorderClassName(rowStatus, highPrice),
                     completed ? 'opacity-70' : '',
                   ].join(' ')}
@@ -286,7 +447,7 @@ export function TourHotelPriceCheckPanel({
                     />
                     <p
                       className={`min-w-0 flex-1 truncate text-[11px] font-medium leading-snug ${todoPanelTourTitleClassName(rowStatus)}`}
-                      title={rowLabel}
+                      title={rowTitle}
                     >
                       <span className="tabular-nums">{formatShortDate(row.check_in_date)}</span>
                       <span className="text-gray-400"> , </span>
@@ -304,14 +465,12 @@ export function TourHotelPriceCheckPanel({
                       {row.rooms > 1 ? (
                         <span className="ml-0.5 text-[10px] text-gray-500">×{row.rooms}</span>
                       ) : null}
-                      {row.tour_date ? (
-                        <>
-                          <span className="text-gray-400"> , </span>
-                          <span className="text-gray-600 tabular-nums">
-                            {isKo ? '투어' : 'Tour'} {formatShortDate(row.tour_date)}
-                          </span>
-                        </>
-                      ) : null}
+                      <span className="text-gray-400"> , </span>
+                      <span
+                        className={`inline-flex rounded px-1 py-0.5 text-[10px] font-semibold tabular-nums ${diffBadge.className}`}
+                      >
+                        {diffBadge.label}
+                      </span>
                     </p>
                     <div className="flex shrink-0 items-center gap-0.5">
                       {websiteUrl ? (
@@ -349,6 +508,37 @@ export function TourHotelPriceCheckPanel({
                       ) : null}
                     </div>
                   </div>
+
+                  {/* Hover: fetched rate list */}
+                  {hoverRates.length > 0 ? (
+                    <div className="pointer-events-none absolute left-2 right-2 top-full z-30 mt-0.5 hidden group-hover:block">
+                      <div className="rounded-lg border border-sky-200 bg-white p-2 shadow-lg">
+                        <p className="mb-1 text-[10px] font-semibold text-sky-900">
+                          {isKo ? '조회된 공개 요금' : 'Fetched public rates'}
+                          {fetched?.destination ? ` · ${fetched.destination}` : ''}
+                          {fetched?.marketPrice != null
+                            ? ` · ${isKo ? '매칭' : 'match'} ${formatUsd(fetched.marketPrice)}`
+                            : ''}
+                        </p>
+                        <ul className="max-h-40 space-y-0.5 overflow-y-auto">
+                          {hoverRates.map((rate) => (
+                            <li
+                              key={`${rate.roomType}-${rate.price}`}
+                              className={`flex items-start justify-between gap-2 text-[10px] ${
+                                rate.matched ? 'font-semibold text-sky-900' : 'text-gray-700'
+                              }`}
+                            >
+                              <span className="min-w-0 flex-1 truncate">{rate.roomType}</span>
+                              <span className="shrink-0 tabular-nums">{formatUsd(rate.price)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        {fetched && !fetched.ok && fetched.error ? (
+                          <p className="mt-1 text-[9px] text-red-600">{fetched.error}</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               )
             })

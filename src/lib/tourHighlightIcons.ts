@@ -45,6 +45,28 @@ export const TOUR_HIGHLIGHT_ITEM_IDS = [
   'trustFreeCancellation',
 ] as const
 
+const BUILTIN_ID_SET = new Set<string>(TOUR_HIGHLIGHT_ITEM_IDS)
+
+/** icons JSON에 저장하는 항목 순서 메타 키 */
+export const TOUR_HIGHLIGHT_ORDER_META_KEY = '_order'
+
+export const CUSTOM_TOUR_HIGHLIGHT_ID_PREFIX = 'custom_'
+
+export function isBuiltinTourHighlightItemId(id: string): id is TourHighlightItemId {
+  return BUILTIN_ID_SET.has(id)
+}
+
+export function isCustomTourHighlightItemId(id: string): boolean {
+  return id.startsWith(CUSTOM_TOUR_HIGHLIGHT_ID_PREFIX)
+}
+
+export function createCustomTourHighlightItemId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${CUSTOM_TOUR_HIGHLIGHT_ID_PREFIX}${crypto.randomUUID()}`
+  }
+  return `${CUSTOM_TOUR_HIGHLIGHT_ID_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 export const DEFAULT_TOUR_HIGHLIGHT_ICONS: Record<TourHighlightItemId, string> = {
   duration: 'clock',
   groupSize: 'users2',
@@ -109,42 +131,83 @@ export function resolveTourHighlightIconComponent(iconKey?: string | null): Luci
 
 export function resolveTourHighlightIcon(
   itemId: TourHighlightItemId,
-  icons?: Partial<Record<TourHighlightItemId, string>> | null
+  icons?: Partial<Record<string, string>> | null
 ): LucideIcon {
   const iconKey = icons?.[itemId]?.trim() || DEFAULT_TOUR_HIGHLIGHT_ICONS[itemId]
   return resolveTourHighlightIconComponent(iconKey)
 }
 
-export function parseTourHighlightIcons(
-  raw: unknown
-): Partial<Record<TourHighlightItemId, string>> {
+function isHighlightStorageKey(key: string): boolean {
+  return isBuiltinTourHighlightItemId(key) || isCustomTourHighlightItemId(key)
+}
+
+export function parseTourHighlightIcons(raw: unknown): Partial<Record<string, string>> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
-  const result: Partial<Record<TourHighlightItemId, string>> = {}
-  for (const id of TOUR_HIGHLIGHT_ITEM_IDS) {
-    const value = (raw as Record<string, unknown>)[id]
+  const result: Partial<Record<string, string>> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!isHighlightStorageKey(key)) continue
     if (typeof value === 'string' && value.trim()) {
-      result[id] = value.trim()
+      result[key] = value.trim()
     }
   }
   return result
 }
 
 export function serializeTourHighlightIcons(
-  icons: Partial<Record<TourHighlightItemId, string>>
+  icons: Partial<Record<string, string>>,
+  order?: string[] | null
 ): Record<string, string> {
   const result: Record<string, string> = {}
-  for (const id of TOUR_HIGHLIGHT_ITEM_IDS) {
-    const value = icons[id]?.trim()
-    if (value) result[id] = value
+  for (const [id, value] of Object.entries(icons)) {
+    if (!isHighlightStorageKey(id)) continue
+    const trimmed = value?.trim()
+    if (trimmed) result[id] = trimmed
+  }
+  if (order && order.length > 0) {
+    result[TOUR_HIGHLIGHT_ORDER_META_KEY] = order.filter(isHighlightStorageKey).join(',')
   }
   return result
 }
 
+export function parseTourHighlightOrder(rawIcons: unknown): string[] {
+  if (!rawIcons || typeof rawIcons !== 'object' || Array.isArray(rawIcons)) return []
+  const raw = (rawIcons as Record<string, unknown>)[TOUR_HIGHLIGHT_ORDER_META_KEY]
+  if (typeof raw !== 'string' || !raw.trim()) return []
+  return raw
+    .split(',')
+    .map((id) => id.trim())
+    .filter(isHighlightStorageKey)
+}
+
+/** order가 비어 있으면 기본 빌트인 전체 + 커스텀 ID */
+export function resolveTourHighlightOrder(
+  savedOrder: string[],
+  customIds: string[]
+): string[] {
+  if (savedOrder.length > 0) {
+    const seen = new Set<string>()
+    const ordered: string[] = []
+    for (const id of savedOrder) {
+      if (!isHighlightStorageKey(id) || seen.has(id)) continue
+      seen.add(id)
+      ordered.push(id)
+    }
+    for (const id of customIds) {
+      if (seen.has(id)) continue
+      seen.add(id)
+      ordered.push(id)
+    }
+    return ordered
+  }
+  return [...TOUR_HIGHLIGHT_ITEM_IDS, ...customIds.filter((id) => !BUILTIN_ID_SET.has(id))]
+}
+
 export type TourHighlightDisplayItem = {
-  id: TourHighlightItemId
+  id: string
   label: string
   iconKey: string
   languageChips?: TourHighlightLanguageChip[]
+  isCustom?: boolean
 }
 
 export type BuildTourHighlightItemsInput = {
@@ -157,7 +220,8 @@ export type BuildTourHighlightItemsInput = {
   trustLicensedOperator?: string
   trustSmallGroup?: string
   trustFreeCancellation?: string
-  icons?: Partial<Record<TourHighlightItemId, string>> | null
+  icons?: Partial<Record<string, string>> | null
+  customItems?: TourHighlightDisplayItem[] | null
 }
 
 export function buildTourHighlightItems(
@@ -225,7 +289,35 @@ export function buildTourHighlightItems(
     })
   }
 
+  if (input.customItems?.length) {
+    items.push(...input.customItems)
+  }
+
   return items
+}
+
+export function orderTourHighlightItems(
+  items: TourHighlightDisplayItem[],
+  order: string[],
+  options?: { includeUnlisted?: boolean }
+): TourHighlightDisplayItem[] {
+  if (order.length === 0) return items
+  const byId = new Map(items.map((item) => [item.id, item]))
+  const ordered: TourHighlightDisplayItem[] = []
+  const seen = new Set<string>()
+  for (const id of order) {
+    const item = byId.get(id)
+    if (!item || seen.has(id)) continue
+    seen.add(id)
+    ordered.push(item)
+  }
+  if (options?.includeUnlisted) {
+    for (const item of items) {
+      if (seen.has(item.id)) continue
+      ordered.push(item)
+    }
+  }
+  return ordered
 }
 
 export const TOUR_HIGHLIGHT_ITEM_LABELS: Record<TourHighlightItemId, string> = {
@@ -239,6 +331,13 @@ export const TOUR_HIGHLIGHT_ITEM_LABELS: Record<TourHighlightItemId, string> = {
   trustFreeCancellation: '무료 취소',
 }
 
+export function getTourHighlightItemTitle(itemId: string): string {
+  if (isBuiltinTourHighlightItemId(itemId)) {
+    return TOUR_HIGHLIGHT_ITEM_LABELS[itemId]
+  }
+  return '커스텀 항목'
+}
+
 export const TRUST_TOUR_HIGHLIGHT_ITEM_IDS = [
   'trustLicensedOperator',
   'trustSmallGroup',
@@ -247,16 +346,14 @@ export const TRUST_TOUR_HIGHLIGHT_ITEM_IDS = [
 
 export type TrustTourHighlightItemId = (typeof TRUST_TOUR_HIGHLIGHT_ITEM_IDS)[number]
 
-/** item id → locale → custom label (신뢰 배지 등 상품별 문구) */
-export type TourHighlightLabelStore = Partial<
-  Record<TourHighlightItemId, Partial<Record<string, string>>>
->
+/** item id → locale → custom label (신뢰 배지·커스텀 항목 등) */
+export type TourHighlightLabelStore = Partial<Record<string, Partial<Record<string, string>>>>
 
 export function parseTourHighlightLabels(raw: unknown): TourHighlightLabelStore {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
   const result: TourHighlightLabelStore = {}
-  for (const id of TOUR_HIGHLIGHT_ITEM_IDS) {
-    const value = (raw as Record<string, unknown>)[id]
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!isHighlightStorageKey(id)) continue
     if (!value || typeof value !== 'object' || Array.isArray(value)) continue
     const locales: Partial<Record<string, string>> = {}
     for (const [locale, label] of Object.entries(value as Record<string, unknown>)) {
@@ -275,9 +372,8 @@ export function serializeTourHighlightLabels(
   labels: TourHighlightLabelStore
 ): Record<string, Record<string, string>> {
   const result: Record<string, Record<string, string>> = {}
-  for (const id of TOUR_HIGHLIGHT_ITEM_IDS) {
-    const locales = labels[id]
-    if (!locales) continue
+  for (const [id, locales] of Object.entries(labels)) {
+    if (!isHighlightStorageKey(id) || !locales) continue
     const serialized: Record<string, string> = {}
     for (const [locale, label] of Object.entries(locales)) {
       const trimmed = typeof label === 'string' ? label.trim() : ''
@@ -290,8 +386,42 @@ export function serializeTourHighlightLabels(
   return result
 }
 
+export function collectCustomTourHighlightIds(
+  icons: Partial<Record<string, string>>,
+  labels: TourHighlightLabelStore,
+  visibility: TourHighlightVisibilityStore
+): string[] {
+  const ids = new Set<string>()
+  for (const source of [icons, labels, visibility]) {
+    for (const key of Object.keys(source)) {
+      if (isCustomTourHighlightItemId(key)) ids.add(key)
+    }
+  }
+  return [...ids]
+}
+
+export function buildCustomTourHighlightItems(
+  customIds: string[],
+  labels: TourHighlightLabelStore,
+  icons: Partial<Record<string, string>>,
+  locale: string
+): TourHighlightDisplayItem[] {
+  const items: TourHighlightDisplayItem[] = []
+  for (const id of customIds) {
+    const label = resolveTourHighlightLabel(labels, id, locale, '')
+    if (!label.trim()) continue
+    items.push({
+      id,
+      label,
+      iconKey: icons[id]?.trim() || 'star',
+      isCustom: true,
+    })
+  }
+  return items
+}
+
 /** item id → false 이면 고객 페이지에서 숨김 (키 없음 = 표시) */
-export type TourHighlightVisibilityStore = Partial<Record<TourHighlightItemId, boolean>>
+export type TourHighlightVisibilityStore = Partial<Record<string, boolean>>
 
 export function emptyTourHighlightItemVisibility(): Record<TourHighlightItemId, boolean> {
   return Object.fromEntries(
@@ -302,37 +432,43 @@ export function emptyTourHighlightItemVisibility(): Record<TourHighlightItemId, 
 export function parseTourHighlightVisibility(raw: unknown): TourHighlightVisibilityStore {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
   const result: TourHighlightVisibilityStore = {}
-  for (const id of TOUR_HIGHLIGHT_ITEM_IDS) {
-    if ((raw as Record<string, unknown>)[id] === false) {
-      result[id] = false
-    }
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!isHighlightStorageKey(id)) continue
+    if (value === false) result[id] = false
   }
   return result
 }
 
 export function mergeTourHighlightVisibilityDefaults(
-  raw: TourHighlightVisibilityStore
-): Record<TourHighlightItemId, boolean> {
-  const result = emptyTourHighlightItemVisibility()
-  for (const id of TOUR_HIGHLIGHT_ITEM_IDS) {
+  raw: TourHighlightVisibilityStore,
+  customIds: string[] = []
+): Record<string, boolean> {
+  const result: Record<string, boolean> = { ...emptyTourHighlightItemVisibility() }
+  for (const id of customIds) {
+    result[id] = raw[id] !== false
+  }
+  for (const id of Object.keys(raw)) {
+    if (!isHighlightStorageKey(id)) continue
     if (raw[id] === false) result[id] = false
+    else if (!(id in result)) result[id] = true
   }
   return result
 }
 
 export function serializeTourHighlightVisibility(
-  visibility: Partial<Record<TourHighlightItemId, boolean>>
+  visibility: Partial<Record<string, boolean>>
 ): Record<string, boolean> {
   const result: Record<string, boolean> = {}
-  for (const id of TOUR_HIGHLIGHT_ITEM_IDS) {
-    if (visibility[id] === false) result[id] = false
+  for (const [id, value] of Object.entries(visibility)) {
+    if (!isHighlightStorageKey(id)) continue
+    if (value === false) result[id] = false
   }
   return result
 }
 
 export function readTourHighlightItemVisibility(
   visibility: TourHighlightVisibilityStore | null | undefined,
-  itemId: TourHighlightItemId
+  itemId: string
 ): boolean {
   return visibility?.[itemId] !== false
 }
@@ -346,7 +482,7 @@ export function filterVisibleTourHighlightItems(
 
 export function resolveTourHighlightLabel(
   labels: TourHighlightLabelStore | null | undefined,
-  itemId: TourHighlightItemId,
+  itemId: string,
   locale: string,
   fallback: string
 ): string {

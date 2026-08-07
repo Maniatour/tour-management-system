@@ -33,7 +33,25 @@ STAYAPI_API_KEY=
 WYNDHAM_LOGIN_USERNAME=
 WYNDHAM_LOGIN_PASSWORD=
 CRON_SECRET=
+
+# Production (Vercel): forward scrapes to a Playwright worker
+# WYNDHAM_WORKER_URL=https://worker.example.com
+# WYNDHAM_WORKER_SECRET=<shared>
+# WYNDHAM_WORKER_TIMEOUT_MS=120000
+
+# Worker host only:
+# WYNDHAM_WORKER_SELF=1
+# WYNDHAM_WORKER_PORT=8791
 ```
+
+## Production Wyndham rates
+
+Vercel cannot run Playwright. Use:
+
+1. Vercel env: `WYNDHAM_WORKER_URL` + `WYNDHAM_WORKER_SECRET` + `HOTEL_WYNDHAM_LIVE=1`
+2. Office PC/VPS: `npm run wyndham:worker` (see `automation/wyndham/README.md`)
+
+Locally, leave `WYNDHAM_WORKER_URL` empty so Chromium runs in-process.
 
 ## Crons
 

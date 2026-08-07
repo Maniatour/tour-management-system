@@ -1,15 +1,46 @@
 /**
  * Runtime readiness for Wyndham Playwright automation (local / worker).
- * Never returns secrets — only whether env + playwright look ready.
+ * Default path: guest/public rates (no login) — Rewards login hits Rate Support.
+ *
+ * Production: set WYNDHAM_WORKER_URL on Vercel; run `npm run wyndham:worker` on a PC/VPS.
  */
+import { getWyndhamWorkerConfig } from '@/lib/hotels/suppliers/wyndham/worker-client'
+
 export async function getWyndhamAutomationStatus() {
   const liveFlag = process.env.HOTEL_WYNDHAM_LIVE === '1'
-  const hasUsername = Boolean(
-    process.env.WYNDHAM_LOGIN_USERNAME?.trim() ||
-      process.env.WYNDHAM_LOGIN_EMAIL?.trim()
-  )
-  const hasPassword = Boolean(process.env.WYNDHAM_LOGIN_PASSWORD?.trim())
-  const credentialsConfigured = hasUsername && hasPassword
+  const worker = getWyndhamWorkerConfig()
+
+  if (worker.configured) {
+    const blockers: string[] = []
+    if (!worker.hasSecret) {
+      blockers.push(
+        'WYNDHAM_WORKER_SECRET이 없습니다. Vercel과 worker에 동일한 값을 설정하세요.'
+      )
+    }
+    if (!liveFlag) {
+      blockers.push(
+        'HOTEL_WYNDHAM_LIVE=1 을 Vercel에 설정하면 상시 조회가 가능합니다.'
+      )
+    }
+
+    return {
+      supplier: 'wyndham' as const,
+      liveFlag,
+      credentialsConfigured: false,
+      playwrightInstalled: false,
+      playwrightError: null as string | null,
+      authStateSaved: false,
+      authStateAgeMinutes: null as number | null,
+      readyForLive: worker.hasSecret && liveFlag,
+      canScrapeRates: worker.hasSecret,
+      mode: 'worker' as const,
+      workerUrl: worker.url,
+      blockers,
+      hint: worker.hasSecret
+        ? `원격 worker로 공개 요금을 조회합니다 (${worker.url}). worker PC에서 npm run wyndham:worker 가 실행 중이어야 합니다.`
+        : 'WYNDHAM_WORKER_URL은 있으나 SECRET이 없습니다.',
+    }
+  }
 
   let playwrightInstalled = false
   let playwrightError: string | null = null
@@ -21,34 +52,35 @@ export async function getWyndhamAutomationStatus() {
       error instanceof Error ? error.message : 'playwright import failed'
   }
 
-  const readyForLive = credentialsConfigured && playwrightInstalled
+  const readyForLive = playwrightInstalled
   const blockers: string[] = []
-  if (!credentialsConfigured) {
-    blockers.push(
-      '.env.local에 WYNDHAM_LOGIN_USERNAME / WYNDHAM_LOGIN_PASSWORD를 넣으세요. (이메일 아님 · username)'
-    )
-  }
+
   if (!playwrightInstalled) {
     blockers.push(
-      'Playwright가 없습니다. 터미널에서: npm i -D playwright && npx playwright install chromium'
+      'Playwright가 없습니다. 로컬: npm i -D playwright && npx playwright install chromium — 또는 Vercel에는 WYNDHAM_WORKER_URL을 설정하세요.'
     )
   }
   if (!liveFlag && readyForLive) {
     blockers.push(
-      '수동 조회는 forceLive로 시도할 수 있습니다. 상시 자동화는 HOTEL_WYNDHAM_LIVE=1을 권장합니다.'
+      '수동 「요금 가져오기」는 가능합니다. 상시 자동화는 HOTEL_WYNDHAM_LIVE=1을 권장합니다.'
     )
   }
 
   return {
     supplier: 'wyndham' as const,
     liveFlag,
-    credentialsConfigured,
+    credentialsConfigured: false,
     playwrightInstalled,
     playwrightError,
+    authStateSaved: false,
+    authStateAgeMinutes: null as number | null,
     readyForLive,
+    canScrapeRates: playwrightInstalled,
+    mode: 'public' as const,
+    workerUrl: null as string | null,
     blockers,
-    hint: readyForLive
-      ? '로그인 후 멤버(Wyndham Rewards) 요금 수동 조회가 가능합니다.'
-      : 'Wyndham 실조회 전에 자격증명과 Playwright를 준비하세요.',
+    hint: playwrightInstalled
+      ? '로그인 없이 공개(게스트) 요금을 조회합니다. 「요금 가져오기」를 누르세요.'
+      : 'Playwright를 설치하거나 WYNDHAM_WORKER_URL(원격 worker)을 설정하세요.',
   }
 }

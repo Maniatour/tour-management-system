@@ -11,8 +11,10 @@ import {
   syncTourHotelBookingFromReservation,
 } from '@/lib/hotels/services/reservation-service'
 import { assignReservationToTour } from '@/lib/hotels/services/tour-hotel-assignment-service'
+import { pickQuotesForHotel } from '@/lib/hotels/suppliers/wyndham/match-hotel'
 import type {
   CreateReservationParams,
+  HotelRateQuote,
   HotelSearchParams,
   HotelSupplierCode,
   RateQueryParams,
@@ -66,24 +68,29 @@ export class HotelManager {
       guests: input.guests,
       destination: input.destination,
     }
-    const availability = await supplier.checkAvailability(params)
-    let quotes = availability.quotes || []
 
-    if (quotes.length === 0) {
-      try {
-        quotes = await supplier.getRates(params)
-      } catch (error) {
-        const message =
-          availability.message ||
-          (error instanceof Error ? error.message : 'Rate fetch failed')
-        throw new Error(message)
-      }
+    // Call getRates once — Wyndham checkAvailability also scrapes via getRates,
+    // so the old checkAvailability→getRates fallback ran Playwright twice (or hung twice).
+    let allQuotes: HotelRateQuote[]
+    try {
+      allQuotes = await supplier.getRates(params)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Rate fetch failed'
+      throw new Error(message)
     }
+
+    // SRP returns every hotel in the city — keep only this catalog hotel's property
+    const quotes = pickQuotesForHotel(
+      {
+        name: input.supplierHotelId,
+        supplierHotelId: input.supplierHotelId,
+      },
+      allQuotes
+    )
 
     if (quotes.length === 0) {
       throw new Error(
-        availability.message ||
-          '요금을 가져오지 못했습니다. Wyndham 로그인·Live 설정·셀렉터를 확인하세요.'
+        `"${input.supplierHotelId}"에 맞는 요금을 결과에서 찾지 못했습니다. 호텔명/목적지(Page·Kanab)를 확인하세요.`
       )
     }
 
@@ -105,7 +112,155 @@ export class HotelManager {
       quotes,
     })
 
-    return { availability, quotes, persisted }
+    return {
+      availability: {
+        available: quotes.some((q) => q.price > 0),
+        supplier: input.supplier,
+        supplierHotelId: input.supplierHotelId,
+        quotes,
+      },
+      quotes,
+      persisted,
+    }
+  }
+
+  /**
+   * Fetch rates for many catalog hotels with one scrape per destination (Page / Kanab).
+   * Typical ops set: Wingate + Days Inn Page + La Quinta Kanab + Days Inn Kanab.
+   */
+  async compareRatesBatch(input: {
+    checkIn: string
+    checkOut: string
+    forceLive?: boolean | undefined
+    hotels: Array<{
+      hotelId: string
+      supplier: HotelSupplierCode
+      supplierHotelId: string
+      name: string
+      city?: string | null
+      state?: string | null
+    }>
+  }) {
+    if (!input.hotels.length) {
+      throw new Error('호텔 목록이 비어 있습니다.')
+    }
+
+    type BatchHotel = (typeof input.hotels)[number]
+    const groups = new Map<string, BatchHotel[]>()
+    for (const hotel of input.hotels) {
+      const key =
+        [hotel.city, hotel.state].filter(Boolean).join(' ').trim().toLowerCase() ||
+        'unknown'
+      const list = groups.get(key) || []
+      list.push(hotel)
+      groups.set(key, list)
+    }
+
+    const results: Array<{
+      hotelId: string
+      name: string
+      ok: boolean
+      price?: number
+      roomType?: string
+      error?: string
+      saved?: number
+    }> = []
+
+    for (const [destinationKey, group] of groups) {
+      const destination =
+        [group[0]?.city, group[0]?.state].filter(Boolean).join(' ').trim() ||
+        group[0]?.name ||
+        destinationKey
+
+      const supplierCode = group[0]?.supplier || 'wyndham'
+      const supplier = getHotelSupplier(supplierCode, {
+        forceLive: input.forceLive === true || supplierCode === 'wyndham',
+      })
+
+      let allQuotes: HotelRateQuote[] = []
+      try {
+        allQuotes = await supplier.getRates({
+          supplierHotelId: `batch:${destination}`,
+          destination,
+          checkIn: input.checkIn,
+          checkOut: input.checkOut,
+          rooms: 1,
+          guests: 2,
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Rate fetch failed'
+        for (const hotel of group) {
+          results.push({
+            hotelId: hotel.hotelId,
+            name: hotel.name,
+            ok: false,
+            error: message,
+          })
+        }
+        continue
+      }
+
+      for (const hotel of group) {
+        try {
+          const quotes = pickQuotesForHotel(
+            { name: hotel.name, supplierHotelId: hotel.supplierHotelId },
+            allQuotes
+          )
+          if (quotes.length === 0) {
+            results.push({
+              hotelId: hotel.hotelId,
+              name: hotel.name,
+              ok: false,
+              error: '검색 결과에서 해당 호텔을 찾지 못했습니다.',
+            })
+            continue
+          }
+
+          for (const quote of quotes) {
+            if (quote.roomType) {
+              await upsertRoom({
+                hotelId: hotel.hotelId,
+                roomType: quote.roomType,
+                bedType: quote.bedType,
+                capacity: quote.capacity,
+                supplierRoomId: quote.supplierRoomId,
+              })
+            }
+          }
+
+          const persisted = await persistRateQuotes({
+            hotelId: hotel.hotelId,
+            quotes,
+          })
+
+          const sample = quotes[0]
+          results.push({
+            hotelId: hotel.hotelId,
+            name: hotel.name,
+            ok: true,
+            price: sample?.price,
+            roomType: sample?.roomType,
+            saved: persisted.saved,
+          })
+        } catch (error) {
+          results.push({
+            hotelId: hotel.hotelId,
+            name: hotel.name,
+            ok: false,
+            error: error instanceof Error ? error.message : '저장 실패',
+          })
+        }
+      }
+    }
+
+    const okCount = results.filter((r) => r.ok).length
+    return {
+      success: okCount > 0,
+      okCount,
+      total: results.length,
+      destinations: groups.size,
+      results,
+    }
   }
 
   async reserve(input: {
