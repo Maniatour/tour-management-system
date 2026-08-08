@@ -247,6 +247,16 @@ export function TourHotelPriceCheckPanel({
     return needsPage.size + needsKanab.size
   }, [rows])
 
+  /** Wall-clock hint after parallel scrapes (~30s/wave, 2 nights at once) */
+  const scrapeEtaLabel = useMemo(() => {
+    if (!uniqueScrapeEstimate) return ''
+    // Each night scrapes Page+Kanab together; nights run 2-wide
+    const nights = Math.ceil(uniqueScrapeEstimate / 2)
+    const waves = Math.ceil(nights / 2)
+    const minutes = Math.max(1, Math.ceil((waves * 30) / 60))
+    return isKo ? `약 ${minutes}분` : `~${minutes} min`
+  }, [uniqueScrapeEstimate, isKo])
+
   /** True when last successful price check is missing or older than 24h */
   const ratesStaleOver24h = useMemo(() => {
     if (!rows.length) return false
@@ -342,8 +352,8 @@ export function TourHotelPriceCheckPanel({
     setBatchBusy(true)
     const toastId = toast.loading(
       isKo
-        ? `Wyndham 공개가 조회 중… (고유 날짜·도시 ${uniqueScrapeEstimate}회, 수 분 소요 가능)`
-        : `Fetching Wyndham rates… (${uniqueScrapeEstimate} unique date/city scrapes)`
+        ? `Wyndham 공개가 조회 중… (${uniqueScrapeEstimate}회 · 병렬 · ${scrapeEtaLabel})`
+        : `Fetching Wyndham rates… (${uniqueScrapeEstimate} scrapes · parallel · ${scrapeEtaLabel})`
     )
     const controller = new AbortController()
     const abortTimer = window.setTimeout(() => controller.abort(), 290_000)
@@ -389,7 +399,7 @@ export function TourHotelPriceCheckPanel({
       window.clearTimeout(abortTimer)
       setBatchBusy(false)
     }
-  }, [rows, isKo, uniqueScrapeEstimate, buildJobsPayload, applyResultsMap])
+  }, [rows, isKo, uniqueScrapeEstimate, scrapeEtaLabel, buildJobsPayload, applyResultsMap])
   return (
     <>
       <div

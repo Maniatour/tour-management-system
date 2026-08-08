@@ -119,6 +119,7 @@ export function TourHotelManagementPanel({
   const [localCompleted, setLocalCompleted] = useState(false)
   const [completing, setCompleting] = useState(false)
   const [surveyBusy, setSurveyBusy] = useState(false)
+  const [hydrateBusy, setHydrateBusy] = useState(false)
   const [rowBusyId, setRowBusyId] = useState<string | null>(null)
   const [surveyByStayId, setSurveyByStayId] = useState<
     Record<string, TourHotelRateSurveyResult>
@@ -129,6 +130,50 @@ export function TourHotelManagementPanel({
   }, [completionDateKey])
 
   const completed = linkedTodo?.completed ?? localCompleted
+
+  const buildStaysPayload = useCallback(
+    () => rows.flatMap((row) => buildStaysForTour(row)),
+    [rows]
+  )
+
+  const applySurveyResults = useCallback((list: TourHotelRateSurveyResult[]) => {
+    setSurveyByStayId((prev) => {
+      const next = { ...prev }
+      for (const r of list) {
+        next[r.stayId] = r
+      }
+      return next
+    })
+  }, [])
+
+  const hydrateFromDb = useCallback(async () => {
+    const stays = buildStaysPayload()
+    if (!stays.length) {
+      setSurveyByStayId({})
+      return
+    }
+    setHydrateBusy(true)
+    try {
+      const headers = await authHeaders()
+      const res = await fetch('/api/hotels/rates/tour-price-check', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ hydrate: true, survey: true, stays }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'hydrate failed')
+      applySurveyResults((json.results || []) as TourHotelRateSurveyResult[])
+    } catch {
+      // Keep previous badges if hydrate fails
+    } finally {
+      setHydrateBusy(false)
+    }
+  }, [buildStaysPayload, applySurveyResults])
+
+  useEffect(() => {
+    if (loading) return
+    void hydrateFromDb()
+  }, [loading, rows, hydrateFromDb])
 
   const dateRangeLabel = useMemo(() => {
     const fmt = (d: string) => {
@@ -164,9 +209,18 @@ export function TourHotelManagementPanel({
         keys.add(`${night.checkIn}|${night.checkOut}`)
       }
     }
-    // Page + Kanab per unique night
+    // Page + Kanab per unique night (API runs nights in parallel, dests in parallel)
     return keys.size * 2
   }, [rows])
+
+  /** Wall-clock hint: ~30s/wave; each wave covers 2 nights × Page+Kanab */
+  const surveyEtaLabel = useMemo(() => {
+    const nights = uniqueScrapeEstimate / 2
+    if (!nights) return ''
+    const waves = Math.ceil(nights / 2)
+    const minutes = Math.max(1, Math.ceil((waves * 30) / 60))
+    return isKo ? `약 ${minutes}분` : `~${minutes} min`
+  }, [uniqueScrapeEstimate, isKo])
 
   const handleToggleComplete = useCallback(async () => {
     const next = !completed
@@ -200,29 +254,24 @@ export function TourHotelManagementPanel({
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || (isKo ? '요금 조회 실패' : 'Rate survey failed'))
 
-      setSurveyByStayId((prev) => {
-        const next = { ...prev }
-        for (const r of (json.results || []) as TourHotelRateSurveyResult[]) {
-          next[r.stayId] = r
-        }
-        return next
-      })
+      applySurveyResults((json.results || []) as TourHotelRateSurveyResult[])
 
       const ok = json.okCount ?? 0
       const total = json.total ?? stays.length
       const scrapes = json.scrapeCount ?? 0
+      const saved = json.savedHotels ?? 0
       toast.success(
         isKo
-          ? `시세 조사 ${ok}/${total} · Playwright ${scrapes}회`
-          : `Survey ${ok}/${total} · ${scrapes} scrapes`,
+          ? `시세 조사 ${ok}/${total} · 저장 ${saved}곳 · Playwright ${scrapes}회`
+          : `Survey ${ok}/${total} · saved ${saved} · ${scrapes} scrapes`,
         opts?.toastId != null ? { id: opts.toastId } : undefined
       )
     },
-    [isKo]
+    [isKo, applySurveyResults]
   )
 
   const handleSurveyAll = useCallback(async () => {
-    const stays = rows.flatMap((row) => buildStaysForTour(row))
+    const stays = buildStaysPayload()
     if (!stays.length) {
       toast.error(isKo ? '조회할 투어가 없습니다.' : 'No tours to survey.')
       return
@@ -230,8 +279,8 @@ export function TourHotelManagementPanel({
     setSurveyBusy(true)
     const toastId = toast.loading(
       isKo
-        ? `Page·Kanab 시세 조사 중… (약 ${uniqueScrapeEstimate}회)`
-        : `Surveying Page·Kanab… (~${uniqueScrapeEstimate} scrapes)`
+        ? `Page·Kanab 시세 조사 중… (${uniqueScrapeEstimate}회 · 병렬 · ${surveyEtaLabel})`
+        : `Surveying Page·Kanab… (${uniqueScrapeEstimate} scrapes · parallel · ${surveyEtaLabel})`
     )
     try {
       await runSurvey(stays, { toastId })
@@ -247,7 +296,7 @@ export function TourHotelManagementPanel({
     } finally {
       setSurveyBusy(false)
     }
-  }, [rows, isKo, uniqueScrapeEstimate, runSurvey])
+  }, [buildStaysPayload, isKo, uniqueScrapeEstimate, surveyEtaLabel, runSurvey])
 
   const handleSurveyRow = useCallback(
     async (row: TourHotelManagementQueueRow) => {
@@ -338,8 +387,8 @@ export function TourHotelManagementPanel({
                 className="rounded p-1 text-sky-700 hover:bg-sky-50 disabled:opacity-40"
                 title={
                   isKo
-                    ? `미부킹 투어 Page·Kanab 시세 한 번에 조회 (약 ${uniqueScrapeEstimate}회)`
-                    : `Survey Page·Kanab rates for unbooked tours (~${uniqueScrapeEstimate})`
+                    ? `미부킹 투어 Page·Kanab 시세 한 번에 조회 (${uniqueScrapeEstimate}회 · ${surveyEtaLabel})`
+                    : `Survey Page·Kanab rates for unbooked tours (${uniqueScrapeEstimate} · ${surveyEtaLabel})`
                 }
                 aria-label={isKo ? '미부킹 투어 호텔 시세 조회' : 'Survey hotel rates'}
               >
@@ -355,7 +404,7 @@ export function TourHotelManagementPanel({
                 className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-sky-800"
                 title={isKo ? '목록 새로고침' : 'Refresh list'}
               >
-                <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`h-3.5 w-3.5 ${loading || hydrateBusy ? 'animate-spin' : ''}`} />
               </button>
             </div>
           </div>
@@ -449,8 +498,10 @@ export function TourHotelManagementPanel({
                           isKo
                             ? `N${night.nightIndex ?? '?'} 최저 ${formatUsd(night.cheapestPrice)} · ${night.cheapestHotel || ''}${
                                 night.cheapestDestination ? ` (${night.cheapestDestination})` : ''
+                              }${night.checkedAt ? ` · 조회 ${night.checkedAt.slice(5, 16).replace('T', ' ')}` : ''}`
+                            : `N${night.nightIndex ?? '?'} low ${formatUsd(night.cheapestPrice)} · ${night.cheapestHotel || ''}${
+                                night.checkedAt ? ` · ${night.checkedAt.slice(5, 16).replace('T', ' ')}` : ''
                               }`
-                            : `N${night.nightIndex ?? '?'} low ${formatUsd(night.cheapestPrice)} · ${night.cheapestHotel || ''}`
                         }
                       >
                         {nights.length > 1 ? `N${night.nightIndex ?? ''} ` : ''}

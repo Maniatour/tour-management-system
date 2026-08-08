@@ -366,7 +366,8 @@ async function scrapePublicRates(
       .first()
       .waitFor({ state: 'visible', timeout: 25_000 })
       .catch(() => undefined)
-    await session.page.waitForTimeout(2_000)
+    // Short settle for late price hydration — avoid a fixed 2s on every scrape
+    await session.page.waitForTimeout(800)
 
     const pageUrl = session.page.url()
     await appendWyndhamLog(artifact, `Results URL: ${pageUrl}`)

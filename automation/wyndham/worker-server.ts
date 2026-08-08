@@ -30,16 +30,33 @@ delete process.env.WYNDHAM_WORKER_URL
 const PORT = Number(process.env.WYNDHAM_WORKER_PORT || 8791)
 const SECRET = process.env.WYNDHAM_WORKER_SECRET?.trim() || ''
 
-/** Serialize scrapes — one Chromium job at a time */
-let jobChain: Promise<unknown> = Promise.resolve()
+/**
+ * Limited Chromium concurrency (default 2).
+ * Survey runs Page+Kanab (and multiple nights) in parallel — serial queue
+ * made “약 8회” take ~4 minutes even when the API asked for parallel scrapes.
+ */
+const MAX_CONCURRENT = Math.max(
+  1,
+  Number(process.env.WYNDHAM_WORKER_CONCURRENCY || 2)
+)
+let activeJobs = 0
+const waitQueue: Array<() => void> = []
 
 function enqueue<T>(fn: () => Promise<T>): Promise<T> {
-  const run = jobChain.then(fn, fn)
-  jobChain = run.then(
-    () => undefined,
-    () => undefined
-  )
-  return run
+  return new Promise<T>((resolve, reject) => {
+    const start = () => {
+      activeJobs += 1
+      fn()
+        .then(resolve, reject)
+        .finally(() => {
+          activeJobs -= 1
+          const next = waitQueue.shift()
+          if (next) next()
+        })
+    }
+    if (activeJobs < MAX_CONCURRENT) start()
+    else waitQueue.push(start)
+  })
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {
@@ -89,6 +106,9 @@ const server = http.createServer(async (req, res) => {
       secretConfigured: Boolean(SECRET),
       live: process.env.HOTEL_WYNDHAM_LIVE === '1',
       self: process.env.WYNDHAM_WORKER_SELF === '1',
+      concurrency: MAX_CONCURRENT,
+      activeJobs,
+      queued: waitQueue.length,
     })
     return
   }
@@ -143,7 +163,9 @@ const server = http.createServer(async (req, res) => {
 })
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[wyndham-worker] listening on http://0.0.0.0:${PORT}`)
+  console.log(
+    `[wyndham-worker] listening on http://0.0.0.0:${PORT} concurrency=${MAX_CONCURRENT}`
+  )
   if (!SECRET) {
     console.warn(
       '[wyndham-worker] WARNING: WYNDHAM_WORKER_SECRET is empty — all rate requests will be rejected'

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireStaffApiAuth } from '@/lib/api-security'
 import { getHotelSupplier } from '@/lib/hotels/suppliers/registry'
+import { runPool } from '@/lib/hotels/suppliers/wyndham/run-pool'
 import {
   destinationsToScrapeForJobs,
   enrichJobsWithDestination,
+  hydrateTourHotelRateSurveyResults,
   hydrateTourPriceCheckResults,
   KANAB_DEST,
   PAGE_DEST,
@@ -21,11 +23,61 @@ export const runtime = 'nodejs'
 /** Many unique check-in dates × Page/Kanab — allow several minutes */
 export const maxDuration = 300
 
+/**
+ * Parallel scrapes: Page+Kanab per night, and up to N nights at once.
+ * Each scrape opens Chromium (~30s mainly on Wyndham goto), so serial was ~N×30s.
+ */
+const SURVEY_NIGHT_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.WYNDHAM_SURVEY_CONCURRENCY || 2)
+)
+
 export type { TourPriceCheckJob, TourPriceCheckResult }
+
+async function scrapeDestinations(input: {
+  destinations: string[]
+  checkIn: string
+  checkOut: string
+  supplierHotelIdPrefix: string
+}): Promise<{
+  quotesByDestination: Record<string, HotelRateQuote[]>
+  failed: Map<string, string>
+  scrapeCount: number
+}> {
+  const supplier = getHotelSupplier('wyndham', { forceLive: true })
+  const quotesByDestination: Record<string, HotelRateQuote[]> = {}
+  const failed = new Map<string, string>()
+
+  await Promise.all(
+    input.destinations.map(async (destination) => {
+      try {
+        quotesByDestination[destination] = await supplier.getRates({
+          supplierHotelId: `${input.supplierHotelIdPrefix}:${destination}`,
+          destination,
+          checkIn: input.checkIn,
+          checkOut: input.checkOut,
+          rooms: 1,
+          guests: 2,
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Rate fetch failed'
+        quotesByDestination[destination] = []
+        failed.set(destination, message)
+      }
+    })
+  )
+
+  return {
+    quotesByDestination,
+    failed,
+    scrapeCount: input.destinations.length,
+  }
+}
 
 /**
  * POST /api/hotels/rates/tour-price-check
  * - { hydrate: true, jobs } → rebuild badges from hotel_rates (no scrape)
+ * - { hydrate: true, survey: true, stays } → rebuild survey badges from hotel_rates
  * - { survey: true, stays } → Page+Kanab market survey for unbooked tours
  * - { jobs } → scrape Wyndham, persist to hotel_rates, return matches
  *
@@ -42,6 +94,25 @@ export async function POST(request: NextRequest) {
       hydrate?: boolean
       survey?: boolean
       stays?: TourHotelRateSurveyStay[]
+    }
+
+    if (body.hydrate === true && body.survey === true) {
+      const stays = (Array.isArray(body.stays) ? body.stays : []).filter(
+        (s) => s?.stayId && s.checkIn && s.checkOut
+      )
+      if (!stays.length) {
+        return NextResponse.json({ error: 'stays[] required' }, { status: 400 })
+      }
+      const results = await hydrateTourHotelRateSurveyResults(stays)
+      const okCount = results.filter((r) => r.ok).length
+      return NextResponse.json({
+        success: true,
+        hydrated: true,
+        survey: true,
+        okCount,
+        total: results.length,
+        results,
+      })
     }
 
     if (body.hydrate === true) {
@@ -76,33 +147,35 @@ export async function POST(request: NextRequest) {
         byDates.set(key, list)
       }
 
-      const supplier = getHotelSupplier('wyndham', { forceLive: true })
-      const results = []
-      let scrapeCount = 0
-      const savedHotelIds = new Set<string>()
+      const dateGroups = [...byDates.values()]
 
-      for (const [, group] of byDates) {
-        const sample = group[0]!
-        const quotesByDestination: Record<string, HotelRateQuote[]> = {}
-
-        for (const destination of [PAGE_DEST, KANAB_DEST]) {
-          scrapeCount += 1
-          try {
-            quotesByDestination[destination] = await supplier.getRates({
-              supplierHotelId: `todo-hotel-survey:${destination}`,
-              destination,
-              checkIn: sample.checkIn,
-              checkOut: sample.checkOut,
-              rooms: 1,
-              guests: 2,
-            })
-          } catch (error) {
-            const message = error instanceof Error ? error.message : 'Rate fetch failed'
+      // 1) Scrape Page+Kanab for each unique night in parallel (wall-clock bottleneck)
+      const scrapedGroups = await runPool(
+        dateGroups,
+        SURVEY_NIGHT_CONCURRENCY,
+        async (group) => {
+          const sample = group[0]!
+          const scraped = await scrapeDestinations({
+            destinations: [PAGE_DEST, KANAB_DEST],
+            checkIn: sample.checkIn,
+            checkOut: sample.checkOut,
+            supplierHotelIdPrefix: 'todo-hotel-survey',
+          })
+          for (const [destination, message] of scraped.failed) {
             console.warn(`[tour-price-check survey] ${destination}: ${message}`)
-            quotesByDestination[destination] = []
           }
+          return { group, scraped }
         }
+      )
 
+      // 2) Persist / build results sequentially (catalog upserts must not race)
+      const results = []
+      const savedHotelIds = new Set<string>()
+      let scrapeCount = 0
+
+      for (const { group, scraped } of scrapedGroups) {
+        scrapeCount += scraped.scrapeCount
+        const quotesByDestination = scraped.quotesByDestination
         if (
           !(quotesByDestination[PAGE_DEST]?.length) &&
           !(quotesByDestination[KANAB_DEST]?.length)
@@ -110,7 +183,7 @@ export async function POST(request: NextRequest) {
           for (const stay of group) {
             results.push({
               stayId: stay.stayId,
-              ok: false,
+              ok: false as const,
               checkIn: stay.checkIn,
               checkOut: stay.checkOut,
               nightIndex: stay.nightIndex,
@@ -137,6 +210,7 @@ export async function POST(request: NextRequest) {
         total: results.length,
         scrapeCount,
         groupCount: byDates.size,
+        concurrency: SURVEY_NIGHT_CONCURRENCY,
         savedHotels: savedHotelIds.size,
         results,
       })
@@ -159,43 +233,47 @@ export async function POST(request: NextRequest) {
       byDates.set(key, list)
     }
 
-    const supplier = getHotelSupplier('wyndham', { forceLive: true })
-    const results: TourPriceCheckResult[] = []
-    let scrapeCount = 0
-    const savedHotelIds = new Set<string>()
+    const dateGroups = [...byDates.values()]
 
-    for (const [, group] of byDates) {
-      const sample = group[0]!
-      const destinations = destinationsToScrapeForJobs(group)
-      const requiredDests = new Set(group.map((j) => j.destination))
-      const quotesByDestination: Record<string, HotelRateQuote[]> = {}
-      const failedRequired = new Map<string, string>()
-
-      for (const destination of destinations) {
-        scrapeCount += 1
-        try {
-          quotesByDestination[destination] = await supplier.getRates({
-            supplierHotelId: `todo-price-check:${destination}`,
-            destination,
-            checkIn: sample.checkIn,
-            checkOut: sample.checkOut,
-            rooms: 1,
-            guests: 2,
-          })
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Rate fetch failed'
-          quotesByDestination[destination] = []
-          if (requiredDests.has(destination)) {
-            failedRequired.set(destination, message)
-          } else {
+    // Scrape nights in parallel; persist sequentially to avoid catalog races
+    const scrapedGroups = await runPool(
+      dateGroups,
+      SURVEY_NIGHT_CONCURRENCY,
+      async (group) => {
+        const sample = group[0]!
+        const destinations = destinationsToScrapeForJobs(group)
+        const scraped = await scrapeDestinations({
+          destinations,
+          checkIn: sample.checkIn,
+          checkOut: sample.checkOut,
+          supplierHotelIdPrefix: 'todo-price-check',
+        })
+        for (const [destination, message] of scraped.failed) {
+          if (!group.some((j) => j.destination === destination)) {
             console.warn(
               `[tour-price-check] optional scrape failed ${destination}: ${message}`
             )
           }
         }
+        return { group, scraped, destinations }
+      }
+    )
+
+    const results: TourPriceCheckResult[] = []
+    const savedHotelIds = new Set<string>()
+    let scrapeCount = 0
+
+    for (const { group, scraped } of scrapedGroups) {
+      scrapeCount += scraped.scrapeCount
+      const quotesByDestination = scraped.quotesByDestination
+      const requiredDests = new Set(group.map((j) => j.destination))
+      const failedRequired = new Map<string, string>()
+      for (const [destination, message] of scraped.failed) {
+        if (requiredDests.has(destination)) {
+          failedRequired.set(destination, message)
+        }
       }
 
-      const jobsToPersist = group.filter((j) => !failedRequired.has(j.destination))
       for (const job of group) {
         const err = failedRequired.get(job.destination)
         if (err) {
@@ -209,6 +287,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      const jobsToPersist = group.filter((j) => !failedRequired.has(j.destination))
       if (!jobsToPersist.length) continue
 
       const persisted = await persistTourPriceCheckQuotes({
@@ -226,6 +305,7 @@ export async function POST(request: NextRequest) {
       total: results.length,
       scrapeCount,
       groupCount: byDates.size,
+      concurrency: SURVEY_NIGHT_CONCURRENCY,
       savedHotels: savedHotelIds.size,
       results,
     })

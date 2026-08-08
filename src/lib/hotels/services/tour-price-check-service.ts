@@ -541,6 +541,136 @@ export async function hydrateTourPriceCheckResults(
   return results
 }
 
+/**
+ * Rebuild unbooked-tour market survey badges from hotel_rates
+ * (same Page+Kanab catalog rates the scrape path persists).
+ */
+export async function hydrateTourHotelRateSurveyResults(
+  stays: TourHotelRateSurveyStay[]
+): Promise<TourHotelRateSurveyResult[]> {
+  if (!stays.length) return []
+
+  const catalog = await listHotels({ supplier: 'wyndham', activeOnly: true })
+  const pageKanabHotels = catalog.filter(
+    (h) =>
+      hotelMatchesDestination(h, PAGE_DEST) || hotelMatchesDestination(h, KANAB_DEST)
+  )
+  const stayDates = [...new Set(stays.map((s) => s.checkIn).filter(Boolean))]
+  const db = getHotelAdminClient()
+
+  let ratesQuery = db
+    .from('hotel_rates')
+    .select('hotel_id, stay_date, price, currency, checked_at, hotels(name, city, state)')
+    .eq('supplier', 'wyndham')
+    .order('checked_at', { ascending: false })
+
+  if (stayDates.length === 1) {
+    ratesQuery = ratesQuery.eq('stay_date', stayDates[0]!)
+  } else if (stayDates.length > 1) {
+    ratesQuery = ratesQuery.in('stay_date', stayDates)
+  }
+
+  const { data: rateRows, error } = await ratesQuery.limit(2000)
+  if (error) throw new Error(error.message)
+
+  type RateRow = {
+    hotel_id: string
+    stay_date: string
+    price: number
+    currency: string
+    checked_at: string
+    hotels?: { name: string; city: string | null; state: string | null } | null
+  }
+
+  const rates = (rateRows || []) as unknown as RateRow[]
+  const rateByHotelDate = new Map<string, RateRow>()
+  for (const row of rates) {
+    const key = `${row.hotel_id}|${row.stay_date}`
+    if (!rateByHotelDate.has(key)) rateByHotelDate.set(key, row)
+  }
+
+  const emptyCatalog = pageKanabHotels.length === 0
+
+  return stays.map((stay) => {
+    const ratesList: TourPriceCheckRateItem[] = []
+    let cheapest: {
+      name: string
+      price: number
+      destination: string
+      checkedAt: string
+    } | null = null
+
+    for (const hotel of pageKanabHotels) {
+      const dest = hotelMatchesDestination(hotel, PAGE_DEST)
+        ? PAGE_DEST
+        : hotelMatchesDestination(hotel, KANAB_DEST)
+          ? KANAB_DEST
+          : ''
+      if (!dest) continue
+      const r = rateByHotelDate.get(`${hotel.hotel_id}|${stay.checkIn}`)
+      if (!r || !(Number(r.price) > 0)) continue
+      const price = Number(r.price)
+      ratesList.push({
+        roomType: hotel.name,
+        price,
+        destination: dest,
+      })
+      if (!cheapest || price < cheapest.price) {
+        cheapest = {
+          name: hotel.name,
+          price,
+          destination: dest,
+          checkedAt: r.checked_at,
+        }
+      }
+    }
+
+    ratesList.sort((a, b) => a.price - b.price)
+    if (cheapest) {
+      for (const item of ratesList) {
+        if (
+          item.roomType === cheapest.name &&
+          item.destination === cheapest.destination
+        ) {
+          item.cheapest = true
+        }
+      }
+    }
+
+    if (!cheapest) {
+      const fail: TourHotelRateSurveyResult = {
+        stayId: stay.stayId,
+        ok: false,
+        checkIn: stay.checkIn,
+        checkOut: stay.checkOut,
+        rates: ratesList,
+      }
+      if (emptyCatalog) {
+        fail.error =
+          '호텔 관리 카탈로그에 Page/Kanab 호텔이 없습니다. 먼저 호텔을 추가하세요.'
+      }
+      if (stay.nightIndex != null) fail.nightIndex = stay.nightIndex
+      if (stay.tourId) fail.tourId = stay.tourId
+      return fail
+    }
+
+    const ok: TourHotelRateSurveyResult = {
+      stayId: stay.stayId,
+      ok: true,
+      checkIn: stay.checkIn,
+      checkOut: stay.checkOut,
+      cheapestPrice: cheapest.price,
+      cheapestHotel: cheapest.name,
+      cheapestDestination: cheapest.destination,
+      rates: ratesList,
+      checkedAt: cheapest.checkedAt,
+    }
+    if (stay.nightIndex != null) ok.nightIndex = stay.nightIndex
+    if (stay.tourId) ok.tourId = stay.tourId
+    return ok
+  })
+}
+
 export function enrichJobsWithDestination(
   jobs: TourPriceCheckJob[]
 ): Array<TourPriceCheckJob & { destination: string }> {
