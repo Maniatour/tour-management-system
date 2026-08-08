@@ -1,6 +1,7 @@
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
+import { getMultiDayTourDays } from '@/lib/scheduleVehicleOilMaintenance'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -26,7 +27,30 @@ export function tourHotelManagementDateRange(): { start: string; end: string } {
   return { start, end }
 }
 
-export function shouldHideTodoChipForTourHotelManagementPanel(todo: { title?: string | null }): boolean {
+/**
+ * Multi-day tour overnight stays (Page/Kanab area).
+ * N nights = tour days − 1, starting on tour_date.
+ */
+export function resolveMultiDayHotelSurveyNights(
+  tourDate: string,
+  productId: string | null | undefined
+): Array<{ checkIn: string; checkOut: string; nightIndex: number }> {
+  const start = String(tourDate || '').trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return []
+  const days = getMultiDayTourDays(String(productId || '').trim())
+  const nightCount = Math.max(0, days - 1)
+  const nights: Array<{ checkIn: string; checkOut: string; nightIndex: number }> = []
+  for (let i = 0; i < nightCount; i++) {
+    const checkIn = dayjs(start).add(i, 'day').format('YYYY-MM-DD')
+    const checkOut = dayjs(start).add(i + 1, 'day').format('YYYY-MM-DD')
+    nights.push({ checkIn, checkOut, nightIndex: i + 1 })
+  }
+  return nights
+}
+
+export function shouldHideTodoChipForTourHotelManagementPanel(todo: {
+  title?: string | null
+}): boolean {
   const normalized = (todo.title || '').replace(/\s+/g, ' ').trim()
   if (normalized === TOUR_HOTEL_MANAGEMENT_PANEL.titleKo) return true
   if (normalized.toLowerCase() === TOUR_HOTEL_MANAGEMENT_PANEL.titleEn.toLowerCase()) return true

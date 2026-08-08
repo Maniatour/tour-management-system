@@ -163,8 +163,15 @@ export async function syncReservationPricingAggregates(
       amount: Number(r.amount) || 0,
     }))
 
+    const pricingAdultsRaw = (pricing as { pricing_adults?: number | null }).pricing_adults
+    const hasPricingAdults =
+      pricingAdultsRaw !== null &&
+      pricingAdultsRaw !== undefined &&
+      Number.isFinite(Number(pricingAdultsRaw))
     const party: PartySizeSource = {
-      adults: res.adults ?? 0,
+      adults: hasPricingAdults
+        ? Math.max(0, Math.floor(Number(pricingAdultsRaw)))
+        : (res.adults ?? 0),
       child: res.child ?? 0,
       infant: res.infant ?? 0,
     }
@@ -230,7 +237,9 @@ export async function syncReservationPricingAggregates(
     const reservationLike = {
       id: reservationId,
       channelId: cid,
-      adults: res.adults ?? 0,
+      adults: hasPricingAdults
+        ? Math.max(0, Math.floor(Number(pricingAdultsRaw)))
+        : (res.adults ?? 0),
       child: res.child ?? 0,
       infant: res.infant ?? 0,
       status: res.status as Reservation['status'],

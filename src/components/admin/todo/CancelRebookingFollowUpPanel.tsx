@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { CalendarPlus, CalendarX, ExternalLink, Loader2, RefreshCw, Users } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { TodoPanelStatusButtons } from '@/components/admin/todo/TodoPanelStatusButtons'
@@ -23,6 +24,14 @@ import { upsertReservationCancelFollowUpManual } from '@/lib/reservationCancelFo
 import { getCustomerName, getProductInternalName, getReservationPartySize } from '@/utils/reservationUtils'
 import type { CancelFollowUpManualKind } from '@/components/reservation/ReservationFollowUpQueueModal'
 import type { ReservationFollowUpPipelineSnapshot } from '@/lib/reservationFollowUpPipeline'
+
+const ReservationDetailPageView = dynamic(
+  () =>
+    import('@/components/reservation/ReservationDetailPageView').then(
+      (mod) => mod.ReservationDetailPageView
+    ),
+  { ssr: false, loading: () => null }
+)
 
 type CancelRebookingFollowUpPanelProps = {
   locale: string
@@ -126,7 +135,7 @@ export function CancelRebookingFollowUpPanel({
   onToggleLinkedTodo,
   onCompletedChange,
   onEditRequest,
-  onOpenReservation,
+  onOpenReservation: _onOpenReservation,
   onHold = false,
   holdEnabled = false,
   onToggleHold,
@@ -158,6 +167,7 @@ export function CancelRebookingFollowUpPanel({
 
   const [localCompleted, setLocalCompleted] = useState(false)
   const [completing, setCompleting] = useState(false)
+  const [editingReservationId, setEditingReservationId] = useState<string | null>(null)
 
   useEffect(() => {
     setLocalCompleted(readCancelRebookingFollowUpLocalCompleted(completionDateKey))
@@ -187,6 +197,11 @@ export function CancelRebookingFollowUpPanel({
     void reload({ silent: true })
   }, [reload])
 
+  const handleModalSaved = useCallback(() => {
+    setEditingReservationId(null)
+    bumpRefresh()
+  }, [bumpRefresh])
+
   const handleManualChange = useCallback(
     async (reservationId: string, kind: CancelFollowUpManualKind, action: 'mark' | 'clear') => {
       try {
@@ -209,6 +224,7 @@ export function CancelRebookingFollowUpPanel({
   )
 
   return (
+    <>
     <div
       className={
         isList
@@ -388,17 +404,15 @@ export function CancelRebookingFollowUpPanel({
                       sentBy={sentBy}
                       uiLocale={locale === 'en' ? 'en' : 'ko'}
                     />
-                    {onOpenReservation ? (
-                      <button
-                        type="button"
-                        onClick={() => onOpenReservation(reservation.id)}
-                        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                        title={isKo ? '예약 카드에서 열기' : 'Open in reservations'}
-                        aria-label={isKo ? '예약 카드에서 열기' : 'Open in reservations'}
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </button>
-                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setEditingReservationId(reservation.id)}
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                      title={isKo ? '예약 카드에서 열기' : 'Open reservation card'}
+                      aria-label={isKo ? '예약 카드에서 열기' : 'Open reservation card'}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 </div>
                 <CancelRebookingFollowUpStepBar
@@ -438,5 +452,17 @@ export function CancelRebookingFollowUpPanel({
         )}
       </div>
     </div>
+
+    {editingReservationId ? (
+      <ReservationDetailPageView
+        reservationId={editingReservationId}
+        layout="modal"
+        modalLightLoad
+        modalStackLevel="elevated"
+        onCancel={() => setEditingReservationId(null)}
+        onSaved={handleModalSaved}
+      />
+    ) : null}
+    </>
   )
 }

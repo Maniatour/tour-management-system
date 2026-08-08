@@ -19,6 +19,7 @@ import { isTourCancelled, isTourDeleted } from '@/utils/tourStatusUtils'
 export type TourHotelManagementQueueRow = {
   id: string
   tour_date: string
+  product_id: string | null
   product_name: string
   guide_name: string | null
   booked_hotel_count: number
@@ -150,6 +151,7 @@ export function useTourHotelManagementQueue(enabled = true) {
         nextRows.push({
           id: tour.id,
           tour_date: tour.tour_date,
+          product_id: tour.product_id ? String(tour.product_id) : null,
           product_name: productDisplayName(tour),
           guide_name: guideEmail ? teamDisplayName(teamMap.get(guideEmail)) : null,
           booked_hotel_count: bookedHotelCount,

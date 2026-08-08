@@ -174,7 +174,11 @@ export function PendingCustomerFollowUpStrip({
     }
   }
 
-  const saveCustomerResponse = async ({ text, images }: CustomerFollowUpResponseSubmitPayload) => {
+  const saveCustomerResponse = async ({
+    text,
+    images,
+    existingImages = [],
+  }: CustomerFollowUpResponseSubmitPayload) => {
     if (!userEmail) {
       alert(locale === 'ko' ? '로그인이 필요합니다.' : 'Login required.')
       return
@@ -184,12 +188,16 @@ export function PendingCustomerFollowUpStrip({
       return
     }
     const trimmedText = text.trim()
-    if (!trimmedText && images.length === 0) return
+    if (!trimmedText && images.length === 0 && existingImages.length === 0) return
 
     setResponseSaving(true)
     try {
       const uploadedImages = await uploadCustomerResponseImages(reservationId, images, locale)
-      const content = buildCustomerResponseContactContent(trimmedText, uploadedImages, locale)
+      const content = buildCustomerResponseContactContent(
+        trimmedText,
+        [...existingImages, ...uploadedImages],
+        locale
+      )
       const { error } = await fromUntypedTable(supabase, 'reservation_follow_ups').insert({
         reservation_id: reservationId,
         type: 'contact',

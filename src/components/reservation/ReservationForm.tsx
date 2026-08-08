@@ -167,6 +167,7 @@ import {
 } from '@/utils/reservationPricingBalance'
 import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
 import { sumReservationOptionCancelledRefundTotals } from '@/utils/reservationOptionsShared'
+import { computePricingTotalsForDbSave } from '@/utils/reservationPricingSaveTotals'
 import {
   computeRefundAmountForCompanyRevenueBlock,
   computeStoredCompanyRevenueFields,
@@ -5454,18 +5455,11 @@ export default function ReservationForm({
 
       let fd = formDataRef.current
 
-      // 불포함 가격 합계(인원별) = product_price_total·subtotal·total_price에 포함하여 저장 (청구 인원 = pricingAdults+아동+유아)
-      const billingPax = (fd.pricingAdults ?? fd.adults) + fd.child + fd.infant
-      const notIncludedTotal = (Number(fd.not_included_price) || 0) * (billingPax || 1)
-
       const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
       const newAdult = toNum(fd.adultProductPrice)
       const newChild = toNum(fd.childProductPrice)
       const newInfant = toNum(fd.infantProductPrice)
-      const newProductTotal = (toNum(fd.productPriceTotal) || 0) + notIncludedTotal
       const newNotIncluded = toNum(fd.not_included_price)
-      const newSubtotal = (toNum(fd.subtotal) || 0) + notIncludedTotal
-      const newTotal = (toNum(fd.totalPrice) || 0) + notIncludedTotal
       const newChoicesTotal = toNum(fd.choicesTotal)
       const newOptionTotal = toNum(fd.optionTotal)
       const newRequiredOptionTotal = toNum(fd.requiredOptionTotal)
@@ -5499,11 +5493,12 @@ export default function ReservationForm({
 
       let isOTAChannel = false
       let isHomepageBooking = String(fd.channelId ?? '').trim() === 'M00001'
+      let channelPricingType: string | null = null
       try {
         if (fd.channelId) {
           const { data: chRow } = await (supabase as any)
             .from('channels')
-            .select('type, category, name')
+            .select('type, category, name, pricing_type')
             .eq('id', fd.channelId)
             .maybeSingle()
           if (chRow) {
@@ -5515,6 +5510,7 @@ export default function ReservationForm({
               isHomepageBooking ||
               nm.toLowerCase().includes('homepage') ||
               nm.includes('홈페이지')
+            channelPricingType = (chRow as { pricing_type?: string | null }).pricing_type ?? null
           }
         }
       } catch {
@@ -5523,6 +5519,70 @@ export default function ReservationForm({
 
       // 입금·채널 조회 await 이후 최신 폼(선결제 지출 등) 반영
       fd = formDataRef.current
+
+      let reservationOptionsRows: Array<{
+        reservation_id: string
+        total_price?: unknown
+        price?: unknown
+        ea?: unknown
+        status?: string | null
+      }> = []
+      try {
+        const { data: optRows } = await (supabase as any)
+          .from('reservation_options')
+          .select('reservation_id, total_price, price, ea, status')
+          .eq('reservation_id', reservationId)
+        reservationOptionsRows = (optRows || []) as typeof reservationOptionsRows
+      } catch {
+        reservationOptionsRows = []
+      }
+      const optionActiveSum =
+        aggregateReservationOptionSumsByReservationId(reservationOptionsRows).get(reservationId) ?? 0
+      /** 화면 ①과 동일: DB 옵션 합이 있으면 우선, 없으면 폼 로드값 */
+      const optionsTotalForCustomerPayment = Math.max(
+        optionActiveSum,
+        Math.max(0, Number(reservationOptionsTotalPrice) || 0)
+      )
+
+      const selectedChannelForSave =
+        channels.find((c) => c.id === fd.channelId) ||
+        (channelPricingType != null ? { pricing_type: channelPricingType } : null)
+
+      const saveTotals = computePricingTotalsForDbSave({
+        amounts: {
+          adultProductPrice: fd.adultProductPrice,
+          childProductPrice: fd.childProductPrice,
+          infantProductPrice: fd.infantProductPrice,
+          productPriceTotal: fd.productPriceTotal,
+          not_included_price: fd.not_included_price ?? null,
+          choiceNotIncludedTotal:
+            (fd as { choiceNotIncludedTotal?: number }).choiceNotIncludedTotal ?? null,
+          residentStatusAmounts: fd.residentStatusAmounts ?? null,
+          couponDiscount: fd.couponDiscount,
+          additionalDiscount: fd.additionalDiscount,
+          additionalCost: fd.additionalCost,
+          tax: fd.tax,
+          cardFee: fd.cardFee,
+          prepaymentCost: fd.prepaymentCost,
+          prepaymentTip: fd.prepaymentTip,
+          refundAmount: fd.refundAmount,
+          status: fd.status ?? null,
+        },
+        party: {
+          pricingAdults: fd.pricingAdults,
+          adults: fd.adults,
+          child: fd.child,
+          infant: fd.infant,
+        },
+        channel: selectedChannelForSave,
+        reservationOptionsTotalUsd: optionsTotalForCustomerPayment,
+        returnedAmount,
+      })
+
+      // product_price_total = 판매가×인원 + 불포함(필드×청구인원). total_price = 화면 ①과 동일(거주비 포함)
+      const newProductTotal = saveTotals.productPriceTotal
+      const newSubtotal = saveTotals.subtotal
+      const newTotal = saveTotals.totalPrice
 
       const depAmt = overrides?.depositAmount ?? toNum(fd.depositAmount)
       const storedCb =
@@ -5579,24 +5639,6 @@ export default function ReservationForm({
 
       let storedMetrics: { company_total_revenue: number; operating_profit: number } | null = null
       if (!isPartialPaymentSync) {
-        let reservationOptionsRows: Array<{
-          reservation_id: string
-          total_price?: unknown
-          price?: unknown
-          ea?: unknown
-          status?: string | null
-        }> = []
-        try {
-          const { data: optRows } = await (supabase as any)
-            .from('reservation_options')
-            .select('reservation_id, total_price, price, ea, status')
-            .eq('reservation_id', reservationId)
-          reservationOptionsRows = (optRows || []) as typeof reservationOptionsRows
-        } catch {
-          reservationOptionsRows = []
-        }
-        const optionActiveSum =
-          aggregateReservationOptionSumsByReservationId(reservationOptionsRows).get(reservationId) ?? 0
         const optionCancelRefundUsd = sumReservationOptionCancelledRefundTotals(
           reservationOptionsRows as Array<{ status?: string | null; total_price?: number | null }>
         )
@@ -5630,9 +5672,13 @@ export default function ReservationForm({
         const pricingAdultsVal = Math.max(0, Math.floor(Number(fd.pricingAdults ?? fd.adults) || 0))
         const stFd = String(fd.status || '').toLowerCase().trim()
         const isResCancelledFd = stFd === 'cancelled' || stFd === 'canceled'
-        const partyFd = { adults: fd.adults, children: fd.child, infants: fd.infant }
+        const partyFd = {
+          adults: pricingAdultsVal,
+          children: fd.child,
+          infants: fd.infant,
+        }
         const pricingLikeFd: Parameters<typeof computeCustomerPaymentNetForCompanyRevenueBase>[0] = {
-          product_price_total: toNum(fd.productPriceTotal),
+          product_price_total: saveTotals.baseProductPriceTotal,
           coupon_discount: toNum(fd.couponDiscount),
           additional_discount: toNum(fd.additionalDiscount),
           additional_cost: toNum(fd.additionalCost),
@@ -5740,12 +5786,17 @@ export default function ReservationForm({
         prepayment_cost: prepaymentCostSave,
         prepayment_tip: prepaymentTipSave,
         selected_options: fd.selectedOptionalOptions,
-        option_total: keep(newOptionTotal, (existing as any)?.option_total),
+        option_total: keep(
+          Math.max(optionActiveSum, newOptionTotal),
+          (existing as any)?.option_total
+        ),
         total_price: cancelledSave
           ? Math.round(newTotal * 100) / 100
           : keep(newTotal, (existing as any)?.total_price),
         deposit_amount: overrides?.depositAmount ?? (Number(fd.depositAmount) || 0),
-        balance_amount: overrides?.balanceAmount ?? (Number(fd.onSiteBalanceAmount ?? fd.balanceAmount) || 0),
+        balance_amount:
+          overrides?.balanceAmount ??
+          (Number(fd.onSiteBalanceAmount ?? fd.balanceAmount) || 0),
         private_tour_additional_cost: Number(fd.privateTourAdditionalCost) || 0,
         commission_percent: Number(fd.commission_percent) || 0,
         commission_amount: keep(Number(fd.commission_amount) || 0, (existing as any)?.commission_amount),
@@ -5801,6 +5852,32 @@ export default function ReservationForm({
       }
 
       console.log('가격 정보가 성공적으로 저장되었습니다.')
+      // 저장한 total_price를 폼·로드 스냅샷에 반영 → 재저장 시 이중 가산·표시 불일치 방지
+      const persistedTotal = Math.round(newTotal * 100) / 100
+      setFormData((prev: typeof formData) => ({
+        ...prev,
+        totalPrice: persistedTotal,
+        productPriceTotal: saveTotals.baseProductPriceTotal,
+        subtotal: Math.round(newSubtotal * 100) / 100,
+      }))
+      setPricingDbSnapshot((prev) =>
+        prev
+          ? {
+              ...prev,
+              total_price: persistedTotal,
+              ...(storedMetrics
+                ? {
+                    company_total_revenue: storedMetrics.company_total_revenue,
+                    operating_profit: storedMetrics.operating_profit,
+                  }
+                : {}),
+            }
+          : {
+              total_price: persistedTotal,
+              company_total_revenue: storedMetrics?.company_total_revenue ?? null,
+              operating_profit: storedMetrics?.operating_profit ?? null,
+            }
+      )
       if (existingAudited && isSuperPricingAdmin && !isPartialPaymentSync) {
         const actorName = auditDisplayName(currentTeamProfile, authUser?.email)
         await insertPricingAuditNotifications(
@@ -5814,7 +5891,15 @@ export default function ReservationForm({
       console.error('가격 정보 저장 중 오류:', error)
       throw error
     }
-  }, [authUser?.email, currentTeamProfile, insertPricingAuditNotifications, isSuperPricingAdmin, onPricingSaved])
+  }, [
+    authUser?.email,
+    channels,
+    currentTeamProfile,
+    insertPricingAuditNotifications,
+    isSuperPricingAdmin,
+    onPricingSaved,
+    reservationOptionsTotalPrice,
+  ])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -6091,6 +6176,10 @@ export default function ReservationForm({
           selectedOptionalOptions: fd.selectedOptionalOptions,
           optionTotal: toNum(fd.optionTotal),
           totalPrice: toNum(fd.totalPrice),
+          choiceNotIncludedTotal: toNum(
+            (fd as { choiceNotIncludedTotal?: number }).choiceNotIncludedTotal
+          ),
+          residentStatusAmounts: fd.residentStatusAmounts,
           // DB deposit_amount = 입금 보증 버킷 합(파트너 수령 등, Refunded·Returned 별도). 잔금 수령은 payment_records·balanceReceivedTotal, 잔액은 balance_amount
           depositAmount: toNum(fd.depositAmount),
           balanceAmount: toNum(fd.onSiteBalanceAmount ?? fd.balanceAmount ?? 0),

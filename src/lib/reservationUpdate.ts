@@ -24,6 +24,7 @@ import {
   computeRefundAmountForCompanyRevenueBlock,
   computeStoredCompanyRevenueFields,
 } from '@/utils/storedCompanyRevenue'
+import { computePricingTotalsForDbSave } from '@/utils/reservationPricingSaveTotals'
 import { isNoShowReservationStatus } from '@/lib/reservationStatus'
 import {
   CANCEL_DEPOSIT_REFUND_NOTE_AUTO,
@@ -367,8 +368,12 @@ export async function updateReservation(
     // reservation_pricing
     const pricingInfo = payload.pricingInfo as Record<string, unknown> | undefined
     if (pricingInfo) {
-      const totalPeople = (payload.adults || 0) + (payload.child || 0) + (payload.infant || 0)
-      const notIncludedTotal = toNum(pricingInfo.not_included_price) * (totalPeople || 1)
+      const pricingAdultsVal = Math.max(
+        0,
+        Math.floor(toNum(pricingInfo.pricingAdults ?? pricingInfo.pricing_adults ?? payload.adults))
+      )
+      const childVal = payload.child || 0
+      const infantVal = payload.infant || 0
 
       const { data: existingRow } = await supabase
         .from('reservation_pricing')
@@ -385,22 +390,10 @@ export async function updateReservation(
       const newAdult = toNum(pricingInfo.adultProductPrice)
       const newChild = toNum(pricingInfo.childProductPrice)
       const newInfant = toNum(pricingInfo.infantProductPrice)
-      const newProductTotal = toNum(pricingInfo.productPriceTotal) + notIncludedTotal
       const newNotIncluded = toNum(pricingInfo.not_included_price)
-      const newSubtotal = toNum(pricingInfo.subtotal) + notIncludedTotal
-      const newTotal = toNum(pricingInfo.totalPrice) + notIncludedTotal
       const newChoicesTotal = toNum(pricingInfo.choicesTotal)
       const newOptionTotal = toNum(pricingInfo.optionTotal)
       const newRequiredOptionTotal = toNum(pricingInfo.requiredOptionTotal)
-
-      // savePricingInfo와 동일: 채널 정산 산식용 상품 합계(불포함 × 청구 인원)
-      const pricingAdultsVal = Math.max(
-        0,
-        Math.floor(toNum(pricingInfo.pricingAdults ?? pricingInfo.pricing_adults ?? payload.adults))
-      )
-      const billingPaxForSettlement = pricingAdultsVal + (payload.child || 0) + (payload.infant || 0)
-      const notIncludedForSettlement = toNum(pricingInfo.not_included_price) * (billingPaxForSettlement || 1)
-      const productTotalForChannelSettlement = toNum(pricingInfo.productPriceTotal) + notIncludedForSettlement
 
       let returnedAmount = 0
       let partnerReceivedAmount = 0
@@ -429,13 +422,33 @@ export async function updateReservation(
         paymentRecords = []
       }
 
+      let reservationOptionsRows: Array<{
+        reservation_id: string
+        total_price?: unknown
+        price?: unknown
+        ea?: unknown
+        status?: string | null
+      }> = []
+      try {
+        const { data: optRows } = await (supabase as any)
+          .from('reservation_options')
+          .select('reservation_id, total_price, price, ea, status')
+          .eq('reservation_id', reservationId)
+        reservationOptionsRows = (optRows || []) as typeof reservationOptionsRows
+      } catch {
+        reservationOptionsRows = []
+      }
+      const optionActiveSum =
+        aggregateReservationOptionSumsByReservationId(reservationOptionsRows).get(reservationId) ?? 0
+
+      let channelPricingType: string | null = null
       let isOTAChannel = false
       let isHomepageBooking = String(payload.channelId ?? '').trim() === 'M00001'
       try {
         if (payload.channelId) {
           const { data: chRow } = await (supabase as any)
             .from('channels')
-            .select('type, category, name')
+            .select('type, category, name, pricing_type')
             .eq('id', payload.channelId)
             .maybeSingle()
           if (chRow) {
@@ -447,11 +460,56 @@ export async function updateReservation(
               isHomepageBooking ||
               nm.toLowerCase().includes('homepage') ||
               nm.includes('홈페이지')
+            channelPricingType =
+              (chRow as { pricing_type?: string | null }).pricing_type ?? null
           }
         }
       } catch {
         isOTAChannel = false
       }
+
+      const saveTotals = computePricingTotalsForDbSave({
+        amounts: {
+          adultProductPrice: newAdult,
+          childProductPrice: newChild,
+          infantProductPrice: newInfant,
+          productPriceTotal: toNum(pricingInfo.productPriceTotal),
+          not_included_price: newNotIncluded,
+          choiceNotIncludedTotal: toNum(
+            pricingInfo.choiceNotIncludedTotal ?? pricingInfo.choice_not_included_total
+          ),
+          residentStatusAmounts:
+            (pricingInfo.residentStatusAmounts as Record<string, number> | undefined) ?? null,
+          couponDiscount: toNum(pricingInfo.couponDiscount),
+          additionalDiscount: toNum(pricingInfo.additionalDiscount),
+          additionalCost: toNum(pricingInfo.additionalCost),
+          tax: toNum(pricingInfo.tax),
+          cardFee: toNum(pricingInfo.cardFee),
+          prepaymentCost: toNum(pricingInfo.prepaymentCost),
+          prepaymentTip: toNum(pricingInfo.prepaymentTip),
+          refundAmount: toNum(pricingInfo.refundAmount),
+          status: (payload.status as string | null | undefined) ?? null,
+        },
+        party: {
+          pricingAdults: pricingAdultsVal,
+          adults: payload.adults || 0,
+          child: childVal,
+          infant: infantVal,
+        },
+        channel: channelPricingType != null ? { pricing_type: channelPricingType } : null,
+        reservationOptionsTotalUsd: Math.max(optionActiveSum, newOptionTotal),
+        returnedAmount,
+      })
+
+      const newProductTotal = saveTotals.productPriceTotal
+      const newSubtotal = saveTotals.subtotal
+      const newTotal = saveTotals.totalPrice
+
+      // savePricingInfo와 동일: 채널 정산 산식용 상품 합계(불포함 × 청구 인원)
+      const billingPaxForSettlement = pricingAdultsVal + childVal + infantVal
+      const notIncludedForSettlement = toNum(pricingInfo.not_included_price) * (billingPaxForSettlement || 1)
+      const productTotalForChannelSettlement =
+        saveTotals.baseProductPriceTotal + notIncludedForSettlement
 
       const depAmtForGross = toNum(pricingInfo.depositAmount)
       const storedCb =
@@ -476,7 +534,7 @@ export async function updateReservation(
         productPriceTotal: productTotalForChannelSettlement,
         couponDiscount: toNum(pricingInfo.couponDiscount),
         additionalDiscount: toNum(pricingInfo.additionalDiscount),
-        optionTotalSum: newOptionTotal,
+        optionTotalSum: Math.max(optionActiveSum, newOptionTotal),
         additionalCost: toNum(pricingInfo.additionalCost),
         tax: toNum(pricingInfo.tax),
         cardFee: toNum(pricingInfo.cardFee ?? (pricingInfo as { card_fee?: unknown }).card_fee),
@@ -511,24 +569,6 @@ export async function updateReservation(
         return Math.round(channelSettlementComputed * 100) / 100
       })()
 
-      let reservationOptionsRows: Array<{
-        reservation_id: string
-        total_price?: unknown
-        price?: unknown
-        ea?: unknown
-        status?: string | null
-      }> = []
-      try {
-        const { data: optRows } = await supabase
-          .from('reservation_options')
-          .select('reservation_id, total_price, price, ea, status')
-          .eq('reservation_id', reservationId)
-        reservationOptionsRows = (optRows || []) as typeof reservationOptionsRows
-      } catch {
-        reservationOptionsRows = []
-      }
-      const optionActiveSum =
-        aggregateReservationOptionSumsByReservationId(reservationOptionsRows).get(reservationId) ?? 0
       const optionCancelRefundUsd = sumReservationOptionCancelledRefundTotals(
         reservationOptionsRows as Array<{ status?: string | null; total_price?: number | null }>
       )
@@ -562,12 +602,12 @@ export async function updateReservation(
       const stPl = String(payload.status || '').toLowerCase().trim()
       const isResCancelledPl = stPl === 'cancelled' || stPl === 'canceled'
       const partyPl = {
-        adults: payload.adults,
-        children: payload.child,
-        infants: payload.infant,
+        adults: pricingAdultsVal,
+        children: childVal,
+        infants: infantVal,
       }
       const pricingLikePl: Parameters<typeof computeCustomerPaymentNetForCompanyRevenueBase>[0] = {
-        product_price_total: newProductTotal,
+        product_price_total: saveTotals.baseProductPriceTotal,
         coupon_discount: toNum(pricingInfo.couponDiscount),
         additional_discount: toNum(pricingInfo.additionalDiscount),
         additional_cost: toNum(pricingInfo.additionalCost),
@@ -609,6 +649,11 @@ export async function updateReservation(
         pricingAdults: pricingAdultsVal,
         child: payload.child || 0,
         infant: payload.infant || 0,
+        ...(pricingInfo.residentStatusAmounts &&
+        typeof pricingInfo.residentStatusAmounts === 'object' &&
+        Object.keys(pricingInfo.residentStatusAmounts as object).length > 0
+          ? { residentStatusAmounts: pricingInfo.residentStatusAmounts as Record<string, number> }
+          : {}),
         additionalDiscount: toNum(pricingInfo.additionalDiscount),
         additionalCost: toNum(pricingInfo.additionalCost),
         tax: toNum(pricingInfo.tax),
@@ -644,7 +689,7 @@ export async function updateReservation(
         prepayment_cost: Math.round(toNum(pricingInfo.prepaymentCost) * 100) / 100,
         prepayment_tip: Math.round(toNum(pricingInfo.prepaymentTip) * 100) / 100,
         selected_options: pricingInfo.selectedOptionalOptions ?? {},
-        option_total: keep(newOptionTotal, existingRow?.option_total),
+        option_total: keep(Math.max(optionActiveSum, newOptionTotal), existingRow?.option_total),
         total_price: keep(newTotal, existingRow?.total_price),
         deposit_amount: toNum(pricingInfo.depositAmount),
         balance_amount: toNum(pricingInfo.balanceAmount),

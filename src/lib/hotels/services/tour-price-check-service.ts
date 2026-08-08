@@ -13,6 +13,8 @@ import {
   resolveTourHotelPriceCheckDestination,
 } from '@/lib/hotels/suppliers/wyndham/match-hotel'
 import type {
+  TourHotelRateSurveyResult,
+  TourHotelRateSurveyStay,
   TourPriceCheckJob,
   TourPriceCheckRateItem,
   TourPriceCheckResult,
@@ -129,6 +131,45 @@ function findCheapestProperty(allQuotes: HotelRateQuote[]): {
     }
   }
   return best
+}
+
+/**
+ * Keep only scraped quotes that match active hotels catalog rows
+ * (호텔 관리 · 투어 숙박). One quote set per catalog hotel (lowest night price).
+ */
+function filterQuotesToCatalogHotels(
+  allQuotes: HotelRateQuote[],
+  catalog: HotelRow[],
+  destination: string
+): HotelRateQuote[] {
+  if (!allQuotes.length || !catalog.length) return []
+  const destHotels = catalog.filter((h) => hotelMatchesDestination(h, destination))
+  const out: HotelRateQuote[] = []
+  const seenHotelIds = new Set<string>()
+
+  for (const hotel of destHotels) {
+    if (seenHotelIds.has(hotel.hotel_id)) continue
+    const matched = pickQuotesForHotel(
+      { name: hotel.name, supplierHotelId: hotel.supplier_hotel_id },
+      allQuotes
+    )
+    if (!matched.length) continue
+    seenHotelIds.add(hotel.hotel_id)
+    // Use catalog display name; keep lowest-priced night sample for survey UI
+    const sample = matched.reduce((a, b) => (a.price <= b.price ? a : b))
+    out.push({
+      ...sample,
+      roomType: hotel.name,
+      supplierHotelId: hotel.supplier_hotel_id,
+      raw: {
+        ...(sample.raw || {}),
+        destination,
+        catalogHotelId: hotel.hotel_id,
+        catalogName: hotel.name,
+      },
+    })
+  }
+  return out
 }
 
 async function persistQuotesForDestination(input: {
@@ -509,4 +550,93 @@ export function enrichJobsWithDestination(
       ...j,
       destination: resolveTourHotelPriceCheckDestination(j.hotel, j.city),
     }))
+}
+
+/**
+ * Market survey for unbooked multi-day tours — scrape Page + Kanab and persist catalog rates.
+ * UI/cheapest use only hotels already in the 호텔 관리 catalog (not every Wyndham listing).
+ */
+export async function runTourHotelRateSurvey(input: {
+  quotesByDestination: Record<string, HotelRateQuote[]>
+  stays: TourHotelRateSurveyStay[]
+}): Promise<{
+  results: TourHotelRateSurveyResult[]
+  savedHotelIds: string[]
+}> {
+  const { quotesByDestination, stays } = input
+  const catalog = await listHotels({ supplier: 'wyndham', activeOnly: true })
+  let workingCatalog = [...catalog]
+  const savedHotelIds: string[] = []
+
+  for (const [destination, quotes] of Object.entries(quotesByDestination)) {
+    const tagged = tagQuotes(quotes, destination)
+    const persisted = await persistQuotesForDestination({
+      destination,
+      allQuotes: tagged,
+      catalog: workingCatalog,
+    })
+    workingCatalog = persisted.workingCatalog
+    for (const id of persisted.savedHotelIds) {
+      if (!savedHotelIds.includes(id)) savedHotelIds.push(id)
+    }
+  }
+
+  const pageQuotes = filterQuotesToCatalogHotels(
+    tagQuotes(quotesByDestination[PAGE_DEST] || [], PAGE_DEST),
+    catalog,
+    PAGE_DEST
+  )
+  const kanabQuotes = filterQuotesToCatalogHotels(
+    tagQuotes(quotesByDestination[KANAB_DEST] || [], KANAB_DEST),
+    catalog,
+    KANAB_DEST
+  )
+  const combined = [...pageQuotes, ...kanabQuotes]
+  const cheapest = findCheapestProperty(combined)
+  const rateOpts: { cheapestRoomType?: string } = {}
+  if (cheapest?.roomType) rateOpts.cheapestRoomType = cheapest.roomType
+  const rates = buildPropertyRates(combined, rateOpts)
+  const checkedAt = new Date().toISOString()
+
+  const emptyCatalog =
+    catalog.filter(
+      (h) =>
+        hotelMatchesDestination(h, PAGE_DEST) || hotelMatchesDestination(h, KANAB_DEST)
+    ).length === 0
+
+  const results: TourHotelRateSurveyResult[] = stays.map((stay) => {
+    if (!combined.length || !cheapest) {
+      const fail: TourHotelRateSurveyResult = {
+        stayId: stay.stayId,
+        ok: false,
+        checkIn: stay.checkIn,
+        checkOut: stay.checkOut,
+        error: emptyCatalog
+          ? '호텔 관리 카탈로그에 Page/Kanab 호텔이 없습니다. 먼저 호텔을 추가하세요.'
+          : '카탈로그 호텔에 맞는 Page/Kanab 공개 요금을 찾지 못했습니다.',
+        rates,
+        checkedAt,
+      }
+      if (stay.nightIndex != null) fail.nightIndex = stay.nightIndex
+      if (stay.tourId) fail.tourId = stay.tourId
+      return fail
+    }
+
+    const ok: TourHotelRateSurveyResult = {
+      stayId: stay.stayId,
+      ok: true,
+      checkIn: stay.checkIn,
+      checkOut: stay.checkOut,
+      cheapestPrice: cheapest.price,
+      cheapestHotel: cheapest.roomType,
+      rates,
+      checkedAt,
+    }
+    if (stay.nightIndex != null) ok.nightIndex = stay.nightIndex
+    if (stay.tourId) ok.tourId = stay.tourId
+    if (cheapest.destination) ok.cheapestDestination = cheapest.destination
+    return ok
+  })
+
+  return { results, savedHotelIds }
 }

@@ -17,6 +17,30 @@ export type TourPriceCheckRateItem = {
   destination?: string
 }
 
+/** Unbooked multi-day tour hotel market survey (Page + Kanab). */
+export type TourHotelRateSurveyStay = {
+  stayId: string
+  checkIn: string
+  checkOut: string
+  nightIndex?: number
+  tourId?: string
+}
+
+export type TourHotelRateSurveyResult = {
+  stayId: string
+  ok: boolean
+  checkIn: string
+  checkOut: string
+  nightIndex?: number
+  tourId?: string
+  cheapestPrice?: number
+  cheapestHotel?: string
+  cheapestDestination?: string
+  rates?: TourPriceCheckRateItem[]
+  error?: string
+  checkedAt?: string
+}
+
 export type TourPriceCheckResult = {
   bookingId: string
   ok: boolean

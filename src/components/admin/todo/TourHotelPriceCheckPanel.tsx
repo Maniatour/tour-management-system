@@ -68,6 +68,21 @@ function formatUsd(amount: number | null | undefined): string {
   return `$${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
 }
 
+/** Hotel stay length label: 1박 / 2박 / 3박 (from check-in → check-out). */
+function formatStayNightsLabel(
+  checkIn: string,
+  checkOut: string,
+  isKo: boolean
+): string {
+  const inParts = checkIn.split('-').map(Number)
+  const outParts = checkOut.split('-').map(Number)
+  if (inParts.length !== 3 || outParts.length !== 3) return isKo ? '—' : '—'
+  const inMs = Date.UTC(inParts[0]!, inParts[1]! - 1, inParts[2]!)
+  const outMs = Date.UTC(outParts[0]!, outParts[1]! - 1, outParts[2]!)
+  const nights = Math.max(1, Math.round((outMs - inMs) / 86_400_000))
+  return isKo ? `${nights}박` : `${nights}N`
+}
+
 function formatDiffBadge(
   diff: number | null | undefined,
   isKo: boolean,
@@ -471,7 +486,11 @@ export function TourHotelPriceCheckPanel({
           ) : (
             displayRows.map((row) => {
               const rowStatus = getTodoPanelTourStatus(row.id, tourState)
-              const tourLabel = row.tour_name || row.reservation_name || '—'
+              const stayLabel = formatStayNightsLabel(
+                row.check_in_date,
+                row.check_out_date,
+                isKo
+              )
               const highPrice = isTourHotelPriceCheckHighUnitPrice(
                 row.total_price,
                 row.unit_price,
@@ -496,7 +515,7 @@ export function TourHotelPriceCheckPanel({
               const rowTitle = [
                 formatShortDate(row.check_in_date),
                 row.hotel,
-                tourLabel,
+                stayLabel,
                 formatUsd(row.display_price),
                 fetched?.ok
                   ? `${isKo ? '같은호텔' : 'Same'} ${formatUsd(fetched.marketPrice)}`
@@ -508,7 +527,7 @@ export function TourHotelPriceCheckPanel({
                   : null,
               ]
                 .filter(Boolean)
-                .join(' · ')
+                .join(' ')
 
               return (
                 <div
@@ -530,11 +549,11 @@ export function TourHotelPriceCheckPanel({
                       title={rowTitle}
                     >
                       <span className="tabular-nums">{formatShortDate(row.check_in_date)}</span>
-                      <span className="text-gray-400"> , </span>
+                      <span> </span>
                       <span>{row.hotel}</span>
-                      <span className="text-gray-400"> , </span>
-                      <span>{tourLabel}</span>
-                      <span className="text-gray-400"> , </span>
+                      <span> </span>
+                      <span>{stayLabel}</span>
+                      <span> </span>
                       <span
                         className={`inline-flex rounded px-1 py-0.5 text-[10px] font-semibold tabular-nums ${
                           highPrice ? 'bg-red-50 text-red-900' : 'bg-emerald-50 text-emerald-900'
@@ -545,7 +564,7 @@ export function TourHotelPriceCheckPanel({
                       {row.rooms > 1 ? (
                         <span className="ml-0.5 text-[10px] text-gray-500">×{row.rooms}</span>
                       ) : null}
-                      <span className="text-gray-400"> , </span>
+                      <span> </span>
                       <span
                         className={`inline-flex rounded px-1 py-0.5 text-[10px] font-semibold tabular-nums ${sameBadge.className}`}
                         title={
@@ -558,7 +577,7 @@ export function TourHotelPriceCheckPanel({
                       </span>
                       {showAltBadge ? (
                         <>
-                          <span className="text-gray-400"> </span>
+                          <span> </span>
                           <span
                             className={`inline-flex rounded px-1 py-0.5 text-[10px] font-semibold tabular-nums ring-1 ring-violet-200 ${cheapBadge.className}`}
                             title={

@@ -224,6 +224,7 @@ export default function CancelledSimpleCardFollowUpStrip({
   const saveCustomerResponse = async ({
     text,
     images,
+    existingImages = [],
     cancellationReason,
   }: CustomerFollowUpResponseSubmitPayload) => {
     if (!userEmail) {
@@ -231,12 +232,16 @@ export default function CancelledSimpleCardFollowUpStrip({
       return
     }
     const trimmedText = text.trim()
-    if (!trimmedText && images.length === 0) return
+    if (!trimmedText && images.length === 0 && existingImages.length === 0) return
 
     setResponseSaving(true)
     try {
       const uploadedImages = await uploadCustomerResponseImages(reservationId, images, locale)
-      const content = buildCustomerResponseContactContent(trimmedText, uploadedImages, locale)
+      const content = buildCustomerResponseContactContent(
+        trimmedText,
+        [...existingImages, ...uploadedImages],
+        locale
+      )
       const { error } = await fromUntypedTable(supabase, 'reservation_follow_ups').insert({
         reservation_id: reservationId,
         type: 'contact',

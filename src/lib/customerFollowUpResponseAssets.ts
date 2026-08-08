@@ -10,15 +10,70 @@ export const CUSTOMER_RESPONSE_IMAGE_TYPES = [
 
 export const CUSTOMER_RESPONSE_IMAGE_MAX_BYTES = 5 * 1024 * 1024
 
-export type CustomerFollowUpResponseSubmitPayload = {
-  text: string
-  images: File[]
-  cancellationReason?: string | undefined
-}
-
 export type UploadedCustomerResponseImage = {
   imageUrl: string
   fileName: string
+}
+
+export type CustomerFollowUpResponseSubmitPayload = {
+  text: string
+  images: File[]
+  /** 이미 저장된 스크린샷(재저장 시 유지) */
+  existingImages?: UploadedCustomerResponseImage[]
+  cancellationReason?: string | undefined
+}
+
+export type ParsedCustomerResponseContactContent = {
+  text: string
+  images: UploadedCustomerResponseImage[]
+}
+
+const SCREENSHOT_LABEL_RE = /^(?:스크린샷|Screenshot)\s+\d+\s*:\s*(.+)$/i
+const SCREENSHOT_ONLY_HEADER_RE =
+  /^(?:고객 답변 스크린샷(?:\s*\(\d+장\))?|Customer reply screenshots?(?:\s*\(\d+\))?)$/i
+const HTTP_URL_RE = /^https?:\/\/\S+$/i
+
+/** 저장된 contact content에서 본문 텍스트와 스크린샷 URL을 분리 */
+export function parseCustomerResponseContactContent(
+  content: string
+): ParsedCustomerResponseContactContent {
+  const raw = String(content ?? '')
+  if (!raw.trim()) return { text: '', images: [] }
+
+  const lines = raw.split('\n')
+  const images: UploadedCustomerResponseImage[] = []
+  const textLines: string[] = []
+
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i] ?? ''
+    const trimmed = line.trim()
+    const labelMatch = trimmed.match(SCREENSHOT_LABEL_RE)
+
+    if (labelMatch) {
+      const fileName = labelMatch[1]?.trim() || `screenshot-${images.length + 1}`
+      const next = (lines[i + 1] ?? '').trim()
+      if (HTTP_URL_RE.test(next)) {
+        images.push({ fileName, imageUrl: next })
+        i += 2
+        if ((lines[i] ?? '').trim() === '') i += 1
+        continue
+      }
+    }
+
+    if (SCREENSHOT_ONLY_HEADER_RE.test(trimmed)) {
+      i += 1
+      continue
+    }
+
+    textLines.push(line)
+    i += 1
+  }
+
+  return {
+    text: textLines.join('\n').replace(/^\n+/, '').replace(/\n+$/, '').trim(),
+    images,
+  }
 }
 
 function validateImageFile(file: File, locale: string): string | null {

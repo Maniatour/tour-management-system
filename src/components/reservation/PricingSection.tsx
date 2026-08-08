@@ -3978,8 +3978,8 @@ export default function PricingSection({
                   ) > 0.02 && (
                     <p className="mt-1 text-amber-800">
                       {isKorean
-                        ? '위 두 값이 다르면, 저장 시 예약 폼 로직으로 DB 총액이 갱신됩니다.'
-                        : 'If these differ, saving updates DB totals via the reservation form rules.'}
+                        ? '위 두 값이 다르면, 저장 시 ① 화면 계산값이 DB total_price에 저장됩니다.'
+                        : 'If these differ, saving writes ① Calculated to DB total_price.'}
                     </p>
                   )}
                 </div>

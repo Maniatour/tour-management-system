@@ -1,13 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Image as ImageIcon, Loader2, Trash2, Upload } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { Image as ImageIcon, Loader2, Trash2, Upload, X } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import {
   CUSTOMER_RESPONSE_IMAGE_TYPES,
+  parseCustomerResponseContactContent,
   type CustomerFollowUpResponseSubmitPayload,
+  type UploadedCustomerResponseImage,
 } from '@/lib/customerFollowUpResponseAssets'
+import { DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
 
 type PendingImage = {
   id: string
@@ -25,6 +29,8 @@ type CustomerFollowUpResponseModalProps = {
   onSubmit: (payload: CustomerFollowUpResponseSubmitPayload) => void | Promise<void>
 }
 
+const LIGHTBOX_Z = DIALOG_Z_INDEX.nestedElevated + 100
+
 function nextPendingId() {
   return `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
@@ -39,9 +45,11 @@ export function CustomerFollowUpResponseModal({
   onSubmit,
 }: CustomerFollowUpResponseModalProps) {
   const isKo = locale === 'ko'
-  const [draft, setDraft] = useState(initialValue)
+  const [draft, setDraft] = useState('')
+  const [existingImages, setExistingImages] = useState<UploadedCustomerResponseImage[]>([])
   const [cancellationReasonDraft, setCancellationReasonDraft] = useState(initialCancellationReason)
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pasteZoneRef = useRef<HTMLDivElement>(null)
 
@@ -59,24 +67,39 @@ export function CustomerFollowUpResponseModal({
         'Other',
       ]
 
-  const resetForm = useCallback(() => {
-    setDraft(initialValue)
-    setCancellationReasonDraft(initialCancellationReason)
+  const applyInitialContent = useCallback((value: string, reason: string) => {
+    const parsed = parseCustomerResponseContactContent(value)
+    setDraft(parsed.text)
+    setExistingImages(parsed.images)
+    setCancellationReasonDraft(reason)
+    setLightboxUrl(null)
     setPendingImages((prev) => {
       for (const img of prev) URL.revokeObjectURL(img.previewUrl)
       return []
     })
-  }, [initialCancellationReason, initialValue])
+  }, [])
+
+  const resetForm = useCallback(() => {
+    applyInitialContent(initialValue, initialCancellationReason)
+  }, [applyInitialContent, initialCancellationReason, initialValue])
 
   useEffect(() => {
     if (!isOpen) return
-    setDraft(initialValue)
-    setCancellationReasonDraft(initialCancellationReason)
-    setPendingImages((prev) => {
-      for (const img of prev) URL.revokeObjectURL(img.previewUrl)
-      return []
-    })
-  }, [isOpen, initialCancellationReason, initialValue])
+    applyInitialContent(initialValue, initialCancellationReason)
+  }, [isOpen, initialCancellationReason, initialValue, applyInitialContent])
+
+  useEffect(() => {
+    if (!lightboxUrl) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        setLightboxUrl(null)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [lightboxUrl])
 
   const addImageFile = useCallback((file: File | null) => {
     if (!file) return
@@ -98,6 +121,10 @@ export function CustomerFollowUpResponseModal({
     })
   }, [])
 
+  const removeExistingImage = useCallback((imageUrl: string) => {
+    setExistingImages((prev) => prev.filter((img) => img.imageUrl !== imageUrl))
+  }, [])
+
   const handlePaste = useCallback(
     (e: React.ClipboardEvent) => {
       const items = e.clipboardData?.items
@@ -115,7 +142,10 @@ export function CustomerFollowUpResponseModal({
     [addImageFile]
   )
 
-  const canSave = Boolean(draft.trim()) || pendingImages.length > 0
+  const canSave =
+    Boolean(draft.trim()) || pendingImages.length > 0 || existingImages.length > 0
+
+  const expandLabel = isKo ? '크게 보기' : 'View larger'
 
   return (
     <Dialog
@@ -186,18 +216,55 @@ export function CustomerFollowUpResponseModal({
             </div>
           </div>
 
-          {pendingImages.length > 0 ? (
+          {existingImages.length > 0 || pendingImages.length > 0 ? (
             <ul className="flex flex-wrap gap-2">
+              {existingImages.map((img) => (
+                <li
+                  key={img.imageUrl}
+                  className="group relative h-20 w-20 overflow-hidden rounded-lg border border-border bg-muted/40"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setLightboxUrl(img.imageUrl)}
+                    className="h-full w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={`${expandLabel}: ${img.fileName}`}
+                    title={expandLabel}
+                  >
+                    <img
+                      src={img.imageUrl}
+                      alt={img.fileName}
+                      className="h-full w-full object-cover"
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeExistingImage(img.imageUrl)}
+                    disabled={saving}
+                    className="absolute right-1 top-1 rounded bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                    aria-label={isKo ? '이미지 제거' : 'Remove image'}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                </li>
+              ))}
               {pendingImages.map((img) => (
                 <li
                   key={img.id}
                   className="group relative h-20 w-20 overflow-hidden rounded-lg border border-border bg-muted/40"
                 >
-                  <img
-                    src={img.previewUrl}
-                    alt={img.file.name}
-                    className="h-full w-full object-cover"
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setLightboxUrl(img.previewUrl)}
+                    className="h-full w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={`${expandLabel}: ${img.file.name}`}
+                    title={expandLabel}
+                  >
+                    <img
+                      src={img.previewUrl}
+                      alt={img.file.name}
+                      className="h-full w-full object-cover"
+                    />
+                  </button>
                   <button
                     type="button"
                     onClick={() => removePendingImage(img.id)}
@@ -261,6 +328,7 @@ export function CustomerFollowUpResponseModal({
               void onSubmit({
                 text: draft,
                 images: pendingImages.map((img) => img.file),
+                existingImages,
                 cancellationReason: cancellationReasonDraft.trim() || undefined,
               })
             }
@@ -270,6 +338,35 @@ export function CustomerFollowUpResponseModal({
           </Button>
         </div>
       </DialogContent>
+
+      {lightboxUrl && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              className="fixed inset-0 flex items-center justify-center bg-black/85 p-4 sm:p-8"
+              style={{ zIndex: LIGHTBOX_Z }}
+              role="dialog"
+              aria-modal="true"
+              aria-label={expandLabel}
+              onClick={() => setLightboxUrl(null)}
+            >
+              <button
+                type="button"
+                onClick={() => setLightboxUrl(null)}
+                className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                aria-label={isKo ? '닫기' : 'Close'}
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <img
+                src={lightboxUrl}
+                alt=""
+                className="max-h-[90vh] max-w-full rounded-lg object-contain shadow-lg"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>,
+            document.body
+          )
+        : null}
     </Dialog>
   )
 }
