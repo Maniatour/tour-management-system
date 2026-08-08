@@ -1,6 +1,6 @@
 import { defaultCache } from '@serwist/next/worker'
 import type { PrecacheEntry, SerwistGlobalConfig } from 'serwist'
-import { NetworkOnly, Serwist } from 'serwist'
+import { Serwist } from 'serwist'
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -10,36 +10,39 @@ declare global {
 
 declare const self: ServiceWorkerGlobalScope
 
-const networkOnly = new NetworkOnly()
+const STAFF_APP_PATH =
+  /^\/(ko|en|ja|zh-CN|zh-TW|es|fr|de)\/(admin|dashboard|guide)(\/|$)/
 
-/** 직원·관리 화면: 탭 여러 개 동시 사용 시 SW 캐시로 구버전 HTML이 섞이지 않도록 */
-function isStaffAppDocumentNavigation(url: URL, request: Request): boolean {
-  if (request.mode !== 'navigate' && request.destination !== 'document') return false
-  const p = url.pathname
-  return /^\/(ko|en|ja|zh-CN|zh-TW|es|fr|de)\/(admin|dashboard|guide)(\/|$)/.test(p)
+/** 직원·관리 화면 (HTML·RSC·프리페치 포함). defaultCache NetworkFirst가 캐시 미스+네트워크 실패 시 no-response를 throw함 */
+function isStaffAppPath(url: URL): boolean {
+  return STAFF_APP_PATH.test(url.pathname)
 }
 
 /**
- * NetworkOnly가 네트워크 실패 시 throw 하는 no-response를 삼킨다.
- * Chrome PWA offline probe / navigationPreload 경합 시 콘솔 Uncaught가 나고
- * 관리 화면 네비게이션이 깨져 저장 흐름이 끊기는 경우가 있음.
+ * Strategy(NetworkOnly/NetworkFirst)를 거치지 않고 fetch만 사용.
+ * NetworkOnly.handle()은 실패 시 done 프라미스가 Uncaught no-response를 남길 수 있음.
+ * 리다이렉트된 navigate 응답은 Chrome SW 제약으로 재구성.
  */
 async function handleNetworkOnlySafe(options: {
   request: Request
   event?: ExtendableEvent
 }): Promise<Response> {
   try {
-    return await networkOnly.handle(options as never)
-  } catch {
-    try {
-      return await fetch(options.request)
-    } catch {
-      return new Response('', {
-        status: 504,
-        statusText: 'Gateway Timeout',
-        headers: { 'Cache-Control': 'no-store' },
+    const response = await fetch(options.request)
+    if (options.request.mode === 'navigate' && response.redirected) {
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
       })
     }
+    return response
+  } catch {
+    return new Response('', {
+      status: 504,
+      statusText: 'Gateway Timeout',
+      headers: { 'Cache-Control': 'no-store' },
+    })
   }
 }
 
@@ -87,8 +90,8 @@ const serwist = new Serwist({
   clientsClaim: true,
   // preload 실패 시 NetworkOnly no-response와 경합 → admin 문서에서 Uncaught 유발
   navigationPreload: false,
-  // 공개 투어 채팅(/chat/[code])은 동적·세션 의존 페이지라 기본 런타임 캐시와 맞지 않으면
-  // Workbox/Serwist에서 no-response가 날 수 있음 → 문서 요청은 네트워크만 사용
+  // 공개 투어 채팅(/chat/[code])·직원 앱은 런타임 캐시(NetworkFirst)와 맞지 않음
+  // → 네트워크만 사용하고 실패 시에도 promise reject 금지
   runtimeCaching: [
     {
       matcher({ url }) {
@@ -104,8 +107,8 @@ const serwist = new Serwist({
       handler: handleNetworkOnlySafe,
     },
     {
-      matcher({ url, request }) {
-        return isStaffAppDocumentNavigation(url, request)
+      matcher({ url, sameOrigin }) {
+        return sameOrigin && isStaffAppPath(url)
       },
       handler: handleNetworkOnlySafe,
     },
