@@ -15,6 +15,8 @@ import {
   type OtaClosureLinkedTodo,
 } from '@/lib/otaClosureTodo'
 import { useOtaClosureQueue } from '@/hooks/useOtaClosureQueue'
+import { useTodoPanelAutoComplete } from '@/hooks/useTodoPanelAutoComplete'
+import { getTodoPanelAutoCompleteMode } from '@/lib/todoPanelAutoComplete'
 
 type OtaClosurePanelProps = {
   locale: string
@@ -83,22 +85,43 @@ export function OtaClosurePanel({
     return member?.nick_name || member?.name_ko || email.split('@')[0] || ''
   }, [teamMembers, user?.email])
 
-  const handleToggleComplete = useCallback(async () => {
-    const next = !completed
-    setCompleting(true)
-    try {
-      if (linkedTodo && onToggleLinkedTodo) {
-        await onToggleLinkedTodo(linkedTodo, next)
+  const pendingActions = useMemo(
+    () => rows.reduce((sum, row) => sum + row.closureActions.length, 0),
+    [rows]
+  )
+
+  const setPanelCompleted = useCallback(
+    async (next: boolean) => {
+      if (next === completed) return
+      setCompleting(true)
+      try {
+        if (linkedTodo && onToggleLinkedTodo) {
+          await onToggleLinkedTodo(linkedTodo, next)
+        } else {
+          writeOtaClosureLocalCompleted(next, completionDateKey)
+          setLocalCompleted(next)
+        }
         onCompletedChange?.(next)
-      } else {
-        writeOtaClosureLocalCompleted(next, completionDateKey)
-        setLocalCompleted(next)
+      } finally {
+        setCompleting(false)
       }
-      onCompletedChange?.(next)
-    } finally {
-      setCompleting(false)
-    }
-  }, [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey])
+    },
+    [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey]
+  )
+
+  const handleToggleComplete = useCallback(async () => {
+    await setPanelCompleted(!completed)
+  }, [completed, setPanelCompleted])
+
+  useTodoPanelAutoComplete({
+    enabled: queryEnabled,
+    loading,
+    workCount: pendingActions,
+    completed,
+    onHold,
+    mode: getTodoPanelAutoCompleteMode('ota-closure'),
+    applyCompleted: setPanelCompleted,
+  })
 
   const dateRangeLabel = useMemo(() => {
     const [d1, d2] = targetDates
@@ -109,11 +132,6 @@ export function OtaClosurePanel({
     }
     return `${fmt(d1)} – ${fmt(d2)}`
   }, [targetDates])
-
-  const pendingActions = useMemo(
-    () => rows.reduce((sum, row) => sum + row.closureActions.length, 0),
-    [rows]
-  )
 
   const progressLabel = isKo
     ? `미반영 ${pendingActions}건`

@@ -23,6 +23,11 @@ import {
 } from '@/lib/tourSettlementTodo'
 import { TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR } from '@/lib/tourExpenseConstants'
 import { useTourSettlementQueue } from '@/hooks/useTourSettlementQueue'
+import { useTodoPanelAutoComplete } from '@/hooks/useTodoPanelAutoComplete'
+import {
+  getTodoPanelAutoCompleteMode,
+  todoPanelPendingTourCount,
+} from '@/lib/todoPanelAutoComplete'
 import { TourSettlementExpenseModal } from '@/components/admin/todo/TourSettlementExpenseModal'
 
 type TourSettlementPanelProps = {
@@ -146,22 +151,38 @@ export function TourSettlementPanel({
     })
   }, [])
 
-  const handleToggleComplete = useCallback(async () => {
-    const next = !completed
-    setCompleting(true)
-    try {
-      if (linkedTodo && onToggleLinkedTodo) {
-        await onToggleLinkedTodo(linkedTodo, next)
+  const setPanelCompleted = useCallback(
+    async (next: boolean) => {
+      if (next === completed) return
+      setCompleting(true)
+      try {
+        if (linkedTodo && onToggleLinkedTodo) {
+          await onToggleLinkedTodo(linkedTodo, next)
+        } else {
+          writeTourSettlementLocalCompleted(next, completionDateKey)
+          setLocalCompleted(next)
+        }
         onCompletedChange?.(next)
-      } else {
-        writeTourSettlementLocalCompleted(next, completionDateKey)
-        setLocalCompleted(next)
+      } finally {
+        setCompleting(false)
       }
-      onCompletedChange?.(next)
-    } finally {
-      setCompleting(false)
-    }
-  }, [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey])
+    },
+    [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey]
+  )
+
+  const handleToggleComplete = useCallback(async () => {
+    await setPanelCompleted(!completed)
+  }, [completed, setPanelCompleted])
+
+  useTodoPanelAutoComplete({
+    enabled: queryEnabled,
+    loading,
+    workCount: todoPanelPendingTourCount(progress),
+    completed,
+    onHold,
+    mode: getTodoPanelAutoCompleteMode('tour-settlement'),
+    applyCompleted: setPanelCompleted,
+  })
 
   return (
     <div

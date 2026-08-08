@@ -22,6 +22,11 @@ import {
 } from '@/lib/todoPanelTourCompletion'
 import { useTodoPanelTourCompletion } from '@/hooks/useTodoPanelTourCompletion'
 import { useBentoCheckQueue } from '@/hooks/useBentoCheckQueue'
+import { useTodoPanelAutoComplete } from '@/hooks/useTodoPanelAutoComplete'
+import {
+  getTodoPanelAutoCompleteMode,
+  todoPanelPendingTourCount,
+} from '@/lib/todoPanelAutoComplete'
 import type { BentoCheckTourRow } from '@/lib/bentoCheckQueue'
 
 type BentoCheckPanelProps = {
@@ -102,22 +107,38 @@ export function BentoCheckPanel({
     [rows, tourState]
   )
 
-  const handleToggleComplete = useCallback(async () => {
-    const next = !completed
-    setCompleting(true)
-    try {
-      if (linkedTodo && onToggleLinkedTodo) {
-        await onToggleLinkedTodo(linkedTodo, next)
+  const setPanelCompleted = useCallback(
+    async (next: boolean) => {
+      if (next === completed) return
+      setCompleting(true)
+      try {
+        if (linkedTodo && onToggleLinkedTodo) {
+          await onToggleLinkedTodo(linkedTodo, next)
+        } else {
+          writeBentoCheckLocalCompleted(next, completionDateKey)
+          setLocalCompleted(next)
+        }
         onCompletedChange?.(next)
-      } else {
-        writeBentoCheckLocalCompleted(next, completionDateKey)
-        setLocalCompleted(next)
+      } finally {
+        setCompleting(false)
       }
-      onCompletedChange?.(next)
-    } finally {
-      setCompleting(false)
-    }
-  }, [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey])
+    },
+    [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey]
+  )
+
+  const handleToggleComplete = useCallback(async () => {
+    await setPanelCompleted(!completed)
+  }, [completed, setPanelCompleted])
+
+  useTodoPanelAutoComplete({
+    enabled: queryEnabled,
+    loading,
+    workCount: todoPanelPendingTourCount(progress),
+    completed,
+    onHold,
+    mode: getTodoPanelAutoCompleteMode('bento-check'),
+    applyCompleted: setPanelCompleted,
+  })
 
   const progressLabel =
     progress.onHold > 0

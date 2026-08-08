@@ -15,6 +15,8 @@ import {
   type PendingCustomerManagementLinkedTodo,
 } from '@/lib/pendingCustomerManagementTodo'
 import { usePendingCustomerManagementQueue } from '@/hooks/usePendingCustomerManagementQueue'
+import { useTodoPanelAutoComplete } from '@/hooks/useTodoPanelAutoComplete'
+import { getTodoPanelAutoCompleteMode } from '@/lib/todoPanelAutoComplete'
 import { supabase } from '@/lib/supabase'
 import {
   upsertReservationPendingAltTourNoticeManual,
@@ -120,22 +122,38 @@ export function PendingCustomerManagementPanel({
   const progressLabel = isKo ? `대기 ${count}건` : `${count} pending`
   const dateRangeLabel = dateRange.start && dateRange.end ? `${dateRange.start} ~ ${dateRange.end}` : ''
 
-  const handleToggleComplete = useCallback(async () => {
-    const next = !completed
-    setCompleting(true)
-    try {
-      if (linkedTodo && onToggleLinkedTodo) {
-        await onToggleLinkedTodo(linkedTodo, next)
+  const setPanelCompleted = useCallback(
+    async (next: boolean) => {
+      if (next === completed) return
+      setCompleting(true)
+      try {
+        if (linkedTodo && onToggleLinkedTodo) {
+          await onToggleLinkedTodo(linkedTodo, next)
+        } else {
+          writePendingCustomerManagementLocalCompleted(next, completionDateKey)
+          setLocalCompleted(next)
+        }
         onCompletedChange?.(next)
-      } else {
-        writePendingCustomerManagementLocalCompleted(next, completionDateKey)
-        setLocalCompleted(next)
+      } finally {
+        setCompleting(false)
       }
-      onCompletedChange?.(next)
-    } finally {
-      setCompleting(false)
-    }
-  }, [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey])
+    },
+    [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey]
+  )
+
+  const handleToggleComplete = useCallback(async () => {
+    await setPanelCompleted(!completed)
+  }, [completed, setPanelCompleted])
+
+  useTodoPanelAutoComplete({
+    enabled: queryEnabled,
+    loading,
+    workCount: count,
+    completed,
+    onHold,
+    mode: getTodoPanelAutoCompleteMode('pending-customer-management'),
+    applyCompleted: setPanelCompleted,
+  })
 
   const bumpRefresh = useCallback(() => {
     void reload({ silent: true })

@@ -31,6 +31,11 @@ import {
 } from '@/lib/todoPanelTourCompletion'
 import { useTodoPanelTourCompletion } from '@/hooks/useTodoPanelTourCompletion'
 import { useTourHotelPriceCheckQueue } from '@/hooks/useTourHotelPriceCheckQueue'
+import { useTodoPanelAutoComplete } from '@/hooks/useTodoPanelAutoComplete'
+import {
+  getTodoPanelAutoCompleteMode,
+  todoPanelPendingTourCount,
+} from '@/lib/todoPanelAutoComplete'
 import { supabase } from '@/lib/supabase'
 import type { TourPriceCheckResult } from '@/lib/hotels/tour-price-check-types'
 
@@ -326,22 +331,38 @@ export function TourHotelPriceCheckPanel({
     void hydrateFromDb()
   }, [loading, rows, hydrateFromDb])
 
-  const handleToggleComplete = useCallback(async () => {
-    const next = !completed
-    setCompleting(true)
-    try {
-      if (linkedTodo && onToggleLinkedTodo) {
-        await onToggleLinkedTodo(linkedTodo, next)
+  const setPanelCompleted = useCallback(
+    async (next: boolean) => {
+      if (next === completed) return
+      setCompleting(true)
+      try {
+        if (linkedTodo && onToggleLinkedTodo) {
+          await onToggleLinkedTodo(linkedTodo, next)
+        } else {
+          writeTourHotelPriceCheckLocalCompleted(next, completionDateKey)
+          setLocalCompleted(next)
+        }
         onCompletedChange?.(next)
-      } else {
-        writeTourHotelPriceCheckLocalCompleted(next, completionDateKey)
-        setLocalCompleted(next)
+      } finally {
+        setCompleting(false)
       }
-      onCompletedChange?.(next)
-    } finally {
-      setCompleting(false)
-    }
-  }, [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey])
+    },
+    [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey]
+  )
+
+  const handleToggleComplete = useCallback(async () => {
+    await setPanelCompleted(!completed)
+  }, [completed, setPanelCompleted])
+
+  useTodoPanelAutoComplete({
+    enabled: queryEnabled,
+    loading,
+    workCount: todoPanelPendingTourCount(progress),
+    completed,
+    onHold,
+    mode: getTodoPanelAutoCompleteMode('tour-hotel-price-check'),
+    applyCompleted: setPanelCompleted,
+  })
 
   const handleFetchAllRates = useCallback(async () => {
     if (!rows.length) {

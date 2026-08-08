@@ -20,6 +20,11 @@ import {
 } from '@/lib/todoPanelTourCompletion'
 import { useTodoPanelTourCompletion } from '@/hooks/useTodoPanelTourCompletion'
 import { useToursForEnvelopePrint } from '@/hooks/useToursForEnvelopePrint'
+import { useTodoPanelAutoComplete } from '@/hooks/useTodoPanelAutoComplete'
+import {
+  getTodoPanelAutoCompleteMode,
+  todoPanelPendingTourCount,
+} from '@/lib/todoPanelAutoComplete'
 import type { TourQuickPrintKind } from '@/components/admin/todo/TourQuickPrintHost'
 
 type TourEnvelopePrintPanelProps = {
@@ -117,22 +122,38 @@ export function TourEnvelopePrintPanel({
         ? `투어 ${progress.done}/${progress.total}`
         : `Tours ${progress.done}/${progress.total}`
 
-  const handleToggleComplete = useCallback(async () => {
-    const next = !completed
-    setCompleting(true)
-    try {
-      if (linkedTodo && onToggleLinkedTodo) {
-        await onToggleLinkedTodo(linkedTodo, next)
+  const setPanelCompleted = useCallback(
+    async (next: boolean) => {
+      if (next === completed) return
+      setCompleting(true)
+      try {
+        if (linkedTodo && onToggleLinkedTodo) {
+          await onToggleLinkedTodo(linkedTodo, next)
+        } else {
+          writeTourEnvelopePrintLocalCompleted(targetDate, next)
+          setLocalCompleted(next)
+        }
         onCompletedChange?.(next)
-      } else {
-        writeTourEnvelopePrintLocalCompleted(targetDate, next)
-        setLocalCompleted(next)
+      } finally {
+        setCompleting(false)
       }
-      onCompletedChange?.(next)
-    } finally {
-      setCompleting(false)
-    }
-  }, [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, targetDate])
+    },
+    [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, targetDate]
+  )
+
+  const handleToggleComplete = useCallback(async () => {
+    await setPanelCompleted(!completed)
+  }, [completed, setPanelCompleted])
+
+  useTodoPanelAutoComplete({
+    enabled: queryEnabled,
+    loading,
+    workCount: todoPanelPendingTourCount(progress),
+    completed,
+    onHold,
+    mode: getTodoPanelAutoCompleteMode('tour-envelope-print'),
+    applyCompleted: setPanelCompleted,
+  })
 
   const printButtons = (tourId: string) => (
     <div className="flex shrink-0 items-center gap-0.5">

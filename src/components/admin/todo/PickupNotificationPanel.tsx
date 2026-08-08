@@ -21,6 +21,11 @@ import {
 } from '@/lib/todoPanelTourCompletion'
 import { useTodoPanelTourCompletion } from '@/hooks/useTodoPanelTourCompletion'
 import { useToursForPickupNotification } from '@/hooks/useToursForPickupNotification'
+import { useTodoPanelAutoComplete } from '@/hooks/useTodoPanelAutoComplete'
+import {
+  getTodoPanelAutoCompleteMode,
+  todoPanelPendingTourCount,
+} from '@/lib/todoPanelAutoComplete'
 import type { TourPickupNotificationKind } from '@/components/admin/todo/TourPickupNotificationHost'
 
 type PickupNotificationPanelProps = {
@@ -116,22 +121,38 @@ export function PickupNotificationPanel({
         ? `투어 ${progress.done}/${progress.total}`
         : `Tours ${progress.done}/${progress.total}`
 
-  const handleToggleComplete = useCallback(async () => {
-    const next = !completed
-    setCompleting(true)
-    try {
-      if (linkedTodo && onToggleLinkedTodo) {
-        await onToggleLinkedTodo(linkedTodo, next)
+  const setPanelCompleted = useCallback(
+    async (next: boolean) => {
+      if (next === completed) return
+      setCompleting(true)
+      try {
+        if (linkedTodo && onToggleLinkedTodo) {
+          await onToggleLinkedTodo(linkedTodo, next)
+        } else {
+          writePickupNotificationLocalCompleted(next, completionDateKey)
+          setLocalCompleted(next)
+        }
         onCompletedChange?.(next)
-      } else {
-        writePickupNotificationLocalCompleted(next, completionDateKey)
-        setLocalCompleted(next)
+      } finally {
+        setCompleting(false)
       }
-      onCompletedChange?.(next)
-    } finally {
-      setCompleting(false)
-    }
-  }, [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey])
+    },
+    [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey]
+  )
+
+  const handleToggleComplete = useCallback(async () => {
+    await setPanelCompleted(!completed)
+  }, [completed, setPanelCompleted])
+
+  useTodoPanelAutoComplete({
+    enabled: queryEnabled,
+    loading,
+    workCount: todoPanelPendingTourCount(progress),
+    completed,
+    onHold,
+    mode: getTodoPanelAutoCompleteMode('pickup-notification'),
+    applyCompleted: setPanelCompleted,
+  })
 
   const autoGenerateLabel = tPickup('autoGenerate')
   const emailLabel = tPickup('email')

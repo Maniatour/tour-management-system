@@ -23,6 +23,8 @@ import {
   useTourHotelCcFormQueue,
   type TourHotelCcFormQueueRow,
 } from '@/hooks/useTourHotelCcFormQueue'
+import { useTodoPanelAutoComplete } from '@/hooks/useTodoPanelAutoComplete'
+import { getTodoPanelAutoCompleteMode } from '@/lib/todoPanelAutoComplete'
 
 type TourHotelCcFormPanelProps = {
   locale: string
@@ -101,22 +103,38 @@ export function TourHotelCcFormPanel({
         ? `체크인 ${formatShortDate(targetCheckIn)} · 0건`
         : `Check-in ${formatShortDate(targetCheckIn)} · 0`
 
-  const handleToggleComplete = useCallback(async () => {
-    const next = !completed
-    setCompleting(true)
-    try {
-      if (linkedTodo && onToggleLinkedTodo) {
-        await onToggleLinkedTodo(linkedTodo, next)
+  const setPanelCompleted = useCallback(
+    async (next: boolean) => {
+      if (next === completed) return
+      setCompleting(true)
+      try {
+        if (linkedTodo && onToggleLinkedTodo) {
+          await onToggleLinkedTodo(linkedTodo, next)
+        } else {
+          writeTourHotelCcFormLocalCompleted(next, completionDateKey)
+          setLocalCompleted(next)
+        }
         onCompletedChange?.(next)
-      } else {
-        writeTourHotelCcFormLocalCompleted(next, completionDateKey)
-        setLocalCompleted(next)
+      } finally {
+        setCompleting(false)
       }
-      onCompletedChange?.(next)
-    } finally {
-      setCompleting(false)
-    }
-  }, [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey])
+    },
+    [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey]
+  )
+
+  const handleToggleComplete = useCallback(async () => {
+    await setPanelCompleted(!completed)
+  }, [completed, setPanelCompleted])
+
+  useTodoPanelAutoComplete({
+    enabled: queryEnabled,
+    loading,
+    workCount: rows.length - doneCount,
+    completed,
+    onHold,
+    mode: getTodoPanelAutoCompleteMode('tour-hotel-cc-form'),
+    applyCompleted: setPanelCompleted,
+  })
 
   const patchRow = useCallback(
     (id: string, patch: Partial<TourHotelCcFormQueueRow>) => {

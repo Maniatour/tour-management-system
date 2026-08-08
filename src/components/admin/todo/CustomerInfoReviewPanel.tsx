@@ -31,6 +31,8 @@ import {
   useCustomerInfoReviewQueue,
   type CustomerInfoReviewItem,
 } from '@/hooks/useCustomerInfoReviewQueue'
+import { useTodoPanelAutoComplete } from '@/hooks/useTodoPanelAutoComplete'
+import { getTodoPanelAutoCompleteMode } from '@/lib/todoPanelAutoComplete'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
 import { ResidentStatusIcon } from '@/components/reservation/ResidentStatusIcon'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
@@ -278,22 +280,43 @@ export function CustomerInfoReviewPanel({
 
   const completed = linkedTodo?.completed ?? localCompleted
 
-  const handleToggleComplete = useCallback(async () => {
-    const next = !completed
-    setCompleting(true)
-    try {
-      if (linkedTodo && onToggleLinkedTodo) {
-        await onToggleLinkedTodo(linkedTodo, next)
+  const setPanelCompleted = useCallback(
+    async (next: boolean) => {
+      if (next === completed) return
+      setCompleting(true)
+      try {
+        if (linkedTodo && onToggleLinkedTodo) {
+          await onToggleLinkedTodo(linkedTodo, next)
+        } else {
+          writeCustomerInfoReviewLocalCompleted(next, completionDateKey)
+          setLocalCompleted(next)
+        }
         onCompletedChange?.(next)
-      } else {
-        writeCustomerInfoReviewLocalCompleted(next, completionDateKey)
-        setLocalCompleted(next)
+      } finally {
+        setCompleting(false)
       }
-      onCompletedChange?.(next)
-    } finally {
-      setCompleting(false)
-    }
-  }, [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey])
+    },
+    [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey]
+  )
+
+  const handleToggleComplete = useCallback(async () => {
+    await setPanelCompleted(!completed)
+  }, [completed, setPanelCompleted])
+
+  const visibleIssueCount = useMemo(
+    () => localGroups.reduce((sum, group) => sum + group.items.length, 0),
+    [localGroups]
+  )
+
+  useTodoPanelAutoComplete({
+    enabled: queryEnabled,
+    loading,
+    workCount: visibleIssueCount,
+    completed,
+    onHold,
+    mode: getTodoPanelAutoCompleteMode('customer-info-review'),
+    applyCompleted: setPanelCompleted,
+  })
 
   const patchItem = useCallback(
     (reservationId: string, patch: Partial<CustomerInfoReviewItem>) => {
@@ -362,11 +385,6 @@ export function CustomerInfoReviewPanel({
     }
     return `${fmt(d1)} – ${fmt(d2)}`
   }, [targetDates])
-
-  const visibleIssueCount = useMemo(
-    () => localGroups.reduce((sum, group) => sum + group.items.length, 0),
-    [localGroups]
-  )
 
   return (
     <>

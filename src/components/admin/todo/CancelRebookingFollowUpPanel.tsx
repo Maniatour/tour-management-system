@@ -19,6 +19,8 @@ import {
 } from '@/lib/cancelRebookingFollowUpTodo'
 import { useAuth } from '@/contexts/AuthContext'
 import { useCancelRebookingFollowUpQueue } from '@/hooks/useCancelRebookingFollowUpQueue'
+import { useTodoPanelAutoComplete } from '@/hooks/useTodoPanelAutoComplete'
+import { getTodoPanelAutoCompleteMode } from '@/lib/todoPanelAutoComplete'
 import { supabase } from '@/lib/supabase'
 import { upsertReservationCancelFollowUpManual } from '@/lib/reservationCancelFollowUpManual'
 import { getCustomerName, getProductInternalName, getReservationPartySize } from '@/utils/reservationUtils'
@@ -176,22 +178,38 @@ export function CancelRebookingFollowUpPanel({
   const completed = linkedTodo?.completed ?? localCompleted
   const progressLabel = isKo ? `대기 ${count}건` : `${count} pending`
 
-  const handleToggleComplete = useCallback(async () => {
-    const next = !completed
-    setCompleting(true)
-    try {
-      if (linkedTodo && onToggleLinkedTodo) {
-        await onToggleLinkedTodo(linkedTodo, next)
+  const setPanelCompleted = useCallback(
+    async (next: boolean) => {
+      if (next === completed) return
+      setCompleting(true)
+      try {
+        if (linkedTodo && onToggleLinkedTodo) {
+          await onToggleLinkedTodo(linkedTodo, next)
+        } else {
+          writeCancelRebookingFollowUpLocalCompleted(next, completionDateKey)
+          setLocalCompleted(next)
+        }
         onCompletedChange?.(next)
-      } else {
-        writeCancelRebookingFollowUpLocalCompleted(next, completionDateKey)
-        setLocalCompleted(next)
+      } finally {
+        setCompleting(false)
       }
-      onCompletedChange?.(next)
-    } finally {
-      setCompleting(false)
-    }
-  }, [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey])
+    },
+    [completed, linkedTodo, onToggleLinkedTodo, onCompletedChange, completionDateKey]
+  )
+
+  const handleToggleComplete = useCallback(async () => {
+    await setPanelCompleted(!completed)
+  }, [completed, setPanelCompleted])
+
+  useTodoPanelAutoComplete({
+    enabled: queryEnabled,
+    loading,
+    workCount: count,
+    completed,
+    onHold,
+    mode: getTodoPanelAutoCompleteMode('cancel-rebooking-follow-up'),
+    applyCompleted: setPanelCompleted,
+  })
 
   const bumpRefresh = useCallback(() => {
     void reload({ silent: true })
