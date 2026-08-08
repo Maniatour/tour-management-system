@@ -2209,43 +2209,44 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
           <div className="flex items-center justify-center py-16 text-gray-400">
             <Loader2 className="h-6 w-6 animate-spin" />
           </div>
-        ) : visibleTodos.length === 0 &&
-          !showEnvelopePrintInList &&
-          !showPickupNotificationInList &&
-          !showGuideScheduleConfirmInList &&
-          !showCustomerInfoReviewInList &&
-          !showCancelRebookingFollowUpInList &&
-          !showPendingCustomerManagementInList &&
-          !showOtaClosureInList &&
-          !showTourHotelManagementInList &&
-          !showTourHotelPriceCheckInList &&
-          !showTourHotelCcFormInList &&
-          !showTourSettlementInList &&
-          !showReservationAgencyManagementInList &&
-          !showAntelopeCanyonBookingInList &&
-          !showBentoCheckInList ? (
-          <p className="py-12 text-center text-sm text-gray-500">
-            {activeListTab === 'pending'
-              ? isKo
-                ? '해야 할 일이 없습니다.'
-                : 'Nothing to do.'
-              : activeListTab === 'on_hold'
-                ? isKo
-                  ? '보류 중인 항목이 없습니다.'
-                  : 'Nothing on hold.'
-                : isKo
-                  ? '완료된 항목이 없습니다.'
-                  : 'No completed items.'}
-          </p>
         ) : (
           <ul className="space-y-1.5">
-            {showEnvelopePrintInList ? (
+            {visibleTodos.length === 0 &&
+            !showEnvelopePrintInList &&
+            !showPickupNotificationInList &&
+            !showGuideScheduleConfirmInList &&
+            !showCustomerInfoReviewInList &&
+            !showCancelRebookingFollowUpInList &&
+            !showPendingCustomerManagementInList &&
+            !showOtaClosureInList &&
+            !showTourHotelManagementInList &&
+            !showTourHotelPriceCheckInList &&
+            !showTourHotelCcFormInList &&
+            !showTourSettlementInList &&
+            !showReservationAgencyManagementInList &&
+            !showAntelopeCanyonBookingInList &&
+            !showBentoCheckInList ? (
+              <li className="list-none py-12 text-center text-sm text-gray-500">
+                {activeListTab === 'pending'
+                  ? isKo
+                    ? '해야 할 일이 없습니다.'
+                    : 'Nothing to do.'
+                  : activeListTab === 'on_hold'
+                    ? isKo
+                      ? '보류 중인 항목이 없습니다.'
+                      : 'Nothing on hold.'
+                    : isKo
+                      ? '완료된 항목이 없습니다.'
+                      : 'No completed items.'}
+              </li>
+            ) : null}
               <li
                 className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
                   'daily',
                   envelopeCompleted,
                   envelopeLinkedTodo?.on_hold ?? false
-                )}`}
+                )} ${showEnvelopePrintInList ? '' : 'hidden'}`}
+                aria-hidden={!showEnvelopePrintInList}
               >
                 <TourEnvelopePrintPanel
                   locale={locale}
@@ -2258,14 +2259,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   {...panelHoldProps(envelopeLinkedTodo)}
                 />
               </li>
-            ) : null}
-            {showPickupNotificationInList ? (
               <li
                 className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
                   'daily',
                   pickupNotificationCompleted,
                   pickupLinkedTodo?.on_hold ?? false
-                )}`}
+                )} ${showPickupNotificationInList ? '' : 'hidden'}`}
+                aria-hidden={!showPickupNotificationInList}
               >
                 <PickupNotificationPanel
                   locale={locale}
@@ -2278,14 +2278,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   {...panelHoldProps(pickupLinkedTodo)}
                 />
               </li>
-            ) : null}
-            {showGuideScheduleConfirmInList ? (
               <li
                 className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
                   'daily',
                   guideScheduleConfirmCompleted,
                   guideLinkedTodo?.on_hold ?? false
-                )}`}
+                )} ${showGuideScheduleConfirmInList ? '' : 'hidden'}`}
+                aria-hidden={!showGuideScheduleConfirmInList}
               >
                 <GuideScheduleConfirmPanel
                   locale={locale}
@@ -2297,14 +2296,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   {...panelHoldProps(guideLinkedTodo)}
                 />
               </li>
-            ) : null}
-            {showCustomerInfoReviewInList ? (
               <li
                 className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
                   'daily',
                   customerInfoReviewCompleted,
                   customerReviewLinkedTodo?.on_hold ?? false
-                )}`}
+                )} ${showCustomerInfoReviewInList ? '' : 'hidden'}`}
+                aria-hidden={!showCustomerInfoReviewInList}
               >
                 <CustomerInfoReviewPanel
                   locale={locale}
@@ -2316,14 +2314,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   {...panelHoldProps(customerReviewLinkedTodo)}
                 />
               </li>
-            ) : null}
-            {showCancelRebookingFollowUpInList ? (
               <li
                 className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
                   'daily',
                   cancelRebookingFollowUpCompleted,
                   cancelRebookingLinkedTodo?.on_hold ?? false
-                )}`}
+                )} ${showCancelRebookingFollowUpInList ? '' : 'hidden'}`}
+                aria-hidden={!showCancelRebookingFollowUpInList}
               >
                 <CancelRebookingFollowUpPanel
                   locale={locale}
@@ -2337,14 +2334,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   {...panelHoldProps(cancelRebookingLinkedTodo)}
                 />
               </li>
-            ) : null}
-            {showPendingCustomerManagementInList ? (
               <li
                 className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
                   'daily',
                   pendingCustomerManagementCompleted,
                   pendingCustomerLinkedTodo?.on_hold ?? false
-                )}`}
+                )} ${showPendingCustomerManagementInList ? '' : 'hidden'}`}
+                aria-hidden={!showPendingCustomerManagementInList}
               >
                 <PendingCustomerManagementPanel
                   locale={locale}
@@ -2357,14 +2353,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   {...panelHoldProps(pendingCustomerLinkedTodo)}
                 />
               </li>
-            ) : null}
-            {showOtaClosureInList ? (
               <li
                 className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
                   'daily',
                   otaClosureCompleted,
                   otaClosureLinkedTodo?.on_hold ?? false
-                )}`}
+                )} ${showOtaClosureInList ? '' : 'hidden'}`}
+                aria-hidden={!showOtaClosureInList}
               >
                 <OtaClosurePanel
                   locale={locale}
@@ -2376,14 +2371,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   {...panelHoldProps(otaClosureLinkedTodo)}
                 />
               </li>
-            ) : null}
-            {showTourHotelManagementInList ? (
               <li
                 className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
                   'daily',
                   tourHotelManagementCompleted,
                   tourHotelMgmtLinkedTodo?.on_hold ?? false
-                )}`}
+                )} ${showTourHotelManagementInList ? '' : 'hidden'}`}
+                aria-hidden={!showTourHotelManagementInList}
               >
                 <TourHotelManagementPanel
                   locale={locale}
@@ -2396,14 +2390,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   {...panelHoldProps(tourHotelMgmtLinkedTodo)}
                 />
               </li>
-            ) : null}
-            {showTourHotelPriceCheckInList ? (
               <li
                 className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
                   'daily',
                   tourHotelPriceCheckCompleted,
                   tourHotelPriceLinkedTodo?.on_hold ?? false
-                )}`}
+                )} ${showTourHotelPriceCheckInList ? '' : 'hidden'}`}
+                aria-hidden={!showTourHotelPriceCheckInList}
               >
                 <TourHotelPriceCheckPanel
                   locale={locale}
@@ -2416,14 +2409,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   {...panelHoldProps(tourHotelPriceLinkedTodo)}
                 />
               </li>
-            ) : null}
-            {showTourHotelCcFormInList ? (
               <li
                 className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
                   'daily',
                   tourHotelCcFormCompleted,
                   tourHotelCcFormLinkedTodo?.on_hold ?? false
-                )}`}
+                )} ${showTourHotelCcFormInList ? '' : 'hidden'}`}
+                aria-hidden={!showTourHotelCcFormInList}
               >
                 <TourHotelCcFormPanel
                   locale={locale}
@@ -2436,14 +2428,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   {...panelHoldProps(tourHotelCcFormLinkedTodo)}
                 />
               </li>
-            ) : null}
-            {showTourSettlementInList ? (
               <li
                 className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
                   'daily',
                   tourSettlementCompleted,
                   tourSettlementLinkedTodo?.on_hold ?? false
-                )}`}
+                )} ${showTourSettlementInList ? '' : 'hidden'}`}
+                aria-hidden={!showTourSettlementInList}
               >
                 <TourSettlementPanel
                   locale={locale}
@@ -2456,14 +2447,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   {...panelHoldProps(tourSettlementLinkedTodo)}
                 />
               </li>
-            ) : null}
-            {showReservationAgencyManagementInList ? (
               <li
                 className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
                   'daily',
                   reservationAgencyManagementCompleted,
                   reservationAgencyLinkedTodo?.on_hold ?? false
-                )}`}
+                )} ${showReservationAgencyManagementInList ? '' : 'hidden'}`}
+                aria-hidden={!showReservationAgencyManagementInList}
               >
                 <ReservationAgencyManagementPanel
                   locale={locale}
@@ -2475,14 +2465,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   {...panelHoldProps(reservationAgencyLinkedTodo)}
                 />
               </li>
-            ) : null}
-            {showAntelopeCanyonBookingInList ? (
               <li
                 className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
                   'daily',
                   antelopeCanyonBookingCompleted,
                   antelopeCanyonBookingLinkedTodo?.on_hold ?? false
-                )}`}
+                )} ${showAntelopeCanyonBookingInList ? '' : 'hidden'}`}
+                aria-hidden={!showAntelopeCanyonBookingInList}
               >
                 <AntelopeCanyonBookingPanel
                   locale={locale}
@@ -2495,14 +2484,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   {...panelHoldProps(antelopeCanyonBookingLinkedTodo)}
                 />
               </li>
-            ) : null}
-            {showBentoCheckInList ? (
               <li
                 className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
                   'daily',
                   bentoCheckCompleted,
                   bentoCheckLinkedTodo?.on_hold ?? false
-                )}`}
+                )} ${showBentoCheckInList ? '' : 'hidden'}`}
+                aria-hidden={!showBentoCheckInList}
               >
                 <BentoCheckPanel
                   locale={locale}
@@ -2515,7 +2503,6 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   {...panelHoldProps(bentoCheckLinkedTodo)}
                 />
               </li>
-            ) : null}
             {visibleTodos.map((todo) => {
               const actionType = normalizeOpTodoActionType(todo.action_type)
               const actionConfig = parseOpTodoActionConfig(todo.action_config)

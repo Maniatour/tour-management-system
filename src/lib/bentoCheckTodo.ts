@@ -1,6 +1,7 @@
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
+import { opTodoBusinessDateKey } from '@/lib/opTodoBusinessDay'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -20,7 +21,7 @@ export function bentoCheckPanelTitle(locale: string): string {
 }
 
 export function bentoCheckCompletionDateKey(): string {
-  return dayjs().tz(LV_TZ).format('YYYY-MM-DD')
+  return opTodoBusinessDateKey()
 }
 
 export function bentoCheckTargetTourDate(): string {

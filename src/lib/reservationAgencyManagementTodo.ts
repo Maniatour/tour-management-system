@@ -5,6 +5,7 @@ import {
   isManiaTourOrServiceSubCategory,
   type DepositTabProductRef,
 } from '@/lib/reservationActionRequiredDepositTab'
+import { opTodoBusinessDateKey } from '@/lib/opTodoBusinessDay'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -23,7 +24,7 @@ export function reservationAgencyManagementPanelTitle(locale: string): string {
 }
 
 export function reservationAgencyManagementCompletionDateKey(): string {
-  return dayjs().tz(LV_TZ).format('YYYY-MM-DD')
+  return opTodoBusinessDateKey()
 }
 
 /** 오늘부터 90일 이내 투어일 예약 */

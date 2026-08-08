@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase'
 import {
   isConfirmedTourHotelBookingForCcForm,
   normalizeTourHotelCcStatus,
-  tourHotelCcFormCompletionDateKey,
   tourHotelCcFormTargetCheckInDate,
   type TourHotelCcStatus,
 } from '@/lib/tourHotelCcFormTodo'
@@ -61,11 +60,7 @@ export function useTourHotelCcFormQueue(enabled = true) {
   const [rows, setRows] = useState<TourHotelCcFormQueueRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const completionDateKey = useMemo(() => tourHotelCcFormCompletionDateKey(), [])
-  const targetCheckIn = useMemo(
-    () => tourHotelCcFormTargetCheckInDate(completionDateKey),
-    [completionDateKey]
-  )
+  const targetCheckIn = useMemo(() => tourHotelCcFormTargetCheckInDate(), [])
 
   const reload = useCallback(async () => {
     if (!enabled) {

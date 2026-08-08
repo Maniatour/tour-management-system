@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { chunkStrings } from '@/lib/supabaseInChunks'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type CancellationFollowUpMeta = { reason: string; firstRecordedAt: string | null }
 
@@ -25,7 +26,8 @@ export function isRebookingReservationByReasonMap(
 }
 
 export async function fetchCancellationFollowUpMeta(
-  reservationIds: string[]
+  reservationIds: string[],
+  client: SupabaseClient = supabase as SupabaseClient
 ): Promise<Map<string, CancellationFollowUpMeta>> {
   const map = new Map<string, CancellationFollowUpMeta>()
   const chunks = chunkStrings(reservationIds)
@@ -34,7 +36,7 @@ export async function fetchCancellationFollowUpMeta(
   const grouped = new Map<string, Array<{ content: string | null; created_at: string | null }>>()
 
   for (const chunk of chunks) {
-    const { data, error } = await fromUntypedTable(supabase, 'reservation_follow_ups')
+    const { data, error } = await fromUntypedTable(client, 'reservation_follow_ups')
       .select('reservation_id, content, created_at')
       .in('reservation_id', chunk)
       .eq('type', 'cancellation_reason')

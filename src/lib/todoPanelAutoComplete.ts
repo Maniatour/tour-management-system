@@ -45,11 +45,10 @@ export function todoPanelPendingTourCount(progress: {
 /**
  * Decide next panel completed flag.
  * - workCount === 0 → complete
- * - workCount > 0 → incomplete (reopen)
- * - live: always reopen when work exists
- * - snapshot: reopen only when work newly appeared after an empty queue
- *   (prevWorkCount === 0), so a manual "완료" with remaining tours can stick
- *   until the queue later goes empty→nonempty again.
+ * - workCount > 0 → incomplete only when:
+ *   - live initial reconcile (completed while away, work already waiting), or
+ *   - queue transitioned from empty → nonempty (0 → N)
+ * Manual complete with remaining work can stick until the queue goes empty again.
  */
 export function resolveTodoPanelAutoComplete(input: {
   workCount: number
@@ -57,13 +56,15 @@ export function resolveTodoPanelAutoComplete(input: {
   onHold: boolean
   mode: TodoPanelAutoCompleteMode
   prevWorkCount: number | null
+  /** First stable load after mount/enable — live panels may reopen once. */
+  initialReconcile?: boolean
 }): boolean | null {
   if (input.onHold) return null
 
   if (input.workCount === 0 && !input.completed) return true
 
   if (input.workCount > 0 && input.completed) {
-    if (input.mode === 'live') return false
+    if (input.initialReconcile && input.mode === 'live') return false
     if (input.prevWorkCount === 0) return false
   }
 

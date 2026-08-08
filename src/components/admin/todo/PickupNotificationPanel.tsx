@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2, Mail, RefreshCw, Users, Wand2 } from 'lucide-react'
+import { Hotel, Loader2, Mail, RefreshCw, Users, Wand2 } from 'lucide-react'
 import { TodoPanelStatusButtons } from '@/components/admin/todo/TodoPanelStatusButtons'
 import { useTranslations } from 'next-intl'
 import { TodoPanelTourStatusButtons } from '@/components/admin/todo/TodoPanelTourStatusButtons'
@@ -263,13 +263,22 @@ export function PickupNotificationPanel({
                 />
                 <p
                   className={`min-w-0 flex-1 truncate text-[11px] font-medium ${todoPanelTourTitleClassName(tourStatus)}`}
-                  title={`${tourSummaryText(tour)} · ${tour.assigned_people}`}
+                  title={`${tourSummaryText(tour)} · ${tour.assigned_people} · ${
+                    isKo ? `호텔 ${tour.pickup_hotel_count}` : `${tour.pickup_hotel_count} hotels`
+                  }`}
                 >
                   <span>{tourSummaryText(tour)}</span>
                   <span className="text-gray-400"> , </span>
                   <span className="inline-flex items-center gap-0.5 align-middle text-gray-700">
                     <Users className="h-3 w-3 shrink-0" aria-hidden />
                     <span className="tabular-nums">{tour.assigned_people}</span>
+                  </span>
+                  <span
+                    className="ml-1 inline-flex items-center gap-0.5 align-middle rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800"
+                    title={isKo ? '픽업 호텔 수' : 'Pickup hotels'}
+                  >
+                    <Hotel className="h-3 w-3 shrink-0" aria-hidden />
+                    <span className="tabular-nums">{tour.pickup_hotel_count}</span>
                   </span>
                 </p>
                 {actionButtons(tour.id)}

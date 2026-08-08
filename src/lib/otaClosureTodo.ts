@@ -9,6 +9,7 @@ import {
   type ChannelVariantListing,
   type OtaChannelInventoryRow,
 } from '@/lib/otaPriceInventory'
+import { opTodoBusinessDateKey } from '@/lib/opTodoBusinessDay'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -25,7 +26,7 @@ export function otaClosurePanelTitle(locale: string): string {
 }
 
 export function otaClosureCompletionDateKey(): string {
-  return dayjs().tz(LV_TZ).format('YYYY-MM-DD')
+  return opTodoBusinessDateKey()
 }
 
 /** 오늘 포함 앞으로 7일 (LA 기준) */

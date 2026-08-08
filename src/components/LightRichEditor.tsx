@@ -1024,31 +1024,6 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
     document.addEventListener('touchend', handleEnd)
   }, [currentHeight, minHeight, maxHeight])
 
-  const insertLink = () => {
-    const url = prompt(strings.linkUrlPrompt)
-    if (url) {
-      const text = prompt(strings.linkTextPrompt, strings.linkDefaultText)
-      if (text) {
-        const linkHtml = `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline;">${text}</a>`
-        document.execCommand('insertHTML', false, linkHtml)
-        setTimeout(updateEditorContent, 0)
-      }
-    }
-  }
-
-  const insertList = () => {
-    editorRef.current?.focus()
-    document.execCommand('insertUnorderedList', false)
-    setTimeout(updateEditorContent, 0)
-  }
-
-  const insertOrderedList = () => {
-    editorRef.current?.focus()
-    document.execCommand('insertOrderedList', false)
-    if (editorRef.current) syncOrderedListStarts(editorRef.current)
-    setTimeout(updateEditorContent, 0)
-  }
-
   const saveEditorSelection = useCallback(() => {
     const editor = editorRef.current
     if (!editor) return
@@ -1074,6 +1049,58 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
       return false
     }
   }, [])
+
+  /** 툴바 클릭으로 contentEditable 포커스/선택이 풀리지 않게 함 (INPUT 등은 제외) */
+  const preserveToolbarSelection = useCallback((e: React.MouseEvent) => {
+    const tag = (e.target as HTMLElement)?.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+    e.preventDefault()
+    saveEditorSelection()
+  }, [saveEditorSelection])
+
+  /** 포커스·선택 복원 후 execCommand 실행 (툴바 서식 버튼용) */
+  const runEditorCommand = useCallback(
+    (command: string, value?: string) => {
+      if (readOnly) return
+      const editor = editorRef.current
+      if (!editor) return
+      editor.focus()
+      restoreEditorSelection()
+      if (value !== undefined) {
+        document.execCommand(command, false, value)
+      } else {
+        document.execCommand(command, false)
+      }
+      saveEditorSelection()
+      setTimeout(updateEditorContent, 0)
+    },
+    [readOnly, restoreEditorSelection, saveEditorSelection, updateEditorContent]
+  )
+
+  const insertLink = () => {
+    saveEditorSelection()
+    const url = prompt(strings.linkUrlPrompt)
+    if (url) {
+      const text = prompt(strings.linkTextPrompt, strings.linkDefaultText)
+      if (text) {
+        const linkHtml = `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline;">${text}</a>`
+        editorRef.current?.focus()
+        restoreEditorSelection()
+        document.execCommand('insertHTML', false, linkHtml)
+        saveEditorSelection()
+        setTimeout(updateEditorContent, 0)
+      }
+    }
+  }
+
+  const insertList = () => {
+    runEditorCommand('insertUnorderedList')
+  }
+
+  const insertOrderedList = () => {
+    runEditorCommand('insertOrderedList')
+    if (editorRef.current) syncOrderedListStarts(editorRef.current)
+  }
 
   const insertHtmlAtCursor = useCallback(
     (html: string): HTMLElement | null => {
@@ -1246,9 +1273,8 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   }
 
   const insertImageDataUrl = (imageUrl: string, alt: string) => {
-    editorRef.current?.focus()
     const imageHtml = buildSopImageHtml(imageUrl, alt, null, effectiveImageResize)
-    document.execCommand('insertHTML', false, imageHtml)
+    insertHtmlAtCursor(imageHtml)
     setTimeout(updateEditorContent, 0)
   }
 
@@ -1330,20 +1356,25 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
 
   // 글자색 적용
   const applyColor = (color: string) => {
-    document.execCommand('foreColor', false, color)
-    setTimeout(updateEditorContent, 0)
+    runEditorCommand('foreColor', color)
     setShowColorPicker(false)
   }
 
   // 배경색 적용
   const applyBackgroundColor = (color: string) => {
-    document.execCommand('backColor', false, color)
-    setTimeout(updateEditorContent, 0)
+    runEditorCommand('backColor', color)
     setShowBackgroundColorPicker(false)
   }
 
   // 글자 크기 적용
   const applyFontSize = (size: string) => {
+    const editor = editorRef.current
+    if (!editor || readOnly) {
+      setShowFontSizePicker(false)
+      return
+    }
+    editor.focus()
+    restoreEditorSelection()
     const selection = window.getSelection()
     if (selection && selection.rangeCount > 0) {
       const range = selection.getRangeAt(0)
@@ -1351,6 +1382,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
       span.style.fontSize = size
       try {
         range.surroundContents(span)
+        saveEditorSelection()
         setTimeout(updateEditorContent, 0)
       } catch {
         console.log('Cannot surround contents')
@@ -1360,6 +1392,13 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   }
 
   const applyFontFamily = (family: string) => {
+    const editor = editorRef.current
+    if (!editor || readOnly) {
+      setShowFontFamilyPicker(false)
+      return
+    }
+    editor.focus()
+    restoreEditorSelection()
     const selection = window.getSelection()
     if (selection && selection.rangeCount > 0) {
       const range = selection.getRangeAt(0)
@@ -1367,6 +1406,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
       span.style.fontFamily = family
       try {
         range.surroundContents(span)
+        saveEditorSelection()
         setTimeout(updateEditorContent, 0)
       } catch {
         console.log('Cannot surround contents')
@@ -1379,14 +1419,14 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
     <div className={`border border-gray-300 rounded overflow-hidden flex flex-col ${className}`}>
       {/* 툴바 */}
       {effectiveShowToolbar && (
-        <div className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 p-2 flex flex-wrap gap-1">
+        <div
+          className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 p-2 flex flex-wrap gap-1"
+          onMouseDown={preserveToolbarSelection}
+        >
           {enableBold && (
             <button
               type="button"
-              onClick={() => {
-                document.execCommand('bold')
-                setTimeout(updateEditorContent, 0)
-              }}
+              onClick={() => runEditorCommand('bold')}
               className="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100 font-bold"
               title={strings.boldTitle}
             >
@@ -1396,10 +1436,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
           {enableItalic && (
             <button
               type="button"
-              onClick={() => {
-                document.execCommand('italic')
-                setTimeout(updateEditorContent, 0)
-              }}
+              onClick={() => runEditorCommand('italic')}
               className="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100 italic"
               title={strings.italicTitle}
             >
@@ -1409,10 +1446,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
           {enableUnderline && (
             <button
               type="button"
-              onClick={() => {
-                document.execCommand('underline')
-                setTimeout(updateEditorContent, 0)
-              }}
+              onClick={() => runEditorCommand('underline')}
               className="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100 underline"
               title={strings.underlineTitle}
             >
@@ -1450,11 +1484,6 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
             <div className="relative">
               <button
                 type="button"
-                onMouseDown={(e) => {
-                  // 툴바 클릭으로 에디터 선택이 풀리기 전에 커서 위치 저장
-                  e.preventDefault()
-                  saveEditorSelection()
-                }}
                 onClick={() => setShowTablePicker(!showTablePicker)}
                 className="inline-flex items-center gap-1 px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100"
                 title={strings.tableTitle}
@@ -1492,7 +1521,6 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
                   </div>
                   <button
                     type="button"
-                    onMouseDown={(e) => e.preventDefault()}
                     onClick={insertTable}
                     className="w-full rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-700"
                   >

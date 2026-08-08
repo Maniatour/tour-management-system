@@ -2,6 +2,7 @@ import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
 import { normalizeTourHotelBookingStatus } from '@/lib/tourHotelReferences'
+import { opTodoBusinessDateKey } from '@/lib/opTodoBusinessDay'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -30,14 +31,12 @@ export function tourHotelCcFormPanelTitle(locale: string): string {
 }
 
 export function tourHotelCcFormCompletionDateKey(): string {
-  return dayjs().tz(LV_TZ).format('YYYY-MM-DD')
+  return opTodoBusinessDateKey()
 }
 
-/** 다음날(라스베가스 기준) 체크인 확정 부킹 대상일 */
-export function tourHotelCcFormTargetCheckInDate(
-  dateKey = tourHotelCcFormCompletionDateKey()
-): string {
-  return dayjs.tz(dateKey, LV_TZ).add(1, 'day').format('YYYY-MM-DD')
+/** 다음날(라스베가스 달력 기준) 체크인 확정 부킹 대상일 */
+export function tourHotelCcFormTargetCheckInDate(_dateKey?: string): string {
+  return dayjs().tz(LV_TZ).add(1, 'day').format('YYYY-MM-DD')
 }
 
 export function shouldHideTodoChipForTourHotelCcFormPanel(todo: { title?: string | null }): boolean {

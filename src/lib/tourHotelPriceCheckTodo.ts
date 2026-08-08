@@ -1,6 +1,7 @@
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
+import { opTodoBusinessDateKey } from '@/lib/opTodoBusinessDay'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -17,7 +18,7 @@ export function tourHotelPriceCheckPanelTitle(locale: string): string {
 }
 
 export function tourHotelPriceCheckCompletionDateKey(): string {
-  return dayjs().tz(LV_TZ).format('YYYY-MM-DD')
+  return opTodoBusinessDateKey()
 }
 
 export function tourHotelPriceCheckDateRange(): { start: string; end: string } {

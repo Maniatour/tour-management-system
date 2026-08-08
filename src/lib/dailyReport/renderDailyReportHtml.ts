@@ -65,11 +65,10 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
     .map(
       (t) => `<tr>
         <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:12px;">${esc(t.productName)}<br/><span style="color:#6b7280;">${esc(t.guideName ?? '—')}</span></td>
-        <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;text-align:right;font-size:12px;">${formatUsd(t.totalPayment)}</td>
-        <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;text-align:right;font-size:12px;">${formatUsd(t.balanceOutstanding)}</td>
         <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;text-align:right;font-size:12px;color:#059669;">${formatUsd(t.totalIncome)}</td>
         <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;text-align:right;font-size:12px;color:#dc2626;">${formatUsd(t.totalExpenses)}</td>
         <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;text-align:right;font-size:12px;font-weight:600;">${formatUsd(t.netProfit)}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;text-align:right;font-size:12px;">${formatUsd(t.balanceOutstanding)}</td>
       </tr>`
     )
     .join('')
@@ -77,17 +76,16 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
   const tourTotalRow = ts.tours.length
     ? `<tr style="background:#f9fafb;font-weight:600;">
         <td style="padding:8px 10px;border-top:2px solid #e5e7eb;">합계</td>
-        <td style="padding:8px 10px;border-top:2px solid #e5e7eb;text-align:right;">${formatUsd(ts.totals.totalPayment)}</td>
-        <td style="padding:8px 10px;border-top:2px solid #e5e7eb;text-align:right;">${formatUsd(ts.totals.balanceOutstanding)}</td>
         <td style="padding:8px 10px;border-top:2px solid #e5e7eb;text-align:right;color:#059669;">${formatUsd(ts.totals.totalIncome)}</td>
         <td style="padding:8px 10px;border-top:2px solid #e5e7eb;text-align:right;color:#dc2626;">${formatUsd(ts.totals.totalExpenses)}</td>
         <td style="padding:8px 10px;border-top:2px solid #e5e7eb;text-align:right;">${formatUsd(ts.totals.netProfit)}</td>
+        <td style="padding:8px 10px;border-top:2px solid #e5e7eb;text-align:right;">${formatUsd(ts.totals.balanceOutstanding)}</td>
       </tr>`
     : ''
 
   const tourBody = `
     ${tourFinRows ? `<table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:12px;"><thead><tr style="background:#f9fafb;">
-      <th style="padding:8px;text-align:left;">상품</th><th>총매출</th><th>잔액</th><th>운영이익</th><th>지출</th><th>순수익</th>
+      <th style="padding:8px;text-align:left;">상품</th><th>총매출</th><th>지출</th><th>순이익</th><th>잔액</th>
     </tr></thead><tbody>${tourFinRows}${tourTotalRow}</tbody></table>` : `<p>${singleDay ? '오늘 투어 없음' : '해당 기간 투어 없음'}</p>`}
     ${sectionNotes(ts.notes)}
   `
@@ -96,6 +94,7 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
   const financialBlocks = fr
     ? fr.categories
         .map((cat) => {
+          const isBooking = cat.key === 'booking'
           const rows = cat.items
             .map((item) => {
               const amount =
@@ -105,9 +104,18 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
               const detail = [item.detail, item.paymentMethod ? `(${item.paymentMethod})` : null]
                 .filter(Boolean)
                 .join(' ')
+              const bookingCols = isBooking
+                ? `<td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:right;font-size:12px;color:#6b7280;">${
+                    item.ea != null ? item.ea : '—'
+                  }</td>
+                <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:right;font-size:12px;color:#6b7280;">${
+                    item.unitPrice != null ? formatUsd(item.unitPrice) : '—'
+                  }</td>`
+                : ''
               return `<tr>
                 <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;font-size:12px;">${esc(item.label)}</td>
                 <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;font-size:12px;color:#6b7280;">${esc(detail || '—')}</td>
+                ${bookingCols}
                 <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:right;font-size:12px;">${amount}</td>
               </tr>`
             })
@@ -116,9 +124,12 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
             cat.key === 'cash'
               ? ''
               : `<div style="text-align:right;font-weight:600;color:#dc2626;font-size:13px;margin-top:6px;">합계 ${formatUsd(cat.total)}</div>`
+          const headerCols = isBooking
+            ? `<th style="padding:6px 10px;text-align:left;">항목</th><th style="padding:6px 10px;text-align:left;">상세</th><th style="padding:6px 10px;text-align:right;">EA</th><th style="padding:6px 10px;text-align:right;">개당 가격</th><th style="padding:6px 10px;text-align:right;">금액</th>`
+            : `<th style="padding:6px 10px;text-align:left;">항목</th><th style="padding:6px 10px;text-align:left;">상세</th><th style="padding:6px 10px;text-align:right;">금액</th>`
           return `<div style="margin-bottom:16px;">
             <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${esc(cat.title)}</div>
-            ${rows ? `<table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#f9fafb;"><th style="padding:6px 10px;text-align:left;">항목</th><th style="padding:6px 10px;text-align:left;">상세</th><th style="padding:6px 10px;text-align:right;">금액</th></tr></thead><tbody>${rows}</tbody></table>${total}` : '<p style="font-size:12px;color:#6b7280;">해당 항목 없음</p>'}
+            ${rows ? `<table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#f9fafb;">${headerCols}</tr></thead><tbody>${rows}</tbody></table>${total}` : '<p style="font-size:12px;color:#6b7280;">해당 항목 없음</p>'}
           </div>`
         })
         .join('')

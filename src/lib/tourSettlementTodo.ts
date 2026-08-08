@@ -3,6 +3,7 @@ import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
 import { getMultiDayTourDays } from '@/lib/scheduleVehicleOilMaintenance'
 import { TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR } from '@/lib/tourExpenseConstants'
+import { opTodoBusinessDateKey } from '@/lib/opTodoBusinessDay'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -41,7 +42,7 @@ export function tourSettlementPanelTitle(locale: string): string {
 }
 
 export function tourSettlementCompletionDateKey(): string {
-  return dayjs().tz(LV_TZ).format('YYYY-MM-DD')
+  return opTodoBusinessDateKey()
 }
 
 /** 어제·오늘 투어 (라스베이거스 기준) */

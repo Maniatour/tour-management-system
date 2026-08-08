@@ -5,7 +5,12 @@ import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
 import { supabase } from '@/lib/supabase'
-import { calculateAssignedPeople, normalizeReservationIds } from '@/utils/tourUtils'
+import {
+  calculateAssignedPeople,
+  isReservationCancelledStatus,
+  isReservationDeletedStatus,
+  normalizeReservationIds,
+} from '@/utils/tourUtils'
 import { isTourCancelled, isTourDeleted } from '@/utils/tourStatusUtils'
 import { isWithin48HoursBeforeTourStartLocal } from '@/utils/reservationUtils'
 import type { TourEnvelopePrintListRow } from '@/hooks/useToursForEnvelopePrint'
@@ -14,6 +19,30 @@ dayjs.extend(utc)
 dayjs.extend(timezone)
 
 const LV_TZ = 'America/Los_Angeles'
+
+export type PickupNotificationTourRow = TourEnvelopePrintListRow & {
+  /** 배정·비취소 예약의 서로 다른 픽업 호텔 수 */
+  pickup_hotel_count: number
+}
+
+function countDistinctPickupHotels(
+  tour: { reservation_ids?: unknown },
+  reservations: Array<{ id: string; status: string | null; pickup_hotel: string | null }>
+): number {
+  const ids = normalizeReservationIds(tour.reservation_ids)
+  if (ids.length === 0) return 0
+  const idSet = new Set(ids.map((id) => String(id).trim()))
+  const hotels = new Set<string>()
+  for (const reservation of reservations) {
+    if (!idSet.has(String(reservation.id ?? '').trim())) continue
+    if (isReservationCancelledStatus(reservation.status)) continue
+    if (isReservationDeletedStatus(reservation.status)) continue
+    const hotelId = (reservation.pickup_hotel ?? '').trim()
+    if (!hotelId) continue
+    hotels.add(hotelId)
+  }
+  return hotels.size
+}
 
 type TourRow = {
   id: string
@@ -51,7 +80,7 @@ function isTourWithinPickupNotificationWindow(tour: Pick<TourRow, 'tour_date' | 
 }
 
 export function useToursForPickupNotification(enabled = true) {
-  const [rows, setRows] = useState<TourEnvelopePrintListRow[]>([])
+  const [rows, setRows] = useState<PickupNotificationTourRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -134,11 +163,12 @@ export function useToursForPickupNotification(enabled = true) {
         adults?: number | null
         child?: number | null
         infant?: number | null
+        pickup_hotel: string | null
       }> = []
       if (allReservationIds.length > 0) {
         const { data: reservationsData, error: resErr } = await supabase
           .from('reservations')
-          .select('id, status, total_people, adults, child, infant')
+          .select('id, status, total_people, adults, child, infant, pickup_hotel')
           .in('id', allReservationIds)
         if (resErr) throw resErr
         reservationRows.push(...(reservationsData || []))
@@ -157,7 +187,8 @@ export function useToursForPickupNotification(enabled = true) {
           assistant_name: t.assistant_id ? teamDisplayName(teamMap.get(t.assistant_id)) : null,
           vehicle_number: t.tour_car_id ? vehicleMap.get(t.tour_car_id) ?? null : null,
           assigned_people: calculateAssignedPeople(t, reservationRows),
-        } satisfies TourEnvelopePrintListRow
+          pickup_hotel_count: countDistinctPickupHotels(t, reservationRows),
+        } satisfies PickupNotificationTourRow
       })
 
       setRows(list)

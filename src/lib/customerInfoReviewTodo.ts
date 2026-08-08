@@ -3,6 +3,7 @@ import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
 import { resolveCustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
+import { opTodoBusinessDateKey } from '@/lib/opTodoBusinessDay'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -21,7 +22,7 @@ export function customerInfoReviewPanelTitle(locale: string): string {
 }
 
 export function customerInfoReviewCompletionDateKey(): string {
-  return dayjs().tz(LV_TZ).format('YYYY-MM-DD')
+  return opTodoBusinessDateKey()
 }
 
 /** 내일·모레 (LA 기준) */

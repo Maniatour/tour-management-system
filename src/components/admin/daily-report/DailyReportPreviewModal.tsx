@@ -230,20 +230,38 @@ export function DailyReportPreviewModal({
   return (
     <Dialog open={open} onOpenChange={(next) => !next && !busy && onClose()}>
       <DialogContent
-        className="flex max-h-[92vh] max-w-5xl flex-col gap-0 overflow-hidden p-0"
+        className="flex h-[100dvh] max-h-[100dvh] max-w-5xl flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:max-h-[92vh]"
         hideCloseButton={busy}
       >
-        <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4">
-          <DialogTitle className="flex items-center gap-2 text-xl">
-            <FileText className="h-5 w-5 text-primary" />
-            {isKo ? 'Daily Report — 일일 업무 보고' : 'Daily Report'}
+        <DialogHeader className="shrink-0 space-y-0 border-b border-border/60 px-3 py-2 text-left sm:px-6 sm:py-4">
+          <DialogTitle className="flex items-center gap-1.5 text-base sm:gap-2 sm:text-xl">
+            <FileText className="h-4 w-4 shrink-0 text-primary sm:h-5 sm:w-5" />
+            <span className="truncate">
+              {isKo ? (
+                <>
+                  <span className="sm:hidden">Daily Report</span>
+                  <span className="hidden sm:inline">Daily Report — 일일 업무 보고</span>
+                </>
+              ) : (
+                'Daily Report'
+              )}
+            </span>
+            {existing?.status === 'submitted' && (
+              <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 sm:ml-2 sm:px-2 sm:text-xs">
+                <CheckCircle2 className="h-3 w-3" />
+                {isKo ? '발송완료' : 'Sent'}
+              </span>
+            )}
           </DialogTitle>
 
-          <div className="mt-3 space-y-2">
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="min-w-[140px] flex-1 sm:flex-none">
-                <Label htmlFor="daily-report-start-date" className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                  {isKo ? '시작일' : 'Start date'}
+          <div className="mt-2 space-y-1.5 sm:mt-3 sm:space-y-2">
+            <div className="flex flex-wrap items-end gap-1.5 sm:gap-3">
+              <div className="min-w-0 flex-1 basis-[calc(50%-0.25rem)] sm:min-w-[140px] sm:flex-none sm:basis-auto">
+                <Label
+                  htmlFor="daily-report-start-date"
+                  className="mb-0.5 block text-[10px] font-medium text-muted-foreground sm:mb-1.5 sm:text-xs"
+                >
+                  {isKo ? '시작일' : 'Start'}
                 </Label>
                 <Input
                   id="daily-report-start-date"
@@ -251,15 +269,18 @@ export function DailyReportPreviewModal({
                   value={startDate}
                   onChange={(e) => handleStartDateChange(e.target.value)}
                   disabled={busy}
-                  className="h-9 rounded-lg"
+                  className="h-8 rounded-md text-sm sm:h-9 sm:rounded-lg"
                 />
               </div>
               <span className="hidden pb-2 text-muted-foreground sm:inline" aria-hidden>
                 —
               </span>
-              <div className="min-w-[140px] flex-1 sm:flex-none">
-                <Label htmlFor="daily-report-end-date" className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                  {isKo ? '종료일' : 'End date'}
+              <div className="min-w-0 flex-1 basis-[calc(50%-0.25rem)] sm:min-w-[140px] sm:flex-none sm:basis-auto">
+                <Label
+                  htmlFor="daily-report-end-date"
+                  className="mb-0.5 block text-[10px] font-medium text-muted-foreground sm:mb-1.5 sm:text-xs"
+                >
+                  {isKo ? '종료일' : 'End'}
                 </Label>
                 <Input
                   id="daily-report-end-date"
@@ -267,11 +288,11 @@ export function DailyReportPreviewModal({
                   value={endDate}
                   onChange={(e) => handleEndDateChange(e.target.value)}
                   disabled={busy}
-                  className="h-9 rounded-lg"
+                  className="h-8 rounded-md text-sm sm:h-9 sm:rounded-lg"
                 />
               </div>
 
-              <div className="flex flex-wrap gap-1.5 sm:ml-auto">
+              <div className="flex w-full flex-nowrap gap-1 overflow-x-auto pb-0.5 sm:ml-auto sm:w-auto sm:flex-wrap sm:gap-1.5 sm:overflow-visible sm:pb-0">
                 {datePresets.map((preset) => (
                   <Button
                     key={preset}
@@ -280,7 +301,7 @@ export function DailyReportPreviewModal({
                     size="sm"
                     disabled={busy}
                     onClick={() => applyDatePreset(preset)}
-                    className="h-9 rounded-lg px-2.5 text-xs"
+                    className="h-7 shrink-0 rounded-md px-2 text-[11px] sm:h-9 sm:rounded-lg sm:px-2.5 sm:text-xs"
                   >
                     {isKo ? DAILY_REPORT_DATE_PRESET_LABELS[preset].ko : DAILY_REPORT_DATE_PRESET_LABELS[preset].en}
                   </Button>
@@ -289,15 +310,15 @@ export function DailyReportPreviewModal({
             </div>
 
             {isRangeReport && (
-              <p className="text-xs text-primary">
+              <p className="text-[11px] text-primary sm:text-xs">
                 {isKo
-                  ? `${formatReportDateRangeLabel(startDate, endDate, locale)} 기간 통계를 표시합니다.`
-                  : `Showing stats for ${formatReportDateRangeLabel(startDate, endDate, locale)}.`}
+                  ? `${formatReportDateRangeLabel(startDate, endDate, locale)} 기간 통계`
+                  : `Showing ${formatReportDateRangeLabel(startDate, endDate, locale)}`}
               </p>
             )}
           </div>
 
-          <DialogDescription className="mt-2">
+          <DialogDescription className="sr-only sm:not-sr-only sm:mt-2 sm:block">
             {isKo
               ? isRangeReport
                 ? '선택한 기간의 업무 통계를 확인하고, 메모를 추가한 뒤 SUPER 관리자에게 발송하세요.'
@@ -305,30 +326,26 @@ export function DailyReportPreviewModal({
               : isRangeReport
                 ? 'Review the selected period, add notes, and send to SUPER admins.'
                 : 'Review today, add notes, and send to SUPER admins.'}
-            {existing?.status === 'submitted' && (
-              <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                <CheckCircle2 className="h-3 w-3" />
-                {isKo ? '발송 완료' : 'Sent'}
-                {existing.emailSentAt
-                  ? ` · ${new Date(existing.emailSentAt).toLocaleString(isKo ? 'ko-KR' : 'en-US')}`
-                  : ''}
+            {existing?.status === 'submitted' && existing.emailSentAt ? (
+              <span className="ml-2 hidden text-xs text-emerald-700 sm:inline">
+                · {new Date(existing.emailSentAt).toLocaleString(isKo ? 'ko-KR' : 'en-US')}
               </span>
-            )}
+            ) : null}
           </DialogDescription>
         </DialogHeader>
 
         {loading || !data ? (
-          <div className="flex flex-1 items-center justify-center py-24">
+          <div className="flex flex-1 items-center justify-center py-16 sm:py-24">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="shrink-0 border-b border-border/40 px-6">
+            <div className="shrink-0 border-b border-border/40 px-3 sm:px-6">
               <div className="flex gap-1">
                 <button
                   type="button"
                   onClick={() => setActiveTab('preview')}
-                  className={`border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                  className={`border-b-2 px-3 py-1.5 text-xs font-medium transition-colors sm:px-4 sm:py-2.5 sm:text-sm ${
                     activeTab === 'preview'
                       ? 'border-primary text-primary'
                       : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -339,7 +356,7 @@ export function DailyReportPreviewModal({
                 <button
                   type="button"
                   onClick={() => setActiveTab('edit')}
-                  className={`border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                  className={`border-b-2 px-3 py-1.5 text-xs font-medium transition-colors sm:px-4 sm:py-2.5 sm:text-sm ${
                     activeTab === 'edit'
                       ? 'border-primary text-primary'
                       : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -351,14 +368,14 @@ export function DailyReportPreviewModal({
             </div>
 
             {activeTab === 'preview' ? (
-              <div className="min-h-0 flex-1 overflow-y-auto bg-muted/20 p-4 md:p-6">
-                <div ref={previewRef} className="mx-auto max-w-3xl overflow-hidden rounded-2xl shadow-lg">
+              <div className="min-h-0 flex-1 overflow-y-auto bg-muted/20 p-2 sm:p-4 md:p-6">
+                <div ref={previewRef} className="mx-auto max-w-3xl overflow-hidden rounded-xl shadow-lg sm:rounded-2xl">
                   <DailyReportDocument data={data} locale={locale} />
                 </div>
               </div>
             ) : (
-              <div className="min-h-0 flex-1 overflow-y-auto p-6">
-                <div className="mx-auto max-w-2xl space-y-5">
+              <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-6">
+                <div className="mx-auto max-w-2xl space-y-4 sm:space-y-5">
                   <NoteField
                     label={isKo ? '예약 관리 메모' : 'Reservation notes'}
                     value={data.reservationSummary.notes}
@@ -390,7 +407,7 @@ export function DailyReportPreviewModal({
                     placeholder={isKo ? '오늘 특이사항, 내일 주의사항 등' : 'Overall notes for SUPER...'}
                     rows={5}
                   />
-                  <div className="rounded-xl border border-border/60 bg-muted/30 p-4">
+                  <div className="rounded-xl border border-border/60 bg-muted/30 p-3 sm:p-4">
                     <p className="mb-2 text-sm font-semibold text-muted-foreground">
                       {isKo ? '여행사 Daily Report 권장 항목' : 'Recommended daily report items'}
                     </p>
@@ -406,11 +423,20 @@ export function DailyReportPreviewModal({
           </div>
         )}
 
-        <DialogFooter className="shrink-0 gap-2 border-t border-border/60 px-6 py-4 sm:justify-between">
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => void loadReport()} disabled={busy}>
-              <RefreshCw className="mr-1.5 h-4 w-4" />
-              {isKo ? '새로고침' : 'Refresh'}
+        <DialogFooter className="shrink-0 !flex-row items-center gap-1.5 border-t border-border/60 px-2 py-2 sm:gap-2 sm:px-6 sm:py-4 sm:justify-between">
+          <div className="flex items-center gap-1 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void loadReport()}
+              disabled={busy}
+              className="h-8 w-8 px-0 sm:h-9 sm:w-auto sm:px-3"
+              aria-label={isKo ? '새로고침' : 'Refresh'}
+              title={isKo ? '새로고침' : 'Refresh'}
+            >
+              <RefreshCw className="h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">{isKo ? '새로고침' : 'Refresh'}</span>
             </Button>
             <Button
               type="button"
@@ -418,22 +444,53 @@ export function DailyReportPreviewModal({
               size="sm"
               onClick={() => void handleDownloadPdf()}
               disabled={busy || !data}
+              className="h-8 w-8 px-0 sm:h-9 sm:w-auto sm:px-3"
+              aria-label="PDF"
+              title="PDF"
             >
-              <FileText className="mr-1.5 h-4 w-4" />
-              PDF
+              <FileText className="h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">PDF</span>
             </Button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onClose}
+              disabled={busy}
+              className="hidden h-9 sm:inline-flex"
+            >
               {isKo ? '닫기' : 'Close'}
             </Button>
-            <Button type="button" variant="secondary" onClick={() => void handleSaveDraft()} disabled={busy || !data}>
-              {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
-              {isKo ? '초안 저장' : 'Save Draft'}
+          </div>
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5 sm:flex-none sm:gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => void handleSaveDraft()}
+              disabled={busy || !data}
+              className="h-8 px-2.5 text-xs sm:h-9 sm:px-3 sm:text-sm"
+            >
+              {saving ? (
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin sm:mr-1.5 sm:h-4 sm:w-4" />
+              ) : (
+                <Save className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4" />
+              )}
+              {isKo ? '초안' : 'Draft'}
             </Button>
-            <Button type="button" onClick={() => void handleSubmit()} disabled={busy || !data}>
-              {submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Mail className="mr-1.5 h-4 w-4" />}
-              {isKo ? 'SUPER에게 발송' : 'Send to SUPER'}
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void handleSubmit()}
+              disabled={busy || !data}
+              className="h-8 min-w-0 flex-1 px-2.5 text-xs sm:h-9 sm:flex-none sm:px-3 sm:text-sm"
+            >
+              {submitting ? (
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin sm:mr-1.5 sm:h-4 sm:w-4" />
+              ) : (
+                <Mail className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4" />
+              )}
+              <span className="truncate">{isKo ? 'SUPER 발송' : 'Send'}</span>
             </Button>
           </div>
         </DialogFooter>

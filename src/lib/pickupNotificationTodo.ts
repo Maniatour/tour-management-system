@@ -1,11 +1,4 @@
-import dayjs from 'dayjs'
-import timezone from 'dayjs/plugin/timezone'
-import utc from 'dayjs/plugin/utc'
-
-dayjs.extend(utc)
-dayjs.extend(timezone)
-
-const LV_TZ = 'America/Los_Angeles'
+import { opTodoBusinessDateKey } from '@/lib/opTodoBusinessDay'
 
 /** Todo List에 항상 표시되는 고정 패널 (DB Todo와 무관) */
 export const PICKUP_NOTIFICATION_PANEL = {
@@ -18,7 +11,7 @@ export function pickupNotificationPanelTitle(_locale: string): string {
 }
 
 export function pickupNotificationCompletionDateKey(): string {
-  return dayjs().tz(LV_TZ).format('YYYY-MM-DD')
+  return opTodoBusinessDateKey()
 }
 
 /** DB에 동일 제목 Todo가 있으면 칩 목록에서 숨김 (고정 패널과 중복 방지) */

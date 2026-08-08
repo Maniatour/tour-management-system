@@ -2,6 +2,7 @@ import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
 import { getMultiDayTourDays } from '@/lib/scheduleVehicleOilMaintenance'
+import { opTodoBusinessDateKey } from '@/lib/opTodoBusinessDay'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -18,7 +19,7 @@ export function tourHotelManagementPanelTitle(locale: string): string {
 }
 
 export function tourHotelManagementCompletionDateKey(): string {
-  return dayjs().tz(LV_TZ).format('YYYY-MM-DD')
+  return opTodoBusinessDateKey()
 }
 
 export function tourHotelManagementDateRange(): { start: string; end: string } {

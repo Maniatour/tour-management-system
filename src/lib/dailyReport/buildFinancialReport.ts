@@ -17,7 +17,7 @@ import type {
   DailyReportTourFinancial,
 } from '@/lib/dailyReport/types'
 
-const LEDGER_BASE_DATE = '2025-01-01'
+const LEDGER_BASE_DATE = '2026-01-01'
 
 const CASH_PAYMENT_STATUSES = [
   'Deposit Received',
@@ -32,11 +32,69 @@ type TourRow = {
   tour_date: string
   guide_fee: number | null
   assistant_fee: number | null
-  products: { name: string | null; name_ko: string | null; name_en: string | null } | null
+  products: {
+    internal_name_ko: string | null
+    internal_name_en: string | null
+    name: string | null
+    name_ko: string | null
+    name_en: string | null
+  } | null
 }
 
 function productDisplayName(p: TourRow['products']): string {
-  return p?.name_ko?.trim() || p?.name_en?.trim() || p?.name?.trim() || '상품 미지정'
+  return (
+    p?.internal_name_ko?.trim() ||
+    p?.internal_name_en?.trim() ||
+    p?.name?.trim() ||
+    p?.name_ko?.trim() ||
+    p?.name_en?.trim() ||
+    '상품 미지정'
+  )
+}
+
+function tourExpenseDetail(
+  tourId: string | null | undefined,
+  tourById: Map<string, DailyReportTourFinancial>,
+  fallbackName: string | null
+): string | null {
+  if (!tourId) return fallbackName
+  const tour = tourById.get(tourId)
+  if (!tour) return fallbackName
+  return [
+    tour.productName,
+    tour.guideName,
+    tour.assistantName,
+    `${tour.guestCount}명`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+function formatShortTourDate(dateYmd: string | null | undefined): string | null {
+  if (!dateYmd) return null
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateYmd.trim())
+  if (!m) return dateYmd.trim()
+  return `${Number(m[2])}/${Number(m[3])}`
+}
+
+function bookingTourDetail(
+  tourId: string | null | undefined,
+  tourById: Map<string, DailyReportTourFinancial>,
+  tourDateById: Map<string, string>,
+  fallbackName: string | null
+): string | null {
+  if (!tourId) return fallbackName
+  const tour = tourById.get(tourId)
+  const dateLabel = formatShortTourDate(tourDateById.get(tourId) ?? null)
+  if (!tour) {
+    return [dateLabel, fallbackName].filter(Boolean).join(' · ') || fallbackName
+  }
+  return [dateLabel, tour.productName, `${tour.guestCount}명`].filter(Boolean).join(' · ')
+}
+
+function ticketUnitPrice(expense: number, ea: number | null): number | null {
+  if (ea == null || !Number.isFinite(ea) || ea <= 0) return null
+  return roundUsd(expense / ea)
 }
 
 function isCashPayment(method: string | null, cashSet: Set<string>): boolean {
@@ -74,6 +132,8 @@ export async function buildFinancialReport(
   const { start, end } = lasVegasDateRangeBounds(startDate, endDate)
   const tourIds = todayTours.map((t) => t.id)
   const tourNameById = new Map(todayTours.map((t) => [t.id, productDisplayName(t.products)]))
+  const tourDateById = new Map(todayTours.map((t) => [t.id, t.tour_date]))
+  const tourById = new Map(tourFinancials.map((t) => [t.id, t]))
   const cashPaymentMethods = new Set(await getCashPaymentMethodFilterValues())
 
   const tourExpensesQuery = fromUntypedTable(client, 'tour_expenses')
@@ -114,7 +174,7 @@ export async function buildFinancialReport(
       .gte('submit_on', start)
       .lte('submit_on', end),
     fromUntypedTable(client, 'ticket_bookings')
-      .select('id, tour_id, category, company, expense, status, deleted_at, deletion_requested_at')
+      .select('id, tour_id, category, company, expense, ea, status, deleted_at, deletion_requested_at')
       .in('tour_id', tourIds.length ? tourIds : ['__none__']),
     client
       .from('tour_hotel_bookings')
@@ -185,7 +245,7 @@ export async function buildFinancialReport(
     tourExpenseItems.push({
       id: `te_${row.id}`,
       label: (row.paid_for as string)?.trim() || '투어 지출',
-      detail: tourId ? tourNameById.get(tourId) ?? null : null,
+      detail: tourExpenseDetail(tourId, tourById, tourId ? tourNameById.get(tourId) ?? null : null),
       amount: amountToNumber(row.amount),
       paymentMethod: (row.payment_method as string | null) ?? null,
     })
@@ -197,7 +257,7 @@ export async function buildFinancialReport(
     tourExpenseItems.push({
       id: `guide_${tour.id}`,
       label: '가이드피',
-      detail: productDisplayName(tour.products),
+      detail: tourExpenseDetail(tour.id, tourById, productDisplayName(tour.products)),
       amount: guideFee,
     })
   }
@@ -219,31 +279,49 @@ export async function buildFinancialReport(
   for (const row of ticketBookingsRes.data ?? []) {
     if (!isTicketBookingActiveForReports(row)) continue
     const tourId = row.tour_id as string | null
+    const amount = ticketExpenseForSettlement(row)
+    const eaRaw = Number((row as { ea?: number | null }).ea ?? NaN)
+    const ea = Number.isFinite(eaRaw) ? eaRaw : null
     bookingItems.push({
       id: `tb_${row.id}`,
-      label: '입장권 부킹',
-      detail: [
-        tourId ? tourNameById.get(tourId) : null,
-        (row.category as string | null)?.trim() || (row.company as string | null)?.trim() || null,
-      ]
-        .filter(Boolean)
-        .join(' · ') || null,
-      amount: ticketExpenseForSettlement(row),
+      label:
+        (row.company as string | null)?.trim() ||
+        (row.category as string | null)?.trim() ||
+        '입장권 부킹',
+      detail: bookingTourDetail(
+        tourId,
+        tourById,
+        tourDateById,
+        tourId ? tourNameById.get(tourId) ?? null : null
+      ),
+      amount,
+      ea,
+      unitPrice: ticketUnitPrice(amount, ea),
     })
   }
   for (const row of hotelBookingsRes.data ?? []) {
     if (!isHotelBookingActiveForReports(row)) continue
     const tourId = row.tour_id as string | null
+    const amount = hotelAmountForSettlement(row)
+    const roomsRaw = Number(row.rooms ?? NaN)
+    const ea = Number.isFinite(roomsRaw) ? roomsRaw : null
+    const unitRaw = Number(row.unit_price ?? NaN)
+    const unitPrice =
+      Number.isFinite(unitRaw) && unitRaw > 0
+        ? unitRaw
+        : ticketUnitPrice(amount, ea)
     bookingItems.push({
       id: `hb_${row.id}`,
-      label: '호텔 부킹',
-      detail: [
-        tourId ? tourNameById.get(tourId) : null,
-        (row.hotel as string | null)?.trim() || null,
-      ]
-        .filter(Boolean)
-        .join(' · ') || null,
-      amount: hotelAmountForSettlement(row),
+      label: (row.hotel as string | null)?.trim() || '호텔 부킹',
+      detail: bookingTourDetail(
+        tourId,
+        tourById,
+        tourDateById,
+        tourId ? tourNameById.get(tourId) ?? null : null
+      ),
+      amount,
+      ea,
+      unitPrice,
     })
   }
 
@@ -301,7 +379,7 @@ export async function buildFinancialReport(
     cashExpenseItems.push({
       id: `cte_${row.id}`,
       label: (row.paid_for as string | null)?.trim() || '투어 지출',
-      detail: tourId ? tourNameById.get(tourId) ?? null : null,
+      detail: tourExpenseDetail(tourId, tourById, tourId ? tourNameById.get(tourId) ?? null : null),
       amount: amountToNumber(row.amount),
       paymentMethod: 'cash',
     })

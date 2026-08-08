@@ -12,7 +12,7 @@
     },
     {
       "path": "/api/cron/reset-todos",
-      "schedule": "0 12 * * *"
+      "schedule": "0 10 * * *"
     },
     {
       "path": "/api/cron/remind-tour-checklists",

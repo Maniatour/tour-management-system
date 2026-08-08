@@ -1,13 +1,6 @@
 'use client'
 
-import dayjs from 'dayjs'
-import timezone from 'dayjs/plugin/timezone'
-import utc from 'dayjs/plugin/utc'
-
-dayjs.extend(utc)
-dayjs.extend(timezone)
-
-const LV_TZ = 'America/Los_Angeles'
+import { opTodoBusinessDateKey } from '@/lib/opTodoBusinessDay'
 
 export const CANCEL_REBOOKING_FOLLOW_UP_PANEL = {
   titleKo: '취소 고객 재예약 권유',
@@ -27,7 +20,7 @@ export function cancelRebookingFollowUpPanelTitle(locale: string): string {
 }
 
 export function cancelRebookingFollowUpCompletionDateKey(): string {
-  return dayjs().tz(LV_TZ).format('YYYY-MM-DD')
+  return opTodoBusinessDateKey()
 }
 
 export function shouldHideTodoChipForCancelRebookingFollowUpPanel(todo: {

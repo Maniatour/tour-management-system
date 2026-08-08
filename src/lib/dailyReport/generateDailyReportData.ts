@@ -1,8 +1,19 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
-import { lasVegasDateRangeBounds, tomorrowInLasVegas, isSingleDayReport } from '@/lib/dailyReport/dateUtils'
+import {
+  lasVegasDateRangeBounds,
+  tomorrowInLasVegas,
+  isSingleDayReport,
+  toLasVegasDateKey,
+} from '@/lib/dailyReport/dateUtils'
 import { buildTourFinancialSummary } from '@/lib/dailyReport/buildTourFinancials'
 import { buildFinancialReport } from '@/lib/dailyReport/buildFinancialReport'
+import { fetchReservationStatusTransitionsByTimeRange } from '@/lib/reservationStatusEventsFetch'
+import { statusFromReservationAuditJson } from '@/lib/reservationStatusAudit'
+import {
+  fetchCancellationFollowUpMeta,
+  isRebookingReservationByReasonMap,
+} from '@/lib/reservationCancellationReason'
 import type {
   DailyReportBreakdownRow,
   DailyReportCountGuests,
@@ -33,7 +44,13 @@ type TourRow = {
   product_id: string | null
   guide_fee: number | null
   assistant_fee: number | null
-  products: { name: string | null; name_ko: string | null; name_en: string | null } | null
+  products: {
+    internal_name_ko: string | null
+    internal_name_en: string | null
+    name: string | null
+    name_ko: string | null
+    name_en: string | null
+  } | null
 }
 
 type TeamRow = {
@@ -68,8 +85,15 @@ type TodoClickRow = {
 }
 
 function isCancelledStatus(status: string | null | undefined): boolean {
-  const s = (status ?? '').toLowerCase()
-  return s.includes('cancel') || s === 'canceled' || s === 'cancelled'
+  const s = (status ?? '').toLowerCase().trim()
+  if (!s) return false
+  return (
+    s === 'cancelled' ||
+    s === 'canceled' ||
+    s === 'deleted' ||
+    s === 'no_show' ||
+    s.includes('cancel')
+  )
 }
 
 function productNameFromMap(productId: string | null, productMap: Map<string, string>): string {
@@ -186,7 +210,6 @@ export async function generateDailyReportData(
 
   const [
     tourDateReservationsRes,
-    statusEventsRes,
     todayToursRes,
     tomorrowToursRes,
     opTodosRes,
@@ -202,14 +225,9 @@ export async function generateDailyReportData(
       .gte('tour_date', reportDate)
       .lte('tour_date', endDate),
     client
-      .from('reservation_status_events')
-      .select('id, reservation_id, from_status, to_status, occurred_at')
-      .gte('occurred_at', start)
-      .lte('occurred_at', end),
-    client
       .from('tours')
       .select(
-        'id, tour_date, tour_status, assignment_status, tour_guide_id, assistant_id, tour_car_id, reservation_ids, tour_start_datetime, product_id, guide_fee, assistant_fee, products(name, name_ko, name_en)'
+        'id, tour_date, tour_status, assignment_status, tour_guide_id, assistant_id, tour_car_id, reservation_ids, tour_start_datetime, product_id, guide_fee, assistant_fee, products(internal_name_ko, internal_name_en, name, name_ko, name_en)'
       )
       .eq('operator_id', operatorId)
       .gte('tour_date', reportDate)
@@ -218,7 +236,7 @@ export async function generateDailyReportData(
       ? client
           .from('tours')
           .select(
-            'id, tour_date, tour_status, assignment_status, tour_guide_id, assistant_id, tour_car_id, reservation_ids, tour_start_datetime, products(name, name_ko, name_en)'
+            'id, tour_date, tour_status, assignment_status, tour_guide_id, assistant_id, tour_car_id, reservation_ids, tour_start_datetime, products(internal_name_ko, internal_name_en, name, name_ko, name_en)'
           )
           .eq('operator_id', operatorId)
           .eq('tour_date', tomorrowDate)
@@ -240,19 +258,83 @@ export async function generateDailyReportData(
 
   const newReservations = (newReservationsRes.data ?? []) as ReservationRow[]
   const tourDateReservations = (tourDateReservationsRes.data ?? []) as ReservationRow[]
-  const statusEvents = (statusEventsRes.data ?? []).filter((e) => isCancelledStatus(e.to_status))
 
-  const cancelledReservationIds = [...new Set(statusEvents.map((e) => e.reservation_id))]
+  /** 당일(기간) 상태→취소 전환: events 페이지네이션 + audit_logs 보완 */
+  const cancelledIdSet = new Set<string>()
+  const { rows: statusTransitionRows, error: statusTransitionError } =
+    await fetchReservationStatusTransitionsByTimeRange(client, {
+      rangeStartIso: start,
+      rangeEndIso: end,
+      includeAuditLogs: true,
+    })
+  if (statusTransitionError) {
+    console.error('daily-report reservation status transitions:', statusTransitionError)
+  }
+  for (const row of statusTransitionRows) {
+    const to = statusFromReservationAuditJson(row.new_values)
+    if (!isCancelledStatus(to)) continue
+    const ymd = toLasVegasDateKey(row.created_at)
+    if (!ymd || ymd < reportDate || ymd > endDate) continue
+    const id = String(row.record_id ?? '').trim()
+    if (id) cancelledIdSet.add(id)
+  }
 
-  let cancelledReservations: ReservationRow[] = []
-  if (cancelledReservationIds.length > 0) {
+  /** events/audit 누락 시: 당일 updated_at + 현재 취소 상태 폴백 */
+  const { data: updatedCancelledRows, error: updatedCancelError } = await client
+    .from('reservations')
+    .select('id, status, total_people, created_at, tour_date, archive, product_id, channel_id, updated_at')
+    .eq('operator_id', operatorId)
+    .eq('archive', false)
+    .gte('updated_at', start)
+    .lte('updated_at', end)
+  if (updatedCancelError) {
+    console.error('daily-report cancelled fallback query:', updatedCancelError)
+  }
+  for (const row of updatedCancelledRows ?? []) {
+    if (!isCancelledStatus(row.status)) continue
+    const id = String(row.id ?? '').trim()
+    if (id) cancelledIdSet.add(id)
+  }
+
+  const cancelledReservationIds = [...cancelledIdSet]
+
+  const cancelledById = new Map<string, ReservationRow>()
+  for (const row of updatedCancelledRows ?? []) {
+    if (!isCancelledStatus(row.status)) continue
+    const id = String(row.id ?? '').trim()
+    if (!id) continue
+    cancelledById.set(id, row as ReservationRow)
+  }
+
+  const missingCancelIds = cancelledReservationIds.filter((id) => !cancelledById.has(id))
+  const CANCEL_ID_CHUNK = 100
+  for (let i = 0; i < missingCancelIds.length; i += CANCEL_ID_CHUNK) {
+    const chunk = missingCancelIds.slice(i, i + CANCEL_ID_CHUNK)
     const { data } = await client
       .from('reservations')
       .select('id, status, total_people, created_at, tour_date, archive, product_id, channel_id')
       .eq('operator_id', operatorId)
-      .in('id', cancelledReservationIds)
-    cancelledReservations = (data ?? []) as ReservationRow[]
+      .in('id', chunk)
+    for (const row of (data ?? []) as ReservationRow[]) {
+      cancelledById.set(row.id, row)
+    }
   }
+
+  const cancelledReservationsRaw = [...cancelledById.values()]
+
+  const cancellationMeta = await fetchCancellationFollowUpMeta(
+    cancelledReservationsRaw.map((r) => r.id),
+    client
+  )
+  const cancellationReasonById = new Map<string, string>()
+  for (const [id, meta] of cancellationMeta) {
+    if (meta.reason) cancellationReasonById.set(id, meta.reason)
+  }
+
+  /** 취소 사유가 재예약인 건은 당일 취소·순예약에서 제외 */
+  const cancelledReservations = cancelledReservationsRaw.filter(
+    (r) => !isRebookingReservationByReasonMap(r.id, cancellationReasonById)
+  )
 
   const productIds = [
     ...new Set(
@@ -273,10 +355,18 @@ export async function generateDailyReportData(
   if (productIds.length) {
     const { data: products } = await client
       .from('products')
-      .select('id, name, name_ko, name_en')
+      .select('id, internal_name_ko, internal_name_en, name, name_ko, name_en')
       .in('id', productIds)
     for (const p of products ?? []) {
-      productMap.set(p.id, p.name_ko?.trim() || p.name_en?.trim() || p.name?.trim() || '상품 미지정')
+      productMap.set(
+        p.id,
+        p.internal_name_ko?.trim() ||
+          p.internal_name_en?.trim() ||
+          p.name?.trim() ||
+          p.name_ko?.trim() ||
+          p.name_en?.trim() ||
+          '상품 미지정'
+      )
     }
   }
 
@@ -429,9 +519,11 @@ export async function generateDailyReportData(
     return {
       id: t.id,
       productName:
+        t.products?.internal_name_ko?.trim() ||
+        t.products?.internal_name_en?.trim() ||
+        t.products?.name?.trim() ||
         t.products?.name_ko?.trim() ||
         t.products?.name_en?.trim() ||
-        t.products?.name?.trim() ||
         '상품 미지정',
       tourStatus: t.tour_status,
       assignmentStatus: t.assignment_status,

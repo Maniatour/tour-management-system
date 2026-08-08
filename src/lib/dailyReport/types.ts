@@ -37,6 +37,7 @@ export type DailyReportTourFinancial = {
   productName: string
   tourStatus: string | null
   guideName: string | null
+  assistantName: string | null
   guestCount: number
   reservationCount: number
   totalPayment: number
@@ -116,6 +117,10 @@ export type DailyReportFinancialItem = {
   detail?: string | null
   amount: number
   paymentMethod?: string | null
+  /** 부킹 수량 (입장권 EA / 호텔 rooms) */
+  ea?: number | null
+  /** 부킹 개당 가격 */
+  unitPrice?: number | null
 }
 
 export type DailyReportFinancialCategory = {

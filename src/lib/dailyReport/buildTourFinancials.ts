@@ -15,10 +15,14 @@ import {
 } from '@/lib/bookingSettlement'
 import {
   computeCustomerPaymentTotalLineFormula,
-  computeDisplayedOnSiteBalanceLikePricingSection,
+  getBalanceAmountForDisplay,
   paymentRecordAmountToNumber,
+  withNormalizedBalanceAmountForDisplay,
+  residentFeesUsdFromCustomerRows,
+  inferResidentFeesUsdForBalance,
+  adjustOptionTotalExcludingLegacyNonResident,
   type PaymentRecordLike,
-  type PricingBalanceFields,
+  type PartySizeSource,
 } from '@/utils/reservationPricingBalance'
 import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
 import { amountToNumber, mergeCategoryAmounts, roundUsd } from '@/lib/dailyReport/moneyUtils'
@@ -31,16 +35,30 @@ type TourRow = {
   tour_date: string
   tour_status: string | null
   tour_guide_id: string | null
+  assistant_id: string | null
   tour_car_id: string | null
   reservation_ids: string[] | null
   product_id: string | null
   guide_fee: number | null
   assistant_fee: number | null
-  products: { name: string | null; name_ko: string | null; name_en: string | null } | null
+  products: {
+    internal_name_ko: string | null
+    internal_name_en: string | null
+    name: string | null
+    name_ko: string | null
+    name_en: string | null
+  } | null
 }
 
 function productInternalName(p: TourRow['products']): string {
-  return p?.name?.trim() || p?.name_ko?.trim() || p?.name_en?.trim() || '상품 미지정'
+  return (
+    p?.internal_name_ko?.trim() ||
+    p?.internal_name_en?.trim() ||
+    p?.name?.trim() ||
+    p?.name_ko?.trim() ||
+    p?.name_en?.trim() ||
+    '상품 미지정'
+  )
 }
 
 function isCashPayment(method: string | null, cashSet: Set<string>): boolean {
@@ -89,16 +107,13 @@ export async function buildTourFinancialSummary(
     if (data?.length) reservations = reservations.concat(data)
   }
 
-  let pricingList: ReservationPricingRow[] = []
+  let pricingList: Array<ReservationPricingRow & Record<string, unknown>> = []
   for (let i = 0; i < allReservationIds.length; i += BATCH) {
     const batch = allReservationIds.slice(i, i + BATCH)
-    const { data } = await client
-      .from('reservation_pricing')
-      .select(
-        'reservation_id, total_price, product_price_total, option_total, choices_total, coupon_discount, additional_discount, additional_cost, not_included_price, card_fee, prepayment_tip, commission_amount, commission_percent, operating_profit, deposit_amount, balance_amount, adult_product_price, child_product_price, infant_product_price, tax, prepayment_cost, refund_amount'
-      )
-      .in('reservation_id', batch)
-    if (data?.length) pricingList = pricingList.concat(data as ReservationPricingRow[])
+    const { data } = await client.from('reservation_pricing').select('*').in('reservation_id', batch)
+    if (data?.length) {
+      pricingList = pricingList.concat(data as Array<ReservationPricingRow & Record<string, unknown>>)
+    }
   }
 
   const reservationExpensesMap: Record<string, number> = {}
@@ -154,6 +169,46 @@ export async function buildTourFinancialSummary(
     }
   }
 
+  const optSumById = new Map<string, number>()
+  const optCountById = new Map<string, number>()
+  const optRowsById = new Map<
+    string,
+    Array<{ option_id?: string | null; total_price?: unknown; status?: string | null }>
+  >()
+  for (let i = 0; i < allReservationIds.length; i += BATCH) {
+    const batch = allReservationIds.slice(i, i + BATCH)
+    const { data } = await client
+      .from('reservation_options')
+      .select('reservation_id, total_price, option_id, status')
+      .in('reservation_id', batch)
+    for (const row of data ?? []) {
+      const id = String(row.reservation_id)
+      const st = String(row.status ?? 'active').toLowerCase()
+      if (st === 'cancelled' || st === 'refunded') continue
+      const tp = Number(row.total_price) || 0
+      optSumById.set(id, (optSumById.get(id) || 0) + tp)
+      optCountById.set(id, (optCountById.get(id) || 0) + 1)
+      const list = optRowsById.get(id) || []
+      list.push(row)
+      optRowsById.set(id, list)
+    }
+  }
+
+  const customersById = new Map<string, Array<{ resident_status?: string | null }>>()
+  for (let i = 0; i < allReservationIds.length; i += BATCH) {
+    const batch = allReservationIds.slice(i, i + BATCH)
+    const { data } = await client
+      .from('reservation_customers')
+      .select('reservation_id, resident_status')
+      .in('reservation_id', batch)
+    for (const row of data ?? []) {
+      const id = String(row.reservation_id)
+      const list = customersById.get(id) || []
+      list.push({ resident_status: row.resident_status ?? null })
+      customersById.set(id, list)
+    }
+  }
+
   const cashPaymentMethods = new Set(await getCashPaymentMethodFilterValues())
 
   const { data: tourExpensesAll } = await fromUntypedTable(client, 'tour_expenses')
@@ -188,21 +243,55 @@ export async function buildTourFinancialSummary(
       const pricing = pricingByReservation.get(rid)
       if (!pricing || !r) continue
 
-      const party = { adults: r.adults, child: r.child, infant: r.infant }
-      const lineGross = computeCustomerPaymentTotalLineFormula(
-        pricing as PricingBalanceFields,
+      const paRaw = pricing.pricing_adults
+      const hasPa =
+        paRaw !== undefined &&
+        paRaw !== null &&
+        paRaw !== '' &&
+        Number.isFinite(Number(paRaw)) &&
+        Math.floor(Number(paRaw)) >= 0
+      const party: PartySizeSource = {
+        adults: hasPa ? Math.floor(Number(paRaw)) : (r.adults ?? null),
+        children: r.child ?? null,
+        infants: r.infant ?? null,
+      }
+
+      const nOpts = optCountById.get(rid) ?? 0
+      const rawOptionsTotal = nOpts > 0 ? (optSumById.get(rid) || 0) : null
+      const pricingNorm = withNormalizedBalanceAmountForDisplay(pricing)
+      const lineGrossBase = computeCustomerPaymentTotalLineFormula(
+        {
+          ...(pricingNorm as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]),
+          required_option_total:
+            rawOptionsTotal !== null
+              ? 0
+              : (pricingNorm as { required_option_total?: unknown }).required_option_total,
+          option_total: rawOptionsTotal !== null ? rawOptionsTotal : pricingNorm.option_total,
+        },
         party
       )
-      totalGrossPayment += lineGross
+      totalGrossPayment += lineGrossBase
       totalChannelCommission += resolveChannelCommissionAmount(pricing, rid, reservationChannels)
 
-      const payments = paymentsByReservation.get(rid) ?? []
-      balanceOutstanding += computeDisplayedOnSiteBalanceLikePricingSection(
-        pricing as PricingBalanceFields,
-        null,
-        party,
-        payments
+      const fromCustomers = residentFeesUsdFromCustomerRows(customersById.get(rid) ?? [])
+      const residentFeeUsd = Math.max(
+        fromCustomers,
+        inferResidentFeesUsdForBalance(pricingNorm, lineGrossBase)
       )
+      const optionsTotalFromOptions =
+        rawOptionsTotal !== null
+          ? adjustOptionTotalExcludingLegacyNonResident(
+              rawOptionsTotal,
+              residentFeeUsd,
+              optRowsById.get(rid)
+            )
+          : null
+
+      balanceOutstanding += getBalanceAmountForDisplay(pricingNorm, optionsTotalFromOptions, party, {
+        paymentRecords: paymentsByReservation.get(rid) ?? [],
+        reservationStatus: r.status ?? null,
+        residentFeeUsd,
+      })
     }
 
     const tourPricing = pricingList.filter((p) => activeResIds.includes(p.reservation_id))
@@ -249,6 +338,7 @@ export async function buildTourFinancialSummary(
       productName: productInternalName(tour.products),
       tourStatus: tour.tour_status,
       guideName: memberName(tour.tour_guide_id),
+      assistantName: memberName(tour.assistant_id),
       guestCount,
       reservationCount: activeResIds.length,
       totalPayment: roundUsd(Math.max(0, totalGrossPayment - totalChannelCommission)),
