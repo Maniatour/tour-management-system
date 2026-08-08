@@ -80,10 +80,35 @@ export type DailyReportTodoUserActivity = {
   onHold: Array<{ id: string; title: string }>
 }
 
+export type DailyReportTodoStaffColumn = {
+  email: string
+  name: string
+}
+
+export type DailyReportTodoMatrixStatus = 'completed' | 'pending' | 'on_hold' | 'na'
+
+export type DailyReportTodoMatrixRow = {
+  id: string
+  title: string
+  status: DailyReportTodoMatrixStatus
+  /** 고정 패널(큐) 연동 여부 — false면 상태 N/A */
+  hasQueue: boolean
+  /** 완료 처리한 직원 이메일 (소문자) */
+  completedByEmails: string[]
+  completedByNames: string[]
+  assignedToEmail: string | null
+  assignedToName: string | null
+  completedAt: string | null
+  department: string | null
+}
+
 export type DailyReportTodoSummary = {
   completedCount: number
   pendingCount: number
   onHoldCount: number
+  /** 큐(고정 패널) 연동 Todo 포함 매트릭스 */
+  staffColumns: DailyReportTodoStaffColumn[]
+  matrixRows: DailyReportTodoMatrixRow[]
   byUser: DailyReportTodoUserActivity[]
   notes: string
 }

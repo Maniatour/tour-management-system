@@ -95,8 +95,23 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
     ? fr.categories
         .map((cat) => {
           const isBooking = cat.key === 'booking'
+          const isCashFlow = cat.key === 'cash'
           const rows = cat.items
             .map((item) => {
+              if (isCashFlow) {
+                const isBalance = item.id === 'cash_on_hand'
+                const isNegative = item.amount < 0
+                const spent = !isBalance && isNegative ? formatUsd(Math.abs(item.amount)) : '—'
+                const deposited = !isBalance && !isNegative ? formatUsd(item.amount) : '—'
+                const hold = isBalance ? formatUsd(item.amount) : '—'
+                return `<tr>
+                  <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;font-size:12px;">${esc(item.label)}</td>
+                  <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:right;font-size:12px;color:#dc2626;">${spent}</td>
+                  <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:right;font-size:12px;color:#059669;">${deposited}</td>
+                  <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:right;font-size:12px;font-weight:600;color:#4338ca;">${hold}</td>
+                </tr>`
+              }
+
               const amount =
                 item.amount < 0
                   ? `-${formatUsd(Math.abs(item.amount))}`
@@ -124,9 +139,11 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
             cat.key === 'cash'
               ? ''
               : `<div style="text-align:right;font-weight:600;color:#dc2626;font-size:13px;margin-top:6px;">합계 ${formatUsd(cat.total)}</div>`
-          const headerCols = isBooking
-            ? `<th style="padding:6px 10px;text-align:left;">항목</th><th style="padding:6px 10px;text-align:left;">상세</th><th style="padding:6px 10px;text-align:right;">EA</th><th style="padding:6px 10px;text-align:right;">개당 가격</th><th style="padding:6px 10px;text-align:right;">금액</th>`
-            : `<th style="padding:6px 10px;text-align:left;">항목</th><th style="padding:6px 10px;text-align:left;">상세</th><th style="padding:6px 10px;text-align:right;">금액</th>`
+          const headerCols = isCashFlow
+            ? `<th style="padding:6px 10px;text-align:left;">항목</th><th style="padding:6px 10px;text-align:right;">지출</th><th style="padding:6px 10px;text-align:right;">입금</th><th style="padding:6px 10px;text-align:right;">보유</th>`
+            : isBooking
+              ? `<th style="padding:6px 10px;text-align:left;">항목</th><th style="padding:6px 10px;text-align:left;">상세</th><th style="padding:6px 10px;text-align:right;">EA</th><th style="padding:6px 10px;text-align:right;">개당 가격</th><th style="padding:6px 10px;text-align:right;">금액</th>`
+              : `<th style="padding:6px 10px;text-align:left;">항목</th><th style="padding:6px 10px;text-align:left;">상세</th><th style="padding:6px 10px;text-align:right;">금액</th>`
           return `<div style="margin-bottom:16px;">
             <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${esc(cat.title)}</div>
             ${rows ? `<table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#f9fafb;">${headerCols}</tr></thead><tbody>${rows}</tbody></table>${total}` : '<p style="font-size:12px;color:#6b7280;">해당 항목 없음</p>'}
@@ -145,15 +162,48 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
     ${financialBlocks}`
     : ''
 
-  const todoUserBlocks = data.todoSummary.byUser
-    .map((u) => {
-      const completed = u.completed.map((i) => `<li>✓ ${esc(i.title)}</li>`).join('')
-      const pending = u.pending.map((i) => `<li style="color:#b45309;">○ ${esc(i.title)}</li>`).join('')
-      return `<div style="margin-bottom:12px;padding:10px;background:#f9fafb;border-radius:8px;">
-        <div style="font-weight:600;font-size:13px;">${esc(u.userName || u.userEmail)}</div>
-        ${completed ? `<ul style="margin:6px 0 0;padding-left:16px;font-size:12px;">${completed}</ul>` : ''}
-        ${pending ? `<ul style="margin:6px 0 0;padding-left:16px;font-size:12px;">${pending}</ul>` : ''}
-      </div>`
+  const staffCols = data.todoSummary.staffColumns ?? []
+  const matrixRows = data.todoSummary.matrixRows ?? []
+  const todoMatrixHeader =
+    staffCols.length > 0
+      ? `<tr style="background:#f9fafb;">
+          <th style="padding:6px 8px;text-align:left;font-size:11px;">할 일</th>
+          <th style="padding:6px 8px;text-align:center;font-size:11px;">상태</th>
+          ${staffCols.map((s) => `<th style="padding:6px 4px;text-align:center;font-size:11px;">${esc(s.name)}</th>`).join('')}
+        </tr>`
+      : `<tr style="background:#f9fafb;">
+          <th style="padding:6px 8px;text-align:left;font-size:11px;">할 일</th>
+          <th style="padding:6px 8px;text-align:center;font-size:11px;">상태</th>
+        </tr>`
+
+  const todoMatrixBody = matrixRows
+    .map((row) => {
+      const statusLabel =
+        row.status === 'na'
+          ? 'N/A'
+          : row.status === 'completed'
+            ? '완료'
+            : row.status === 'on_hold'
+              ? '보류'
+              : '미처리'
+      const statusColor =
+        row.status === 'completed'
+          ? '#059669'
+          : row.status === 'pending'
+            ? '#b45309'
+            : '#6b7280'
+      const doneSet = new Set(row.completedByEmails.map((e) => e.toLowerCase()))
+      const checks = staffCols
+        .map((s) => {
+          const ok = doneSet.has(s.email.toLowerCase())
+          return `<td style="padding:6px 4px;text-align:center;font-size:12px;color:${ok ? '#059669' : '#d1d5db'};">${ok ? '✓' : '·'}</td>`
+        })
+        .join('')
+      return `<tr>
+        <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;font-size:12px;">${esc(row.title)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;text-align:center;font-size:11px;color:${statusColor};">${statusLabel}</td>
+        ${checks}
+      </tr>`
     })
     .join('')
 
@@ -163,7 +213,12 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
       ${statRow('미처리', `${data.todoSummary.pendingCount}건`)}
       ${statRow('보류', `${data.todoSummary.onHoldCount}건`)}
     </table>
-    ${todoUserBlocks}
+    <p style="font-size:11px;color:#6b7280;margin:0 0 8px;">큐 없는 항목은 N/A · 출근 직원 기준 완료 체크</p>
+    ${
+      matrixRows.length
+        ? `<table style="width:100%;border-collapse:collapse;"><thead>${todoMatrixHeader}</thead><tbody>${todoMatrixBody}</tbody></table>`
+        : '<p style="font-size:12px;color:#6b7280;">표시할 Todo가 없습니다.</p>'
+    }
     ${sectionNotes(data.todoSummary.notes)}
   `
 

@@ -14,10 +14,14 @@ import {
   fetchCancellationFollowUpMeta,
   isRebookingReservationByReasonMap,
 } from '@/lib/reservationCancellationReason'
+import { isQueuePanelLinkedOpTodo, todoMatrixDedupeKey } from '@/lib/opTodoQueuePanelFilter'
 import type {
   DailyReportBreakdownRow,
   DailyReportCountGuests,
   DailyReportData,
+  DailyReportTodoMatrixRow,
+  DailyReportTodoMatrixStatus,
+  DailyReportTodoStaffColumn,
 } from '@/lib/dailyReport/types'
 
 type ReservationRow = {
@@ -75,6 +79,7 @@ type OpTodoRow = {
   on_hold: boolean
   assigned_to: string | null
   created_by: string
+  action_type?: string | null
 }
 
 type TodoClickRow = {
@@ -216,6 +221,7 @@ export async function generateDailyReportData(
     todoLogsRes,
     teamRes,
     vehiclesRes,
+    attendanceRes,
   ] = await Promise.all([
     client
       .from('reservations')
@@ -243,7 +249,7 @@ export async function generateDailyReportData(
       : Promise.resolve({ data: [], error: null }),
     client
       .from('op_todos')
-      .select('id, title, department, completed, completed_at, on_hold, assigned_to, created_by')
+      .select('id, title, department, completed, completed_at, on_hold, assigned_to, created_by, action_type')
       .order('title', { ascending: true })
       .limit(500),
     client
@@ -254,10 +260,22 @@ export async function generateDailyReportData(
       .lte('timestamp', end),
     client.from('team').select('email, name_ko, nick_name, display_name'),
     client.from('vehicles').select('id, vehicle_number, nick'),
+    client
+      .from('attendance_records')
+      .select('employee_email, date, check_in_time, check_out_time')
+      .gte('date', reportDate)
+      .lte('date', endDate)
+      .not('check_in_time', 'is', null),
   ])
 
   const newReservations = (newReservationsRes.data ?? []) as ReservationRow[]
   const tourDateReservations = (tourDateReservationsRes.data ?? []) as ReservationRow[]
+  const attendanceRows = (attendanceRes.data ?? []) as Array<{
+    employee_email: string | null
+    date: string | null
+    check_in_time: string | null
+    check_out_time: string | null
+  }>
 
   /** 당일(기간) 상태→취소 전환: events 페이지네이션 + audit_logs 보완 */
   const cancelledIdSet = new Set<string>()
@@ -402,7 +420,10 @@ export async function generateDailyReportData(
 
   const teamByEmail = new Map<string, TeamRow>()
   for (const m of (teamRes.data ?? []) as TeamRow[]) {
-    if (m.email) teamByEmail.set(m.email, m)
+    if (m.email) {
+      teamByEmail.set(m.email, m)
+      teamByEmail.set(m.email.trim().toLowerCase(), m)
+    }
   }
 
   const vehicleById = new Map<string, VehicleRow>()
@@ -450,19 +471,36 @@ export async function generateDailyReportData(
   }
 
   const completerByTodo = new Map<string, string>()
+  const completersByTodo = new Map<string, Set<string>>()
   for (const log of todoLogs) {
+    const email = (log.user_email || '').trim().toLowerCase()
+    if (!email) continue
     completerByTodo.set(log.todo_id, log.user_email)
+    const set = completersByTodo.get(log.todo_id) ?? new Set<string>()
+    set.add(email)
+    completersByTodo.set(log.todo_id, set)
   }
 
-  const todosCompletedToday = opTodos.filter(
-    (t) =>
-      t.completed &&
-      t.completed_at &&
-      t.completed_at >= start &&
-      t.completed_at <= end
+  /** 전체 Todo (고정 패널 연동 포함) — 출근 직원 매트릭스 */
+  const isCompletedToday = (t: OpTodoRow) =>
+    Boolean(
+      t.completed && t.completed_at && t.completed_at >= start && t.completed_at <= end
+    )
+
+  const resolveTodoStatus = (t: OpTodoRow): DailyReportTodoMatrixStatus => {
+    if (!isQueuePanelLinkedOpTodo(t)) return 'na'
+    if (t.completed) return 'completed'
+    if (t.on_hold) return 'on_hold'
+    return 'pending'
+  }
+
+  const todosCompletedToday = opTodos.filter((t) => isCompletedToday(t) && isQueuePanelLinkedOpTodo(t))
+  const todosPending = opTodos.filter(
+    (t) => !t.completed && !t.on_hold && isQueuePanelLinkedOpTodo(t)
   )
-  const todosPending = opTodos.filter((t) => !t.completed && !t.on_hold)
-  const todosOnHold = opTodos.filter((t) => !t.completed && t.on_hold)
+  const todosOnHold = opTodos.filter(
+    (t) => !t.completed && t.on_hold && isQueuePanelLinkedOpTodo(t)
+  )
 
   const userActivityMap = new Map<
     string,
@@ -508,6 +546,110 @@ export async function generateDailyReportData(
     const email = t.assigned_to || t.created_by
     ensureUser(email).onHold.push({ id: t.id, title: t.title })
   }
+
+  const checkedInEmails = new Set<string>()
+  for (const row of attendanceRows) {
+    const email = (row.employee_email || '').trim().toLowerCase()
+    if (!email) continue
+    const ymd =
+      toLasVegasDateKey(row.check_in_time) ||
+      (row.date && /^\d{4}-\d{2}-\d{2}/.test(row.date) ? row.date.slice(0, 10) : null)
+    if (!ymd || ymd < reportDate || ymd > endDate) continue
+    checkedInEmails.add(email)
+  }
+
+  const staffNameForEmail = (email: string | null | undefined) => {
+    if (!email) return null
+    const team = teamByEmail.get(email.trim().toLowerCase())
+    return (
+      team?.nick_name?.trim() ||
+      team?.name_ko?.trim() ||
+      team?.display_name?.trim() ||
+      email.split('@')[0] ||
+      email
+    )
+  }
+
+  const staffColumns: DailyReportTodoStaffColumn[] = [...checkedInEmails]
+    .map((email) => ({
+      email,
+      name: staffNameForEmail(email) || email,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+
+  const collectCompleterEmails = (t: OpTodoRow): string[] => {
+    const emails = new Set(completersByTodo.get(t.id) ?? [])
+    if (emails.size === 0) {
+      const fallback = (completerByTodo.get(t.id) || t.assigned_to || t.created_by || '')
+        .trim()
+        .toLowerCase()
+      if (fallback) emails.add(fallback)
+    }
+    return [...emails]
+  }
+
+  const toMatrixRow = (t: OpTodoRow): DailyReportTodoMatrixRow => {
+    const status = resolveTodoStatus(t)
+    const completedByEmails = collectCompleterEmails(t)
+    const assigned = (t.assigned_to || '').trim().toLowerCase() || null
+    return {
+      id: t.id,
+      title: t.title,
+      status,
+      hasQueue: isQueuePanelLinkedOpTodo(t),
+      completedByEmails,
+      completedByNames: completedByEmails
+        .map((e) => staffNameForEmail(e) || e)
+        .filter(Boolean),
+      assignedToEmail: assigned,
+      assignedToName: assigned ? staffNameForEmail(assigned) : null,
+      completedAt: t.completed_at,
+      department: t.department || null,
+    }
+  }
+
+  /** 동일 제목 중복 병합 (예: 가이드와 스케줄 컨펌 2건) */
+  const statusRank: Record<DailyReportTodoMatrixStatus, number> = {
+    completed: 0,
+    on_hold: 1,
+    na: 2,
+    pending: 3,
+  }
+  const dedupedByTitle = new Map<string, DailyReportTodoMatrixRow>()
+  for (const t of opTodos) {
+    const hasQueue = isQueuePanelLinkedOpTodo(t)
+    // 과거 완료된 큐 패널은 당일 보고에서 제외 (당일 완료·미완료·비큐만 표시)
+    if (t.completed && hasQueue && !isCompletedToday(t)) continue
+
+    const row = toMatrixRow(t)
+    const key = todoMatrixDedupeKey(row.title)
+    const existing = dedupedByTitle.get(key)
+    if (!existing) {
+      dedupedByTitle.set(key, row)
+      continue
+    }
+    const preferNew = statusRank[row.status] < statusRank[existing.status]
+    const base = preferNew ? row : existing
+    const other = preferNew ? existing : row
+    const mergedEmails = [...new Set([...base.completedByEmails, ...other.completedByEmails])]
+    dedupedByTitle.set(key, {
+      ...base,
+      completedByEmails: mergedEmails,
+      completedByNames: mergedEmails.map((e) => staffNameForEmail(e) || e),
+      completedAt: base.completedAt || other.completedAt,
+      assignedToEmail: base.assignedToEmail || other.assignedToEmail,
+      assignedToName: base.assignedToName || other.assignedToName,
+    })
+  }
+
+  // 완료 → 보류 → N/A → 미처리(하단)
+  const matrixRows: DailyReportTodoMatrixRow[] = [...dedupedByTitle.values()].sort(
+    (a, b) => statusRank[a.status] - statusRank[b.status] || a.title.localeCompare(b.title, 'ko')
+  )
+
+  const completedCount = matrixRows.filter((r) => r.status === 'completed').length
+  const pendingCount = matrixRows.filter((r) => r.status === 'pending').length
+  const onHoldCount = matrixRows.filter((r) => r.status === 'on_hold').length
 
   const tomorrowTourRows = tomorrowTours.map((t) => {
     const guideName = memberNameFn(t.tour_guide_id)
@@ -570,9 +712,11 @@ export async function generateDailyReportData(
     },
     financialReport,
     todoSummary: {
-      completedCount: todosCompletedToday.length,
-      pendingCount: todosPending.length,
-      onHoldCount: todosOnHold.length,
+      completedCount,
+      pendingCount,
+      onHoldCount,
+      staffColumns,
+      matrixRows,
       byUser: Array.from(userActivityMap.values()).sort(
         (a, b) => b.completed.length - a.completed.length
       ),

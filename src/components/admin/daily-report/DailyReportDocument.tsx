@@ -1,13 +1,18 @@
 'use client'
 
-import type { ReactNode } from 'react'
-import type { DailyReportData, DailyReportFinancialCategory } from '@/lib/dailyReport/types'
+import { useState, Fragment, type ReactNode } from 'react'
+import type {
+  DailyReportData,
+  DailyReportFinancialCategory,
+  DailyReportTodoMatrixStatus,
+} from '@/lib/dailyReport/types'
 import { formatReportDateLabel, formatReportDateRangeLabel, isSingleDayReport } from '@/lib/dailyReport/dateUtils'
 import { formatUsd } from '@/lib/dailyReport/moneyUtils'
 import {
   Calendar,
   CheckCircle2,
   Bus,
+  ChevronDown,
   ClipboardList,
   DollarSign,
   Wallet,
@@ -60,6 +65,255 @@ function NoteBox({ children }: { children: ReactNode }) {
     <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs whitespace-pre-wrap sm:mt-3 sm:rounded-xl sm:p-3 sm:text-sm">
       {children}
     </div>
+  )
+}
+
+function todoStatusLabel(status: DailyReportTodoMatrixStatus, isKo: boolean) {
+  if (status === 'na') return 'N/A'
+  if (status === 'completed') return isKo ? '완료' : 'Done'
+  if (status === 'on_hold') return isKo ? '보류' : 'Hold'
+  return isKo ? '미처리' : 'Open'
+}
+
+function todoStatusClass(status: DailyReportTodoMatrixStatus) {
+  if (status === 'completed') return 'text-emerald-700'
+  if (status === 'on_hold') return 'text-muted-foreground'
+  if (status === 'na') return 'text-muted-foreground'
+  return 'text-amber-700'
+}
+
+function formatTodoCompletedAt(iso: string | null, isKo: boolean) {
+  if (!iso) return '—'
+  try {
+    return new Date(iso).toLocaleString(isKo ? 'ko-KR' : 'en-US', {
+      timeZone: 'America/Los_Angeles',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return iso
+  }
+}
+
+function TodoStatusSection({
+  data,
+  isKo,
+}: {
+  data: DailyReportData
+  isKo: boolean
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const rows = data.todoSummary.matrixRows ?? []
+  const staffColumns = data.todoSummary.staffColumns ?? []
+  const colSpan = 2 + staffColumns.length
+
+  const toggleRow = (id: string) => {
+    setExpandedId((prev) => (prev === id ? null : id))
+  }
+
+  return (
+    <section>
+      <SectionTitle icon={<CheckCircle2 className="h-4 w-4 text-primary sm:h-5 sm:w-5" />}>
+        {isKo ? 'TODO 처리 현황' : 'TODO by staff'}
+      </SectionTitle>
+      <div className="mb-2 grid grid-cols-3 gap-1.5 sm:mb-3 sm:gap-3">
+        <StatCard
+          label={isKo ? '완료' : 'Done'}
+          value={data.todoSummary.completedCount}
+          accent="text-emerald-600"
+        />
+        <StatCard
+          label={isKo ? '미처리' : 'Pending'}
+          value={data.todoSummary.pendingCount}
+          accent="text-amber-600"
+        />
+        <StatCard label={isKo ? '보류' : 'Hold'} value={data.todoSummary.onHoldCount} />
+      </div>
+      <p className="mb-1.5 text-[10px] text-muted-foreground sm:text-xs">
+        {isKo
+          ? '큐 없는 항목은 N/A · 행 클릭 시 상세 펼침 · 출근 직원 기준 완료 체크'
+          : 'No-queue → N/A · click row to expand · checks by checked-in staff'}
+      </p>
+      {rows.length > 0 ? (
+        <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-border/60 sm:rounded-xl">
+          <table className="w-full min-w-[20rem] text-[11px] sm:text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="sticky left-0 z-[1] bg-muted/50 px-2 py-1 text-left sm:px-3 sm:py-1.5">
+                  {isKo ? '할 일' : 'Todo'}
+                </th>
+                <th className="px-1.5 py-1 text-center sm:px-2 sm:py-1.5">
+                  {isKo ? '상태' : 'St'}
+                </th>
+                {staffColumns.map((s) => (
+                  <th
+                    key={s.email}
+                    className="max-w-[3.5rem] truncate px-1 py-1 text-center font-medium sm:max-w-none sm:px-2 sm:py-1.5"
+                    title={s.name}
+                  >
+                    {s.name}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const doneSet = new Set(row.completedByEmails.map((e) => e.toLowerCase()))
+                const isOpen = expandedId === row.id
+                return (
+                  <Fragment key={row.id}>
+                    <tr
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={isOpen}
+                      onClick={() => toggleRow(row.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          toggleRow(row.id)
+                        }
+                      }}
+                      className={`group cursor-pointer border-t border-border/40 transition-colors hover:bg-muted/40 focus-visible:bg-muted/50 focus-visible:outline-none ${
+                        isOpen ? 'bg-muted/30' : ''
+                      }`}
+                    >
+                      <td
+                        className={`sticky left-0 z-[1] px-2 py-1 font-medium leading-tight group-hover:bg-muted/40 group-focus-visible:bg-muted/50 sm:px-3 sm:py-1.5 ${
+                          isOpen ? 'bg-muted/30' : 'bg-white'
+                        }`}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          <ChevronDown
+                            className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${
+                              isOpen ? 'rotate-0' : '-rotate-90'
+                            }`}
+                            aria-hidden
+                          />
+                          <span>{row.title}</span>
+                        </span>
+                      </td>
+                      <td
+                        className={`px-1.5 py-1 text-center text-[10px] font-medium sm:px-2 sm:py-1.5 sm:text-xs ${todoStatusClass(row.status)}`}
+                      >
+                        {todoStatusLabel(row.status, isKo)}
+                      </td>
+                      {staffColumns.map((s) => {
+                        const checked = doneSet.has(s.email.toLowerCase())
+                        return (
+                          <td key={s.email} className="px-1 py-1 text-center sm:px-2 sm:py-1.5">
+                            {checked ? (
+                              <span className="font-semibold text-emerald-600" aria-label="done">
+                                ✓
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground/40">·</span>
+                            )}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                    {isOpen ? (
+                      <tr className="border-t border-border/30 bg-muted/20">
+                        <td colSpan={colSpan} className="px-2.5 py-2.5 sm:px-3 sm:py-3">
+                          <dl className="grid gap-1.5 text-[11px] sm:grid-cols-2 sm:gap-x-4 sm:gap-y-1.5 sm:text-sm">
+                            <div className="flex items-start justify-between gap-2 sm:justify-start sm:gap-3">
+                              <dt className="shrink-0 text-muted-foreground">
+                                {isKo ? '상태' : 'Status'}
+                              </dt>
+                              <dd className={`font-medium ${todoStatusClass(row.status)}`}>
+                                {todoStatusLabel(row.status, isKo)}
+                                {!row.hasQueue ? (
+                                  <span className="ml-1 text-[10px] font-normal text-muted-foreground sm:text-xs">
+                                    ({isKo ? '큐 없음' : 'no queue'})
+                                  </span>
+                                ) : null}
+                              </dd>
+                            </div>
+                            <div className="flex items-start justify-between gap-2 sm:justify-start sm:gap-3">
+                              <dt className="shrink-0 text-muted-foreground">
+                                {isKo ? '부서' : 'Dept'}
+                              </dt>
+                              <dd className="font-medium">{row.department || '—'}</dd>
+                            </div>
+                            <div className="flex items-start justify-between gap-2 sm:justify-start sm:gap-3">
+                              <dt className="shrink-0 text-muted-foreground">
+                                {isKo ? '담당' : 'Assigned'}
+                              </dt>
+                              <dd className="font-medium">
+                                {row.assignedToName || row.assignedToEmail || '—'}
+                              </dd>
+                            </div>
+                            <div className="flex items-start justify-between gap-2 sm:justify-start sm:gap-3">
+                              <dt className="shrink-0 text-muted-foreground">
+                                {isKo ? '완료자' : 'Done by'}
+                              </dt>
+                              <dd className="font-medium">
+                                {row.completedByNames.length > 0
+                                  ? row.completedByNames.join(', ')
+                                  : '—'}
+                              </dd>
+                            </div>
+                            <div className="flex items-start justify-between gap-2 sm:col-span-2 sm:justify-start sm:gap-3">
+                              <dt className="shrink-0 text-muted-foreground">
+                                {isKo ? '완료 시각' : 'Completed at'}
+                              </dt>
+                              <dd className="font-medium">
+                                {formatTodoCompletedAt(row.completedAt, isKo)}
+                              </dd>
+                            </div>
+                          </dl>
+                          {staffColumns.length > 0 ? (
+                            <div className="mt-2 rounded-md border border-border/50 bg-white/70 p-2 sm:rounded-lg sm:p-2.5">
+                              <div className="mb-1 text-[10px] font-medium text-muted-foreground sm:text-xs">
+                                {isKo ? '출근 직원 체크' : 'Staff checks'}
+                              </div>
+                              <ul className="grid grid-cols-2 gap-1 text-[10px] sm:grid-cols-3 sm:text-xs md:grid-cols-4">
+                                {staffColumns.map((s) => {
+                                  const checked = doneSet.has(s.email.toLowerCase())
+                                  return (
+                                    <li
+                                      key={s.email}
+                                      className="flex items-center justify-between gap-2"
+                                    >
+                                      <span className="truncate">{s.name}</span>
+                                      <span
+                                        className={
+                                          checked
+                                            ? 'font-semibold text-emerald-600'
+                                            : 'text-muted-foreground/50'
+                                        }
+                                      >
+                                        {checked ? '✓' : '·'}
+                                      </span>
+                                    </li>
+                                  )
+                                })}
+                              </ul>
+                            </div>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground sm:text-sm">
+          {isKo ? '표시할 Todo가 없습니다.' : 'No todos to show.'}
+        </p>
+      )}
+      {staffColumns.length === 0 && rows.length > 0 ? (
+        <p className="mt-1 text-[10px] text-muted-foreground sm:text-xs">
+          {isKo ? '해당일 출근 기록이 없습니다.' : 'No check-ins for this date.'}
+        </p>
+      ) : null}
+      {data.todoSummary.notes.trim() ? <NoteBox>{data.todoSummary.notes}</NoteBox> : null}
+    </section>
   )
 }
 
@@ -132,22 +386,62 @@ function FinancialCategoryBlock({
           <thead className="bg-muted/20">
             <tr>
               <th className="px-2 py-1 text-left font-medium sm:px-3 sm:py-1.5">{isKo ? '항목' : 'Item'}</th>
-              <th className="px-2 py-1 text-left font-medium sm:px-3 sm:py-1.5">{isKo ? '상세' : 'Detail'}</th>
-              {isBooking ? (
+              {isCashFlow ? (
                 <>
-                  <th className="px-2 py-1 text-right font-medium sm:px-3 sm:py-1.5">EA</th>
                   <th className="px-2 py-1 text-right font-medium sm:px-3 sm:py-1.5">
-                    {isKo ? '개당' : 'Unit'}
+                    {isKo ? '지출' : 'Out'}
+                  </th>
+                  <th className="px-2 py-1 text-right font-medium sm:px-3 sm:py-1.5">
+                    {isKo ? '입금' : 'In'}
+                  </th>
+                  <th className="px-2 py-1 text-right font-medium sm:px-3 sm:py-1.5">
+                    {isKo ? '보유' : 'Hold'}
                   </th>
                 </>
-              ) : null}
-              <th className="px-2 py-1 text-right font-medium sm:px-3 sm:py-1.5">{isKo ? '금액' : 'Amt'}</th>
+              ) : (
+                <>
+                  <th className="px-2 py-1 text-left font-medium sm:px-3 sm:py-1.5">
+                    {isKo ? '상세' : 'Detail'}
+                  </th>
+                  {isBooking ? (
+                    <>
+                      <th className="px-2 py-1 text-right font-medium sm:px-3 sm:py-1.5">EA</th>
+                      <th className="px-2 py-1 text-right font-medium sm:px-3 sm:py-1.5">
+                        {isKo ? '개당' : 'Unit'}
+                      </th>
+                    </>
+                  ) : null}
+                  <th className="px-2 py-1 text-right font-medium sm:px-3 sm:py-1.5">
+                    {isKo ? '금액' : 'Amt'}
+                  </th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
             {category.items.map((item) => {
               const isNegative = item.amount < 0
               const isBalance = item.id === 'cash_on_hand'
+
+              if (isCashFlow) {
+                const spent = isBalance ? null : isNegative ? Math.abs(item.amount) : null
+                const deposited = isBalance ? null : !isNegative ? item.amount : null
+                return (
+                  <tr key={item.id} className="border-t border-border/40">
+                    <td className="px-2 py-1 font-medium sm:px-3 sm:py-1.5">{item.label}</td>
+                    <td className="px-2 py-1 text-right font-medium text-red-600 sm:px-3 sm:py-1.5">
+                      {spent != null ? formatUsd(spent) : '—'}
+                    </td>
+                    <td className="px-2 py-1 text-right font-medium text-emerald-700 sm:px-3 sm:py-1.5">
+                      {deposited != null ? formatUsd(deposited) : '—'}
+                    </td>
+                    <td className="px-2 py-1 text-right font-medium text-indigo-700 sm:px-3 sm:py-1.5">
+                      {isBalance ? formatUsd(item.amount) : '—'}
+                    </td>
+                  </tr>
+                )
+              }
+
               return (
                 <tr key={item.id} className="border-t border-border/40">
                   <td className="px-2 py-1 font-medium sm:px-3 sm:py-1.5">{item.label}</td>
@@ -168,11 +462,7 @@ function FinancialCategoryBlock({
                   ) : null}
                   <td
                     className={`px-2 py-1 text-right font-medium sm:px-3 sm:py-1.5 ${
-                      isBalance
-                        ? 'text-indigo-700'
-                        : isNegative
-                          ? 'text-red-600'
-                          : 'text-emerald-700'
+                      isNegative ? 'text-red-600' : 'text-emerald-700'
                     }`}
                   >
                     {isNegative ? `-${formatUsd(Math.abs(item.amount))}` : formatUsd(item.amount)}
@@ -258,53 +548,72 @@ export function DailyReportDocument({ data, locale = 'ko' }: DailyReportDocument
           </SectionTitle>
 
           {ts.tours.length > 0 ? (
-            <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-border/60 sm:rounded-xl">
-              <table className="w-full min-w-[28rem] text-[11px] sm:min-w-0 sm:text-sm">
+            <div className="overflow-hidden rounded-lg border border-border/60 sm:rounded-xl">
+              <table className="w-full table-fixed text-[10px] sm:text-sm">
+                <colgroup>
+                  <col className="w-[36%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[16%]" />
+                </colgroup>
                 <thead className="bg-muted/50">
                   <tr>
-                    <th className="px-2 py-1 text-left sm:px-3 sm:py-1.5">{isKo ? '상품' : 'Product'}</th>
-                    <th className="px-2 py-1 text-right sm:px-3 sm:py-1.5">{isKo ? '총매출' : 'Rev.'}</th>
-                    <th className="px-2 py-1 text-right sm:px-3 sm:py-1.5">{isKo ? '지출' : 'Exp.'}</th>
-                    <th className="px-2 py-1 text-right sm:px-3 sm:py-1.5">{isKo ? '순이익' : 'Net'}</th>
-                    <th className="px-2 py-1 text-right sm:px-3 sm:py-1.5">{isKo ? '잔액' : 'Bal.'}</th>
+                    <th className="px-1.5 py-1 text-left font-medium sm:px-3 sm:py-1.5">
+                      {isKo ? '상품' : 'Product'}
+                    </th>
+                    <th className="px-0.5 py-1 text-right font-medium sm:px-2 sm:py-1.5">
+                      {isKo ? '총매출' : 'Rev'}
+                    </th>
+                    <th className="px-0.5 py-1 text-right font-medium sm:px-2 sm:py-1.5">
+                      {isKo ? '지출' : 'Exp'}
+                    </th>
+                    <th className="px-0.5 py-1 text-right font-medium sm:px-2 sm:py-1.5">
+                      {isKo ? '순이익' : 'Net'}
+                    </th>
+                    <th className="px-1.5 py-1 text-right font-medium sm:px-2 sm:py-1.5">
+                      {isKo ? '잔액' : 'Bal'}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {ts.tours.map((t) => (
                     <tr key={t.id} className="border-t border-border/40">
-                      <td className="px-2 py-1 sm:px-3 sm:py-1.5">
-                        <div className="font-medium leading-tight">{t.productName}</div>
-                        <div className="text-[10px] text-muted-foreground sm:text-xs">
+                      <td className="px-1.5 py-1 sm:px-3 sm:py-1.5">
+                        <div className="truncate font-medium leading-tight" title={t.productName}>
+                          {t.productName}
+                        </div>
+                        <div className="truncate text-[9px] text-muted-foreground sm:text-xs">
                           {t.guideName ?? '—'} · {t.guestCount}
                           {isKo ? '명' : 'p'}
                         </div>
                       </td>
-                      <td className="px-2 py-1 text-right text-emerald-700 sm:px-3 sm:py-1.5">
+                      <td className="px-0.5 py-1 text-right tabular-nums text-emerald-700 sm:px-2 sm:py-1.5">
                         {formatUsd(t.totalIncome)}
                       </td>
-                      <td className="px-2 py-1 text-right text-red-600 sm:px-3 sm:py-1.5">
+                      <td className="px-0.5 py-1 text-right tabular-nums text-red-600 sm:px-2 sm:py-1.5">
                         {formatUsd(t.totalExpenses)}
                       </td>
-                      <td className="px-2 py-1 text-right font-semibold sm:px-3 sm:py-1.5">
+                      <td className="px-0.5 py-1 text-right font-semibold tabular-nums sm:px-2 sm:py-1.5">
                         {formatUsd(t.netProfit)}
                       </td>
-                      <td className="px-2 py-1 text-right text-amber-700 sm:px-3 sm:py-1.5">
+                      <td className="px-1.5 py-1 text-right tabular-nums text-amber-700 sm:px-2 sm:py-1.5">
                         {formatUsd(t.balanceOutstanding)}
                       </td>
                     </tr>
                   ))}
                   <tr className="border-t-2 border-border/60 bg-muted/30 font-semibold">
-                    <td className="px-2 py-1 sm:px-3 sm:py-1.5">{isKo ? '합계' : 'Total'}</td>
-                    <td className="px-2 py-1 text-right text-emerald-700 sm:px-3 sm:py-1.5">
+                    <td className="px-1.5 py-1 sm:px-3 sm:py-1.5">{isKo ? '합계' : 'Total'}</td>
+                    <td className="px-0.5 py-1 text-right tabular-nums text-emerald-700 sm:px-2 sm:py-1.5">
                       {formatUsd(ts.totals.totalIncome)}
                     </td>
-                    <td className="px-2 py-1 text-right text-red-600 sm:px-3 sm:py-1.5">
+                    <td className="px-0.5 py-1 text-right tabular-nums text-red-600 sm:px-2 sm:py-1.5">
                       {formatUsd(ts.totals.totalExpenses)}
                     </td>
-                    <td className="px-2 py-1 text-right sm:px-3 sm:py-1.5">
+                    <td className="px-0.5 py-1 text-right tabular-nums sm:px-2 sm:py-1.5">
                       {formatUsd(ts.totals.netProfit)}
                     </td>
-                    <td className="px-2 py-1 text-right text-amber-700 sm:px-3 sm:py-1.5">
+                    <td className="px-1.5 py-1 text-right tabular-nums text-amber-700 sm:px-2 sm:py-1.5">
                       {formatUsd(ts.totals.balanceOutstanding)}
                     </td>
                   </tr>
@@ -362,73 +671,7 @@ export function DailyReportDocument({ data, locale = 'ko' }: DailyReportDocument
           </section>
         ) : null}
 
-        <section>
-          <SectionTitle icon={<CheckCircle2 className="h-4 w-4 text-primary sm:h-5 sm:w-5" />}>
-            {isKo ? 'TODO 처리 현황' : 'TODO by user'}
-          </SectionTitle>
-          <div className="mb-2 grid grid-cols-3 gap-1.5 sm:mb-3 sm:gap-3">
-            <StatCard
-              label={isKo ? '완료' : 'Done'}
-              value={data.todoSummary.completedCount}
-              accent="text-emerald-600"
-            />
-            <StatCard
-              label={isKo ? '미처리' : 'Pending'}
-              value={data.todoSummary.pendingCount}
-              accent="text-amber-600"
-            />
-            <StatCard label={isKo ? '보류' : 'Hold'} value={data.todoSummary.onHoldCount} />
-          </div>
-          <div className="space-y-2 sm:space-y-3">
-            {data.todoSummary.byUser.map((u) => (
-              <div
-                key={u.userEmail}
-                className="rounded-lg border border-border/60 p-2.5 sm:rounded-xl sm:p-3"
-              >
-                <div className="mb-1 text-xs font-semibold sm:mb-1.5 sm:text-sm">
-                  {u.userName || u.userEmail}
-                </div>
-                {u.completed.length > 0 && (
-                  <div className="mb-1.5">
-                    <div className="text-[10px] font-medium text-emerald-700 sm:text-xs">
-                      {isKo ? '완료' : 'Completed'}
-                    </div>
-                    <ul className="mt-0.5 space-y-0.5 text-[11px] sm:text-sm">
-                      {u.completed.map((i) => (
-                        <li key={i.id}>✓ {i.title}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {u.pending.length > 0 && (
-                  <div className="mb-1.5">
-                    <div className="text-[10px] font-medium text-amber-700 sm:text-xs">
-                      {isKo ? '미처리' : 'Pending'}
-                    </div>
-                    <ul className="mt-0.5 space-y-0.5 text-[11px] text-amber-900 sm:text-sm">
-                      {u.pending.map((i) => (
-                        <li key={i.id}>○ {i.title}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {u.onHold.length > 0 && (
-                  <div>
-                    <div className="text-[10px] font-medium text-muted-foreground sm:text-xs">
-                      {isKo ? '보류' : 'On hold'}
-                    </div>
-                    <ul className="mt-0.5 space-y-0.5 text-[11px] text-muted-foreground sm:text-sm">
-                      {u.onHold.map((i) => (
-                        <li key={i.id}>— {i.title}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-          {data.todoSummary.notes.trim() ? <NoteBox>{data.todoSummary.notes}</NoteBox> : null}
-        </section>
+        <TodoStatusSection data={data} isKo={isKo} />
 
         {singleDay ? (
           <section>
