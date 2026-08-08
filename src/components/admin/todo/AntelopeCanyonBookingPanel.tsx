@@ -20,6 +20,7 @@ import {
   formatTicketEaWithPending,
   isTicketChangeRequested,
   type AntelopeCanyonTicketLite,
+  type AntelopeCanyonTourLite,
 } from '@/lib/antelopeCanyonBookingQueue'
 import { isTicketBookingPendingRequestState } from '@/lib/ticketBookingWorkflow'
 import {
@@ -70,7 +71,12 @@ function formatShortDate(raw: string): string {
   return `${month}/${day}`
 }
 
-function toDetailRow(ticket: AntelopeCanyonTicketLite): TicketBookingReservationDetailRow {
+function toDetailRow(
+  ticket: AntelopeCanyonTicketLite,
+  toursById: Record<string, AntelopeCanyonTourLite>
+): TicketBookingReservationDetailRow {
+  const tourId = String(ticket.tour_id || '').trim()
+  const linkedTour = tourId ? toursById[tourId] : undefined
   return {
     id: ticket.id,
     tour_id: ticket.tour_id,
@@ -89,6 +95,28 @@ function toDetailRow(ticket: AntelopeCanyonTicketLite): TicketBookingReservation
     vendor_status: ticket.vendor_status,
     change_status: ticket.change_status,
     check_in_date: ticket.check_in_date,
+    ...(linkedTour
+      ? {
+          tours: {
+            tour_date: linkedTour.tour_date,
+            ...(linkedTour.products
+              ? {
+                  products: {
+                    ...(linkedTour.products.name != null
+                      ? { name: linkedTour.products.name }
+                      : {}),
+                    ...(linkedTour.products.name_en != null
+                      ? { name_en: linkedTour.products.name_en }
+                      : {}),
+                    ...(linkedTour.products.name_ko != null
+                      ? { name_ko: linkedTour.products.name_ko }
+                      : {}),
+                  },
+                }
+              : {}),
+          },
+        }
+      : {}),
   }
 }
 
@@ -186,7 +214,7 @@ export function AntelopeCanyonBookingPanel({
   const isKo = locale === 'ko'
   const isList = variant === 'list'
   const completionDateKey = useMemo(() => antelopeCanyonBookingCompletionDateKey(), [])
-  const { mismatchRows, cancelDueRows, loading, reload, dateRange, cancelDueCheckInYmd } =
+  const { mismatchRows, cancelDueRows, toursById, loading, reload, dateRange, cancelDueCheckInYmd } =
     useAntelopeCanyonBookingQueue(queryEnabled)
   const { tourState, setTourStatus } = useTodoPanelTourCompletion(
     'antelope-canyon-booking',
@@ -370,15 +398,27 @@ export function AntelopeCanyonBookingPanel({
                             />
                             <div className="min-w-0 flex-1">
                               <p
-                                className={`text-[11px] font-medium leading-snug ${todoPanelTourTitleClassName(rowStatus)}`}
+                                className={`flex flex-wrap items-center gap-1 text-[11px] font-medium leading-snug ${todoPanelTourTitleClassName(rowStatus)}`}
                               >
                                 <span className="tabular-nums text-gray-600">
                                   {formatShortDate(row.tour_date)}
                                 </span>
-                                <span className="mx-1 text-gray-300">·</span>
+                                <span className="text-gray-300">·</span>
                                 <span>{row.product_name}</span>
+                                {(row.day_tour_count ?? 0) >= 2 ? (
+                                  <span className="rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[9px] font-semibold tabular-nums text-indigo-900">
+                                    {isKo
+                                      ? `투어 ${row.day_tour_count}`
+                                      : `${row.day_tour_count} tours`}
+                                  </span>
+                                ) : null}
                               </p>
                               <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                                {row.id.startsWith('day::') && !(row.day_tour_count && row.day_tour_count >= 2) ? (
+                                  <span className="rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[9px] font-medium text-slate-700">
+                                    {isKo ? '당일 합산' : 'Day total'}
+                                  </span>
+                                ) : null}
                                 <span className="rounded border border-blue-200 bg-blue-50 px-1 py-0.5 text-[9px] font-semibold tabular-nums text-blue-900">
                                   {isKo ? '투어' : 'Tour'} {row.tour_people}
                                 </span>
@@ -505,15 +545,27 @@ export function AntelopeCanyonBookingPanel({
                             />
                             <div className="min-w-0 flex-1">
                               <p
-                                className={`text-[11px] font-medium leading-snug ${todoPanelTourTitleClassName(rowStatus)}`}
+                                className={`flex flex-wrap items-center gap-1 text-[11px] font-medium leading-snug ${todoPanelTourTitleClassName(rowStatus)}`}
                               >
                                 <span className="tabular-nums text-gray-600">
                                   {formatShortDate(row.check_in_date)}
                                 </span>
-                                <span className="mx-1 text-gray-300">·</span>
+                                <span className="text-gray-300">·</span>
                                 <span>{row.product_name}</span>
+                                {(row.day_tour_count ?? 0) >= 2 ? (
+                                  <span className="rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[9px] font-semibold tabular-nums text-indigo-900">
+                                    {isKo
+                                      ? `투어 ${row.day_tour_count}`
+                                      : `${row.day_tour_count} tours`}
+                                  </span>
+                                ) : null}
                               </p>
                               <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                                {row.id.startsWith('day::') && !(row.day_tour_count && row.day_tour_count >= 2) ? (
+                                  <span className="rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[9px] font-medium text-slate-700">
+                                    {isKo ? '당일 합산' : 'Day total'}
+                                  </span>
+                                ) : null}
                                 <span className="rounded border border-blue-200 bg-blue-50 px-1 py-0.5 text-[9px] font-semibold tabular-nums text-blue-900">
                                   {isKo ? '투어' : 'Tour'} {row.tour_people}
                                 </span>
@@ -580,7 +632,7 @@ export function AntelopeCanyonBookingPanel({
       <TicketBookingReservationDetailModal
         open={detailOpen}
         onOpenChange={setDetailOpen}
-        bookings={detailTickets.map(toDetailRow)}
+        bookings={detailTickets.map((ticket) => toDetailRow(ticket, toursById))}
         onEdit={(b) => {
           setDetailOpen(false)
           setEditBookingId(b.id)

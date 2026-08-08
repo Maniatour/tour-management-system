@@ -61,6 +61,8 @@ export type AntelopeCanyonMismatchTourRow = {
   product_name: string
   /** 일별 합계 행에서 투어 상세 링크용 */
   primary_tour_id?: string | null
+  /** 당일 합산 시 같은 날 투어 개수 (2 이상일 때 뱃지 표시) */
+  day_tour_count?: number
   tour_people: number
   ticket_ea: number
   ticket_ea_current: number
@@ -75,6 +77,8 @@ export type AntelopeCanyonCancelDueTourRow = {
   tour_id: string
   tour_date: string
   product_name: string
+  /** 당일 합산 시 같은 날 투어 개수 */
+  day_tour_count?: number
   check_in_date: string
   cancel_due_date: string
   tour_people: number
@@ -228,6 +232,26 @@ function ticketCountsForMismatchDay(
   return tour != null && tourProductRequiresTicketBookingCount(tour)
 }
 
+/**
+ * 일별 합계(day::YYYY-MM-DD)에 넣을 티켓.
+ * check_in 날짜만 맞추면 1박2일 등 다른 출발일 투어 티켓이 당일 밤도깨비에 섞이므로,
+ * tour_id가 있으면 연결된 투어의 tour_date가 그날인 경우만 포함한다.
+ * 미연결 티켓은 check_in 날짜 기준으로 계속 포함한다.
+ */
+function ticketBelongsToDayMismatchAggregation(
+  ticket: AntelopeCanyonTicketLite,
+  date: string,
+  toursById: Map<string, AntelopeCanyonTourLite>
+): boolean {
+  if (ticketCheckInYmd(ticket) !== date) return false
+  if (!ticketCountsForMismatchDay(ticket, toursById)) return false
+  const tourId = String(ticket.tour_id || '').trim()
+  if (!tourId) return true
+  const linkedTour = toursById.get(tourId)
+  if (!linkedTour) return false
+  return tourYmd(linkedTour) === date
+}
+
 function dayMismatchProductLabel(toursOnDay: AntelopeCanyonTourLite[]): string {
   if (toursOnDay.length === 1) return productDisplayName(toursOnDay[0]!)
   const names = [...new Set(toursOnDay.map((t) => productDisplayName(t)))]
@@ -279,7 +303,21 @@ export function buildAntelopeCanyonMismatchRows(input: {
     (tour) => isActiveTicketBookingTour(tour) && tourProductRequiresTicketBookingCount(tour)
   )
 
+  /** 같은 날 투어 2개+ → 일별 합산 비교 (공유 RN 일괄 구매 대응) */
+  const eligibleByDate = new Map<string, AntelopeCanyonTourLite[]>()
   for (const tour of eligibleTours) {
+    const d = tourYmd(tour)
+    if (!d) continue
+    const list = eligibleByDate.get(d) || []
+    list.push(tour)
+    eligibleByDate.set(d, list)
+  }
+
+  for (const tour of eligibleTours) {
+    const date = tourYmd(tour)
+    // 같은 날 투어가 여러 개면 투어별 행을 만들지 않고 아래에서 합산
+    if ((eligibleByDate.get(date)?.length ?? 0) >= 2) continue
+
     const tourTickets = ticketsForTour(tour.id, ticketBookings)
     if (!tourTickets.length) continue
 
@@ -329,15 +367,15 @@ export function buildAntelopeCanyonMismatchRows(input: {
   const dateEnd = input.dateEnd || ''
   if (dateStart && dateEnd && dateStart <= dateEnd) {
     for (const date of collectYmdRange(dateStart, dateEnd)) {
-      const toursStarting = eligibleTours.filter((tour) => tourYmd(tour) === date)
+      const toursStarting = eligibleByDate.get(date) || []
+      const multiTourDay = toursStarting.length >= 2
       const tourPeople = toursStarting.reduce(
         (sum, tour) => sum + computeTourAssignedPeople(tour, reservations),
         0
       )
 
-      const dayTickets = activeTickets(ticketBookings).filter(
-        (ticket) =>
-          ticketCheckInYmd(ticket) === date && ticketCountsForMismatchDay(ticket, toursById)
+      const dayTickets = activeTickets(ticketBookings).filter((ticket) =>
+        ticketBelongsToDayMismatchAggregation(ticket, date, toursById)
       )
 
       const ticketEaEffective = sumEffectiveTicketEa(dayTickets)
@@ -357,19 +395,22 @@ export function buildAntelopeCanyonMismatchRows(input: {
         continue
       }
 
-      if (
-        rows.some(
-          (row) =>
-            !row.id.startsWith('day::') &&
-            String(row.tour_date || '').trim().slice(0, 10) === date
-        ) &&
-        !dayTickets.some((ticket) => !String(ticket.tour_id || '').trim())
-      ) {
-        continue
-      }
+      // 단일 투어 날: 이미 투어별 행이 있고 미연결 티켓이 없으면 일별 행 생략
+      if (!multiTourDay) {
+        if (
+          rows.some(
+            (row) =>
+              !row.id.startsWith('day::') &&
+              String(row.tour_date || '').trim().slice(0, 10) === date
+          ) &&
+          !dayTickets.some((ticket) => !String(ticket.tour_id || '').trim())
+        ) {
+          continue
+        }
 
-      if (perTourRowsAlreadyExplainDayMismatch(date, tourPeople, ticketEaCurrent, rows)) {
-        continue
+        if (perTourRowsAlreadyExplainDayMismatch(date, tourPeople, ticketEaCurrent, rows)) {
+          continue
+        }
       }
 
       rows.push({
@@ -379,6 +420,7 @@ export function buildAntelopeCanyonMismatchRows(input: {
           ? dayMismatchProductLabel(toursStarting)
           : date,
         primary_tour_id: toursStarting[0]?.id ?? dayTickets.find((t) => t.tour_id)?.tour_id ?? null,
+        ...(multiTourDay ? { day_tour_count: toursStarting.length } : {}),
         tour_people: tourPeople,
         ticket_ea: ticketEaEffective,
         ticket_ea_current: ticketEaCurrent,
@@ -412,7 +454,19 @@ export function buildAntelopeCanyonCancelDueRows(input: {
     }
   }
 
-  const grouped = new Map<string, AntelopeCanyonTicketLite[]>()
+  const eligibleTours = [...toursById.values()].filter((tour) =>
+    tourProductRequiresTicketBookingCount(tour)
+  )
+  const eligibleByDate = new Map<string, AntelopeCanyonTourLite[]>()
+  for (const tour of eligibleTours) {
+    const d = tourYmd(tour)
+    if (!d) continue
+    const list = eligibleByDate.get(d) || []
+    list.push(tour)
+    eligibleByDate.set(d, list)
+  }
+
+  const dueTicketsByCheckIn = new Map<string, AntelopeCanyonTicketLite[]>()
 
   for (const booking of activeTickets(input.ticketBookings)) {
     const checkIn = String(booking.check_in_date || '').slice(0, 10)
@@ -424,52 +478,110 @@ export function buildAntelopeCanyonCancelDueRows(input: {
     const isD2CheckIn = checkIn === d2CheckIn
     if (!isDueToday && !isD2CheckIn) continue
 
-    const tid = String(booking.tour_id || '').trim()
-    if (!tid) continue
-    const key = `${tid}::${checkIn}`
-    const list = grouped.get(key) || []
+    const list = dueTicketsByCheckIn.get(checkIn) || []
     list.push(booking)
-    grouped.set(key, list)
+    dueTicketsByCheckIn.set(checkIn, list)
   }
 
   const rows: AntelopeCanyonCancelDueTourRow[] = []
+  const emittedMultiDay = new Set<string>()
 
-  for (const [key, dueTickets] of grouped) {
-    const [tourId, checkInDate] = key.split('::')
-    const tour = toursById.get(tourId)
-    if (!tour) continue
+  for (const [checkInDate, dueTickets] of dueTicketsByCheckIn) {
+    const toursOnDay = eligibleByDate.get(checkInDate) || []
+    const multiTourDay = toursOnDay.length >= 2
 
-    const tourTickets = ticketsForTour(tourId, input.ticketBookings)
-    const displayTickets = tourTickets.length > 0 ? tourTickets : dueTickets
+    if (multiTourDay) {
+      if (emittedMultiDay.has(checkInDate)) continue
+      emittedMultiDay.add(checkInDate)
 
-    const tourPeople = computeTourAssignedPeople(tour, input.reservations)
-    const ticketEaEffective = sumEffectiveTicketEa(displayTickets)
-    const ticketEaCurrent = sumCurrentTicketEa(displayTickets)
-    const hasPendingChange = tourHasPendingTicketChange(displayTickets)
-    const hasVendorPending = tourHasVendorPendingTickets(displayTickets)
+      const dayTickets = activeTickets(input.ticketBookings).filter((ticket) =>
+        ticketBelongsToDayMismatchAggregation(ticket, checkInDate, toursById)
+      )
+      const displayTickets = dayTickets.length > 0 ? dayTickets : dueTickets
+      const tourPeople = toursOnDay.reduce(
+        (sum, tour) => sum + computeTourAssignedPeople(tour, input.reservations),
+        0
+      )
+      const ticketEaEffective = sumEffectiveTicketEa(displayTickets)
+      const ticketEaCurrent = sumCurrentTicketEa(displayTickets)
+      const hasPendingChange = tourHasPendingTicketChange(displayTickets)
+      const hasVendorPending = tourHasVendorPendingTickets(displayTickets)
 
-    const needsCancel = ticketEaEffective > tourPeople
-    if (!needsCancel && !hasPendingChange && !hasVendorPending) continue
+      const needsCancel = ticketEaEffective > tourPeople
+      if (!needsCancel && !hasPendingChange && !hasVendorPending) continue
 
-    const supplier = input.supplierProductsByBookingId.get(dueTickets[0]!.id)
-    const cancelDueDate = getCancelDueDateForTicketBooking(dueTickets[0]!, supplier) || today
+      const supplier = input.supplierProductsByBookingId.get(dueTickets[0]!.id)
+      const cancelDueDate = getCancelDueDateForTicketBooking(dueTickets[0]!, supplier) || today
+      const primaryTour = toursOnDay[0]!
 
-    rows.push({
-      id: key,
-      tour_id: tourId,
-      tour_date: tour.tour_date,
-      product_name: productDisplayName(tour),
-      check_in_date: checkInDate,
-      cancel_due_date: cancelDueDate,
-      tour_people: tourPeople,
-      ticket_ea: ticketEaEffective,
-      ticket_ea_current: ticketEaCurrent,
-      cancel_from: ticketEaEffective,
-      cancel_to: tourPeople,
-      has_pending_change: hasPendingChange,
-      has_vendor_pending: hasVendorPending,
-      tickets: displayTickets,
-    })
+      rows.push({
+        id: `day::${checkInDate}`,
+        tour_id: primaryTour.id,
+        tour_date: primaryTour.tour_date,
+        product_name: dayMismatchProductLabel(toursOnDay),
+        day_tour_count: toursOnDay.length,
+        check_in_date: checkInDate,
+        cancel_due_date: cancelDueDate,
+        tour_people: tourPeople,
+        ticket_ea: ticketEaEffective,
+        ticket_ea_current: ticketEaCurrent,
+        cancel_from: ticketEaEffective,
+        cancel_to: tourPeople,
+        has_pending_change: hasPendingChange,
+        has_vendor_pending: hasVendorPending,
+        tickets: displayTickets,
+      })
+      continue
+    }
+
+    // 단일 투어 날: 기존처럼 tour_id별 행
+    const grouped = new Map<string, AntelopeCanyonTicketLite[]>()
+    for (const booking of dueTickets) {
+      const tid = String(booking.tour_id || '').trim()
+      if (!tid) continue
+      const key = `${tid}::${checkInDate}`
+      const list = grouped.get(key) || []
+      list.push(booking)
+      grouped.set(key, list)
+    }
+
+    for (const [key, tourDueTickets] of grouped) {
+      const [tourId] = key.split('::')
+      const tour = toursById.get(tourId)
+      if (!tour) continue
+
+      const tourTickets = ticketsForTour(tourId, input.ticketBookings)
+      const displayTickets = tourTickets.length > 0 ? tourTickets : tourDueTickets
+
+      const tourPeople = computeTourAssignedPeople(tour, input.reservations)
+      const ticketEaEffective = sumEffectiveTicketEa(displayTickets)
+      const ticketEaCurrent = sumCurrentTicketEa(displayTickets)
+      const hasPendingChange = tourHasPendingTicketChange(displayTickets)
+      const hasVendorPending = tourHasVendorPendingTickets(displayTickets)
+
+      const needsCancel = ticketEaEffective > tourPeople
+      if (!needsCancel && !hasPendingChange && !hasVendorPending) continue
+
+      const supplier = input.supplierProductsByBookingId.get(tourDueTickets[0]!.id)
+      const cancelDueDate = getCancelDueDateForTicketBooking(tourDueTickets[0]!, supplier) || today
+
+      rows.push({
+        id: key,
+        tour_id: tourId,
+        tour_date: tour.tour_date,
+        product_name: productDisplayName(tour),
+        check_in_date: checkInDate,
+        cancel_due_date: cancelDueDate,
+        tour_people: tourPeople,
+        ticket_ea: ticketEaEffective,
+        ticket_ea_current: ticketEaCurrent,
+        cancel_from: ticketEaEffective,
+        cancel_to: tourPeople,
+        has_pending_change: hasPendingChange,
+        has_vendor_pending: hasVendorPending,
+        tickets: displayTickets,
+      })
+    }
   }
 
   return rows.sort(

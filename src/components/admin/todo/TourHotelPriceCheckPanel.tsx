@@ -83,6 +83,28 @@ function formatStayNightsLabel(
   return isKo ? `${nights}박` : `${nights}N`
 }
 
+/** checked_at → local-friendly "8/7 14:32" (America/Los_Angeles). */
+function formatCheckedAtLabel(iso: string | null | undefined, isKo: boolean): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(d)
+    const get = (type: string) => parts.find((p) => p.type === type)?.value || ''
+    const label = `${get('month')}/${get('day')} ${get('hour')}:${get('minute')}`
+    return isKo ? `조회 ${label}` : `Fetched ${label}`
+  } catch {
+    return isKo ? `조회 ${iso.slice(0, 16)}` : `Fetched ${iso.slice(0, 16)}`
+  }
+}
+
 function formatDiffBadge(
   diff: number | null | undefined,
   isKo: boolean,
@@ -512,6 +534,7 @@ export function TourHotelPriceCheckPanel({
                 { emptyLabel: isKo ? '최저가?' : 'Low?' }
               )
               const hoverRates = fetched?.rates || []
+              const checkedAtLabel = formatCheckedAtLabel(fetched?.checkedAt, isKo)
               const rowTitle = [
                 formatShortDate(row.check_in_date),
                 row.hotel,
@@ -637,6 +660,11 @@ export function TourHotelPriceCheckPanel({
                             ? ` · ${isKo ? '최저' : 'low'} ${formatUsd(fetched.cheapestPrice)}`
                             : ''}
                         </p>
+                        {checkedAtLabel ? (
+                          <p className="mb-1 text-[9px] font-medium text-gray-500">
+                            {checkedAtLabel}
+                          </p>
+                        ) : null}
                         <ul className="max-h-40 space-y-0.5 overflow-y-auto">
                           {hoverRates.map((rate) => (
                             <li

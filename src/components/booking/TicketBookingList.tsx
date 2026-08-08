@@ -1992,10 +1992,8 @@ export default function TicketBookingList() {
             break;
           }
           if (batchTours?.length) {
-            const activeOnly = batchTours.filter(
-              (t: { tour_status?: string | null }) => !isTourCancelled(t.tour_status)
-            );
-            toursData = toursData.concat(activeOnly as unknown as TourEvent[]);
+            // 취소된 투어라도 tour_id 연결 표시용으로 유지 (미연결로 오인하지 않음)
+            toursData = toursData.concat(batchTours as unknown as TourEvent[]);
           }
         }
         type TourEnrichRow = TourEvent & {
@@ -5357,12 +5355,25 @@ export default function TicketBookingList() {
             </FormField>
             <div className="col-span-2 grid grid-cols-2 gap-2 sm:col-span-3">
               <FormField label={formLabel('투어', 'Tour')}>
-                {booking.tours && booking.tour_id ? (
-                  <TicketBookingTourDisplay
-                    locale={locale}
-                    tours={booking.tours}
-                    tourFallback={t('tour')}
-                  />
+                {booking.tour_id ? (
+                  booking.tours ? (
+                    <TicketBookingTourDisplay
+                      locale={locale}
+                      tours={booking.tours}
+                      tourFallback={t('tour')}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className="text-left text-xs font-medium text-amber-800 underline decoration-amber-400/80 underline-offset-2 hover:text-amber-950"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLinkTourModalBooking(booking);
+                      }}
+                    >
+                      {locale.startsWith('en') ? 'Linked' : '연결됨'}
+                    </button>
+                  )
                 ) : (
                   <button
                     type="button"
@@ -5426,12 +5437,25 @@ export default function TicketBookingList() {
           <span className="text-gray-500">제출일</span>
           <span className="font-medium">{booking.submit_on ? new Date(booking.submit_on).toISOString().split('T')[0] : '-'}</span>
           <span className="text-gray-500">투어</span>
-          {booking.tours && booking.tour_id ? (
-            <TicketBookingTourDisplay
-              locale={locale}
-              tours={booking.tours}
-              tourFallback={t('tour')}
-            />
+          {booking.tour_id ? (
+            booking.tours ? (
+              <TicketBookingTourDisplay
+                locale={locale}
+                tours={booking.tours}
+                tourFallback={t('tour')}
+              />
+            ) : (
+              <button
+                type="button"
+                className="text-left text-xs font-medium text-amber-800 underline decoration-amber-400/80 underline-offset-2 hover:text-amber-950"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLinkTourModalBooking(booking);
+                }}
+              >
+                연결됨
+              </button>
+            )
           ) : (
             <button
               type="button"
@@ -5905,16 +5929,30 @@ export default function TicketBookingList() {
       className={`${TICKET_TABLE_CELL} hidden lg:table-cell min-w-[9rem] max-w-[12rem]`}
       onClick={(e) => e.stopPropagation()}
     >
-      {booking.tours && booking.tour_id ? (
-        <TicketBookingTourDisplay
-          locale={locale}
-          tours={booking.tours}
-          tourFallback={t('tour')}
-          layout={opts?.inDetailModal ? 'default' : 'table'}
-          showDetails={opts?.inDetailModal === true}
-          headlineClassName="font-medium text-gray-900 leading-snug"
-          onTourClick={() => handleTourClick(booking.tour_id!)}
-        />
+      {booking.tour_id ? (
+        booking.tours ? (
+          <TicketBookingTourDisplay
+            locale={locale}
+            tours={booking.tours}
+            tourFallback={t('tour')}
+            layout={opts?.inDetailModal ? 'default' : 'table'}
+            showDetails={opts?.inDetailModal === true}
+            headlineClassName="font-medium text-gray-900 leading-snug"
+            onTourClick={() => handleTourClick(booking.tour_id!)}
+          />
+        ) : (
+          <button
+            type="button"
+            className="text-left text-xs font-medium text-amber-800 underline decoration-amber-400/80 underline-offset-2 hover:text-amber-950"
+            onClick={(e) => {
+              e.stopPropagation();
+              setLinkTourModalBooking(booking);
+            }}
+            title={locale === 'ko' ? '투어 연결됨 · 상세/변경' : 'Linked · view or change'}
+          >
+            {locale.startsWith('en') ? 'Linked' : '연결됨'}
+          </button>
+        )
       ) : (
         <button
           type="button"
@@ -7337,13 +7375,26 @@ export default function TicketBookingList() {
                       <div className="text-xs sm:text-sm">
                         <span className="text-gray-500">투어 연결</span>
                         <div className="mt-0.5 sm:mt-1">
-                          {booking.tours && booking.tour_id ? (
-                            <div>
-                              <TicketBookingTourDisplay locale={locale} tours={booking.tours} tourFallback={t('tour')} showDetails={false} />
-                              <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800 mt-1">
-                                연결됨
-                              </span>
-                            </div>
+                          {booking.tour_id ? (
+                            booking.tours ? (
+                              <div>
+                                <TicketBookingTourDisplay locale={locale} tours={booking.tours} tourFallback={t('tour')} showDetails={false} />
+                                <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800 mt-1">
+                                  연결됨
+                                </span>
+                              </div>
+                            ) : (
+                              <div>
+                                <span className="text-amber-800 text-xs font-medium">연결됨</span>
+                                <button
+                                  type="button"
+                                  className="mt-1.5 inline-flex w-full items-center justify-center rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+                                  onClick={() => setLinkTourModalBooking(booking)}
+                                >
+                                  투어 확인
+                                </button>
+                              </div>
+                            )
                           ) : (
                             <div>
                               <span className="text-gray-400 text-xs">투어 미연결</span>

@@ -588,13 +588,19 @@ export default function TicketBookingReservationDetailModal({
                                           </span>
                                         </td>
                                         <td className={`${td} min-w-[11rem] max-w-[16rem]`}>
-                                          {booking.tours && booking.tour_id ? (
-                                            <TicketBookingTourDisplay
-                                              locale={locale}
-                                              tours={booking.tours}
-                                              tourFallback={tourFallback}
-                                              headlineClassName="font-medium text-green-800 text-[11px]"
-                                            />
+                                          {booking.tour_id ? (
+                                            booking.tours ? (
+                                              <TicketBookingTourDisplay
+                                                locale={locale}
+                                                tours={booking.tours}
+                                                tourFallback={tourFallback}
+                                                headlineClassName="font-medium text-green-800 text-[11px]"
+                                              />
+                                            ) : (
+                                              <span className="text-amber-800 text-[11px] font-medium">
+                                                {locale === 'en' ? 'Linked' : '연결됨'}
+                                              </span>
+                                            )
                                           ) : (
                                             <span className="text-red-600">{locale === 'en' ? 'Unlinked' : '미연결'}</span>
                                           )}
