@@ -936,6 +936,12 @@
       "button": "Home category links"
     },
     "favoriteOrder": "Reorder favorites",
+    "productSortOrder": "Reorder products",
+    "productSortDragHint": "Drag to reorder",
+    "productSortMoveUp": "Move up",
+    "productSortMoveDown": "Move down",
+    "productSortOrderIndex": "#{n}",
+    "productSortOrderInput": "Enter sort position",
     "productCode": {
       "button": "Product codes",
       "title": "Product code management",

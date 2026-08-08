@@ -104,6 +104,17 @@ export async function cloneAdminProduct(
   if (sourceError) throw sourceError
   if (!source) throw new Error('Source product not found for active operator')
 
+  const { data: maxOrderRow } = await db
+    .from('products')
+    .select('sort_order')
+    .eq('operator_id', opId)
+    .order('sort_order', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const nextSortOrder =
+    typeof maxOrderRow?.sort_order === 'number' ? maxOrderRow.sort_order + 1 : 0
+
   const copySuffix = locale === 'en' ? ' (Copy)' : ' (복사본)'
   const productInsert = {
     ...omitKeys(source as Record<string, unknown>, [
@@ -113,6 +124,7 @@ export async function cloneAdminProduct(
       'is_favorite',
       'favorite_order',
       'is_published',
+      'sort_order',
     ]),
     name: `${source.name || 'Product'}${copySuffix}`,
     name_en: source.name_en ? `${source.name_en} (Copy)` : null,
@@ -121,6 +133,7 @@ export async function cloneAdminProduct(
     is_published: false,
     is_favorite: false,
     favorite_order: null,
+    sort_order: nextSortOrder,
     ...operatorIdInsert(opId),
   }
 

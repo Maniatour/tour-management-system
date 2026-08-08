@@ -4767,6 +4767,128 @@ main:has(.maniatour-home) {
   justify-self: center;
 }
 
+.admin-product-gyg-card--sortable {
+  cursor: grab;
+}
+
+.admin-product-gyg-card--sortable:active {
+  cursor: grabbing;
+}
+
+.admin-product-gyg-card--dragging {
+  opacity: 0.55;
+}
+
+.admin-product-gyg-card--drag-over {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 3px;
+  border-radius: 0.75rem;
+}
+
+.admin-product-gyg-card--sort-saving {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.admin-product-gyg-card__sort-bar {
+  position: absolute;
+  left: 0.5rem;
+  top: calc(var(--admin-product-card-image-height) - 2.35rem);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  border-radius: 9999px;
+  border: 1px solid var(--gyg-border, #e5e7eb);
+  background: rgb(255 255 255 / 0.96);
+  padding: 0.125rem 0.25rem 0.125rem 0.2rem;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
+}
+
+.admin-product-gyg-card__sort-grip {
+  display: inline-flex;
+  color: #6b7280;
+}
+
+.admin-product-gyg-card__sort-index {
+  display: inline-flex;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 9999px;
+  background: hsl(var(--primary) / 0.12);
+  color: hsl(var(--primary));
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: text;
+  padding: 0 0.2rem;
+}
+
+.admin-product-gyg-card__sort-index:hover:not(:disabled) {
+  background: hsl(var(--primary) / 0.2);
+}
+
+.admin-product-gyg-card__sort-index:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.admin-product-gyg-card__sort-index-input {
+  width: 2.5rem;
+  height: 1.35rem;
+  border-radius: 0.375rem;
+  border: 1px solid hsl(var(--primary));
+  background: #ffffff;
+  color: #111827;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  padding: 0 0.15rem;
+  outline: none;
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.2);
+}
+
+.admin-product-gyg-card__sort-index-input::-webkit-outer-spin-button,
+.admin-product-gyg-card__sort-index-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.admin-product-gyg-card__sort-index-input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.admin-product-gyg-card__sort-arrows {
+  display: inline-flex;
+  flex-direction: column;
+  margin-left: 0.1rem;
+}
+
+.admin-product-gyg-card__sort-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #4b5563;
+  border-radius: 0.25rem;
+  line-height: 0;
+}
+
+.admin-product-gyg-card__sort-arrow:hover:not(:disabled) {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.admin-product-gyg-card__sort-arrow:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .admin-product-gyg-card .gyg-listing-card {
   width: var(--admin-product-card-width);
   max-width: 100%;

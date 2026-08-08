@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, type SetStateAction } from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight, Star, Languages, Trash2, RotateCcw, Hash, MapPin, Tags } from 'lucide-react'
+import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight, Star, Languages, Trash2, RotateCcw, Hash, MapPin, Tags, ListOrdered } from 'lucide-react'
 import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -10,6 +10,7 @@ import type { Database } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
 import ProductCard from '@/components/ProductCard'
 import FavoriteOrderModal from '@/components/admin/FavoriteOrderModal'
+import ProductSortOrderModal from '@/components/admin/ProductSortOrderModal'
 import HomeCategoriesLinkSettingsModal from '@/components/admin/HomeCategoriesLinkSettingsModal'
 import AdminProductTagsModal from '@/components/admin/AdminProductTagsModal'
 import ProductCodeManagementModal from '@/components/admin/ProductCodeManagementModal'
@@ -123,6 +124,10 @@ export default function AdminProducts() {
   const [homepageChannel, setHomepageChannel] = useState<any>(null)
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
   const [isFavoriteOrderModalOpen, setIsFavoriteOrderModalOpen] = useState(false)
+  const [isProductSortOrderModalOpen, setIsProductSortOrderModalOpen] = useState(false)
+  const [cardDragIndex, setCardDragIndex] = useState<number | null>(null)
+  const [cardDragOverIndex, setCardDragOverIndex] = useState<number | null>(null)
+  const [isSavingCardSort, setIsSavingCardSort] = useState(false)
   const [isHomeCategoriesModalOpen, setIsHomeCategoriesModalOpen] = useState(false)
   const [tagsModalProduct, setTagsModalProduct] = useState<Product | null>(null)
   const [isProductCodeModalOpen, setIsProductCodeModalOpen] = useState(false)
@@ -186,7 +191,9 @@ export default function AdminProducts() {
       const { data, error } = await withOperatorId(
         supabase.from('products').select('*'),
         operatorId
-      ).order('name', { ascending: true })
+      )
+        .order('sort_order', { ascending: true })
+        .order('name', { ascending: true })
 
       if (error) {
         console.error('Products 데이터 조회 오류:', error)
@@ -354,11 +361,94 @@ export default function AdminProducts() {
     
     return matchesSearch && matchesCategory && matchesSubCategory && matchesStatus && matchesPublish
   }).sort((a, b) => {
-    // name 컬럼으로 정렬
+    const orderA = typeof a.sort_order === 'number' ? a.sort_order : Number.MAX_SAFE_INTEGER
+    const orderB = typeof b.sort_order === 'number' ? b.sort_order : Number.MAX_SAFE_INTEGER
+    if (orderA !== orderB) return orderA - orderB
     const nameA = a.name || ''
     const nameB = b.name || ''
     return nameA.localeCompare(nameB, 'ko', { numeric: true })
   })
+
+  const persistFilteredSortOrder = async (reorderedFiltered: Product[]) => {
+    const opId = resolveOperatorId(operatorId)
+    const fullSorted = [...products].sort((a, b) => {
+      const orderA = typeof a.sort_order === 'number' ? a.sort_order : Number.MAX_SAFE_INTEGER
+      const orderB = typeof b.sort_order === 'number' ? b.sort_order : Number.MAX_SAFE_INTEGER
+      if (orderA !== orderB) return orderA - orderB
+      return (a.name || '').localeCompare(b.name || '', 'ko', { numeric: true })
+    })
+
+    const filteredIdSet = new Set(reorderedFiltered.map((p) => p.id))
+    const filteredQueue = [...reorderedFiltered]
+    const merged: Product[] = []
+
+    for (const item of fullSorted) {
+      if (filteredIdSet.has(item.id)) {
+        const next = filteredQueue.shift()
+        if (next) merged.push(next)
+      } else {
+        merged.push(item)
+      }
+    }
+
+    // 필터에 없던 상품이 큐에 남은 경우(이론상 없어야 함) 뒤에 붙임
+    while (filteredQueue.length > 0) {
+      const next = filteredQueue.shift()
+      if (next) merged.push(next)
+    }
+
+    const withOrder = merged.map((product, index) => ({ ...product, sort_order: index }))
+
+    try {
+      setIsSavingCardSort(true)
+      const results = await Promise.all(
+        withOrder.map((product) =>
+          supabase
+            .from('products')
+            .update({ sort_order: product.sort_order })
+            .eq('id', product.id)
+            .eq('operator_id', opId)
+        )
+      )
+
+      const hasError = results.some((result) => result.error)
+      if (hasError) {
+        console.error(
+          'Card sort update errors:',
+          results.filter((r) => r.error).map((r) => r.error)
+        )
+        alert(locale === 'en' ? 'Failed to update order.' : '순서 변경 중 오류가 발생했습니다.')
+        await fetchProducts()
+        return
+      }
+
+      setProducts(withOrder)
+    } catch (error) {
+      console.error('Card sort update error:', error)
+      alert(locale === 'en' ? 'Failed to update order.' : '순서 변경 중 오류가 발생했습니다.')
+      await fetchProducts()
+    } finally {
+      setIsSavingCardSort(false)
+    }
+  }
+
+  const moveFilteredProduct = async (fromIndex: number, toIndex: number) => {
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= filteredProducts.length ||
+      toIndex >= filteredProducts.length ||
+      isSavingCardSort
+    ) {
+      return
+    }
+
+    const next = [...filteredProducts]
+    const [moved] = next.splice(fromIndex, 1)
+    next.splice(toIndex, 0, moved)
+    await persistFilteredSortOrder(next)
+  }
 
   const clearFilters = () => {
     setSearchTerm('')
@@ -880,6 +970,15 @@ export default function AdminProducts() {
             <span>{t('homeCategoriesLink.button')}</span>
           </button>
           <button
+            type="button"
+            onClick={() => setIsProductSortOrderModalOpen(true)}
+            className="bg-slate-600 text-white px-3 py-1.5 rounded-md hover:bg-slate-700 flex items-center gap-1.5 text-sm font-medium"
+          >
+            <ListOrdered size={16} />
+            <span>{t('productSortOrder')}</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setIsFavoriteOrderModalOpen(true)}
             className="bg-yellow-500 text-white px-3 py-1.5 rounded-md hover:bg-yellow-600 flex items-center gap-1.5 text-sm font-medium"
           >
@@ -1128,6 +1227,42 @@ export default function AdminProducts() {
                 displayLocale={cardPreviewLocale}
                 priority={index === 0}
                 canSoftDelete={canSoftDelete}
+                sortIndex={index}
+                sortTotal={filteredProducts.length}
+                isSortDragging={cardDragIndex === index}
+                isSortDragOver={cardDragOverIndex === index}
+                isSortSaving={isSavingCardSort}
+                onSortMoveUp={() => {
+                  void moveFilteredProduct(index, index - 1)
+                }}
+                onSortMoveDown={() => {
+                  void moveFilteredProduct(index, index + 1)
+                }}
+                onSortMoveTo={(targetOrder) => {
+                  void moveFilteredProduct(index, targetOrder - 1)
+                }}
+                onSortDragStart={(e) => {
+                  setCardDragIndex(index)
+                  e.dataTransfer.effectAllowed = 'move'
+                  e.dataTransfer.setData('text/plain', String(index))
+                }}
+                onSortDragOver={() => {
+                  setCardDragOverIndex(index)
+                }}
+                onSortDragLeave={() => {
+                  setCardDragOverIndex((prev) => (prev === index ? null : prev))
+                }}
+                onSortDrop={() => {
+                  const from = cardDragIndex
+                  setCardDragIndex(null)
+                  setCardDragOverIndex(null)
+                  if (from === null) return
+                  void moveFilteredProduct(from, index)
+                }}
+                onSortDragEnd={() => {
+                  setCardDragIndex(null)
+                  setCardDragOverIndex(null)
+                }}
                 onSoftDeleted={() => {
                   void fetchProducts()
                 }}
@@ -1901,6 +2036,15 @@ export default function AdminProducts() {
             prev.map((p) => (p.id === productId ? { ...p, product_code: productCode } : p))
           )
         }}
+      />
+
+      <ProductSortOrderModal
+        isOpen={isProductSortOrderModalOpen}
+        onClose={() => setIsProductSortOrderModalOpen(false)}
+        onUpdate={() => {
+          void fetchProducts()
+        }}
+        locale={locale}
       />
 
       {/* 즐겨찾기 순서 조정 모달 */}

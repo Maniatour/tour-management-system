@@ -753,6 +753,12 @@
       "button": "Enlaces de categorías de inicio"
     },
     "favoriteOrder": "Reordenar favoritos",
+    "productSortOrder": "Reordenar productos",
+    "productSortDragHint": "Arrastra para reordenar",
+    "productSortMoveUp": "Subir",
+    "productSortMoveDown": "Bajar",
+    "productSortOrderIndex": "{n}",
+    "productSortOrderInput": "Introducir posición",
     "localeReadiness": {
       "button": "Preparación local",
       "title": "Preparación local",

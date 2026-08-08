@@ -464,7 +464,12 @@ export default function BasicInfoTab({
           .from('products')
           .insert([{
             name: formData.name.trim(),
+            name_ko: formData.name.trim() || null,
             name_en: formData.nameEn?.trim() || null,
+            // NOT NULL columns (no DB default) — calendar/admin short names
+            internal_name_ko: formData.name.trim() || tBasic('defaultProductName'),
+            internal_name_en:
+              formData.nameEn?.trim() || formData.name.trim() || 'Product',
             product_code: formData.productCode.trim(),
             category: formData.category,
             sub_category: formData.subCategory.trim(),
@@ -548,7 +553,11 @@ export default function BasicInfoTab({
           .from('products')
           .update({
             name: formData.name.trim(),
+            name_ko: formData.name.trim() || null,
             name_en: formData.nameEn?.trim() || null,
+            internal_name_ko: formData.name.trim() || tBasic('defaultProductName'),
+            internal_name_en:
+              formData.nameEn?.trim() || formData.name.trim() || 'Product',
             product_code: formData.productCode.trim(),
             category: formData.category,
             sub_category: formData.subCategory.trim(),

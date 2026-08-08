@@ -753,6 +753,12 @@
       "button": "首页分类链接"
     },
     "favoriteOrder": "重新排序收藏夹",
+    "productSortOrder": "调整商品顺序",
+    "productSortDragHint": "拖动以调整顺序",
+    "productSortMoveUp": "上移",
+    "productSortMoveDown": "下移",
+    "productSortOrderIndex": "{n}",
+    "productSortOrderInput": "输入排序号",
     "localeReadiness": {
       "button": "区域设置准备情况",
       "title": "区域设置准备情况",

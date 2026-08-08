@@ -942,6 +942,12 @@
     "pageDescription": "투어 상품을 추가, 편집, 삭제할 수 있습니다",
     "homeSectionsManualHint": "홈 인기 목적지 · 여행 스타일 노출 규칙은 제목 옆 책 아이콘 메뉴얼을 참고하세요. 「홈 카테고리 연결」에서 카드별 연결 태그를 설정할 수 있습니다.",
     "favoriteOrder": "즐겨찾기 순서 조정",
+    "productSortOrder": "상품 순서 조정",
+    "productSortDragHint": "드래그하여 순서 변경",
+    "productSortMoveUp": "위로 이동",
+    "productSortMoveDown": "아래로 이동",
+    "productSortOrderIndex": "{n}번",
+    "productSortOrderInput": "순서 번호 입력",
     "productCode": {
       "button": "상품 코드",
       "title": "상품 코드 관리",

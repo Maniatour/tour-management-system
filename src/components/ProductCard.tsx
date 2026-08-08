@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
-import { Copy, Star, Tags, Trash2, RotateCcw } from 'lucide-react'
+import { Copy, Star, Tags, Trash2, RotateCcw, GripVertical, ChevronUp, ChevronDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import ProductsGygCard from '@/components/products/ProductsGygCard'
@@ -39,6 +39,21 @@ interface ProductCardProps {
   displayLocale?: AdminProductCardPreviewLocale
   priority?: boolean
   canSoftDelete?: boolean
+  /** 카드뷰 순서(0-based). 있으면 드래그/위아래 순서 조절 UI 표시 */
+  sortIndex?: number
+  sortTotal?: number
+  isSortDragging?: boolean
+  isSortDragOver?: boolean
+  isSortSaving?: boolean
+  onSortMoveUp?: () => void
+  onSortMoveDown?: () => void
+  /** 1-based 목표 순서로 이동 */
+  onSortMoveTo?: (targetOrder: number) => void
+  onSortDragStart?: (e: React.DragEvent) => void
+  onSortDragOver?: (e: React.DragEvent) => void
+  onSortDragLeave?: () => void
+  onSortDrop?: (e: React.DragEvent) => void
+  onSortDragEnd?: () => void
   onSoftDeleted?: (productId: string) => void
   onRestored?: (productId: string) => void
   onStatusChange?: (productId: string, newStatus: string) => void
@@ -69,6 +84,19 @@ export default function ProductCard({
   displayLocale,
   priority = false,
   canSoftDelete = false,
+  sortIndex,
+  sortTotal,
+  isSortDragging = false,
+  isSortDragOver = false,
+  isSortSaving = false,
+  onSortMoveUp,
+  onSortMoveDown,
+  onSortMoveTo,
+  onSortDragStart,
+  onSortDragOver,
+  onSortDragLeave,
+  onSortDrop,
+  onSortDragEnd,
   onSoftDeleted,
   onRestored,
   onStatusChange,
@@ -98,6 +126,11 @@ export default function ProductCard({
   const [localTags, setLocalTags] = useState<string[]>(product.tags ?? [])
   const [imageError, setImageError] = useState(false)
   const [localProduct, setLocalProduct] = useState(product)
+  const [suppressClickAfterDrag, setSuppressClickAfterDrag] = useState(false)
+  const [isEditingSortOrder, setIsEditingSortOrder] = useState(false)
+  const [sortOrderDraft, setSortOrderDraft] = useState('')
+
+  const sortEnabled = typeof sortIndex === 'number'
   const [editSection, setEditSection] = useState<AdminProductCardEditSection | null>(null)
 
   useEffect(() => {
@@ -520,16 +553,85 @@ export default function ProductCard({
 
   const openCustomerPageEdit = () => {
     if (editSection) return
+    if (suppressClickAfterDrag) {
+      setSuppressClickAfterDrag(false)
+      return
+    }
     router.push(buildAdminProductCustomerEditPath(locale, localProduct.id))
+  }
+
+  const canMoveUp = sortEnabled && sortIndex! > 0 && !isSortSaving
+  const canMoveDown =
+    sortEnabled && typeof sortTotal === 'number' && sortIndex! < sortTotal - 1 && !isSortSaving
+
+  const commitSortOrderDraft = () => {
+    if (!sortEnabled || isSortSaving) {
+      setIsEditingSortOrder(false)
+      setSortOrderDraft('')
+      return
+    }
+
+    const parsed = Number.parseInt(sortOrderDraft.trim(), 10)
+    const max = typeof sortTotal === 'number' && sortTotal > 0 ? sortTotal : 1
+    setIsEditingSortOrder(false)
+    setSortOrderDraft('')
+
+    if (!Number.isFinite(parsed)) return
+
+    const targetOrder = Math.min(max, Math.max(1, parsed))
+    if (targetOrder === sortIndex! + 1) return
+    onSortMoveTo?.(targetOrder)
+  }
+
+  const beginSortOrderEdit = (e: React.MouseEvent | React.KeyboardEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!sortEnabled || isSortSaving) return
+    setSortOrderDraft(String(sortIndex! + 1))
+    setIsEditingSortOrder(true)
   }
 
   return (
     <>
       <div
-        className="admin-product-gyg-card admin-product-gyg-card--open-editor"
+        className={[
+          'admin-product-gyg-card admin-product-gyg-card--open-editor',
+          sortEnabled ? 'admin-product-gyg-card--sortable' : '',
+          isSortDragging ? 'admin-product-gyg-card--dragging' : '',
+          isSortDragOver ? 'admin-product-gyg-card--drag-over' : '',
+          isSortSaving ? 'admin-product-gyg-card--sort-saving' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        draggable={sortEnabled && !isSortSaving && !isEditingSortOrder}
+        onDragStart={(e) => {
+          if (!sortEnabled || isEditingSortOrder) return
+          setSuppressClickAfterDrag(true)
+          onSortDragStart?.(e)
+        }}
+        onDragOver={(e) => {
+          if (!sortEnabled) return
+          e.preventDefault()
+          onSortDragOver?.(e)
+        }}
+        onDragLeave={() => {
+          if (!sortEnabled) return
+          onSortDragLeave?.()
+        }}
+        onDrop={(e) => {
+          if (!sortEnabled) return
+          e.preventDefault()
+          onSortDrop?.(e)
+        }}
+        onDragEnd={() => {
+          if (!sortEnabled) return
+          onSortDragEnd?.()
+          // 드래그 직후 click이 에디터로 넘어가지 않도록 잠시 유지
+          window.setTimeout(() => setSuppressClickAfterDrag(false), 150)
+        }}
         onClick={openCustomerPageEdit}
         onKeyDown={(event) => {
-          if (editSection) return
+          if (editSection || isEditingSortOrder) return
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
             openCustomerPageEdit()
@@ -539,6 +641,98 @@ export default function ProductCard({
         tabIndex={0}
         title={t('openCustomerPageEdit')}
       >
+        {sortEnabled ? (
+          <div
+            className="admin-product-gyg-card__sort-bar"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            role="presentation"
+          >
+            <span className="admin-product-gyg-card__sort-grip" title={t('productSortDragHint')}>
+              <GripVertical className="h-4 w-4" />
+            </span>
+            {isEditingSortOrder ? (
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={typeof sortTotal === 'number' ? sortTotal : undefined}
+                value={sortOrderDraft}
+                autoFocus
+                disabled={isSortSaving}
+                className="admin-product-gyg-card__sort-index-input"
+                aria-label={t('productSortOrderInput')}
+                title={t('productSortOrderInput')}
+                onFocus={(e) => {
+                  e.target.select()
+                }}
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                }}
+                onMouseDown={(e) => {
+                  e.stopPropagation()
+                }}
+                onChange={(e) => setSortOrderDraft(e.target.value)}
+                onBlur={() => commitSortOrderDraft()}
+                onKeyDown={(e) => {
+                  e.stopPropagation()
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    commitSortOrderDraft()
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault()
+                    setIsEditingSortOrder(false)
+                    setSortOrderDraft('')
+                  }
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                className="admin-product-gyg-card__sort-index"
+                disabled={isSortSaving}
+                onClick={beginSortOrderEdit}
+                onMouseDown={(e) => e.stopPropagation()}
+                title={t('productSortOrderInput')}
+                aria-label={t('productSortOrderIndex', { n: sortIndex! + 1 })}
+              >
+                {sortIndex! + 1}
+              </button>
+            )}
+            <div className="admin-product-gyg-card__sort-arrows">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  onSortMoveUp?.()
+                }}
+                disabled={!canMoveUp}
+                className="admin-product-gyg-card__sort-arrow"
+                title={t('productSortMoveUp')}
+                aria-label={t('productSortMoveUp')}
+              >
+                <ChevronUp className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  onSortMoveDown?.()
+                }}
+                disabled={!canMoveDown}
+                className="admin-product-gyg-card__sort-arrow"
+                title={t('productSortMoveDown')}
+                aria-label={t('productSortMoveDown')}
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <ProductsGygCard
           locale={cardLocale}
           href={`/${cardLocale}/products/${localProduct.id}`}

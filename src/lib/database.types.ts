@@ -6338,6 +6338,9 @@ export type Database = {
           id: string
           infant_age: number | null
           infant_base_price: number | null
+          /** 관리/캘린더용 짧은 내부 상품명 (한국어) */
+          internal_name_en: string
+          internal_name_ko: string
           is_favorite: boolean | null
           /** 고객 사이트 배포 여부 (status와 별도) */
           is_published: boolean
@@ -6348,6 +6351,8 @@ export type Database = {
           name_ko: string | null
           operator_id: string
           product_code: string | null
+          /** 카탈로그 표시 순서 (낮을수록 먼저) */
+          sort_order: number
           status: string | null
           sub_category: string | null
           summary_en: string | null
@@ -6382,6 +6387,8 @@ export type Database = {
           id?: string
           infant_age?: number | null
           infant_base_price?: number | null
+          internal_name_en?: string
+          internal_name_ko?: string
           is_favorite?: boolean | null
           is_published?: boolean
           languages?: string[] | null
@@ -6391,6 +6398,7 @@ export type Database = {
           name_ko?: string | null
           operator_id?: string
           product_code?: string | null
+          sort_order?: number
           status?: string | null
           sub_category?: string | null
           summary_en?: string | null
@@ -6425,6 +6433,8 @@ export type Database = {
           id?: string
           infant_age?: number | null
           infant_base_price?: number | null
+          internal_name_en?: string
+          internal_name_ko?: string
           is_favorite?: boolean | null
           is_published?: boolean
           languages?: string[] | null
@@ -6434,6 +6444,7 @@ export type Database = {
           name_ko?: string | null
           operator_id?: string
           product_code?: string | null
+          sort_order?: number
           status?: string | null
           sub_category?: string | null
           summary_en?: string | null

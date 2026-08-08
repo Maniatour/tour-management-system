@@ -753,6 +753,12 @@
       "button": "Liens catégories d'accueil"
     },
     "favoriteOrder": "Réorganiser les favoris",
+    "productSortOrder": "Réorganiser les produits",
+    "productSortDragHint": "Glisser pour réordonner",
+    "productSortMoveUp": "Monter",
+    "productSortMoveDown": "Descendre",
+    "productSortOrderIndex": "{n}",
+    "productSortOrderInput": "Saisir la position",
     "localeReadiness": {
       "button": "Préparation aux paramètres régionaux",
       "title": "Préparation aux paramètres régionaux",

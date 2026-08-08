@@ -753,6 +753,12 @@
       "button": "Startseiten-Kategorie-Links"
     },
     "favoriteOrder": "Favoriten neu anordnen",
+    "productSortOrder": "Produktreihenfolge ändern",
+    "productSortDragHint": "Ziehen zum Sortieren",
+    "productSortMoveUp": "Nach oben",
+    "productSortMoveDown": "Nach unten",
+    "productSortOrderIndex": "{n}",
+    "productSortOrderInput": "Reihenfolge eingeben",
     "localeReadiness": {
       "button": "Lokale Bereitschaft",
       "title": "Lokale Bereitschaft",

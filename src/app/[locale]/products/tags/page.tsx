@@ -110,6 +110,7 @@ function ProductTagsPageInner() {
           .eq('operator_id', readPublicOperatorIdBrowser())
           .eq('status', 'active')
           .eq('is_published', true)
+          .order('sort_order', { ascending: true })
           .order('created_at', { ascending: false })
         
         if (error) {

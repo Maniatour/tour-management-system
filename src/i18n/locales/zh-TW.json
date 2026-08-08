@@ -753,6 +753,12 @@
       "button": "首頁分類連結"
     },
     "favoriteOrder": "重新排序收藏夾",
+    "productSortOrder": "調整商品順序",
+    "productSortDragHint": "拖曳以調整順序",
+    "productSortMoveUp": "上移",
+    "productSortMoveDown": "下移",
+    "productSortOrderIndex": "{n}",
+    "productSortOrderInput": "輸入排序號",
     "localeReadiness": {
       "button": "區域設定準備狀況",
       "title": "區域設定準備狀況",

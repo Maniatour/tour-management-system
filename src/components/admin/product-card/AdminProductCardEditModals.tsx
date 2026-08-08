@@ -321,6 +321,9 @@ export default function AdminProductCardEditModals({
           name: basicForm.name.trim(),
           name_ko: basicForm.name.trim() || null,
           name_en: basicForm.nameEn.trim() || null,
+          internal_name_ko: basicForm.name.trim() || '상품',
+          internal_name_en:
+            basicForm.nameEn.trim() || basicForm.name.trim() || 'Product',
           customer_name_ko: basicForm.customerNameKo.trim() || basicForm.name.trim(),
           customer_name_en: basicForm.customerNameEn.trim() || basicForm.nameEn.trim() || 'Product',
           product_code: basicForm.productCode.trim() || null,

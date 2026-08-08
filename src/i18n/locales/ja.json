@@ -753,6 +753,12 @@
       "button": "ホームカテゴリ連携"
     },
     "favoriteOrder": "お気に入りを並べ替える",
+    "productSortOrder": "商品の並び替え",
+    "productSortDragHint": "ドラッグして並べ替え",
+    "productSortMoveUp": "上へ",
+    "productSortMoveDown": "下へ",
+    "productSortOrderIndex": "{n}",
+    "productSortOrderInput": "表示順を入力",
     "localeReadiness": {
       "button": "ロケールの準備状況",
       "title": "ロケールの準備状況",

@@ -109,6 +109,7 @@ export default function ProductsPageClient() {
             .eq('operator_id', operatorId)
             .eq('status', 'active')
             .eq('is_published', true)
+            .order('sort_order', { ascending: true })
             .order('created_at', { ascending: false })
 
           if (fetchError) {
