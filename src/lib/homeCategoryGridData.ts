@@ -2,22 +2,22 @@ import type { CategoryTagItem } from '@/components/home/homeSectionTypes'
 
 /** Home category icon grid — shared between page data and admin zone labels */
 export const HOME_CATEGORY_GRID_ITEMS: CategoryTagItem[] = [
-  { labelKey: 'antelopeCanyon', tagQuery: '앤텔롭' },
-  { labelKey: 'grandCanyon', tagQuery: '그랜드캐년' },
-  { labelKey: 'suburbanTour', tagQuery: '근교' },
-  { labelKey: 'dayTour', tagQuery: '당일' },
-  { labelKey: 'accommodationTour', tagQuery: '숙박' },
-  { labelKey: 'cityTour', tagQuery: '시티' },
-  { labelKey: 'helicopterTour', tagQuery: '헬기' },
-  { labelKey: 'lightAircraftTour', tagQuery: '경비행기' },
-  { labelKey: 'busTour', tagQuery: '버스' },
-  { labelKey: 'premiumTour', tagQuery: '프리미엄' },
-  { labelKey: 'performanceTicket', tagQuery: '공연' },
-  { labelKey: 'attraction', tagQuery: '어트랙션' },
-  { labelKey: 'categoryEvent', tagQuery: '이벤트' },
-  { labelKey: 'categoryCoupon', tagQuery: '쿠폰' },
-  { labelKey: 'categoryTravelInsurance', tagQuery: '여행자보험' },
-  { labelKey: 'categoryConventionSupport', tagQuery: '컨벤션' },
+  { labelKey: 'antelopeCanyon', tagQuery: 'antelope_canyon' },
+  { labelKey: 'grandCanyon', tagQuery: 'grand_canyon' },
+  { labelKey: 'suburbanTour', tagQuery: 'suburban_tour' },
+  { labelKey: 'dayTour', tagQuery: 'day_tour' },
+  { labelKey: 'accommodationTour', tagQuery: 'overnight_tour' },
+  { labelKey: 'cityTour', tagQuery: 'city_tour' },
+  { labelKey: 'helicopterTour', tagQuery: 'helicopter' },
+  { labelKey: 'lightAircraftTour', tagQuery: 'light_aircraft' },
+  { labelKey: 'busTour', tagQuery: 'bus_tour' },
+  { labelKey: 'premiumTour', tagQuery: 'premium_tour' },
+  { labelKey: 'performanceTicket', tagQuery: 'show_ticket' },
+  { labelKey: 'attraction', tagQuery: 'attraction' },
+  { labelKey: 'categoryEvent', tagQuery: 'event' },
+  { labelKey: 'categoryCoupon', tagQuery: 'coupon' },
+  { labelKey: 'categoryTravelInsurance', tagQuery: 'travel_insurance' },
+  { labelKey: 'categoryConventionSupport', tagQuery: 'convention' },
 ]
 
 export type HomeCategoryTileStyle = {

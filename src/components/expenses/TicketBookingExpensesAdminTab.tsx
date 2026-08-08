@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -263,8 +264,7 @@ export default function TicketBookingExpensesAdminTab({ locale }: { locale: stri
           </label>
         </div>
         <div className="flex-1 min-w-[12rem]">
-          <input
-            type="search"
+          <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('searchPlaceholder')}

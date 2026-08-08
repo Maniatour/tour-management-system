@@ -41,6 +41,8 @@ type ProductsGygCardProps = {
   showWishlistButton?: boolean
   /** 이미지 우상단 오버레이 (관리자 액션 등) */
   imageOverlay?: ReactNode
+  /** 카드 하단(가격 줄) 좌측 슬롯 — 관리자 태그 버튼 등 */
+  footerStart?: ReactNode
   /** 관리자 — 매진 임박 뱃지 슬롯 (클릭 토글 등) */
   selloutBadgeSlot?: ReactNode
   /** 관리자 카드뷰 — 영역별 수정 모달 트리거 */
@@ -99,6 +101,7 @@ export default function ProductsGygCard({
   editableZones = false,
   showWishlistButton = true,
   imageOverlay,
+  footerStart,
   selloutBadgeSlot,
   adminCardEdits,
 }: ProductsGygCardProps) {
@@ -209,7 +212,7 @@ export default function ProductsGygCard({
   const priceBlock = adminCardEdits ? (
     <button
       type="button"
-      className="gyg-listing-card-price gyg-listing-card-editable ml-auto text-right"
+      className={`gyg-listing-card-price gyg-listing-card-editable text-right${footerStart ? '' : ' ml-auto'}`}
       onClick={(e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -222,7 +225,7 @@ export default function ProductsGygCard({
       <span className="font-bold text-[#ff5533]">{formattedPrice}</span>
     </button>
   ) : (
-    <p className="gyg-listing-card-price ml-auto">
+    <p className={`gyg-listing-card-price${footerStart ? '' : ' ml-auto'}`}>
       {priceLabel.trim() ? `${priceLabel} ` : null}
       <span className="font-bold text-[#ff5533]">{formattedPrice}</span>
     </p>
@@ -318,7 +321,19 @@ export default function ProductsGygCard({
           </p>
         ) : null}
 
-        <div className="gyg-listing-card-footer mt-auto">
+        <div
+          className={`gyg-listing-card-footer mt-auto${footerStart ? ' gyg-listing-card-footer--split' : ''}`}
+        >
+          {footerStart ? (
+            <div
+              className="gyg-listing-card-footer-start"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+              role="presentation"
+            >
+              {footerStart}
+            </div>
+          ) : null}
           {editableZones ? (
             <CardZone zone="listing-card-price" productId={product.id}>
               {priceBlock}

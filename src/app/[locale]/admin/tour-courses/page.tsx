@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect, useRef, type ComponentProps } from 'react'
 import { 
@@ -666,8 +667,7 @@ export default function TourCoursesPage() {
           <div className="flex-1 min-w-0">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                type="text"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 placeholder={t('searchPlaceholder')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}

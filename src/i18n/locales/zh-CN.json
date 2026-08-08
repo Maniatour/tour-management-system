@@ -749,6 +749,9 @@
     "pageTitle": "产品管理",
     "pageDescription": "添加、编辑和删除旅游产品。",
     "homeSectionsManualHint": "请参阅标题旁边的书籍图标，了解产品如何显示在“探索热门目的地”和“选择您的冒险”下。",
+    "homeCategoriesLink": {
+      "button": "首页分类链接"
+    },
     "favoriteOrder": "重新排序收藏夹",
     "localeReadiness": {
       "button": "区域设置准备情况",
@@ -1926,6 +1929,9 @@
     "guestReviewsTitle": "宾客评论",
     "guestReviewsSubtitle": "预订此行程的旅行者的真实体验",
     "reviewCount": "{count, plural, one {# review} 其他 {# reviews}}",
+    "reviewPrev": "上一条评论",
+    "reviewNext": "下一条评论",
+    "reviewCarouselPosition": "{current} / {total}",
     "showBookingOptions": "点击以配置选项",
     "hideBookingOptions": "点击折叠选项",
     "bookingCtaRegion": "预订操作",

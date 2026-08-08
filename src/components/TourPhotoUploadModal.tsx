@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect } from 'react'
 import { createClientSupabase } from '@/lib/supabase'
@@ -273,8 +274,7 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row gap-4">
                 <div className="flex-1">
-                  <input
-                    type="text"
+                  <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                     placeholder="투어명으로 검색..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}

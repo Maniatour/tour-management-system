@@ -3,6 +3,7 @@ import {
   getHomeCategoryIllustration,
   HOME_CATEGORY_GRID_ITEMS,
 } from '@/lib/homeCategoryGridData'
+import { resolveHomeLinkTagQuery } from '@/lib/homeLinkTags'
 import { MANIATOUR_CTA_IMAGE } from '@/lib/maniatourHomeData'
 import type { CategoryTagItem } from '@/components/home/homeSectionTypes'
 
@@ -142,8 +143,9 @@ export function normalizeCustomerPageHomeContent(raw: unknown): CustomerPageHome
     destinations: resolveHomeDestinationsForDisplay(
       destinations.length > 0 ? destinations : defaults.destinations
     ),
-    adventureCategories:
-      adventureCategories.length > 0 ? adventureCategories : defaults.adventureCategories,
+    adventureCategories: resolveHomeAdventureCategoriesForDisplay(
+      adventureCategories.length > 0 ? adventureCategories : defaults.adventureCategories
+    ),
   }
 }
 
@@ -271,8 +273,22 @@ export function resolveHomeDestinationsForDisplay(
     return {
       ...item,
       labelKey: item.labelKey ?? canonical.labelKey,
-      tagQuery: item.tagQuery || canonical.tagQuery,
+      tagQuery: resolveHomeLinkTagQuery(canonical.id, item.tagQuery || canonical.tagQuery, 'destination'),
       imageUrl: resolveHomeDestinationImageUrl(item),
+    }
+  })
+}
+
+export function resolveHomeAdventureCategoriesForDisplay(
+  configured: HomeAdventureContentItem[]
+): HomeAdventureContentItem[] {
+  const source = configured.length > 0 ? configured : DEFAULT_CUSTOMER_PAGE_HOME_CONTENT.adventureCategories
+
+  return source.map((item) => {
+    const styleId = item.labelKey ?? item.id
+    return {
+      ...item,
+      tagQuery: resolveHomeLinkTagQuery(styleId, item.tagQuery, 'style'),
     }
   })
 }

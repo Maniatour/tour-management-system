@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect } from 'react'
 import { createClientSupabase } from '@/lib/supabase'
@@ -292,8 +293,7 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
             <div className="space-y-4">
               <div className="flex gap-4">
                 <div className="flex-1">
-                  <input
-                    type="text"
+                  <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                     placeholder={getText('투어명으로 검색...', 'Search by tour name...')}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}

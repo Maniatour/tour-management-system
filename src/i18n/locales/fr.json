@@ -749,6 +749,9 @@
     "pageTitle": "Gestion des produits",
     "pageDescription": "Ajoutez, modifiez et supprimez des produits de tournée.",
     "homeSectionsManualHint": "Consultez l'icône de livre à côté du titre pour savoir comment les produits apparaissent sous Explorez les meilleures destinations et Choisissez votre aventure.",
+    "homeCategoriesLink": {
+      "button": "Liens catégories d'accueil"
+    },
     "favoriteOrder": "Réorganiser les favoris",
     "localeReadiness": {
       "button": "Préparation aux paramètres régionaux",
@@ -1926,6 +1929,9 @@
     "guestReviewsTitle": "Commentaires des clients",
     "guestReviewsSubtitle": "Expériences réelles des voyageurs qui ont réservé ce circuit",
     "reviewCount": "{count, plural, one {# review} autre {# reviews}}",
+    "reviewPrev": "Avis précédent",
+    "reviewNext": "Avis suivant",
+    "reviewCarouselPosition": "{current} / {total}",
     "showBookingOptions": "Appuyez pour configurer les options",
     "hideBookingOptions": "Appuyez pour réduire les options",
     "bookingCtaRegion": "Actions de réservation",

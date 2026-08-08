@@ -1,3 +1,4 @@
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 interface PickupHotelModalProps {
   isOpen: boolean
@@ -44,8 +45,7 @@ export default function PickupHotelModal({
           
           {/* 검색 입력 필드 */}
           <div className="mb-4">
-            <input
-              type="text"
+            <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
               placeholder="호텔명 또는 픽업 위치로 검색..."
               value={hotelSearchTerm}
               onChange={(e) => onSearchChange(e.target.value)}

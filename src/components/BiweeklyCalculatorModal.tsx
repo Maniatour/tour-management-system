@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone, Search, ChevronDown, ExternalLink, Mail } from 'lucide-react'
@@ -2506,8 +2507,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                         </div>
                         <div className="relative shrink-0 px-2 pb-2">
                           <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                          <input
-                            type="search"
+                          <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                             value={employeeSearch}
                             onChange={e => setEmployeeSearch(e.target.value)}
                             placeholder="이름, 이메일, 포지션 검색"

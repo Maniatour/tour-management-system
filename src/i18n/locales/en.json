@@ -931,7 +931,10 @@
     "orAddNewProduct": "Or add a new product",
     "pageTitle": "Product Management",
     "pageDescription": "Add, edit, and delete tour products.",
-    "homeSectionsManualHint": "See the book icon next to the title for how products appear under Explore Top Destinations and Choose Your Adventure.",
+    "homeSectionsManualHint": "See the book icon for how products appear under Popular Destinations and Travel Styles. Use Home category links to set each card’s product tag.",
+    "homeCategoriesLink": {
+      "button": "Home category links"
+    },
     "favoriteOrder": "Reorder favorites",
     "productCode": {
       "button": "Product codes",
@@ -1551,7 +1554,8 @@
             "hint": "Third tour highlight checklist item"
           }
         }
-      }
+      },
+      "manageTags": "Manage tags"
     },
     "cardEditModal": {
       "locationTitle": "Edit departure & arrival",
@@ -1566,7 +1570,7 @@
       "editMedia": "Edit media",
       "editTags": "Manage tags",
       "tagsTitle": "Manage tags",
-      "tagsHint": "Select product tags and edit Korean / English display labels.",
+      "tagsHint": "Tap Popular destinations or Travel style buttons to list this product from those home cards.",
       "mediaTitle": "Edit / upload media",
       "mediaHint": "Upload images or set a primary image. Changes are saved immediately.",
       "cancel": "Cancel",
@@ -5414,6 +5418,10 @@
       "paymentMethodRequired": "Please select a registered payment method.",
       "expenseRegistered": "Expense registered successfully",
       "expenseRegistrationError": "Failed to register expense",
+      "expenseUpdateError": "An error occurred while updating the expense.",
+      "expenseUpdatePermissionDenied": "Save failed due to permission or session. Refresh, sign in again, then retry.",
+      "expenseSaveApproveError": "An error occurred while saving and approving the expense.",
+      "paidToRequired": "Please select or enter who was paid.",
       "status": {
         "pending": "Pending",
         "confirmed": "Confirmed",
@@ -7809,6 +7817,9 @@
     "guestReviewsTitle": "Guest Reviews",
     "guestReviewsSubtitle": "Real experiences from travelers who booked this tour",
     "reviewCount": "{count, plural, one {# review} other {# reviews}}",
+    "reviewPrev": "Previous review",
+    "reviewNext": "Next review",
+    "reviewCarouselPosition": "{current} / {total}",
     "showBookingOptions": "Tap to configure options",
     "hideBookingOptions": "Tap to collapse options",
     "bookingCtaRegion": "Booking actions",

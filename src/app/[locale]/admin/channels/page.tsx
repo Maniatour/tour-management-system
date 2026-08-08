@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect } from 'react'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
@@ -536,8 +537,7 @@ export default function AdminChannels() {
       {/* 검색 */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-        <input
-          type="text"
+        <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
           placeholder={t('searchPlaceholder')}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
@@ -1740,8 +1740,7 @@ function ChannelProductSelectionForm({ channel, products, channelProducts, loadi
         <div className="mb-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-            <input
-              type="text"
+            <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
               placeholder="상품명, 설명, 카테고리로 검색..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}

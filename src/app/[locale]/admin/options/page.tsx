@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect } from 'react'
 import { Plus, Search, Edit, Trash2, Settings, Copy, ChevronDown, ChevronUp } from 'lucide-react'
@@ -362,8 +363,7 @@ export default function AdminOptions({}: AdminOptionsProps) {
           {/* 검색 */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-        <input
-          type="text"
+        <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
           placeholder={t('searchPlaceholder')}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}

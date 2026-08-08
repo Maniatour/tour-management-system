@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React from "react"
 import { useTranslations } from 'next-intl'
@@ -255,8 +256,7 @@ function ReservationsHeader({
           <div className="relative flex w-44 shrink-0 items-center gap-1.5 sm:w-48 lg:w-52">
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-2 top-1/2 size-[14px] -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 placeholder={t('searchPlaceholder')}
                 value={searchTerm}
                 onChange={(e) => {

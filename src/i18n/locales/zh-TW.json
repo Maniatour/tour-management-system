@@ -749,6 +749,9 @@
     "pageTitle": "產品管理",
     "pageDescription": "新增、編輯和刪除旅遊產品。",
     "homeSectionsManualHint": "請參閱標題旁的書籍圖標，以了解產品如何顯示在「探索熱門目的地」和「選擇您的冒險」下。",
+    "homeCategoriesLink": {
+      "button": "首頁分類連結"
+    },
     "favoriteOrder": "重新排序收藏夾",
     "localeReadiness": {
       "button": "區域設定準備狀況",
@@ -1926,6 +1929,9 @@
     "guestReviewsTitle": "賓客評論",
     "guestReviewsSubtitle": "預訂此行程的旅客的真實體驗",
     "reviewCount": "{count, plural, one {# review} 其他 {# reviews}}",
+    "reviewPrev": "上一則評論",
+    "reviewNext": "下一則評論",
+    "reviewCarouselPosition": "{current} / {total}",
     "showBookingOptions": "點擊以配置選項",
     "hideBookingOptions": "點擊折疊選項",
     "bookingCtaRegion": "預訂操作",

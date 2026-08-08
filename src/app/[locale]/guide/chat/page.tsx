@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect, useCallback } from 'react'
 import { MessageCircle, Plus, Pin, Search, RefreshCw, Users, User, Car } from 'lucide-react'
@@ -645,8 +646,7 @@ export default function GuideChatPage() {
           <div className="space-y-2">
             <div className="relative">
               <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 placeholder={activeTab === 'team' ? t('searchTeam') : t('searchTour')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}

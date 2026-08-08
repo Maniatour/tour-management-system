@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
@@ -167,8 +168,7 @@ export default function StringMultiSelectFilter({
           </div>
           {searchable ? (
             <div className="border-b border-gray-100 px-2 py-1.5">
-              <input
-                id={searchId}
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} id={searchId}
                 type="search"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}

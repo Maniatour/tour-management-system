@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useMemo, useEffect, useCallback, Fragment } from 'react'
 import { useLocale } from 'next-intl'
@@ -1730,7 +1731,7 @@ export default function TourStatisticsTab({ dateRange, isSuper = false }: TourSt
           </div>
           <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 w-full md:w-auto md:justify-end md:ml-auto md:shrink-0">
             <label className="sr-only" htmlFor="tour-stats-search">검색(상품명/날짜)</label>
-            <input
+            <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
               id="tour-stats-search"
               value={tourSearch}
               onChange={(e) => setFilters((f) => ({ ...f, tourSearch: e.target.value }))}

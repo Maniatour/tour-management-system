@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { Plus, Search, Car, Edit, Trash2, Copy, Settings, Building2 } from 'lucide-react'
@@ -813,8 +814,7 @@ export default function VehiclesPage() {
           {/* 검색 */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
+            <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
               placeholder="ID, 차량 번호, 차종, VIN/RN, Rental Agreement #, 렌터카 회사, 닉네임..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}

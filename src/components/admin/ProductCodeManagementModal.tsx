@@ -373,7 +373,7 @@ export default function ProductCodeManagementModal({
               <div className="shrink-0 space-y-3 border-b border-border p-4">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
+                  <Input type="search"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder={t('searchPlaceholder')}

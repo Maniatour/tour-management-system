@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useCallback, useEffect, useState } from 'react'
 import Image from 'next/image'
@@ -296,8 +297,7 @@ export default function TravelGuideListingView({ locale, t }: Props) {
               {t('travelGuideSearchPlaceholder')}
             </label>
             <Search className="kv-travel-guide-search-icon" aria-hidden />
-            <input
-              id="travel-guide-search"
+            <input {...BROWSER_AUTOFILL_OFF_PROPS} id="travel-guide-search"
               type="search"
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}

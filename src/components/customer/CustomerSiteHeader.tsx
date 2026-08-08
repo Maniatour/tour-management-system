@@ -124,9 +124,21 @@ export default function CustomerSiteHeader({ brandName }: CustomerSiteHeaderProp
 
   const loading = context?.loading ?? true
   const currentUser = context?.authUser ?? null
+  const isSimulating = context?.isSimulating ?? false
+  const simulatedUser = context?.simulatedUser ?? null
+  const currentUserRole = isSimulating && simulatedUser ? simulatedUser.role : (context?.userRole ?? null)
+  const userPosition = isSimulating && simulatedUser ? simulatedUser.position : (context?.userPosition ?? null)
+  const canOpenAdmin =
+    !!currentUserRole &&
+    currentUserRole !== 'customer' &&
+    !(userPosition && (userPosition.toLowerCase() === 'tour guide' || userPosition.toLowerCase() === 'driver'))
 
   const isHome = pathname === `/${locale}` || pathname === `/${locale}/`
-  const profileHref = !loading && currentUser ? `/${locale}/dashboard` : `/${locale}/auth`
+  const profileHref = !loading && currentUser
+    ? canOpenAdmin
+      ? `/${locale}/admin`
+      : `/${locale}/dashboard`
+    : `/${locale}/auth`
   const cartLabel = locale === 'en' ? 'Cart' : '장바구니'
   const accountLabel = !loading && currentUser ? t('profile') : t('login')
 

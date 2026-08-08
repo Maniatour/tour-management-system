@@ -1,4 +1,5 @@
 'use client';
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect, useCallback, useRef, Fragment, useMemo } from 'react';
 import { createPortal } from 'react-dom';
@@ -6150,8 +6151,7 @@ export default function TicketBookingList() {
             </label>
             <div className="relative">
               <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={12} />
-              <input
-                type="text"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder={`${t('search')}...`}

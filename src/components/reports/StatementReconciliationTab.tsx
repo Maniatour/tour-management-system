@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, {
   startTransition,
@@ -8189,8 +8190,7 @@ export default function StatementReconciliationTab() {
                   className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
                   aria-hidden
                 />
-                <input
-                  type="search"
+                <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                   className="w-full border rounded py-1.5 pl-8 pr-8 text-sm h-9"
                   value={reconciliationSearchQuery}
                   onChange={(e) => setReconciliationSearchQuery(e.target.value)}
@@ -9389,8 +9389,7 @@ export default function StatementReconciliationTab() {
                       className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-400"
                       aria-hidden
                     />
-                    <input
-                      type="search"
+                    <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                       aria-label="미매칭 지출 검색"
                       className="w-full min-w-0 border border-slate-200 rounded py-1 pl-7 pr-7 text-[10px] bg-white"
                       placeholder="비고·금액·일자·유형·테이블·ID…"
@@ -9789,8 +9788,7 @@ export default function StatementReconciliationTab() {
             </div>
             <div className="relative min-w-[14rem] flex-1">
               <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-              <input
-                type="search"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 className="w-full rounded border border-slate-200 py-1 pl-7 pr-2"
                 placeholder="금액·내용·거래처·ID 검색"
                 value={operationalLedgerSearch}

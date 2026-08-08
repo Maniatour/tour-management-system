@@ -4,6 +4,12 @@ import type { Metadata } from 'next'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 import { FALLBACK_SITE_LOGO_URL } from '@/lib/customerSiteBranding'
+import {
+  CUSTOMER_SEO_SITE_NAME,
+  getCustomerSeoCopy,
+  getCustomerSiteUrl,
+} from '@/lib/customerSeo'
+import { normalizeSiteLocale } from '@/lib/siteLocales'
 
 const FALLBACK_FAVICON_URL = FALLBACK_SITE_LOGO_URL
 
@@ -110,16 +116,39 @@ function buildIconsMetadata(faviconUrl: string): NonNullable<Metadata['icons']> 
   }
 }
 
-export async function getLocaleLayoutMetadata(): Promise<Metadata> {
+export async function getLocaleLayoutMetadata(locale?: string): Promise<Metadata> {
+  const siteLocale = normalizeSiteLocale(locale)
+  const copy = getCustomerSeoCopy(siteLocale)
+  const siteUrl = getCustomerSiteUrl()
+
   const fallbackMetadata: Metadata = {
+    metadataBase: new URL(siteUrl),
+    title: {
+      default: copy.titleDefault,
+      template: copy.titleTemplate,
+    },
+    description: copy.description,
+    applicationName: CUSTOMER_SEO_SITE_NAME,
     manifest: '/manifest.json',
     icons: buildIconsMetadata(FALLBACK_FAVICON_URL),
+    openGraph: {
+      type: 'website',
+      siteName: CUSTOMER_SEO_SITE_NAME,
+      locale: siteLocale,
+      title: copy.titleDefault,
+      description: copy.description,
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: copy.titleDefault,
+      description: copy.description,
+    },
   }
 
   try {
     const faviconUrl = (await getCachedChannelFaviconUrl()) ?? FALLBACK_FAVICON_URL
     return {
-      manifest: '/manifest.json',
+      ...fallbackMetadata,
       icons: buildIconsMetadata(faviconUrl),
     }
   } catch {

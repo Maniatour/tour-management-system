@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useCallback } from 'react'
 import { Search } from 'lucide-react'
@@ -71,8 +72,7 @@ export default function ReservationFilters({
       <div className="flex items-center space-x-2">
         <div className="relative flex-1">
           <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={14} />
-          <input
-            type="text"
+          <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
             placeholder="예약번호, 고객명, 다른 이름(영문명 등), 특별요청, 상품명으로 검색..."
             value={searchTerm}
             onChange={handleSearchChange}

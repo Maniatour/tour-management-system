@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, Loader2, Plus, Save, Search, Trash2 } from 'lucide-react'
@@ -321,7 +322,7 @@ export default function CustomerPageProductRecommendationsEmbed({
       <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm">
         <label className="relative block">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
+          <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             placeholder="상품명, 지역, 카테고리 검색"

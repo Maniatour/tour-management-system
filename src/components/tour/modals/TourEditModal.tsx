@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
@@ -141,8 +142,7 @@ export default function TourEditModal({
               </label>
               
               {/* 검색 */}
-              <input
-                type="text"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder={locale === 'ko' ? '상품명 검색...' : 'Search products...'}

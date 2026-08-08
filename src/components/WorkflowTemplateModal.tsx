@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState } from 'react'
 import { X } from 'lucide-react'
@@ -41,8 +42,7 @@ export default function WorkflowTemplateModal({ onSelectTemplate: _onSelectTempl
           {/* 검색 및 필터 */}
           <div className="flex gap-4">
             <div className="flex-1">
-              <input
-                type="text"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 placeholder="템플릿 검색..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}

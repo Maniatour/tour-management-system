@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -44,8 +45,7 @@ export default function HomeSearchBar({
     <form onSubmit={handleSearch} className="gyg-search-form">
       <label className="gyg-search-field gyg-search-field-grow">
         <Search className="h-[18px] w-[18px] shrink-0 text-[#9ca3af]" aria-hidden />
-        <input
-          type="search"
+        <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={searchPlaceholder}

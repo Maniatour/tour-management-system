@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
@@ -1526,8 +1527,7 @@ export default function GuideDashboard() {
               <div className="p-2 border-b border-gray-200">
                 <div className="relative">
                   <SearchIcon size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="text"
+                  <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                     placeholder={locale === 'en' ? 'Search...' : '검색...'}
                     value={chatSearchTerm}
                     onChange={(e) => setChatSearchTerm(e.target.value)}

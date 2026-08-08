@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect } from 'react'
 import { Plus, Check, X, Search } from 'lucide-react'
@@ -280,21 +281,20 @@ export default function TagSelector({
         </button>
 
         {showDropdown && (
-          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-hidden">
+          <div className="relative z-20 mt-1 w-full overflow-hidden rounded-lg border border-gray-300 bg-white shadow-lg">
             {/* 검색 입력 */}
-            <div className="p-2 border-b border-gray-200">
-              <input
-                type="text"
+            <div className="border-b border-gray-200 p-2">
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="태그 검색..."
-                className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-ring"
+                className="w-full rounded border border-gray-300 px-2 py-1 focus:ring-1 focus:ring-ring"
                 autoFocus
               />
             </div>
 
-            {/* 태그 목록 */}
-            <div className="max-h-48 overflow-y-auto">
+            {/* 태그 목록 — absolute 대신 문서 흐름으로 렌더해 모달 overflow에 잘리지 않음 */}
+            <div className="max-h-[min(42vh,320px)] overflow-y-auto overscroll-contain">
               {loading ? (
                 <div className="p-4 text-center text-gray-500">로딩 중...</div>
               ) : filteredTags.length === 0 ? (
@@ -308,7 +308,7 @@ export default function TagSelector({
                       <button
                         type="button"
                         onClick={() => handleTagToggle(tag.key)}
-                        className={`w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center justify-between ${
+                        className={`flex w-full items-center justify-between px-4 py-2 text-left hover:bg-gray-100 ${
                           selectedTags.includes(tag.key) ? 'bg-primary/5' : ''
                         }`}
                       >
@@ -331,7 +331,7 @@ export default function TagSelector({
                   setShowDropdown(false)
                   setShowAddModal(true)
                 }}
-                className="w-full flex items-center justify-center space-x-2 px-3 py-2 text-sm text-primary hover:bg-muted/50 rounded"
+                className="flex w-full items-center justify-center space-x-2 rounded px-3 py-2 text-sm text-primary hover:bg-muted/50"
               >
                 <Plus size={16} />
                 <span>새 태그 추가</span>

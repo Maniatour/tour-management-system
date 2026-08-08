@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { Suspense, useState, useEffect } from 'react'
 import { Search, Loader2, Mountain } from 'lucide-react'
@@ -238,8 +239,7 @@ function ProductTagsPageInner() {
                       className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
                       size={20}
                     />
-                    <input
-                      type="text"
+                    <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                       placeholder={t('tagsPageSearchPlaceholder')}
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}

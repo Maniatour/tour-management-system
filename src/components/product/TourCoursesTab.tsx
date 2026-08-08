@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect, type ComponentProps } from 'react'
 import { MapPin, Search, Check, X, Folder, FolderOpen, ChevronRight, ChevronDown, Edit, ArrowUp, ArrowDown } from 'lucide-react'
@@ -505,8 +506,7 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
               {/* 검색 */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input
-                  type="text"
+                <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="투어 코스 검색..."

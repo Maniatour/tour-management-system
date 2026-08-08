@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -522,8 +523,7 @@ export default function PaymentMethodFinancialAccountLinkModal({
                 className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 pointer-events-none"
                 aria-hidden
               />
-              <input
-                type="search"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 value={paymentLinkMethodSearch}
                 onChange={(e) => setPaymentLinkMethodSearch(e.target.value)}
                 placeholder="검색어 입력…"

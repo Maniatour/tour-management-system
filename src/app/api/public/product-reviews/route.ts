@@ -16,6 +16,8 @@ const PRODUCT_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/
 
 const DEFAULT_LIMIT = 12
 const MAX_LIMIT = 30
+/** Safety cap when product detail requests all reviews (`limit=all`). */
+const PRODUCT_ALL_MAX = 500
 
 type ReservationRow = {
   id: string
@@ -101,28 +103,42 @@ async function fetchApprovedGoogleReviewsForProduct(
   db: NonNullable<typeof supabaseAdmin>,
   operatorId: string,
   productId: string,
-  limit: number
+  limit: number | null
 ): Promise<PublicGoogleReviewRow[]> {
-  const { data: mappings } = await fromUntypedTable(db, 'review_products')
+  let mappingsQuery = fromUntypedTable(db, 'review_products')
     .select('google_review_id')
     .eq('operator_id', operatorId)
     .eq('product_id', productId)
     .eq('is_primary', true)
-    .limit(limit)
+
+  if (limit != null) {
+    mappingsQuery = mappingsQuery.limit(limit)
+  } else {
+    mappingsQuery = mappingsQuery.limit(PRODUCT_ALL_MAX)
+  }
+
+  const { data: mappings } = await mappingsQuery
 
   const reviewIds = ((mappings ?? []) as Array<{ google_review_id: string }>).map(
     (row) => row.google_review_id
   )
   if (!reviewIds.length) return []
 
-  const { data: reviews } = await fromUntypedTable(db, 'google_reviews')
+  let reviewsQuery = fromUntypedTable(db, 'google_reviews')
     .select('id, author_name, author_photo_url, rating, comment, review_created_at')
     .eq('operator_id', operatorId)
     .eq('import_status', 'approved')
     .in('id', reviewIds)
     .not('comment', 'is', null)
     .order('review_created_at', { ascending: false })
-    .limit(limit)
+
+  if (limit != null) {
+    reviewsQuery = reviewsQuery.limit(limit)
+  } else {
+    reviewsQuery = reviewsQuery.limit(PRODUCT_ALL_MAX)
+  }
+
+  const { data: reviews } = await reviewsQuery
 
   return ((reviews ?? []) as PublicGoogleReviewRow[]).filter(
     (row) => typeof row.comment === 'string' && row.comment.trim().length > 0
@@ -134,7 +150,7 @@ function mergeAndMapProductReviews(input: {
   guestNames: Map<string, string>
   googleRows: PublicGoogleReviewRow[]
   locale: string
-  limit: number
+  limit: number | null
 }): { reviews: ProductReviewItem[]; reviewCount: number; averageRating: number | null } {
   type SortableItem =
     | { kind: 'reservation'; sortAt: string | null; reservation: PublicProductReviewRow }
@@ -159,18 +175,23 @@ function mergeAndMapProductReviews(input: {
     return bTime - aTime
   })
 
-  const sliced = sortable.slice(0, input.limit)
-  const reservationSlice = sliced
-    .filter((item): item is Extract<SortableItem, { kind: 'reservation' }> => item.kind === 'reservation')
-    .map((item) => item.reservation)
-  const googleSlice = sliced
-    .filter((item): item is Extract<SortableItem, { kind: 'google' }> => item.kind === 'google')
-    .map((item) => item.google)
+  const ordered =
+    input.limit == null ? sortable : sortable.slice(0, input.limit)
 
-  const reviews = [
-    ...mapReviewRowsToProductItems(reservationSlice, input.guestNames, input.locale),
-    ...mapGoogleReviewsToProductItems(googleSlice, input.locale),
-  ]
+  const reviews: ProductReviewItem[] = []
+  for (const item of ordered) {
+    if (item.kind === 'reservation') {
+      const mapped = mapReviewRowsToProductItems(
+        [item.reservation],
+        input.guestNames,
+        input.locale
+      )
+      if (mapped[0]) reviews.push(mapped[0])
+    } else {
+      const mapped = mapGoogleReviewsToProductItems([item.google], input.locale)
+      if (mapped[0]) reviews.push(mapped[0])
+    }
+  }
 
   const ratings = [
     ...input.normalizedReviews.map((row) => row.rating),
@@ -189,13 +210,20 @@ function mergeAndMapProductReviews(input: {
 export async function GET(request: NextRequest) {
   const productId = request.nextUrl.searchParams.get('product_id')?.trim() ?? ''
   const locale = request.nextUrl.searchParams.get('locale')?.trim() || 'en'
-  const limitParam = Number.parseInt(
-    request.nextUrl.searchParams.get('limit') ?? String(DEFAULT_LIMIT),
-    10
-  )
-  const limit = Number.isFinite(limitParam)
-    ? Math.min(Math.max(limitParam, 1), MAX_LIMIT)
-    : DEFAULT_LIMIT
+  const rawLimit = request.nextUrl.searchParams.get('limit')?.trim() ?? ''
+  const wantAll =
+    rawLimit === 'all' || (Boolean(productId) && (rawLimit === '' || rawLimit === '0'))
+
+  let limit: number | null
+  if (wantAll) {
+    limit = null
+  } else {
+    const limitParam = Number.parseInt(rawLimit || String(DEFAULT_LIMIT), 10)
+    const cappedMax = productId ? PRODUCT_ALL_MAX : MAX_LIMIT
+    limit = Number.isFinite(limitParam)
+      ? Math.min(Math.max(limitParam, 1), cappedMax)
+      : DEFAULT_LIMIT
+  }
 
   if (productId && !PRODUCT_ID_RE.test(productId)) {
     return NextResponse.json({ ok: false, message: 'Invalid product_id' }, { status: 400 })
@@ -220,23 +248,6 @@ export async function GET(request: NextRequest) {
     if (productError || !productRow) {
       return NextResponse.json(
         { ok: true, reviews: [], averageRating: null, reviewCount: 0 },
-        { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' } }
-      )
-    }
-
-    const googleRows = await fetchApprovedGoogleReviewsForProduct(db, operatorId, productId, limit)
-    const googleItems = mapGoogleReviewsToProductItems(googleRows, locale)
-    if (googleItems.length >= limit) {
-      const ratings = googleRows
-        .map((row) => row.rating)
-        .filter((rating): rating is number => typeof rating === 'number')
-      return NextResponse.json(
-        {
-          ok: true,
-          reviews: googleItems.slice(0, limit),
-          averageRating: computeAverageRatingFromNumbers(ratings),
-          reviewCount: googleRows.length,
-        },
         { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' } }
       )
     }
@@ -299,7 +310,12 @@ export async function GET(request: NextRequest) {
 
   if (!reservations.length) {
     if (productId) {
-      const googleRows = await fetchApprovedGoogleReviewsForProduct(db, operatorId, productId, limit)
+      const googleRows = await fetchApprovedGoogleReviewsForProduct(
+        db,
+        operatorId,
+        productId,
+        limit
+      )
       const merged = mergeAndMapProductReviews({
         normalizedReviews: [],
         guestNames: new Map(),
@@ -351,7 +367,12 @@ export async function GET(request: NextRequest) {
 
   if (!reservations.length) {
     if (productId) {
-      const googleRows = await fetchApprovedGoogleReviewsForProduct(db, operatorId, productId, limit)
+      const googleRows = await fetchApprovedGoogleReviewsForProduct(
+        db,
+        operatorId,
+        productId,
+        limit
+      )
       const merged = mergeAndMapProductReviews({
         normalizedReviews: [],
         guestNames: new Map(),
@@ -377,13 +398,20 @@ export async function GET(request: NextRequest) {
   }
 
   const reservationIds = reservations.map((row) => row.id)
-  const { data: reviewRows, error: reviewError } = await db
+  let reviewQuery = db
     .from('reservation_reviews')
     .select('id, reservation_id, rating, content, platform, created_at')
     .in('reservation_id', reservationIds)
     .not('content', 'is', null)
     .order('created_at', { ascending: false })
-    .limit(limit)
+
+  if (limit != null) {
+    reviewQuery = reviewQuery.limit(limit)
+  } else {
+    reviewQuery = reviewQuery.limit(PRODUCT_ALL_MAX)
+  }
+
+  const { data: reviewRows, error: reviewError } = await reviewQuery
 
   if (reviewError) {
     console.error('[product-reviews] review query failed', reviewError)

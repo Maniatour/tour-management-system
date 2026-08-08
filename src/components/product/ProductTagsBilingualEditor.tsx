@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
-import TagSelector from '@/components/admin/TagSelector'
+import ProductHomeLinkTagPicker from '@/components/admin/ProductHomeLinkTagPicker'
 import LocaleDropdown from '@/components/LocaleDropdown'
 import { supabase } from '@/lib/supabase'
 import { SITE_LOCALES, type SiteLocale } from '@/lib/siteLocales'
@@ -15,6 +15,7 @@ type ProductTagsBilingualEditorProps = {
   selectedTags: string[]
   onTagsChange: (tags: string[]) => void
   onTranslationsChange: (translations: TagTranslationState) => void
+  locale?: string
 }
 
 export async function loadTagTranslations(
@@ -99,6 +100,7 @@ export default function ProductTagsBilingualEditor({
   selectedTags,
   onTagsChange,
   onTranslationsChange,
+  locale = 'ko',
 }: ProductTagsBilingualEditorProps) {
   const [translations, setTranslations] = useState<TagTranslationState>({})
   const [editLocale, setEditLocale] = useState<SiteLocale>('ko')
@@ -144,10 +146,15 @@ export default function ProductTagsBilingualEditor({
     <div className="space-y-4">
       <div>
         <label className="mb-1 block text-xs font-medium text-gray-700">상품 태그 선택</label>
-        <TagSelector selectedTags={selectedTags} onTagsChange={onTagsChange} />
-        <p className="mt-1 text-[11px] text-gray-500">
-          태그 키는 공통이며, 아래에서 언어별 표시명을 입력합니다.
+        <p className="mb-2 text-[11px] leading-relaxed text-gray-500">
+          「인기 목적지」「여행 스타일」 버튼을 누르면 고객 홈 해당 카드 → 상품 목록 링크에 이 상품이
+          포함됩니다.
         </p>
+        <ProductHomeLinkTagPicker
+          selectedTags={selectedTags}
+          onTagsChange={onTagsChange}
+          locale={locale}
+        />
       </div>
 
       <div className="flex items-center justify-between gap-2">

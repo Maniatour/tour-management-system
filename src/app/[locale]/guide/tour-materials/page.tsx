@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
@@ -155,8 +156,7 @@ export default function GuideTourMaterialsPage() {
           <h1 className="text-lg font-bold text-gray-900">{t('tourMaterialsTitle')}</h1>
           <div className="relative w-32">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
+            <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
               placeholder={t('searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}

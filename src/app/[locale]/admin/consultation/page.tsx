@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
@@ -705,8 +706,7 @@ export default function ConsultationManagementPage() {
               {/* Search */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-                <input
-                  type="text"
+                <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                   placeholder={locale === 'ko' ? '템플릿 검색...' : 'Search templates...'}
                   value={searchTerm}
                   onChange={(e) => setListUi((prev) => ({ ...prev, searchTerm: e.target.value }))}

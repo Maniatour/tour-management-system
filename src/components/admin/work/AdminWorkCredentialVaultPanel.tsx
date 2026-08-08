@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -248,7 +249,7 @@ export function AdminWorkCredentialVaultPanel({
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[140px] flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-          <input
+          <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={isKo ? '사이트·ID 검색' : 'Search site or ID'}

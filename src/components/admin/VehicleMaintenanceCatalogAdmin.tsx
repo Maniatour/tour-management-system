@@ -529,7 +529,7 @@ export default function VehicleMaintenanceCatalogAdmin() {
       <div className="flex flex-wrap gap-3 items-end">
         <div className="flex-1 min-w-[12rem]">
           <Label htmlFor="cat_search">{t('search')}</Label>
-          <Input
+          <Input type="search"
             id="cat_search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}

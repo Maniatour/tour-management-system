@@ -91,14 +91,22 @@ const customerPageFontVariables = cn(
 );
 
 export const metadata: Metadata = {
-  applicationName: "MANIATOUR",
-  title: "MANIATOUR",
-  description: "Tour schedule and customer management system for guides",
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
+  ),
+  applicationName: "Kovegas",
+  title: {
+    default: "Kovegas | Las Vegas & Grand Canyon Tours",
+    template: "%s | Kovegas",
+  },
+  description:
+    "Grand Canyon, Antelope Canyon, Zion and more from Las Vegas. Small groups, hotel pickup, local guides. Book with Kovegas (Mania Tour).",
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "MANIATOUR",
+    title: "Kovegas",
   },
   formatDetection: {
     telephone: false,

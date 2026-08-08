@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect, useCallback } from 'react'
 import { Search, Calendar, Grid, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react'
@@ -569,8 +570,7 @@ export default function GuideTours({}: GuideToursProps) {
         <div className="mb-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
+            <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
               placeholder={gt('searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}

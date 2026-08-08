@@ -1,4 +1,5 @@
 'use client';
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
@@ -1615,8 +1616,7 @@ export default function TourHotelBookingList() {
             </label>
             <div className="relative">
               <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={12} />
-              <input
-                type="text"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder={`${t('search')}...`}

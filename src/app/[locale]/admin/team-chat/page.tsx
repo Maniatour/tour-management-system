@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { MessageCircle, Plus, Settings, Pin, Search, X, Paperclip, Image, File, RefreshCw, Trash2 } from 'lucide-react'
@@ -955,8 +956,7 @@ export default function TeamChatPage() {
           <div className="space-y-2">
             <div className="relative">
               <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 placeholder="채팅방 검색..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}

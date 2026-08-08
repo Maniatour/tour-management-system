@@ -1462,7 +1462,7 @@ export default function CashManagement() {
               <div className="flex flex-1 min-w-0 sm:min-w-[200px] gap-2">
                 <div className="relative flex-1 min-w-0">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
+                  <Input type="search"
                     placeholder="검색..."
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}

@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, MapPin, Search } from 'lucide-react'
@@ -226,8 +227,7 @@ export default function ProductDetailDeparturePointModal({
               className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9ca3af]"
               aria-hidden
             />
-            <input
-              type="search"
+            <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder={t('searchAvailableLocations')}

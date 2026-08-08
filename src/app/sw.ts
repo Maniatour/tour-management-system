@@ -10,11 +10,37 @@ declare global {
 
 declare const self: ServiceWorkerGlobalScope
 
+const networkOnly = new NetworkOnly()
+
 /** 직원·관리 화면: 탭 여러 개 동시 사용 시 SW 캐시로 구버전 HTML이 섞이지 않도록 */
 function isStaffAppDocumentNavigation(url: URL, request: Request): boolean {
   if (request.mode !== 'navigate' && request.destination !== 'document') return false
   const p = url.pathname
   return /^\/(ko|en|ja|zh-CN|zh-TW|es|fr|de)\/(admin|dashboard|guide)(\/|$)/.test(p)
+}
+
+/**
+ * NetworkOnly가 네트워크 실패 시 throw 하는 no-response를 삼킨다.
+ * Chrome PWA offline probe / navigationPreload 경합 시 콘솔 Uncaught가 나고
+ * 관리 화면 네비게이션이 깨져 저장 흐름이 끊기는 경우가 있음.
+ */
+async function handleNetworkOnlySafe(options: {
+  request: Request
+  event?: ExtendableEvent
+}): Promise<Response> {
+  try {
+    return await networkOnly.handle(options as never)
+  } catch {
+    try {
+      return await fetch(options.request)
+    } catch {
+      return new Response('', {
+        status: 504,
+        statusText: 'Gateway Timeout',
+        headers: { 'Cache-Control': 'no-store' },
+      })
+    }
+  }
 }
 
 // Push 알림 (기존 public/sw.js 동작 유지)
@@ -59,7 +85,8 @@ const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST ?? [],
   skipWaiting: true,
   clientsClaim: true,
-  navigationPreload: true,
+  // preload 실패 시 NetworkOnly no-response와 경합 → admin 문서에서 Uncaught 유발
+  navigationPreload: false,
   // 공개 투어 채팅(/chat/[code])은 동적·세션 의존 페이지라 기본 런타임 캐시와 맞지 않으면
   // Workbox/Serwist에서 no-response가 날 수 있음 → 문서 요청은 네트워크만 사용
   runtimeCaching: [
@@ -67,20 +94,20 @@ const serwist = new Serwist({
       matcher({ url }) {
         return url.pathname.startsWith('/api/')
       },
-      handler: new NetworkOnly(),
+      handler: handleNetworkOnlySafe,
     },
     {
       matcher({ url, request }) {
         if (!url.pathname.startsWith('/chat/')) return false
         return request.mode === 'navigate' || request.destination === 'document'
       },
-      handler: new NetworkOnly(),
+      handler: handleNetworkOnlySafe,
     },
     {
       matcher({ url, request }) {
         return isStaffAppDocumentNavigation(url, request)
       },
-      handler: new NetworkOnly(),
+      handler: handleNetworkOnlySafe,
     },
     ...defaultCache,
   ],

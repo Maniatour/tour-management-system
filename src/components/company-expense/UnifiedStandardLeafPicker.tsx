@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState, useId } from 'react'
 import { useTranslations } from 'next-intl'
@@ -215,9 +216,8 @@ export function UnifiedStandardLeafPicker({
           >
             <div className="flex shrink-0 items-center gap-2 border-b border-gray-100 px-2 py-1.5">
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-              <input
-                ref={searchInputRef}
-                type="text"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} ref={searchInputRef}
+                type="search"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="min-w-0 flex-1 border-0 bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground"

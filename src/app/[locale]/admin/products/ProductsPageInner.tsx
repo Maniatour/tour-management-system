@@ -2,13 +2,16 @@
 
 import { useState, useEffect, useMemo, type SetStateAction } from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight, Star, Languages, Trash2, RotateCcw, Hash } from 'lucide-react'
+import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight, Star, Languages, Trash2, RotateCcw, Hash, MapPin, Tags } from 'lucide-react'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
 import ProductCard from '@/components/ProductCard'
 import FavoriteOrderModal from '@/components/admin/FavoriteOrderModal'
+import HomeCategoriesLinkSettingsModal from '@/components/admin/HomeCategoriesLinkSettingsModal'
+import AdminProductTagsModal from '@/components/admin/AdminProductTagsModal'
 import ProductCodeManagementModal from '@/components/admin/ProductCodeManagementModal'
 import ProductLocaleReadinessModal from '@/components/admin/ProductLocaleReadinessModal'
 import AdminProductCardPreviewLocaleToggle from '@/components/admin/AdminProductCardPreviewLocaleToggle'
@@ -120,6 +123,8 @@ export default function AdminProducts() {
   const [homepageChannel, setHomepageChannel] = useState<any>(null)
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
   const [isFavoriteOrderModalOpen, setIsFavoriteOrderModalOpen] = useState(false)
+  const [isHomeCategoriesModalOpen, setIsHomeCategoriesModalOpen] = useState(false)
+  const [tagsModalProduct, setTagsModalProduct] = useState<Product | null>(null)
   const [isProductCodeModalOpen, setIsProductCodeModalOpen] = useState(false)
   const [productCodeModalFocusId, setProductCodeModalFocusId] = useState<string | null>(null)
   const [isLocaleReadinessModalOpen, setIsLocaleReadinessModalOpen] = useState(false)
@@ -867,6 +872,14 @@ export default function AdminProducts() {
             <span>{t('productCode.button')}</span>
           </button>
           <button
+            type="button"
+            onClick={() => setIsHomeCategoriesModalOpen(true)}
+            className="bg-teal-600 text-white px-3 py-1.5 rounded-md hover:bg-teal-700 flex items-center gap-1.5 text-sm font-medium"
+          >
+            <MapPin size={16} />
+            <span>{t('homeCategoriesLink.button')}</span>
+          </button>
+          <button
             onClick={() => setIsFavoriteOrderModalOpen(true)}
             className="bg-yellow-500 text-white px-3 py-1.5 rounded-md hover:bg-yellow-600 flex items-center gap-1.5 text-sm font-medium"
           >
@@ -914,17 +927,21 @@ export default function AdminProducts() {
                   ))}
                 </nav>
                 
-                {/* 검색창 */}
+                {/* 검색창 — autocomplete off로 Chrome 카드번호 자동완성 방지 */}
                 <div className="relative flex-shrink-0">
                   <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-        <input
-          type="text"
+                  <input
+                    {...BROWSER_AUTOFILL_OFF_PROPS}
+                    type="search"
+                    id="admin-products-search"
+                    name="admin-products-search"
+                    role="searchbox"
                     placeholder={t('searchPlaceholder')}
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-56 pl-7 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
-        />
-      </div>
+                  />
+                </div>
                         </div>
                       </div>
           )}
@@ -1720,6 +1737,25 @@ export default function AdminProducts() {
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div className="flex items-center space-x-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              setTagsModalProduct(product)
+                            }}
+                            className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-50 border border-indigo-200"
+                            title={t('cardEditModal.editTags')}
+                          >
+                            <Tags className="h-3.5 w-3.5" />
+                            {t('cardEditModal.editTags')}
+                            {Array.isArray(product.tags) && product.tags.length > 0 ? (
+                              <span className="rounded-full bg-indigo-100 px-1.5 text-[10px] font-bold">
+                                {product.tags.length}
+                              </span>
+                            ) : null}
+                          </button>
+
                           {/* 복사 버튼 */}
                           <button
                             type="button"
@@ -1875,6 +1911,32 @@ export default function AdminProducts() {
           fetchProducts() // 상품 목록 새로고침
         }}
         locale={locale}
+      />
+
+      <HomeCategoriesLinkSettingsModal
+        isOpen={isHomeCategoriesModalOpen}
+        onClose={() => setIsHomeCategoriesModalOpen(false)}
+        locale={locale}
+      />
+
+      <AdminProductTagsModal
+        isOpen={Boolean(tagsModalProduct)}
+        onClose={() => setTagsModalProduct(null)}
+        productId={tagsModalProduct?.id ?? ''}
+        productLabel={
+          tagsModalProduct
+            ? (locale === 'en'
+                ? tagsModalProduct.customer_name_en || tagsModalProduct.name
+                : tagsModalProduct.customer_name_ko || tagsModalProduct.name) || tagsModalProduct.id
+            : ''
+        }
+        locale={locale}
+        initialTags={tagsModalProduct?.tags ?? []}
+        onSaved={(productId, tags) => {
+          setProducts((prev) =>
+            prev.map((product) => (product.id === productId ? { ...product, tags } : product))
+          )
+        }}
       />
     </div>
   )

@@ -1494,7 +1494,7 @@ export default function PnlUnifiedExpenseDetailDialog({
                   className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none"
                   aria-hidden
                 />
-                <Input
+                <Input type="search"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="출처·지출일·투어일·ID·상품·가이드·결제처·분류·금액·메모 검색"

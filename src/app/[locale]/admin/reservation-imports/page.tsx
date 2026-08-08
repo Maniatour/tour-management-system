@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
@@ -875,8 +876,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
       <div className="flex flex-col sm:flex-row gap-3 py-3 border-b border-gray-100">
         <div className="relative flex-1 min-w-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" aria-hidden />
-          <input
-            type="search"
+          <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
             value={searchQuery}
             onChange={(e) => setListUi((prev) => ({ ...prev, searchQuery: e.target.value }))}
             placeholder="제목, 발신자, 고객명·날짜 등 검색..."

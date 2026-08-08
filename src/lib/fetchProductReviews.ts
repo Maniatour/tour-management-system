@@ -16,13 +16,23 @@ export async function fetchProductReviews(
   options: {
     productId?: string
     locale: string
-    limit?: number
+    /** Pass `'all'` for product detail (no display cap). Defaults to 12 for home/list. */
+    limit?: number | 'all'
   }
 ): Promise<ProductReviewsResult> {
   const params = new URLSearchParams({
     locale: options.locale,
-    limit: String(options.limit ?? 12),
   })
+
+  if (options.limit === 'all') {
+    params.set('limit', 'all')
+  } else if (options.limit != null) {
+    params.set('limit', String(options.limit))
+  } else if (options.productId) {
+    params.set('limit', 'all')
+  } else {
+    params.set('limit', '12')
+  }
 
   if (options.productId) {
     params.set('product_id', options.productId)

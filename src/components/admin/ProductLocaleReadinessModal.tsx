@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -456,8 +457,7 @@ export default function ProductLocaleReadinessModal({
         <div className="px-4 sm:px-6 py-3 border-b border-gray-100 flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between bg-gray-50/80">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="search"
+            <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t('searchPlaceholder')}

@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState } from 'react'
 import { 
@@ -139,8 +140,7 @@ export default function DocumentFilters({
         <div className="flex-1 w-full min-w-0 flex gap-2">
           <div className="relative flex-1 min-w-0">
             <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
+            <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
               placeholder="문서 검색..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}

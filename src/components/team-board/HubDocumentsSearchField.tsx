@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { Search, X } from 'lucide-react'
 
@@ -27,8 +28,7 @@ export function HubDocumentsSearchField({
         }`}
         aria-hidden
       />
-      <input
-        type="search"
+      <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={isKo ? '제목·본문·슬러그·카테고리 검색…' : 'Search title, body, slug, category…'}

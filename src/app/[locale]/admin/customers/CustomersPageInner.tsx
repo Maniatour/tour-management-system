@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
@@ -1400,8 +1401,7 @@ export default function AdminCustomers() {
       <div className="flex flex-col md:flex-row md:items-center gap-3 md:space-x-4 md:gap-0">
         <div className="relative flex-1 md:max-w-md">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-        <input
-          type="text"
+        <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
             placeholder={t('searchPlaceholder')}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}

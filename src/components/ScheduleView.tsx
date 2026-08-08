@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
@@ -7676,8 +7677,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 <label htmlFor="schedule-team-modal-search" className="sr-only">
                   가이드·팀원 이름 검색
                 </label>
-                <input
-                  id="schedule-team-modal-search"
+                <input {...BROWSER_AUTOFILL_OFF_PROPS} id="schedule-team-modal-search"
                   type="search"
                   value={teamModalSearchQuery}
                   onChange={(e) => setTeamModalSearchQuery(e.target.value)}

@@ -828,7 +828,7 @@ export default function PartnerFundsManagement() {
               {/* 필터 - 모바일 컴팩트 */}
               <div className="mb-3 sm:mb-4 space-y-2">
                 <div className="flex flex-wrap gap-2">
-                  <Input
+                  <Input type="search"
                     placeholder="검색..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}

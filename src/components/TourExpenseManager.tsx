@@ -317,6 +317,17 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
     return error.message
   }
 
+  function formatExpenseSaveError(error: unknown, fallback: string): string {
+    if (error && typeof error === 'object' && 'message' in error) {
+      const msg = String((error as { message?: unknown }).message || '').trim()
+      if (msg) return `${fallback}\n${msg}`
+    }
+    if (error instanceof Error && error.message.trim()) {
+      return `${fallback}\n${error.message}`
+    }
+    return fallback
+  }
+
   /** RLS: tour_expenses.submitted_by / checked_by는 JWT 이메일과 맞아야 할 때가 많음 — prop이 비면 세션에서 채움 */
   const resolveSubmitterEmail = useCallback(async (): Promise<string | null> => {
     const fromProp = typeof submittedBy === 'string' ? submittedBy.trim() : ''
@@ -975,12 +986,13 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
     // 지급 대상 유효성 검사
     const finalPaidTo = formData.custom_paid_to || formData.paid_to || null
     if (!finalPaidTo) {
-      alert('지급 대상을 선택하거나 입력해주세요.')
+      alert(t('paidToRequired'))
       return
     }
 
     try {
       setUploading(true)
+      await ensureFreshAuthSessionForUpload()
 
       const effectiveSubmittedBy = await resolveSubmitterEmail()
       if (!effectiveSubmittedBy) {
@@ -1074,7 +1086,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
       alert(t('expenseRegistered'))
     } catch (error) {
       console.error('Error adding expense:', error)
-      alert(t('expenseRegistrationError'))
+      alert(formatExpenseSaveError(error, t('expenseRegistrationError')))
     } finally {
       setUploading(false)
     }
@@ -1830,6 +1842,10 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
     }
 
     const finalPaidTo = formData.custom_paid_to || formData.paid_to || null
+    if (!finalPaidTo) {
+      alert(t('paidToRequired'))
+      return null
+    }
     const reimbursedOnVal = formData.reimbursed_on?.trim() || null
     const reimbPayload =
       amountNum > 0 && reimbursementSectionOpen
@@ -1864,12 +1880,20 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
     if (!payload) return
 
     try {
-      const { error } = await supabase
+      setUploading(true)
+      await ensureFreshAuthSessionForUpload()
+
+      const { data, error } = await supabase
         .from('tour_expenses')
         .update(payload as never)
         .eq('id', editingExpense.id)
+        .select('id')
+        .maybeSingle()
 
       if (error) throw error
+      if (!data?.id) {
+        throw new Error(t('expenseUpdatePermissionDenied'))
+      }
 
       const amountNum = payload.amount as number
       const finalPaidTo = payload.paid_to as string | null
@@ -1889,6 +1913,8 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                 amount: amountNum,
                 payment_method: payload.payment_method as string | null,
                 note: payload.note as string | null,
+                image_url: (payload.image_url as string | null) ?? expense.image_url,
+                file_path: (payload.file_path as string | null) ?? expense.file_path,
                 ...reimbPayload,
               }
             : expense
@@ -1900,7 +1926,9 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
       onEmbedUpdated?.()
     } catch (error) {
       console.error('Error updating expense:', error)
-      alert('지출 수정 중 오류가 발생했습니다.')
+      alert(formatExpenseSaveError(error, t('expenseUpdateError')))
+    } finally {
+      setUploading(false)
     }
   }
 
@@ -1911,13 +1939,16 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
     if (!payload) return
 
     try {
+      setUploading(true)
+      await ensureFreshAuthSessionForUpload()
+
       const effectiveSubmittedBy = await resolveSubmitterEmail()
       if (!effectiveSubmittedBy) {
         alert(t('submitterEmailRequired'))
         return
       }
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('tour_expenses')
         .update({
           ...payload,
@@ -1926,15 +1957,22 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
           checked_on: new Date().toISOString(),
         } as never)
         .eq('id', editingExpense.id)
+        .select('id')
+        .maybeSingle()
 
       if (error) throw error
+      if (!data?.id) {
+        throw new Error(t('expenseUpdatePermissionDenied'))
+      }
 
       onExpenseUpdated?.()
       onEmbedUpdated?.()
       handleCancelEdit()
     } catch (error) {
       console.error('Error saving and approving expense:', error)
-      alert('지출 저장·승인 중 오류가 발생했습니다.')
+      alert(formatExpenseSaveError(error, t('expenseSaveApproveError')))
+    } finally {
+      setUploading(false)
     }
   }
 

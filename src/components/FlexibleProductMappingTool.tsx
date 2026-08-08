@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect } from 'react'
 import { Database } from '@/lib/supabase'
@@ -462,8 +463,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">변환할 상품 (소스)</label>
             <div className="flex space-x-2">
-              <input
-                type="text"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 placeholder="상품 ID 또는 이름으로 검색..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}

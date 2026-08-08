@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, Loader2, Search } from 'lucide-react'
@@ -262,8 +263,7 @@ export default function GoogleReviewTourSelect({
               <span className="text-xs font-medium text-muted-foreground">
                 {isKo ? '고객명' : 'Guest name'}
               </span>
-              <input
-                type="search"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
                 placeholder={isKo ? '예약 고객명' : 'Reservation guest name'}
@@ -273,8 +273,7 @@ export default function GoogleReviewTourSelect({
           </div>
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="search"
+            <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={isKo ? '상품·가이드 검색 (선택)' : 'Product or guide (optional)'}

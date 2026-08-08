@@ -1,6 +1,7 @@
 // @ts-nocheck
 'use client'
 
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 import React, { useState, useEffect } from 'react'
 import { Calendar, Clock, MapPin, Utensils, Car, Coffee, Plus, Edit, Trash2, Save, AlertCircle, Map, Users, User } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -1881,8 +1882,7 @@ function LocationPickerModal({ currentLat, currentLng, onLocationSelect, onClose
               장소 검색
             </label>
             <div className="flex space-x-2">
-              <input
-                type="text"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"

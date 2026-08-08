@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useMemo } from 'react'
 import { X, Search } from 'lucide-react'
@@ -94,8 +95,7 @@ export default function GlobalOptionModal({
             {/* 검색 입력 필드 */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 placeholder="옵션명, 설명, 카테고리, 태그로 검색..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}

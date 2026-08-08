@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useEffect, useMemo, useState } from 'react'
 import { Search } from 'lucide-react'
@@ -99,8 +100,7 @@ export function OpTodoProductSelect({
       <div className="relative">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-          <input
-            type="search"
+          <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
             value={inputValue}
             disabled={disabled}
             onChange={(e) => {
@@ -196,8 +196,7 @@ export function OpTodoProductSelect({
 
       <div className="relative">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-        <input
-          type="search"
+        <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value)

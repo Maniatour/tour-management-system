@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import dynamic from 'next/dynamic'
@@ -1393,8 +1394,7 @@ export default function ReservationExpenseManager({
             <div className="flex flex-1 gap-2 min-w-0">
               <div className="flex-1 relative min-w-0">
                 <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
-                <input
-                  type="text"
+                <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                   placeholder={t('searchPlaceholder')}
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}

@@ -4619,6 +4619,18 @@ main:has(.maniatour-home) {
   margin-top: 0.5rem;
 }
 
+.gyg-listing-card-footer--split {
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.gyg-listing-card-footer-start {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
 .gyg-listing-card-price {
   margin: 0;
   font-size: 0.875rem;

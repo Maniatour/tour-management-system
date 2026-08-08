@@ -451,7 +451,9 @@ export default function AdminProductCardEditModals({
   const dialogSize =
     section === 'media'
       ? 'max-w-[min(96vw,72rem)] max-h-[90vh] overflow-y-auto'
-      : 'max-w-2xl max-h-[90vh] overflow-y-auto'
+      : section === 'tags'
+        ? 'flex max-h-[90vh] min-h-[min(72vh,640px)] max-w-2xl flex-col overflow-y-auto'
+        : 'max-w-2xl max-h-[90vh] overflow-y-auto'
 
   const dialogHeader =
     section === 'pricing' ? (
@@ -837,6 +839,7 @@ export default function AdminProductCardEditModals({
               selectedTags={tagKeys}
               onTagsChange={setTagKeys}
               onTranslationsChange={setTagTranslations}
+              locale={editLocale === 'en' ? 'en' : 'ko'}
             />
           </div>
         ) : null}

@@ -1,4 +1,5 @@
 'use client';
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Search, Check } from 'lucide-react';
@@ -493,8 +494,7 @@ export default function ProductSelector({
         {/* 검색 입력 */}
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-          <input
-            type="text"
+          <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
             placeholder="상품명, 카테고리, 초성으로 검색..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}

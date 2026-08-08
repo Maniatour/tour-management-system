@@ -5,6 +5,7 @@ import { ConnectionStatusLabel } from './TourUIComponents'
 import { isVehicleShownInTeamAssignmentDropdown } from '@/utils/tourUtils'
 import { isInactiveVehicleStatus } from '@/lib/vehicleStatus'
 import { useTourDetailSectionChrome } from './TourDetailModalChromeContext'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 interface TeamMember {
   id: string
@@ -149,8 +150,7 @@ function MemberSelectWithTabs({
             </button>
           </div>
           <div className="px-2 pb-1">
-            <input
-              type="text"
+            <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="이름/닉네임/이메일 검색"

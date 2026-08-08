@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect, useMemo } from 'react'
 import { 
@@ -1866,8 +1867,7 @@ export default function PaymentMethodManager({
                 </label>
                 <div className="relative mb-2">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 pointer-events-none" aria-hidden />
-                  <input
-                    type="search"
+                  <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                     value={formTeamMemberSearch}
                     onChange={(e) => setFormTeamMemberSearch(e.target.value)}
                     placeholder="이름, 영문명, 닉네임, 이메일로 검색…"
@@ -2581,8 +2581,7 @@ export default function PaymentMethodManager({
                   <div className="space-y-4">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 pointer-events-none" aria-hidden />
-                      <input
-                        type="search"
+                      <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                         value={bulkUserMemberSearch}
                         onChange={(e) => setBulkUserMemberSearch(e.target.value)}
                         placeholder="이름, 영문명, 닉네임, 이메일로 검색…"
@@ -2720,8 +2719,7 @@ export default function PaymentMethodManager({
                   <div className="space-y-4">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 pointer-events-none" aria-hidden />
-                      <input
-                        type="search"
+                      <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                         value={bulkEditUserMemberSearch}
                         onChange={(e) => setBulkEditUserMemberSearch(e.target.value)}
                         placeholder="이름, 영문명, 닉네임, 이메일로 검색…"

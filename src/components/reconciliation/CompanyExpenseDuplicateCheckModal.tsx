@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useParams } from 'next/navigation'
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
@@ -711,8 +712,7 @@ export default function CompanyExpenseDuplicateCheckModal({
                 </label>
                 <label className="flex flex-col gap-0.5 text-[11px] text-slate-600 flex-1 min-w-[12rem]">
                   <span className="font-medium text-slate-700">검색</span>
-                  <input
-                    type="search"
+                  <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                     value={ledgerSearch}
                     onChange={(e) => setLedgerSearch(e.target.value)}
                     placeholder="지출 ID, Paid to/for, 금액, 투어명…"

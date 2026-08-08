@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect, useMemo } from 'react'
 import { X, Plus, Trash2, Settings, RefreshCw, Search, AlertCircle, Pencil, Copy } from 'lucide-react'
@@ -1057,8 +1058,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onSave }: Catego
           <div className="flex items-center gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input
-                type="text"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 placeholder="검색..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}

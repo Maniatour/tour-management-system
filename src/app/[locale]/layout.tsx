@@ -19,8 +19,13 @@ import { getLocaleLayoutMetadata, getCachedCustomerSiteBranding } from '@/lib/ch
 import { CustomerSiteBrandingProvider } from '@/contexts/CustomerSiteBrandingContext';
 import { isSiteLocale, siteLocalePathTest } from '@/lib/siteLocales';
 
-export async function generateMetadata(): Promise<Metadata> {
-  return getLocaleLayoutMetadata();
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>
+}): Promise<Metadata> {
+  const { locale } = await params
+  return getLocaleLayoutMetadata(locale)
 }
 
 function resolvePathname(

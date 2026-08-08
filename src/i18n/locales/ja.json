@@ -749,6 +749,9 @@
     "pageTitle": "製品管理",
     "pageDescription": "ツアー商品を追加、編集、削除します。",
     "homeSectionsManualHint": "「人気の目的地を探索して冒険を選択」の下に製品がどのように表示されるかについては、タイトルの横にある本のアイコンを参照してください。",
+    "homeCategoriesLink": {
+      "button": "ホームカテゴリ連携"
+    },
     "favoriteOrder": "お気に入りを並べ替える",
     "localeReadiness": {
       "button": "ロケールの準備状況",
@@ -1926,6 +1929,9 @@
     "guestReviewsTitle": "ゲストレビュー",
     "guestReviewsSubtitle": "このツアーを予約した旅行者の実際の体験談",
     "reviewCount": "{count, plural, one {# review} その他 {# reviews}}",
+    "reviewPrev": "前のレビュー",
+    "reviewNext": "次のレビュー",
+    "reviewCarouselPosition": "{current} / {total}",
     "showBookingOptions": "タップしてオプションを設定します",
     "hideBookingOptions": "タップしてオプションを折りたたむ",
     "bookingCtaRegion": "予約アクション",

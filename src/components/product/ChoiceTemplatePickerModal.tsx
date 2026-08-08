@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Search, ChevronDown, ChevronUp, Library } from 'lucide-react'
@@ -175,8 +176,7 @@ export default function ChoiceTemplatePickerModal({ onSelect, onClose }: Props) 
           </p>
           <div className="relative mt-3">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="search"
+            <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={

@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect, type FormEvent } from 'react'
 import { Plus, Search, Edit, Trash2, Copy, Upload, ChevronUp, ChevronDown, BookOpen, X } from 'lucide-react'
@@ -746,8 +747,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
       <div className="grid grid-cols-2 sm:flex sm:flex-row gap-2 sm:gap-4 items-stretch">
         <div className="relative col-span-1 sm:flex-1 min-w-0">
           <Search className="absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2 text-gray-400 sm:w-5 sm:h-5 w-4 h-4" />
-          <input
-            type="text"
+          <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
             placeholder="초이스 템플릿 검색..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}

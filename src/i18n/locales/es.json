@@ -749,6 +749,9 @@
     "pageTitle": "Gestión de productos",
     "pageDescription": "Agregue, edite y elimine productos turísticos.",
     "homeSectionsManualHint": "Vea el ícono del libro al lado del título para ver cómo aparecen los productos en Explora los destinos principales y Elige tu aventura.",
+    "homeCategoriesLink": {
+      "button": "Enlaces de categorías de inicio"
+    },
     "favoriteOrder": "Reordenar favoritos",
     "localeReadiness": {
       "button": "Preparación local",
@@ -1926,6 +1929,9 @@
     "guestReviewsTitle": "Comentarios de huéspedes",
     "guestReviewsSubtitle": "Experiencias reales de viajeros que reservaron este tour.",
     "reviewCount": "{count, plural, one {# review} otro {# reviews}}",
+    "reviewPrev": "Reseña anterior",
+    "reviewNext": "Reseña siguiente",
+    "reviewCarouselPosition": "{current} / {total}",
     "showBookingOptions": "Toca para configurar opciones",
     "hideBookingOptions": "Toca para contraer opciones",
     "bookingCtaRegion": "Acciones de reserva",

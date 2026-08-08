@@ -174,7 +174,7 @@ function ProductDetailPageContentInner({
       const reviewsData = await fetchProductReviews({
         productId: data.product?.id ?? productId,
         locale,
-        limit: 12,
+        limit: 'all',
       })
       setProductReviews(reviewsData.reviews)
       setReviewRating(reviewsData.averageRating)

@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
@@ -637,8 +638,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
             <div className="flex items-center gap-2 py-2 flex-shrink-0 min-w-0">
               <div className="relative flex-1 sm:flex-none sm:min-w-[200px]">
                 <Search className="absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
+                <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="고객명, 채널RN, 상품명, 날짜 검색..."

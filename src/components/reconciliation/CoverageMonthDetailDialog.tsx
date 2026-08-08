@@ -124,7 +124,7 @@ export default function CoverageMonthDetailDialog({
         </DialogHeader>
 
         <div className="px-4 py-2 border-b border-slate-100 shrink-0">
-          <Input
+          <Input type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="날짜, 금액, 설명, 대조 상태 검색…"

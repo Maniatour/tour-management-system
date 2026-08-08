@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect, useCallback } from 'react'
 import { MapPin, Search, X } from 'lucide-react'
@@ -687,8 +688,7 @@ export default function LocationPickerModal({
             <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
               <Search className="w-4 h-4" />
             </div>
-            <input
-              type="text"
+            <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
               onKeyPress={handleKeyPress}

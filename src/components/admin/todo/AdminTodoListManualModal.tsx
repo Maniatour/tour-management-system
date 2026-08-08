@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useMemo, useState } from 'react'
 import { BookOpen, ChevronDown, ChevronRight, Search, X } from 'lucide-react'
@@ -172,8 +173,7 @@ export function AdminTodoListManualModal({ open, onClose, locale }: AdminTodoLis
         <div className="shrink-0 space-y-3 border-b border-gray-100 bg-slate-50 px-5 py-3">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <input
-              type="search"
+            <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={isKo ? '패널 이름·조건 검색…' : 'Search panels or filters…'}

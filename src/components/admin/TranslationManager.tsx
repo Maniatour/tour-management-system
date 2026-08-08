@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect } from 'react'
 import { Plus, Edit2, Trash2, Save, X, Search, ChevronDown, ChevronRight } from 'lucide-react'
@@ -315,8 +316,7 @@ export default function TranslationManager({ locale: _locale }: TranslationManag
       <div className="flex gap-4">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-          <input
-            type="text"
+          <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
             placeholder={t('searchPlaceholderKeys')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}

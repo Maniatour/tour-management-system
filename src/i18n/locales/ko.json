@@ -940,7 +940,7 @@
     "orAddNewProduct": "또는 새 상품을 추가해보세요",
     "pageTitle": "상품 관리",
     "pageDescription": "투어 상품을 추가, 편집, 삭제할 수 있습니다",
-    "homeSectionsManualHint": "홈 Explore Top Destinations · Choose Your Adventure 노출 방법은 제목 옆 책 아이콘 메뉴얼을 참고하세요.",
+    "homeSectionsManualHint": "홈 인기 목적지 · 여행 스타일 노출 규칙은 제목 옆 책 아이콘 메뉴얼을 참고하세요. 「홈 카테고리 연결」에서 카드별 연결 태그를 설정할 수 있습니다.",
     "favoriteOrder": "즐겨찾기 순서 조정",
     "productCode": {
       "button": "상품 코드",
@@ -1560,7 +1560,8 @@
             "hint": "투어 하이라이트 체크리스트 3번째 항목"
           }
         }
-      }
+      },
+      "manageTags": "태그 관리"
     },
     "cardEditModal": {
       "locationTitle": "출발/도착 정보 수정",
@@ -1575,7 +1576,7 @@
       "editMedia": "미디어 수정",
       "editTags": "태그 관리",
       "tagsTitle": "태그 관리",
-      "tagsHint": "상품에 표시할 태그를 선택하고, 한국어·영어 표시명을 편집하세요.",
+      "tagsHint": "인기 목적지·여행 스타일 버튼을 누르면 고객 홈 해당 카드 링크로 이 상품이 연결됩니다.",
       "mediaTitle": "미디어 수정/업로드",
       "mediaHint": "이미지를 업로드하거나 대표 이미지를 설정하세요. 변경 사항은 저장 즉시 반영됩니다.",
       "cancel": "취소",
@@ -2179,6 +2180,9 @@
       "msgCopyDataSuccess": "{count}개 채널에 데이터가 복사되었습니다.",
       "msgCopyError": "복사 중 오류가 발생했습니다.",
       "msgChannelCopyError": "채널 데이터 복사 중 오류가 발생했습니다."
+    },
+    "homeCategoriesLink": {
+      "button": "홈 카테고리 연결"
     }
   },
   "admin": {
@@ -5463,6 +5467,10 @@
       "paymentMethodRequired": "등록된 결제 방법을 선택해 주세요.",
       "expenseRegistered": "비용이 등록되었습니다",
       "expenseRegistrationError": "비용 등록에 실패했습니다",
+      "expenseUpdateError": "지출 수정 중 오류가 발생했습니다.",
+      "expenseUpdatePermissionDenied": "권한 또는 세션 문제로 저장되지 않았습니다. 새로고침 후 다시 로그인한 뒤 시도해 주세요.",
+      "expenseSaveApproveError": "지출 저장·승인 중 오류가 발생했습니다.",
+      "paidToRequired": "지급 대상을 선택하거나 입력해주세요.",
       "status": {
         "pending": "대기",
         "confirmed": "확정",
@@ -7872,6 +7880,9 @@
     "guestReviewsTitle": "게스트 리뷰",
     "guestReviewsSubtitle": "이 투어를 예약한 여행자들의 실제 후기",
     "reviewCount": "리뷰 {count}개",
+    "reviewPrev": "이전 리뷰",
+    "reviewNext": "다음 리뷰",
+    "reviewCarouselPosition": "{current} / {total}",
     "showBookingOptions": "탭하여 옵션 설정",
     "hideBookingOptions": "탭하여 옵션 접기",
     "bookingCtaRegion": "예약 영역",

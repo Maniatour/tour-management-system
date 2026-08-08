@@ -239,7 +239,7 @@ export default function TourReportList({
                 <label className="block text-sm font-medium mb-2">검색</label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <Input
+                  <Input type="search"
                     placeholder="이메일, 상품명으로 검색..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}

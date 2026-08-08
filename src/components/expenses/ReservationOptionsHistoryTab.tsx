@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -657,8 +658,7 @@ export default function ReservationOptionsHistoryTab() {
               <div className="flex flex-1 min-w-0 gap-2">
                 <div className="flex-1 min-w-0 relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <input
-                    type="text"
+                  <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}
                     onKeyDown={(e) => {

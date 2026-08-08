@@ -10,6 +10,9 @@ type Props = {
   locale: string
   selectedFilter?: GuideReviewRatingFilter | null
   onFilterChange?: (filter: GuideReviewRatingFilter | null) => void
+  /** When false, distribution rows are display-only (customer pages). Default true. */
+  interactive?: boolean
+  className?: string
 }
 
 type DistributionRow = {
@@ -84,26 +87,19 @@ function DistributionBar({
   maxCount,
   selected,
   onSelect,
+  interactive,
 }: {
   label: string
   count: number
   maxCount: number
   selected: boolean
   onSelect: () => void
+  interactive: boolean
 }) {
   const widthPercent = maxCount > 0 ? Math.round((count / maxCount) * 100) : 0
 
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-pressed={selected}
-      className={`flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-sm text-left transition-colors ${
-        selected
-          ? 'bg-emerald-50 ring-1 ring-emerald-600/40'
-          : 'hover:bg-muted/60'
-      }`}
-    >
+  const content = (
+    <>
       <span
         className={`w-20 shrink-0 font-medium ${
           selected ? 'text-emerald-800' : 'text-muted-foreground'
@@ -120,6 +116,29 @@ function DistributionBar({
       <span className="w-6 shrink-0 text-right tabular-nums text-foreground font-medium">
         {count}
       </span>
+    </>
+  )
+
+  if (!interactive) {
+    return (
+      <div className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-sm text-left">
+        {content}
+      </div>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={`flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-sm text-left transition-colors ${
+        selected
+          ? 'bg-emerald-50 ring-1 ring-emerald-600/40'
+          : 'hover:bg-muted/60'
+      }`}
+    >
+      {content}
     </button>
   )
 }
@@ -129,6 +148,8 @@ export default function GuideReviewSummaryCard({
   locale,
   selectedFilter = null,
   onFilterChange,
+  interactive = true,
+  className,
 }: Props) {
   const isKo = locale === 'ko'
   const avg = summary.avgRating ?? 0
@@ -180,7 +201,12 @@ export default function GuideReviewSummaryCard({
   }
 
   return (
-    <div className="border-b border-border/60 bg-white px-3 py-4 sm:px-4 sm:py-5">
+    <div
+      className={
+        className ??
+        'border-b border-border/60 bg-white px-3 py-4 sm:px-4 sm:py-5'
+      }
+    >
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-6">
         <div className="flex shrink-0 flex-col items-center justify-center bg-gray-50 px-4 py-5 sm:min-w-[140px] sm:rounded-xl">
           <p className="text-4xl font-bold tabular-nums text-foreground leading-none">
@@ -194,14 +220,27 @@ export default function GuideReviewSummaryCard({
           </div>
         </div>
 
-        <div className="flex-1 space-y-1 min-w-0" role="group" aria-label={isKo ? '평점 필터' : 'Rating filter'}>
+        <div
+          className="flex-1 space-y-1 min-w-0"
+          role="group"
+          aria-label={
+            interactive
+              ? isKo
+                ? '평점 필터'
+                : 'Rating filter'
+              : isKo
+                ? '평점 분포'
+                : 'Rating distribution'
+          }
+        >
           {distribution.map((row) => (
             <DistributionBar
               key={row.key}
               label={isKo ? row.labelKo : row.labelEn}
               count={row.count}
               maxCount={maxCount}
-              selected={selectedFilter === row.key}
+              selected={interactive && selectedFilter === row.key}
+              interactive={interactive}
               onSelect={() => {
                 if (!onFilterChange) return
                 onFilterChange(selectedFilter === row.key ? null : row.key)

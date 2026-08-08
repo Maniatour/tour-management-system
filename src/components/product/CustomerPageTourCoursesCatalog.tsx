@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useCallback, useEffect, useState } from 'react'
 import { Edit, Loader2, MapPin, Plus, Search } from 'lucide-react'
@@ -84,8 +85,7 @@ export default function CustomerPageTourCoursesCatalog({
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            type="text"
+          <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="코스명·위치 검색"

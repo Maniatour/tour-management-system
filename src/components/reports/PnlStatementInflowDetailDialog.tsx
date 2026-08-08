@@ -169,7 +169,7 @@ export default function PnlStatementInflowDetailDialog({
           </p>
         </DialogHeader>
         <div className="flex items-center gap-2">
-          <Input
+          <Input type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="날짜, 금액, 금융 계정, 설명 검색…"

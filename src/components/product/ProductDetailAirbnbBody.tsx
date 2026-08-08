@@ -1,8 +1,9 @@
 'use client'
 
-import { Check, MapPin } from 'lucide-react'
+import { Check, MapPin, Tags } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
+import { useCustomerPageEditMode } from '@/components/product/CustomerPageEditModeProvider'
 import ProductDetailOverviewTab from '@/components/product/ProductDetailOverviewTab'
 import ProductDetailWhyChooseSection from '@/components/product/ProductDetailWhyChooseSection'
 import ProductDetailItineraryTab from '@/components/product/ProductDetailItineraryTab'
@@ -97,8 +98,10 @@ export default function ProductDetailAirbnbBody({
   selectedDate = '',
 }: ProductDetailAirbnbBodyProps) {
   const t = useTranslations('productDetail')
+  const { isEditMode } = useCustomerPageEditMode()
   const sectionTitles = productDetails?.section_titles
   const tags = productDetails?.tags || product.tags || []
+  const showTagsSection = tags.length > 0 || isEditMode
   const mainSlogan = showDetail('slogan1') ? (productDetails?.slogan1?.trim() ?? '') : ''
   const subSlogan = showDetail('slogan2') ? (productDetails?.slogan2?.trim() ?? '') : ''
   const highlightSlogans = collectVisibleTourHighlightSlogans(
@@ -282,7 +285,7 @@ export default function ProductDetailAirbnbBody({
         </>
       ) : null}
 
-      {tags.length > 0 ? (
+      {showTagsSection ? (
         <>
           <AirbnbSectionDivider />
           <section className="airbnb-detail-section">
@@ -290,14 +293,21 @@ export default function ProductDetailAirbnbBody({
               <h2 className="airbnb-detail-section-title">{t('whatThisTourOffers')}</h2>
             </CustomerPageZone>
             <CustomerPageZone zone="detail-overview-tags" productId={productId}>
-              <ul className="airbnb-detail-amenities">
-                {tags.slice(0, 10).map((tag) => (
-                  <li key={tag} className="airbnb-detail-amenity">
-                    <MapPin className="h-6 w-6 shrink-0 text-[#1a2b49]" strokeWidth={1.5} aria-hidden />
-                    <span>{resolveTagLabel(tag, locale, tagLabelMap)}</span>
-                  </li>
-                ))}
-              </ul>
+              {tags.length > 0 ? (
+                <ul className="airbnb-detail-amenities">
+                  {tags.slice(0, 10).map((tag) => (
+                    <li key={tag} className="airbnb-detail-amenity">
+                      <MapPin className="h-6 w-6 shrink-0 text-[#1a2b49]" strokeWidth={1.5} aria-hidden />
+                      <span>{resolveTagLabel(tag, locale, tagLabelMap)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="flex items-center gap-2 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/60 px-4 py-5 text-sm text-indigo-800">
+                  <Tags className="h-5 w-5 shrink-0" />
+                  <span>태그가 없습니다. 「수정」을 눌러 태그를 추가하세요.</span>
+                </div>
+              )}
             </CustomerPageZone>
           </section>
         </>

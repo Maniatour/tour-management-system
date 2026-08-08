@@ -4,14 +4,16 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { ArrowLeft, ExternalLink, Monitor, Smartphone } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Monitor, Smartphone, Tags } from 'lucide-react'
 import LocaleDropdown from '@/components/LocaleDropdown'
 import AdminProductCustomerPreviewPanel from '@/components/admin/AdminProductCustomerPreviewPanel'
+import AdminProductTagsModal from '@/components/admin/AdminProductTagsModal'
 import { CustomerPageEditModeProvider } from '@/components/product/CustomerPageEditModeProvider'
 import { CustomerPageFieldBindingsProvider } from '@/components/product/CustomerPageFieldBindingsProvider'
 import CustomerPageGlobalThemeShell from '@/components/product/CustomerPageGlobalThemeShell'
 import { CustomerPageZoneEditProvider } from '@/components/product/CustomerPageZoneEditProvider'
 import { buildAdminPathForEditTab, buildCustomerPageEditUrl } from '@/lib/customer-page-registry'
+import { dispatchCustomerPageSoftReload } from '@/lib/customerPageSoftReload'
 import { normalizeSiteLocale, type SiteLocale } from '@/lib/siteLocales'
 
 type PreviewViewport = 'desktop' | 'mobile'
@@ -31,6 +33,7 @@ export default function AdminProductCustomerEditView({
     normalizeSiteLocale(locale)
   )
   const [previewViewport, setPreviewViewport] = useState<PreviewViewport>('desktop')
+  const [isTagsModalOpen, setIsTagsModalOpen] = useState(false)
 
   const customerPreviewUrl = useMemo(
     () => buildCustomerPageEditUrl(previewLocale, 'product-detail', { productId, previewLocale }),
@@ -66,6 +69,15 @@ export default function AdminProductCustomerEditView({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsTagsModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-700"
+            >
+              <Tags className="h-3.5 w-3.5" />
+              {t('manageTags')}
+            </button>
+
             <div className="hidden items-center gap-1 rounded-lg border border-slate-200 bg-white/80 p-0.5 md:flex">
               {([
                 { id: 'desktop' as const, label: t('desktop'), icon: Monitor },
@@ -156,6 +168,16 @@ export default function AdminProductCustomerEditView({
           </CustomerPageEditModeProvider>
         </CustomerPageGlobalThemeShell>
       </CustomerPageFieldBindingsProvider>
+
+      <AdminProductTagsModal
+        isOpen={isTagsModalOpen}
+        onClose={() => setIsTagsModalOpen(false)}
+        productId={productId}
+        locale={locale}
+        onSaved={() => {
+          dispatchCustomerPageSoftReload()
+        }}
+      />
     </div>
   )
 }

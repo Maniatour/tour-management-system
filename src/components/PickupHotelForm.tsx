@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import Image from 'next/image'
@@ -1453,7 +1454,7 @@ export default function PickupHotelForm({
 
             <div className="space-y-4 p-5 sm:p-6">
               <div className="flex gap-2">
-                <input
+                <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                   id="mapSearch"
                   className={`${inputClass} flex-1`}
                   placeholder="호텔명 또는 주소 검색 (예: Bellagio Hotel)"

@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
@@ -306,8 +307,7 @@ export default function ChannelSection({
       {/* 채널명 검색 - 아코디언이 펼쳐졌을 때만 표시 */}
       {isExpanded && (
         <div className="mb-3">
-          <input
-            type="text"
+          <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
             placeholder="채널명 검색..."
             className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
             onChange={(e) => setFormData((prev: any) => ({ ...prev, channelSearch: e.target.value }))} // eslint-disable-line @typescript-eslint/no-explicit-any

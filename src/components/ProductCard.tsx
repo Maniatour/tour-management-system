@@ -399,20 +399,6 @@ export default function ProductCard({
     >
       <button
         type="button"
-        onClick={(e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          openEditSection('tags')
-        }}
-        className="rounded p-1 text-indigo-600 transition-colors hover:bg-indigo-50 hover:text-indigo-800"
-        title={tCardEdit('editTags')}
-        aria-label={tCardEdit('editTags')}
-      >
-        <Tags className="h-4 w-4" />
-      </button>
-
-      <button
-        type="button"
         onClick={handleFavoriteToggle}
         disabled={isTogglingFavorite || isAdminProductSoftDeleted(localStatus)}
         className={`rounded p-1 transition-colors ${
@@ -510,6 +496,28 @@ export default function ProductCard({
     </div>
   )
 
+  const adminFooterStart = (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        openEditSection('tags')
+      }}
+      className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-700 transition-colors hover:bg-indigo-100 hover:text-indigo-900"
+      title={tCardEdit('editTags')}
+      aria-label={tCardEdit('editTags')}
+    >
+      <Tags className="h-3.5 w-3.5" />
+      <span>{tCardEdit('editTags')}</span>
+      {localTags.length > 0 ? (
+        <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-800">
+          {localTags.length}
+        </span>
+      ) : null}
+    </button>
+  )
+
   const openCustomerPageEdit = () => {
     if (editSection) return
     router.push(buildAdminProductCustomerEditPath(locale, localProduct.id))
@@ -553,6 +561,7 @@ export default function ProductCard({
           priority={priority}
           showWishlistButton={false}
           imageOverlay={adminImageActions}
+          footerStart={adminFooterStart}
           selloutBadgeSlot={adminSelloutBadge}
           adminCardEdits={{
             editLocationLabel: tCardEdit('editLocation'),

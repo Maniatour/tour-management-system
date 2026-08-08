@@ -1,4 +1,5 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect } from 'react'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
@@ -447,8 +448,7 @@ export default function AdminAuditLogs() {
             </h3>
             <div className="flex items-center gap-2 min-w-0">
               <Search className="h-4 w-4 text-gray-400 shrink-0" />
-              <input
-                type="text"
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
                 placeholder="검색..."
                 value={searchTerm}
                 onChange={(e) => setListUi((prev) => ({ ...prev, searchTerm: e.target.value }))}

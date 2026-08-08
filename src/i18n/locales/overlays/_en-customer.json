@@ -749,6 +749,9 @@
     "pageTitle": "Product Management",
     "pageDescription": "Add, edit, and delete tour products.",
     "homeSectionsManualHint": "See the book icon next to the title for how products appear under Explore Top Destinations and Choose Your Adventure.",
+    "homeCategoriesLink": {
+      "button": "Home category links"
+    },
     "favoriteOrder": "Reorder favorites",
     "localeReadiness": {
       "button": "Locale readiness",
@@ -2003,6 +2006,9 @@
     "guestReviewsTitle": "Guest Reviews",
     "guestReviewsSubtitle": "Real experiences from travelers who booked this tour",
     "reviewCount": "{count, plural, one {# review} other {# reviews}}",
+    "reviewPrev": "Previous review",
+    "reviewNext": "Next review",
+    "reviewCarouselPosition": "{current} / {total}",
     "showBookingOptions": "Tap to configure options",
     "hideBookingOptions": "Tap to collapse options",
     "bookingCtaRegion": "Booking actions",
