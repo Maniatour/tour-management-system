@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import ReactCountryFlag from 'react-country-flag'
-import { ArrowLeftRight, Bus, Hotel, User, Users, X } from 'lucide-react'
+import { ArrowLeftRight, Bus, Calendar, Hotel, User, Users, X } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -16,6 +16,14 @@ import {
   type GuideAssignmentStatusValue,
 } from '@/lib/guideAssignmentStatus'
 
+function pickupStopNumberEmoji(index1Based: number): string {
+  const keycaps = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟']
+  if (index1Based >= 1 && index1Based <= keycaps.length) {
+    return keycaps[index1Based - 1]!
+  }
+  return `${index1Based}.`
+}
+
 export type ScheduleGuideTourInfoSummary = {
   productName: string
   tourDate: string
@@ -25,7 +33,7 @@ export type ScheduleGuideTourInfoSummary = {
   assignedKo: number
   assignedEn: number
   assignedJa: number
-  /** 배정 예약의 픽업 호텔 메인 그룹(group_number 정수부) 고유 개수 */
+  /** 배정 예약의 픽업 호텔 수 (픽업 스케줄: 호텔 ID별 픽업 수) */
   pickupHotelGroupCount: number
   /** 배정 예약 픽업 호텔 내부용 이름 (당일 다른 투어와 공유 시 sharedSameDay) */
   pickupHotelItems: Array<{
@@ -97,13 +105,52 @@ type ScheduleGuideTourInfoCardProps = {
   onSelectAssignmentStatus: (status: GuideAssignmentStatusValue) => void
 }
 
-function badgeClass(active?: boolean) {
+/** 아이콘 전용 상태 뱃지: 배경·테두리로 상태 구분 */
+function statusIconBadgeClass(active?: boolean) {
   return [
-    'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums transition-colors',
-    active
-      ? 'border-border bg-white text-gray-800 hover:bg-gray-50 cursor-pointer'
-      : 'border-transparent bg-gray-100 text-gray-700',
+    'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 shadow-sm transition-colors',
+    active ? 'cursor-pointer hover:brightness-95' : 'cursor-default',
   ].join(' ')
+}
+
+function assignmentStatusIconColor(status: string | null | undefined) {
+  const n = (status || '').toLowerCase().trim()
+  if (n === 'confirm' || n === 'confirmed') {
+    return 'bg-emerald-100 text-emerald-700 border-emerald-500'
+  }
+  if (n === 'assigned') {
+    return 'bg-violet-100 text-violet-700 border-violet-500'
+  }
+  if (n === 'rejected') {
+    return 'bg-red-100 text-red-700 border-red-500'
+  }
+  if (n === 'pending') {
+    return 'bg-amber-100 text-amber-800 border-amber-500'
+  }
+  return 'bg-gray-100 text-gray-600 border-gray-400'
+}
+
+function vehicleDispatchIconColor(assigned: boolean) {
+  return assigned
+    ? 'bg-emerald-100 text-emerald-700 border-emerald-500'
+    : 'bg-amber-50 text-amber-800 border-amber-500 border-dashed'
+}
+
+function tourStatusIconColor(status: string | null | undefined) {
+  const n = (status || '').toLowerCase().trim()
+  if (n === 'confirm' || n === 'confirmed') {
+    return 'bg-green-100 text-green-700 border-green-500'
+  }
+  if (n === 'recruiting') {
+    return 'bg-sky-100 text-sky-700 border-sky-500'
+  }
+  if (n.includes('cancel') || n === 'deleted') {
+    return 'bg-red-100 text-red-700 border-red-500'
+  }
+  if (n === 'complete' || n === 'completed') {
+    return 'bg-slate-100 text-slate-600 border-slate-400'
+  }
+  return 'bg-gray-100 text-gray-600 border-gray-400'
 }
 
 /** 예약 카드뷰와 동일한 앤텔롭 캐년 초이스 뱃지 색 */
@@ -147,7 +194,6 @@ export default function ScheduleGuideTourInfoCard({
   const [editTarget, setEditTarget] = useState<EditTarget>(null)
 
   const assignmentLabel = getAssignmentStatusLabel(summary.assignmentStatus, locale)
-  const assignmentBadgeColor = getAssignmentStatusBadgeColor(summary.assignmentStatus)
 
   const choiceBadges = useMemo(() => {
     const order: Array<'X' | 'L' | 'U'> = ['X', 'L', 'U']
@@ -221,76 +267,105 @@ export default function ScheduleGuideTourInfoCard({
             : 'border-border/70 hover:border-border'
         } ${onSelectCard && !selected ? 'cursor-pointer' : ''}`}
       >
-        {/* 헤더: 날짜 · 상품 · 뱃지 */}
-        <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
-          <span className="text-sm font-semibold text-gray-900">
-            {summary.tourDate}{' '}
-            {summary.isPrivateTour ? '🔒 ' : ''}
-            {summary.productName}
-          </span>
-          <span
-            className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium tabular-nums text-primary"
-            title={locale === 'ko' ? '배정 인원 / 정원' : 'Assigned / capacity'}
-          >
-            <Users size={12} aria-hidden />
-            <span>
-              {summary.assignedPeople}/{summary.capacityDenom}
+        {/* 헤더: 날짜 · 상품 · 인원/초이스 | 상태 뱃지(우측) */}
+        <div className="mb-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            <span className="text-sm font-semibold text-gray-900">
+              {summary.tourDate}{' '}
+              {summary.isPrivateTour ? '🔒 ' : ''}
+              {summary.productName}
             </span>
-          </span>
-          {choiceBadges.map((b) => (
             <span
-              key={b.key}
-              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums ${canyonChoiceBadgeClass(b.key)}`}
+              className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium tabular-nums text-primary"
+              title={locale === 'ko' ? '배정 인원 / 정원' : 'Assigned / capacity'}
             >
-              🏜️ {b.key} {b.count}
+              <Users size={12} aria-hidden />
+              <span>
+                {summary.assignedPeople}/{summary.capacityDenom}
+              </span>
             </span>
-          ))}
-          <button
-            type="button"
-            disabled={!isStaff || updatingAssignmentStatus}
-            onClick={(e) => {
-              e.stopPropagation()
-              openEdit('assignmentStatus')
-            }}
-            className={`${badgeClass(isStaff)} ${assignmentBadgeColor}`}
-            title={locale === 'ko' ? '배정 상태 변경' : 'Change assignment status'}
-          >
-            {assignmentLabel}
-          </button>
-          <button
-            type="button"
-            disabled={!isStaff}
-            onClick={(e) => {
-              e.stopPropagation()
-              openEdit('vehicle')
-            }}
-            className={`${badgeClass(isStaff)} ${
-              summary.vehicleAssigned
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                : 'bg-amber-50 text-amber-900 border-amber-200'
-            }`}
-            title={locale === 'ko' ? '차량(배차) 변경' : 'Change vehicle'}
-          >
-            {summary.vehicleAssigned
-              ? locale === 'ko'
-                ? '배차 완료'
-                : 'Dispatched'
-              : locale === 'ko'
-                ? '미배차'
-                : 'No vehicle'}
-          </button>
-          <button
-            type="button"
-            disabled={!isStaff || updatingTourStatus}
-            onClick={(e) => {
-              e.stopPropagation()
-              openEdit('tourStatus')
-            }}
-            className={`${badgeClass(isStaff)} ${summary.tourStatusColorClass}`}
-            title={locale === 'ko' ? '투어 상태 변경' : 'Change tour status'}
-          >
-            {summary.tourStatusLabel}
-          </button>
+            {choiceBadges.map((b) => (
+              <span
+                key={b.key}
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums ${canyonChoiceBadgeClass(b.key)}`}
+              >
+                🏜️ {b.key} {b.count}
+              </span>
+            ))}
+          </div>
+          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+            <button
+              type="button"
+              disabled={!isStaff || updatingAssignmentStatus}
+              onClick={(e) => {
+                e.stopPropagation()
+                openEdit('assignmentStatus')
+              }}
+              className={`${statusIconBadgeClass(isStaff)} ${assignmentStatusIconColor(summary.assignmentStatus)}`}
+              title={
+                locale === 'ko'
+                  ? `배정 상태: ${assignmentLabel}`
+                  : `Assignment: ${assignmentLabel}`
+              }
+              aria-label={
+                locale === 'ko'
+                  ? `배정 상태: ${assignmentLabel}`
+                  : `Assignment: ${assignmentLabel}`
+              }
+            >
+              <User className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            </button>
+            <button
+              type="button"
+              disabled={!isStaff}
+              onClick={(e) => {
+                e.stopPropagation()
+                openEdit('vehicle')
+              }}
+              className={`${statusIconBadgeClass(isStaff)} ${vehicleDispatchIconColor(summary.vehicleAssigned)}`}
+              title={
+                summary.vehicleAssigned
+                  ? locale === 'ko'
+                    ? '배차 완료'
+                    : 'Dispatched'
+                  : locale === 'ko'
+                    ? '미배차'
+                    : 'No vehicle'
+              }
+              aria-label={
+                summary.vehicleAssigned
+                  ? locale === 'ko'
+                    ? '배차 완료'
+                    : 'Dispatched'
+                  : locale === 'ko'
+                    ? '미배차'
+                    : 'No vehicle'
+              }
+            >
+              <Bus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            </button>
+            <button
+              type="button"
+              disabled={!isStaff || updatingTourStatus}
+              onClick={(e) => {
+                e.stopPropagation()
+                openEdit('tourStatus')
+              }}
+              className={`${statusIconBadgeClass(isStaff)} ${tourStatusIconColor(summary.tourStatus)}`}
+              title={
+                locale === 'ko'
+                  ? `투어 상태: ${summary.tourStatusLabel}`
+                  : `Tour status: ${summary.tourStatusLabel}`
+              }
+              aria-label={
+                locale === 'ko'
+                  ? `투어 상태: ${summary.tourStatusLabel}`
+                  : `Tour status: ${summary.tourStatusLabel}`
+              }
+            >
+              <Calendar className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            </button>
+          </div>
         </div>
 
         {/* 스태프 · 차량 */}
@@ -404,7 +479,7 @@ export default function ScheduleGuideTourInfoCard({
           </span>
           <span
             className="inline-flex flex-wrap items-center gap-1 font-medium tabular-nums text-teal-800"
-            title={locale === 'ko' ? '픽업 호텔 그룹 수' : 'Pickup hotel groups'}
+            title={locale === 'ko' ? '픽업 수 (픽업 스케줄 기준)' : 'Pickup stops (pickup schedule)'}
           >
             <Hotel className="h-4 w-4 shrink-0 text-teal-700" aria-hidden />
             {summary.pickupHotelGroupCount}
@@ -412,8 +487,8 @@ export default function ScheduleGuideTourInfoCard({
               <span className="inline-flex flex-wrap items-center gap-1 font-normal text-gray-600">
                 (
                 {(summary.pickupHotelItems || []).map((item, idx) => (
-                  <span key={item.hotelId} className="inline-flex items-center gap-1">
-                    {idx > 0 ? <span className="text-gray-400">,</span> : null}
+                  <span key={item.hotelId} className="inline-flex items-center gap-0.5">
+                    {idx > 0 ? <span className="text-gray-400 mr-0.5">,</span> : null}
                     <span
                       className={
                         item.sharedSameDay
@@ -428,6 +503,7 @@ export default function ScheduleGuideTourInfoCard({
                           : item.label
                       }
                     >
+                      {pickupStopNumberEmoji(idx + 1)}
                       {item.label}
                     </span>
                   </span>

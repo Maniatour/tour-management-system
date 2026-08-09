@@ -4742,24 +4742,18 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     const canyonBadges = buildTourCanyonDisplayBadges(choiceCounts, tourTicketBookings)
     const assignmentStatus = resolveTourDisplayAssignmentStatus(tour)
 
-    const pickupHotelGroupKeys = new Set<string>()
     const pickupHotelIdsOrdered: string[] = []
     const seenPickupHotelIds = new Set<string>()
     for (const r of assignedResList) {
       const hotelId = String(r.pickup_hotel || '').trim()
       if (!hotelId) continue
-      const gn = pickupHotelIdToGroupNumber.get(hotelId)
-      if (gn != null && Number.isFinite(Number(gn))) {
-        pickupHotelGroupKeys.add(`g:${Math.floor(Number(gn))}`)
-      } else {
-        pickupHotelGroupKeys.add(`h:${hotelId}`)
-      }
       if (!seenPickupHotelIds.has(hotelId)) {
         seenPickupHotelIds.add(hotelId)
         pickupHotelIdsOrdered.push(hotelId)
       }
     }
-    const pickupHotelGroupCount = pickupHotelGroupKeys.size
+    /** 픽업 스케줄과 동일: 픽업 호텔 ID별 고유 픽업 수 */
+    const pickupHotelGroupCount = pickupHotelIdsOrdered.length
     const pickupHotelItems = pickupHotelIdsOrdered
       .map((hotelId) => {
         const gn = pickupHotelIdToGroupNumber.get(hotelId)
