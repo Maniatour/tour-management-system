@@ -955,6 +955,11 @@ export default function PickupScheduleEmailPreviewModal({
         tourDate: reservationTourDate
       })
 
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser()
+      const sentByEmail = authUser?.email?.trim() || null
+
       const response = await fetchApiWithAuth('/api/send-pickup-schedule-notification', {
         method: 'POST',
         headers: {
@@ -965,7 +970,8 @@ export default function PickupScheduleEmailPreviewModal({
           pickupTime: reservation.pickup_time.includes(':') 
             ? reservation.pickup_time 
             : `${reservation.pickup_time}:00`,
-          tourDate: reservationTourDate
+          tourDate: reservationTourDate,
+          sentBy: sentByEmail,
         })
       })
 

@@ -15,9 +15,53 @@ import {
   formatPickupLocationDescriptionHtml,
   hasPickupLocationDescription,
 } from '@/lib/pickupHotelVehicleAccess'
+import { readAuthAccessTokenFromRequest } from '@/lib/authSessionCookie'
 
 const PICKUP_HOTEL_EMAIL_SELECT =
   'id, hotel, pick_up_location, address, link, media, description_ko, description_en, from_inside_hotel_ko, from_inside_hotel_en, from_outside_hotel_ko, from_outside_hotel_en'
+
+async function resolvePickupActorEmail(
+  request: NextRequest,
+  sentByFromBody: unknown
+): Promise<string | null> {
+  const fromBody =
+    typeof sentByFromBody === 'string' && sentByFromBody.includes('@')
+      ? sentByFromBody.trim().toLowerCase()
+      : null
+  if (fromBody) return fromBody
+
+  const token = readAuthAccessTokenFromRequest(request)
+  if (token) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser(token)
+    const email = user?.email?.trim().toLowerCase()
+    if (email) return email
+  }
+
+  return null
+}
+
+async function markPickupNotificationSentAsActor(
+  reservationId: string,
+  actorEmail: string | null
+) {
+  const db = supabaseAdmin ?? supabase
+  const { error } = await (db as any).rpc('mark_pickup_notification_sent', {
+    p_reservation_id: reservationId,
+    p_actor_email: actorEmail,
+  })
+  if (error) {
+    console.error('mark_pickup_notification_sent RPC 오류, fallback update:', error)
+    const { error: updateError } = await db
+      .from('reservations')
+      .update({ pickup_notification_sent: true })
+      .eq('id', reservationId)
+    if (updateError) {
+      console.error('pickup_notification_sent 업데이트 오류:', updateError)
+    }
+  }
+}
 
 /**
  * POST /api/send-pickup-schedule-notification
@@ -27,7 +71,8 @@ const PICKUP_HOTEL_EMAIL_SELECT =
  *   reservationId: string,
  *   pickupTime: string,
  *   tourDate: string,
- *   locale?: 'ko' | 'en'
+ *   locale?: 'ko' | 'en',
+ *   sentBy?: string
  * }
  */
 export async function POST(request: NextRequest) {
@@ -50,10 +95,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const actorEmail = await resolvePickupActorEmail(request, sentBy)
     const routeDb = supabaseAdmin ?? supabase
 
     // 예약 정보 조회
-    console.log('[send-pickup-schedule-notification] 예약 조회 시작:', { reservationId })
+    console.log('[send-pickup-schedule-notification] 예약 조회 시작:', { reservationId, actorEmail })
     const { data: reservation, error: reservationError } = await routeDb
       .from('reservations')
       .select('*')
@@ -652,12 +698,9 @@ export async function POST(request: NextRequest) {
       if (isDevelopment && skipEmailInDev) {
         console.log('[send-pickup-schedule-notification] 개발 환경에서 이메일 발송 건너뛰기 (SKIP_EMAIL_IN_DEV=true)')
         
-        // 예약 상태만 업데이트
+        // 예약 상태만 업데이트 (발송자 기준 audit)
         try {
-          await routeDb
-            .from('reservations')
-            .update({ pickup_notification_sent: true })
-            .eq('id', reservationId)
+          await markPickupNotificationSentAsActor(reservationId, actorEmail)
         } catch (error) {
           console.error('pickup_notification_sent 업데이트 오류:', error)
         }
@@ -762,16 +805,9 @@ export async function POST(request: NextRequest) {
         emailId: emailResult?.id
       })
 
-      // reservations 테이블에 pickup_notification_sent 업데이트
+      // reservations 테이블에 pickup_notification_sent 업데이트 (발송자 기준 audit)
       try {
-        const { error: updateError } = await routeDb
-          .from('reservations')
-          .update({ pickup_notification_sent: true })
-          .eq('id', reservationId)
-
-        if (updateError) {
-          console.error('pickup_notification_sent 업데이트 오류:', updateError)
-        }
+        await markPickupNotificationSentAsActor(reservationId, actorEmail)
       } catch (error) {
         console.error('pickup_notification_sent 업데이트 중 오류:', error)
       }
@@ -788,7 +824,7 @@ export async function POST(request: NextRequest) {
               subject: emailContent.subject,
               status: 'sent',
               sent_at: new Date().toISOString(),
-              sent_by: sentBy || null,
+              sent_by: actorEmail || sentBy || null,
               resend_email_id: emailResult?.id || null
             } as never)
 
@@ -824,7 +860,7 @@ export async function POST(request: NextRequest) {
               status: 'failed',
               error_message: error instanceof Error ? error.message : 'Unknown error',
               sent_at: new Date().toISOString(),
-              sent_by: sentBy || null
+              sent_by: actorEmail || sentBy || null
             } as never)
         } else {
           console.error('email_logs: supabaseAdmin 미설정, 실패 로그 미저장')

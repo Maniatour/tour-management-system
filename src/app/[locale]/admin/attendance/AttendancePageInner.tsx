@@ -127,7 +127,10 @@ export default function AttendancePage() {
   const [canViewOfficeTips, setCanViewOfficeTips] = useState(false)
   /** 사무실 식사 버튼·작성 (super 또는 office manager만) */
   const [canManageOfficeMeal, setCanManageOfficeMeal] = useState(false)
-  const [teamMembers, setTeamMembers] = useState<Array<{ email: string; name_ko: string; position: string }>>([])
+  const [teamMembers, setTeamMembers] = useState<
+    Array<{ email: string; name_ko: string; position: string; is_active: boolean }>
+  >([])
+  const [employeeListTab, setEmployeeListTab] = useState<'active' | 'inactive'>('active')
   const [currentSessionForSelectedEmployee, setCurrentSessionForSelectedEmployee] = useState<AttendanceRecord | null>(null)
   const [employeeNotFound, setEmployeeNotFound] = useState(false)
   const [isAddFormOpen, setIsAddFormOpen] = useState(false)
@@ -214,13 +217,12 @@ export default function AttendancePage() {
     }
   }
 
-  // 팀 멤버 목록 조회 (OP와 Office Manager만 - 대소문자 구별 없음)
+  // 팀 멤버 목록 조회 (OP와 Office Manager만 - 활성/비활성 모두, 대소문자 구별 없음)
   const fetchTeamMembers = async () => {
     try {
       const { data, error } = await supabase
         .from('team')
-        .select('email, name_ko, position')
-        .eq('is_active', true)
+        .select('email, name_ko, position, is_active')
         .or('position.ilike.op,position.ilike.office manager')
         .order('name_ko')
       
@@ -228,26 +230,67 @@ export default function AttendancePage() {
         if (!isAbortLikeError(error)) console.error('팀 멤버 조회 오류:', error)
         return
       }
+
+      const members = (data || []).map((m) => ({
+        email: String((m as { email?: string | null }).email ?? ''),
+        name_ko: String((m as { name_ko?: string | null }).name_ko ?? ''),
+        position: String((m as { position?: string | null }).position ?? ''),
+        is_active: (m as { is_active?: boolean | null }).is_active !== false,
+      }))
       
-      setTeamMembers(
-        (data || []).map((m) => ({
-          email: String((m as { email?: string | null }).email ?? ''),
-          name_ko: String((m as { name_ko?: string | null }).name_ko ?? ''),
-          position: String((m as { position?: string | null }).position ?? ''),
-        }))
-      )
-      
-      // 기본값을 현재 사용자로 설정 (OP 또는 Office Manager인 경우)
-      if (authUser?.email && data?.length) {
-        const currentUser = data.find((member: any) => member.email === authUser.email)
-        if (currentUser) {
-          setSelectedEmployee(authUser.email)
-        } else {
-          setSelectedEmployee((data[0] as any).email)
-        }
+      setTeamMembers(members)
+
+      const activeMembers = members.filter((m) => m.is_active)
+      const preferredEmail =
+        (authUser?.email && activeMembers.some((m) => m.email === authUser.email)
+          ? authUser.email
+          : null) ||
+        activeMembers[0]?.email ||
+        members[0]?.email ||
+        ''
+
+      const kept =
+        selectedEmployee && members.some((m) => m.email === selectedEmployee)
+          ? selectedEmployee
+          : preferredEmail
+
+      if (kept !== selectedEmployee) {
+        setSelectedEmployee(kept)
+      }
+
+      const keptMember = members.find((m) => m.email === kept)
+      if (keptMember) {
+        setEmployeeListTab(keptMember.is_active ? 'active' : 'inactive')
       }
     } catch (error) {
       if (!isAbortLikeError(error)) console.error('팀 멤버 조회 중 오류:', error)
+    }
+  }
+
+  const filteredTeamMembers = useMemo(
+    () =>
+      teamMembers.filter((m) => (employeeListTab === 'active' ? m.is_active : !m.is_active)),
+    [teamMembers, employeeListTab]
+  )
+
+  const activeEmployeeCount = useMemo(
+    () => teamMembers.filter((m) => m.is_active).length,
+    [teamMembers]
+  )
+  const inactiveEmployeeCount = useMemo(
+    () => teamMembers.filter((m) => !m.is_active).length,
+    [teamMembers]
+  )
+
+  const handleEmployeeListTabChange = (tab: 'active' | 'inactive') => {
+    setEmployeeListTab(tab)
+    const list = teamMembers.filter((m) => (tab === 'active' ? m.is_active : !m.is_active))
+    if (list.length === 0) {
+      setSelectedEmployee('')
+      return
+    }
+    if (!list.some((m) => m.email === selectedEmployee)) {
+      setSelectedEmployee(list[0].email)
     }
   }
   
@@ -356,12 +399,11 @@ export default function AttendancePage() {
     if (!selectedEmployee) return
 
     try {
-      // 선택된 직원의 정보 조회
+      // 선택된 직원의 정보 조회 (비활성 직원 기록 조회 허용)
       const { data: employeeData, error: employeeError } = await supabase
         .from('team')
         .select('name_ko, email')
         .eq('email', selectedEmployee)
-        .eq('is_active', true)
         .maybeSingle()
 
       if (employeeError) {
@@ -484,12 +526,11 @@ export default function AttendancePage() {
 
     try {
       console.log('직원 정보 조회 시작...')
-      // 선택된 직원의 정보 조회
+      // 선택된 직원의 정보 조회 (비활성 직원 기록 조회 허용)
       const { data: employeeData, error: employeeError } = await supabase
         .from('team')
         .select('name_ko, email')
         .eq('email', selectedEmployee)
-        .eq('is_active', true)
         .maybeSingle()
 
       if (employeeError && isAbortLikeError(employeeError)) return
@@ -976,17 +1017,49 @@ export default function AttendancePage() {
                   <Users className="w-4 h-4 inline mr-1" />
                   {t('selectEmployee')}
                 </label>
-                <select
-                  value={selectedEmployee}
-                  onChange={(e) => setSelectedEmployee(e.target.value)}
-                  className="w-full sm:w-auto min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring text-sm"
-                >
-                  {teamMembers.map((member) => (
-                    <option key={member.email} value={member.email}>
-                      {member.name_ko} ({member.position}) - {member.email}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex flex-wrap gap-1 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => handleEmployeeListTabChange('active')}
+                    className={`px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg border transition-colors ${
+                      employeeListTab === 'active'
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {t('activeEmployeesTab', { count: activeEmployeeCount })}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleEmployeeListTabChange('inactive')}
+                    className={`px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg border transition-colors ${
+                      employeeListTab === 'inactive'
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {t('inactiveEmployeesTab', { count: inactiveEmployeeCount })}
+                  </button>
+                </div>
+                {filteredTeamMembers.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-2">
+                    {employeeListTab === 'active'
+                      ? t('noActiveEmployees')
+                      : t('noInactiveEmployees')}
+                  </p>
+                ) : (
+                  <select
+                    value={selectedEmployee}
+                    onChange={(e) => setSelectedEmployee(e.target.value)}
+                    className="w-full sm:w-auto min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring text-sm"
+                  >
+                    {filteredTeamMembers.map((member) => (
+                      <option key={member.email} value={member.email}>
+                        {member.name_ko} ({member.position}) - {member.email}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             )}
             <div className="text-xs sm:text-sm text-gray-500 mt-1 break-words">

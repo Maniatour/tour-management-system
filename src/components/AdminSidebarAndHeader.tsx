@@ -877,7 +877,9 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                     onOpenChange={setShowDailyReportModal}
                   />
 
-                  <AdminSmsManagementHeaderButton locale={locale} />
+                  <div className="relative hidden sm:inline-block">
+                    <AdminSmsManagementHeaderButton locale={locale} />
+                  </div>
 
                   {/* 운영 허브 */}
                   <div className="relative hidden sm:inline-block">

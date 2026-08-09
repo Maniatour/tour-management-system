@@ -1025,6 +1025,51 @@ async function enrichAuditItems(
     })
   }
 
+  // 픽업 안내 발송 audit 는 과거 added_by 오인이 있어 email_logs.sent_by 로 보정
+  const pickupNotifReservationIds = [
+    ...new Set(
+      rows
+        .filter(
+          (r) =>
+            r.table_name === 'reservations' &&
+            (r.changed_fields || []).includes('pickup_notification_sent')
+        )
+        .map((r) => str(r.record_id))
+        .filter(Boolean)
+    ),
+  ]
+  const pickupSenderByReservation = new Map<string, string>()
+  if (pickupNotifReservationIds.length > 0) {
+    const { data: pickupLogs } = await supabase
+      .from('email_logs')
+      .select('reservation_id, sent_by, sent_at, status')
+      .in('reservation_id', pickupNotifReservationIds)
+      .eq('email_type', 'pickup')
+      .not('sent_by', 'is', null)
+      .order('sent_at', { ascending: false })
+      .limit(500)
+    for (const log of pickupLogs || []) {
+      const rid = str(log.reservation_id)
+      const sender = normEmail(log.sent_by)
+      if (!rid || !sender || pickupSenderByReservation.has(rid)) continue
+      pickupSenderByReservation.set(rid, sender)
+      teamEmails.add(sender)
+    }
+    // sent_by 가 teamMap 에 없을 수 있어 추가 조회
+    const missingSenders = [...pickupSenderByReservation.values()].filter(
+      (e) => e && !teamMap.has(e)
+    )
+    if (missingSenders.length > 0) {
+      const { data: extraTeam } = await supabase
+        .from('team')
+        .select('email, name_ko, nick_name')
+        .in('email', missingSenders)
+      for (const m of extraTeam || []) {
+        teamMap.set(normEmail(m.email), m as TeamRow)
+      }
+    }
+  }
+
   const items: AwayChangeItem[] = []
 
   for (let i = 0; i < rows.length; i++) {
@@ -1036,8 +1081,16 @@ async function enrichAuditItems(
     ) {
       continue
     }
-    const systemActor = isSystemActorEmail(row.user_email)
-    const actor = systemActor ? 'system' : row.user_email
+    let resolvedEmail = row.user_email
+    if (
+      row.table_name === 'reservations' &&
+      (row.changed_fields || []).includes('pickup_notification_sent')
+    ) {
+      const sender = pickupSenderByReservation.get(str(row.record_id))
+      if (sender) resolvedEmail = sender
+    }
+    const systemActor = isSystemActorEmail(resolvedEmail)
+    const actor = systemActor ? 'system' : resolvedEmail
     const actorNick = systemActor
       ? null
       : actor

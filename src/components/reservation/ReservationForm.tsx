@@ -3,7 +3,7 @@
 
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { Trash2, Eye, AlertTriangle, X, Mail, Phone, ChevronDown, Globe, Store } from 'lucide-react'
+import { Trash2, Eye, AlertTriangle, X, Mail, Phone, ChevronDown, Globe, Store, History } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations, useLocale } from 'next-intl'
 import { stripSpacesFromContactInput } from '@/lib/contactInputUtils'
@@ -118,6 +118,7 @@ import ReservationExpenseManager from '@/components/ReservationExpenseManager'
 import ReservationOptionsSection from '@/components/reservation/ReservationOptionsSection'
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
+import ReservationEditHistoryModal from '@/components/reservation/ReservationEditHistoryModal'
 import ReservationLocalScratchList from '@/components/reservation/ReservationLocalScratchList'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
@@ -545,6 +546,7 @@ export default function ReservationForm({
     title: string
   } | null>(null)
   const [linkedTourDetailRefreshNonce, setLinkedTourDetailRefreshNonce] = useState(0)
+  const [showEditHistoryModal, setShowEditHistoryModal] = useState(false)
   const resolvedCustomerIdRef = useRef<string | null>(null)
   /** 이메일 가져오기: 상위 reservation.channel_id는 비동기로 채워지며, 이후 effect가 사용자가 모달에서 고른 채널을 덮어쓰면 안 됨 */
   const emailImportChannelParentSyncedRef = useRef(false)
@@ -6412,14 +6414,27 @@ export default function ReservationForm({
           className={`flex flex-col sm:flex-row sm:justify-between sm:items-center flex-shrink-0 p-3 sm:p-0 sm:mb-2 sm:space-y-0 space-y-3 border-b border-gray-200 max-lg:bg-white max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:shadow-sm${useResizableModal ? ' sm:cursor-grab sm:active:cursor-grabbing' : ''}`}
         >
           <div className="flex items-center justify-between gap-2 min-w-0">
-            <h2 className="text-base sm:text-base font-semibold text-gray-900 truncate">
-              {formTitleOverride ?? (isNewReservation ? t('form.title') : (reservation ? t('form.editTitle') : t('form.title')))}
-              {reservation && !isNewReservation && (
-                <span className="ml-2 text-xs font-normal text-gray-500 hidden sm:inline">
-                  (ID: {reservation.id})
-                </span>
+            <div className="flex items-center gap-2 min-w-0">
+              <h2 className="text-base sm:text-base font-semibold text-gray-900 truncate">
+                {formTitleOverride ?? (isNewReservation ? t('form.title') : (reservation ? t('form.editTitle') : t('form.title')))}
+                {reservation && !isNewReservation && (
+                  <span className="ml-2 text-xs font-normal text-gray-500 hidden sm:inline">
+                    (ID: {reservation.id})
+                  </span>
+                )}
+              </h2>
+              {reservation?.id && !isNewReservation && (
+                <button
+                  type="button"
+                  onClick={() => setShowEditHistoryModal(true)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors flex-shrink-0"
+                  title={locale === 'en' ? 'Reservation edit history' : '예약 수정 이력'}
+                >
+                  <History className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{locale === 'en' ? 'Edit history' : '수정 이력'}</span>
+                </button>
               )}
-            </h2>
+            </div>
             <div className="flex items-center gap-2 flex-shrink-0 min-w-0">
               {reservation && titleAction}
               <div className="flex items-center gap-2 max-sm:flex sm:hidden">
@@ -7473,6 +7488,14 @@ export default function ReservationForm({
           </div>
         </div>
       )}
+
+      {reservation?.id && !isNewReservation ? (
+        <ReservationEditHistoryModal
+          isOpen={showEditHistoryModal}
+          onClose={() => setShowEditHistoryModal(false)}
+          reservationId={reservation.id}
+        />
+      ) : null}
 
     </>
     </ReservationFormModalStackProvider>

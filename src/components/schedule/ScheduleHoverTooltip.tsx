@@ -38,6 +38,21 @@ function isEmptyTooltipContent(content: ReactNode): boolean {
   return false
 }
 
+/** Keep measure styles on before first paint so width isn't treated as full-bleed (left clamp flash). */
+function getHiddenMeasureStyle(maxWidth: number, vw?: number): CSSProperties {
+  const viewportWidth = vw ?? (typeof window !== 'undefined' ? window.innerWidth : maxWidth + VIEWPORT_PADDING * 2)
+  return {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: 'max-content',
+    maxWidth: Math.min(maxWidth, Math.max(0, viewportWidth - VIEWPORT_PADDING * 2)),
+    zIndex: TOOLTIP_Z_INDEX,
+    visibility: 'hidden',
+    pointerEvents: 'none',
+  }
+}
+
 export default function ScheduleHoverTooltip({
   content,
   children,
@@ -52,7 +67,7 @@ export default function ScheduleHoverTooltip({
   const [mounted, setMounted] = useState(false)
   const anchorRef = useRef<HTMLElement | null>(null)
   const tooltipRef = useRef<HTMLDivElement | null>(null)
-  const [style, setStyle] = useState<CSSProperties>({ visibility: 'hidden' })
+  const [style, setStyle] = useState<CSSProperties>(() => getHiddenMeasureStyle(maxWidth))
 
   useEffect(() => {
     setMounted(true)
@@ -63,10 +78,20 @@ export default function ScheduleHoverTooltip({
     const tooltip = tooltipRef.current
     if (!anchor || !tooltip) return
 
-    const rect = anchor.getBoundingClientRect()
-    const tooltipRect = tooltip.getBoundingClientRect()
     const vw = window.innerWidth
     const vh = window.innerHeight
+    const cappedMaxWidth = Math.min(maxWidth, vw - VIEWPORT_PADDING * 2)
+
+    // Ensure intrinsic width is used for measurement (block + no max-content ≈ full viewport).
+    tooltip.style.position = 'fixed'
+    tooltip.style.width = 'max-content'
+    tooltip.style.maxWidth = `${cappedMaxWidth}px`
+    tooltip.style.visibility = 'hidden'
+    tooltip.style.left = '0px'
+    tooltip.style.top = '0px'
+
+    const rect = anchor.getBoundingClientRect()
+    const tooltipRect = tooltip.getBoundingClientRect()
 
     const spaceBelow = vh - rect.bottom
     const spaceAbove = rect.top
@@ -98,21 +123,20 @@ export default function ScheduleHoverTooltip({
       top,
       left,
       width: 'max-content',
-      maxWidth: Math.min(maxWidth, vw - VIEWPORT_PADDING * 2),
+      maxWidth: cappedMaxWidth,
       zIndex: TOOLTIP_Z_INDEX,
       visibility: 'visible',
+      pointerEvents: 'none',
     })
   }, [align, maxWidth, placement])
 
   useLayoutEffect(() => {
     if (!open) return
     updatePosition()
-    const raf = window.requestAnimationFrame(updatePosition)
     const onUpdate = () => updatePosition()
     window.addEventListener('scroll', onUpdate, true)
     window.addEventListener('resize', onUpdate)
     return () => {
-      window.cancelAnimationFrame(raf)
       window.removeEventListener('scroll', onUpdate, true)
       window.removeEventListener('resize', onUpdate)
     }
@@ -122,15 +146,16 @@ export default function ScheduleHoverTooltip({
     (el: HTMLElement) => {
       if (disabled || isEmptyTooltipContent(content)) return
       anchorRef.current = el
+      setStyle(getHiddenMeasureStyle(maxWidth))
       setOpen(true)
     },
-    [content, disabled],
+    [content, disabled, maxWidth],
   )
 
   const hide = useCallback(() => {
     setOpen(false)
-    setStyle({ visibility: 'hidden' })
-  }, [])
+    setStyle(getHiddenMeasureStyle(maxWidth))
+  }, [maxWidth])
 
   if (!isValidElement(children)) return children
 
