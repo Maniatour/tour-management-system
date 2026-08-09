@@ -538,13 +538,26 @@ export async function buildGuideScheduleConfirmPreview(
 export function guideScheduleConfirmPopupConfirmLabel(locale: SupportedLocale): string {
   switch (locale) {
     case 'ko':
-      return '확인했습니다'
+      return '확정'
     case 'ja':
-      return '確認しました'
+      return '確定'
     case 'zh':
-      return '已确认'
+      return '确认'
     default:
-      return 'Got it'
+      return 'Confirm'
+  }
+}
+
+export function guideScheduleConfirmPopupRejectLabel(locale: SupportedLocale): string {
+  switch (locale) {
+    case 'ko':
+      return '거절'
+    case 'ja':
+      return '辞退'
+    case 'zh':
+      return '拒绝'
+    default:
+      return 'Reject'
   }
 }
 

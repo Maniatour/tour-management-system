@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Bell, Check, Loader2 } from 'lucide-react'
+import { Bell, Check, Loader2, X } from 'lucide-react'
 import {
   detectGuidePreferredLanguage,
   type SupportedLocale,
@@ -9,9 +9,13 @@ import {
 import {
   guideScheduleConfirmPopupConfirmLabel,
   guideScheduleConfirmPopupOfficeLine,
+  guideScheduleConfirmPopupRejectLabel,
   isGuideScheduleConfirmPopupSchemaMissingError,
 } from '@/lib/guideScheduleConfirmMessage'
-import { confirmTourAssignmentForRecipient } from '@/lib/guideAssignmentStatus'
+import {
+  confirmTourAssignmentForRecipient,
+  updateTourAssignmentStatus,
+} from '@/lib/guideAssignmentStatus'
 import { useAuth } from '@/contexts/AuthContext'
 import { canUseAuthenticatedRest, supabase } from '@/lib/supabase'
 
@@ -33,7 +37,7 @@ type GuideScheduleConfirmPopupLayerProps = {
 export function GuideScheduleConfirmPopupLayer({ userEmail }: GuideScheduleConfirmPopupLayerProps) {
   const { isInitialized } = useAuth()
   const [queue, setQueue] = useState<PopupRow[]>([])
-  const [acknowledging, setAcknowledging] = useState(false)
+  const [responding, setResponding] = useState(false)
   const [guideLocale, setGuideLocale] = useState<SupportedLocale>('ko')
   const [schemaUnavailable, setSchemaUnavailable] = useState(false)
 
@@ -100,9 +104,9 @@ export function GuideScheduleConfirmPopupLayer({ userEmail }: GuideScheduleConfi
 
   const current = queue[0] ?? null
 
-  const handleAcknowledge = async () => {
+  const handleRespond = async (decision: 'confirmed' | 'rejected') => {
     if (!current) return
-    setAcknowledging(true)
+    setResponding(true)
     try {
       const { error } = await supabase
         .from('guide_schedule_confirm_popups')
@@ -112,29 +116,36 @@ export function GuideScheduleConfirmPopupLayer({ userEmail }: GuideScheduleConfi
       if (error) throw error
 
       const role = current.recipient_role === 'assistant' ? 'assistant' : 'guide'
-      const confirmResult = await confirmTourAssignmentForRecipient(
-        current.tour_id,
-        emailKey,
-        role,
-      )
-      if (!confirmResult.ok) {
-        console.warn('GuideScheduleConfirmPopupLayer assignment confirm', confirmResult.error)
+      if (decision === 'confirmed') {
+        const confirmResult = await confirmTourAssignmentForRecipient(
+          current.tour_id,
+          emailKey,
+          role,
+        )
+        if (!confirmResult.ok) {
+          console.warn('GuideScheduleConfirmPopupLayer assignment confirm', confirmResult.error)
+        }
+      } else {
+        const rejectResult = await updateTourAssignmentStatus(current.tour_id, 'rejected')
+        if (!rejectResult.ok) {
+          console.warn('GuideScheduleConfirmPopupLayer assignment reject', rejectResult.error)
+        }
       }
 
       setQueue((prev) => prev.filter((p) => p.id !== current.id))
     } catch (e) {
-      console.error('GuideScheduleConfirmPopupLayer ack', e)
+      console.error('GuideScheduleConfirmPopupLayer respond', e)
       alert(
         guideLocale === 'ko'
-          ? '확인 처리에 실패했습니다.'
+          ? '처리에 실패했습니다.'
           : guideLocale === 'ja'
-            ? '確認の処理に失敗しました。'
+            ? '処理に失敗しました。'
             : guideLocale === 'zh'
-              ? '确认失败。'
-              : 'Failed to confirm.'
+              ? '处理失败。'
+              : 'Failed to process.'
       )
     } finally {
-      setAcknowledging(false)
+      setResponding(false)
     }
   }
 
@@ -161,14 +172,27 @@ export function GuideScheduleConfirmPopupLayer({ userEmail }: GuideScheduleConfi
             </p>
           ) : null}
         </div>
-        <div className="flex justify-end border-t px-5 py-4">
+        <div className="flex flex-wrap justify-end gap-2 border-t px-5 py-4">
           <button
             type="button"
-            disabled={acknowledging}
-            onClick={() => void handleAcknowledge()}
+            disabled={responding}
+            onClick={() => void handleRespond('rejected')}
+            className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-5 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+          >
+            {responding ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <X className="h-4 w-4" />
+            )}
+            {guideScheduleConfirmPopupRejectLabel(guideLocale)}
+          </button>
+          <button
+            type="button"
+            disabled={responding}
+            onClick={() => void handleRespond('confirmed')}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
-            {acknowledging ? (
+            {responding ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Check className="h-4 w-4" />
