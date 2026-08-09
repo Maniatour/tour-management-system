@@ -1,7 +1,7 @@
 'use client'
 import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { MessageCircle, Plus, Pin, Search, RefreshCw, Users, User, Car } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -10,6 +10,7 @@ import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStats
 import { useTranslations, useLocale } from 'next-intl'
 import { createClientSupabase } from '@/lib/supabase'
 import { useSearchParams } from 'next/navigation'
+import { todayInLasVegas } from '@/lib/dailyReport/dateUtils'
 
 interface TeamChatRoom {
   id: string
@@ -519,16 +520,31 @@ export default function GuideChatPage() {
 
   const teamChatRooms = teamChatRoomsData || []
   const tourChatRooms = tourChatRoomsData || []
+  const today = todayInLasVegas()
 
   // 필터링된 채팅방 목록
-  const filteredRooms = (activeTab === 'team' ? teamChatRooms : tourChatRooms).filter(room => {
-    const matchesSearch = activeTab === 'team'
-      ? ((room as TeamChatRoom).room_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-         (room as TeamChatRoom).description?.toLowerCase().includes(searchTerm.toLowerCase()))
-      : ((room as TourChatRoom).tour_name?.toLowerCase().includes(searchTerm.toLowerCase()))
-    const matchesType = filterType === 'all' || (activeTab === 'team' && 'room_type' in room && room.room_type === filterType)
-    return matchesSearch && matchesType
-  })
+  const filteredTeamRooms = useMemo(() => {
+    return teamChatRooms.filter((room) => {
+      const matchesSearch =
+        room.room_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        room.description?.toLowerCase().includes(searchTerm.toLowerCase())
+      const matchesType = filterType === 'all' || room.room_type === filterType
+      return matchesSearch && matchesType
+    })
+  }, [teamChatRooms, searchTerm, filterType])
+
+  const { upcomingTourRooms, pastTourRooms } = useMemo(() => {
+    const filtered = tourChatRooms.filter((room) =>
+      room.tour_name?.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    const upcoming = filtered
+      .filter((room) => room.tour_date >= today)
+      .sort((a, b) => a.tour_date.localeCompare(b.tour_date))
+    const past = filtered
+      .filter((room) => room.tour_date < today)
+      .sort((a, b) => b.tour_date.localeCompare(a.tour_date))
+    return { upcomingTourRooms: upcoming, pastTourRooms: past }
+  }, [tourChatRooms, searchTerm, today])
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString)
@@ -577,6 +593,116 @@ export default function GuideChatPage() {
     }
     return `${dateString} (${dayName})`
   }
+
+  const renderChatRoomRow = (room: TeamChatRoom | TourChatRoom) => (
+    <div
+      key={room.id}
+      onClick={() => selectRoom(room)}
+      className={`p-2 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
+        selectedRoom?.id === room.id
+          ? 'bg-primary/5 border-l-2 border-l-blue-500'
+          : room.unread_count > 0
+            ? 'bg-yellow-50 border-l-2 border-l-yellow-400'
+            : ''
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between mb-0.5">
+            <h3
+              className={`text-xs truncate ${
+                room.unread_count > 0 ? 'font-bold text-gray-900' : 'font-medium text-gray-900'
+              }`}
+            >
+              {activeTab === 'team' && 'room_name' in room
+                ? room.room_name
+                : activeTab === 'tour' && 'tour_name' in room
+                  ? room.tour_name
+                  : room.id}
+              {room.unread_count > 0 && t('newMessage')}
+              {activeTab === 'team' && 'room_type' in room && room.room_type === 'announcement' && (
+                <Pin size={10} className="inline ml-1 text-yellow-500" />
+              )}
+            </h3>
+            {activeTab === 'team' && 'room_type' in room && (
+              <span
+                className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                  room.room_type === 'announcement'
+                    ? 'bg-yellow-100 text-yellow-800'
+                    : room.room_type === 'department'
+                      ? 'bg-primary/10 text-primary'
+                      : room.room_type === 'project'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-gray-100 text-gray-800'
+                }`}
+              >
+                {room.room_type === 'general'
+                  ? t('roomType.general')
+                  : room.room_type === 'department'
+                    ? t('roomType.department')
+                    : room.room_type === 'project'
+                      ? t('roomType.project')
+                      : room.room_type === 'announcement'
+                        ? t('roomType.announcement')
+                        : room.room_type}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <div className="flex items-center">
+              <span className="truncate">
+                {activeTab === 'team' && 'description' in room
+                  ? room.description ||
+                    `${t('participants')} ${'participants_count' in room ? room.participants_count : 0}`
+                  : activeTab === 'tour' && 'tour_date' in room
+                    ? formatDateWithDay(room.tour_date)
+                    : ''}
+              </span>
+            </div>
+            {room.last_message && (
+              <span className="text-xs text-gray-400">{formatTime(room.last_message.created_at)}</span>
+            )}
+          </div>
+
+          {activeTab === 'tour' && 'assigned_people' in room && (
+            <div className="flex items-center space-x-2 text-xs text-gray-600 mt-1">
+              <span className="flex items-center">
+                <Users className="w-3 h-3 mr-1" />
+                {room.assigned_people || 0}
+                {locale === 'en' ? ' people' : '명'}
+              </span>
+              {room.guide_name && (
+                <span className="flex items-center">
+                  <User className="w-3 h-3 mr-1" />
+                  {room.guide_name}
+                </span>
+              )}
+              {room.vehicle_number && (
+                <span className="flex items-center">
+                  <Car className="w-3 h-3 mr-1" />
+                  {room.vehicle_number}
+                </span>
+              )}
+            </div>
+          )}
+
+          {room.last_message && (
+            <p className="text-xs text-gray-600 truncate mt-1">
+              <span className="font-medium">{room.last_message.sender_name}:</span>
+              {room.last_message.message}
+            </p>
+          )}
+        </div>
+
+        {room.unread_count > 0 && (
+          <div className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium ml-2">
+            {room.unread_count}
+          </div>
+        )}
+      </div>
+    </div>
+  )
 
   const loading = activeTab === 'team' ? teamChatLoading : tourChatLoading
 
@@ -672,110 +798,47 @@ export default function GuideChatPage() {
 
         {/* 채팅방 목록 */}
         <div className="flex-1 overflow-y-auto">
-          {filteredRooms.length === 0 ? (
+          {activeTab === 'team' ? (
+            filteredTeamRooms.length === 0 ? (
+              <div className="p-4 text-center text-gray-500">
+                <MessageCircle size={48} className="mx-auto mb-2 text-gray-300" />
+                <p>{t('noRooms')}</p>
+              </div>
+            ) : (
+              filteredTeamRooms.map((room) => renderChatRoomRow(room))
+            )
+          ) : upcomingTourRooms.length === 0 && pastTourRooms.length === 0 ? (
             <div className="p-4 text-center text-gray-500">
               <MessageCircle size={48} className="mx-auto mb-2 text-gray-300" />
-              <p>{activeTab === 'team' ? t('noRooms') : t('noTours')}</p>
+              <p>{t('noTours')}</p>
             </div>
           ) : (
-            filteredRooms.map((room) => (
-              <div
-                key={room.id}
-                onClick={() => selectRoom(room)}
-                className={`p-2 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
-                  selectedRoom?.id === room.id 
-                    ? 'bg-primary/5 border-l-2 border-l-blue-500' 
-                    : room.unread_count > 0 
-                      ? 'bg-yellow-50 border-l-2 border-l-yellow-400' 
-                      : ''
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <h3 className={`text-xs truncate ${
-                        room.unread_count > 0 
-                          ? 'font-bold text-gray-900' 
-                          : 'font-medium text-gray-900'
-                      }`}>
-                        {activeTab === 'team' && 'room_name' in room ? room.room_name : 
-                         activeTab === 'tour' && 'tour_name' in room ? room.tour_name : room.id}
-                        {room.unread_count > 0 && t('newMessage')}
-                        {activeTab === 'team' && 'room_type' in room && room.room_type === 'announcement' && (
-                          <Pin size={10} className="inline ml-1 text-yellow-500" />
-                        )}
-                      </h3>
-                      {activeTab === 'team' && 'room_type' in room && (
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                          room.room_type === 'announcement' 
-                            ? 'bg-yellow-100 text-yellow-800'
-                            : room.room_type === 'department'
-                            ? 'bg-primary/10 text-primary'
-                            : room.room_type === 'project'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {room.room_type === 'general' ? t('roomType.general') :
-                           room.room_type === 'department' ? t('roomType.department') :
-                           room.room_type === 'project' ? t('roomType.project') :
-                           room.room_type === 'announcement' ? t('roomType.announcement') : room.room_type}
-                        </span>
-                      )}
-                    </div>
-                    
-                    <div className="flex items-center justify-between text-xs text-gray-500">
-                      <div className="flex items-center">
-                        <span className="truncate">
-                          {activeTab === 'team' && 'description' in room ? 
-                            (room.description || `${t('participants')} ${'participants_count' in room ? room.participants_count : 0}`) :
-                            activeTab === 'tour' && 'tour_date' in room ? 
-                            formatDateWithDay(room.tour_date) : ''}
-                        </span>
-                      </div>
-                      {room.last_message && (
-                        <span className="text-xs text-gray-400">
-                          {formatTime(room.last_message.created_at)}
-                        </span>
-                      )}
-                    </div>
-                    
-                    {activeTab === 'tour' && 'assigned_people' in room && (
-                      <div className="flex items-center space-x-2 text-xs text-gray-600 mt-1">
-                        <span className="flex items-center">
-                          <Users className="w-3 h-3 mr-1" />
-                          {room.assigned_people || 0}{locale === 'en' ? ' people' : '명'}
-                        </span>
-                        {room.guide_name && (
-                          <span className="flex items-center">
-                            <User className="w-3 h-3 mr-1" />
-                            {room.guide_name}
-                          </span>
-                        )}
-                        {room.vehicle_number && (
-                          <span className="flex items-center">
-                            <Car className="w-3 h-3 mr-1" />
-                            {room.vehicle_number}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    
-                    {room.last_message && (
-                      <p className="text-xs text-gray-600 truncate mt-1">
-                        <span className="font-medium">{room.last_message.sender_name}:</span>
-                        {room.last_message.message}
-                      </p>
-                    )}
-                  </div>
-                  
-                  {room.unread_count > 0 && (
-                    <div className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium ml-2">
-                      {room.unread_count}
-                    </div>
-                  )}
-                </div>
+            <>
+              <div className="sticky top-0 z-10 bg-gray-50 px-3 py-2 border-b border-gray-200">
+                <h3 className="text-xs font-semibold text-gray-700">
+                  {t('tours.upcoming')} ({upcomingTourRooms.length})
+                </h3>
               </div>
-            ))
+              {upcomingTourRooms.length === 0 ? (
+                <div className="px-3 py-4 text-center text-xs text-gray-400">
+                  {t('tours.noUpcoming')}
+                </div>
+              ) : (
+                upcomingTourRooms.map((room) => renderChatRoomRow(room))
+              )}
+              <div className="sticky top-0 z-10 bg-gray-50 px-3 py-2 border-b border-t border-gray-200">
+                <h3 className="text-xs font-semibold text-gray-700">
+                  {t('tours.past')} ({pastTourRooms.length})
+                </h3>
+              </div>
+              {pastTourRooms.length === 0 ? (
+                <div className="px-3 py-4 text-center text-xs text-gray-400">
+                  {t('tours.noPast')}
+                </div>
+              ) : (
+                pastTourRooms.map((room) => renderChatRoomRow(room))
+              )}
+            </>
           )}
         </div>
       </div>

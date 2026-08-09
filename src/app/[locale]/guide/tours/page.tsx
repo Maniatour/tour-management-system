@@ -14,7 +14,7 @@ import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { useAuth } from '@/contexts/AuthContext'
 import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
 import { chunkStrings } from '@/lib/supabaseInChunks'
-import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
+import { teamMemberNameForLocale, teamMemberNickDisplayName } from '@/lib/teamMemberDisplayName'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 
@@ -37,6 +37,7 @@ type ExtendedTour = Omit<Tour, 'assignment_status'> & {
   status?: string | null | undefined;
   tour_status?: string | null | undefined;
   vehicle_number?: string | null | undefined;
+  vehicle_nick?: string | null | undefined;
 }
 
 type Employee = Database['public']['Tables']['team']['Row']
@@ -205,7 +206,7 @@ export default function GuideTours({}: GuideToursProps) {
       const productIdsAll = [...new Set((toursData || []).map((tour: ExtendedTour) => tour.product_id).filter((id): id is string => id != null))]
       const { data: productsData } = await supabase
         .from('products')
-        .select('id, name, name_ko, name_en, status')
+        .select('id, name, name_ko, name_en, internal_name_ko, internal_name_en, status')
         .in('id', productIdsAll)
 
       const activeProductIds = new Set(
@@ -225,6 +226,20 @@ export default function GuideTours({}: GuideToursProps) {
           .filter((p) => activeProductIds.has(p.id))
           .map((p) => [p.id, (p.name as string) || p.name_ko || p.name_en || p.id])
       )
+      const productEnMap = new Map(
+        (((productsData || []) as Array<{
+          id: string
+          name?: string | null
+          name_ko?: string | null
+          name_en?: string | null
+          internal_name_en?: string | null
+        }>))
+          .filter((p) => activeProductIds.has(p.id))
+          .map((p) => [
+            p.id,
+            (p.internal_name_en || p.name_en || p.name || p.name_ko || p.id) as string,
+          ])
+      )
 
       // 3. 가이드와 어시스턴트 정보 가져오기
       const guideEmails = [...new Set((toursDataActive || []).map((tour: ExtendedTour) => tour.tour_guide_id).filter((id): id is string => id != null))]
@@ -238,15 +253,20 @@ export default function GuideTours({}: GuideToursProps) {
 
       const teamMap = new Map((teamMembers || []).map((member: { email: string; name_ko: string; name_en?: string | null; nick_name?: string | null }) => [member.email, member]))
 
-      // 3-1. 차량 정보 가져오기 (카드에 차량 번호 표시)
+      // 3-1. 차량 정보 가져오기 (칩에 차량 nick 표시)
       const vehicleIds = [...new Set((toursDataActive || []).map((t: { tour_car_id?: string | null }) => t.tour_car_id).filter((id): id is string => id != null))]
-      let vehicleMap = new Map<string, string | null>()
+      let vehicleMap = new Map<string, { vehicle_number: string | null; nick: string | null }>()
       if (vehicleIds.length > 0) {
         const { data: vehiclesData } = await supabase
           .from('vehicles')
-          .select('id, vehicle_number')
+          .select('id, vehicle_number, nick')
           .in('id', vehicleIds)
-        vehicleMap = new Map((vehiclesData || []).map((v: { id: string; vehicle_number: string | null }) => [v.id, v.vehicle_number]))
+        vehicleMap = new Map(
+          (vehiclesData || []).map((v: { id: string; vehicle_number: string | null; nick?: string | null }) => [
+            v.id,
+            { vehicle_number: v.vehicle_number, nick: v.nick ?? null },
+          ])
+        )
       }
 
       // 4. 현재 달력 그리드 범위를 커버하는 날짜 구간으로 예약 데이터 조회 (URL 길이/성능 고려)
@@ -411,8 +431,13 @@ export default function GuideTours({}: GuideToursProps) {
         return {
           ...tour,
           product_name: tour.product_id ? (productMap.get(tour.product_id) ?? null) : null,
-          name_ko: product?.name_ko ?? null,
-          name_en: product?.name_en ?? null,
+          name: product?.name ?? null,
+          name_ko: product?.name_ko ?? product?.name ?? null,
+          name_en:
+            (product as { internal_name_en?: string | null } | null)?.internal_name_en ||
+            product?.name_en ||
+            (tour.product_id ? productEnMap.get(tour.product_id) : null) ||
+            null,
           customer_name_ko: (product as { customer_name_ko?: string | null } | null)?.customer_name_ko ?? null,
           customer_name_en: (product as { customer_name_en?: string | null } | null)?.customer_name_en ?? null,
           total_people: totalPeople,
@@ -421,12 +446,17 @@ export default function GuideTours({}: GuideToursProps) {
           assigned_children: assignedChildren,
           assigned_infants: assignedInfants,
           unassigned_people: unassignedPeople,
-          guide_name: teamMemberNameForLocale(guide, 'ko'),
+          guide_name: teamMemberNickDisplayName(guide),
           guide_name_en: teamMemberNameForLocale(guide, 'en'),
-          assistant_name: teamMemberNameForLocale(assistant, 'ko'),
+          assistant_name: teamMemberNickDisplayName(assistant),
           assistant_name_en: teamMemberNameForLocale(assistant, 'en'),
           is_private_tour: tour.is_private_tour === true,
-          vehicle_number: tour.tour_car_id ? (vehicleMap.get(tour.tour_car_id as unknown as string) || null) : null
+          vehicle_number: tour.tour_car_id
+            ? (vehicleMap.get(tour.tour_car_id as unknown as string)?.vehicle_number || null)
+            : null,
+          vehicle_nick: tour.tour_car_id
+            ? (vehicleMap.get(tour.tour_car_id as unknown as string)?.nick || null)
+            : null,
         }
       })
 
@@ -591,7 +621,14 @@ export default function GuideTours({}: GuideToursProps) {
               </div>
             </div>
           )}
-          <TourCalendar tours={filteredTours} onTourClick={handleTourClick} allReservations={allReservations} offSchedules={offSchedules} onOffScheduleChange={handleOffScheduleChange} />
+          <TourCalendar
+            tours={filteredTours}
+            onTourClick={handleTourClick}
+            allReservations={allReservations}
+            offSchedules={offSchedules}
+            onOffScheduleChange={handleOffScheduleChange}
+            chipVariant="guide"
+          />
         </div>
       )}
 

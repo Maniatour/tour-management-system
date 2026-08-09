@@ -9,6 +9,7 @@ import {
   getSiteLocaleMeta,
   type SiteLocale,
 } from '@/lib/siteLocales'
+import { DROPDOWN_Z_INDEX } from '@/lib/dialogZIndex'
 
 export type LocaleDropdownProps = {
   value: SiteLocale
@@ -76,13 +77,9 @@ export default function LocaleDropdown({
     const spaceAbove = rect.top - VIEWPORT_MARGIN
     const preferred = MENU_CONTENT_HEIGHT + (showCloseButton ? 36 : 0)
     const openUpward = spaceBelow < preferred && spaceAbove > spaceBelow
-    const height = Math.min(
-      preferred,
-      Math.max(120, (openUpward ? spaceAbove : spaceBelow) - MENU_GAP)
-    )
 
     const top = openUpward
-      ? Math.max(VIEWPORT_MARGIN, rect.top - MENU_GAP - height)
+      ? Math.max(VIEWPORT_MARGIN, rect.top - MENU_GAP - preferred)
       : rect.bottom + MENU_GAP
 
     setMenuStyle({ top, left })
@@ -107,6 +104,7 @@ export default function LocaleDropdown({
     }
     const onReposition = () => updatePosition()
 
+    // Use bubble phase so option mousedown handlers run first.
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
     window.addEventListener('scroll', onReposition, true)
@@ -119,14 +117,22 @@ export default function LocaleDropdown({
     }
   }, [open, updatePosition])
 
+  const selectLocale = (locale: SiteLocale) => {
+    onChange(locale)
+    setOpen(false)
+  }
+
   const menu =
     open && menuStyle ? (
       <div
         ref={menuRef}
-        className="fixed z-[10050] min-w-[13.5rem] overflow-hidden rounded-xl border border-border bg-white shadow-lg"
+        data-locale-dropdown-menu=""
+        // Modal Dialog sets body { pointer-events: none }; re-enable for this portaled menu.
+        className="pointer-events-auto fixed min-w-[13.5rem] overflow-hidden rounded-xl border border-border bg-white shadow-lg"
         style={{
           top: menuStyle.top,
           left: menuStyle.left,
+          zIndex: DROPDOWN_Z_INDEX,
         }}
       >
         {showCloseButton ? (
@@ -151,9 +157,10 @@ export default function LocaleDropdown({
                   className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition hover:bg-muted ${
                     selected ? 'bg-muted/70 font-semibold text-slate-900' : 'text-slate-700'
                   }`}
-                  onClick={() => {
-                    onChange(item.code)
-                    setOpen(false)
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    selectLocale(item.code)
                   }}
                 >
                   <ReactCountryFlag

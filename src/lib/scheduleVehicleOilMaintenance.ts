@@ -110,6 +110,52 @@ export function getMultiDayTourDays(productId: string): number {
   return 1
 }
 
+function ymdFromDbDate(value: string | null | undefined): string {
+  if (!value) return ''
+  const m = String(value).trim().match(/^(\d{4}-\d{2}-\d{2})/)
+  return m ? m[1]! : ''
+}
+
+/**
+ * 투어 달력 표시용 종료일 (YYYY-MM-DD).
+ * 숙박·멀티데이 상품은 product_id 일수, 아니면 tour_end_datetime, 기본은 시작일.
+ */
+export function getTourCalendarEndYmd(tour: {
+  tour_date: string | null | undefined
+  tour_end_datetime?: string | null
+  product_id?: string | null
+}): string {
+  const start = ymdFromDbDate(tour.tour_date)
+  if (!start) return ''
+
+  const days = getMultiDayTourDays(String(tour.product_id || '').trim())
+  if (days > 1) {
+    return dayjs(start).add(days - 1, 'day').format('YYYY-MM-DD')
+  }
+
+  if (tour.tour_end_datetime) {
+    const end = dayjs(tour.tour_end_datetime).format('YYYY-MM-DD')
+    if (end && end >= start) return end
+  }
+
+  return start
+}
+
+/** 해당 날짜가 투어 진행 구간(시작일~종료일)에 포함되는지 */
+export function tourCoversCalendarDate(
+  tour: {
+    tour_date: string | null | undefined
+    tour_end_datetime?: string | null
+    product_id?: string | null
+  },
+  dateYmd: string
+): boolean {
+  const start = ymdFromDbDate(tour.tour_date)
+  if (!start || !dateYmd) return false
+  const end = getTourCalendarEndYmd(tour)
+  return dateYmd >= start && dateYmd <= end
+}
+
 /** 투어 상품명·ID 기준 예상 주행거리 (mi) */
 export function estimateTourMileage(productName: string, productId?: string | null): number {
   const pid = (productId || '').trim()

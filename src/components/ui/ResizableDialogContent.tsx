@@ -51,6 +51,9 @@ const ResizableDialogContent = React.forwardRef<
       accessibilityTitle,
       style: propsStyle,
       onPointerDown: propsOnPointerDown,
+      onPointerDownOutside,
+      onInteractOutside,
+      onFocusOutside,
       ...props
     },
     ref
@@ -157,6 +160,36 @@ const ResizableDialogContent = React.forwardRef<
           )}
           style={{ ...contentStyle, ...propsStyle }}
           {...props}
+          onPointerDownOutside={(e) => {
+            const originalTarget = e.detail?.originalEvent?.target ?? null
+            const target = e.target
+            const isLocaleMenu =
+              (target instanceof Element && target.closest('[data-locale-dropdown-menu]')) ||
+              (originalTarget instanceof Element &&
+                originalTarget.closest('[data-locale-dropdown-menu]'))
+            if (isLocaleMenu) e.preventDefault()
+            onPointerDownOutside?.(e)
+          }}
+          onInteractOutside={(e) => {
+            const originalTarget = e.detail?.originalEvent?.target ?? null
+            const target = e.target
+            const isLocaleMenu =
+              (target instanceof Element && target.closest('[data-locale-dropdown-menu]')) ||
+              (originalTarget instanceof Element &&
+                originalTarget.closest('[data-locale-dropdown-menu]'))
+            if (isLocaleMenu) e.preventDefault()
+            onInteractOutside?.(e)
+          }}
+          onFocusOutside={(e) => {
+            const originalTarget = e.detail?.originalEvent?.target ?? null
+            const target = e.target
+            const isLocaleMenu =
+              (target instanceof Element && target.closest('[data-locale-dropdown-menu]')) ||
+              (originalTarget instanceof Element &&
+                originalTarget.closest('[data-locale-dropdown-menu]'))
+            if (isLocaleMenu) e.preventDefault()
+            onFocusOutside?.(e)
+          }}
         >
           <ResizableDialogContext.Provider value={dialogContextValue}>
             {accessibilityTitle ? (

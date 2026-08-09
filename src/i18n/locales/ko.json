@@ -7251,6 +7251,15 @@
         "approved": "승인됨",
         "pending": "대기중",
         "rejected": "거부됨"
+      },
+      "reasons": {
+        "annualLeave": "연차",
+        "halfDay": "반차",
+        "sickLeave": "병가",
+        "familyEvent": "경조사",
+        "businessTrip": "출장",
+        "training": "교육",
+        "other": "기타"
       }
     },
     "simulation": "시뮬레이션",

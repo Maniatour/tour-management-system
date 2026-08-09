@@ -17,6 +17,7 @@ import TourPhotoGallery from './TourPhotoGallery'
 import { SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 import { formatTourChatStaffDisplayName } from '@/lib/tourChatStaffDisplay'
 import { buildTourChatRoomUrl } from '@/lib/tourChatRoomEmailHtml'
+import { formatPublicChatRoomTitle } from '@/lib/formatPublicChatRoomTitle'
 import { usePushNotification } from '@/hooks/usePushNotification'
 import { useChatRoom } from '@/hooks/useChatRoom'
 import { useChatMessages } from '@/hooks/useChatMessages'
@@ -79,6 +80,8 @@ interface TourChatRoomProps {
   customerLanguage?: SupportedLanguage
   /** 고객 공개 뷰에서 헤더·공유 문구에 쓸 현지화된 채팅방 제목 */
   publicDisplayRoomName?: string
+  /** 가이드/스태프 뷰에서 selectedLanguage에 맞춰 제목 생성용 상품명 */
+  productNames?: { name?: string | null; name_ko?: string | null; name_en?: string | null } | null
   externalMobileMenuOpen?: boolean
   onExternalMobileMenuToggle?: () => void
   /** 공개 채팅: 전체 메시지 수 변경 시 (미읽음 배지용) */
@@ -95,6 +98,7 @@ export default function TourChatRoom({
   customerName,
   customerLanguage = 'en',
   publicDisplayRoomName,
+  productNames = null,
   externalMobileMenuOpen,
   onExternalMobileMenuToggle,
   onMessageCountChange
@@ -1293,9 +1297,20 @@ export default function TourChatRoom({
     }
   }
 
+  const localizedRoomTitle = useMemo(() => {
+    const lang = selectedLanguage === 'ko' ? 'ko' : 'en'
+    if (publicDisplayRoomName?.trim()) {
+      // 공개 뷰: 부모가 이미 현지화한 제목을 넘김 (언어 토글 시 부모도 갱신)
+      if (isPublicView) return publicDisplayRoomName.trim()
+    }
+    if (productNames || room?.room_name) {
+      return formatPublicChatRoomTitle(lang, productNames, room?.room_name || '')
+    }
+    return publicDisplayRoomName?.trim() || ''
+  }, [publicDisplayRoomName, isPublicView, productNames, room?.room_name, selectedLanguage])
+
   const tourDetailModalTitle =
-    publicDisplayRoomName?.trim() ||
-    room?.room_name ||
+    localizedRoomTitle ||
     (selectedLanguage === 'ko' ? '투어 상세' : 'Tour Details')
 
   // loadMessages는 useChatMessages 훅에서 제공됨
@@ -2563,7 +2578,7 @@ export default function TourChatRoom({
       {room && (
         <ChatHeader
           room={room}
-          {...(publicDisplayRoomName ? { displayRoomName: publicDisplayRoomName } : {})}
+          {...(localizedRoomTitle ? { displayRoomName: localizedRoomTitle } : {})}
           isPublicView={isPublicView}
           isMobileMenuOpen={isMobileMenuOpen}
           selectedLanguage={selectedLanguage}
@@ -2697,7 +2712,11 @@ export default function TourChatRoom({
           isOpen={showShareModal}
           onClose={() => setShowShareModal(false)}
           roomCode={room.room_code}
-          roomName={isPublicView && publicDisplayRoomName ? publicDisplayRoomName : room.room_name}
+          roomName={
+            isPublicView && publicDisplayRoomName
+              ? publicDisplayRoomName
+              : localizedRoomTitle || room.room_name
+          }
           {...(tourDate ? { tourDate } : {})}
           isPublicView={isPublicView}
           language={selectedLanguage as 'en' | 'ko'}

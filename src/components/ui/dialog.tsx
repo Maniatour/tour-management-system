@@ -41,10 +41,39 @@ type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.
   forceZIndex?: number
 }
 
+/** Portaled overlays (e.g. LocaleDropdown) rendered outside DialogContent */
+function isPortaledDialogExemptTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false
+  return !!target.closest('[data-locale-dropdown-menu]')
+}
+
+function shouldIgnoreDialogOutsideEvent(event: {
+  target: EventTarget | null
+  detail?: { originalEvent?: Event }
+}): boolean {
+  const originalTarget = event.detail?.originalEvent?.target ?? null
+  return (
+    isPortaledDialogExemptTarget(event.target) ||
+    isPortaledDialogExemptTarget(originalTarget)
+  )
+}
+
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
->(({ className, children, hideCloseButton, overlayClassName, stackLevel = 'default', forceZIndex, style, ...props }, ref) => {
+>(({
+  className,
+  children,
+  hideCloseButton,
+  overlayClassName,
+  stackLevel = 'default',
+  forceZIndex,
+  style,
+  onPointerDownOutside,
+  onInteractOutside,
+  onFocusOutside,
+  ...props
+}, ref) => {
   const zIndex = forceZIndex ?? DIALOG_Z_INDEX[stackLevel]
 
   return (
@@ -59,6 +88,18 @@ const DialogContent = React.forwardRef<
         className
       )}
       {...props}
+      onPointerDownOutside={(e) => {
+        if (shouldIgnoreDialogOutsideEvent(e)) e.preventDefault()
+        onPointerDownOutside?.(e)
+      }}
+      onInteractOutside={(e) => {
+        if (shouldIgnoreDialogOutsideEvent(e)) e.preventDefault()
+        onInteractOutside?.(e)
+      }}
+      onFocusOutside={(e) => {
+        if (shouldIgnoreDialogOutsideEvent(e)) e.preventDefault()
+        onFocusOutside?.(e)
+      }}
     >
       {children}
       {!hideCloseButton ? (

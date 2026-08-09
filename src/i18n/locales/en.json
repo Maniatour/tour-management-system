@@ -7201,6 +7201,15 @@
         "approved": "Approved",
         "pending": "Pending",
         "rejected": "Rejected"
+      },
+      "reasons": {
+        "annualLeave": "Annual Leave",
+        "halfDay": "Half Day",
+        "sickLeave": "Sick Leave",
+        "familyEvent": "Family Event",
+        "businessTrip": "Business Trip",
+        "training": "Training",
+        "other": "Other"
       }
     },
     "simulation": "Simulation",

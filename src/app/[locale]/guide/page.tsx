@@ -18,6 +18,7 @@ import {
 import GuideVehicleBadge from '@/components/guide/GuideVehicleBadge'
 import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
 import { fetchPersonallyRespondedTourIds } from '@/lib/guideAssignmentStatus'
+import { translateOffScheduleReason } from '@/lib/offScheduleReasonI18n'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Omit<Tour, 'assignment_status'> & {
@@ -1490,7 +1491,9 @@ export default function GuideDashboard() {
                                 )}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-700">{schedule.reason}</p>
+                    <p className="text-sm text-gray-700">
+                      {translateOffScheduleReason(schedule.reason, t)}
+                    </p>
                   </div>
                   <div className="flex items-center space-x-2">
                     <div className="flex items-center space-x-1">

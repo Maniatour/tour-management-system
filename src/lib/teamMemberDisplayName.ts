@@ -43,6 +43,17 @@ export function teamMemberNameForLocale(
   return nick || nameKo || nameEn || display || null
 }
 
+/**
+ * 가이드 캘린더 칩용 표시명 — 닉네임만 사용.
+ */
+export function teamMemberNickDisplayName(
+  member: TeamMemberNameFields | null | undefined
+): string | null {
+  if (!member) return null
+  const nick = trimName(member.nick_name)
+  return nick || null
+}
+
 /** team.email → display_name (없으면 name_ko, name_en 순) */
 export async function fetchTeamMemberDisplayName(email: string): Promise<string | null> {
   const em = String(email || '').trim()

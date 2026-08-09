@@ -1348,6 +1348,37 @@ export default function GuideTourDetailPage() {
     // 탭 변경 시에는 섹션 상태를 강제로 변경하지 않음
     // 사용자가 collapse한 섹션은 그대로 유지
   }
+
+  const chatFillMode = isGuideMobileLayout && activeTab === 'chat'
+
+  useEffect(() => {
+    if (!chatFillMode) return
+    const html = document.documentElement
+    const body = document.body
+    const prevHtmlOverflow = html.style.overflow
+    const prevBodyOverflow = body.style.overflow
+    html.style.overflow = 'hidden'
+    body.style.overflow = 'hidden'
+    return () => {
+      html.style.overflow = prevHtmlOverflow
+      body.style.overflow = prevBodyOverflow
+    }
+  }, [chatFillMode])
+
+  const mobileNavTabs: Array<{
+    id: typeof activeTab
+    label: string
+    icon: LucideIcon
+    activeTile: string
+  }> = [
+    { id: 'overview', label: t('overview'), icon: Clock, activeTile: 'bg-primary' },
+    { id: 'schedule', label: t('schedule'), icon: MapPin, activeTile: 'bg-green-500' },
+    { id: 'bookings', label: t('booking'), icon: Hotel, activeTile: 'bg-purple-500' },
+    { id: 'photos', label: t('photos'), icon: Camera, activeTile: 'bg-orange-500' },
+    { id: 'chat', label: t('chat'), icon: MessageSquare, activeTile: 'bg-teal-500' },
+    { id: 'expenses', label: t('expenses'), icon: Calculator, activeTile: 'bg-yellow-500' },
+    { id: 'report', label: t('report'), icon: FileText, activeTile: 'bg-red-500' },
+  ]
   
   // 아코디언 섹션 컴포넌트
   const guidePanelShell = isGuideMobileLayout
@@ -1462,9 +1493,15 @@ export default function GuideTourDetailPage() {
   }
 
   return (
-    <div className="w-full">
+    <div
+      className={
+        chatFillMode
+          ? 'flex h-[calc(100dvh-var(--header-height)-var(--footer-height)-env(safe-area-inset-bottom,0px))] w-full flex-col overflow-hidden'
+          : 'w-full'
+      }
+    >
       {/* 헤더 - 모바일 최적화 */}
-      <div className={`mb-4 sm:mb-6 ${guideContentInset}`}>
+      <div className={`shrink-0 ${chatFillMode ? `py-2 ${guideContentInset}` : `mb-4 sm:mb-6 ${guideContentInset}`}`}>
         <button
           onClick={() => router.push(`/${locale}/guide/tours`)}
           className="flex items-center text-gray-600 hover:text-gray-900 text-sm sm:text-base"
@@ -1474,99 +1511,45 @@ export default function GuideTourDetailPage() {
         </button>
       </div>
 
-      {/* 모바일 탭 네비게이션 - 앱 스타일 */}
-      <div className="lg:hidden mb-0 lg:mb-4">
-        <div className={`${guidePanelShell} p-2`}>
-          <div className="flex space-x-2 overflow-x-auto pb-1">
-            <button
-              onClick={() => handleTabChange('overview')}
-              className={`flex flex-col items-center justify-center w-16 h-16 rounded-xl transition-all duration-200 whitespace-nowrap ${
-                activeTab === 'overview'
-                  ? 'bg-primary text-primary-foreground shadow-lg transform scale-105'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:scale-105'
-              }`}
-            >
-              <Clock className="w-5 h-5 mb-1" />
-              <span className="text-[10px] font-medium">{t('overview')}</span>
-            </button>
-            
-            <button
-              onClick={() => handleTabChange('schedule')}
-              className={`flex flex-col items-center justify-center w-16 h-16 rounded-xl transition-all duration-200 whitespace-nowrap ${
-                activeTab === 'schedule'
-                  ? 'bg-green-500 text-white shadow-lg transform scale-105'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:scale-105'
-              }`}
-            >
-              <MapPin className="w-5 h-5 mb-1" />
-              <span className="text-[10px] font-medium">{t('schedule')}</span>
-            </button>
-            
-            <button
-              onClick={() => handleTabChange('bookings')}
-              className={`flex flex-col items-center justify-center w-16 h-16 rounded-xl transition-all duration-200 whitespace-nowrap ${
-                activeTab === 'bookings'
-                  ? 'bg-purple-500 text-white shadow-lg transform scale-105'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:scale-105'
-              }`}
-            >
-              <Hotel className="w-5 h-5 mb-1" />
-              <span className="text-[10px] font-medium">{t('booking')}</span>
-            </button>
-            
-            <button
-              onClick={() => handleTabChange('photos')}
-              className={`flex flex-col items-center justify-center w-16 h-16 rounded-xl transition-all duration-200 whitespace-nowrap ${
-                activeTab === 'photos'
-                  ? 'bg-orange-500 text-white shadow-lg transform scale-105'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:scale-105'
-              }`}
-            >
-              <Camera className="w-5 h-5 mb-1" />
-              <span className="text-[10px] font-medium">{t('photos')}</span>
-            </button>
-            
-            <button
-              onClick={() => handleTabChange('chat')}
-              className={`flex flex-col items-center justify-center w-16 h-16 rounded-xl transition-all duration-200 whitespace-nowrap ${
-                activeTab === 'chat'
-                  ? 'bg-teal-500 text-white shadow-lg transform scale-105'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:scale-105'
-              }`}
-            >
-              <MessageSquare className="w-5 h-5 mb-1" />
-              <span className="text-[10px] font-medium">{t('chat')}</span>
-            </button>
-            
-            <button
-              onClick={() => handleTabChange('expenses')}
-              className={`flex flex-col items-center justify-center w-16 h-16 rounded-xl transition-all duration-200 whitespace-nowrap ${
-                activeTab === 'expenses'
-                  ? 'bg-yellow-500 text-white shadow-lg transform scale-105'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:scale-105'
-              }`}
-            >
-              <Calculator className="w-5 h-5 mb-1" />
-              <span className="text-[10px] font-medium">{t('expenses')}</span>
-        </button>
-        
-            <button
-              onClick={() => handleTabChange('report')}
-              className={`flex flex-col items-center justify-center w-16 h-16 rounded-xl transition-all duration-200 whitespace-nowrap ${
-                activeTab === 'report'
-                  ? 'bg-red-500 text-white shadow-lg transform scale-105'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:scale-105'
-              }`}
-            >
-              <FileText className="w-5 h-5 mb-1" />
-              <span className="text-[10px] font-medium">{t('report')}</span>
-            </button>
+      {/* 모바일 탭 네비게이션 — 아이콘 타일 + 외부 라벨 */}
+      <div className={`lg:hidden shrink-0 ${chatFillMode ? 'mb-0' : 'mb-0 lg:mb-4'}`}>
+        <div className={`${guidePanelShell} ${chatFillMode ? 'border-b-0' : ''} px-2 py-2`}>
+          <div className="flex items-end justify-between gap-1 overflow-x-auto pb-0.5">
+            {mobileNavTabs.map((tab) => {
+              const Icon = tab.icon
+              const isActive = activeTab === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => handleTabChange(tab.id)}
+                  className="flex min-w-0 flex-1 flex-col items-center gap-1 active:scale-95 transition-transform"
+                >
+                  <span
+                    className={`flex h-10 w-10 items-center justify-center rounded-xl shadow-md ring-1 ring-black/5 sm:h-11 sm:w-11 ${
+                      isActive
+                        ? `${tab.activeTile} text-white`
+                        : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    <Icon className="h-5 w-5" strokeWidth={1.75} />
+                  </span>
+                  <span
+                    className={`w-full truncate px-0.5 text-center text-[9px] font-medium leading-none sm:text-[10px] ${
+                      isActive ? 'text-gray-900' : 'text-gray-600'
+                    }`}
+                  >
+                    {tab.label}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         </div>
       </div>
 
       {/* 모바일 최적화된 아코디언 레이아웃 */}
-      <div className="space-y-0 lg:space-y-4">
+      <div className={chatFillMode ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'space-y-0 lg:space-y-4'}>
         {/* 투어 기본 정보 - 개요 탭에만 표시 */}
         <div className={`${activeTab === 'overview' ? 'block' : 'hidden'} lg:block`}>
           <div className={guidePanelShell}>
@@ -1826,7 +1809,7 @@ export default function GuideTourDetailPage() {
               </div>
 
         {/* 밤도깨비 투어 특별 정보 - 개요 탭에만 표시 */}
-        <div className={`${activeTab === 'overview' ? 'block' : 'hidden'} lg:block`}>
+        <div className={`${activeTab === 'overview' ? 'block' : 'hidden'} lg:block ${guideContentInset || 'px-3 sm:px-4'} py-2`}>
           <TourWeather 
             tourDate={tour.tour_date} 
             productId={(tour as TourRow & { product_id?: string }).product_id} 
@@ -2419,18 +2402,40 @@ export default function GuideTourDetailPage() {
         </div>
 
         {/* 채팅 - 채팅 탭에만 표시 */}
-        <div className={`${activeTab === 'chat' ? 'block' : 'hidden'} lg:block`}>
+        <div
+          className={
+            activeTab === 'chat'
+              ? chatFillMode
+                ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
+                : 'block lg:block'
+              : 'hidden lg:block'
+          }
+        >
           {tour && tour.tour_date && currentUserEmail ? (
-            <div className={`h-[600px] overflow-hidden bg-white ${
-              isGuideMobileLayout
-                ? 'border-y border-gray-200 rounded-none'
-                : 'border border-gray-200 rounded-lg'
-            }`}>
+            <div
+              className={`overflow-hidden bg-white ${
+                chatFillMode
+                  ? 'flex h-full min-h-0 flex-1 flex-col border-t border-gray-200'
+                  : isGuideMobileLayout
+                    ? 'h-[600px] border-y border-gray-200 rounded-none'
+                    : 'h-[600px] border border-gray-200 rounded-lg'
+              }`}
+            >
               <TourChatRoom
                 tourId={tour.id}
                 guideEmail={currentUserEmail}
                 tourDate={tour.tour_date}
                 isPublicView={false}
+                customerLanguage={locale === 'ko' ? 'ko' : 'en'}
+                productNames={
+                  product
+                    ? {
+                        name: product.name,
+                        name_ko: product.name_ko ?? product.name,
+                        name_en: product.name_en,
+                      }
+                    : null
+                }
               />
             </div>
           ) : (

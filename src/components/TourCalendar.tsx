@@ -7,6 +7,10 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTranslations, useLocale } from 'next-intl'
 import { isReservationCancelledStatus } from '@/utils/tourUtils'
+import {
+  getMultiDayTourDays,
+  getTourCalendarEndYmd,
+} from '@/lib/scheduleVehicleOilMaintenance'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 
@@ -23,8 +27,12 @@ interface ExtendedTour extends Omit<Tour, 'assignment_status'> {
   assigned_infants?: number | undefined;
   unassigned_people?: number | undefined;
   guide_name?: string | null | undefined;
+  guide_name_en?: string | null | undefined;
   assistant_name?: string | null | undefined;
+  assistant_name_en?: string | null | undefined;
   vehicle_number?: string | null | undefined;
+  /** 차량 nick (가이드 칩 표시용) */
+  vehicle_nick?: string | null | undefined;
 }
 
 interface OffSchedule {
@@ -55,6 +63,8 @@ interface TourCalendarProps {
   onTourStatusUpdate?: (tourId: string, newStatus: string) => Promise<void>
   userRole?: string | undefined
   userPosition?: string | null | undefined
+  /** guide: 투어명·배정인원·동료 가이드/어시·차량 nick */
+  chipVariant?: 'default' | 'guide'
 }
 
 const TourCalendar = memo(function TourCalendar({
@@ -71,6 +81,7 @@ const TourCalendar = memo(function TourCalendar({
   onTourStatusUpdate,
   userRole,
   userPosition,
+  chipVariant = 'default',
 }: TourCalendarProps) {
   const { user, simulatedUser, isSimulating } = useAuth()
   const t = useTranslations('tours.calendar')
@@ -83,51 +94,61 @@ const TourCalendar = memo(function TourCalendar({
     y: number
   } | null>(null)
   
-  // 투어 이름 매핑 함수 — 상품 name을 처음부터 사용(name_ko 별도 로드 없음)
+  // 투어 이름: 영문 페이지는 name_en 우선 (한글 product_name 사용 금지)
   const getTourDisplayName = (tour: ExtendedTour) => {
-    // 상품 name이 processToursData에서 이미 채워져 있음 → 별도 로드 없이 사용
-    const primaryName = tour.name || tour.product_name
-    if (primaryName) {
-      return primaryName
+    const meta = tour.product_id ? productMetaById[tour.product_id] : undefined
+    if (locale === 'en') {
+      const en =
+        (tour.name_en || '').trim() ||
+        getProductDisplayName(meta)
+      if (en) return en
+      return tour.product_id || ''
     }
-    // locale별 fallback
-    if (locale === 'en' && tour.name_en) {
-      return tour.name_en
-    }
-    if (tour.name_ko || tour.name_en) {
-      return tour.name_ko || tour.name_en || tour.product_id || ''
-    }
-    
-    const tourName = tour.product_id || ''
-    try {
-      // 번역 키 존재 여부 확인
-      const translationKey = `tourNameMapping.${tourName}`
-      
-      try {
-        const translatedName = t(translationKey)
-        // 번역이 성공하고 원본과 다르면 번역된 이름 반환
-        return translatedName && translatedName !== translationKey ? translatedName : tourName
-      } catch {
-        // 번역 키가 없으면 원본 이름 반환
-        console.warn(`Translation key not found for tour name: ${tourName}`)
-        return tourName
-      }
-    } catch (error) {
-      // 번역 실패 시 원본 이름 반환
-      console.warn(`Translation failed for tour name: ${tourName}`, error)
-      return tourName
-    }
+    const ko =
+      (tour.name || '').trim() ||
+      (tour.product_name || '').trim() ||
+      (tour.name_ko || '').trim() ||
+      getProductDisplayName(meta)
+    if (ko) return ko
+    return tour.product_id || ''
   }
 
-  // locale별 상품 표시명: 한국어=name 컬럼, 영문=name_en 컬럼
-  const getProductDisplayName = useCallback((meta: { name?: string; name_ko?: string | null; name_en?: string | null } | undefined) => {
+  // locale별 상품 표시명: 한국어=내부명/name, 영문=내부명_en/name_en
+  const getProductDisplayName = useCallback((meta: {
+    name?: string
+    name_ko?: string | null
+    name_en?: string | null
+    internal_name_ko?: string | null
+    internal_name_en?: string | null
+  } | undefined) => {
     if (!meta) return ''
-    if (locale === 'ko') return (meta.name || meta.name_ko || meta.name_en || '').trim() || ''
-    return (meta.name_en || meta.name || meta.name_ko || '').trim() || ''
+    if (locale === 'ko') {
+      return (
+        meta.internal_name_ko ||
+        meta.name ||
+        meta.name_ko ||
+        meta.name_en ||
+        ''
+      ).trim()
+    }
+    return (
+      meta.internal_name_en ||
+      meta.name_en ||
+      ''
+    ).trim()
   }, [locale])
 
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [productMetaById, setProductMetaById] = useState<{[id: string]: { name: string; name_ko?: string | null; name_en?: string | null; sub_category: string }}>({})
+  const [productMetaById, setProductMetaById] = useState<{
+    [id: string]: {
+      name: string
+      name_ko?: string | null
+      name_en?: string | null
+      internal_name_ko?: string | null
+      internal_name_en?: string | null
+      sub_category: string
+    }
+  }>({})
   const [choiceSummaryByTourId, setChoiceSummaryByTourId] = useState<Record<string, Record<string, number>>>({})
   const [hoveredTour, setHoveredTour] = useState<ExtendedTour | null>(null)
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 })
@@ -217,6 +238,24 @@ const TourCalendar = memo(function TourCalendar({
 
   // 현재 사용자 이메일 가져오기
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
+  const isGuideChip = chipVariant === 'guide'
+
+  const getGuideChipStaffNames = useCallback((tour: ExtendedTour): string[] => {
+    const selfEmail = String(currentUserEmail || '').trim().toLowerCase()
+    const guideEmail = String(tour.tour_guide_id || '').trim().toLowerCase()
+    const assistantEmail = String(tour.assistant_id || '').trim().toLowerCase()
+    // 닉네임 우선(한글 닉이면 영문명) — guide_name / assistant_name에 이미 반영
+    const guideName = String(tour.guide_name || '').trim()
+    const assistantName = String(tour.assistant_name || '').trim()
+    const names: string[] = []
+    if (guideName && (!selfEmail || guideEmail !== selfEmail)) names.push(guideName)
+    if (assistantName && (!selfEmail || assistantEmail !== selfEmail)) names.push(assistantName)
+    return names
+  }, [currentUserEmail])
+
+  const getGuideChipVehicleLabel = useCallback((tour: ExtendedTour) => {
+    return String(tour.vehicle_nick || tour.vehicle_number || '').trim()
+  }, [])
 
   // 오프 스케줄 모달 열기
   const openOffScheduleModal = useCallback((date: Date, existingSchedule?: OffSchedule) => {
@@ -399,22 +438,105 @@ const TourCalendar = memo(function TourCalendar({
     onVisibleCalendarRangeChange(fmt(calendarDays[0]), fmt(calendarDays[calendarDays.length - 1]))
   }, [currentDate, calendarDays, onVisibleCalendarRangeChange])
 
-  // 특정 날짜의 예약들 가져오기 (메모이제이션)
-  const getToursForDate = useCallback((date: Date) => {
-    // 라스베가스 시간대 (Pacific Time) 기준으로 날짜 문자열 생성
-    // Intl.DateTimeFormat을 사용하여 정확한 시간대 변환
-    const formatter = new Intl.DateTimeFormat('en-CA', {
+  // 숙박·멀티데이는 주 단위 오버레이 칩, 당일 투어만 셀 안에 표시
+  const formatLasVegasYmd = useCallback((date: Date) => {
+    return new Intl.DateTimeFormat('en-CA', {
       timeZone: 'America/Los_Angeles',
       year: 'numeric',
       month: '2-digit',
-      day: '2-digit'
+      day: '2-digit',
+    }).format(date)
+  }, [])
+
+  const isMultiDayTour = useCallback((tour: ExtendedTour) => {
+    if (getMultiDayTourDays(String(tour.product_id || '').trim()) > 1) return true
+    const start = String(tour.tour_date || '').trim().match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || ''
+    const end = getTourCalendarEndYmd(tour)
+    return Boolean(start && end && end > start)
+  }, [])
+
+  const getSingleDayToursForDate = useCallback((date: Date) => {
+    const dateString = formatLasVegasYmd(date)
+    return tours.filter((tour) => {
+      const start = String(tour.tour_date || '').trim().match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || ''
+      if (start !== dateString) return false
+      return !isMultiDayTour(tour)
     })
-    
-    const lasVegasDate = formatter.format(date)
-    const dateString = lasVegasDate // YYYY-MM-DD 형식
-    
-    return tours.filter(tour => tour.tour_date === dateString)
-  }, [tours])
+  }, [tours, formatLasVegasYmd, isMultiDayTour])
+
+  const calendarWeeks = useMemo(() => {
+    const weeks: Date[][] = []
+    for (let i = 0; i < calendarDays.length; i += 7) {
+      weeks.push(calendarDays.slice(i, i + 7))
+    }
+    return weeks
+  }, [calendarDays])
+
+  type MultiDayWeekSegment = {
+    tour: ExtendedTour
+    startCol: number
+    span: number
+    lane: number
+    continuesLeft: boolean
+    continuesRight: boolean
+  }
+
+  const getMultiDaySegmentsForWeek = useCallback(
+    (weekDays: Date[]): MultiDayWeekSegment[] => {
+      if (weekDays.length === 0) return []
+      const weekYmids = weekDays.map(formatLasVegasYmd)
+      const weekStart = weekYmids[0] || ''
+      const weekEnd = weekYmids[weekYmids.length - 1] || ''
+      if (!weekStart || !weekEnd) return []
+
+      const candidates = tours
+        .filter((tour) => {
+          if (!isMultiDayTour(tour)) return false
+          const start = String(tour.tour_date || '').trim().match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || ''
+          const end = getTourCalendarEndYmd(tour)
+          if (!start || !end) return false
+          return start <= weekEnd && end >= weekStart
+        })
+        .sort((a, b) => {
+          const as = String(a.tour_date || '')
+          const bs = String(b.tour_date || '')
+          if (as !== bs) return as.localeCompare(bs)
+          return getTourCalendarEndYmd(b).localeCompare(getTourCalendarEndYmd(a))
+        })
+
+      const laneEndYmd: string[] = []
+      const segments: MultiDayWeekSegment[] = []
+
+      for (const tour of candidates) {
+        const start = String(tour.tour_date || '').trim().match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || ''
+        const end = getTourCalendarEndYmd(tour)
+        const segStart = start < weekStart ? weekStart : start
+        const segEnd = end > weekEnd ? weekEnd : end
+        const startCol = weekYmids.indexOf(segStart)
+        const endCol = weekYmids.indexOf(segEnd)
+        if (startCol < 0 || endCol < 0 || endCol < startCol) continue
+
+        let lane = 0
+        for (; lane < laneEndYmd.length; lane++) {
+          if ((laneEndYmd[lane] || '') < segStart) break
+        }
+        if (lane === laneEndYmd.length) laneEndYmd.push(segEnd)
+        else laneEndYmd[lane] = segEnd
+
+        segments.push({
+          tour,
+          startCol,
+          span: endCol - startCol + 1,
+          lane,
+          continuesLeft: start < weekStart,
+          continuesRight: end > weekEnd,
+        })
+      }
+      return segments
+    },
+    [tours, isMultiDayTour, formatLasVegasYmd]
+  )
+
 
   // 특정 날짜의 오프 스케줄 가져오기 (메모이제이션)
   const getOffSchedulesForDate = useCallback((date: Date) => {
@@ -487,14 +609,12 @@ const TourCalendar = memo(function TourCalendar({
     t('days.0'), t('days.1'), t('days.2'), t('days.3'), t('days.4'), t('days.5'), t('days.6')
   ]
 
-  // 마우스 이벤트 핸들러
-  const handleMouseEnter = useCallback((tour: ExtendedTour, event: React.MouseEvent) => {
+  // 마우스 이벤트 핸들러 — 툴팁은 뷰포트 중앙에 표시 (상단 잘림 방지)
+  const handleMouseEnter = useCallback((tour: ExtendedTour) => {
     setHoveredTour(tour)
-    const rect = event.currentTarget.getBoundingClientRect()
-    
     setTooltipPosition({
-      x: rect.left + rect.width / 2,
-      y: rect.top - 10
+      x: typeof window !== 'undefined' ? window.innerWidth / 2 : 0,
+      y: typeof window !== 'undefined' ? window.innerHeight / 2 : 0,
     })
   }, [])
 
@@ -624,7 +744,7 @@ const TourCalendar = memo(function TourCalendar({
 
         const { data, error } = await supabase
           .from('products')
-          .select('id, name, name_ko, name_en, sub_category')
+          .select('id, name, name_ko, name_en, internal_name_ko, internal_name_en, sub_category')
           .in('id', missing)
 
         if (error) {
@@ -632,13 +752,34 @@ const TourCalendar = memo(function TourCalendar({
           return
         }
 
-        const next: {[id: string]: { name: string; name_ko?: string | null; name_en?: string | null; sub_category: string }} = {}
-        ;(data as Array<{ id: string; name?: string | null; name_ko?: string | null; name_en?: string | null; sub_category?: string | null }> | null || []).forEach((p) => {
+        const next: {
+          [id: string]: {
+            name: string
+            name_ko?: string | null
+            name_en?: string | null
+            internal_name_ko?: string | null
+            internal_name_en?: string | null
+            sub_category: string
+          }
+        } = {}
+        ;(
+          data as Array<{
+            id: string
+            name?: string | null
+            name_ko?: string | null
+            name_en?: string | null
+            internal_name_ko?: string | null
+            internal_name_en?: string | null
+            sub_category?: string | null
+          }> | null || []
+        ).forEach((p) => {
           next[p.id] = {
             name: p.name ?? '',
             name_ko: p.name_ko ?? null,
             name_en: p.name_en ?? null,
-            sub_category: p.sub_category || ''
+            internal_name_ko: p.internal_name_ko ?? null,
+            internal_name_en: p.internal_name_en ?? null,
+            sub_category: p.sub_category || '',
           }
         })
 
@@ -833,249 +974,326 @@ const TourCalendar = memo(function TourCalendar({
         ))}
       </div>
 
-      {/* 달력 그리드 */}
-      <div className="grid grid-cols-7 gap-px">
-        {calendarDays.map((date, index) => {
-          const dayTours = getToursForDate(date)
-          const dayOffSchedules = getOffSchedulesForDate(date)
-          const isCurrentMonthDay = isCurrentMonth(date)
-          const isTodayDate = isToday(date)
+      {/* 달력 그리드 — 주 단위 행 + 숙박 투어 오버레이 칩 */}
+      <div className="space-y-0">
+        {calendarWeeks.map((weekDays, weekIdx) => {
+          const multiDaySegments = getMultiDaySegmentsForWeek(weekDays)
+          const multiDayLaneStride = isGuideChip ? 56 : 40
 
           return (
-            <div
-              key={index}
-              className={`min-h-[120px] p-px border border-gray-200 ${
-                isCurrentMonthDay ? 'bg-white' : 'bg-gray-50'
-              } ${isTodayDate ? 'ring-2 ring-blue-500' : ''} ${
-                isCurrentMonthDay ? 'cursor-pointer hover:bg-gray-50' : ''
-              }`}
-              onClick={() => {
-                if (isCurrentMonthDay) {
-                  // 기존 오프 스케줄이 있으면 수정, 없으면 새로 추가
-                  const existingSchedule = dayOffSchedules.find(s => s.team_email === currentUserEmail)
-                  openOffScheduleModal(date, existingSchedule)
-                }
-              }}
-            >
-              {/* 날짜 */}
-              <div className={`text-xs font-medium mb-0.5 ml-[3px] mt-[3px] ${
-                isCurrentMonthDay ? 'text-gray-900' : 'text-gray-400'
-              } ${isTodayDate ? 'text-primary font-bold' : ''}`}>
-                {date.getDate()}
-              </div>
+            <div key={`week-${weekIdx}`} className="relative grid grid-cols-7">
+              {weekDays.map((date, dayIdx) => {
+                const dayTours = getSingleDayToursForDate(date)
+                const dayOffSchedules = getOffSchedulesForDate(date)
+                const isCurrentMonthDay = isCurrentMonth(date)
+                const isTodayDate = isToday(date)
+                // 숙박 오버레이가 실제로 덮는 날짜에만 여백 확보 (주 전체 밀어내림 방지)
+                const coveringSegs = multiDaySegments.filter(
+                  (s) => dayIdx >= s.startCol && dayIdx < s.startCol + s.span
+                )
+                const dayMaxLane = coveringSegs.reduce((m, s) => Math.max(m, s.lane), -1)
+                const dayMultiDaySpacer = dayMaxLane >= 0 ? (dayMaxLane + 1) * multiDayLaneStride : 0
 
-              {/* 투어 라벨들 */}
-              <div className="space-y-0.5">
-                {dayTours.map((tour, tourIndex) => {
-                  // 인원 계산
-                  const assignedPeople = getAssignedPeople(tour)
-                  const totalNonCancelled = getTotalPeopleSameProductDateNonCancelled(tour)
-                  const totalCancelled = getTotalPeopleSameProductDateCancelled(tour)
+                return (
+                  <div
+                    key={`day-${weekIdx}-${dayIdx}`}
+                    className={`min-h-[120px] p-px border border-gray-200 ${
+                      isCurrentMonthDay ? 'bg-white' : 'bg-gray-50'
+                    } ${isTodayDate ? 'ring-2 ring-blue-500' : ''} ${
+                      isCurrentMonthDay ? 'cursor-pointer hover:bg-gray-50' : ''
+                    }`}
+                    onClick={() => {
+                      if (isCurrentMonthDay) {
+                        const existingSchedule = dayOffSchedules.find(s => s.team_email === currentUserEmail)
+                        openOffScheduleModal(date, existingSchedule)
+                      }
+                    }}
+                  >
+                    <div className={`text-xs font-medium mb-0.5 ml-[3px] mt-[3px] ${
+                      isCurrentMonthDay ? 'text-gray-900' : 'text-gray-400'
+                    } ${isTodayDate ? 'text-primary font-bold' : ''}`}>
+                      {date.getDate()}
+                    </div>
 
-                  // 단독투어 여부 확인
-                  const isPrivateTour = (typeof tour.is_private_tour === 'string'
-                    ? tour.is_private_tour === 'TRUE'
-                    : !!tour.is_private_tour)
-                  
-                  // 배정 상태 아이콘 가져오기
-                  const getAssignmentStatusIcon = (status?: string | null) => {
-                    if (!status) return '⏸️' // 상태 없음
-                    const normalizedStatus = String(status).toLowerCase().trim()
-                    switch (normalizedStatus) {
-                      case 'assigned':
-                        return '⏳' // 배정됨 (오피스에서 배정)
-                      case 'confirmed':
-                        return '✅' // 확인됨 (가이드가 확인)
-                      case 'rejected':
-                        return '❌' // 거절됨 (가이드가 거절)
-                      case 'pending':
-                        return '⏸️' // 대기 중
-                      default:
-                        return '⏸️' // 기타 상태
-                    }
-                  }
-                  
-                  // 투어 상태 아이콘 가져오기
-                  const getTourStatusIcon = (status?: string | null) => {
-                    if (!status) return ''
-                    const normalizedStatus = String(status).toLowerCase().trim()
-                    // Canceled 변형들 처리
-                    if (normalizedStatus.includes('canceled') || normalizedStatus.includes('cancel')) {
-                      return '🚫' // 취소
-                    }
-                    switch (normalizedStatus) {
-                      case 'recruiting':
-                        return '📢' // 모집중
-                      case 'confirmed':
-                      case 'confirm':
-                        return '✓' // 확정
-                      case 'deleted':
-                        return '🗑️' // 삭제됨
-                      case 'approved':
-                        return '✅' // 승인됨
-                      case 'requested':
-                        return '📝' // 요청됨
-                      default:
-                        return ''
-                    }
-                  }
-                  
-                  // assignment_status 확인 - 여러 방법으로 시도
-                  const assignmentStatus = tour.assignment_status 
-                    || (tour as any).assignment_status 
-                    || (tour as Database['public']['Tables']['tours']['Row']).assignment_status
-                    || null
-                  
-                  // tour_status 확인
-                  const tourStatus = tour.tour_status 
-                    || (tour as any).tour_status 
-                    || (tour as Database['public']['Tables']['tours']['Row']).tour_status
-                    || null
-                  
-                  const assignmentIcon = getAssignmentStatusIcon(assignmentStatus)
-                  const tourStatusIcon = getTourStatusIcon(tourStatus)
-                  
-                  // 디버깅: 모든 투어의 assignment_status 확인 (개발 환경에서만)
-                  if (process.env.NODE_ENV === 'development' && tourIndex === 0) {
-                    console.log('Tour assignment status check:', {
-                      tourId: tour.id,
-                      productName: getTourDisplayName(tour),
-                      assignmentStatus: assignmentStatus,
-                      hasAssignmentStatus: 'assignment_status' in tour,
-                      tourKeys: Object.keys(tour),
-                      icon: assignmentIcon
-                    })
-                  }
-                  
-                  // 픽업 안내 미발송 예약 확인
-                  const hasUnsentPickupNotification = (() => {
-                    if (!tour.reservation_ids || !Array.isArray(tour.reservation_ids) || tour.reservation_ids.length === 0) {
-                      return false
-                    }
-                    const tourReservations = allReservations.filter((r: any) => 
-                      tour.reservation_ids?.includes(r.id)
-                    )
-                    // 픽업 시간이 있고, 픽업 안내를 보내지 않은 예약이 있는지 확인
-                    return tourReservations.some((r: any) => 
-                      r.pickup_time && 
-                      r.pickup_time.trim() !== '' && 
-                      (!r.pickup_notification_sent || r.pickup_notification_sent === false)
-                    )
-                  })()
-                  
-                  // 밸런스 확인
-                  const tourHasBalance = hasBalance(tour)
-                  
-                  // 고유한 key 생성: tour.id + tourIndex + date 정보를 조합
-                  const uniqueKey = `${tour.id}-${tourIndex}-${date.getTime()}`
-                  
-                  return (
+                    {dayMultiDaySpacer > 0 && (
+                      <div className="shrink-0" style={{ height: dayMultiDaySpacer }} aria-hidden />
+                    )}
+
+                    <div className="space-y-0.5">
+                      {dayTours.map((tour, tourIndex) => {
+                        const assignedPeople = getAssignedPeople(tour)
+                        const totalNonCancelled = getTotalPeopleSameProductDateNonCancelled(tour)
+                        const totalCancelled = getTotalPeopleSameProductDateCancelled(tour)
+                        const isPrivateTour = (typeof tour.is_private_tour === 'string'
+                          ? tour.is_private_tour === 'TRUE'
+                          : !!tour.is_private_tour)
+
+                        const getAssignmentStatusIcon = (status?: string | null) => {
+                          if (!status) return '⏸️'
+                          const normalizedStatus = String(status).toLowerCase().trim()
+                          switch (normalizedStatus) {
+                            case 'assigned': return '⏳'
+                            case 'confirmed': return '✅'
+                            case 'rejected': return '❌'
+                            case 'pending': return '⏸️'
+                            default: return '⏸️'
+                          }
+                        }
+
+                        const getTourStatusIcon = (status?: string | null) => {
+                          if (!status) return ''
+                          const normalizedStatus = String(status).toLowerCase().trim()
+                          if (normalizedStatus.includes('canceled') || normalizedStatus.includes('cancel')) {
+                            return '🚫'
+                          }
+                          switch (normalizedStatus) {
+                            case 'recruiting': return '📢'
+                            case 'confirmed':
+                            case 'confirm': return '✓'
+                            case 'deleted': return '🗑️'
+                            case 'approved': return '✅'
+                            case 'requested': return '📝'
+                            default: return ''
+                          }
+                        }
+
+                        const assignmentStatus = tour.assignment_status
+                          || (tour as { assignment_status?: string | null }).assignment_status
+                          || null
+                        const tourStatus = tour.tour_status
+                          || (tour as { tour_status?: string | null }).tour_status
+                          || null
+                        const assignmentIcon = getAssignmentStatusIcon(assignmentStatus)
+                        const tourStatusIcon = getTourStatusIcon(tourStatus)
+
+                        const hasUnsentPickupNotification = (() => {
+                          if (!tour.reservation_ids || !Array.isArray(tour.reservation_ids) || tour.reservation_ids.length === 0) {
+                            return false
+                          }
+                          const tourReservations = allReservations.filter((r: { id: string }) =>
+                            tour.reservation_ids?.includes(r.id)
+                          )
+                          return tourReservations.some((r: { pickup_time?: string | null; pickup_notification_sent?: boolean | null }) =>
+                            Boolean(r.pickup_time && r.pickup_time.trim() !== '') &&
+                            r.pickup_notification_sent !== true
+                          )
+                        })()
+
+                        const tourHasBalance = hasBalance(tour)
+                        const uniqueKey = `${tour.id}-${tourIndex}-${date.getTime()}`
+
+                        return (
+                          <div
+                            key={uniqueKey}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onTourClick(tour)
+                            }}
+                            onContextMenu={(e) => handleContextMenu(e, tour)}
+                            onMouseEnter={() => handleMouseEnter(tour)}
+                            onMouseLeave={handleMouseLeave}
+                            className={`text-[8px] sm:text-[10px] px-px py-0.5 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
+                              getProductColor(tour.product_id, tour.product_name)
+                            } ${
+                              isPrivateTour ? 'ring-2 ring-purple-400 ring-opacity-100' : ''
+                            } ${
+                              hasUnsentPickupNotification ? 'ring-2 ring-red-500 ring-opacity-100' : ''
+                            } ${
+                              tourHasBalance ? 'ring-2 ring-yellow-400 ring-opacity-100' : ''
+                            }`}
+                            title={
+                              (hasUnsentPickupNotification ? '픽업 안내 미발송 예약이 있습니다. ' : '') +
+                              (tourHasBalance ? '밸런스가 남아 있는 투어입니다.' : '')
+                            }
+                          >
+                            {isGuideChip ? (
+                              (() => {
+                                const staffNames = getGuideChipStaffNames(tour)
+                                const vehicleLabel = getGuideChipVehicleLabel(tour)
+                                return (
+                              <div className="leading-tight whitespace-normal break-words space-y-0.5">
+                                <div className={`font-medium ${isPrivateTour ? 'text-purple-100' : ''}`}>
+                                  {isPrivateTour ? '🔒 ' : ''}
+                                  {getTourDisplayName(tour) || getProductDisplayName(productMetaById[tour.product_id ?? ''])}
+                                </div>
+                                <div className="opacity-95">
+                                  {tour.assigned_people ?? assignedPeople}
+                                  {locale === 'en' ? ' pax' : '명'}
+                                </div>
+                                {staffNames.length > 0 && (
+                                  <div className="opacity-95">{staffNames.join(' · ')}</div>
+                                )}
+                                {vehicleLabel && (
+                                  <div className="opacity-95">{vehicleLabel}</div>
+                                )}
+                              </div>
+                                )
+                              })()
+                            ) : (
+                            <div className="whitespace-normal break-words leading-tight sm:whitespace-nowrap sm:truncate flex flex-wrap items-baseline gap-x-0.5">
+                              <span className={`font-medium ${isPrivateTour ? 'text-purple-100' : ''}`}>
+                                {hasUnsentPickupNotification && <span className="inline-block mr-0.5" title="픽업 안내 미발송">📧</span>}
+                                {tourHasBalance && <span className="inline-block mr-0.5" title="밸런스 남음">💲</span>}
+                                {tourStatusIcon && <span className="inline-block mr-0.5">{tourStatusIcon}</span>}
+                                {assignmentIcon && <span className="inline-block mr-0.5">{assignmentIcon}</span>}
+                                {isPrivateTour ? '🔒 ' : ''}
+                                {getTourDisplayName(tour) || getProductDisplayName(productMetaById[tour.product_id ?? ''])}
+                              </span>
+                              <span className="ml-0.5 sm:ml-1">
+                                {(() => {
+                                  const children = tour.assigned_children ?? 0
+                                  const infants = tour.assigned_infants ?? 0
+                                  const total = tour.assigned_people ?? assignedPeople
+                                  if (children === 0 && infants === 0) {
+                                    return `${total}/${totalNonCancelled}/${totalCancelled}`
+                                  }
+                                  const detailParts: string[] = []
+                                  if (children > 0) detailParts.push(locale === 'en' ? `Child ${children}` : `아동${children}`)
+                                  if (infants > 0) detailParts.push(locale === 'en' ? `Infant ${infants}` : `유아${infants}`)
+                                  return locale === 'en'
+                                    ? `Total ${total}/${totalNonCancelled}/${totalCancelled}, ${detailParts.join(', ')}`
+                                    : `총 ${total}/${totalNonCancelled}/${totalCancelled}, ${detailParts.join(', ')}`
+                                })()}
+                              </span>
+                              {tour.vehicle_number && (
+                                <span className="ml-0.5 text-[8px] sm:text-[9px] font-medium leading-none" title={t('vehicle')}>
+                                  {tour.vehicle_number}
+                                </span>
+                              )}
+                            </div>
+                            )}
+                          </div>
+                        )
+                      })}
+
+                      {offScheduleChipsVisible && dayOffSchedules.map((schedule, scheduleIndex) => {
+                        const statusColor = schedule.status === 'approved' ? 'bg-green-600' :
+                                          schedule.status === 'pending' ? 'bg-amber-500 ring-2 ring-amber-200 ring-inset' :
+                                          schedule.status === 'rejected' ? 'bg-red-500' : 'bg-gray-500'
+                        const statusText = schedule.status?.toLowerCase() === 'approved' ? t('offSchedule.status.approved') :
+                                         schedule.status?.toLowerCase() === 'pending' ? t('offSchedule.status.pending') :
+                                         schedule.status?.toLowerCase() === 'rejected' ? t('offSchedule.status.rejected') : schedule.status
+                        const applicantLabel =
+                          teamMemberNameLookup[schedule.team_email.trim().toLowerCase()] ||
+                          schedule.team_email.split('@')[0]
+
+                        return (
+                          <div
+                            key={`off-${schedule.id}-${scheduleIndex}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openOffScheduleModal(date, schedule)
+                            }}
+                            className={`text-[8px] sm:text-[10px] px-px py-0.5 rounded cursor-pointer text-white hover:opacity-90 transition-opacity ${statusColor}`}
+                            title={`${applicantLabel} · ${schedule.reason ?? ''} (${statusText})`}
+                          >
+                            <div className="leading-tight">
+                              <div className="font-medium">OFF</div>
+                              <div className="opacity-90">{statusText}</div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+
+              {multiDaySegments.map((seg) => {
+                const tour = seg.tour
+                const assignedPeople = getAssignedPeople(tour)
+                const totalNonCancelled = getTotalPeopleSameProductDateNonCancelled(tour)
+                const totalCancelled = getTotalPeopleSameProductDateCancelled(tour)
+                const isPrivateTour = (typeof tour.is_private_tour === 'string'
+                  ? tour.is_private_tour === 'TRUE'
+                  : !!tour.is_private_tour)
+                const tourEndYmd = getTourCalendarEndYmd(tour)
+                const tourHasBalance = hasBalance(tour)
+                const displayName = getTourDisplayName(tour) || getProductDisplayName(productMetaById[tour.product_id ?? ''])
+
+                return (
+                  <div
+                    key={`md-${tour.id}-w${weekIdx}-l${seg.lane}`}
+                    className="absolute z-20 px-0.5 box-border"
+                    style={{
+                      left: `calc(${seg.startCol} * 100% / 7)`,
+                      width: `calc(${seg.span} * 100% / 7)`,
+                      top: `${20 + seg.lane * multiDayLaneStride}px`,
+                      minHeight: isGuideChip ? '52px' : '36px',
+                    }}
+                  >
                     <div
-                      key={uniqueKey}
+                      role="button"
+                      tabIndex={0}
                       onClick={(e) => {
-                        e.stopPropagation() // 부모 요소의 클릭 이벤트 방지
+                        e.stopPropagation()
                         onTourClick(tour)
                       }}
                       onContextMenu={(e) => handleContextMenu(e, tour)}
-                      onMouseEnter={(e) => handleMouseEnter(tour, e)}
+                      onMouseEnter={() => handleMouseEnter(tour)}
                       onMouseLeave={handleMouseLeave}
-                      className={`text-[8px] sm:text-[10px] px-px py-0.5 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          onTourClick(tour)
+                        }
+                      }}
+                      className={`${isGuideChip ? 'min-h-[52px]' : 'min-h-[36px]'} w-full px-1 py-0.5 flex items-start text-[8px] sm:text-[10px] cursor-pointer text-white hover:opacity-90 transition-opacity ${
                         getProductColor(tour.product_id, tour.product_name)
+                      } ${
+                        seg.continuesLeft ? 'rounded-l-none' : 'rounded-l'
+                      } ${
+                        seg.continuesRight ? 'rounded-r-none' : 'rounded-r'
                       } ${
                         isPrivateTour ? 'ring-2 ring-purple-400 ring-opacity-100' : ''
                       } ${
-                        hasUnsentPickupNotification ? 'ring-2 ring-red-500 ring-opacity-100' : ''
-                      } ${
                         tourHasBalance ? 'ring-2 ring-yellow-400 ring-opacity-100' : ''
                       }`}
-                      title={
-                        (hasUnsentPickupNotification ? '픽업 안내 미발송 예약이 있습니다. ' : '') +
-                        (tourHasBalance ? '밸런스가 남아 있는 투어입니다.' : '')
-                      }
+                      title={`${String(tour.tour_date || '').slice(0, 10)} ~ ${tourEndYmd}`}
                     >
-                      <div className="whitespace-normal break-words leading-tight sm:whitespace-nowrap sm:truncate flex flex-wrap items-baseline gap-x-0.5">
-                        <span className={`font-medium ${isPrivateTour ? 'text-purple-100' : ''}`}>
-                          {hasUnsentPickupNotification && <span className="inline-block mr-0.5" title="픽업 안내 미발송">📧</span>}
-                          {tourHasBalance && <span className="inline-block mr-0.5" title="밸런스 남음">💲</span>}
-                          {tourStatusIcon && <span className="inline-block mr-0.5">{tourStatusIcon}</span>}
-                          {assignmentIcon && <span className="inline-block mr-0.5">{assignmentIcon}</span>}
-                          {isPrivateTour ? '🔒 ' : ''}{getTourDisplayName(tour) || getProductDisplayName(productMetaById[tour.product_id ?? ''])}
-                        </span>
-                        <span className="ml-0.5 sm:ml-1">
-                          {(() => {
-                            const children = tour.assigned_children ?? 0
-                            const infants = tour.assigned_infants ?? 0
-                            const total = tour.assigned_people ?? assignedPeople
-                            if (children === 0 && infants === 0) {
-                              return `${total}/${totalNonCancelled}/${totalCancelled}`
-                            }
-                            const detailParts: string[] = []
-                            if (children > 0) detailParts.push(locale === 'en' ? `Child ${children}` : `아동${children}`)
-                            if (infants > 0) detailParts.push(locale === 'en' ? `Infant ${infants}` : `유아${infants}`)
-                            return locale === 'en'
-                              ? `Total ${total}/${totalNonCancelled}/${totalCancelled}, ${detailParts.join(', ')}`
-                              : `총 ${total}/${totalNonCancelled}/${totalCancelled}, ${detailParts.join(', ')}`
-                          })()}
-                        </span>
-                        {(() => {
-                          const counts = choiceSummaryByTourId[String(tour.id)]
-                          if (!counts) return null
-                          const order = ['X', 'L', 'U', '_other'] as const
-                          const labels: Record<string, string> = { X: 'X', L: 'L', U: 'U', _other: '기타' }
-                          const emojis: Record<string, string> = { X: '❌', L: '🔽', U: '🔼', _other: '⭕' }
+                      {isGuideChip ? (
+                        (() => {
+                          const staffNames = getGuideChipStaffNames(tour)
+                          const vehicleLabel = getGuideChipVehicleLabel(tour)
                           return (
-                            <span className="ml-0.5 inline-flex items-baseline gap-0.5 flex-wrap align-baseline">
-                              {order.filter((k) => (counts[k] || 0) > 0).map((k) => (
-                                <span key={k} className="inline-flex items-baseline gap-px opacity-95" title={`${labels[k]} : ${counts[k]}`}>
-                                  <span className="leading-none">{emojis[k]}</span>
-                                  <span className="text-[8px] sm:text-[9px] font-medium leading-none">{counts[k]}</span>
-                                </span>
-                              ))}
-                            </span>
+                        <div className="w-full font-medium leading-tight whitespace-normal break-words space-y-0.5">
+                          <div>
+                            {seg.continuesLeft ? '← ' : ''}
+                            {isPrivateTour ? '🔒 ' : ''}
+                            {displayName}
+                            {seg.continuesRight ? ' →' : ''}
+                          </div>
+                          <div className="opacity-95">
+                            {tour.assigned_people ?? assignedPeople}
+                            {locale === 'en' ? ' pax' : '명'}
+                          </div>
+                          {staffNames.length > 0 && (
+                            <div className="opacity-95">{staffNames.join(' · ')}</div>
+                          )}
+                          {vehicleLabel && (
+                            <div className="opacity-95">{vehicleLabel}</div>
+                          )}
+                        </div>
                           )
-                        })()}
-                        {tour.vehicle_number && (
-                          <span className="ml-0.5 text-[8px] sm:text-[9px] font-medium leading-none" title={t('vehicle')}>
-                            {tour.vehicle_number}
-                          </span>
-                        )}
+                        })()
+                      ) : (
+                      <div className="w-full font-medium leading-tight whitespace-normal break-words">
+                        <div>
+                          {seg.continuesLeft ? '← ' : ''}
+                          {isPrivateTour ? '🔒 ' : ''}
+                          {displayName}
+                          {seg.continuesRight ? ' →' : ''}
+                        </div>
+                        <div className="opacity-95">
+                          {assignedPeople}/{totalNonCancelled}/{totalCancelled}
+                          {tour.vehicle_number ? ` · ${tour.vehicle_number}` : ''}
+                        </div>
                       </div>
+                      )}
                     </div>
-                  )
-                })}
-                
-                {/* 오프 스케줄 라벨들 */}
-                {offScheduleChipsVisible && dayOffSchedules.map((schedule, scheduleIndex) => {
-                  const statusColor = schedule.status === 'approved' ? 'bg-green-600' : 
-                                    schedule.status === 'pending' ? 'bg-amber-500 ring-2 ring-amber-200 ring-inset' : 
-                                    schedule.status === 'rejected' ? 'bg-red-500' : 'bg-gray-500'
-                  
-                  const statusText = schedule.status?.toLowerCase() === 'approved' ? t('offSchedule.status.approved') : 
-                                   schedule.status?.toLowerCase() === 'pending' ? t('offSchedule.status.pending') : 
-                                   schedule.status?.toLowerCase() === 'rejected' ? t('offSchedule.status.rejected') : schedule.status
-
-                  const applicantLabel =
-                    teamMemberNameLookup[schedule.team_email.trim().toLowerCase()] ||
-                    schedule.team_email.split('@')[0]
-                  
-                  return (
-                    <div
-                      key={`off-${schedule.id}-${scheduleIndex}`}
-                      onClick={(e) => {
-                        e.stopPropagation() // 부모 요소의 클릭 이벤트 방지
-                        openOffScheduleModal(date, schedule)
-                      }}
-                      className={`text-[8px] sm:text-[10px] px-px py-0.5 rounded cursor-pointer text-white hover:opacity-90 transition-opacity ${statusColor}`}
-                      title={`${applicantLabel} · ${schedule.reason ?? ''} (${statusText})`}
-                    >
-                      <div className="whitespace-normal break-words leading-tight sm:whitespace-nowrap sm:truncate">
-                        <span className="font-medium">🏖️ {applicantLabel}</span>
-                        <span className="opacity-90"> · {statusText}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+                  </div>
+                )
+              })}
             </div>
           )
         })}
@@ -1262,11 +1480,11 @@ const TourCalendar = memo(function TourCalendar({
         
         return (
           <div
-            className="fixed z-50 bg-white border border-gray-300 rounded-lg shadow-xl p-3 max-w-xs pointer-events-none"
+            className="fixed z-[60] bg-white border border-gray-300 rounded-lg shadow-xl p-3 max-w-xs w-[min(100vw-1.5rem,20rem)] max-h-[min(70vh,28rem)] overflow-y-auto pointer-events-none"
             style={{
               left: `${tooltipPosition.x}px`,
               top: `${tooltipPosition.y}px`,
-              transform: 'translateX(-50%) translateY(-100%)'
+              transform: 'translate(-50%, -50%)',
             }}
           >
             <div className="text-sm">
@@ -1346,11 +1564,6 @@ const TourCalendar = memo(function TourCalendar({
                 )}
               </div>
             </div>
-            
-            {/* 툴팁 화살표 */}
-            <div className="absolute top-full left-1/2 transform -translate-x-1/2">
-              <div className="w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-300"></div>
-            </div>
           </div>
         )
       })()}
@@ -1380,8 +1593,8 @@ const TourCalendar = memo(function TourCalendar({
             selectedOffSchedule.team_email)
 
         return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-1 sm:p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-xs w-full max-h-[75vh] overflow-y-auto relative top-0 left-0 right-0 bottom-0 m-auto">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-3 sm:p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-xs w-full max-h-[min(75vh,32rem)] overflow-y-auto">
             <div className="flex items-center justify-between p-3 sm:p-6 border-b">
               <h3 className="text-base sm:text-lg font-semibold text-gray-900">
                 {showStaffReviewPanel || showReadOnlyOtherStaff

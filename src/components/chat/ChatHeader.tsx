@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { Megaphone, Calendar, ExternalLink, ImageIcon, Users, Phone, Copy, Share2, ChevronDown, ChevronUp, Bell, BellOff, Car, Power } from 'lucide-react'
+import { Megaphone, Calendar, ExternalLink, ImageIcon, Users, Phone, Copy, Share2, Bell, BellOff, Car, Power } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import type { SupportedLanguage } from '@/lib/translation'
 import type { ChatRoom } from '@/types/chat'
@@ -219,47 +219,9 @@ export default function ChatHeader({
     onShare,
   ])
 
-  const mobileCollapsedActions = useMemo((): AttendanceDashboardAction[] => {
-    const ko = selectedLanguage === 'ko'
-    return [
-      ...mobileCoreActions,
-      {
-        id: 'expand',
-        label: ko ? '더보기' : 'More',
-        icon: ChevronDown,
-        onClick: onToggleMobileMenu,
-        tileClass: 'bg-gradient-to-br from-slate-400 to-slate-600',
-      },
-    ]
-  }, [mobileCoreActions, selectedLanguage, onToggleMobileMenu])
-
-  const mobileExpandedActions = useMemo((): AttendanceDashboardAction[] => {
-    const ko = selectedLanguage === 'ko'
-    return [
-      ...mobileCoreActions.map((action) =>
-        action.id === 'announcements'
-          ? { ...action, label: ko ? '공지사항' : 'Announcements' }
-          : action.id === 'pickup'
-            ? { ...action, label: ko ? '픽업 스케줄' : 'Pickup Schedule' }
-            : action.id === 'photos'
-              ? { ...action, label: ko ? '투어 사진' : 'Tour Photos' }
-              : action.id === 'guide'
-                ? { ...action, label: ko ? '가이드 정보' : 'Guide Info' }
-                : action.id === 'tour-detail'
-                  ? { ...action, label: ko ? '투어 상세' : 'Tour Details' }
-                  : action.id === 'participants'
-                    ? { ...action, label: ko ? '접속자' : 'Online' }
-                  : action
-      ),
-      {
-        id: 'collapse',
-        label: ko ? '접기' : 'Collapse',
-        icon: ChevronUp,
-        onClick: onToggleMobileMenu,
-        tileClass: 'bg-gradient-to-br from-slate-400 to-slate-600',
-      },
-    ]
-  }, [mobileCoreActions, selectedLanguage, onToggleMobileMenu])
+  // onToggleMobileMenu: 예전 More 접기용 — 버튼이 한 줄에 모두 보여 더 이상 사용하지 않음
+  void onToggleMobileMenu
+  void isMobileMenuOpen
 
   return (
     <div className="flex-shrink-0 px-2 lg:px-3 py-2 border-b bg-white bg-opacity-90 backdrop-blur-sm shadow-sm relative">
@@ -285,15 +247,11 @@ export default function ChatHeader({
 
       {/* 버튼 영역 */}
       <div
-        className={`${
-          isMobileMenuOpen ? 'flex flex-col w-full' : 'flex items-center gap-1 lg:gap-2'
-        } ${isPublicView ? '' : 'mt-1'} ${
-          isMobileMenuOpen ? '' : 'justify-center'
-        } lg:mt-1 lg:flex lg:flex-row lg:items-center lg:justify-between lg:gap-2`}
+        className={`flex items-center gap-1 lg:gap-2 justify-center ${isPublicView ? '' : 'mt-1'} lg:mt-1 lg:flex-row lg:items-center lg:justify-between`}
       >
-        {/* 모바일: 접었을 때 — 출석 관리와 동일한 앱 아이콘 한 줄 */}
-        <div className={`lg:hidden w-full flex-1 min-w-0 ${isMobileMenuOpen ? 'hidden' : ''}`}>
-          <AttendanceMobileDashboard actions={mobileCollapsedActions} layout="strip" />
+        {/* 모바일: 액션 전부 한 줄 (More 없음) */}
+        <div className="lg:hidden w-full flex-1 min-w-0">
+          <AttendanceMobileDashboard actions={mobileCoreActions} layout="strip" />
         </div>
 
         {/* 데스크톱: 왼쪽 버튼 그룹 */}
@@ -393,13 +351,6 @@ export default function ChatHeader({
           >
             <Phone size={12} className="lg:w-3.5 lg:h-3.5" />
           </button>
-        </div>
-
-        {/* 모바일: 출석 관리와 동일한 앱 아이콘 대시보드 */}
-        <div className={`lg:hidden relative w-full ${isMobileMenuOpen ? '' : 'hidden'}`}>
-          {isMobileMenuOpen && (
-            <AttendanceMobileDashboard actions={mobileExpandedActions} />
-          )}
         </div>
 
         {/* 데스크톱: 오른쪽 버튼 그룹 */}
