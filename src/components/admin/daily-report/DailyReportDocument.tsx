@@ -1,13 +1,22 @@
 'use client'
 
-import { useState, Fragment, type ReactNode } from 'react'
+import { useMemo, useState, Fragment, type ReactNode } from 'react'
 import type {
   DailyReportData,
   DailyReportFinancialCategory,
   DailyReportTodoMatrixStatus,
+  DailyReportActivityActionKind,
+  DailyReportActivityHistoryGroup,
 } from '@/lib/dailyReport/types'
 import { formatReportDateLabel, formatReportDateRangeLabel, isSingleDayReport } from '@/lib/dailyReport/dateUtils'
 import { formatUsd } from '@/lib/dailyReport/moneyUtils'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   Calendar,
   CheckCircle2,
@@ -15,6 +24,8 @@ import {
   ChevronDown,
   ClipboardList,
   DollarSign,
+  History,
+  Users,
   Wallet,
 } from 'lucide-react'
 
@@ -181,6 +192,43 @@ function formatTodoCompletedAt(iso: string | null, isKo: boolean) {
   }
 }
 
+/** 매트릭스·뱃지용 짧은 시각 HH:mm (LA) */
+function formatTodoHhMm(iso: string | null | undefined) {
+  if (!iso) return null
+  try {
+    return new Date(iso).toLocaleTimeString('en-GB', {
+      timeZone: 'America/Los_Angeles',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+  } catch {
+    return null
+  }
+}
+
+/** 기간 활동용: M/D HH:mm (LA) */
+function formatActivityWhen(iso: string | null | undefined) {
+  if (!iso) return '—'
+  try {
+    const d = new Date(iso)
+    const md = d.toLocaleDateString('en-US', {
+      timeZone: 'America/Los_Angeles',
+      month: 'numeric',
+      day: 'numeric',
+    })
+    const hm = d.toLocaleTimeString('en-GB', {
+      timeZone: 'America/Los_Angeles',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+    return `${md} ${hm}`
+  } catch {
+    return iso
+  }
+}
+
 function TodoStatusSection({
   data,
   isKo,
@@ -217,8 +265,8 @@ function TodoStatusSection({
       </div>
       <p className="mb-1.5 text-[10px] text-muted-foreground sm:text-xs">
         {isKo
-          ? '큐 없는 항목은 N/A · 행 클릭 시 상세 펼침 · 출근 직원 기준 완료 체크'
-          : 'No-queue → N/A · click row to expand · checks by checked-in staff'}
+          ? '큐 없는 항목은 N/A · 완료 시각은 제목 옆 뱃지 · 행 클릭 시 변경 상세'
+          : 'No-queue → N/A · done time as title badge · click row for details'}
       </p>
       {rows.length > 0 ? (
         <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-border/60 sm:rounded-xl">
@@ -244,8 +292,14 @@ function TodoStatusSection({
             </thead>
             <tbody>
               {rows.map((row) => {
-                const doneSet = new Set(row.completedByEmails.map((e) => e.toLowerCase()))
+                const doneAtByEmail = row.completedAtByEmail ?? {}
                 const isOpen = expandedId === row.id
+                const activityItems = row.activityItems ?? []
+                const titleTime =
+                  formatTodoHhMm(row.completedAt) ||
+                  formatTodoHhMm(
+                    Object.values(doneAtByEmail).find((v): v is string => Boolean(v)) ?? null
+                  )
                 return (
                   <Fragment key={row.id}>
                     <tr
@@ -268,14 +322,22 @@ function TodoStatusSection({
                           isOpen ? 'bg-muted/30' : 'bg-white'
                         }`}
                       >
-                        <span className="inline-flex items-center gap-1">
+                        <span className="inline-flex min-w-0 items-center gap-1.5">
                           <ChevronDown
                             className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${
                               isOpen ? 'rotate-0' : '-rotate-90'
                             }`}
                             aria-hidden
                           />
-                          <span>{row.title}</span>
+                          <span className="min-w-0 truncate">{row.title}</span>
+                          {titleTime ? (
+                            <span
+                              className="inline-flex shrink-0 items-center rounded-md border border-emerald-200/80 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums tracking-tight text-emerald-800 sm:text-[11px]"
+                              title={formatTodoCompletedAt(row.completedAt, isKo)}
+                            >
+                              {titleTime}
+                            </span>
+                          ) : null}
                         </span>
                       </td>
                       <td
@@ -284,12 +346,24 @@ function TodoStatusSection({
                         {todoStatusLabel(row.status, isKo)}
                       </td>
                       {staffColumns.map((s) => {
-                        const checked = doneSet.has(s.email.toLowerCase())
+                        const emailKey = s.email.toLowerCase()
+                        const at =
+                          doneAtByEmail[emailKey] ??
+                          (row.completedByEmails.some((e) => e.toLowerCase() === emailKey)
+                            ? row.completedAt
+                            : null)
+                        const timeLabel = formatTodoHhMm(at)
                         return (
-                          <td key={s.email} className="px-1 py-1 text-center sm:px-2 sm:py-1.5">
-                            {checked ? (
-                              <span className="font-semibold text-emerald-600" aria-label="done">
-                                ✓
+                          <td
+                            key={s.email}
+                            className="px-1 py-1 text-center tabular-nums sm:px-2 sm:py-1.5"
+                          >
+                            {timeLabel ? (
+                              <span
+                                className="text-[10px] font-semibold text-emerald-700 sm:text-xs"
+                                title={formatTodoCompletedAt(at, isKo)}
+                              >
+                                {timeLabel}
                               </span>
                             ) : (
                               <span className="text-muted-foreground/40">·</span>
@@ -301,82 +375,61 @@ function TodoStatusSection({
                     {isOpen ? (
                       <tr className="border-t border-border/30 bg-muted/20">
                         <td colSpan={colSpan} className="px-2.5 py-2.5 sm:px-3 sm:py-3">
-                          <dl className="grid gap-1.5 text-[11px] sm:grid-cols-2 sm:gap-x-4 sm:gap-y-1.5 sm:text-sm">
-                            <div className="flex items-start justify-between gap-2 sm:justify-start sm:gap-3">
-                              <dt className="shrink-0 text-muted-foreground">
-                                {isKo ? '상태' : 'Status'}
-                              </dt>
-                              <dd className={`font-medium ${todoStatusClass(row.status)}`}>
-                                {todoStatusLabel(row.status, isKo)}
-                                {!row.hasQueue ? (
-                                  <span className="ml-1 text-[10px] font-normal text-muted-foreground sm:text-xs">
-                                    ({isKo ? '큐 없음' : 'no queue'})
+                          {activityItems.length > 0 ? (
+                            <div>
+                              <div className="mb-1.5 text-[10px] font-medium text-muted-foreground sm:text-xs">
+                                {isKo ? '변경 상세' : 'Change details'}
+                                {activityItems.length > 40 ? (
+                                  <span className="ml-1 font-normal">
+                                    ({isKo ? `최근 40건` : `latest 40`})
                                   </span>
                                 ) : null}
-                              </dd>
-                            </div>
-                            <div className="flex items-start justify-between gap-2 sm:justify-start sm:gap-3">
-                              <dt className="shrink-0 text-muted-foreground">
-                                {isKo ? '부서' : 'Dept'}
-                              </dt>
-                              <dd className="font-medium">{row.department || '—'}</dd>
-                            </div>
-                            <div className="flex items-start justify-between gap-2 sm:justify-start sm:gap-3">
-                              <dt className="shrink-0 text-muted-foreground">
-                                {isKo ? '담당' : 'Assigned'}
-                              </dt>
-                              <dd className="font-medium">
-                                {row.assignedToName || row.assignedToEmail || '—'}
-                              </dd>
-                            </div>
-                            <div className="flex items-start justify-between gap-2 sm:justify-start sm:gap-3">
-                              <dt className="shrink-0 text-muted-foreground">
-                                {isKo ? '완료자' : 'Done by'}
-                              </dt>
-                              <dd className="font-medium">
-                                {row.completedByNames.length > 0
-                                  ? row.completedByNames.join(', ')
-                                  : '—'}
-                              </dd>
-                            </div>
-                            <div className="flex items-start justify-between gap-2 sm:col-span-2 sm:justify-start sm:gap-3">
-                              <dt className="shrink-0 text-muted-foreground">
-                                {isKo ? '완료 시각' : 'Completed at'}
-                              </dt>
-                              <dd className="font-medium">
-                                {formatTodoCompletedAt(row.completedAt, isKo)}
-                              </dd>
-                            </div>
-                          </dl>
-                          {staffColumns.length > 0 ? (
-                            <div className="mt-2 rounded-md border border-border/50 bg-white/70 p-2 sm:rounded-lg sm:p-2.5">
-                              <div className="mb-1 text-[10px] font-medium text-muted-foreground sm:text-xs">
-                                {isKo ? '출근 직원 체크' : 'Staff checks'}
                               </div>
-                              <ul className="grid grid-cols-2 gap-1 text-[10px] sm:grid-cols-3 sm:text-xs md:grid-cols-4">
-                                {staffColumns.map((s) => {
-                                  const checked = doneSet.has(s.email.toLowerCase())
-                                  return (
-                                    <li
-                                      key={s.email}
-                                      className="flex items-center justify-between gap-2"
-                                    >
-                                      <span className="truncate">{s.name}</span>
-                                      <span
-                                        className={
-                                          checked
-                                            ? 'font-semibold text-emerald-600'
-                                            : 'text-muted-foreground/50'
-                                        }
-                                      >
-                                        {checked ? '✓' : '·'}
+                              <ul className="space-y-1.5">
+                                {activityItems.slice(0, 40).map((item, idx) => (
+                                  <li
+                                    key={`${item.at ?? 'x'}-${item.subject}-${idx}`}
+                                    className="rounded-md border border-border/50 bg-white/80 px-2 py-1.5 text-[11px] sm:rounded-lg sm:px-2.5 sm:py-2 sm:text-xs"
+                                  >
+                                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                      <span className="font-semibold text-foreground">
+                                        {item.subject}
                                       </span>
-                                    </li>
-                                  )
-                                })}
+                                      <span className="text-muted-foreground">
+                                        {item.actorName || item.actorEmail || '—'}
+                                      </span>
+                                      {formatTodoHhMm(item.at) ? (
+                                        <span className="tabular-nums text-muted-foreground">
+                                          {formatTodoHhMm(item.at)}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                                      {item.changes.map((ch) => (
+                                        <li key={`${ch.field}-${ch.before}-${ch.after}`}>
+                                          <span className="font-medium text-foreground/80">
+                                            {ch.fieldLabel}
+                                          </span>
+                                          <span className="mx-1">:</span>
+                                          <span className="line-through opacity-70">{ch.before}</span>
+                                          <span className="mx-1 text-foreground">→</span>
+                                          <span className="font-medium text-emerald-800">
+                                            {ch.after}
+                                          </span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </li>
+                                ))}
                               </ul>
                             </div>
-                          ) : null}
+                          ) : (
+                            <p className="text-[11px] text-muted-foreground sm:text-sm">
+                              {isKo
+                                ? '표시할 변경 내역이 없습니다.'
+                                : 'No change details for this item.'}
+                            </p>
+                          )}
                         </td>
                       </tr>
                     ) : null}
@@ -397,6 +450,247 @@ function TodoStatusSection({
         </p>
       ) : null}
       {data.todoSummary.notes.trim() ? <NoteBox>{data.todoSummary.notes}</NoteBox> : null}
+    </section>
+  )
+}
+
+function activityActionEmoji(kind: DailyReportActivityActionKind): string {
+  if (kind === 'add') return '➕'
+  if (kind === 'delete') return '❌'
+  return '🔁'
+}
+
+function activityActionBadgeClass(kind: DailyReportActivityActionKind): string {
+  if (kind === 'add') {
+    return 'border-sky-200/80 bg-sky-50 text-sky-800'
+  }
+  if (kind === 'delete') {
+    return 'border-rose-200/80 bg-rose-50 text-rose-800'
+  }
+  return 'border-emerald-200/80 bg-emerald-50 text-emerald-800'
+}
+
+function activityGroupKey(group: DailyReportActivityHistoryGroup): string {
+  return (group.actorEmail || group.actorName || 'unknown').toLowerCase()
+}
+
+function ActivityHistoryGroupList({
+  groups,
+  isKo,
+}: {
+  groups: DailyReportActivityHistoryGroup[]
+  isKo: boolean
+}) {
+  if (!groups.length) {
+    return (
+      <p className="text-xs text-muted-foreground sm:text-sm">
+        {isKo ? '표시할 활동이 없습니다.' : 'No activity to show.'}
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-2.5 sm:space-y-3">
+      {groups.map((group) => (
+        <div
+          key={activityGroupKey(group)}
+          className="overflow-hidden rounded-lg border border-border/60 sm:rounded-xl"
+        >
+          <div className="flex items-center justify-between gap-2 border-b border-border/40 bg-muted/40 px-2.5 py-1.5 sm:px-3 sm:py-2">
+            <span className="text-xs font-semibold sm:text-sm">{group.actorName}</span>
+            <span className="text-[10px] tabular-nums text-muted-foreground sm:text-xs">
+              {group.items.length}
+              {isKo ? '건' : ''}
+            </span>
+          </div>
+          <ul className="divide-y divide-border/30">
+            {group.items.map((item) => {
+              const kind = item.actionKind ?? 'edit'
+              const emoji = activityActionEmoji(kind)
+              const badgeClass = activityActionBadgeClass(kind)
+              const contentBadges =
+                (item.badges ?? []).length > 0
+                  ? item.badges!
+                  : [item.actionLabel || (isKo ? '변경' : 'Change')]
+              return (
+                <li
+                  key={item.id}
+                  className="flex gap-2 px-2.5 py-1.5 text-[11px] sm:gap-3 sm:px-3 sm:py-2 sm:text-xs"
+                >
+                  <span className="w-[4.5rem] shrink-0 tabular-nums text-muted-foreground sm:w-24">
+                    {formatActivityWhen(item.at)}
+                  </span>
+                  <div className="min-w-0 flex-1 leading-snug text-foreground">
+                    <span>{item.summary}</span>
+                    <span className="ml-1.5 inline-flex flex-wrap items-center gap-1 align-middle">
+                      {contentBadges.map((badge) => (
+                        <span
+                          key={`${item.id}-${badge}`}
+                          title={item.actionLabel}
+                          className={`inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold sm:text-[11px] ${badgeClass}`}
+                        >
+                          <span aria-hidden>{emoji}</span>
+                          <span>{badge}</span>
+                        </span>
+                      ))}
+                    </span>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ActivityHistoryModal({
+  open,
+  onOpenChange,
+  groups,
+  title,
+  isKo,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  groups: DailyReportActivityHistoryGroup[]
+  title: string
+  isKo: boolean
+}) {
+  const total = groups.reduce((sum, g) => sum + g.items.length, 0)
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        stackLevel="nested"
+        className="flex max-h-[85dvh] max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-h-[88vh]"
+      >
+        <DialogHeader className="shrink-0 space-y-1 border-b border-border/60 px-4 py-3 text-left sm:px-5 sm:py-4">
+          <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <History className="h-4 w-4 shrink-0 text-violet-600 sm:h-5 sm:w-5" />
+            <span className="truncate">{title}</span>
+            <span className="ml-auto text-xs font-medium tabular-nums text-muted-foreground sm:text-sm">
+              {total}
+              {isKo ? '건' : ''}
+            </span>
+          </DialogTitle>
+          <DialogDescription className="text-[11px] text-muted-foreground sm:text-xs">
+            {isKo
+              ? '라스베가스 현지 시간 기준 · 예약·투어·부킹 변경'
+              : 'Las Vegas local time · reservation / tour / booking changes'}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5 sm:py-4">
+          <ActivityHistoryGroupList groups={groups} isKo={isKo} />
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ActivityHistorySection({
+  data,
+  isKo,
+}: {
+  data: DailyReportData
+  isKo: boolean
+}) {
+  const history = data.activityHistory ?? { groups: [], items: [], totalCount: 0 }
+  const groups = history.groups ?? []
+  const [modalOpen, setModalOpen] = useState(false)
+  const [selectedKey, setSelectedKey] = useState<string | 'all'>('all')
+
+  const modalGroups = useMemo(() => {
+    if (selectedKey === 'all') return groups
+    return groups.filter((g) => activityGroupKey(g) === selectedKey)
+  }, [groups, selectedKey])
+
+  const modalTitle = useMemo(() => {
+    if (selectedKey === 'all') {
+      return isKo ? '활동 히스토리 — 전체' : 'Activity history — All'
+    }
+    const g = groups.find((x) => activityGroupKey(x) === selectedKey)
+    const name = g?.actorName || (isKo ? '직원' : 'Staff')
+    return isKo ? `활동 히스토리 — ${name}` : `Activity history — ${name}`
+  }, [groups, selectedKey, isKo])
+
+  const openAll = () => {
+    setSelectedKey('all')
+    setModalOpen(true)
+  }
+
+  const openGroup = (key: string) => {
+    setSelectedKey(key)
+    setModalOpen(true)
+  }
+
+  return (
+    <section>
+      <SectionTitle icon={<History className="h-4 w-4 text-violet-600 sm:h-5 sm:w-5" />}>
+        {isKo ? '활동 히스토리' : 'Activity history'}
+      </SectionTitle>
+      <p className="mb-2 text-[10px] text-muted-foreground sm:mb-2.5 sm:text-xs">
+        {isKo
+          ? `사이트 활동 ${history.totalCount}건 · 라스베가스 현지 시간 기준 · 직원별로 나눠 확인`
+          : `${history.totalCount} site actions · Las Vegas local time · open by staff`}
+      </p>
+
+      {groups.length > 0 ? (
+        <div className="overflow-hidden rounded-lg border border-border/60 sm:rounded-xl">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 bg-muted/40 px-2.5 py-2 sm:px-3">
+            <div className="flex items-center gap-1.5 text-xs font-semibold sm:text-sm">
+              <Users className="h-3.5 w-3.5 text-violet-600 sm:h-4 sm:w-4" />
+              {isKo ? '직원별 활동' : 'By staff'}
+              <span className="font-medium tabular-nums text-muted-foreground">
+                ({groups.length}
+                {isKo ? '명' : ''})
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={openAll}
+              className="inline-flex h-8 items-center rounded-lg border border-violet-200 bg-violet-50 px-2.5 text-[11px] font-semibold text-violet-800 transition hover:bg-violet-100 sm:h-9 sm:px-3 sm:text-xs"
+            >
+              {isKo ? `전체 보기 (${history.totalCount}건)` : `View all (${history.totalCount})`}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-1.5 p-2 sm:grid-cols-2 sm:gap-2 sm:p-2.5 md:grid-cols-3">
+            {groups.map((group) => {
+              const key = activityGroupKey(group)
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => openGroup(key)}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-background px-2.5 py-2 text-left transition hover:border-violet-200 hover:bg-violet-50/60 sm:px-3 sm:py-2.5"
+                >
+                  <span className="min-w-0 truncate text-xs font-semibold sm:text-sm">
+                    {group.actorName}
+                  </span>
+                  <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground sm:text-[11px]">
+                    {group.items.length}
+                    {isKo ? '건' : ''}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground sm:text-sm">
+          {isKo ? '표시할 활동이 없습니다.' : 'No activity to show.'}
+        </p>
+      )}
+
+      <ActivityHistoryModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        groups={modalGroups}
+        title={modalTitle}
+        isKo={isKo}
+      />
     </section>
   )
 }
@@ -766,7 +1060,8 @@ export function DailyReportDocument({ data, locale = 'ko' }: DailyReportDocument
           </section>
         ) : null}
 
-        <TodoStatusSection data={data} isKo={isKo} />
+        {singleDay ? <TodoStatusSection data={data} isKo={isKo} /> : null}
+        <ActivityHistorySection data={data} isKo={isKo} />
 
         {singleDay ? (
           <section>

@@ -198,6 +198,20 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
           <th style="padding:6px 8px;text-align:center;font-size:11px;">상태</th>
         </tr>`
 
+  const formatStaffTime = (iso: string | null | undefined) => {
+    if (!iso) return null
+    try {
+      return new Date(iso).toLocaleTimeString('en-GB', {
+        timeZone: 'America/Los_Angeles',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      })
+    } catch {
+      return null
+    }
+  }
+
   const todoMatrixBody = matrixRows
     .map((row) => {
       const statusLabel =
@@ -214,16 +228,43 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
           : row.status === 'pending'
             ? '#b45309'
             : '#6b7280'
-      const doneSet = new Set(row.completedByEmails.map((e) => e.toLowerCase()))
+      const doneAt = row.completedAtByEmail ?? {}
+      const titleTime =
+        formatStaffTime(row.completedAt) ||
+        formatStaffTime(Object.values(doneAt).find((v): v is string => Boolean(v)) ?? null)
+      const titleBadge = titleTime
+        ? ` <span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:6px;border:1px solid #a7f3d0;background:#ecfdf5;color:#065f46;font-size:10px;font-weight:600;font-variant-numeric:tabular-nums;vertical-align:middle;">${esc(titleTime)}</span>`
+        : ''
       const checks = staffCols
         .map((s) => {
-          const ok = doneSet.has(s.email.toLowerCase())
-          return `<td style="padding:6px 4px;text-align:center;font-size:12px;color:${ok ? '#059669' : '#d1d5db'};">${ok ? '✓' : '·'}</td>`
+          const emailKey = s.email.toLowerCase()
+          const at =
+            doneAt[emailKey] ??
+            (row.completedByEmails.some((e) => e.toLowerCase() === emailKey)
+              ? row.completedAt
+              : null)
+          const timeLabel = formatStaffTime(at)
+          return `<td style="padding:6px 4px;text-align:center;font-size:11px;color:${timeLabel ? '#047857' : '#d1d5db'};font-variant-numeric:tabular-nums;">${timeLabel ? esc(timeLabel) : '·'}</td>`
         })
         .join('')
+
+      const activity = (row.activityItems ?? [])
+        .slice(0, 12)
+        .map((item) => {
+          const changeText = item.changes
+            .map((ch) => `${ch.fieldLabel}: ${ch.before} → ${ch.after}`)
+            .join(' · ')
+          const when = formatStaffTime(item.at) || ''
+          return `<div style="font-size:11px;color:#4b5563;margin:2px 0;">${esc(item.subject)} · ${esc(item.actorName || item.actorEmail || '—')}${when ? ` · ${esc(when)}` : ''}${changeText ? ` — ${esc(changeText)}` : ''}</div>`
+        })
+        .join('')
+
       return `<tr>
-        <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;font-size:12px;">${esc(row.title)}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;text-align:center;font-size:11px;color:${statusColor};">${statusLabel}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;font-size:12px;vertical-align:top;">
+          ${esc(row.title)}${titleBadge}
+          ${activity ? `<div style="margin-top:4px;">${activity}</div>` : ''}
+        </td>
+        <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;text-align:center;font-size:11px;color:${statusColor};vertical-align:top;">${statusLabel}</td>
         ${checks}
       </tr>`
     })
@@ -235,7 +276,7 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
       ${statRow('미처리', `${data.todoSummary.pendingCount}건`)}
       ${statRow('보류', `${data.todoSummary.onHoldCount}건`)}
     </table>
-    <p style="font-size:11px;color:#6b7280;margin:0 0 8px;">큐 없는 항목은 N/A · 출근 직원 기준 완료 체크</p>
+    <p style="font-size:11px;color:#6b7280;margin:0 0 8px;">큐 없는 항목은 N/A · 완료 시각은 제목 옆 뱃지(HH:mm) · 고객 정보 검수 등은 변경 상세 포함</p>
     ${
       matrixRows.length
         ? `<table style="width:100%;border-collapse:collapse;"><thead>${todoMatrixHeader}</thead><tbody>${todoMatrixBody}</tbody></table>`
@@ -264,6 +305,71 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
     ${sectionNotes(data.tomorrowSchedule.notes)}
   `
 
+  const formatActivityWhen = (iso: string) => {
+    try {
+      const d = new Date(iso)
+      const md = d.toLocaleDateString('en-US', {
+        timeZone: 'America/Los_Angeles',
+        month: 'numeric',
+        day: 'numeric',
+      })
+      const hm = d.toLocaleTimeString('en-GB', {
+        timeZone: 'America/Los_Angeles',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      })
+      return `${md} ${hm}`
+    } catch {
+      return iso
+    }
+  }
+
+  const activityHistory = data.activityHistory ?? { groups: [], items: [], totalCount: 0 }
+  const activityGroupsHtml = (activityHistory.groups ?? [])
+    .map((group) => {
+      const rows = group.items
+        .map((item) => {
+          const actionKind = item.actionKind ?? 'edit'
+          const emoji = actionKind === 'add' ? '➕' : actionKind === 'delete' ? '❌' : '🔁'
+          const badgeStyle =
+            actionKind === 'add'
+              ? 'border:1px solid #bae6fd;background:#f0f9ff;color:#075985;'
+              : actionKind === 'delete'
+                ? 'border:1px solid #fecdd3;background:#fff1f2;color:#9f1239;'
+                : 'border:1px solid #a7f3d0;background:#ecfdf5;color:#065f46;'
+          const contentBadges =
+            (item.badges ?? []).length > 0 ? item.badges! : [item.actionLabel || '변경']
+          const badges = contentBadges
+            .map(
+              (b) =>
+                `<span title="${esc(item.actionLabel)}" style="display:inline-block;margin-left:4px;padding:1px 6px;border-radius:6px;${badgeStyle}font-size:10px;font-weight:600;vertical-align:middle;">${emoji} ${esc(b)}</span>`
+            )
+            .join('')
+          return `<tr>
+            <td style="padding:4px 8px;border-bottom:1px solid #f3f4f6;font-size:11px;color:#6b7280;white-space:nowrap;vertical-align:top;">${esc(formatActivityWhen(item.at))}</td>
+            <td style="padding:4px 8px;border-bottom:1px solid #f3f4f6;font-size:12px;vertical-align:top;">${esc(item.summary)}${badges}</td>
+          </tr>`
+        })
+        .join('')
+      return `<div style="margin-bottom:12px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+        <div style="padding:8px 10px;background:#f9fafb;font-size:13px;font-weight:600;display:flex;justify-content:space-between;">
+          <span>${esc(group.actorName)}</span>
+          <span style="font-weight:500;color:#6b7280;font-size:11px;">${group.items.length}건</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;">${rows}</table>
+      </div>`
+    })
+    .join('')
+
+  const activityBody = `
+    <p style="font-size:11px;color:#6b7280;margin:0 0 8px;">사이트 활동 ${activityHistory.totalCount}건 · 라스베가스 현지 시간 기준 · 직원별 예약·투어·부킹 변경</p>
+    ${
+      activityGroupsHtml ||
+      '<p style="font-size:12px;color:#6b7280;">표시할 활동이 없습니다.</p>'
+    }
+  `
+
   const additionalBlock = data.additionalNotes.trim()
     ? sectionBlock('종합 메모', `<div style="font-size:14px;white-space:pre-wrap;">${esc(data.additionalNotes.trim())}</div>`)
     : ''
@@ -279,7 +385,8 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
       ${sectionBlock('예약 관리 요약', reservationBody)}
       ${sectionBlock('투어 관리 요약 (재무)', tourBody)}
       ${financialBody ? sectionBlock('재무 보고', financialBody) : ''}
-      ${sectionBlock('TODO 처리 현황 (사용자별)', todoBody)}
+      ${singleDay ? sectionBlock('TODO 처리 현황 (사용자별)', todoBody) : ''}
+      ${sectionBlock('활동 히스토리', activityBody)}
       ${singleDay ? sectionBlock('내일 투어 스케줄 · 배차', tomorrowBody) : ''}
       ${additionalBlock}
     </div>

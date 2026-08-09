@@ -101,6 +101,24 @@ export type DailyReportTodoStaffColumn = {
 
 export type DailyReportTodoMatrixStatus = 'completed' | 'pending' | 'on_hold' | 'na'
 
+/** 어코디언: 필드 단위 변경 한 줄 */
+export type DailyReportTodoActivityChange = {
+  field: string
+  fieldLabel: string
+  before: string
+  after: string
+}
+
+/** 어코디언: 고객(대상)별 변경 내역 */
+export type DailyReportTodoActivityItem = {
+  at: string | null
+  actorEmail: string | null
+  actorName: string | null
+  /** 고객명 등 대상 */
+  subject: string
+  changes: DailyReportTodoActivityChange[]
+}
+
 export type DailyReportTodoMatrixRow = {
   id: string
   title: string
@@ -110,10 +128,14 @@ export type DailyReportTodoMatrixRow = {
   /** 완료 처리한 직원 이메일 (소문자) */
   completedByEmails: string[]
   completedByNames: string[]
+  /** 직원별 완료 시각 (이메일 소문자 → ISO) */
+  completedAtByEmail: Record<string, string | null>
   assignedToEmail: string | null
   assignedToName: string | null
   completedAt: string | null
   department: string | null
+  /** 행 펼침 시 표시할 업무 상세(예: 고객 정보 변경) */
+  activityItems: DailyReportTodoActivityItem[]
 }
 
 export type DailyReportTodoSummary = {
@@ -125,6 +147,36 @@ export type DailyReportTodoSummary = {
   matrixRows: DailyReportTodoMatrixRow[]
   byUser: DailyReportTodoUserActivity[]
   notes: string
+}
+
+/** 기간 보고용 직원 활동 한 줄 */
+export type DailyReportActivityActionKind = 'add' | 'edit' | 'delete'
+
+export type DailyReportActivityHistoryItem = {
+  id: string
+  at: string
+  actorEmail: string | null
+  actorName: string | null
+  category: string
+  actionLabel: string
+  /** 추가 / 수정 / 삭제 — UI에서 아이콘으로 표시 */
+  actionKind: DailyReportActivityActionKind
+  /** 예: [예약] - 고객명, 8/19/26 밤도깨비 2인 */
+  summary: string
+  /** 예: 투어 연결됨, 대기 > 취소 (액션 아이콘은 actionKind로 별도 표시) */
+  badges?: string[]
+}
+
+export type DailyReportActivityHistoryGroup = {
+  actorEmail: string | null
+  actorName: string
+  items: DailyReportActivityHistoryItem[]
+}
+
+export type DailyReportActivityHistory = {
+  groups: DailyReportActivityHistoryGroup[]
+  items: DailyReportActivityHistoryItem[]
+  totalCount: number
 }
 
 export type DailyReportTomorrowTour = {
@@ -190,6 +242,8 @@ export type DailyReportData = {
   tourSummary: DailyReportTourSummary
   financialReport: DailyReportFinancialReport
   todoSummary: DailyReportTodoSummary
+  /** 직원 활동 히스토리 (단일일·기간 공통) */
+  activityHistory: DailyReportActivityHistory
   tomorrowSchedule: DailyReportTomorrowSchedule
   additionalNotes: string
 }

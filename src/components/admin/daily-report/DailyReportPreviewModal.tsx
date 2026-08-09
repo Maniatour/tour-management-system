@@ -382,18 +382,22 @@ export function DailyReportPreviewModal({
                     onChange={(v) => updateNotes('tour', v)}
                     placeholder={isKo ? '예: 그랜드캐년 투어 지연 없이 완료' : 'Tour notes...'}
                   />
-                  <NoteField
-                    label={isKo ? 'TODO 메모' : 'TODO notes'}
-                    value={data.todoSummary.notes}
-                    onChange={(v) => updateNotes('todo', v)}
-                    placeholder={isKo ? '예: 픽업 알림 전체 발송 완료' : 'TODO notes...'}
-                  />
-                  <NoteField
-                    label={isKo ? '내일 스케줄 메모' : 'Tomorrow schedule notes'}
-                    value={data.tomorrowSchedule.notes}
-                    onChange={(v) => updateNotes('tomorrow', v)}
-                    placeholder={isKo ? '예: 내일 앤텔로프 2건 가이드 추가 배정 필요' : 'Schedule notes...'}
-                  />
+                  {!isRangeReport ? (
+                    <NoteField
+                      label={isKo ? 'TODO 메모' : 'TODO notes'}
+                      value={data.todoSummary.notes}
+                      onChange={(v) => updateNotes('todo', v)}
+                      placeholder={isKo ? '예: 픽업 알림 전체 발송 완료' : 'TODO notes...'}
+                    />
+                  ) : null}
+                  {!isRangeReport ? (
+                    <NoteField
+                      label={isKo ? '내일 스케줄 메모' : 'Tomorrow schedule notes'}
+                      value={data.tomorrowSchedule.notes}
+                      onChange={(v) => updateNotes('tomorrow', v)}
+                      placeholder={isKo ? '예: 내일 앤텔로프 2건 가이드 추가 배정 필요' : 'Schedule notes...'}
+                    />
+                  ) : null}
                   <NoteField
                     label={isKo ? '종합 메모 (SUPER에게 전달)' : 'Overall notes'}
                     value={data.additionalNotes}

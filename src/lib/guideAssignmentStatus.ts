@@ -108,10 +108,64 @@ export function getAssignmentStatusBadgeColor(status: string | null | undefined)
   }
 }
 
+type RespondToTourAssignmentResult =
+  | {
+      ok: true
+      assignment_status: string
+      personal_responded: boolean
+      already_final?: boolean
+    }
+  | { ok: false; error: string }
+
+/** 가이드 RLS로 tours 직접 UPDATE 불가 → RPC로 확정/거절 + 본인 팝업 ack */
+export async function respondToTourAssignment(
+  tourId: string,
+  decision: 'confirmed' | 'rejected',
+  recipientEmail?: string | null,
+): Promise<RespondToTourAssignmentResult> {
+  // 신규 DB types 에 RPC 반영 전 — any 캐스트
+  const { data, error } = await (supabase as any).rpc('respond_to_tour_assignment', {
+    p_tour_id: tourId,
+    p_decision: decision,
+    p_recipient_email: recipientEmail?.trim() ? recipientEmail.trim().toLowerCase() : null,
+  })
+
+  if (error) {
+    console.error('respondToTourAssignment', error)
+    return { ok: false, error: String(error.message || error) }
+  }
+
+  const row = (data ?? null) as {
+    ok?: boolean
+    error?: string
+    assignment_status?: string
+    personal_responded?: boolean
+    already_final?: boolean
+  } | null
+
+  if (!row || row.ok !== true) {
+    return { ok: false, error: row?.error || 'respond_failed' }
+  }
+
+  return {
+    ok: true,
+    assignment_status: String(row.assignment_status || decision),
+    personal_responded: row.personal_responded !== false,
+    ...(row.already_final ? { already_final: true } : {}),
+  }
+}
+
 export async function updateTourAssignmentStatus(
   tourId: string,
   status: GuideAssignmentStatusValue,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  recipientEmail?: string | null,
+): Promise<{ ok: true; assignment_status?: string } | { ok: false; error: string }> {
+  if (status === 'confirmed' || status === 'rejected') {
+    const result = await respondToTourAssignment(tourId, status, recipientEmail)
+    if (!result.ok) return result
+    return { ok: true, assignment_status: result.assignment_status }
+  }
+
   const { error } = await supabase
     .from('tours')
     .update({ assignment_status: status } as Database['public']['Tables']['tours']['Update'])
@@ -121,37 +175,43 @@ export async function updateTourAssignmentStatus(
     console.error('updateTourAssignmentStatus', error)
     return { ok: false, error: error.message }
   }
-  return { ok: true }
+  return { ok: true, assignment_status: status }
 }
 
 export async function confirmTourAssignmentForRecipient(
   tourId: string,
   recipientEmail: string,
-  recipientRole: 'guide' | 'assistant',
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { data: tour, error: fetchErr } = await supabase
-    .from('tours')
-    .select('tour_guide_id, assistant_id, assignment_status')
-    .eq('id', tourId)
-    .maybeSingle()
+  _recipientRole: 'guide' | 'assistant',
+): Promise<{ ok: true; assignment_status?: string } | { ok: false; error: string }> {
+  return respondToTourAssignment(tourId, 'confirmed', recipientEmail)
+}
 
-  if (fetchErr || !tour) {
-    return { ok: false, error: fetchErr?.message || 'Tour not found' }
+/** 현재 사용자가 이미 응답(ack)한 투어 id 목록 */
+export async function fetchPersonallyRespondedTourIds(
+  recipientEmail: string | null | undefined,
+): Promise<Set<string>> {
+  const email = (recipientEmail || '').trim().toLowerCase()
+  if (!email) return new Set()
+
+  const { data, error } = await (supabase as any).rpc('list_personally_responded_tour_ids', {
+    p_recipient_email: email,
+  })
+
+  if (error) {
+    console.error('fetchPersonallyRespondedTourIds', error)
+    // RPC 미적용 환경 폴백
+    const { data: rows, error: fallbackErr } = await supabase
+      .from('guide_schedule_confirm_popups')
+      .select('tour_id')
+      .ilike('recipient_email', email)
+      .not('acknowledged_at', 'is', null)
+    if (fallbackErr) {
+      console.error('fetchPersonallyRespondedTourIds fallback', fallbackErr)
+      return new Set()
+    }
+    return new Set((rows || []).map((row) => String(row.tour_id)).filter(Boolean))
   }
 
-  const email = recipientEmail.toLowerCase()
-  const isGuide = recipientRole === 'guide' && String(tour.tour_guide_id || '').toLowerCase() === email
-  const isAssistant =
-    recipientRole === 'assistant' && String(tour.assistant_id || '').toLowerCase() === email
-
-  if (!isGuide && !isAssistant) {
-    return { ok: false, error: 'Not assigned to this tour' }
-  }
-
-  const current = normalizeAssignmentStatus(tour.assignment_status)
-  if (current === 'confirmed' || current === 'rejected') {
-    return { ok: true }
-  }
-
-  return updateTourAssignmentStatus(tourId, 'confirmed')
+  const ids = Array.isArray(data) ? data : []
+  return new Set(ids.map((id) => String(id)).filter(Boolean))
 }

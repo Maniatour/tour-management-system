@@ -206,9 +206,11 @@ export function applySecurityHeaders(
   response.headers.set('X-Frame-Options', frameOptions)
   response.headers.set('X-Content-Type-Options', 'nosniff')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+  // () = 완전 차단 → 위치/마이크/카메라가 OS·브라우저 허용과 무관하게 거부됨
+  // (self) = 이 사이트에서만 허용 (투어 채팅 위치 공유, 음성통화, 영수증 카메라)
   response.headers.set(
     'Permissions-Policy',
-    'camera=(), microphone=(), geolocation=()'
+    'camera=(self), microphone=(self), geolocation=(self)'
   )
 
   if (isProduction()) {

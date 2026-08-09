@@ -17,11 +17,19 @@ import {
   isRebookingReservationByReasonMap,
 } from '@/lib/reservationCancellationReason'
 import { isQueuePanelLinkedOpTodo, todoMatrixDedupeKey } from '@/lib/opTodoQueuePanelFilter'
+import {
+  buildCustomerInfoReviewActivityItems,
+  isCustomerInfoReviewTodoTitle,
+} from '@/lib/dailyReport/todoActivityDetails'
+import {
+  buildDailyReportActivityHistory,
+} from '@/lib/dailyReport/buildActivityHistory'
 import { fetchAdminRegCancelYtdWeekdayAvg } from '@/lib/adminRegCancelYtdWeekdayAvg'
 import type {
   DailyReportBreakdownRow,
   DailyReportCountGuests,
   DailyReportData,
+  DailyReportTodoActivityItem,
   DailyReportTodoMatrixRow,
   DailyReportTodoMatrixStatus,
   DailyReportTodoStaffColumn,
@@ -555,6 +563,8 @@ export async function generateDailyReportData(
 
   const completerByTodo = new Map<string, string>()
   const completersByTodo = new Map<string, Set<string>>()
+  /** todoId → email → 완료 시각(ISO). 동일 유저는 가장 이른 completed 로그 시각 사용 */
+  const completedAtByTodoEmail = new Map<string, Map<string, string>>()
   for (const log of todoLogs) {
     const email = (log.user_email || '').trim().toLowerCase()
     if (!email) continue
@@ -562,6 +572,13 @@ export async function generateDailyReportData(
     const set = completersByTodo.get(log.todo_id) ?? new Set<string>()
     set.add(email)
     completersByTodo.set(log.todo_id, set)
+    const at = log.timestamp
+    if (at) {
+      const byEmail = completedAtByTodoEmail.get(log.todo_id) ?? new Map<string, string>()
+      const prev = byEmail.get(email)
+      if (!prev || at < prev) byEmail.set(email, at)
+      completedAtByTodoEmail.set(log.todo_id, byEmail)
+    }
   }
 
   /** 전체 Todo (고정 패널 연동 포함) — 출근 직원 매트릭스 */
@@ -662,7 +679,7 @@ export async function generateDailyReportData(
 
   const collectCompleterEmails = (t: OpTodoRow): string[] => {
     const emails = new Set(completersByTodo.get(t.id) ?? [])
-    if (emails.size === 0) {
+    if (emails.size === 0 && t.completed) {
       const fallback = (completerByTodo.get(t.id) || t.assigned_to || t.created_by || '')
         .trim()
         .toLowerCase()
@@ -671,10 +688,51 @@ export async function generateDailyReportData(
     return [...emails]
   }
 
+  const collectCompletedAtByEmail = (t: OpTodoRow, emails: string[]): Record<string, string | null> => {
+    const fromLogs = completedAtByTodoEmail.get(t.id)
+    const out: Record<string, string | null> = {}
+    for (const email of emails) {
+      out[email] = fromLogs?.get(email) ?? (t.completed ? t.completed_at : null)
+    }
+    return out
+  }
+
+  const mergeCompletedAtByEmail = (
+    a: Record<string, string | null>,
+    b: Record<string, string | null>
+  ): Record<string, string | null> => {
+    const out: Record<string, string | null> = { ...a }
+    for (const [email, at] of Object.entries(b)) {
+      const prev = out[email]
+      if (!prev) out[email] = at
+      else if (at && at < prev) out[email] = at
+    }
+    return out
+  }
+
+  const customerInfoActivityItems = await buildCustomerInfoReviewActivityItems(client, {
+    rangeStartIso: start,
+    rangeEndIso: end,
+    staffNameForEmail,
+    locale: 'ko',
+  })
+
+  const activityHistory = await buildDailyReportActivityHistory(client, {
+    startYmd: reportDate,
+    endYmd: endDate,
+    rangeStartIso: start,
+    rangeEndIso: end,
+    staffNameForEmail,
+    locale: 'ko',
+  })
+
   const toMatrixRow = (t: OpTodoRow): DailyReportTodoMatrixRow => {
     const status = resolveTodoStatus(t)
     const completedByEmails = collectCompleterEmails(t)
     const assigned = (t.assigned_to || '').trim().toLowerCase() || null
+    const activityItems: DailyReportTodoActivityItem[] = isCustomerInfoReviewTodoTitle(t.title)
+      ? customerInfoActivityItems
+      : []
     return {
       id: t.id,
       title: t.title,
@@ -684,10 +742,12 @@ export async function generateDailyReportData(
       completedByNames: completedByEmails
         .map((e) => staffNameForEmail(e) || e)
         .filter(Boolean),
+      completedAtByEmail: collectCompletedAtByEmail(t, completedByEmails),
       assignedToEmail: assigned,
       assignedToName: assigned ? staffNameForEmail(assigned) : null,
       completedAt: t.completed_at,
       department: t.department || null,
+      activityItems,
     }
   }
 
@@ -715,13 +775,17 @@ export async function generateDailyReportData(
     const base = preferNew ? row : existing
     const other = preferNew ? existing : row
     const mergedEmails = [...new Set([...base.completedByEmails, ...other.completedByEmails])]
+    const mergedActivity =
+      base.activityItems.length >= other.activityItems.length ? base.activityItems : other.activityItems
     dedupedByTitle.set(key, {
       ...base,
       completedByEmails: mergedEmails,
       completedByNames: mergedEmails.map((e) => staffNameForEmail(e) || e),
+      completedAtByEmail: mergeCompletedAtByEmail(base.completedAtByEmail, other.completedAtByEmail),
       completedAt: base.completedAt || other.completedAt,
       assignedToEmail: base.assignedToEmail || other.assignedToEmail,
       assignedToName: base.assignedToName || other.assignedToName,
+      activityItems: mergedActivity,
     })
   }
 
@@ -806,6 +870,7 @@ export async function generateDailyReportData(
       ),
       notes: options?.preserveNotes?.todoNotes ?? '',
     },
+    activityHistory,
     tomorrowSchedule: {
       date: tomorrowDate,
       tours: tomorrowTourRows,

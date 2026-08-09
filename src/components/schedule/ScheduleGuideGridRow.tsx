@@ -156,8 +156,50 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
   const canMoveDown = selectedIndex >= 0 && selectedIndex < selectedTeamMembers.length - 1
   const isCdlDriver = cdlDriverEmailSet.has(teamMemberId)
   const isCdlKoreanDriver = cdlKoreanDriverEmailSet.has(teamMemberId)
-  const guideNameHoverContent =
-    teamMembers.find((m) => m.email === teamMemberId)?.notes?.trim() || ''
+  const guideNameHoverContent = (() => {
+    const member = teamMembers.find((m) => m.email === teamMemberId)
+    if (!member) return ''
+
+    const lines: string[] = []
+    const notes = member.notes?.trim() || ''
+    if (notes) lines.push(notes)
+
+    const neverEmails = Array.isArray(member.do_not_team_with) ? member.do_not_team_with : []
+    const avoidEmails = Array.isArray(member.avoid_team_with) ? member.avoid_team_with : []
+
+    const resolvePeerName = (email: string) => {
+      const normalized = String(email || '')
+        .trim()
+        .toLowerCase()
+      if (!normalized) return ''
+      const peer = teamMembers.find((m) => m.email.trim().toLowerCase() === normalized)
+      return (peer?.nick_name?.trim() || peer?.name_ko?.trim() || email.trim() || normalized).toString()
+    }
+
+    const neverNames = neverEmails.map(resolvePeerName).filter(Boolean)
+    const avoidNames = avoidEmails.map(resolvePeerName).filter(Boolean)
+
+    if (neverNames.length > 0 || avoidNames.length > 0) {
+      if (lines.length > 0) lines.push('')
+      lines.push(locale === 'ko' ? '팀 조합 제한' : 'Team pairing restrictions')
+      if (neverNames.length > 0) {
+        lines.push(
+          locale === 'ko'
+            ? `절대 금지: ${neverNames.join(', ')}`
+            : `Never: ${neverNames.join(', ')}`,
+        )
+      }
+      if (avoidNames.length > 0) {
+        lines.push(
+          locale === 'ko'
+            ? `기피: ${avoidNames.join(', ')}`
+            : `Avoid: ${avoidNames.join(', ')}`,
+        )
+      }
+    }
+
+    return lines.join('\n')
+  })()
   // 멀티데이 투어 정보를 미리 계산
   const multiDayTours: { [dateString: string]: { startDate: string; endDate: string; days: number; extendsToNextMonth: boolean; dayData: ScheduleGuideDailyData } } = {}
   

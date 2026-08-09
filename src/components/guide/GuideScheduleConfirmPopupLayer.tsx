@@ -13,8 +13,7 @@ import {
   isGuideScheduleConfirmPopupSchemaMissingError,
 } from '@/lib/guideScheduleConfirmMessage'
 import {
-  confirmTourAssignmentForRecipient,
-  updateTourAssignmentStatus,
+  respondToTourAssignment,
 } from '@/lib/guideAssignmentStatus'
 import { useAuth } from '@/contexts/AuthContext'
 import { canUseAuthenticatedRest, supabase } from '@/lib/supabase'
@@ -108,28 +107,9 @@ export function GuideScheduleConfirmPopupLayer({ userEmail }: GuideScheduleConfi
     if (!current) return
     setResponding(true)
     try {
-      const { error } = await supabase
-        .from('guide_schedule_confirm_popups')
-        .update({ acknowledged_at: new Date().toISOString() })
-        .eq('id', current.id)
-
-      if (error) throw error
-
-      const role = current.recipient_role === 'assistant' ? 'assistant' : 'guide'
-      if (decision === 'confirmed') {
-        const confirmResult = await confirmTourAssignmentForRecipient(
-          current.tour_id,
-          emailKey,
-          role,
-        )
-        if (!confirmResult.ok) {
-          console.warn('GuideScheduleConfirmPopupLayer assignment confirm', confirmResult.error)
-        }
-      } else {
-        const rejectResult = await updateTourAssignmentStatus(current.tour_id, 'rejected')
-        if (!rejectResult.ok) {
-          console.warn('GuideScheduleConfirmPopupLayer assignment reject', rejectResult.error)
-        }
+      const result = await respondToTourAssignment(current.tour_id, decision, emailKey)
+      if (!result.ok) {
+        throw new Error(result.error)
       }
 
       setQueue((prev) => prev.filter((p) => p.id !== current.id))

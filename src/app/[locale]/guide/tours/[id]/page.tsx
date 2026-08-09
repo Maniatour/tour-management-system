@@ -43,6 +43,10 @@ import { filterTicketBookingsExcludedFromMainUi } from '@/lib/ticketBookingSoftD
 import { toast } from 'sonner'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import {
+  fetchPersonallyRespondedTourIds,
+  respondToTourAssignment,
+} from '@/lib/guideAssignmentStatus'
+import {
   isReservationCancelledStatus,
   isReservationDeletedStatus,
   normalizeReservationIds,
@@ -426,6 +430,7 @@ export default function GuideTourDetailPage() {
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
   
   const [tour, setTour] = useState<TourRow | null>(null)
+  const [assignmentPersonallyResponded, setAssignmentPersonallyResponded] = useState(false)
   const [reservations, setReservations] = useState<ReservationRow[]>([])
   const [customers, setCustomers] = useState<CustomerRow[]>([])
   const [product, setProduct] = useState<ProductRow | null>(null)
@@ -1042,6 +1047,23 @@ export default function GuideTourDetailPage() {
   }, [loadTourData])
 
   useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      if (!tour?.id || !currentUserEmail) {
+        setAssignmentPersonallyResponded(false)
+        return
+      }
+      const ids = await fetchPersonallyRespondedTourIds(currentUserEmail)
+      if (!cancelled) {
+        setAssignmentPersonallyResponded(ids.has(tour.id))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [tour?.id, currentUserEmail])
+
+  useEffect(() => {
     const mq = window.matchMedia('(max-width: 1023px)')
     const sync = () => setIsGuideMobileLayout(mq.matches)
     sync()
@@ -1180,14 +1202,15 @@ export default function GuideTourDetailPage() {
   const handleAssignmentResponse = useCallback(async (status: 'confirmed' | 'rejected') => {
     if (!tour || !currentUserEmail) return
 
-    // 가이드가 자신에게 배정된 투어인지 확인
-    const isAssignedGuide = tour.tour_guide_id === currentUserEmail || tour.assistant_id === currentUserEmail
+    const email = currentUserEmail.toLowerCase()
+    const isAssignedGuide =
+      String(tour.tour_guide_id || '').toLowerCase() === email ||
+      String(tour.assistant_id || '').toLowerCase() === email
     if (!isAssignedGuide) {
       alert(locale === 'ko' ? '배정된 가이드만 확인/거절할 수 있습니다.' : 'Only assigned guides can confirm or reject.')
       return
     }
 
-    // assignment_status가 'assigned'인 경우에만 확인/거절 가능
     const currentStatus = (tour as TourRow & { assignment_status?: string }).assignment_status
     if (currentStatus !== 'assigned') {
       alert(locale === 'ko' ? '배정 대기 중인 투어만 확인/거절할 수 있습니다.' : 'Only tours with assigned status can be confirmed or rejected.')
@@ -1195,20 +1218,18 @@ export default function GuideTourDetailPage() {
     }
 
     try {
-      const { error } = await supabase
-        .from('tours')
-        .update({ assignment_status: status } as Database['public']['Tables']['tours']['Update'])
-        .eq('id', tour.id)
-
-      if (error) {
-        console.error('Error updating assignment status:', error)
+      const result = await respondToTourAssignment(tour.id, status, email)
+      if (!result.ok) {
+        console.error('Error updating assignment status:', result.error)
         alert(locale === 'ko' ? '배정 상태 업데이트 중 오류가 발생했습니다.' : 'Error updating assignment status.')
         return
       }
 
-      // 로컬 상태 업데이트
+      setAssignmentPersonallyResponded(true)
       setTour((prev: TourRow | null) =>
-        prev ? ({ ...prev, assignment_status: status } as TourRow) : null
+        prev
+          ? ({ ...prev, assignment_status: result.assignment_status } as TourRow)
+          : null
       )
       
       alert(locale === 'ko' 
@@ -1576,9 +1597,11 @@ export default function GuideTourDetailPage() {
                     return status || t('assignmentStatus')
                   })()}
                 </span>
-                {/* 배정 확인/거절 버튼 (assignment_status가 'assigned'이고 현재 사용자가 가이드로 배정된 경우에만 표시) */}
-                {(tour as TourRow & { assignment_status?: string }).assignment_status === 'assigned' && 
-                 (tour.tour_guide_id === currentUserEmail || tour.assistant_id === currentUserEmail) && (
+                {/* 배정 확인/거절 버튼 (assignment_status가 'assigned'이고 현재 사용자가 아직 응답하지 않은 경우) */}
+                {(tour as TourRow & { assignment_status?: string }).assignment_status === 'assigned' &&
+                 !assignmentPersonallyResponded &&
+                 (String(tour.tour_guide_id || '').toLowerCase() === String(currentUserEmail || '').toLowerCase() ||
+                   String(tour.assistant_id || '').toLowerCase() === String(currentUserEmail || '').toLowerCase()) && (
                   <div ref={assignmentActionRef} className="flex items-center space-x-1">
                     <button
                       onClick={(e) => {

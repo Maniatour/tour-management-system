@@ -6,7 +6,7 @@ import {
   getAssignmentStatusBadgeColor,
   getAssignmentStatusLabel,
   normalizeAssignmentStatus,
-  updateTourAssignmentStatus,
+  respondToTourAssignment,
 } from '@/lib/guideAssignmentStatus'
 
 type GuideAssignmentStatusBadgeProps = {
@@ -36,7 +36,9 @@ type GuideAssignmentResponseButtonsProps = {
   tourGuideId?: string | null
   assistantId?: string | null
   locale?: string
-  onUpdated?: (status: 'confirmed' | 'rejected') => void
+  /** 본인이 이미 컨펌/거절한 경우 (팝업 ack 등) */
+  personallyResponded?: boolean
+  onUpdated?: (status: 'confirmed' | 'rejected', meta?: { assignmentStatus: string; personalResponded: boolean }) => void
   compact?: boolean
 }
 
@@ -47,10 +49,12 @@ export function GuideAssignmentResponseButtons({
   tourGuideId,
   assistantId,
   locale = 'ko',
+  personallyResponded = false,
   onUpdated,
   compact = false,
 }: GuideAssignmentResponseButtonsProps) {
   const [loading, setLoading] = useState(false)
+  const [localResponded, setLocalResponded] = useState(false)
   const isKo = locale === 'ko'
   const email = (currentUserEmail || '').toLowerCase()
   const isAssignedStaff =
@@ -58,18 +62,23 @@ export function GuideAssignmentResponseButtons({
     (String(tourGuideId || '').toLowerCase() === email ||
       String(assistantId || '').toLowerCase() === email)
   const normalized = normalizeAssignmentStatus(assignmentStatus)
+  const hasResponded = personallyResponded || localResponded
 
-  if (!isAssignedStaff || normalized !== 'assigned') return null
+  if (!isAssignedStaff || normalized !== 'assigned' || hasResponded) return null
 
   const handleResponse = async (status: 'confirmed' | 'rejected') => {
     setLoading(true)
     try {
-      const result = await updateTourAssignmentStatus(tourId, status)
+      const result = await respondToTourAssignment(tourId, status, email)
       if (!result.ok) {
         alert(isKo ? '배정 상태 업데이트 중 오류가 발생했습니다.' : 'Error updating assignment status.')
         return
       }
-      onUpdated?.(status)
+      setLocalResponded(true)
+      onUpdated?.(status, {
+        assignmentStatus: result.assignment_status,
+        personalResponded: true,
+      })
       alert(
         isKo
           ? status === 'confirmed'

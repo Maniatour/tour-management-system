@@ -125,8 +125,10 @@ const nextConfig = {
 			{ key: 'X-Content-Type-Options', value: 'nosniff' },
 			{ key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
 			{
+				// () = 완전 차단 → getCurrentPosition / getUserMedia가 OS·브라우저 허용과 무관하게 PERMISSION_DENIED
+				// (self) = 이 사이트에서만 허용 (투어 채팅 위치 공유, 음성통화, 영수증 카메라)
 				key: 'Permissions-Policy',
-				value: 'camera=(), microphone=(), geolocation=()',
+				value: 'camera=(self), microphone=(self), geolocation=(self)',
 			},
 		]
 

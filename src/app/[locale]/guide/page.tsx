@@ -17,6 +17,7 @@ import {
 } from '@/components/guide/GuideAssignmentResponseButtons'
 import GuideVehicleBadge from '@/components/guide/GuideVehicleBadge'
 import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
+import { fetchPersonallyRespondedTourIds } from '@/lib/guideAssignmentStatus'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Omit<Tour, 'assignment_status'> & {
@@ -215,6 +216,7 @@ export default function GuideDashboard() {
   
   const [upcomingTours, setUpcomingTours] = useState<ExtendedTour[]>([])
   const [pastTours, setPastTours] = useState<ExtendedTour[]>([])
+  const [respondedTourIds, setRespondedTourIds] = useState<Set<string>>(() => new Set())
   const [offSchedules, setOffSchedules] = useState<OffSchedule[]>([])
   const [loading, setLoading] = useState(true)
   const [onlineRefreshTick, setOnlineRefreshTick] = useState(0)
@@ -1011,6 +1013,8 @@ export default function GuideDashboard() {
         const pastSlice = pastToursList.slice(0, 10)
         setUpcomingTours(upcomingSlice)
         setPastTours(pastSlice)
+        const responded = await fetchPersonallyRespondedTourIds(currentUserEmail)
+        setRespondedTourIds(responded)
         
         console.log('Final tour state set:', {
           upcomingToursCount: upcomingSlice.length,
@@ -1249,6 +1253,26 @@ export default function GuideDashboard() {
                           onClick={() => router.push(`/${locale}/guide/tours/${tour.id}`)}
                           locale={locale}
                           currentUserEmail={currentUserEmail}
+                          personallyResponded={respondedTourIds.has(tour.id)}
+                          onAssignmentUpdated={(tourId, status, meta) => {
+                            setUpcomingTours((prev) =>
+                              prev.map((t) =>
+                                t.id === tourId
+                                  ? { ...t, assignment_status: meta?.assignmentStatus || status }
+                                  : t
+                              )
+                            )
+                            setPastTours((prev) =>
+                              prev.map((t) =>
+                                t.id === tourId
+                                  ? { ...t, assignment_status: meta?.assignmentStatus || status }
+                                  : t
+                              )
+                            )
+                            if (meta?.personalResponded) {
+                              setRespondedTourIds((prev) => new Set(prev).add(tourId))
+                            }
+                          }}
                         />
                       )
                     })
@@ -1273,6 +1297,26 @@ export default function GuideDashboard() {
                             onClick={() => router.push(`/${locale}/guide/tours/${tour.id}`)}
                             locale={locale}
                             currentUserEmail={currentUserEmail}
+                            personallyResponded={respondedTourIds.has(tour.id)}
+                            onAssignmentUpdated={(tourId, status, meta) => {
+                              setUpcomingTours((prev) =>
+                                prev.map((t) =>
+                                  t.id === tourId
+                                    ? { ...t, assignment_status: meta?.assignmentStatus || status }
+                                    : t
+                                )
+                              )
+                              setPastTours((prev) =>
+                                prev.map((t) =>
+                                  t.id === tourId
+                                    ? { ...t, assignment_status: meta?.assignmentStatus || status }
+                                    : t
+                                )
+                              )
+                              if (meta?.personalResponded) {
+                                setRespondedTourIds((prev) => new Set(prev).add(tourId))
+                              }
+                            }}
                           />
                         ))
               ) : (
@@ -1793,20 +1837,31 @@ function TourCard({
   onClick,
   locale,
   currentUserEmail,
+  personallyResponded = false,
   onAssignmentUpdated,
 }: {
   tour: ExtendedTour
   onClick: () => void
   locale: string
   currentUserEmail?: string | null | undefined
-  onAssignmentUpdated?: (tourId: string, status: 'confirmed' | 'rejected') => void
+  personallyResponded?: boolean
+  onAssignmentUpdated?: (
+    tourId: string,
+    status: 'confirmed' | 'rejected',
+    meta?: { assignmentStatus: string; personalResponded: boolean }
+  ) => void
 }) {
   const t = useTranslations('guide')
   const [assignmentStatus, setAssignmentStatus] = useState(tour.assignment_status)
+  const [localResponded, setLocalResponded] = useState(personallyResponded)
 
   useEffect(() => {
     setAssignmentStatus(tour.assignment_status)
   }, [tour.assignment_status, tour.id])
+
+  useEffect(() => {
+    setLocalResponded(personallyResponded)
+  }, [personallyResponded, tour.id])
   
   // 디버깅을 위한 로그
   console.log('TourCard component called:', {
@@ -1973,9 +2028,11 @@ function TourCard({
           tourGuideId={tour.tour_guide_id}
           assistantId={tour.assistant_id}
           locale={locale}
-          onUpdated={(status) => {
-            setAssignmentStatus(status)
-            onAssignmentUpdated?.(tour.id, status)
+          personallyResponded={localResponded}
+          onUpdated={(status, meta) => {
+            setAssignmentStatus(meta?.assignmentStatus || status)
+            setLocalResponded(true)
+            onAssignmentUpdated?.(tour.id, status, meta)
           }}
         />
 
