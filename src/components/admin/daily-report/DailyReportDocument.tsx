@@ -45,6 +45,90 @@ function StatCard({
   )
 }
 
+/** 예약 요약용 — 인원(명)을 크게, 건수는 보조로 표시 */
+function ReservationStatCard({
+  label,
+  count,
+  guests,
+  accent = 'text-primary',
+  isKo,
+}: {
+  label: string
+  count: number
+  guests: number
+  accent?: string
+  isKo: boolean
+}) {
+  return (
+    <div className="rounded-lg border border-border/60 bg-card px-2.5 py-2 shadow-sm sm:rounded-xl sm:p-3">
+      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">
+        {label}
+      </div>
+      <div className={`mt-0.5 flex items-baseline gap-1 sm:gap-1.5 ${accent}`}>
+        <span className="text-2xl font-bold tracking-tight tabular-nums sm:text-3xl">{guests}</span>
+        <span className="text-sm font-semibold sm:text-base">{isKo ? '명' : 'pax'}</span>
+      </div>
+      <div className="mt-0.5 text-[11px] tabular-nums text-muted-foreground sm:text-xs">
+        {count}
+        {isKo ? '건' : ' bkgs'}
+      </div>
+    </div>
+  )
+}
+
+const WEEKDAY_LABELS = {
+  ko: ['일', '월', '화', '수', '목', '금', '토'],
+  en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+} as const
+
+function YtdWeekdayAvgBanner({
+  avg,
+  netGuests,
+  singleDay,
+  isKo,
+}: {
+  avg: NonNullable<DailyReportData['reservationSummary']['ytdWeekdayNetAvg']>
+  netGuests: number
+  singleDay: boolean
+  isKo: boolean
+}) {
+  const avgRounded = Math.round(avg.avgNetPeople)
+  const delta = netGuests - avgRounded
+  const deltaLabel = delta > 0 ? `+${delta}` : String(delta)
+  const weekday = (isKo ? WEEKDAY_LABELS.ko : WEEKDAY_LABELS.en)[avg.weekdayIndex] ?? ''
+  const deltaClass =
+    delta > 0 ? 'text-emerald-700' : delta < 0 ? 'text-red-600' : 'text-muted-foreground'
+
+  return (
+    <div className="mt-2 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-2 sm:mt-3 sm:rounded-xl sm:px-3 sm:py-2.5">
+      <p className="text-[10px] font-medium text-muted-foreground sm:text-xs">
+        {isKo
+          ? `${avg.compareDate.slice(0, 4)}.1/1~${avg.throughYmd.slice(5).replace('-', '/')} · ${weekday}요일 순예약 일평균`
+          : `YTD ${avg.compareDate.slice(0, 4)}-01-01~${avg.throughYmd} · ${weekday} net daily avg`}
+      </p>
+      <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <p className="text-sm sm:text-base">
+          <span className="text-muted-foreground">{isKo ? '평균 ' : 'Avg '}</span>
+          <span className="text-lg font-bold tabular-nums sm:text-xl">{avgRounded}</span>
+          <span className="ml-0.5 font-medium">{isKo ? '명' : ' pax'}</span>
+        </p>
+        <p className="text-sm sm:text-base">
+          <span className="text-muted-foreground">
+            {singleDay ? (isKo ? '오늘 ' : 'Today ') : isKo ? '기간 ' : 'Period '}
+          </span>
+          <span className="text-lg font-bold tabular-nums text-emerald-700 sm:text-xl">{netGuests}</span>
+          <span className="ml-0.5 font-medium">{isKo ? '명' : ' pax'}</span>
+        </p>
+        {singleDay ? (
+          <p className={`text-sm font-semibold tabular-nums sm:text-base ${deltaClass}`}>
+            {isKo ? `평균 대비 ${deltaLabel}명` : `${deltaLabel} vs avg`}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function SectionTitle({
   icon,
   children,
@@ -513,24 +597,35 @@ export function DailyReportDocument({ data, locale = 'ko' }: DailyReportDocument
             {isKo ? '예약 관리 요약' : 'Reservations'}
           </SectionTitle>
           <div className="grid grid-cols-3 gap-1.5 sm:gap-3">
-            <StatCard
+            <ReservationStatCard
               label={isKo ? '신규' : 'New'}
-              value={`${rs.newRegistrations.count}${isKo ? '건' : ''}`}
-              sub={`${rs.newRegistrations.guests}${isKo ? '명' : ' pax'}`}
+              count={rs.newRegistrations.count}
+              guests={rs.newRegistrations.guests}
+              isKo={isKo}
             />
-            <StatCard
+            <ReservationStatCard
               label={isKo ? '취소' : 'Cancel'}
-              value={`${rs.cancellationsToday.count}${isKo ? '건' : ''}`}
-              sub={`${rs.cancellationsToday.guests}${isKo ? '명' : ' pax'}`}
+              count={rs.cancellationsToday.count}
+              guests={rs.cancellationsToday.guests}
               accent="text-red-600"
+              isKo={isKo}
             />
-            <StatCard
+            <ReservationStatCard
               label={isKo ? '순예약' : 'Net'}
-              value={`${rs.netReservations.count}${isKo ? '건' : ''}`}
-              sub={`${rs.netReservations.guests}${isKo ? '명' : ' pax'}`}
+              count={rs.netReservations.count}
+              guests={rs.netReservations.guests}
               accent="text-emerald-600"
+              isKo={isKo}
             />
           </div>
+          {rs.ytdWeekdayNetAvg ? (
+            <YtdWeekdayAvgBanner
+              avg={rs.ytdWeekdayNetAvg}
+              netGuests={rs.netReservations.guests}
+              singleDay={singleDay}
+              isKo={isKo}
+            />
+          ) : null}
           <BreakdownTable title={isKo ? '투어 상품별' : 'By product'} rows={rs.byProduct} isKo={isKo} />
           <BreakdownTable title={isKo ? '채널별' : 'By channel'} rows={rs.byChannel} isKo={isKo} />
           {rs.notes.trim() ? <NoteBox>{rs.notes}</NoteBox> : null}

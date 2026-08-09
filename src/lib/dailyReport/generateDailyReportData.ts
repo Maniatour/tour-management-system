@@ -5,6 +5,8 @@ import {
   tomorrowInLasVegas,
   isSingleDayReport,
   toLasVegasDateKey,
+  LV_TZ,
+  todayInLasVegas,
 } from '@/lib/dailyReport/dateUtils'
 import { buildTourFinancialSummary } from '@/lib/dailyReport/buildTourFinancials'
 import { buildFinancialReport } from '@/lib/dailyReport/buildFinancialReport'
@@ -15,6 +17,7 @@ import {
   isRebookingReservationByReasonMap,
 } from '@/lib/reservationCancellationReason'
 import { isQueuePanelLinkedOpTodo, todoMatrixDedupeKey } from '@/lib/opTodoQueuePanelFilter'
+import { fetchAdminRegCancelYtdWeekdayAvg } from '@/lib/adminRegCancelYtdWeekdayAvg'
 import type {
   DailyReportBreakdownRow,
   DailyReportCountGuests,
@@ -22,7 +25,14 @@ import type {
   DailyReportTodoMatrixRow,
   DailyReportTodoMatrixStatus,
   DailyReportTodoStaffColumn,
+  DailyReportYtdWeekdayNetAvg,
 } from '@/lib/dailyReport/types'
+import dayjs from 'dayjs'
+import timezone from 'dayjs/plugin/timezone'
+import utc from 'dayjs/plugin/utc'
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 type ReservationRow = {
   id: string
@@ -184,6 +194,67 @@ function normalizeTodoDepartment(dept: string): string {
   return dept || 'office'
 }
 
+/** YYYY-MM-DD → 요일 인덱스 (0=일 … 6=토), 달력 날짜 기준 */
+function weekdayIndexFromYmd(ymd: string): number {
+  const [y, m, d] = ymd.split('-').map(Number)
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return 0
+  return new Date(y, m - 1, d, 12, 0, 0, 0).getDay()
+}
+
+/**
+ * 예약관리 통계 최근 7일 그래프와 동일:
+ * 올해(비교일 연도) 1/1 ~ 어제 순예약 요일별 일평균.
+ */
+async function fetchYtdWeekdayNetAvgForReport(
+  client: SupabaseClient<Database>,
+  operatorId: string,
+  compareDate: string
+): Promise<DailyReportYtdWeekdayNetAvg | null> {
+  const year = parseInt(compareDate.slice(0, 4), 10)
+  if (!Number.isFinite(year)) return null
+
+  const todayLv = todayInLasVegas()
+  const yesterdayLv = dayjs.tz(todayLv, LV_TZ).subtract(1, 'day').format('YYYY-MM-DD')
+  /** 예약관리 7일 차트와 동일: 올해 1/1 ~ 어제 */
+  const throughYmd = yesterdayLv
+  const weekdayIndex = weekdayIndexFromYmd(compareDate)
+
+  if (throughYmd < `${year}-01-01`) {
+    return {
+      weekdayIndex,
+      compareDate,
+      throughYmd,
+      avgNetPeople: 0,
+      avgNetBookings: 0,
+    }
+  }
+
+  const { data: buckets, error } = await fetchAdminRegCancelYtdWeekdayAvg(client, {
+    selectedStatus: 'all',
+    selectedChannel: 'all',
+    dateRange: { start: '', end: '' },
+    customerIdFromUrl: null,
+    debouncedSearchTerm: '',
+    operatorId,
+    year,
+    throughYmd,
+    timeZone: LV_TZ,
+  })
+
+  if (error) {
+    console.error('daily-report ytd weekday avg:', error)
+    return null
+  }
+
+  return {
+    weekdayIndex,
+    compareDate,
+    throughYmd,
+    avgNetPeople: buckets.people[weekdayIndex] ?? 0,
+    avgNetBookings: buckets.bookings[weekdayIndex] ?? 0,
+  }
+}
+
 export async function generateDailyReportData(
   client: SupabaseClient<Database>,
   operatorId: string,
@@ -222,6 +293,7 @@ export async function generateDailyReportData(
     teamRes,
     vehiclesRes,
     attendanceRes,
+    ytdWeekdayNetAvg,
   ] = await Promise.all([
     client
       .from('reservations')
@@ -266,6 +338,7 @@ export async function generateDailyReportData(
       .gte('date', reportDate)
       .lte('date', endDate)
       .not('check_in_time', 'is', null),
+    fetchYtdWeekdayNetAvgForReport(client, operatorId, singleDay ? reportDate : endDate),
   ])
 
   const newReservations = (newReservationsRes.data ?? []) as ReservationRow[]
@@ -462,6 +535,16 @@ export async function generateDailyReportData(
     )
   }
   reservationHighlights.push(`순예약 ${netStats.count}건 / ${netStats.guests}명`)
+  if (ytdWeekdayNetAvg) {
+    const avgPeople = Math.round(ytdWeekdayNetAvg.avgNetPeople)
+    const delta = netStats.guests - avgPeople
+    const deltaLabel = delta > 0 ? `+${delta}` : String(delta)
+    reservationHighlights.push(
+      singleDay
+        ? `요일 일평균 ${avgPeople}명 · 오늘 ${netStats.guests}명 (${deltaLabel})`
+        : `요일 일평균 ${avgPeople}명 · 기간 순예약 ${netStats.guests}명`
+    )
+  }
 
   const tourHighlights: string[] = []
   if (todayTours.length > 0) {
@@ -696,6 +779,7 @@ export async function generateDailyReportData(
       pendingFollowUp,
       byProduct,
       byChannel,
+      ytdWeekdayNetAvg,
       highlights: reservationHighlights,
       notes: options?.preserveNotes?.reservationNotes ?? '',
     },

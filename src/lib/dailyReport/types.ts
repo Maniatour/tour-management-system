@@ -14,6 +14,18 @@ export type DailyReportBreakdownRow = DailyReportCountGuests & {
   netGuests: number
 }
 
+/** 예약관리 통계 최근7일 그래프와 동일: 올해 1/1~어제 요일별 순예약 일평균 */
+export type DailyReportYtdWeekdayNetAvg = {
+  /** 0=일 … 6=토 (로컬/LV 달력 요일) */
+  weekdayIndex: number
+  /** 비교 기준일 (단일은 보고일, 기간은 종료일) */
+  compareDate: string
+  /** 평균 산출 구간 종료일 (보통 어제) */
+  throughYmd: string
+  avgNetPeople: number
+  avgNetBookings: number
+}
+
 export type DailyReportReservationSummary = {
   newRegistrations: DailyReportCountGuests
   cancellationsToday: DailyReportCountGuests
@@ -23,6 +35,8 @@ export type DailyReportReservationSummary = {
   pendingFollowUp: number
   byProduct: DailyReportBreakdownRow[]
   byChannel: DailyReportBreakdownRow[]
+  /** 예약관리 통계 7일 차트 YTD 요일 순예약 일평균 */
+  ytdWeekdayNetAvg?: DailyReportYtdWeekdayNetAvg | null
   highlights: string[]
   notes: string
 }

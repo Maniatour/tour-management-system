@@ -14,6 +14,10 @@ function statRow(label: string, value: string | number): string {
   return `<tr><td style="padding:8px 12px;color:#6b7280;font-size:14px;">${esc(label)}</td><td style="padding:8px 12px;font-weight:600;color:#111827;font-size:14px;text-align:right;">${esc(String(value))}</td></tr>`
 }
 
+function statRowHtml(label: string, valueHtml: string): string {
+  return `<tr><td style="padding:8px 12px;color:#6b7280;font-size:14px;">${esc(label)}</td><td style="padding:8px 12px;font-weight:600;color:#111827;font-size:14px;text-align:right;">${valueHtml}</td></tr>`
+}
+
 function breakdownTable(title: string, rows: DailyReportData['reservationSummary']['byProduct']): string {
   if (!rows.length) return ''
   const body = rows
@@ -50,12 +54,30 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
   const rs = data.reservationSummary
   const ts = data.tourSummary
 
+  const ytdAvg = rs.ytdWeekdayNetAvg
+  const ytdAvgRounded = ytdAvg ? Math.round(ytdAvg.avgNetPeople) : 0
+  const ytdDelta = ytdAvg ? rs.netReservations.guests - ytdAvgRounded : 0
+  const ytdDeltaLabel = ytdDelta > 0 ? `+${ytdDelta}` : String(ytdDelta)
+  const ytdWeekday =
+    ytdAvg != null ? (['일', '월', '화', '수', '목', '금', '토'][ytdAvg.weekdayIndex] ?? '') : ''
+  const ytdAvgBanner = ytdAvg
+    ? `<div style="margin-top:12px;padding:12px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;">
+        <div style="font-size:11px;color:#64748b;margin-bottom:6px;">${esc(`${ytdAvg.compareDate.slice(0, 4)}.1/1~${ytdAvg.throughYmd.slice(5).replace('-', '/')} · ${ytdWeekday}요일 순예약 일평균`)}</div>
+        <div style="font-size:14px;">
+          평균 <strong style="font-size:18px;">${ytdAvgRounded}</strong>명
+          · ${singleDay ? '오늘' : '기간'} <strong style="font-size:18px;color:#059669;">${rs.netReservations.guests}</strong>명
+          ${singleDay ? ` · 평균 대비 <strong>${ytdDeltaLabel}</strong>명` : ''}
+        </div>
+      </div>`
+    : ''
+
   const reservationBody = `
     <table style="width:100%;border-collapse:collapse;">
-      ${statRow('신규 접수', `${rs.newRegistrations.count}건 / ${rs.newRegistrations.guests}명`)}
-      ${statRow(singleDay ? '당일 취소' : '기간 취소', `${rs.cancellationsToday.count}건 / ${rs.cancellationsToday.guests}명`)}
-      ${statRow('순예약', `${rs.netReservations.count}건 / ${rs.netReservations.guests}명`)}
+      ${statRowHtml('신규 접수', `<span style="font-size:20px;font-weight:700;">${rs.newRegistrations.guests}명</span> <span style="color:#6b7280;font-size:13px;">${rs.newRegistrations.count}건</span>`)}
+      ${statRowHtml(singleDay ? '당일 취소' : '기간 취소', `<span style="font-size:20px;font-weight:700;color:#dc2626;">${rs.cancellationsToday.guests}명</span> <span style="color:#6b7280;font-size:13px;">${rs.cancellationsToday.count}건</span>`)}
+      ${statRowHtml('순예약', `<span style="font-size:20px;font-weight:700;color:#059669;">${rs.netReservations.guests}명</span> <span style="color:#6b7280;font-size:13px;">${rs.netReservations.count}건</span>`)}
     </table>
+    ${ytdAvgBanner}
     ${breakdownTable('투어 상품별', rs.byProduct)}
     ${breakdownTable('채널별', rs.byChannel)}
     ${sectionNotes(rs.notes)}

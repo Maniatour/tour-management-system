@@ -3,6 +3,9 @@ import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { buildPickupScheduleEmailPreview } from '@/lib/pickupScheduleEmailPreviewBuilder'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+/** 미리보기는 빠르게 응답해야 함 — 날씨 등 외부 호출은 빌더 내부에서 타임아웃 */
+export const maxDuration = 60
 
 /**
  * POST /api/preview-pickup-schedule-notification

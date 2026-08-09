@@ -12,6 +12,7 @@ import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
 import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
 import { generateTourId } from '@/lib/entityIds'
 import { reservationIdsLooselyEqual } from '@/utils/tourUtils'
+import { allowTeamPairAssignment } from '@/lib/teamDoNotTeamWith'
 import type { Database } from '@/lib/supabase'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
@@ -66,7 +67,7 @@ const GuideScheduleAssignmentHistoryModal = dynamic(
 )
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
-import { normalizeReservationIds, isTourDeletedStatus } from '@/utils/tourUtils'
+import { normalizeReservationIds, isTourDeletedStatus, getDefaultTeamTypeForProduct } from '@/utils/tourUtils'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
 import { RESERVATION_EDIT_MODAL_RECT_KEY } from '@/lib/adminModalRectStorage'
@@ -889,6 +890,34 @@ export function TourDetailPageView({
     if (!tourData.tour?.id) return
 
     try {
+      const nextGuide = tourData.selectedGuide ? String(tourData.selectedGuide).trim() : ''
+      const nextAssistant =
+        tourData.teamType === '1guide'
+          ? ''
+          : tourData.selectedAssistant
+            ? String(tourData.selectedAssistant).trim()
+            : ''
+      if (
+        nextGuide &&
+        nextAssistant &&
+        nextGuide !== nextAssistant &&
+        !allowTeamPairAssignment(
+          nextGuide,
+          nextAssistant,
+          (tourData.teamMembers || []) as Array<{
+            email: string
+            name_ko?: string | null
+            nick_name?: string | null
+            name_en?: string | null
+            do_not_team_with?: string[] | null
+            avoid_team_with?: string[] | null
+          }>,
+          locale,
+        )
+      ) {
+        return
+      }
+
       const feesCancelled = isTourCancelled(tourData.tour.tour_status)
       const updateData: any = {
         team_type: tourData.teamType,
@@ -1432,6 +1461,10 @@ export function TourDetailPageView({
 
     try {
       const tourId = generateTourId()
+      const teamTypeToCopy =
+        tour.team_type ||
+        tourData.teamType ||
+        getDefaultTeamTypeForProduct(tourData.product?.name_ko, tourData.product?.name_en)
       const { data: newTour, error } = await supabase
         .from('tours')
         .insert({
@@ -1440,7 +1473,9 @@ export function TourDetailPageView({
           tour_date: tour.tour_date,
           reservation_ids: [],
           tour_status: 'scheduled',
-          is_private_tour: false
+          is_private_tour: false,
+          // 원본의 팀 구성(1가이드 / 2가이드 / 가이드+드라이버) 유지
+          team_type: teamTypeToCopy,
         })
         .select()
         .single()
@@ -1452,6 +1487,11 @@ export function TourDetailPageView({
       }
 
       alert('새 투어가 생성되었습니다.')
+      // 모달에서 복사 시: 페이지 이동 대신 생성된 투어 상세 모달로 전환
+      if (onNavigateToTourProp) {
+        onNavigateToTourProp(newTour.id)
+        return
+      }
       router.push(`/${locale}/admin/tours/${newTour.id}`)
     } catch (err) {
       console.error('투어 복사 오류:', err)

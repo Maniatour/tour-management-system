@@ -1,5 +1,7 @@
 /** Parse bank/CC CSV exports (common US bank formats). Returns normalized rows for statement_lines. */
 
+import { normalizeImportedStatementFields } from '@/lib/statement-field-normalize'
+
 export type ParsedStatementRow = {
   postedDate: string // YYYY-MM-DD
   amount: number // absolute value
@@ -201,17 +203,18 @@ export function parseStatementCsvText(
 
     if (amount == null || amount === 0) continue
 
-    const description =
+    const descriptionRaw =
       descIdx >= 0 ? (cells[descIdx] ?? '').trim() : headers.map((h, j) => `${h}:${cells[j]}`).join(' | ')
-    const merchant = merchantIdx >= 0 ? (cells[merchantIdx] ?? '').trim() || null : null
+    const merchantRaw = merchantIdx >= 0 ? (cells[merchantIdx] ?? '').trim() || null : null
     const externalReference = refIdx >= 0 ? (cells[refIdx] ?? '').trim() || null : null
+    const normalized = normalizeImportedStatementFields(descriptionRaw || '(no description)', merchantRaw)
 
     rows.push({
       postedDate: posted,
       amount,
       direction: invertDirections ? flipDirection(direction) : direction,
-      description: description || '(no description)',
-      merchant,
+      description: normalized.description,
+      merchant: normalized.merchant,
       externalReference,
       raw
     })

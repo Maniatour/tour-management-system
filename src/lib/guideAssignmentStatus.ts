@@ -73,7 +73,7 @@ export function getAssignmentStatusLabel(
 ): string {
   const n = normalizeAssignmentStatus(status)
   const ko: Record<string, string> = {
-    pending: '대기',
+    pending: '배정 대기',
     assigned: '부여',
     confirmed: '배정',
     rejected: '거절',
@@ -81,7 +81,7 @@ export function getAssignmentStatusLabel(
     recruiting: '모집중',
   }
   const en: Record<string, string> = {
-    pending: 'Pending',
+    pending: 'Assignment pending',
     assigned: 'Assigned',
     confirmed: 'Confirmed',
     rejected: 'Rejected',
@@ -110,7 +110,7 @@ export function getAssignmentStatusBadgeColor(status: string | null | undefined)
 
 export async function updateTourAssignmentStatus(
   tourId: string,
-  status: 'confirmed' | 'rejected' | 'assigned' | 'pending',
+  status: GuideAssignmentStatusValue,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const { error } = await supabase
     .from('tours')

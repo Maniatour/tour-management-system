@@ -453,7 +453,7 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
             supabase.from('channels').select('id, name, favicon_url').order('name'),
             supabase
               .from('team')
-              .select('email, name_ko, name_en, display_name, nick_name, position, is_active')
+              .select('email, name_ko, name_en, display_name, nick_name, position, is_active, do_not_team_with, avoid_team_with')
               .order('name_ko'),
           ])
 

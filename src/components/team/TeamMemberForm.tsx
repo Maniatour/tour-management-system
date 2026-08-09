@@ -96,11 +96,45 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
   const [uploading, setUploading] = useState<{[key: string]: boolean}>({})
   const [uploadDocumentType, setUploadDocumentType] = useState<TeamDocumentType>('contract')
   const documentUploadInputRef = useRef<HTMLInputElement>(null)
+  const [peerTeamMembers, setPeerTeamMembers] = useState<
+    Array<{ email: string; name_ko: string; nick_name: string | null; position: string | null }>
+  >([])
   
   // 컴포넌트 마운트 시 기존 문서 불러오기
   useEffect(() => {
     if (member?.email) {
       loadExistingDocuments()
+    }
+  }, [member?.email])
+
+  // 같이 팀 금지 선택용 동료 목록
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const { data, error } = await supabase
+        .from('team')
+        .select('email, name_ko, nick_name, position, is_active')
+        .eq('is_active', true)
+        .order('name_ko')
+      if (cancelled) return
+      if (error) {
+        console.error('팀원 목록 불러오기 오류:', error)
+        return
+      }
+      const selfEmail = (member?.email || '').trim().toLowerCase()
+      setPeerTeamMembers(
+        (data || [])
+          .filter((m) => String(m.email || '').trim().toLowerCase() !== selfEmail)
+          .map((m) => ({
+            email: String(m.email),
+            name_ko: String(m.name_ko || m.email),
+            nick_name: m.nick_name ?? null,
+            position: m.position ?? null,
+          })),
+      )
+    })()
+    return () => {
+      cancelled = true
     }
   }, [member?.email])
 
@@ -353,6 +387,8 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
     phone: member?.phone || '',
     position: member?.position || '',
     languages: member?.languages || ['KR'],
+    do_not_team_with: member?.do_not_team_with || [],
+    avoid_team_with: member?.avoid_team_with || [],
     avatar_url: member?.avatar_url || '',
     is_active: member?.is_active ?? true,
     hire_date: member?.hire_date || '',
@@ -479,6 +515,25 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
       home_address: formData.home_address?.trim() || null,
       avatar_url: formData.avatar_url?.trim() || null,
       notes: formData.notes?.trim() || null,
+      do_not_team_with: Array.from(
+        new Set(
+          (formData.do_not_team_with || [])
+            .map((e) => String(e || '').trim().toLowerCase())
+            .filter(Boolean),
+        ),
+      ),
+      avoid_team_with: Array.from(
+        new Set(
+          (formData.avoid_team_with || [])
+            .map((e) => String(e || '').trim().toLowerCase())
+            .filter(Boolean),
+        ),
+      ).filter(
+        (e) =>
+          !(formData.do_not_team_with || []).some(
+            (n) => String(n || '').trim().toLowerCase() === e,
+          ),
+      ),
     }
 
     onSubmit(processedData)
@@ -718,6 +773,99 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* 팀 조합 제한 (절대 금지 / 기피) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              팀 조합 제한
+            </label>
+            <p className="text-xs text-gray-500 mb-2">
+              클릭할 때마다 전환됩니다: 없음 → 기피(경고) → 절대 금지(배정 불가) → 없음
+            </p>
+            <div className="flex flex-wrap gap-3 text-[11px] text-gray-600 mb-2">
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-400" />
+                기피 · 경고
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500" />
+                절대 금지 · 배정 차단
+              </span>
+            </div>
+            {peerTeamMembers.length === 0 ? (
+              <p className="text-sm text-gray-400">선택할 수 있는 팀원이 없습니다.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto rounded-md border border-gray-200 p-2">
+                {peerTeamMembers.map((peer) => {
+                  const emailNorm = peer.email.trim().toLowerCase()
+                  const isNever = (formData.do_not_team_with || []).some(
+                    (e) => String(e).trim().toLowerCase() === emailNorm,
+                  )
+                  const isAvoid =
+                    !isNever &&
+                    (formData.avoid_team_with || []).some(
+                      (e) => String(e).trim().toLowerCase() === emailNorm,
+                    )
+                  const label = peer.nick_name?.trim() || peer.name_ko
+                  const levelLabel = isNever ? '절대' : isAvoid ? '기피' : null
+                  return (
+                    <button
+                      key={peer.email}
+                      type="button"
+                      onClick={() => {
+                        const neverList = (formData.do_not_team_with || []).filter(
+                          (e) => String(e).trim().toLowerCase() !== emailNorm,
+                        )
+                        const avoidList = (formData.avoid_team_with || []).filter(
+                          (e) => String(e).trim().toLowerCase() !== emailNorm,
+                        )
+                        if (!isNever && !isAvoid) {
+                          // 없음 → 기피
+                          setFormData({
+                            ...formData,
+                            do_not_team_with: neverList,
+                            avoid_team_with: [...avoidList, emailNorm],
+                          })
+                        } else if (isAvoid) {
+                          // 기피 → 절대
+                          setFormData({
+                            ...formData,
+                            avoid_team_with: avoidList,
+                            do_not_team_with: [...neverList, emailNorm],
+                          })
+                        } else {
+                          // 절대 → 없음
+                          setFormData({
+                            ...formData,
+                            do_not_team_with: neverList,
+                            avoid_team_with: avoidList,
+                          })
+                        }
+                      }}
+                      className={`px-3 py-2 text-sm rounded-md border transition-colors ${
+                        isNever
+                          ? 'bg-red-100 text-red-950 border-red-400'
+                          : isAvoid
+                            ? 'bg-amber-100 text-amber-950 border-amber-400'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      }`}
+                      title={peer.email}
+                    >
+                      {label}
+                      {levelLabel ? (
+                        <span className="ml-1 text-[10px] font-semibold opacity-80">
+                          · {levelLabel}
+                        </span>
+                      ) : null}
+                      {peer.position ? (
+                        <span className="ml-1 text-[10px] text-gray-500">({peer.position})</span>
+                      ) : null}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           {/* 개인 정보 */}

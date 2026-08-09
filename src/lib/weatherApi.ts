@@ -406,53 +406,54 @@ export async function getGoblinTourWeatherData(tourDate: string): Promise<{
   pageCity: LocationWeather
 }> {
   const normalizedDate = normalizeDate(tourDate)
-  const results = []
-  
-  for (const location of GOBLIN_TOUR_LOCATIONS) {
-    try {
-      const [sunriseSunsetData, weatherData] = await Promise.all([
-        getSunriseSunsetData(location.name, normalizedDate),
-        getWeatherData(location.name, normalizedDate)
-      ])
-      
-      results.push({
-        location: location.name,
-        sunrise: sunriseSunsetData?.sunrise || '06:00',
-        sunset: sunriseSunsetData?.sunset || '18:00',
-        weather: weatherData || {
-          temperature: 20,
-          temp_max: 25,
-          temp_min: 15,
-          humidity: 50,
-          weather_main: 'Clear',
-          weather_description: 'Clear sky',
-          wind_speed: 5,
-          visibility: 10000
+
+  const results = await Promise.all(
+    GOBLIN_TOUR_LOCATIONS.map(async (location) => {
+      try {
+        const [sunriseSunsetData, weatherData] = await Promise.all([
+          getSunriseSunsetData(location.name, normalizedDate),
+          getWeatherData(location.name, normalizedDate),
+        ])
+
+        return {
+          location: location.name,
+          sunrise: sunriseSunsetData?.sunrise || '06:00',
+          sunset: sunriseSunsetData?.sunset || '18:00',
+          weather: weatherData || {
+            temperature: 20,
+            temp_max: 25,
+            temp_min: 15,
+            humidity: 50,
+            weather_main: 'Clear',
+            weather_description: 'Clear sky',
+            wind_speed: 5,
+            visibility: 10000,
+          },
         }
-      })
-    } catch (error) {
-      console.warn(`Error getting data for ${location.name}:`, error)
-      results.push({
-        location: location.name,
-        sunrise: '06:00',
-        sunset: '18:00',
-        weather: {
-          temperature: 20,
-          temp_max: 25,
-          temp_min: 15,
-          humidity: 50,
-          weather_main: 'Clear',
-          weather_description: 'Clear sky',
-          wind_speed: 5,
-          visibility: 10000
+      } catch (error) {
+        console.warn(`Error getting data for ${location.name}:`, error)
+        return {
+          location: location.name,
+          sunrise: '06:00',
+          sunset: '18:00',
+          weather: {
+            temperature: 20,
+            temp_max: 25,
+            temp_min: 15,
+            humidity: 50,
+            weather_main: 'Clear',
+            weather_description: 'Clear sky',
+            wind_speed: 5,
+            visibility: 10000,
+          },
         }
-      })
-    }
-  }
-  
+      }
+    })
+  )
+
   return {
     grandCanyon: results[0],
     zionCanyon: results[1],
-    pageCity: results[2]
+    pageCity: results[2],
   }
 }

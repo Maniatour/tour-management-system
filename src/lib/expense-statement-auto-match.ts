@@ -3,6 +3,19 @@ import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
 import { extractPaymentMethodCardLabel } from '@/lib/paymentMethodDisplay'
 import { formatStatementLineDescription } from '@/lib/statement-display'
 import {
+  buildPaymentMethodAccountIndex,
+  resolvePaymentMethodAccountRow,
+  type PaymentMethodAccountRow,
+} from '@/lib/payment-method-financial-account'
+import {
+  normalizeVendorMatchText,
+  statementLineMatchHaystack,
+  statementMatchTextTokenSet,
+  statementVendorTextMatchBonus,
+  vendorAliasTextsForPaidTo,
+  type ExpenseVendorAliasRow,
+} from '@/lib/statement-match-text'
+import {
   expenseReconciliationAmountTolerance,
   replaceExpenseReconciliationMatch,
   type ExpenseReconSourceTable,
@@ -36,27 +49,7 @@ const PAYMENT_METHOD_TEXT_BONUS_MAX = 10
 const PAYMENT_METHOD_CASH_SOURCE_BONUS = 14
 
 function normalizeVendorText(raw: string): string {
-  return String(raw ?? '')
-    .toLowerCase()
-    .replace(/[^a-z0-9가-힣]+/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ')
-}
-
-/** 결제처(paid_to) ↔ 명세 가맹점·적요 부분 일치 */
-function vendorSubstringBonus(
-  paidTo: string,
-  merchantLabel: string,
-  description: string
-): number {
-  const vendor = normalizeVendorText(paidTo)
-  if (vendor.length < 3) return 0
-  const hay = normalizeVendorText(`${merchantLabel} ${description}`)
-  if (!hay) return 0
-  if (hay.includes(vendor)) return VENDOR_SUBSTRING_BONUS
-  const merchant = normalizeVendorText(merchantLabel)
-  if (merchant.length >= 3 && vendor.includes(merchant)) return VENDOR_SUBSTRING_BONUS - 2
-  return 0
+  return normalizeVendorMatchText(raw)
 }
 
 /** 결제처·등록 결제처명(paid_to와 유사한 vendor)을 명세 가맹점·적요와 대조 */
@@ -66,13 +59,27 @@ function expenseTextMatchBonus(
   paidFor: string,
   vendorAliasTexts: string[]
 ): number {
-  const tokens = lineTokensFromRaw(line.merchant_label, line.description)
-  const overlap = textOverlapBonus(tokens, `${paidTo} ${paidFor}`)
-  let vendor = vendorSubstringBonus(paidTo, line.merchant_label, line.description)
-  for (const alias of vendorAliasTexts) {
-    vendor = Math.max(vendor, vendorSubstringBonus(alias, line.merchant_label, line.description))
+  const hay = statementLineMatchHaystack(line.description, line.merchant_label)
+  const tokens = statementMatchTextTokenSet(hay)
+  const sharedBonus = statementVendorTextMatchBonus(
+    tokens,
+    paidTo,
+    paidFor,
+    vendorAliasTexts,
+    TEXT_BONUS_MAX
+  )
+  // 부분문자열 보너스 (기존 상한 유지)
+  const hayNorm = normalizeVendorText(hay)
+  let vendor = 0
+  for (const raw of [paidTo, ...vendorAliasTexts]) {
+    const vendorNorm = normalizeVendorText(raw)
+    if (vendorNorm.length < 3 || !hayNorm) continue
+    if (hayNorm.includes(vendorNorm)) vendor = Math.max(vendor, VENDOR_SUBSTRING_BONUS)
+    else if (vendorNorm.includes(normalizeVendorText(line.merchant_label)) && normalizeVendorText(line.merchant_label).length >= 3) {
+      vendor = Math.max(vendor, VENDOR_SUBSTRING_BONUS - 2)
+    }
   }
-  return Math.min(TEXT_BONUS_MAX + VENDOR_SUBSTRING_BONUS, overlap + vendor)
+  return Math.min(TEXT_BONUS_MAX + VENDOR_SUBSTRING_BONUS, sharedBonus + vendor)
 }
 
 type PaymentMethodMatchProfile = {
@@ -102,7 +109,9 @@ function paymentMethodTextBonus(
   ctx: PaymentMethodMatchContext
 ): number {
   if (!ctx) return 0
-  const hay = normalizeVendorText(`${line.merchant_label} ${line.description} ${line.financial_account_name}`)
+  const hay = normalizeVendorText(
+    `${statementLineMatchHaystack(line.description, line.merchant_label)} ${line.financial_account_name}`
+  )
   if (!hay) return 0
   let bonus = 0
 
@@ -151,20 +160,6 @@ function paymentMethodSourceBonus(
 ): number {
   if (!ctx?.is_cash || line.match_source !== 'cash') return 0
   return PAYMENT_METHOD_CASH_SOURCE_BONUS
-}
-
-function vendorAliasTextsForPaidTo(paidTo: string, vendorNames: string[]): string[] {
-  const normPaid = normalizeVendorText(paidTo)
-  if (normPaid.length < 2) return []
-  const out: string[] = []
-  for (const name of vendorNames) {
-    const norm = normalizeVendorText(name)
-    if (norm.length < 2) continue
-    if (norm === normPaid || norm.includes(normPaid) || normPaid.includes(norm)) {
-      out.push(name)
-    }
-  }
-  return out
 }
 
 export type ExpenseAutoMatchInputRow = {
@@ -262,50 +257,19 @@ function daySpanAmongDates(dates: string[]): number {
   return max - min
 }
 
-function autoMatchTextTokenSet(raw: string): Set<string> {
-  const norm = String(raw ?? '')
-    .toLowerCase()
-    .replace(/[^a-z0-9가-힣]+/g, ' ')
-    .trim()
-  if (!norm) return new Set()
-  const out = new Set<string>()
-  for (const t of norm.split(/\s+/)) {
-    if (t.length >= 2) out.add(t)
-  }
-  return out
-}
-
-function textOverlapBonus(lineTokens: Set<string>, expenseText: string): number {
-  if (lineTokens.size === 0) return 0
-  const expTokens = autoMatchTextTokenSet(expenseText)
-  if (expTokens.size === 0) return 0
-  let shared = 0
-  for (const t of expTokens) if (lineTokens.has(t)) shared += 1
-  if (shared === 0) return 0
-  return Math.min(TEXT_BONUS_MAX, 4 + shared * 4)
-}
-
 /** 가맹점·적요를 «같은 곳» 그룹 키로 정규화 */
 export function normalizeStatementMerchantKey(merchant: string | null | undefined, description: string | null | undefined): string {
-  const raw = String(merchant ?? '').trim() || String(description ?? '').trim()
-  if (!raw) return '__unknown__'
-  return raw
-    .toLowerCase()
-    .replace(/[^a-z0-9가-힣]+/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .slice(0, 80)
+  const raw = statementLineMatchHaystack(description, merchant)
+  if (!raw || raw === '—') return '__unknown__'
+  return normalizeVendorMatchText(raw).slice(0, 80) || '__unknown__'
 }
 
 function merchantDisplayLabel(merchant: string | null | undefined, description: string | null | undefined): string {
-  const m = String(merchant ?? '').trim()
-  if (m) return m
-  const d = String(description ?? '').trim()
-  return d.length > 48 ? `${d.slice(0, 45)}…` : d || '—'
-}
-
-function lineTokensFromRaw(merchant: string | null | undefined, description: string | null | undefined): Set<string> {
-  return autoMatchTextTokenSet(`${merchant ?? ''} ${description ?? ''}`)
+  const formatted = formatStatementLineDescription(description, merchant)
+  if (formatted && formatted !== '—') {
+    return formatted.length > 48 ? `${formatted.slice(0, 45)}…` : formatted
+  }
+  return '—'
 }
 
 function isLineMatchable(matchedStatus: string, matchableAmount: number): boolean {
@@ -382,12 +346,12 @@ async function loadPaymentMethodMatchProfiles(
   supabase: SupabaseClient
 ): Promise<{
   byId: Map<string, PaymentMethodMatchProfile>
-  byMethodKey: Map<string, PaymentMethodMatchProfile>
+  accountIndex: Map<string, PaymentMethodAccountRow>
+  profileById: Map<string, PaymentMethodMatchProfile>
   cashValues: Set<string>
 }> {
   const cashValues = new Set(await getCashPaymentMethodFilterValues())
   const byId = new Map<string, PaymentMethodMatchProfile>()
-  const byMethodKey = new Map<string, PaymentMethodMatchProfile>()
 
   const { data, error } = await supabase
     .from('payment_methods')
@@ -412,6 +376,7 @@ async function loadPaymentMethodMatchProfiles(
     }
   }
 
+  const accountRows: PaymentMethodAccountRow[] = []
   for (const row of rows) {
     const id = String(row.id ?? '').trim()
     if (!id) continue
@@ -433,33 +398,39 @@ async function loadPaymentMethodMatchProfiles(
       is_cash: isCash,
     }
     byId.set(id, profile)
-    if (method) {
-      const prev = byMethodKey.get(method)
-      if (!prev || (!prev.financial_account_id && profile.financial_account_id)) {
-        byMethodKey.set(method, profile)
-      }
-    }
+    accountRows.push({
+      id,
+      method,
+      display_name: profile.display_name,
+      financial_account_id: faId,
+    })
   }
 
-  return { byId, byMethodKey, cashValues }
+  return {
+    byId,
+    accountIndex: buildPaymentMethodAccountIndex(accountRows),
+    profileById: byId,
+    cashValues,
+  }
 }
 
 function resolvePaymentMethodContext(
   pmValue: string | null | undefined,
   profiles: {
     byId: Map<string, PaymentMethodMatchProfile>
-    byMethodKey: Map<string, PaymentMethodMatchProfile>
+    accountIndex: Map<string, PaymentMethodAccountRow>
+    profileById: Map<string, PaymentMethodMatchProfile>
     cashValues: Set<string>
   }
 ): PaymentMethodMatchContext {
   const raw = String(pmValue ?? '').trim()
   if (!raw) return null
 
-  const byId = profiles.byId.get(raw)
-  if (byId) return byId
-
-  const byMethod = profiles.byMethodKey.get(raw)
-  if (byMethod) return byMethod
+  const accountRow = resolvePaymentMethodAccountRow(raw, profiles.accountIndex)
+  if (accountRow) {
+    const profile = profiles.profileById.get(accountRow.id)
+    if (profile) return profile
+  }
 
   if (profiles.cashValues.has(raw)) {
     return {
@@ -477,15 +448,21 @@ function resolvePaymentMethodContext(
   return null
 }
 
-async function loadExpenseVendorNames(supabase: SupabaseClient): Promise<string[]> {
-  const { data, error } = await supabase.from('expense_vendors').select('name').order('name')
+async function loadExpenseVendorAliasRows(supabase: SupabaseClient): Promise<ExpenseVendorAliasRow[]> {
+  const { data, error } = await supabase
+    .from('expense_vendors')
+    .select('name, match_aliases')
+    .order('name')
   if (error) {
     console.warn('expense_vendors 조회 실패(자동 매칭 결제처 별칭 생략):', error)
     return []
   }
-  return ((data || []) as { name?: string | null }[])
-    .map((r) => String(r.name ?? '').trim())
-    .filter(Boolean)
+  return ((data || []) as { name?: string | null; match_aliases?: string[] | null }[])
+    .map((r) => ({
+      name: String(r.name ?? '').trim(),
+      match_aliases: (r.match_aliases ?? []).map((a) => String(a).trim()).filter(Boolean),
+    }))
+    .filter((r) => r.name)
 }
 
 function ymdFromTimestamp(raw: string): string {
@@ -716,7 +693,7 @@ function buildCandidatesForExpense(
   expense: ExpenseAutoMatchInputRow,
   amountIndex: AmountIndexedPool,
   paymentMethodCtx: PaymentMethodMatchContext,
-  vendorNames: string[]
+  vendorAliasRows: ExpenseVendorAliasRow[]
 ): ExpenseStatementAutoMatchCandidate[] {
   const submitYmd = expense.submit_on ? expense.submit_on.slice(0, 10) : ''
   const absAmt = Math.abs(Number(expense.amount ?? 0))
@@ -724,7 +701,7 @@ function buildCandidatesForExpense(
   const tol = expenseReconciliationAmountTolerance(absAmt)
   const paidTo = expense.paid_to ?? ''
   const paidFor = expense.paid_for ?? ''
-  const vendorAliases = vendorAliasTextsForPaidTo(paidTo, vendorNames)
+  const vendorAliases = vendorAliasTextsForPaidTo(paidTo, vendorAliasRows)
 
   const scoredPool = poolLinesNearAmount(amountIndex, absAmt, tol)
     .filter((line) => lineAllowedForPaymentMethod(line, paymentMethodCtx))
@@ -873,9 +850,9 @@ export async function prepareExpenseStatementAutoMatchProposals(
 
   const { pool, statementCount, cashCount } = await fetchMatchPool(supabase, opts?.operatorId)
   const amountIndex = buildAmountIndexedPool(pool)
-  const [pmProfiles, vendorNames] = await Promise.all([
+  const [pmProfiles, vendorAliasRows] = await Promise.all([
     loadPaymentMethodMatchProfiles(supabase),
-    loadExpenseVendorNames(supabase),
+    loadExpenseVendorAliasRows(supabase),
   ])
 
   const proposals: ExpenseStatementAutoMatchProposal[] = []
@@ -885,7 +862,7 @@ export async function prepareExpenseStatementAutoMatchProposals(
     const submitYmd = expense.submit_on ? expense.submit_on.slice(0, 10) : ''
     if (!submitYmd) skippedNoDate += 1
     const paymentMethodCtx = resolvePaymentMethodContext(expense.payment_method, pmProfiles)
-    const candidates = buildCandidatesForExpense(expense, amountIndex, paymentMethodCtx, vendorNames)
+    const candidates = buildCandidatesForExpense(expense, amountIndex, paymentMethodCtx, vendorAliasRows)
     if (candidates.length === 0) continue
     proposals.push({
       expense_id: expense.id,
@@ -976,6 +953,7 @@ export async function applyExpenseStatementAutoMatchProposals(
           linkMode: i === 0 ? 'replace' : 'append',
           ledgerCapAmount: ledgerCap,
           operatorId: activeOperatorId,
+          matchKind: 'auto',
         })
         usedLineIds.add(line.id)
       }

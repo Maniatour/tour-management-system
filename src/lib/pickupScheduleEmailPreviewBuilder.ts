@@ -189,6 +189,20 @@ async function fetchAllPickupHotelsCatalog(routeDb: SupabaseClient): Promise<Pic
   return (data || []) as PickupHotelUtil[]
 }
 
+type PickupHotelEmailRow = {
+  id: string
+  hotel: string | null
+  pick_up_location: string | null
+  address: string | null
+  link: string | null
+  description_ko: string | null
+  description_en: string | null
+  from_inside_hotel_ko: string | null
+  from_inside_hotel_en: string | null
+  from_outside_hotel_ko: string | null
+  from_outside_hotel_en: string | null
+}
+
 async function fetchAllPickups(
   routeDb: SupabaseClient,
   params: {
@@ -201,32 +215,93 @@ async function fetchAllPickups(
 ) {
   const { tourData, productId, tourDate, pickupContext = { useRepresentativePickup: false } } =
     params
-  let allPickups: Record<string, unknown>[] = []
+  let allReservations: Record<string, unknown>[] = []
   const hotelsCatalog =
     params.pickupHotelsCatalog ??
     (pickupContext.preset || pickupContext.useRepresentativePickup
       ? await fetchAllPickupHotelsCatalog(routeDb)
       : [])
 
-  const mapReservationToPickup = async (res: Record<string, unknown>) => {
-    const { data: customerInfo } = await routeDb
-      .from('customers')
-      .select('name')
-      .eq('id', res.customer_id as string)
-      .maybeSingle()
+  if (tourData?.reservation_ids) {
+    const reservationIds = normalizeIds(tourData.reservation_ids)
+    if (reservationIds.length > 0) {
+      const { data } = await routeDb
+        .from('reservations')
+        .select('id, pickup_hotel, pickup_time, customer_id, total_people, tour_date, status')
+        .in('id', reservationIds)
+        .not('pickup_time', 'is', null)
+        .not('pickup_hotel', 'is', null)
+        .neq('status', 'cancelled')
+      allReservations = (data ?? []) as Record<string, unknown>[]
+    }
+  } else if (productId && tourDate) {
+    const { data } = await routeDb
+      .from('reservations')
+      .select('id, pickup_hotel, pickup_time, customer_id, total_people, tour_date, status')
+      .eq('product_id', productId)
+      .eq('tour_date', tourDate)
+      .not('pickup_time', 'is', null)
+      .not('pickup_hotel', 'is', null)
+      .neq('status', 'cancelled')
+    allReservations = (data ?? []) as Record<string, unknown>[]
+  }
 
-    const requestedHotelId = res.pickup_hotel as string
+  if (allReservations.length === 0) {
+    return []
+  }
+
+  const customerIds = [
+    ...new Set(
+      allReservations
+        .map((r) => (r.customer_id ? String(r.customer_id) : ''))
+        .filter((id) => id.length > 0)
+    ),
+  ]
+  const effectiveHotelIds = [
+    ...new Set(
+      allReservations
+        .map((r) => {
+          const requested = r.pickup_hotel ? String(r.pickup_hotel) : ''
+          if (!requested) return ''
+          return (
+            getEffectivePickupHotelId(requested, hotelsCatalog, pickupContext) || requested
+          )
+        })
+        .filter((id) => id.length > 0)
+    ),
+  ]
+
+  const [customersResult, hotelsResult] = await Promise.all([
+    customerIds.length > 0
+      ? routeDb.from('customers').select('id, name').in('id', customerIds)
+      : Promise.resolve({ data: [] as { id: string; name: string | null }[] }),
+    effectiveHotelIds.length > 0
+      ? routeDb
+          .from('pickup_hotels')
+          .select(
+            'id, hotel, pick_up_location, address, link, description_ko, description_en, from_inside_hotel_ko, from_inside_hotel_en, from_outside_hotel_ko, from_outside_hotel_en'
+          )
+          .in('id', effectiveHotelIds)
+      : Promise.resolve({ data: [] as PickupHotelEmailRow[] }),
+  ])
+
+  const customerNameById = new Map(
+    ((customersResult.data ?? []) as { id: string; name: string | null }[]).map((c) => [
+      c.id,
+      c.name || 'Unknown Customer',
+    ])
+  )
+  const hotelById = new Map(
+    ((hotelsResult.data ?? []) as PickupHotelEmailRow[]).map((h) => [h.id, h])
+  )
+
+  const allPickups = allReservations.map((res) => {
+    const requestedHotelId = res.pickup_hotel ? String(res.pickup_hotel) : ''
     const effectiveHotelId =
       getEffectivePickupHotelId(requestedHotelId, hotelsCatalog, pickupContext) ||
       requestedHotelId
-
-    const { data: hotelInfo } = await routeDb
-      .from('pickup_hotels')
-      .select(
-        'hotel, pick_up_location, address, link, description_ko, description_en, from_inside_hotel_ko, from_inside_hotel_en, from_outside_hotel_ko, from_outside_hotel_en'
-      )
-      .eq('id', effectiveHotelId)
-      .maybeSingle()
+    const hotelInfo = hotelById.get(effectiveHotelId)
+    const customerId = res.customer_id ? String(res.customer_id) : ''
 
     return {
       reservation_id: res.id,
@@ -242,45 +317,19 @@ async function fetchAllPickups(
       from_inside_hotel_en: hotelInfo?.from_inside_hotel_en ?? null,
       from_outside_hotel_ko: hotelInfo?.from_outside_hotel_ko ?? null,
       from_outside_hotel_en: hotelInfo?.from_outside_hotel_en ?? null,
-      customer_name: customerInfo?.name || 'Unknown Customer',
+      customer_name: customerNameById.get(customerId) || 'Unknown Customer',
       total_people: res.total_people,
       tour_date: res.tour_date,
     }
-  }
-
-  if (tourData?.reservation_ids) {
-    const reservationIds = normalizeIds(tourData.reservation_ids)
-    if (reservationIds.length > 0) {
-      const { data: allReservations } = await routeDb
-        .from('reservations')
-        .select('id, pickup_hotel, pickup_time, customer_id, total_people, tour_date, status')
-        .in('id', reservationIds)
-        .not('pickup_time', 'is', null)
-        .not('pickup_hotel', 'is', null)
-        .neq('status', 'cancelled')
-
-      if (allReservations?.length) {
-        allPickups = await Promise.all(allReservations.map(mapReservationToPickup))
-      }
-    }
-  } else if (productId && tourDate) {
-    const { data: allReservations } = await routeDb
-      .from('reservations')
-      .select('id, pickup_hotel, pickup_time, customer_id, total_people, tour_date, status')
-      .eq('product_id', productId)
-      .eq('tour_date', tourDate)
-      .not('pickup_time', 'is', null)
-      .not('pickup_hotel', 'is', null)
-      .neq('status', 'cancelled')
-
-    if (allReservations?.length) {
-      allPickups = await Promise.all(allReservations.map(mapReservationToPickup))
-    }
-  }
+  })
 
   return sortAndDedupePickups(allPickups, tourDate)
 }
 
+/**
+ * 이메일 미리보기용 — Storage 업로드 없이 공개 URL만 해석.
+ * (발송 API는 data URL을 임시 업로드하지만, 미리보기에서 하면 504의 주원인)
+ */
 async function fetchTourDetailsForPickup(
   routeDb: SupabaseClient,
   tourData: Record<string, unknown>
@@ -290,137 +339,130 @@ async function fetchTourDetailsForPickup(
   let vehicleInfo = null
 
   const teamDb = supabaseAdmin ?? supabase
-  if (tourData.tour_guide_id) {
-    const { data: guideData } = await teamDb
-      .from('team')
-      .select('name_ko, name_en, phone, email, languages')
-      .eq('email', tourData.tour_guide_id as string)
-      .maybeSingle()
-    tourGuideInfo = guideData
-  }
-
-  if (tourData.assistant_id) {
-    const { data: assistantData } = await teamDb
-      .from('team')
-      .select('name_ko, name_en, phone, email')
-      .eq('email', tourData.assistant_id as string)
-      .maybeSingle()
-    assistantInfo = assistantData
-  }
-
-  if (tourData.tour_car_id) {
-    const vehiclesDb = supabaseAdmin ?? supabase
-    const { data: vehicleData } = await vehiclesDb
-      .from('vehicles')
-      .select('vehicle_type, capacity, color')
-      .eq('id', tourData.tour_car_id as string)
-      .maybeSingle()
-
-    if (vehicleData?.vehicle_type) {
-      const { data: vehicleTypeData } = await routeDb
-        .from('vehicle_types')
-        .select('id, name, brand, model, passenger_capacity, description')
-        .eq('name', vehicleData.vehicle_type)
+  const guidePromise = tourData.tour_guide_id
+    ? teamDb
+        .from('team')
+        .select('name_ko, name_en, phone, email, languages')
+        .eq('email', tourData.tour_guide_id as string)
         .maybeSingle()
+    : Promise.resolve({ data: null })
 
-      const { data: typePhotosData } = await routeDb
+  const assistantPromise = tourData.assistant_id
+    ? teamDb
+        .from('team')
+        .select('name_ko, name_en, phone, email')
+        .eq('email', tourData.assistant_id as string)
+        .maybeSingle()
+    : Promise.resolve({ data: null })
+
+  const vehiclesDb = supabaseAdmin ?? supabase
+  const vehiclePromise = tourData.tour_car_id
+    ? vehiclesDb
+        .from('vehicles')
+        .select('vehicle_type, capacity, color')
+        .eq('id', tourData.tour_car_id as string)
+        .maybeSingle()
+    : Promise.resolve({ data: null })
+
+  const [guideResult, assistantResult, vehicleResult] = await Promise.all([
+    guidePromise,
+    assistantPromise,
+    vehiclePromise,
+  ])
+  tourGuideInfo = guideResult.data
+  assistantInfo = assistantResult.data
+  const vehicleData = vehicleResult.data
+
+  if (vehicleData?.vehicle_type) {
+    const { data: vehicleTypeData } = await routeDb
+      .from('vehicle_types')
+      .select('id, name, brand, model, passenger_capacity, description')
+      .eq('name', vehicleData.vehicle_type)
+      .maybeSingle()
+
+    const [typePhotosResult, vehiclePhotosResult] = await Promise.all([
+      routeDb
         .from('vehicle_type_photos')
         .select('photo_url, photo_name, description, is_primary, display_order')
         .eq('vehicle_type_id', vehicleTypeData?.id || '')
         .order('display_order', { ascending: true })
-        .order('is_primary', { ascending: false })
+        .order('is_primary', { ascending: false }),
+      tourData.tour_car_id
+        ? routeDb
+            .from('vehicle_photos')
+            .select('photo_url, photo_name, is_primary, display_order')
+            .eq('vehicle_id', tourData.tour_car_id as string)
+            .order('display_order', { ascending: true })
+            .order('is_primary', { ascending: false })
+        : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    ])
 
-      const { data: vehiclePhotosData } = await routeDb
-        .from('vehicle_photos')
-        .select('photo_url, photo_name, is_primary, display_order')
-        .eq('vehicle_id', tourData.tour_car_id as string)
-        .order('display_order', { ascending: true })
-        .order('is_primary', { ascending: false })
+    const simplifyUrl = (url: string): string => {
+      if (!url) return url
+      try {
+        const urlObj = new URL(url)
+        urlObj.search = ''
+        urlObj.hash = ''
+        return urlObj.toString()
+      } catch {
+        return url
+      }
+    }
 
-      const simplifyUrl = (url: string): string => {
-        if (!url) return url
+    const toPublicPhotoUrl = (photo: Record<string, unknown>) => {
+      if (!photo.photo_url) return null
+      const photoUrl = String(photo.photo_url)
+      if (photoUrl.startsWith('data:image')) return { ...photo, photo_url: photoUrl }
+      if (!photoUrl.startsWith('http') && !photoUrl.startsWith('data:')) {
         try {
-          const urlObj = new URL(url)
-          urlObj.search = ''
-          urlObj.hash = ''
-          return urlObj.toString()
+          const {
+            data: { publicUrl },
+          } = supabase.storage.from('images').getPublicUrl(photoUrl)
+          return { ...photo, photo_url: simplifyUrl(publicUrl) }
         } catch {
-          return url
+          return photo
         }
       }
-
-      const toPublicPhotoUrl = (photo: Record<string, unknown>) => {
-        if (!photo.photo_url) return null
-        const photoUrl = String(photo.photo_url)
-        if (photoUrl.startsWith('data:image')) return { ...photo, photo_url: photoUrl }
-        if (!photoUrl.startsWith('http') && !photoUrl.startsWith('data:')) {
-          try {
-            const {
-              data: { publicUrl },
-            } = supabase.storage.from('images').getPublicUrl(photoUrl)
-            return { ...photo, photo_url: simplifyUrl(publicUrl) }
-          } catch {
-            return photo
-          }
-        }
-        if (photoUrl.startsWith('http')) {
-          return { ...photo, photo_url: simplifyUrl(photoUrl) }
-        }
-        return photo
+      if (photoUrl.startsWith('http')) {
+        return { ...photo, photo_url: simplifyUrl(photoUrl) }
       }
+      return photo
+    }
 
-      const processedTypePhotos = (typePhotosData || [])
-        .map(toPublicPhotoUrl)
-        .filter((p): p is Record<string, unknown> => p !== null)
-      const processedVehiclePhotos = (vehiclePhotosData || [])
-        .map(toPublicPhotoUrl)
-        .filter((p): p is Record<string, unknown> => p !== null)
-      const displayPhotos =
-        processedVehiclePhotos.length > 0 ? processedVehiclePhotos : processedTypePhotos
+    const processedTypePhotos = (typePhotosResult.data || [])
+      .map((p) => toPublicPhotoUrl(p as Record<string, unknown>))
+      .filter((p): p is Record<string, unknown> => p !== null)
+    const processedVehiclePhotos = (vehiclePhotosResult.data || [])
+      .map((p) => toPublicPhotoUrl(p as Record<string, unknown>))
+      .filter((p): p is Record<string, unknown> => p !== null)
+    const displayPhotos =
+      processedVehiclePhotos.length > 0 ? processedVehiclePhotos : processedTypePhotos
 
-      const displayPhotosWithViewUrl = await Promise.all(
-        displayPhotos.map(async (photo) => {
-          const photoUrl = String(photo.photo_url ?? '')
-          if (!photoUrl.startsWith('data:image')) {
-            return { ...photo, viewUrl: photoUrl }
-          }
-          try {
-            const [header, base64] = photoUrl.split(',')
-            const mime = (header.match(/data:(.+);/)?.[1] || 'image/jpeg').trim()
-            const ext = (mime.split('/')[1] || 'jpg').replace(/\+xml$/, '') || 'jpg'
-            const buffer = Buffer.from(base64, 'base64')
-            const path = `email-view/${crypto.randomUUID()}.${ext}`
-            const { error } = await supabase.storage
-              .from('images')
-              .upload(path, buffer, { contentType: mime, upsert: false })
-            if (error) return { ...photo, viewUrl: null }
-            const {
-              data: { publicUrl },
-            } = supabase.storage.from('images').getPublicUrl(path)
-            return { ...photo, viewUrl: simplifyUrl(publicUrl) }
-          } catch {
-            return { ...photo, viewUrl: null }
-          }
-        })
-      )
-
-      vehicleInfo = {
-        vehicle_type: vehicleData.vehicle_type,
-        color: vehicleData.color,
-        vehicle_type_info: vehicleTypeData
-          ? {
-              name: vehicleTypeData.name,
-              brand: vehicleTypeData.brand,
-              model: vehicleTypeData.model,
-              passenger_capacity: vehicleTypeData.passenger_capacity || vehicleData.capacity,
-              description: vehicleTypeData.description,
-            }
-          : {
-              name: vehicleData.vehicle_type,
-              passenger_capacity: vehicleData.capacity,
-            },
-        vehicle_type_photos: displayPhotosWithViewUrl,
+    // 미리보기: data URL은 그대로 사용 (Storage 업로드 생략)
+    const displayPhotosWithViewUrl = displayPhotos.map((photo) => {
+      const photoUrl = String(photo.photo_url ?? '')
+      return {
+        ...photo,
+        viewUrl: photoUrl.startsWith('data:image') ? null : photoUrl || null,
       }
+    })
+
+    vehicleInfo = {
+      vehicle_type: vehicleData.vehicle_type,
+      color: vehicleData.color,
+      vehicle_type_info: vehicleTypeData
+        ? {
+            name: vehicleTypeData.name,
+            brand: vehicleTypeData.brand,
+            model: vehicleTypeData.model,
+            passenger_capacity: vehicleTypeData.passenger_capacity || vehicleData.capacity,
+            description: vehicleTypeData.description,
+          }
+        : {
+            name: vehicleData.vehicle_type,
+            passenger_capacity: vehicleData.capacity,
+          },
+      vehicle_type_photos: displayPhotosWithViewUrl,
     }
   }
 
@@ -429,6 +471,20 @@ async function fetchTourDetailsForPickup(
     tour_guide: tourGuideInfo,
     assistant: assistantInfo,
     vehicle: vehicleInfo,
+  }
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), ms)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 
@@ -477,20 +533,56 @@ export async function buildPickupScheduleEmailPreview(
         pickupHotelsCatalog,
         pickupContext
       ) || (reservation.pickup_hotel as string)
-    pickupHotel = await fetchPickupHotel(routeDb, effectiveId)
+    pickupHotel =
+      effectiveId === reservation.pickup_hotel
+        ? requestedPickupHotel
+        : await fetchPickupHotel(routeDb, effectiveId)
   }
   if (!pickupHotel && useSamplePickupFallback) {
     pickupHotel = samplePickupHotel(isEnglish)
   }
 
-  let allPickups = await fetchAllPickups(routeDb, {
-    tourData,
-    productId,
-    tourDate,
-    pickupContext,
-    pickupHotelsCatalog,
-  })
+  // 픽업 목록·투어 상세·채팅·날씨·준비물 정보를 병렬 조회 (미리보기 지연·504 방지)
+  const languageCode = isEnglish ? 'en' : 'ko'
+  const [
+    allPickupsRaw,
+    tourDetailsRaw,
+    chatRoomResult,
+    tourDayWeather,
+    preparationRow,
+  ] = await Promise.all([
+    fetchAllPickups(routeDb, {
+      tourData,
+      productId,
+      tourDate,
+      pickupContext,
+      pickupHotelsCatalog,
+    }),
+    tourData ? fetchTourDetailsForPickup(routeDb, tourData) : Promise.resolve(null),
+    tourData?.id
+      ? routeDb
+          .from('chat_rooms')
+          .select('room_code')
+          .eq('tour_id', tourData.id as string)
+          .eq('is_active', true)
+          .maybeSingle()
+      : Promise.resolve({ data: null as { room_code: string } | null }),
+    // 외부 날씨 API 폴백이 길면 미리보기만 먼저 반환
+    withTimeout(getGoblinTourWeatherData(normalizeDate(tourDate)), 2500).catch(() => null),
+    preparationInfoOverride !== undefined && preparationInfoOverride !== null
+      ? Promise.resolve(null)
+      : productId
+        ? fetchProductDetailsForReservationEmail(routeDb, {
+            productId,
+            languageCode,
+            channelId: (reservation.channel_id as string | null | undefined) ?? null,
+            variantKey: (reservation.variant_key as string | undefined) ?? 'default',
+            channelsLookupClient: supabaseAdmin ?? supabase,
+          })
+        : Promise.resolve(null),
+  ])
 
+  let allPickups = allPickupsRaw
   if (allPickups.length === 0 && useSamplePickupFallback && pickupHotel) {
     allPickups = [
       {
@@ -508,28 +600,8 @@ export async function buildPickupScheduleEmailPreview(
     ]
   }
 
-  let tourDetails: Record<string, unknown> | null = null
-  if (tourData) {
-    tourDetails = await fetchTourDetailsForPickup(routeDb, tourData)
-  }
-
-  let chatRoomCode: string | null = null
-  if (tourData?.id) {
-    const { data: chatRoomData } = await routeDb
-      .from('chat_rooms')
-      .select('room_code')
-      .eq('tour_id', tourData.id as string)
-      .eq('is_active', true)
-      .maybeSingle()
-    chatRoomCode = chatRoomData?.room_code ?? null
-  }
-
-  let tourDayWeather: Awaited<ReturnType<typeof getGoblinTourWeatherData>> | null = null
-  try {
-    tourDayWeather = await getGoblinTourWeatherData(normalizeDate(tourDate))
-  } catch {
-    tourDayWeather = null
-  }
+  const tourDetails = tourDetailsRaw
+  const chatRoomCode = chatRoomResult.data?.room_code ?? null
 
   let preparationInfo: string | null = null
   if (preparationInfoOverride !== undefined && preparationInfoOverride !== null) {
@@ -537,16 +609,8 @@ export async function buildPickupScheduleEmailPreview(
       typeof preparationInfoOverride === 'string'
         ? preparationInfoOverride
         : String(preparationInfoOverride)
-  } else if (productId) {
-    const languageCode = isEnglish ? 'en' : 'ko'
-    const row = await fetchProductDetailsForReservationEmail(routeDb, {
-      productId,
-      languageCode,
-      channelId: (reservation.channel_id as string | null | undefined) ?? null,
-      variantKey: (reservation.variant_key as string | undefined) ?? 'default',
-      channelsLookupClient: supabaseAdmin ?? supabase,
-    })
-    preparationInfo = (row?.preparation_info as string) ?? null
+  } else {
+    preparationInfo = (preparationRow?.preparation_info as string) ?? null
   }
 
   const emailContent = generatePickupScheduleEmailContent(

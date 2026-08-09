@@ -8214,6 +8214,8 @@ export type Database = {
           home_address: string | null
           is_active: boolean | null
           languages: string[] | null
+          do_not_team_with: string[]
+          avoid_team_with: string[]
           medical_acquired: string | null
           medical_expired: string | null
           medical_report: boolean | null
@@ -8250,6 +8252,8 @@ export type Database = {
           home_address?: string | null
           is_active?: boolean | null
           languages?: string[] | null
+          do_not_team_with?: string[]
+          avoid_team_with?: string[]
           medical_acquired?: string | null
           medical_expired?: string | null
           medical_report?: boolean | null
@@ -8286,6 +8290,8 @@ export type Database = {
           home_address?: string | null
           is_active?: boolean | null
           languages?: string[] | null
+          do_not_team_with?: string[]
+          avoid_team_with?: string[]
           medical_acquired?: string | null
           medical_expired?: string | null
           medical_report?: boolean | null

@@ -318,20 +318,14 @@ export function DailyReportPreviewModal({
             )}
           </div>
 
-          <DialogDescription className="sr-only sm:not-sr-only sm:mt-2 sm:block">
-            {isKo
-              ? isRangeReport
-                ? '선택한 기간의 업무 통계를 확인하고, 메모를 추가한 뒤 SUPER 관리자에게 발송하세요.'
-                : '하루 업무를 한눈에 확인하고, 메모를 추가한 뒤 SUPER 관리자에게 발송하세요.'
-              : isRangeReport
-                ? 'Review the selected period, add notes, and send to SUPER admins.'
-                : 'Review today, add notes, and send to SUPER admins.'}
-            {existing?.status === 'submitted' && existing.emailSentAt ? (
-              <span className="ml-2 hidden text-xs text-emerald-700 sm:inline">
-                · {new Date(existing.emailSentAt).toLocaleString(isKo ? 'ko-KR' : 'en-US')}
-              </span>
-            ) : null}
+          <DialogDescription className="sr-only">
+            {isKo ? 'Daily Report — 일일 업무 보고' : 'Daily Report'}
           </DialogDescription>
+          {existing?.status === 'submitted' && existing.emailSentAt ? (
+            <p className="mt-2 hidden text-xs text-emerald-700 sm:block">
+              {new Date(existing.emailSentAt).toLocaleString(isKo ? 'ko-KR' : 'en-US')}
+            </p>
+          ) : null}
         </DialogHeader>
 
         {loading || !data ? (

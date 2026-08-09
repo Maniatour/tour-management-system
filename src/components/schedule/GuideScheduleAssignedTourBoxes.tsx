@@ -159,8 +159,9 @@ export default function GuideScheduleAssignedTourBoxes({
             : getAssistantGuideInitials(tour, teamMembers) || fallbackGuideInitials || 'A'
         const displayAssignmentStatus = resolveTourDisplayAssignmentStatus(tour)
         const statusLabel = getAssignmentStatusLabel(displayAssignmentStatus, locale)
+        const isEmptyTour = assignedPeople === 0
         const textColor =
-          assignedPeople > 0 && colorClass
+          !isEmptyTour && colorClass
             ? getProductDisplayProps(colorClass).style?.color
             : undefined
 
@@ -170,12 +171,16 @@ export default function GuideScheduleAssignedTourBoxes({
             content={getGuideScheduleTourHoverText(tour) || tooltipFallback}
           >
             <div
-              className={`relative flex min-w-0 flex-1 items-center justify-center gap-0.5 px-0.5 py-0 text-[10px] cursor-pointer hover:opacity-80 transition-opacity ${
-                assignedPeople === 0 && role === 'guide' ? 'bg-gray-400 text-white' : 'text-white'
+              className={`relative flex min-w-0 flex-1 items-center justify-center gap-0.5 px-0.5 py-0 text-[10px] cursor-pointer hover:opacity-80 transition-opacity text-white ${
+                isEmptyTour ? 'bg-gray-400' : ''
               } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''} ${borderColor ? 'border-2 border-white' : ''} ${roleTours.length === 1 ? 'h-full w-full rounded' : 'h-full'}`}
               style={{
-                backgroundColor:
-                  assignedPeople > 0 && colorClass ? getColorFromClass(colorClass) : undefined,
+                // 인원 0명: 가이드·어시 모두 회색 (inline으로 확실히 표시)
+                backgroundColor: isEmptyTour
+                  ? '#9ca3af'
+                  : colorClass
+                    ? getColorFromClass(colorClass)
+                    : undefined,
                 color: textColor,
                 boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined,
               }}
@@ -187,7 +192,7 @@ export default function GuideScheduleAssignedTourBoxes({
               onDragEnd={handleAssignedTourDragEnd}
               onDoubleClick={() => openTourDetailModal(tour.id)}
               onClick={() =>
-                showGuideModalContent('투어 상세 정보', getTourSummary(tour), tour.id)
+                showGuideModalContent('투어 요약 정보', getTourSummary(tour), tour.id)
               }
             >
               {hasPrivateTour ? <span className="text-[9px]">🔒</span> : null}

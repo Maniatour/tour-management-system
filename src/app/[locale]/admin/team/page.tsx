@@ -26,6 +26,11 @@ import {
 import type { Database } from '@/lib/supabase'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 import TeamMemberForm from '@/components/team/TeamMemberForm'
+import {
+  ensureExclusiveLists,
+  normalizeTeamEmailList,
+  syncDoNotTeamWithPeers,
+} from '@/lib/teamDoNotTeamWith'
 
 type TeamMember = Database['public']['Tables']['team']['Row']
 type TeamMemberInsert = Database['public']['Tables']['team']['Insert']
@@ -140,10 +145,16 @@ export default function AdminTeam() {
   // 새 팀원 추가
   const handleAddMember = async (memberData: TeamMemberInsert) => {
     try {
+      const exclusive = ensureExclusiveLists(
+        normalizeTeamEmailList(memberData.do_not_team_with),
+        normalizeTeamEmailList(memberData.avoid_team_with),
+      )
       // 이메일을 소문자로 정규화
       const normalizedData = {
         ...memberData,
-        email: memberData.email.toLowerCase().trim()
+        email: memberData.email.toLowerCase().trim(),
+        do_not_team_with: exclusive.never,
+        avoid_team_with: exclusive.avoid,
       }
       
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -164,6 +175,20 @@ export default function AdminTeam() {
         return
       }
 
+      const { error: syncError } = await syncDoNotTeamWithPeers({
+        selfEmail: normalizedData.email,
+        previousNeverList: [],
+        nextNeverList: exclusive.never,
+        previousAvoidList: [],
+        nextAvoidList: exclusive.avoid,
+      })
+      if (syncError) {
+        console.error('Error syncing team pair restrictions:', syncError)
+        alert(
+          '팀원은 추가되었지만, 상대 가이드 쪽 팀 조합 설정 동기화에 실패했습니다. 상대 팀원 정보를 확인해 주세요.',
+        )
+      }
+
       alert('팀원이 성공적으로 추가되었습니다!')
       setShowForm(false)
       fetchTeamMembers()
@@ -176,16 +201,59 @@ export default function AdminTeam() {
   // 팀원 정보 수정
   const handleEditMember = async (email: string, updateData: TeamMemberUpdate) => {
     try {
+      const previousNever = editingMember?.do_not_team_with
+      const previousAvoid = editingMember?.avoid_team_with
+      const hasPairFields =
+        updateData.do_not_team_with !== undefined || updateData.avoid_team_with !== undefined
+      const exclusive = hasPairFields
+        ? ensureExclusiveLists(
+            normalizeTeamEmailList(
+              updateData.do_not_team_with !== undefined
+                ? updateData.do_not_team_with
+                : previousNever,
+            ),
+            normalizeTeamEmailList(
+              updateData.avoid_team_with !== undefined
+                ? updateData.avoid_team_with
+                : previousAvoid,
+            ),
+          )
+        : null
+      const payload =
+        exclusive !== null
+          ? {
+              ...updateData,
+              do_not_team_with: exclusive.never,
+              avoid_team_with: exclusive.avoid,
+            }
+          : updateData
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error } = await (supabase as any)
         .from('team')
-        .update(updateData)
+        .update(payload)
         .eq('email', email)
 
       if (error) {
         console.error('Error updating team member:', error)
         alert('팀원 정보 수정 중 오류가 발생했습니다.')
         return
+      }
+
+      if (exclusive) {
+        const { error: syncError } = await syncDoNotTeamWithPeers({
+          selfEmail: email,
+          previousNeverList: previousNever,
+          nextNeverList: exclusive.never,
+          previousAvoidList: previousAvoid,
+          nextAvoidList: exclusive.avoid,
+        })
+        if (syncError) {
+          console.error('Error syncing team pair restrictions:', syncError)
+          alert(
+            '팀원 정보는 저장되었지만, 상대 가이드 쪽 팀 조합 설정 동기화에 실패했습니다. 상대 팀원 정보를 확인해 주세요.',
+          )
+        }
       }
 
       alert('팀원 정보가 성공적으로 수정되었습니다!')

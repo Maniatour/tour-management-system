@@ -2,7 +2,6 @@
 
 import type { DragEvent } from 'react'
 import { ChevronUp, ChevronDown, Layers } from 'lucide-react'
-import ReactCountryFlag from 'react-country-flag'
 import { useTranslations } from 'next-intl'
 import { getScheduleProductDisplayProps } from '@/lib/scheduleProductColorPresets'
 import { getScheduleProductColor } from '@/lib/scheduleAirportPickDropGroup'
@@ -16,6 +15,7 @@ import { tourChoiceCountsDisplayKeys } from '@/lib/tourChoiceCounts'
 import {
   aggregateScheduleBreakdownFromDailyData,
   formatProductScheduleCellPeopleWithPrivateSplit,
+  ScheduleLangFlagsHoverLine,
   ScheduleTotalColumnWithTooltip,
   type ScheduleMonthDayCell,
   type ScheduleProductGridProductRow,
@@ -237,17 +237,11 @@ export default function ScheduleProductGridRow({
                             </div>
                           )
                         })()}
-                        <div className="flex items-center gap-2 mb-1.5 flex-nowrap">
-                          <span className="inline-flex items-center gap-1 shrink-0">
-                            <ReactCountryFlag countryCode="KR" svg style={{ width: '1em', height: '0.75em' }} />
-                            <span>{(dayData.koPeople || 0) + (dayData.koWaitingPeople || 0)}</span>
-                          </span>
-                          <span className="text-gray-400 shrink-0">/</span>
-                          <span className="inline-flex items-center gap-1 shrink-0">
-                            <ReactCountryFlag countryCode="US" svg style={{ width: '1em', height: '0.75em' }} />
-                            <span>{(dayData.enPeople || 0) + (dayData.enWaitingPeople || 0)}</span>
-                          </span>
-                        </div>
+                        <ScheduleLangFlagsHoverLine
+                          ko={(dayData.koPeople || 0) + (dayData.koWaitingPeople || 0)}
+                          en={(dayData.enPeople || 0) + (dayData.enWaitingPeople || 0)}
+                          ja={(dayData.jaPeople || 0) + (dayData.jaWaitingPeople || 0)}
+                        />
                         {((dayData.reservationGroupCount ?? 0) > 0 ||
                           (dayData.waitingReservationGroupCount ?? 0) > 0) && (
                           <div className="text-sm font-semibold text-gray-100 mb-1.5 tabular-nums">

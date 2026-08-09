@@ -127,13 +127,65 @@ async function captureDomToPdf(root: HTMLElement, format: PrintPageFormat) {
   const html2canvas = await loadHtml2Canvas()
   const jsPDF = await loadJsPDF()
   const page = PAGE_MM[format]
-  const canvas = await html2canvas(root, {
-    scale: 2,
-    useCORS: true,
-    logging: false,
-    allowTaint: false,
-    backgroundColor: '#ffffff',
-  })
+
+  // CORS로 캔버스가 오염되지 않도록 캡처 전 이미지를 data URL로 인라인
+  const imgs = Array.from(root.querySelectorAll('img'))
+  await Promise.all(
+    imgs.map(async (img) => {
+      const src = img.getAttribute('src') || img.currentSrc || ''
+      if (!src || src.startsWith('data:')) return
+      try {
+        const res = await fetch(src, { mode: 'cors', credentials: 'omit' })
+        if (!res.ok) throw new Error(`img ${res.status}`)
+        const blob = await res.blob()
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(String(reader.result || ''))
+          reader.onerror = () => reject(reader.error)
+          reader.readAsDataURL(blob)
+        })
+        if (dataUrl.startsWith('data:')) {
+          img.setAttribute('src', dataUrl)
+          await img.decode().catch(() => undefined)
+        }
+      } catch {
+        // 캡처 실패 유발 이미지 제거 (텍스트·레이아웃은 유지)
+        img.removeAttribute('src')
+        img.style.visibility = 'hidden'
+      }
+    })
+  )
+
+  let canvas: HTMLCanvasElement
+  try {
+    canvas = await html2canvas(root, {
+      scale: 1.5,
+      useCORS: true,
+      logging: false,
+      allowTaint: false,
+      backgroundColor: '#ffffff',
+      imageTimeout: 8000,
+      onclone: (_doc, cloned) => {
+        cloned.querySelectorAll('img').forEach((img) => {
+          const s = img.getAttribute('src') || ''
+          if (!s || (!s.startsWith('data:') && !s.startsWith('blob:'))) {
+            img.style.visibility = 'hidden'
+          }
+        })
+      },
+    })
+  } catch (primaryError) {
+    // CORS taint 등으로 실패 시 이미지 없이 재시도
+    console.warn('[captureDomToPdf] primary capture failed, retry without images', primaryError)
+    canvas = await html2canvas(root, {
+      scale: 1.5,
+      useCORS: false,
+      logging: false,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      ignoreElements: (el) => el.tagName === 'IMG',
+    })
+  }
 
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format })
   const pageWidth = page.w
@@ -166,7 +218,26 @@ export async function downloadDomAsA4Pdf(
   const format = options?.format ?? 'letter'
   const pdf = await captureDomToPdf(root, format)
   const safe = fileBaseName.replace(/[^\w.-]+/g, '_').slice(0, 80) || 'document'
-  pdf.save(`${safe}.pdf`)
+  const fileName = `${safe}.pdf`
+
+  // pdf.save()가 일부 브라우저/권한 환경에서 무반응일 때 blob 앵커 폴백
+  try {
+    const blob = pdf.output('blob')
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileName
+    a.rel = 'noopener'
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    window.setTimeout(() => {
+      URL.revokeObjectURL(url)
+      a.remove()
+    }, 2_000)
+  } catch {
+    pdf.save(fileName)
+  }
 }
 
 async function renderDomToPdfBlob(

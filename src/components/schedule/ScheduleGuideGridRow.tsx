@@ -684,13 +684,18 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                   }
                 >
                 <div
-                  className={`relative w-full h-full rounded px-2 py-0 text-[10px] flex items-center justify-center gap-1 cursor-pointer hover:opacity-90 transition-opacity ${tour.dayData.assignedPeople === 0 ? 'bg-gray-400 text-white' : ''}`}
-                  style={{ 
-                    background: tour.dayData.assignedPeople > 0 && hasColors ? gradient : undefined,
+                  className={`relative w-full h-full rounded px-2 py-0 text-[10px] flex items-center justify-center gap-1 cursor-pointer hover:opacity-90 transition-opacity text-white ${tour.dayData.assignedPeople === 0 ? 'bg-gray-400' : ''}`}
+                  style={{
+                    background:
+                      tour.dayData.assignedPeople === 0
+                        ? '#9ca3af'
+                        : hasColors
+                          ? gradient
+                          : undefined,
                     color:
                       tour.dayData.assignedPeople > 0 && hasColors && colorValues[0]
                         ? getProductDisplayProps(colorValues[0]).style?.color
-                        : undefined
+                        : undefined,
                   }}
                   draggable
                   onDragStart={(e) => {
@@ -701,7 +706,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                   onDragEnd={handleAssignedTourDragEnd}
                   onClick={() => {
                     if (mdRowTours.length > 0) {
-                      showGuideModalContent('투어 상세 정보', getTourSummary(mdRowTours[0]), mdRowTours[0].id)
+                      showGuideModalContent('투어 요약 정보', getTourSummary(mdRowTours[0]), mdRowTours[0].id)
                     }
                   }}
                   onDoubleClick={() => {

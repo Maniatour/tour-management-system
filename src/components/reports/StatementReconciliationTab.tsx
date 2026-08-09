@@ -113,6 +113,18 @@ import {
 } from '@/lib/statement-csv'
 import { formatStatementLineDescription } from '@/lib/statement-display'
 import {
+  buildPaymentMethodAccountIndex,
+  resolvePaymentMethodFinancialAccountId,
+} from '@/lib/payment-method-financial-account'
+import {
+  statementLineMatchHaystack,
+  statementMatchTextTokenSet,
+  statementVendorTextMatchBonus,
+  vendorAliasTextsForPaidTo,
+  type ExpenseVendorAliasRow,
+} from '@/lib/statement-match-text'
+import { learnVendorAliasAfterReconciliationMatch } from '@/lib/statement-match-alias-learn'
+import {
   isYmdWithinInclusiveRange,
   parseStatementSearchDateQuery,
   statementSearchReferenceYearFromMonthFilter,
@@ -501,10 +513,10 @@ const AUTO_MATCH_CANDIDATE_LIMIT = 8
 const AUTO_MATCH_PREVIEW_PAGE_SIZE = 120
 /** 자동 매칭 미리보기: 명세 줄 금액과 같은 지출만 후보 (미리보기 옵션 표시와 동일한 부동소수 허용치) */
 const AUTO_MATCH_AMOUNT_EQUAL_EPS = 0.015
-/** 자동 매칭 — 정확 금액: 명세 거래일 vs 지출 기준일(등록일 submit_on, 호텔은 체크인일) 최대 차이(일) */
-const AUTO_MATCH_EXACT_DAY_WINDOW = 4
+/** 자동 매칭 — 정확 금액: 명세 거래일 vs 지출 기준일(등록일 submit_on, 호텔은 체크인일) 최대 차이(일). 2025 수동 매칭에서 ±5~7일 건(HSB·주차 등) 반영 */
+const AUTO_MATCH_EXACT_DAY_WINDOW = 7
 /** 자동 매칭 — 비슷한 금액: 명세 거래일 vs 지출 기준일 최대 차이(일) */
-const AUTO_MATCH_SIMILAR_DAY_WINDOW = 7
+const AUTO_MATCH_SIMILAR_DAY_WINDOW = 10
 /** 자동 매칭 지출·부킹 조회 시 명세 업로드 기간 확장 — 등록일·체크인일 창에 맞춤 */
 const AUTO_MATCH_EXPENSE_FETCH_DAY_PADDING = Math.max(AUTO_MATCH_EXACT_DAY_WINDOW, AUTO_MATCH_SIMILAR_DAY_WINDOW)
 /** 명세 자동 매칭 «금액만 일치»: 날짜는 후보 필터에 쓰지 않지만, 지출·부킹을 불러올 submit_on·체크인 범위를 넓힘(명세 기간 기준 ±일) */
@@ -604,27 +616,7 @@ function formatAutoMatchCandidateDates(submitYmd: string, checkInYmd: string | n
 
 /** 텍스트 토큰 집합 — 소문자·영숫자·한글만, 2자 이상 토큰 */
 function autoMatchTextTokenSet(raw: string): Set<string> {
-  const norm = String(raw ?? '')
-    .toLowerCase()
-    .replace(/[^a-z0-9가-힣]+/g, ' ')
-    .trim()
-  if (!norm) return new Set()
-  const out = new Set<string>()
-  for (const t of norm.split(/\s+/)) {
-    if (t.length >= 2) out.add(t)
-  }
-  return out
-}
-
-/** 명세 적요·가맹점 토큰 vs 지출 결제처·내용 토큰 겹침 가산점(0~AUTO_MATCH_TEXT_BONUS_MAX) */
-function autoMatchTextOverlapBonus(lineTokens: Set<string>, expenseText: string): number {
-  if (lineTokens.size === 0) return 0
-  const expTokens = autoMatchTextTokenSet(expenseText)
-  if (expTokens.size === 0) return 0
-  let shared = 0
-  for (const t of expTokens) if (lineTokens.has(t)) shared += 1
-  if (shared === 0) return 0
-  return Math.min(AUTO_MATCH_TEXT_BONUS_MAX, 4 + shared * 4)
+  return statementMatchTextTokenSet(raw)
 }
 
 /**
@@ -639,6 +631,7 @@ function autoMatchCandidateScore(
   ctx?: {
     lineTokens?: Set<string>
     targetFinancialAccountId?: string | null
+    vendorAliases?: string[]
   }
 ): number | null {
   const expenseAmt = Number(expense.amount)
@@ -672,7 +665,15 @@ function autoMatchCandidateScore(
         ? AUTO_MATCH_ACCOUNT_MATCH_BONUS
         : -AUTO_MATCH_ACCOUNT_MISMATCH_PENALTY
   }
-  const textAdj = ctx?.lineTokens ? autoMatchTextOverlapBonus(ctx.lineTokens, expense.match_text) : 0
+  const textAdj = ctx?.lineTokens
+    ? statementVendorTextMatchBonus(
+        ctx.lineTokens,
+        expense.paid_to,
+        expense.paid_for || expense.match_text,
+        ctx.vendorAliases ?? [],
+        AUTO_MATCH_TEXT_BONUS_MAX
+      )
+    : 0
 
   return Math.max(1, Math.round(base + accountAdj + textAdj))
 }
@@ -2495,9 +2496,19 @@ export default function StatementReconciliationTab() {
     }
   }, [linePairPickerAnchorId, lines])
 
-  const paymentMethodFinancialAccountById = useMemo(() => {
-    return new Map(paymentMethods.map((pm) => [pm.id, pm.financial_account_id ?? null]))
-  }, [paymentMethods])
+  /** id / method / display_name / 카드자릿수 키로 결제수단→금융계정 해석 */
+  const paymentMethodAccountIndex = useMemo(
+    () =>
+      buildPaymentMethodAccountIndex(
+        paymentMethods.map((pm) => ({
+          id: pm.id,
+          method: pm.method ?? null,
+          display_name: pm.display_name ?? null,
+          financial_account_id: pm.financial_account_id ?? null,
+        }))
+      ),
+    [paymentMethods]
+  )
 
   const importToFinancialAccountId = useMemo(() => {
     const m = new Map<string, string>()
@@ -2541,9 +2552,9 @@ export default function StatementReconciliationTab() {
       const pm = o.payment_method?.trim()
       const targetAccountId = isAllAccountsFilter ? expensePickerContextAccountId : filterAccountId
       if (!pm || !targetAccountId) return false
-      return paymentMethodFinancialAccountById.get(pm) === targetAccountId
+      return resolvePaymentMethodFinancialAccountId(pm, paymentMethodAccountIndex) === targetAccountId
     },
-    [paymentMethodFinancialAccountById, filterAccountId, isAllAccountsFilter, expensePickerContextAccountId]
+    [paymentMethodAccountIndex, filterAccountId, isAllAccountsFilter, expensePickerContextAccountId]
   )
 
   const compareExpenseFinancialAccountPriority = useCallback(
@@ -4436,9 +4447,24 @@ export default function StatementReconciliationTab() {
       ])
 
     const resolveFinancialAccountId = (pm: unknown): string | null => {
-      const k = pm == null ? '' : String(pm).trim()
-      if (!k) return null
-      return paymentMethodFinancialAccountById.get(k) ?? null
+      return resolvePaymentMethodFinancialAccountId(
+        pm == null ? null : String(pm),
+        paymentMethodAccountIndex
+      )
+    }
+
+    let vendorAliasRows: ExpenseVendorAliasRow[] = []
+    try {
+      const { data: vendorRows } = await supabase
+        .from('expense_vendors')
+        .select('name, match_aliases')
+        .order('name')
+      vendorAliasRows = ((vendorRows || []) as ExpenseVendorAliasRow[]).map((v) => ({
+        name: String(v.name ?? '').trim(),
+        match_aliases: (v.match_aliases ?? []).map((a) => String(a).trim()).filter(Boolean),
+      }))
+    } catch {
+      vendorAliasRows = []
     }
 
     const candidates: AutoMatchExpenseCandidate[] = [
@@ -4524,15 +4550,19 @@ export default function StatementReconciliationTab() {
     const usedForDefaultSelection = new Set(used)
     for (const line of linesForAutoMatch) {
       const amt = Number(line.amount)
-      const lineTokens = autoMatchTextTokenSet(`${line.description ?? ''} ${line.merchant ?? ''}`)
+      const lineTokens = autoMatchTextTokenSet(
+        statementLineMatchHaystack(line.description, line.merchant)
+      )
       const options = candidates
         .map((expense) => {
           if (!includedSources.has(expense.source_table)) return null
           const key = `${expense.source_table}:${expense.source_id}`
           if (used.has(key)) return null
+          const vendorAliases = vendorAliasTextsForPaidTo(expense.paid_to, vendorAliasRows)
           const score = autoMatchCandidateScore(amt, line.posted_date, expense, matchRule, {
             lineTokens,
-            targetFinancialAccountId: filterAccountId
+            targetFinancialAccountId: filterAccountId,
+            vendorAliases,
           })
           if (!score) return null
           const { submitYmd, checkInYmd } = autoMatchSubmitAndCheckInYmd(expense)
@@ -4683,7 +4713,8 @@ export default function StatementReconciliationTab() {
             source_table: selected.source_table,
             source_id: selected.source_id,
             matched_amount: p.line_amount,
-            matched_by: email || null
+            matched_by: email || null,
+            match_kind: 'auto',
           })
           .select('id')
           .maybeSingle()
@@ -4691,6 +4722,11 @@ export default function StatementReconciliationTab() {
           if (!isAbortLikeError(error)) console.error(error)
           continue
         }
+        void learnVendorAliasAfterReconciliationMatch(supabase, {
+          statementLineId: p.statement_line_id,
+          sourceTable: selected.source_table,
+          sourceId: selected.source_id,
+        })
         await logReconciliationMatchEvent({
           match_id: inserted?.id ? String(inserted.id) : null,
           statement_line_id: p.statement_line_id,
@@ -4910,7 +4946,8 @@ export default function StatementReconciliationTab() {
         source_table: 'payment_records',
         source_id: prId,
         matched_amount: Number(line.amount),
-        matched_by: email
+        matched_by: email,
+        match_kind: 'manual',
       })
       await syncLineMatchedFlag(line.id)
       setMessage('입금 매칭을 추가했습니다.')
@@ -5437,6 +5474,7 @@ export default function StatementReconciliationTab() {
               matchedAmount,
               linkMode: 'replace',
               operatorId: activeOperatorId,
+              matchKind: 'manual',
             })
           } else {
             const { data: inserted, error } = await fromUntypedTable(supabase, 'reconciliation_matches')
@@ -5446,11 +5484,17 @@ export default function StatementReconciliationTab() {
                 source_table: st,
                 source_id: sid,
                 matched_amount: matchedAmount,
-                matched_by: email
+                matched_by: email,
+                match_kind: 'manual',
               })
               .select('id')
               .maybeSingle()
             if (error) throw error
+            void learnVendorAliasAfterReconciliationMatch(supabase, {
+              statementLineId: line.id,
+              sourceTable: st,
+              sourceId: sid,
+            })
             await logReconciliationMatchEvent({
               match_id: inserted?.id ? String(inserted.id) : null,
               statement_line_id: line.id,
@@ -5952,9 +5996,8 @@ export default function StatementReconciliationTab() {
       const accountNameById = new Map(accounts.map((a) => [a.id, a.name]))
       const rowPmKey = row.payment_method == null ? '' : String(row.payment_method).trim()
       const rowFinancialAccountId = rowPmKey
-        ? paymentMethodFinancialAccountById.get(rowPmKey) ?? null
+        ? resolvePaymentMethodFinancialAccountId(rowPmKey, paymentMethodAccountIndex)
         : null
-      const rowTokens = autoMatchTextTokenSet(`${row.party ?? ''} ${row.purpose ?? ''}`)
       const all: StatementLineCandidate[] = []
       for (let i = 0; i < importIds.length; i += 80) {
         const chunk = importIds.slice(i, i + 80)
@@ -5985,9 +6028,16 @@ export default function StatementReconciliationTab() {
                 ? AUTO_MATCH_ACCOUNT_MATCH_BONUS
                 : -AUTO_MATCH_ACCOUNT_MISMATCH_PENALTY
               : 0
-          const textAdj = autoMatchTextOverlapBonus(
-            rowTokens,
-            `${String(line.description ?? '')} ${String(line.merchant ?? '')}`
+          const lineHay = statementLineMatchHaystack(
+            line.description == null ? null : String(line.description),
+            line.merchant == null ? null : String(line.merchant)
+          )
+          const textAdj = statementVendorTextMatchBonus(
+            autoMatchTextTokenSet(lineHay),
+            String(row.party ?? ''),
+            String(row.purpose ?? ''),
+            [],
+            AUTO_MATCH_TEXT_BONUS_MAX
           )
           all.push({
             id: String(line.id),
@@ -6012,7 +6062,7 @@ export default function StatementReconciliationTab() {
       displayCandidates.sort(sortLedgerStatementCandidatesForPick)
       return displayCandidates.slice(0, 24)
     },
-    [imports, accounts, paymentMethodFinancialAccountById]
+    [imports, accounts, paymentMethodAccountIndex]
   )
 
   const findStatementCandidatesForLedgerRow = useCallback(
@@ -6050,11 +6100,17 @@ export default function StatementReconciliationTab() {
           source_table: row.source_table,
           source_id: row.source_id,
           matched_amount: candidate.amount,
-          matched_by: email
+          matched_by: email,
+          match_kind: 'manual',
         })
         .select('id')
         .maybeSingle()
       if (error) throw error
+      void learnVendorAliasAfterReconciliationMatch(supabase, {
+        statementLineId: candidate.id,
+        sourceTable: row.source_table,
+        sourceId: row.source_id,
+      })
       await logReconciliationMatchEvent({
         match_id: inserted?.id ? String(inserted.id) : null,
         statement_line_id: candidate.id,

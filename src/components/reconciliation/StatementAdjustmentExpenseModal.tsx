@@ -391,7 +391,8 @@ export default function StatementAdjustmentExpenseModal({
       source_table: sourceTable,
       source_id: sourceId,
       matched_amount: lineAmount,
-      matched_by: email || null
+      matched_by: email || null,
+      match_kind: 'manual',
     })
     if (mErr) throw mErr
     await syncStatementLineMatchedStatus(supabase, line.id)

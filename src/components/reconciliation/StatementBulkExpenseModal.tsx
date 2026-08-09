@@ -765,7 +765,8 @@ export default function StatementBulkExpenseModal({
       source_table: sourceTable,
       source_id: sourceId,
       matched_amount: amount,
-      matched_by: email || null
+      matched_by: email || null,
+      match_kind: 'manual',
     })
     if (mErr) throw mErr
     await syncStatementLineMatchedStatus(supabase, lineId)

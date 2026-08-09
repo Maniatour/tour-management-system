@@ -22,6 +22,8 @@ export type ScheduleProductGridDailyCell = {
   waitingPeople?: number
   koWaitingPeople?: number
   enWaitingPeople?: number
+  /** 대기(pending) 중 일본어 고객 인원 — enWaitingPeople(비한국어)의 하위 집계 */
+  jaWaitingPeople?: number
   canceledPeople?: number
   assignmentPendingReservationCount?: number
   /** 확정·모집 예약 건수(그룹 수) */
@@ -30,6 +32,8 @@ export type ScheduleProductGridDailyCell = {
   waitingReservationGroupCount?: number
   koPeople?: number
   enPeople?: number
+  /** 확정·모집 중 일본어 고객 인원 — enPeople(비한국어)의 하위 집계 */
+  jaPeople?: number
   choiceCounts?: Record<string, number>
   privateTourPeople?: number
   companionTourPeople?: number
@@ -61,8 +65,10 @@ export type ScheduleProductGridProductRow = {
 type ScheduleDailyBreakdownSlice = {
   koPeople?: number
   enPeople?: number
+  jaPeople?: number
   koWaitingPeople?: number
   enWaitingPeople?: number
+  jaWaitingPeople?: number
   choiceCounts?: Record<string, number>
 }
 
@@ -101,19 +107,52 @@ export function aggregateScheduleBreakdownFromDailyData(
 ) {
   let ko = 0
   let en = 0
+  let ja = 0
   const choiceCounts: Record<string, number> = {}
   for (const dateString of dateStrings) {
     const dd = dailyData[dateString]
     if (!dd) continue
     ko += (dd.koPeople || 0) + (dd.koWaitingPeople || 0)
     en += (dd.enPeople || 0) + (dd.enWaitingPeople || 0)
+    ja += (dd.jaPeople || 0) + (dd.jaWaitingPeople || 0)
     if (dd.choiceCounts) {
       for (const [k, v] of Object.entries(dd.choiceCounts)) {
         if (v > 0) choiceCounts[k] = (choiceCounts[k] || 0) + v
       }
     }
   }
-  return { ko, en, choiceCounts }
+  return { ko, en, ja, choiceCounts }
+}
+
+export function ScheduleLangFlagsHoverLine({
+  ko,
+  en,
+  ja = 0,
+}: {
+  ko: number
+  en: number
+  ja?: number
+}) {
+  return (
+    <div className="flex items-center gap-2 mb-1.5 flex-nowrap">
+      <span className="inline-flex items-center gap-1 shrink-0">
+        <ReactCountryFlag countryCode="KR" svg style={{ width: '1em', height: '0.75em' }} />
+        <span>{ko}</span>
+      </span>
+      <span className="text-gray-400 shrink-0">/</span>
+      <span className="inline-flex items-center gap-1 shrink-0">
+        <ReactCountryFlag countryCode="US" svg style={{ width: '1em', height: '0.75em' }} />
+        <span>{en}</span>
+        {ja > 0 ? (
+          <span className="inline-flex items-center gap-0.5 text-gray-300">
+            (
+            <ReactCountryFlag countryCode="JP" svg style={{ width: '1em', height: '0.75em' }} />
+            {ja})
+          </span>
+        ) : null}
+      </span>
+    </div>
+  )
 }
 
 export function ScheduleTotalColumnWithTooltip({
@@ -123,7 +162,7 @@ export function ScheduleTotalColumnWithTooltip({
 }: {
   total: number
   valueClassName: string
-  breakdown: { ko: number; en: number; choiceCounts: Record<string, number> }
+  breakdown: { ko: number; en: number; ja?: number; choiceCounts: Record<string, number> }
 }) {
   const x = breakdown.choiceCounts.X || 0
   const l = breakdown.choiceCounts.L || 0
@@ -134,17 +173,11 @@ export function ScheduleTotalColumnWithTooltip({
       contentClassName="min-w-[200px]"
       content={
         <>
-          <div className="flex items-center gap-2 mb-1.5 flex-nowrap">
-            <span className="inline-flex items-center gap-1 shrink-0">
-              <ReactCountryFlag countryCode="KR" svg style={{ width: '1em', height: '0.75em' }} />
-              <span>한국인 {breakdown.ko}명</span>
-            </span>
-            <span className="text-gray-400 shrink-0">/</span>
-            <span className="inline-flex items-center gap-1 shrink-0">
-              <ReactCountryFlag countryCode="US" svg style={{ width: '1em', height: '0.75em' }} />
-              <span>미국인 {breakdown.en}명</span>
-            </span>
-          </div>
+          <ScheduleLangFlagsHoverLine
+            ko={breakdown.ko}
+            en={breakdown.en}
+            ja={breakdown.ja || 0}
+          />
           <div className="whitespace-nowrap break-keep leading-tight">
             엑스 {x}명 / 로어 {l}명
           </div>

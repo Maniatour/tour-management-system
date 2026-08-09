@@ -71,7 +71,10 @@ import {
   getAssignmentStatusLabel,
   getTourAssignmentStatusTooltipLine,
   resolveTourDisplayAssignmentStatus,
+  updateTourAssignmentStatus,
+  type GuideAssignmentStatusValue,
 } from '@/lib/guideAssignmentStatus'
+import { allowTeamPairAssignment, type TeamDoNotTeamMember } from '@/lib/teamDoNotTeamWith'
 import {
   SCHEDULE_COLOR_PRESETS,
   getScheduleProductDisplayProps,
@@ -132,6 +135,7 @@ import { isActiveTourHotelBookingStatus } from '@/lib/tourHotelBookingCounts'
 import {
   buildTourCanyonDisplayBadges,
   formatTourCanyonChoiceCardLine,
+  aggregateTicketEaByCanyon,
 } from '@/lib/ticketBookingDateView'
 import {
   aggregateTourChoiceCounts,
@@ -150,6 +154,7 @@ import ScheduleDisplayToolbar from '@/components/schedule/ScheduleDisplayToolbar
 import ScheduleProductGrid from '@/components/schedule/ScheduleProductGrid'
 import ScheduleGuideGrid from '@/components/schedule/ScheduleGuideGrid'
 import ScheduleVehicleGrid from '@/components/schedule/ScheduleVehicleGrid'
+import ScheduleGuideTourInfoCard from '@/components/schedule/ScheduleGuideTourInfoCard'
 import { useScheduleDisplayCalendar } from '@/hooks/useScheduleDisplayCalendar'
 import { useScheduleViewDialogs } from '@/hooks/useScheduleViewDialogs'
 import { useScheduleViewDateNotes } from '@/hooks/useScheduleViewDateNotes'
@@ -292,8 +297,6 @@ const SCHEDULE_VEHICLE_EDIT_SELECT = `
 `
 
 /** 가이드 상세 모달 Select — 실제 이메일과 겹치지 않도록 함 */
-const SCHEDULE_GUIDE_MODAL_NO_GUIDE = '__schedule_guide_modal_no_guide__'
-const SCHEDULE_GUIDE_MODAL_NO_ASSISTANT = '__schedule_guide_modal_no_assistant__'
 const SCHEDULE_GUIDE_MODAL_NO_VEHICLE = '__schedule_guide_modal_no_vehicle__'
 
 /** 통합 스케줄 알림: 닫으면 같은 탭 세션에서 자동 모달 재표시 안 함 (월 변경 시 초기화) */
@@ -334,6 +337,14 @@ type Reservation = any
 type Customer = Database['public']['Tables']['customers']['Row']
 type ProductCellPickupHotel = {
   id: string
+  hotel?: string | null
+  internal_name?: string | null
+  pick_up_location?: string | null
+}
+
+type GuideModalPickupHotelGroupRow = {
+  id: string
+  group_number: number | null
   hotel?: string | null
   internal_name?: string | null
   pick_up_location?: string | null
@@ -927,6 +938,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; title: string } | null>(null)
   const [tourDetailIframeReloadNonce, setTourDetailIframeReloadNonce] = useState(0)
   const [updatingTourDetailModalStatusId, setUpdatingTourDetailModalStatusId] = useState<string | null>(null)
+  const [updatingGuideModalAssignmentStatusId, setUpdatingGuideModalAssignmentStatusId] = useState<string | null>(null)
   
   // 행 드래그앤드롭 상태 (상품/차량)
   const [hoveredGuideRow, setHoveredGuideRow] = useState<string | null>(null)
@@ -1157,6 +1169,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   } | null>(null)
   const [productCellCancellationReasons, setProductCellCancellationReasons] = useState<Record<string, string>>({})
   const [productCellPickupHotels, setProductCellPickupHotels] = useState<ProductCellPickupHotel[]>([])
+  /** 투어 요약 정보 카드: 픽업 호텔 id → group_number */
+  const [guideModalPickupHotelGroups, setGuideModalPickupHotelGroups] = useState<
+    GuideModalPickupHotelGroupRow[]
+  >([])
   const [reservationIdForScheduleEdit, setReservationIdForScheduleEdit] = useState<string | null>(null)
   const [scheduleEditingReservation, setScheduleEditingReservation] = useState<Record<string, unknown> | null>(null)
   const [scheduleReservationFormData, setScheduleReservationFormData] = useState<{
@@ -2476,6 +2492,66 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     }
   }, [productCellReservationsModal, productCellPickupHotels.length])
 
+  useEffect(() => {
+    if (!showGuideModal || !guideModalContent.tourId) return
+    const needsReload =
+      guideModalPickupHotelGroups.length === 0 ||
+      guideModalPickupHotelGroups.some(
+        (h) =>
+          !('pick_up_location' in h) ||
+          (h.internal_name === undefined && h.hotel === undefined),
+      )
+    if (!needsReload) return
+    let cancelled = false
+    void (async () => {
+      const { data, error } = await supabase
+        .from('pickup_hotels')
+        .select('id, group_number, hotel, internal_name, pick_up_location')
+      if (cancelled) return
+      if (error) {
+        console.error('guide modal pickup hotel groups load error:', error)
+        return
+      }
+      setGuideModalPickupHotelGroups((data || []) as GuideModalPickupHotelGroupRow[])
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [showGuideModal, guideModalContent.tourId, guideModalPickupHotelGroups])
+
+  const pickupHotelIdToGroupNumber = useMemo(() => {
+    const map = new Map<string, number | null>()
+    for (const h of guideModalPickupHotelGroups) {
+      map.set(String(h.id), h.group_number)
+    }
+    return map
+  }, [guideModalPickupHotelGroups])
+
+  const pickupHotelIdToMeta = useMemo(() => {
+    const map = new Map<
+      string,
+      { label: string; pickUpLocation: string }
+    >()
+    for (const h of guideModalPickupHotelGroups) {
+      const id = String(h.id)
+      const label =
+        (h.internal_name || '').trim() || (h.hotel || '').trim() || id
+      map.set(id, {
+        label,
+        pickUpLocation: (h.pick_up_location || '').trim(),
+      })
+    }
+    return map
+  }, [guideModalPickupHotelGroups])
+
+  const pickupHotelIdToLabel = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const [id, meta] of pickupHotelIdToMeta) {
+      map.set(id, meta.label)
+    }
+    return map
+  }, [pickupHotelIdToMeta])
+
   const checkScheduleTourExistsForProductDate = useCallback(async (productId: string, tourDate: string) => {
     try {
       const { data, error } = await supabase
@@ -2731,15 +2807,37 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   )
 
   const handleTeamEditModalSaved = useCallback(
-    (updated: Team) => {
+    (
+      updated: Team,
+      peerUpdates?: Array<{
+        email: string
+        do_not_team_with: string[]
+        avoid_team_with: string[]
+      }>,
+    ) => {
+      const applyPeer = (m: Team) => {
+        const peer = peerUpdates?.find(
+          (p) => String(p.email).trim().toLowerCase() === String(m.email).trim().toLowerCase(),
+        )
+        if (!peer) return m
+        return {
+          ...m,
+          do_not_team_with: peer.do_not_team_with,
+          avoid_team_with: peer.avoid_team_with,
+        }
+      }
       setTeamMembers((prev) =>
-        prev.map((m) => (m.email === updated.email ? { ...m, ...updated } : m))
+        prev.map((m) =>
+          m.email === updated.email ? { ...m, ...updated } : applyPeer(m),
+        ),
       )
       setInactiveTeamMembers((prev) =>
-        prev.map((m) => (m.email === updated.email ? { ...m, ...updated } : m))
+        prev.map((m) =>
+          m.email === updated.email ? { ...m, ...updated } : applyPeer(m),
+        ),
       )
     },
-    []
+    [],
   )
 
   const openRentalVehicleAddFromSchedule = useCallback(() => {
@@ -3168,13 +3266,30 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     }
   }, [products, defaultPresetIds])
 
-  // 고객 언어 맵 (customer_id -> ko 여부)
-  const customerIdToIsKo = useMemo(() => {
-    const map = new Map<string, boolean>()
+  // 고객 언어 맵 (customer_id -> ko / ja / en)
+  const customerIdToLangBucket = useMemo(() => {
+    const map = new Map<string, 'ko' | 'ja' | 'en'>()
     for (const c of customers) {
-      const lang = (c?.language || '').toString().toLowerCase()
-      const isKo = lang === 'ko' || lang === 'kr' || lang === '한국어' || lang === 'korean'
-      map.set(String(c.id), isKo)
+      const lang = (c?.language || '').toString().toLowerCase().trim()
+      let bucket: 'ko' | 'ja' | 'en' = 'en'
+      if (
+        lang === 'ko' ||
+        lang === 'kr' ||
+        lang === '한국어' ||
+        lang === 'korean' ||
+        lang.includes('한국')
+      ) {
+        bucket = 'ko'
+      } else if (
+        lang === 'ja' ||
+        lang === 'jp' ||
+        lang === '일본어' ||
+        lang === 'japanese' ||
+        lang.includes('일본')
+      ) {
+        bucket = 'ja'
+      }
+      map.set(String(c.id), bucket)
     }
     return map
   }, [customers])
@@ -3779,6 +3894,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     return set
   }, [teamMembers, inactiveTeamMembers])
 
+  const doNotTeamMembers = useMemo((): TeamDoNotTeamMember[] => {
+    return [...teamMembers, ...inactiveTeamMembers].map((m) => ({
+      email: String(m.email || ''),
+      name_ko: m.name_ko ?? null,
+      nick_name: m.nick_name ?? null,
+      name_en: m.name_en ?? null,
+      do_not_team_with: Array.isArray(m.do_not_team_with) ? m.do_not_team_with : [],
+      avoid_team_with: Array.isArray(m.avoid_team_with) ? m.avoid_team_with : [],
+    }))
+  }, [teamMembers, inactiveTeamMembers])
+
   const teamModalSearchNormalized = teamModalSearchQuery.trim().toLowerCase()
   const teamMembersFilteredForModal = useMemo(() => {
     if (!teamModalSearchNormalized) return teamMembers
@@ -4217,6 +4343,23 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       // 즉시 저장 대신 변경 누적 + 로컬 미리보기 반영
       // draggedRole이 있으면 우선 사용 (가이드/어시스턴트 재배정 구분)
       const effectiveRole = draggedRole || role
+      const nextGuide =
+        effectiveRole === 'guide'
+          ? teamMemberId
+          : String(draggedTour.tour_guide_id || '').trim() || null
+      const nextAssistant =
+        effectiveRole === 'assistant'
+          ? teamMemberId
+          : String(draggedTour.assistant_id || '').trim() || null
+      if (
+        nextGuide &&
+        nextAssistant &&
+        nextGuide !== nextAssistant &&
+        !allowTeamPairAssignment(nextGuide, nextAssistant, doNotTeamMembers, locale)
+      ) {
+        return
+      }
+
       const updateData: Partial<Tour> = {}
       if (effectiveRole === 'guide') {
         updateData.tour_guide_id = teamMemberId
@@ -4460,6 +4603,19 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   /** 미배정 투어에 가이드/어시스턴트 배정 (드래그 드롭 · 모달 공통) */
   const applyUnassignedPersonToTour = useCallback(
     (tour: Tour, teamMemberId: string, dateString: string, role: 'guide' | 'assistant') => {
+      const nextGuide =
+        role === 'guide' ? teamMemberId : String(tour.tour_guide_id || '').trim() || null
+      const nextAssistant =
+        role === 'assistant' ? teamMemberId : String(tour.assistant_id || '').trim() || null
+      if (
+        nextGuide &&
+        nextAssistant &&
+        nextGuide !== nextAssistant &&
+        !allowTeamPairAssignment(nextGuide, nextAssistant, doNotTeamMembers, locale)
+      ) {
+        return
+      }
+
       const updateData: Partial<Tour> = {
         tour_date: dateString,
       }
@@ -4495,7 +4651,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       })
       requestSaveAfterDragAssignment()
     },
-    [mergeStaffPatchWithAssignmentReset, requestSaveAfterDragAssignment],
+    [mergeStaffPatchWithAssignmentReset, requestSaveAfterDragAssignment, doNotTeamMembers, locale],
   )
 
   // 가이드/어시스턴트 셀에 드롭
@@ -4528,16 +4684,19 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     const totalPeopleAll = dayReservations.reduce((s, r) => s + (r.total_people || 0), 0)
     let assignedPeople = 0
     let assignedKo = 0
+    let assignedJa = 0
+    let assignedEn = 0
     if (tour.reservation_ids && Array.isArray(tour.reservation_ids)) {
       const assigned = dayReservations.filter(r => tour.reservation_ids!.includes(r.id))
-      assignedPeople = assigned.reduce((s, r) => s + (r.total_people || 0), 0)
-      assignedKo = assigned.reduce((s, r) => {
-        const cid = String(r.customer_id || '')
-        const isKo = customerIdToIsKo.get(cid) === true
-        return s + (isKo ? (r.total_people || 0) : 0)
-      }, 0)
+      for (const r of assigned) {
+        const people = r.total_people || 0
+        assignedPeople += people
+        const bucket = customerIdToLangBucket.get(String(r.customer_id || '')) || 'en'
+        if (bucket === 'ko') assignedKo += people
+        else if (bucket === 'ja') assignedJa += people
+        else assignedEn += people
+      }
     }
-    const assignedEn = Math.max(assignedPeople - assignedKo, 0)
 
     const guide = teamMembers.find(t => t.email === tour.tour_guide_id)
     const assistant = teamMembers.find(t => t.email === tour.assistant_id)
@@ -4547,9 +4706,11 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     const vehicleNumber = tour.vehicle_number || tour.vehicle_id || '-'
     const vehicleAssigned = tour.tour_car_id && String(tour.tour_car_id).trim().length > 0
 
-    const confirmedEa = ticketBookings
-      .filter((tb) => tb.tour_id === tour.id && isTicketBookingActiveForScheduleGrid(tb))
+    const tourTicketBookings = ticketBookings.filter((tb) => tb.tour_id === tour.id)
+    const confirmedEa = tourTicketBookings
+      .filter((tb) => isTicketBookingActiveForScheduleGrid(tb))
       .reduce((s, tb) => s + (tb.ea || 0), 0)
+    const ticketCountsByCanyon = aggregateTicketEaByCanyon(tourTicketBookings)
 
     const isPrivateTour = tour.is_private_tour === 'TRUE' || tour.is_private_tour === true
 
@@ -4571,7 +4732,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     )
     const choiceLine = choiceParts.length > 0 ? `초이스: ${choiceParts.join(' / ')}` : null
     /** 카드용: 캐년 X/L/U만 (거주자·객실·입장료 등 _other 제외) */
-    const tourTicketBookings = ticketBookings.filter((tb) => tb.tour_id === tour.id)
     const choiceCardLine = formatTourCanyonChoiceCardLine(choiceCounts, tourTicketBookings)
     const maxParticipants = Number((tour as { max_participants?: number | null }).max_participants) || 0
     const capacityDenom = maxParticipants > 0 ? maxParticipants : totalPeopleAll
@@ -4580,6 +4740,36 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     const assistantAssigned = !!(tour.assistant_id && String(tour.assistant_id).trim())
     const requiresAssistant = tour.team_type !== '1guide'
     const canyonBadges = buildTourCanyonDisplayBadges(choiceCounts, tourTicketBookings)
+    const assignmentStatus = resolveTourDisplayAssignmentStatus(tour)
+
+    const pickupHotelGroupKeys = new Set<string>()
+    const pickupHotelIdsOrdered: string[] = []
+    const seenPickupHotelIds = new Set<string>()
+    for (const r of assignedResList) {
+      const hotelId = String(r.pickup_hotel || '').trim()
+      if (!hotelId) continue
+      const gn = pickupHotelIdToGroupNumber.get(hotelId)
+      if (gn != null && Number.isFinite(Number(gn))) {
+        pickupHotelGroupKeys.add(`g:${Math.floor(Number(gn))}`)
+      } else {
+        pickupHotelGroupKeys.add(`h:${hotelId}`)
+      }
+      if (!seenPickupHotelIds.has(hotelId)) {
+        seenPickupHotelIds.add(hotelId)
+        pickupHotelIdsOrdered.push(hotelId)
+      }
+    }
+    const pickupHotelGroupCount = pickupHotelGroupKeys.size
+    const pickupHotelItems = pickupHotelIdsOrdered
+      .map((hotelId) => {
+        const gn = pickupHotelIdToGroupNumber.get(hotelId)
+        const groupSort =
+          gn != null && Number.isFinite(Number(gn)) ? Math.floor(Number(gn)) : 9999
+        const label = pickupHotelIdToLabel.get(hotelId) || hotelId
+        return { hotelId, label, groupSort }
+      })
+      .sort((a, b) => a.groupSort - b.groupSort || a.label.localeCompare(b.label))
+      .map(({ hotelId, label }) => ({ hotelId, label }))
 
     return {
       productName,
@@ -4591,6 +4781,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       spotsLeft,
       assignedKo,
       assignedEn,
+      assignedJa,
+      pickupHotelGroupCount,
+      pickupHotelItems,
       guideName,
       assistantName,
       vehicleNumber,
@@ -4599,11 +4792,13 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       assistantAssigned,
       requiresAssistant,
       confirmedEa,
+      ticketCountsByCanyon,
       isPrivateTour,
       choiceLine,
       choiceCardLine,
       choiceCounts,
       canyonBadges,
+      assignmentStatus,
       tourStatus: tour.tour_status || null,
     }
   }
@@ -4654,7 +4849,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       ticketBookings,
       reservationChoices,
       teamMembers,
-      customerIdToIsKo,
+      customerIdToLangBucket,
       displayOtaSaleStatusByKey,
       locale,
       productColors,
@@ -4662,6 +4857,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       defaultPresetIds,
       airportPickupMemberIdSet,
       airportSendingMemberIdSet,
+      pickupHotelIdToGroupNumber,
     ]
   )
 
@@ -4750,17 +4946,128 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     return tours.find((t: Tour) => t.id === guideModalContent.tourId) ?? null
   }, [guideModalContent.tourId, tours])
 
-  const guideModalStatusSelectOptions = useMemo(() => {
-    if (!guideModalContent.tourId) return tourStatusOptions
-    return buildTourStatusSelectOptions(guideModalTour?.tour_status || '', locale)
-  }, [guideModalContent.tourId, guideModalTour?.tour_status, locale])
-
-  const guideModalStatusSelectValue = useMemo(() => {
-    return resolveTourStatusSelectValue(
-      guideModalTour?.tour_status || '',
-      guideModalStatusSelectOptions,
+  /** 선택한 투어에 배정된 예약 (요약 모달 목록) */
+  const guideModalSelectedTourReservations = useMemo(() => {
+    if (!guideModalTour) return []
+    const assignedIds = new Set(
+      Array.isArray(guideModalTour.reservation_ids)
+        ? (guideModalTour.reservation_ids as string[]).map(String)
+        : [],
     )
-  }, [guideModalTour?.tour_status, guideModalStatusSelectOptions])
+    if (assignedIds.size === 0) return []
+    return reservations
+      .filter((r) => {
+        if (!assignedIds.has(String(r.id))) return false
+        const st = String(r.status || '').toLowerCase()
+        return st === 'confirmed' || st === 'recruiting'
+      })
+      .sort((a, b) => {
+        const nameA = getCustomerName(String(a.customer_id || ''), customers as Customer[])
+        const nameB = getCustomerName(String(b.customer_id || ''), customers as Customer[])
+        return nameA.localeCompare(nameB, locale === 'ko' ? 'ko' : 'en')
+      })
+  }, [guideModalTour, reservations, customers, locale])
+
+  /** 선택한 투어 + 같은 날·같은 상품의 다른 투어 카드 */
+  const guideModalRelatedTourCards = useMemo(() => {
+    if (!guideModalTour) return []
+    const productId = String(guideModalTour.product_id || '')
+    const tourDate = normalizeTourDateKey(guideModalTour.tour_date)
+    if (!productId || !tourDate) return []
+
+    const related = tours.filter((t: Tour) => {
+      if (isTourCancelled(t.tour_status) || isTourDeleted(t.tour_status)) return false
+      if (String(t.product_id || '') !== productId) return false
+      return normalizeTourDateKey(t.tour_date) === tourDate
+    })
+
+    const selectedId = String(guideModalTour.id)
+    related.sort((a, b) => {
+      if (String(a.id) === selectedId) return -1
+      if (String(b.id) === selectedId) return 1
+      return String(a.id).localeCompare(String(b.id))
+    })
+
+    /** 해당일 전체 투어 기준: 호텔 id → 사용 투어 id 집합 */
+    const hotelIdToTourIds = new Map<string, Set<string>>()
+    for (const t of tours) {
+      if (isTourCancelled(t.tour_status) || isTourDeleted(t.tour_status)) continue
+      if (normalizeTourDateKey(t.tour_date) !== tourDate) continue
+      const tid = String(t.id)
+      const assignedIds = new Set(
+        Array.isArray(t.reservation_ids) ? (t.reservation_ids as string[]).map(String) : [],
+      )
+      if (assignedIds.size === 0) continue
+      for (const r of reservations) {
+        if (!assignedIds.has(String(r.id))) continue
+        const st = String(r.status || '').toLowerCase()
+        if (st !== 'confirmed' && st !== 'recruiting') continue
+        if (normalizeTourDateKey(r.tour_date) !== tourDate) continue
+        const hotelId = String(r.pickup_hotel || '').trim()
+        if (!hotelId) continue
+        let set = hotelIdToTourIds.get(hotelId)
+        if (!set) {
+          set = new Set<string>()
+          hotelIdToTourIds.set(hotelId, set)
+        }
+        set.add(tid)
+      }
+    }
+
+    return related.map((tour) => {
+      const c = getTourSummaryCore(tour)
+      const pickupHotelItems = (c.pickupHotelItems || []).map(
+        (item: { hotelId: string; label: string }) => ({
+          hotelId: item.hotelId,
+          label: item.label,
+          sharedSameDay: (hotelIdToTourIds.get(item.hotelId)?.size || 0) > 1,
+        }),
+      )
+      return {
+        tour,
+        summary: {
+          productName: c.productName,
+          tourDate: c.tourDate,
+          assignedPeople: c.assignedPeople,
+          capacityDenom: c.capacityDenom,
+          totalPeopleAll: c.totalPeopleAll,
+          assignedKo: c.assignedKo,
+          assignedEn: c.assignedEn,
+          assignedJa: c.assignedJa,
+          pickupHotelGroupCount: c.pickupHotelGroupCount,
+          pickupHotelItems,
+          guideName: c.guideName,
+          assistantName: c.assistantName,
+          vehicleNumber: c.vehicleNumber,
+          vehicleAssigned: c.vehicleAssigned,
+          guideAssigned: c.guideAssigned,
+          assistantAssigned: c.assistantAssigned,
+          requiresAssistant: c.requiresAssistant,
+          isPrivateTour: c.isPrivateTour,
+          choiceCounts: c.choiceCounts,
+          ticketCountsByCanyon: c.ticketCountsByCanyon,
+          confirmedEa: c.confirmedEa,
+          assignmentStatus: c.assignmentStatus,
+          tourStatus: c.tourStatus,
+          tourStatusLabel: getTourStatusLabel(c.tourStatus, locale),
+          tourStatusColorClass: getTourStatusColor(c.tourStatus || ''),
+        },
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getTourSummaryCore closes over live schedule data
+  }, [
+    guideModalTour,
+    tours,
+    locale,
+    reservations,
+    ticketBookings,
+    reservationChoices,
+    teamMembers,
+    customerIdToLangBucket,
+    products,
+    pickupHotelIdToGroupNumber,
+    pickupHotelIdToLabel,
+  ])
 
   const updateTourDetailModalTourStatus = useCallback(
     async (tourId: string, newStatus: string) => {
@@ -4795,6 +5102,35 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       }
     },
     [tours, tourHandlers, isScheduleStaff, isStatusExcludedFromUnassignedList, onTourStatusChanged]
+  )
+
+  const updateGuideModalAssignmentStatus = useCallback(
+    async (tourId: string, newStatus: GuideAssignmentStatusValue) => {
+      const prevTour = tours.find((t: Tour) => t.id === tourId)
+      const prev = resolveTourDisplayAssignmentStatus(prevTour)
+      if (prev === newStatus) return
+      setUpdatingGuideModalAssignmentStatusId(tourId)
+      try {
+        const result = await updateTourAssignmentStatus(tourId, newStatus)
+        if (!result.ok) {
+          alert(
+            locale === 'ko'
+              ? `배정 상태 변경 실패: ${result.error}`
+              : `Failed to update assignment status: ${result.error}`,
+          )
+          return
+        }
+        setTours((prevTours) =>
+          prevTours.map((t) => (t.id === tourId ? { ...t, assignment_status: newStatus } : t)),
+        )
+        setUnassignedTours((prevTours) =>
+          prevTours.map((t) => (t.id === tourId ? { ...t, assignment_status: newStatus } : t)),
+        )
+      } finally {
+        setUpdatingGuideModalAssignmentStatusId(null)
+      }
+    },
+    [tours, locale],
   )
 
   // 상품별 총계 계산
@@ -5605,58 +5941,202 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     [monthVehiclesWithColors.vehicleList, requestSaveAfterDragAssignment],
   )
 
-  /** 가이드 상세 모달: 가이드 배정·해제 (handleUnassignDrop / handleDrop와 동일한 pendingChanges·미배정 목록 규칙) */
+  /** 가이드 상세 모달: 가이드 배정·해제. 선택 가이드가 다른 투어(같은 날) 가이드면 기존 가이드와 맞교환 */
   const applyGuideModalGuideValue = useCallback(
     (tourId: string, guideEmail: string | null) => {
       const tour = tours.find((t) => t.id === tourId)
       if (!tour) return
+
+      const previousGuide = tour.tour_guide_id ? String(tour.tour_guide_id).trim() || null : null
+      const nextGuide = guideEmail ? String(guideEmail).trim() || null : null
+      if (previousGuide === nextGuide && nextGuide !== null) return
+
       const teamType = tour.team_type || ''
+      const projectedAssistant =
+        nextGuide === null ||
+        teamType === '1guide' ||
+        (tour.assistant_id && String(tour.assistant_id).trim() === nextGuide)
+          ? null
+          : tour.assistant_id
+            ? String(tour.assistant_id).trim() || null
+            : null
+      if (
+        nextGuide &&
+        projectedAssistant &&
+        !allowTeamPairAssignment(nextGuide, projectedAssistant, doNotTeamMembers, locale)
+      ) {
+        return
+      }
+
       const rawPatch: Partial<Tour> =
-        guideEmail === null
+        nextGuide === null
           ? { tour_guide_id: null, assistant_id: null }
           : {
-              tour_guide_id: guideEmail,
-              ...(teamType === '1guide' ? { assistant_id: null } : {}),
+              tour_guide_id: nextGuide,
+              // 선택 가이드가 이 투어 어시였으면 어시 자리 비움
+              ...(teamType === '1guide' ||
+              (tour.assistant_id && String(tour.assistant_id).trim() === nextGuide)
+                ? { assistant_id: null }
+                : {}),
             }
       const patch = mergeStaffPatchWithAssignmentReset(tourId, tour, rawPatch)
       const next: Tour = { ...tour, ...patch }
 
-      setPendingChanges((prev) => ({
-        ...prev,
-        [tourId]: {
-          ...(prev[tourId] || {}),
-          ...patch,
-        },
-      }))
-
-      if (guideEmail === null) {
-        setUnassignedTours((prev) => {
-          const exists = prev.some((t) => t.id === tourId)
-          return exists ? prev.map((t) => (t.id === tourId ? next : t)) : [...prev, next]
+      // 선택 가이드가 같은 날 다른 투어의 가이드면 → 그 투어에 기존 가이드를 배정(맞교환)
+      let swapTourId: string | null = null
+      let swapPatch: Partial<Tour> | null = null
+      let swapNext: Tour | null = null
+      if (nextGuide) {
+        const tourDate = normalizeTourDateKey(tour.tour_date)
+        const conflicts = tours.filter((t) => {
+          if (String(t.id) === String(tourId)) return false
+          if (isTourCancelled(t.tour_status) || isTourDeleted(t.tour_status)) return false
+          if (normalizeTourDateKey(t.tour_date) !== tourDate) return false
+          return String(t.tour_guide_id || '').trim() === nextGuide
         })
-      } else {
-        setUnassignedTours((prev) => {
-          const exists = prev.some((t) => t.id === tourId)
-          const needsGuide = !next.tour_guide_id
-          const needsAssistant = next.team_type !== '1guide' && !next.assistant_id
-          if (needsGuide || needsAssistant) {
-            return exists ? prev.map((t) => (t.id === tourId ? next : t)) : [...prev, next]
+        const conflict =
+          conflicts.find((t) => String(t.product_id || '') === String(tour.product_id || '')) ||
+          conflicts[0] ||
+          null
+        if (conflict) {
+          const swapProjectedAssistant =
+            previousGuide &&
+            conflict.assistant_id &&
+            String(conflict.assistant_id).trim() === previousGuide
+              ? null
+              : conflict.assistant_id
+                ? String(conflict.assistant_id).trim() || null
+                : null
+          if (
+            previousGuide &&
+            swapProjectedAssistant &&
+            !allowTeamPairAssignment(
+              previousGuide,
+              swapProjectedAssistant,
+              doNotTeamMembers,
+              locale,
+            )
+          ) {
+            return
           }
-          return prev.filter((t) => t.id !== tourId)
-        })
+          const swapRaw: Partial<Tour> = {
+            tour_guide_id: previousGuide,
+            // 기존 가이드가 상대 투어 어시였으면 어시 자리 정리
+            ...(previousGuide &&
+            conflict.assistant_id &&
+            String(conflict.assistant_id).trim() === previousGuide
+              ? { assistant_id: null }
+              : {}),
+          }
+          swapTourId = String(conflict.id)
+          swapPatch = mergeStaffPatchWithAssignmentReset(swapTourId, conflict, swapRaw)
+          swapNext = { ...conflict, ...swapPatch }
+        }
       }
-      setTours((prev) => prev.map((t) => (t.id === tourId ? next : t)))
+
+      setPendingChanges((prev) => {
+        const updated = {
+          ...prev,
+          [tourId]: { ...(prev[tourId] || {}), ...patch },
+        }
+        if (swapTourId && swapPatch) {
+          updated[swapTourId] = { ...(prev[swapTourId] || {}), ...swapPatch }
+        }
+        return updated
+      })
+
+      setTours((prev) =>
+        prev.map((t) => {
+          if (String(t.id) === String(tourId)) return next
+          if (swapTourId && swapNext && String(t.id) === swapTourId) return swapNext
+          return t
+        }),
+      )
+
+      setUnassignedTours((prev) => {
+        const syncOne = (list: Tour[], updatedTour: Tour) => {
+          const needsGuide = !updatedTour.tour_guide_id
+          const needsAssistant =
+            updatedTour.team_type !== '1guide' && !updatedTour.assistant_id
+          const exists = list.some((t) => String(t.id) === String(updatedTour.id))
+          if (needsGuide || needsAssistant) {
+            return exists
+              ? list.map((t) => (String(t.id) === String(updatedTour.id) ? updatedTour : t))
+              : [...list, updatedTour]
+          }
+          return list.filter((t) => String(t.id) !== String(updatedTour.id))
+        }
+        let list = syncOne(prev, next)
+        if (swapNext) list = syncOne(list, swapNext)
+        return list
+      })
+
       requestSaveAfterDragAssignment()
     },
-    [tours, mergeStaffPatchWithAssignmentReset, requestSaveAfterDragAssignment],
+    [
+      tours,
+      mergeStaffPatchWithAssignmentReset,
+      requestSaveAfterDragAssignment,
+      doNotTeamMembers,
+      locale,
+    ],
   )
 
   const applyGuideModalAssistantValue = useCallback(
     (tourId: string, assistantEmail: string | null) => {
       const tour = tours.find((t) => t.id === tourId)
       if (!tour || tour.team_type === '1guide') return
+      const guideEmail = tour.tour_guide_id ? String(tour.tour_guide_id).trim() || null : null
+      const nextAssistant = assistantEmail ? String(assistantEmail).trim() || null : null
+      if (
+        guideEmail &&
+        nextAssistant &&
+        !allowTeamPairAssignment(guideEmail, nextAssistant, doNotTeamMembers, locale)
+      ) {
+        return
+      }
       const patch = mergeStaffPatchWithAssignmentReset(tourId, tour, {
         assistant_id: assistantEmail,
+      })
+      const next: Tour = { ...tour, ...patch }
+      setPendingChanges((prev) => ({
+        ...prev,
+        [tourId]: { ...(prev[tourId] || {}), ...patch },
+      }))
+      setTours((prev) => prev.map((t) => (t.id === tourId ? next : t)))
+      setUnassignedTours((prev) => {
+        const needsGuide = !next.tour_guide_id
+        const needsAssistant = next.team_type !== '1guide' && !next.assistant_id
+        const exists = prev.some((t) => t.id === tourId)
+        if (needsGuide || needsAssistant) {
+          return exists ? prev.map((t) => (t.id === tourId ? next : t)) : [...prev, next]
+        }
+        return prev.filter((t) => t.id !== tourId)
+      })
+      requestSaveAfterDragAssignment()
+    },
+    [
+      tours,
+      mergeStaffPatchWithAssignmentReset,
+      requestSaveAfterDragAssignment,
+      doNotTeamMembers,
+      locale,
+    ],
+  )
+
+  /** 가이드 ↔ 어시스턴트 역할 교체 */
+  const swapGuideModalGuideAndAssistant = useCallback(
+    (tourId: string) => {
+      const tour = tours.find((t) => t.id === tourId)
+      if (!tour || tour.team_type === '1guide') return
+      const guideId = tour.tour_guide_id ? String(tour.tour_guide_id).trim() || null : null
+      const assistantId = tour.assistant_id ? String(tour.assistant_id).trim() || null : null
+      if (!guideId && !assistantId) return
+      if (guideId === assistantId) return
+
+      const patch = mergeStaffPatchWithAssignmentReset(tourId, tour, {
+        tour_guide_id: assistantId,
+        assistant_id: guideId,
       })
       const next: Tour = { ...tour, ...patch }
       setPendingChanges((prev) => ({
@@ -8885,8 +9365,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       {/* 가이드 모달 */}
       {showGuideModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
-          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
+          <div className="bg-white rounded-lg p-5 max-w-xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold text-gray-900">
                 {guideModalContent.title}
               </h3>
@@ -8897,160 +9377,230 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 <X className="w-6 h-6" />
               </button>
             </div>
-            <div className="text-sm text-gray-700 whitespace-pre-line">
-              {guideModalTour ? getTourSummary(guideModalTour) : guideModalContent.content}
-            </div>
-            {guideModalContent.tourId && isScheduleStaff ? (
-              <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
-                {guideModalTour ? (
-                  <>
-                    <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-800">
-                        {locale === 'ko' ? '가이드' : 'Guide'}
-                      </label>
-                      <Select
-                        value={
-                          guideModalTour.tour_guide_id && String(guideModalTour.tour_guide_id).trim()
-                            ? guideModalTour.tour_guide_id
-                            : SCHEDULE_GUIDE_MODAL_NO_GUIDE
-                        }
-                        onValueChange={(v) => {
-                          if (!guideModalContent.tourId) return
-                          if (v === SCHEDULE_GUIDE_MODAL_NO_GUIDE) {
-                            applyGuideModalGuideValue(guideModalContent.tourId, null)
-                          } else {
-                            applyGuideModalGuideValue(guideModalContent.tourId, v)
-                          }
+            {guideModalRelatedTourCards.length > 0 ? (
+              <div className="space-y-3">
+                {guideModalRelatedTourCards.length > 1 ? (
+                  <p className="text-xs text-gray-500">
+                    {locale === 'ko'
+                      ? `같은 날 · 같은 상품 투어 ${guideModalRelatedTourCards.length}개`
+                      : `${guideModalRelatedTourCards.length} tours · same day & product`}
+                  </p>
+                ) : null}
+                {guideModalRelatedTourCards.map(({ tour, summary }) => {
+                  const tourId = String(tour.id)
+                  const isSelected = tourId === guideModalContent.tourId
+                  const statusOptions = buildTourStatusSelectOptions(tour.tour_status || '', locale)
+                  const statusValue = resolveTourStatusSelectValue(
+                    tour.tour_status || '',
+                    statusOptions,
+                  )
+                  return (
+                    <div key={tourId} className="space-y-1.5">
+                      {isSelected ? (
+                        <div className="flex items-center gap-1.5 px-0.5">
+                          <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                            {locale === 'ko' ? '선택' : 'Selected'}
+                          </span>
+                          <span className="text-[11px] text-gray-500 truncate">
+                            {summary.guideName !== '-'
+                              ? summary.guideName
+                              : locale === 'ko'
+                                ? '가이드 미배정'
+                                : 'No guide'}
+                            {summary.requiresAssistant
+                              ? ` · ${
+                                  summary.assistantName !== '-'
+                                    ? summary.assistantName
+                                    : locale === 'ko'
+                                      ? '어시 미배정'
+                                      : 'No assistant'
+                                }`
+                              : ''}
+                          </span>
+                        </div>
+                      ) : null}
+                      <ScheduleGuideTourInfoCard
+                        summary={summary}
+                        locale={locale}
+                        isStaff={Boolean(isScheduleStaff)}
+                        selected={isSelected}
+                        onSelectCard={() => {
+                          setGuideModalContent((prev) => ({
+                            ...prev,
+                            tourId,
+                            content: getTourSummary(tour),
+                          }))
                         }}
-                      >
-                        <SelectTrigger
-                          className="h-10 w-full text-sm bg-white"
-                          aria-label={locale === 'ko' ? '가이드 배정' : 'Assign guide'}
-                        >
-                          <SelectValue placeholder={locale === 'ko' ? '선택' : 'Select'} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={SCHEDULE_GUIDE_MODAL_NO_GUIDE}>
-                            {locale === 'ko' ? '미배정' : 'Unassigned'}
-                          </SelectItem>
-                          {teamMembersSortedForAssignModal.map((member) => (
-                            <SelectItem key={member.email} value={member.email}>
-                              {(member as { nick_name?: string }).nick_name || member.name_ko || member.email}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        guideEmail={
+                          tour.tour_guide_id ? String(tour.tour_guide_id).trim() || null : null
+                        }
+                        assistantEmail={
+                          tour.assistant_id ? String(tour.assistant_id).trim() || null : null
+                        }
+                        vehicleId={
+                          tour.tour_car_id ? String(tour.tour_car_id).trim() || null : null
+                        }
+                        teamMembers={teamMembersSortedForAssignModal}
+                        vehicles={monthVehiclesWithColors.vehicleList}
+                        tourStatusOptions={statusOptions}
+                        tourStatusValue={statusValue || ''}
+                        updatingTourStatus={updatingTourDetailModalStatusId === tourId}
+                        updatingAssignmentStatus={updatingGuideModalAssignmentStatusId === tourId}
+                        onSelectGuide={(email) => {
+                          setGuideModalContent((prev) => ({ ...prev, tourId }))
+                          applyGuideModalGuideValue(tourId, email)
+                        }}
+                        onSelectAssistant={(email) => {
+                          setGuideModalContent((prev) => ({ ...prev, tourId }))
+                          applyGuideModalAssistantValue(tourId, email)
+                        }}
+                        onSwapGuideAssistant={() => {
+                          setGuideModalContent((prev) => ({ ...prev, tourId }))
+                          swapGuideModalGuideAndAssistant(tourId)
+                        }}
+                        onSelectVehicle={(id) => {
+                          setGuideModalContent((prev) => ({ ...prev, tourId }))
+                          applyGuideModalVehicleValue(tourId, id)
+                        }}
+                        onSelectTourStatus={(status) => {
+                          setGuideModalContent((prev) => ({ ...prev, tourId }))
+                          void updateTourDetailModalTourStatus(tourId, status)
+                        }}
+                        onSelectAssignmentStatus={(status) => {
+                          setGuideModalContent((prev) => ({ ...prev, tourId }))
+                          void updateGuideModalAssignmentStatus(tourId, status)
+                        }}
+                      />
                     </div>
-                    {guideModalTour.team_type !== '1guide' ? (
-                      <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-800">
-                          {locale === 'ko' ? '어시스턴트' : 'Assistant'}
-                        </label>
-                        <Select
-                          value={
-                            guideModalTour.assistant_id && String(guideModalTour.assistant_id).trim()
-                              ? guideModalTour.assistant_id
-                              : SCHEDULE_GUIDE_MODAL_NO_ASSISTANT
-                          }
-                          onValueChange={(v) => {
-                            if (!guideModalContent.tourId) return
-                            if (v === SCHEDULE_GUIDE_MODAL_NO_ASSISTANT) {
-                              applyGuideModalAssistantValue(guideModalContent.tourId, null)
-                            } else {
-                              applyGuideModalAssistantValue(guideModalContent.tourId, v)
-                            }
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="text-sm text-gray-700 whitespace-pre-line">
+                {guideModalContent.content}
+              </div>
+            )}
+
+            {/* 선택 투어 배정 예약 */}
+            {guideModalContent.tourId ? (
+              <div className="mt-4 border-t border-gray-100 pt-3">
+                <p className="mb-2 text-xs font-medium text-gray-700">
+                  {locale === 'ko'
+                    ? `배정 예약 ${guideModalSelectedTourReservations.length}건`
+                    : `Assigned reservations (${guideModalSelectedTourReservations.length})`}
+                </p>
+                {guideModalSelectedTourReservations.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-gray-500">
+                    {locale === 'ko' ? '배정된 예약이 없습니다.' : 'No assigned reservations.'}
+                  </p>
+                ) : (
+                  <div className="max-h-[40vh] space-y-1.5 overflow-y-auto pr-1">
+                    {guideModalSelectedTourReservations.map((res) => {
+                      const st = String(res.status ?? '')
+                      const customer = (customers as Customer[]).find(
+                        (c) => c.id === res.customer_id,
+                      )
+                      const pickupHotelId = String(res.pickup_hotel || '').trim()
+                      const pickupMeta = pickupHotelId
+                        ? pickupHotelIdToMeta.get(pickupHotelId)
+                        : undefined
+                      const pickupHotelLabel = pickupMeta?.label || pickupHotelId
+                      const pickupLocationLabel = pickupMeta?.pickUpLocation || ''
+                      const antelopeChoiceKeys = [
+                        ...new Set(
+                          reservationChoices
+                            .filter((rc) => rc.reservation_id === String(res.id))
+                            .map((rc) => rc.choiceKey)
+                            .filter(
+                              (k): k is 'X' | 'L' | 'U' =>
+                                k === 'X' || k === 'L' || k === 'U',
+                            ),
+                        ),
+                      ].sort(
+                        (a, b) =>
+                          ['X', 'L', 'U'].indexOf(a) - ['X', 'L', 'U'].indexOf(b),
+                      )
+                      return (
+                        <button
+                          key={res.id}
+                          type="button"
+                          className="w-full rounded-lg border border-gray-200 px-2.5 py-2 text-left transition-colors hover:bg-gray-50"
+                          onClick={() => {
+                            setShowGuideModal(false)
+                            setReservationIdForScheduleEdit(String(res.id))
                           }}
                         >
-                          <SelectTrigger
-                            className="h-10 w-full text-sm bg-white"
-                            aria-label={locale === 'ko' ? '어시스턴트 배정' : 'Assign assistant'}
-                          >
-                            <SelectValue placeholder={locale === 'ko' ? '선택' : 'Select'} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={SCHEDULE_GUIDE_MODAL_NO_ASSISTANT}>
-                              {locale === 'ko' ? '미배정' : 'Unassigned'}
-                            </SelectItem>
-                            {teamMembersSortedForAssignModal.map((member) => (
-                              <SelectItem key={`asst-${member.email}`} value={member.email}>
-                                {(member as { nick_name?: string }).nick_name || member.name_ko || member.email}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ) : null}
-                    <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-800">
-                        {locale === 'ko' ? '차량' : 'Vehicle'}
-                      </label>
-                      <Select
-                        value={
-                          guideModalTour.tour_car_id && String(guideModalTour.tour_car_id).trim()
-                            ? String(guideModalTour.tour_car_id).trim()
-                            : SCHEDULE_GUIDE_MODAL_NO_VEHICLE
-                        }
-                        onValueChange={(v) => {
-                          if (!guideModalContent.tourId) return
-                          if (v === SCHEDULE_GUIDE_MODAL_NO_VEHICLE) {
-                            applyGuideModalVehicleValue(guideModalContent.tourId, null)
-                          } else {
-                            applyGuideModalVehicleValue(guideModalContent.tourId, v)
-                          }
-                        }}
-                      >
-                        <SelectTrigger
-                          className="h-10 w-full text-sm bg-white"
-                          aria-label={locale === 'ko' ? '차량 배정' : 'Assign vehicle'}
-                        >
-                          <SelectValue placeholder={locale === 'ko' ? '선택' : 'Select'} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={SCHEDULE_GUIDE_MODAL_NO_VEHICLE}>
-                            {locale === 'ko' ? '배정 안 함' : 'None'}
-                          </SelectItem>
-                          {monthVehiclesWithColors.vehicleList.map((v) => (
-                            <SelectItem key={v.id} value={v.id}>
-                              {v.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </>
-                ) : null}
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-800">
-                    {locale === 'ko' ? '투어 상태' : 'Tour status'}
-                  </label>
-                  <Select
-                    {...(guideModalStatusSelectValue ? { value: guideModalStatusSelectValue } : {})}
-                    onValueChange={(v) => {
-                      if (!guideModalContent.tourId) return
-                      void updateTourDetailModalTourStatus(guideModalContent.tourId, v)
-                    }}
-                    disabled={updatingTourDetailModalStatusId === guideModalContent.tourId}
-                  >
-                    <SelectTrigger
-                      className="h-10 w-full text-sm bg-white"
-                      aria-label={locale === 'ko' ? '투어 상태 빠른 변경' : 'Quick change tour status'}
-                    >
-                      <SelectValue
-                        placeholder={locale === 'ko' ? '상태 선택' : 'Select status'}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {guideModalStatusSelectOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {getTourStatusLabel(option.value, locale)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                          <div className="flex min-w-0 items-center justify-between gap-2">
+                            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                              <span
+                                className={`inline-flex shrink-0 rounded-md px-2 py-0.5 text-xs font-medium ${getStatusColor(st)}`}
+                              >
+                                {st ? getStatusLabel(st, tReservations) : '—'}
+                              </span>
+                              {customer?.language ? (
+                                <ReactCountryFlag
+                                  countryCode={getLanguageFlagCountryCode(
+                                    customer.language,
+                                  )}
+                                  svg
+                                  title={customer.language}
+                                  style={{
+                                    width: '14px',
+                                    height: '11px',
+                                    borderRadius: '2px',
+                                    flexShrink: 0,
+                                  }}
+                                />
+                              ) : null}
+                              <span className="truncate text-sm font-medium text-gray-900">
+                                {getCustomerName(
+                                  String(res.customer_id || ''),
+                                  customers as Customer[],
+                                )}
+                              </span>
+                              {antelopeChoiceKeys.map((key) => (
+                                <span
+                                  key={key}
+                                  className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${getAntelopeChoiceBadgeClass(key)}`}
+                                >
+                                  {`🏜️ ${key}`}
+                                </span>
+                              ))}
+                            </div>
+                            <span className="shrink-0 text-xs tabular-nums text-gray-600">
+                              {res.total_people ?? 0}
+                              {locale === 'ko' ? '명' : ' pax'}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 min-w-0 truncate pl-0.5 text-[11px] leading-snug text-gray-600">
+                            {pickupHotelId ? (
+                              <>
+                                <span className="font-bold text-gray-800">
+                                  {pickupHotelLabel ||
+                                    (locale === 'ko' ? '픽업 미정' : 'Pickup TBD')}
+                                </span>
+                                {pickupLocationLabel ? (
+                                  <>
+                                    {' - '}
+                                    <span>{pickupLocationLabel}</span>
+                                  </>
+                                ) : null}
+                              </>
+                            ) : locale === 'ko' ? (
+                              '픽업 미정'
+                            ) : (
+                              'Pickup TBD'
+                            )}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             ) : null}
-            <div className="mt-6 flex flex-wrap justify-between gap-2">
+
+            <div className="mt-5 flex flex-wrap justify-between gap-2">
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => {
@@ -9744,7 +10294,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         : {})}
       onTourClick={(tour) => {
         showGuideModalContent(
-          locale === 'ko' ? '투어 상세 정보' : 'Tour details',
+          locale === 'ko' ? '투어 요약 정보' : 'Tour summary',
           getTourSummary(tour),
           tour.id,
         )

@@ -7,6 +7,7 @@ import {
 } from '@/lib/statement-line-pairs'
 import { parseStatementSearchDateQuery } from '@/lib/statement-search-date'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { learnVendorAliasAfterReconciliationMatch } from '@/lib/statement-match-alias-learn'
 
 /** 명세 대조 화면의 운영 원장 «수동 후보»와 동일한 거래일 ±일 */
 export const RECON_EXPENSE_LEDGER_DAY_WINDOW = 4
@@ -1387,6 +1388,8 @@ export async function replaceExpenseReconciliationMatch(
     /** append 시 원장 총액(절대값) — 이미 명세에 배정된 합을 빼고 남은 금액만 추가 허용 */
     ledgerCapAmount?: number | null
     operatorId?: string | null
+    /** manual(기본) | auto — DB match_kind */
+    matchKind?: 'manual' | 'auto'
   }
 ): Promise<void> {
   const {
@@ -1398,7 +1401,8 @@ export async function replaceExpenseReconciliationMatch(
     matchedAmount: matchedAmountParam,
     syncSourceAmountToStatement = false,
     linkMode = 'replace',
-    ledgerCapAmount = null
+    ledgerCapAmount = null,
+    matchKind = 'manual',
   } = params
   const activeOperatorId = resolveOperatorId(params.operatorId)
 
@@ -1473,10 +1477,18 @@ export async function replaceExpenseReconciliationMatch(
     source_table: sourceTable,
     source_id: sourceId,
     matched_amount: ledgerShare,
-    matched_by: actorEmail
+    matched_by: actorEmail,
+    match_kind: matchKind,
   })
   if (insErr) throw insErr
   await syncStatementLineMatchedStatus(supabase, statementLineId)
+
+  // 별칭 학습은 매칭 성공 후 비동기 — 실패해도 대조는 유지
+  void learnVendorAliasAfterReconciliationMatch(supabase, {
+    statementLineId,
+    sourceTable,
+    sourceId,
+  })
 
   if (syncSourceAmountToStatement && linkMode !== 'append') {
     const ledgerAmount = normalizeLedgerAmountForSource(sourceTable, statementLineAmount)
