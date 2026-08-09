@@ -16,12 +16,14 @@ import {
   type GuideAssignmentStatusValue,
 } from '@/lib/guideAssignmentStatus'
 
-function pickupStopNumberEmoji(index1Based: number): string {
+function pickupStopNumberEmoji(groupNumber: number): string {
+  const n = Math.floor(Number(groupNumber))
+  if (!Number.isFinite(n) || n < 1) return '#️⃣'
   const keycaps = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟']
-  if (index1Based >= 1 && index1Based <= keycaps.length) {
-    return keycaps[index1Based - 1]!
+  if (n >= 1 && n <= keycaps.length) {
+    return keycaps[n - 1]!
   }
-  return `${index1Based}.`
+  return `${n}.`
 }
 
 export type ScheduleGuideTourInfoSummary = {
@@ -39,6 +41,8 @@ export type ScheduleGuideTourInfoSummary = {
   pickupHotelItems: Array<{
     hotelId: string
     label: string
+    /** pickup_hotels.group_number (내림 정수), 없으면 null */
+    groupNumber: number | null
     sharedSameDay?: boolean
   }>
   guideName: string
@@ -500,10 +504,14 @@ export default function ScheduleGuideTourInfoCard({
                           ? locale === 'ko'
                             ? '같은 날 다른 투어에도 있는 픽업 호텔'
                             : 'Also on another tour this day'
-                          : item.label
+                          : item.groupNumber != null
+                            ? `G${item.groupNumber} · ${item.label}`
+                            : item.label
                       }
                     >
-                      {pickupStopNumberEmoji(idx + 1)}
+                      {item.groupNumber != null
+                        ? pickupStopNumberEmoji(item.groupNumber)
+                        : '#️⃣'}
                       {item.label}
                     </span>
                   </span>

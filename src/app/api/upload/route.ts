@@ -68,7 +68,7 @@ export async function POST(request: Request) {
       }
       
       // 파일 타입 검증
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
       if (!allowedTypes.includes(file.type)) {
         return NextResponse.json({ error: `지원하지 않는 파일 형식입니다: ${file.name}` }, { status: 400 })
       }

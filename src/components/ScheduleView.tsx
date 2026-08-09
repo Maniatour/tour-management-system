@@ -289,6 +289,7 @@ const SCHEDULE_VEHICLE_EDIT_SELECT = `
   rental_total_cost,
   rental_notes,
   rental_agreement_number,
+  rental_reservation_url,
   rental_agreement_file_url,
   rental_receipt_url,
   nick,
@@ -2889,6 +2890,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         'rental_total_cost',
         'rental_notes',
         'rental_agreement_number',
+        'rental_reservation_url',
         'rental_agreement_file_url',
         'rental_receipt_url',
         'nick',
@@ -4757,13 +4759,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     const pickupHotelItems = pickupHotelIdsOrdered
       .map((hotelId) => {
         const gn = pickupHotelIdToGroupNumber.get(hotelId)
-        const groupSort =
-          gn != null && Number.isFinite(Number(gn)) ? Math.floor(Number(gn)) : 9999
+        const groupNumber =
+          gn != null && Number.isFinite(Number(gn)) ? Math.floor(Number(gn)) : null
+        const groupSort = groupNumber != null ? groupNumber : 9999
         const label = pickupHotelIdToLabel.get(hotelId) || hotelId
-        return { hotelId, label, groupSort }
+        return { hotelId, label, groupNumber, groupSort }
       })
       .sort((a, b) => a.groupSort - b.groupSort || a.label.localeCompare(b.label))
-      .map(({ hotelId, label }) => ({ hotelId, label }))
+      .map(({ hotelId, label, groupNumber }) => ({ hotelId, label, groupNumber }))
 
     return {
       productName,
@@ -5011,9 +5014,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     return related.map((tour) => {
       const c = getTourSummaryCore(tour)
       const pickupHotelItems = (c.pickupHotelItems || []).map(
-        (item: { hotelId: string; label: string }) => ({
+        (item: { hotelId: string; label: string; groupNumber: number | null }) => ({
           hotelId: item.hotelId,
           label: item.label,
+          groupNumber: item.groupNumber,
           sharedSameDay: (hotelIdToTourIds.get(item.hotelId)?.size || 0) > 1,
         }),
       )

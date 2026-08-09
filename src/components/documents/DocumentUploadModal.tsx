@@ -211,7 +211,15 @@ export default function DocumentUploadModal({
       onSuccess()
     } catch (error) {
       console.error('문서 업로드 오류:', error)
-      toast.error(editingDocument ? '문서 수정 중 오류가 발생했습니다.' : '문서 업로드 중 오류가 발생했습니다.')
+      const message =
+        error && typeof error === 'object' && 'message' in error && typeof (error as { message: unknown }).message === 'string'
+          ? (error as { message: string }).message
+          : null
+      toast.error(
+        editingDocument
+          ? `문서 수정 중 오류가 발생했습니다.${message ? `\n${message}` : ''}`
+          : `문서 업로드 중 오류가 발생했습니다.${message ? `\n${message}` : ''}`
+      )
     } finally {
       setLoading(false)
       setUploading(false)

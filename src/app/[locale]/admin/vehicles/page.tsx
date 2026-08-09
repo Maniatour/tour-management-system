@@ -93,6 +93,8 @@ interface Vehicle {
   rental_notes?: string
   /** Rental Agreement # */
   rental_agreement_number?: string | null
+  /** Rental reservations 스크린샷/파일 URL */
+  rental_reservation_url?: string | null
   /** Rental Agreement 파일 URL */
   rental_agreement_file_url?: string | null
   /** Rental Receipt 파일 URL */
@@ -150,6 +152,8 @@ function mapDbRowToVehicle(row: VehicleDbRow): Vehicle {
     rental_total_cost: row.rental_total_cost != null ? Number(row.rental_total_cost) : undefined,
     rental_notes: row.rental_notes != null ? String(row.rental_notes) : undefined,
     rental_agreement_number: row.rental_agreement_number != null ? String(row.rental_agreement_number) : null,
+    rental_reservation_url:
+      row.rental_reservation_url != null ? String(row.rental_reservation_url) : null,
     rental_agreement_file_url:
       row.rental_agreement_file_url != null ? String(row.rental_agreement_file_url) : null,
     rental_receipt_url: row.rental_receipt_url != null ? String(row.rental_receipt_url) : null,
@@ -261,6 +265,7 @@ export default function VehiclesPage() {
           rental_total_cost,
           rental_notes,
           rental_agreement_number,
+          rental_reservation_url,
           rental_agreement_file_url,
           rental_receipt_url,
           nick,
@@ -624,7 +629,7 @@ export default function VehiclesPage() {
         'vehicle_category', 'rental_company', 'daily_rate', 'rental_booking_price', 'rental_start_date',
         'rental_end_date',         'rental_pickup_location', 'rental_return_location',
         'rental_total_cost', 'rental_notes', 'rental_agreement_number',
-        'rental_agreement_file_url', 'rental_receipt_url', 'nick'
+        'rental_reservation_url', 'rental_agreement_file_url', 'rental_receipt_url', 'nick'
       ]
       
       // 날짜 필드 정리
