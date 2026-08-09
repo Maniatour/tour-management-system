@@ -5941,7 +5941,73 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     [monthVehiclesWithColors.vehicleList, requestSaveAfterDragAssignment],
   )
 
-  /** 가이드 상세 모달: 가이드 배정·해제. 선택 가이드가 다른 투어(같은 날) 가이드면 기존 가이드와 맞교환 */
+  /** 같은 날 다른 투어에서 staffEmail이 가이드/어시로 있는 자리 찾기 */
+  const findSameDayStaffConflict = useCallback(
+    (
+      excludeTourId: string,
+      tourDate: string,
+      staffEmail: string,
+      preferProductId?: string | null,
+    ): { tour: Tour; role: 'guide' | 'assistant' } | null => {
+      const email = String(staffEmail || '').trim()
+      if (!email) return null
+      const dateKey = normalizeTourDateKey(tourDate)
+      const matches: Array<{ tour: Tour; role: 'guide' | 'assistant' }> = []
+      for (const t of tours) {
+        if (String(t.id) === String(excludeTourId)) continue
+        if (isTourCancelled(t.tour_status) || isTourDeleted(t.tour_status)) continue
+        if (normalizeTourDateKey(t.tour_date) !== dateKey) continue
+        if (String(t.tour_guide_id || '').trim() === email) {
+          matches.push({ tour: t, role: 'guide' })
+        } else if (
+          String(t.team_type || '') !== '1guide' &&
+          String(t.assistant_id || '').trim() === email
+        ) {
+          matches.push({ tour: t, role: 'assistant' })
+        }
+      }
+      if (matches.length === 0) return null
+      const prefer = String(preferProductId || '')
+      return (
+        matches.find((m) => String(m.tour.product_id || '') === prefer) ||
+        matches.find((m) => m.role === 'guide') ||
+        matches[0] ||
+        null
+      )
+    },
+    [tours],
+  )
+
+  /** 상대 투어의 해당 역할 자리에 previousStaff를 넣고, 자리 중복이면 정리 */
+  const buildStaffRoleSwapPatch = useCallback(
+    (
+      conflictTour: Tour,
+      conflictRole: 'guide' | 'assistant',
+      previousStaff: string | null,
+    ): Partial<Tour> => {
+      if (conflictRole === 'guide') {
+        return {
+          tour_guide_id: previousStaff,
+          ...(previousStaff &&
+          conflictTour.assistant_id &&
+          String(conflictTour.assistant_id).trim() === previousStaff
+            ? { assistant_id: null }
+            : {}),
+        }
+      }
+      return {
+        assistant_id: previousStaff,
+        ...(previousStaff &&
+        conflictTour.tour_guide_id &&
+        String(conflictTour.tour_guide_id).trim() === previousStaff
+          ? { tour_guide_id: null }
+          : {}),
+      }
+    },
+    [],
+  )
+
+  /** 가이드 상세 모달: 가이드 배정·해제. 같은 날 다른 투어(가이드/어시)에 있으면 자리 맞교환 */
   const applyGuideModalGuideValue = useCallback(
     (tourId: string, guideEmail: string | null) => {
       const tour = tours.find((t) => t.id === tourId)
@@ -5982,55 +6048,65 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       const patch = mergeStaffPatchWithAssignmentReset(tourId, tour, rawPatch)
       const next: Tour = { ...tour, ...patch }
 
-      // 선택 가이드가 같은 날 다른 투어의 가이드면 → 그 투어에 기존 가이드를 배정(맞교환)
+      // 선택 인원이 같은 날 다른 투어 가이드/어시면 → 그 자리에 기존 가이드를 배정(맞교환)
       let swapTourId: string | null = null
       let swapPatch: Partial<Tour> | null = null
       let swapNext: Tour | null = null
       if (nextGuide) {
-        const tourDate = normalizeTourDateKey(tour.tour_date)
-        const conflicts = tours.filter((t) => {
-          if (String(t.id) === String(tourId)) return false
-          if (isTourCancelled(t.tour_status) || isTourDeleted(t.tour_status)) return false
-          if (normalizeTourDateKey(t.tour_date) !== tourDate) return false
-          return String(t.tour_guide_id || '').trim() === nextGuide
-        })
-        const conflict =
-          conflicts.find((t) => String(t.product_id || '') === String(tour.product_id || '')) ||
-          conflicts[0] ||
-          null
+        const conflict = findSameDayStaffConflict(
+          tourId,
+          tour.tour_date,
+          nextGuide,
+          tour.product_id,
+        )
         if (conflict) {
-          const swapProjectedAssistant =
-            previousGuide &&
-            conflict.assistant_id &&
-            String(conflict.assistant_id).trim() === previousGuide
-              ? null
-              : conflict.assistant_id
-                ? String(conflict.assistant_id).trim() || null
+          const swapRaw = buildStaffRoleSwapPatch(
+            conflict.tour,
+            conflict.role,
+            previousGuide,
+          )
+          const swapProjectedGuide =
+            conflict.role === 'guide'
+              ? previousGuide
+              : conflict.tour.tour_guide_id
+                ? String(conflict.tour.tour_guide_id).trim() || null
                 : null
-          if (
+          const swapProjectedAssistant =
+            conflict.role === 'assistant'
+              ? previousGuide
+              : conflict.tour.assistant_id &&
+                  String(conflict.tour.assistant_id).trim() === previousGuide
+                ? null
+                : conflict.tour.assistant_id
+                  ? String(conflict.tour.assistant_id).trim() || null
+                  : null
+          // 가이드 자리로 넣을 때 상대 어시가 기존 가이드면 위에서 null 처리됨
+          const swapAssistantForCheck =
+            conflict.role === 'guide' &&
             previousGuide &&
-            swapProjectedAssistant &&
+            conflict.tour.assistant_id &&
+            String(conflict.tour.assistant_id).trim() === previousGuide
+              ? null
+              : swapProjectedAssistant
+          if (
+            swapProjectedGuide &&
+            swapAssistantForCheck &&
             !allowTeamPairAssignment(
-              previousGuide,
-              swapProjectedAssistant,
+              swapProjectedGuide,
+              swapAssistantForCheck,
               doNotTeamMembers,
               locale,
             )
           ) {
             return
           }
-          const swapRaw: Partial<Tour> = {
-            tour_guide_id: previousGuide,
-            // 기존 가이드가 상대 투어 어시였으면 어시 자리 정리
-            ...(previousGuide &&
-            conflict.assistant_id &&
-            String(conflict.assistant_id).trim() === previousGuide
-              ? { assistant_id: null }
-              : {}),
-          }
-          swapTourId = String(conflict.id)
-          swapPatch = mergeStaffPatchWithAssignmentReset(swapTourId, conflict, swapRaw)
-          swapNext = { ...conflict, ...swapPatch }
+          swapTourId = String(conflict.tour.id)
+          swapPatch = mergeStaffPatchWithAssignmentReset(
+            swapTourId,
+            conflict.tour,
+            swapRaw,
+          )
+          swapNext = { ...conflict.tour, ...swapPatch }
         }
       }
 
@@ -6079,6 +6155,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       requestSaveAfterDragAssignment,
       doNotTeamMembers,
       locale,
+      findSameDayStaffConflict,
+      buildStaffRoleSwapPatch,
     ],
   )
 
@@ -6087,31 +6165,121 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       const tour = tours.find((t) => t.id === tourId)
       if (!tour || tour.team_type === '1guide') return
       const guideEmail = tour.tour_guide_id ? String(tour.tour_guide_id).trim() || null : null
+      const previousAssistant = tour.assistant_id
+        ? String(tour.assistant_id).trim() || null
+        : null
       const nextAssistant = assistantEmail ? String(assistantEmail).trim() || null : null
+      if (previousAssistant === nextAssistant && nextAssistant !== null) return
+
+      // 선택 인원이 이 투어 가이드면 가이드 자리 비움
+      const clearGuideOnCurrent =
+        !!nextAssistant && guideEmail === nextAssistant
+
+      const projectedGuide = clearGuideOnCurrent ? null : guideEmail
       if (
-        guideEmail &&
+        projectedGuide &&
         nextAssistant &&
-        !allowTeamPairAssignment(guideEmail, nextAssistant, doNotTeamMembers, locale)
+        !allowTeamPairAssignment(projectedGuide, nextAssistant, doNotTeamMembers, locale)
       ) {
         return
       }
-      const patch = mergeStaffPatchWithAssignmentReset(tourId, tour, {
-        assistant_id: assistantEmail,
-      })
+
+      const rawPatch: Partial<Tour> = {
+        assistant_id: nextAssistant,
+        ...(clearGuideOnCurrent ? { tour_guide_id: null } : {}),
+      }
+      const patch = mergeStaffPatchWithAssignmentReset(tourId, tour, rawPatch)
       const next: Tour = { ...tour, ...patch }
-      setPendingChanges((prev) => ({
-        ...prev,
-        [tourId]: { ...(prev[tourId] || {}), ...patch },
-      }))
-      setTours((prev) => prev.map((t) => (t.id === tourId ? next : t)))
-      setUnassignedTours((prev) => {
-        const needsGuide = !next.tour_guide_id
-        const needsAssistant = next.team_type !== '1guide' && !next.assistant_id
-        const exists = prev.some((t) => t.id === tourId)
-        if (needsGuide || needsAssistant) {
-          return exists ? prev.map((t) => (t.id === tourId ? next : t)) : [...prev, next]
+
+      let swapTourId: string | null = null
+      let swapPatch: Partial<Tour> | null = null
+      let swapNext: Tour | null = null
+      if (nextAssistant) {
+        const conflict = findSameDayStaffConflict(
+          tourId,
+          tour.tour_date,
+          nextAssistant,
+          tour.product_id,
+        )
+        if (conflict) {
+          const swapRaw = buildStaffRoleSwapPatch(
+            conflict.tour,
+            conflict.role,
+            previousAssistant,
+          )
+          const swapProjectedGuide =
+            conflict.role === 'guide'
+              ? previousAssistant
+              : conflict.tour.tour_guide_id &&
+                  String(conflict.tour.tour_guide_id).trim() === previousAssistant
+                ? null
+                : conflict.tour.tour_guide_id
+                  ? String(conflict.tour.tour_guide_id).trim() || null
+                  : null
+          const swapProjectedAssistant =
+            conflict.role === 'assistant'
+              ? previousAssistant
+              : conflict.tour.assistant_id &&
+                  String(conflict.tour.assistant_id).trim() === previousAssistant
+                ? null
+                : conflict.tour.assistant_id
+                  ? String(conflict.tour.assistant_id).trim() || null
+                  : null
+          if (
+            swapProjectedGuide &&
+            swapProjectedAssistant &&
+            !allowTeamPairAssignment(
+              swapProjectedGuide,
+              swapProjectedAssistant,
+              doNotTeamMembers,
+              locale,
+            )
+          ) {
+            return
+          }
+          swapTourId = String(conflict.tour.id)
+          swapPatch = mergeStaffPatchWithAssignmentReset(
+            swapTourId,
+            conflict.tour,
+            swapRaw,
+          )
+          swapNext = { ...conflict.tour, ...swapPatch }
         }
-        return prev.filter((t) => t.id !== tourId)
+      }
+
+      setPendingChanges((prev) => {
+        const updated = {
+          ...prev,
+          [tourId]: { ...(prev[tourId] || {}), ...patch },
+        }
+        if (swapTourId && swapPatch) {
+          updated[swapTourId] = { ...(prev[swapTourId] || {}), ...swapPatch }
+        }
+        return updated
+      })
+      setTours((prev) =>
+        prev.map((t) => {
+          if (String(t.id) === String(tourId)) return next
+          if (swapTourId && swapNext && String(t.id) === swapTourId) return swapNext
+          return t
+        }),
+      )
+      setUnassignedTours((prev) => {
+        const syncOne = (list: Tour[], updatedTour: Tour) => {
+          const needsGuide = !updatedTour.tour_guide_id
+          const needsAssistant =
+            updatedTour.team_type !== '1guide' && !updatedTour.assistant_id
+          const exists = list.some((t) => String(t.id) === String(updatedTour.id))
+          if (needsGuide || needsAssistant) {
+            return exists
+              ? list.map((t) => (String(t.id) === String(updatedTour.id) ? updatedTour : t))
+              : [...list, updatedTour]
+          }
+          return list.filter((t) => String(t.id) !== String(updatedTour.id))
+        }
+        let list = syncOne(prev, next)
+        if (swapNext) list = syncOne(list, swapNext)
+        return list
       })
       requestSaveAfterDragAssignment()
     },
@@ -6121,6 +6289,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       requestSaveAfterDragAssignment,
       doNotTeamMembers,
       locale,
+      findSameDayStaffConflict,
+      buildStaffRoleSwapPatch,
     ],
   )
 

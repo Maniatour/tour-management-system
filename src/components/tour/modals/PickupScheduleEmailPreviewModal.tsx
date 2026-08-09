@@ -417,6 +417,7 @@ export default function PickupScheduleEmailPreviewModal({
     if (!selectedReservation || !selectedReservation.pickup_time) return
 
     setLoading(true)
+    setEmailContent(null)
     try {
       const body: Record<string, unknown> = {
         reservationId: selectedReservation.id,
@@ -440,6 +441,12 @@ export default function PickupScheduleEmailPreviewModal({
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
         console.error('API 응답 오류:', response.status, errorData)
+        if (response.status === 504 || response.status === 502 || response.status === 503) {
+          throw new Error(
+            errorData.error ||
+              `이메일 미리보기 서버 타임아웃 (${response.status}). 잠시 후 다시 시도해 주세요.`
+          )
+        }
         throw new Error(errorData.error || `이메일 미리보기 로드 실패 (${response.status})`)
       }
 
@@ -455,11 +462,15 @@ export default function PickupScheduleEmailPreviewModal({
       }
     } catch (error) {
       console.error('이메일 미리보기 로드 오류:', error)
-      alert(t('emailPreviewLoadError'))
+      alert(
+        error instanceof Error && error.message
+          ? error.message
+          : t('emailPreviewLoadError')
+      )
     } finally {
       setLoading(false)
     }
-  }, [selectedReservation, tourDate, tourId])
+  }, [selectedReservation, tourDate, tourId, t])
 
   // 초기 선택 예약 설정
   useEffect(() => {
@@ -800,7 +811,7 @@ export default function PickupScheduleEmailPreviewModal({
       'width:794px',
       'min-height:1200px',
       'border:0',
-      'opacity:0.02',
+      'opacity:0.01',
       'pointer-events:none',
       'z-index:2147483646',
     ].join(';')
@@ -812,8 +823,14 @@ export default function PickupScheduleEmailPreviewModal({
       throw new Error('PDF export iframe unavailable')
     }
 
+    // 상대 경로 이미지를 절대 URL로 — iframe 문서 기준 CORS/로드 실패 방지
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    const htmlWithAbsUrls = html
+      .replace(/(src|href)=(["'])(\/api\/[^"']+)\2/gi, (_m, attr, q, path) => `${attr}=${q}${origin}${path}${q}`)
+      .replace(/(src|href)=(["'])(\/images\/[^"']+)\2/gi, (_m, attr, q, path) => `${attr}=${q}${origin}${path}${q}`)
+
     doc.open()
-    doc.write(html)
+    doc.write(htmlWithAbsUrls)
     doc.close()
 
     await new Promise<void>((resolve) => {
@@ -822,6 +839,7 @@ export default function PickupScheduleEmailPreviewModal({
         return
       }
       iframe.addEventListener('load', () => resolve(), { once: true })
+      window.setTimeout(() => resolve(), 1500)
     })
 
     await document.fonts.ready.catch(() => undefined)
@@ -843,7 +861,7 @@ export default function PickupScheduleEmailPreviewModal({
         )
       ),
       new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 8000)
+        window.setTimeout(resolve, 5000)
       }),
     ])
 
@@ -852,7 +870,7 @@ export default function PickupScheduleEmailPreviewModal({
 
   // PDF로 다운로드
   const handleDownloadPDF = async () => {
-    if (!emailContent) {
+    if (!emailContent?.html) {
       alert(t('emailPreviewPDFDownloadFailed'))
       return
     }
@@ -886,6 +904,23 @@ export default function PickupScheduleEmailPreviewModal({
       await downloadDomAsA4Pdf(captureRoot, fileBaseName, { format: 'a4' })
     } catch (error) {
       console.error('PDF 다운로드 오류:', error)
+      // 미리보기 DOM 폴백 (iframe 캡처 실패 시)
+      try {
+        if (emailPreviewRef.current) {
+          const customerName = emailContent.customer?.name || 'customer'
+          const sanitizedCustomerName =
+            customerName.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30) || 'customer'
+          const dateStr = new Date().toISOString().split('T')[0]
+          await downloadDomAsA4Pdf(
+            emailPreviewRef.current,
+            `Pickup_notification_${sanitizedCustomerName}_${dateStr}`,
+            { format: 'a4' }
+          )
+          return
+        }
+      } catch (fallbackError) {
+        console.error('PDF 폴백 다운로드 오류:', fallbackError)
+      }
       alert(t('emailPreviewPDFDownloadFailed'))
     } finally {
       exportIframe?.remove()
@@ -1254,9 +1289,9 @@ export default function PickupScheduleEmailPreviewModal({
                         {/* 텍스트 복사 버튼 */}
                         <button
                           onClick={handleCopyText}
-                          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 transition-colors disabled:opacity-50"
                           title={t('emailPreviewCopyTextTitle')}
-                          disabled={downloading}
+                          disabled={downloading || !emailContent}
                         >
                           {copied ? (
                             <>
@@ -1275,7 +1310,7 @@ export default function PickupScheduleEmailPreviewModal({
                           onClick={handleDownloadImage}
                           className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors disabled:opacity-50"
                           title={t('emailPreviewDownloadImageTitle')}
-                          disabled={downloading || pdfDownloading}
+                          disabled={downloading || pdfDownloading || !emailContent}
                         >
                           {downloading ? (
                             <>
@@ -1294,7 +1329,7 @@ export default function PickupScheduleEmailPreviewModal({
                           onClick={handleDownloadPDF}
                           className="flex items-center gap-2 px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors disabled:opacity-50"
                           title={t('emailPreviewDownloadPDFTitle')}
-                          disabled={downloading || pdfDownloading}
+                          disabled={downloading || pdfDownloading || !emailContent}
                         >
                           {pdfDownloading ? (
                             <>
@@ -1311,9 +1346,9 @@ export default function PickupScheduleEmailPreviewModal({
                         {/* HTML 복사 버튼 */}
                         <button
                           onClick={handleCopyEmail}
-                          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
                           title={t('emailPreviewCopyHTMLTitle')}
-                          disabled={downloading}
+                          disabled={downloading || !emailContent}
                         >
                           <Copy className="w-4 h-4" />
                           <span>{t('emailPreviewCopyHTML')}</span>
