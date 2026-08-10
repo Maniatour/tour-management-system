@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import { createTourPhotosBucket } from './tourPhotoBucket'
 import { generateTourId } from './entityIds'
-import { canonicalReservationIdKey, normalizeReservationIds } from '@/utils/tourUtils'
+import { canonicalReservationIdKey, normalizeReservationIds, resolveTeamTypeForTourCreate } from '@/utils/tourUtils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { KOVEgAS_OPERATOR_ID } from '@/lib/operatorConstants'
 
@@ -30,7 +30,9 @@ export async function autoCreateOrUpdateTour(
     // 1. 해당 상품의 sub_category 확인
     const { data: product, error: productError } = await supabase
       .from('products')
-      .select('sub_category, operator_id')
+      .select(
+        'id, sub_category, operator_id, name, name_ko, name_en, internal_name_ko, customer_name_ko'
+      )
       .eq('id', productId)
       .single()
 
@@ -168,6 +170,7 @@ export async function autoCreateOrUpdateTour(
     } else {
       // 5. 활성 투어가 없는 경우(삭제·취소만 있거나 없음): 새 투어 생성
       const tourId = generateTourId()
+      const teamType = resolveTeamTypeForTourCreate({ product })
       
       const { data: newTour, error: createError } = await supabase
         .from('tours')
@@ -179,6 +182,7 @@ export async function autoCreateOrUpdateTour(
           tour_status: 'scheduled',
           is_private_tour: isPrivateTour || false,
           operator_id: tourOperatorId,
+          team_type: teamType,
         })
         .select()
         .single()
@@ -261,7 +265,9 @@ export async function createAdditionalActiveTourForReservations(
 
     const { data: product, error: productError } = await supabase
       .from('products')
-      .select('sub_category, operator_id')
+      .select(
+        'id, sub_category, operator_id, name, name_ko, name_en, internal_name_ko, customer_name_ko'
+      )
       .eq('id', productId)
       .single()
 
@@ -355,6 +361,7 @@ export async function createAdditionalActiveTourForReservations(
     )
 
     const tourId = generateTourId()
+    const teamType = resolveTeamTypeForTourCreate({ product })
     const { data: newTour, error: createError } = await supabase
       .from('tours')
       .insert({
@@ -365,6 +372,7 @@ export async function createAdditionalActiveTourForReservations(
         tour_status: 'scheduled',
         is_private_tour: isPrivate,
         operator_id: tourOperatorId,
+        team_type: teamType,
       })
       .select()
       .single()

@@ -17,6 +17,7 @@ import {
   UserCheck,
   Users,
   X,
+  Copy,
 } from 'lucide-react'
 import {
   Select,
@@ -132,6 +133,9 @@ type ScheduleGuideTourInfoCardProps = {
   onPrintReceipts?: () => void
   onPrintTipEnvelopes?: () => void
   onPrintBalanceEnvelopes?: () => void
+  /** 같은 상품/날짜로 투어 복사 */
+  onCopyTour?: () => void
+  copyingTour?: boolean
 }
 
 /** 아이콘 전용 상태 뱃지: 배경·테두리로 상태 구분 */
@@ -228,6 +232,8 @@ export default function ScheduleGuideTourInfoCard({
   onPrintReceipts,
   onPrintTipEnvelopes,
   onPrintBalanceEnvelopes,
+  onCopyTour,
+  copyingTour = false,
 }: ScheduleGuideTourInfoCardProps) {
   const [editTarget, setEditTarget] = useState<EditTarget>(null)
 
@@ -325,6 +331,17 @@ export default function ScheduleGuideTourInfoCard({
             title={locale === 'ko' ? 'Balance 봉투 인쇄' : 'Print balance envelopes'}
           >
             <DollarSign className="h-4 w-4" />
+          </button>
+        ) : null}
+        {isStaff && onCopyTour ? (
+          <button
+            type="button"
+            onClick={onCopyTour}
+            disabled={copyingTour}
+            className="rounded-md border border-emerald-200 bg-emerald-50 p-1.5 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+            title={locale === 'ko' ? '투어 복사 (같은 상품·날짜)' : 'Copy tour (same product & date)'}
+          >
+            <Copy className="h-4 w-4" />
           </button>
         ) : null}
       </div>

@@ -429,33 +429,107 @@ export const getOptionName = (optionId: string, productId: string, productOption
 
 type TeamTypeKey = '1guide' | '2guide' | 'guide+driver'
 
+export type ProductTeamTypeNameFields = {
+  id?: string | null
+  name?: string | null | undefined
+  name_ko?: string | null | undefined
+  name_en?: string | null | undefined
+  internal_name_ko?: string | null | undefined
+  internal_name_en?: string | null | undefined
+  customer_name_ko?: string | null | undefined
+  customer_name_en?: string | null | undefined
+}
+
+/** tours.team_type 문자열을 UI/저장용 키로 정규화. 알 수 없으면 null. */
+export function normalizeTourTeamType(raw: string | null | undefined): TeamTypeKey | null {
+  if (raw == null) return null
+  const s = String(raw).trim().toLowerCase().replace(/\s+/g, '')
+  if (!s) return null
+  if (s === '1guide' || s === '1_guide') return '1guide'
+  if (s === '2guide' || s === '2_guides' || s === '2guides') return '2guide'
+  if (s === 'guide+driver' || s === 'guide_driver' || s === 'guidedriver') return 'guide+driver'
+  return null
+}
+
 /**
- * tours.team_type 미저장 시 투어 상세「팀 구성 & 차량 배정」기본값.
- * 밤도깨비 그랜드캐년 일출 투어, 그랜드서클 당일 투어 → 2가이드.
+ * tours.team_type 미저장(또는 DB 컬럼 기본값 1guide만 있는 경우) 시
+ * 투어 상세「팀 구성 & 차량 배정」기본값.
+ * 밤도깨비(MDGCSUNRISE 포함), 그랜드서클 당일 투어 → 2가이드.
  */
 export function getDefaultTeamTypeForProduct(
   nameKo?: string | null,
-  nameEn?: string | null
+  nameEn?: string | null,
+  extra?: Omit<ProductTeamTypeNameFields, 'name_ko' | 'name_en'> | null
 ): TeamTypeKey {
-  const ko = (nameKo || '').trim()
-  const en = (nameEn || '').trim().toLowerCase()
+  const productId = String(extra?.id || '').trim().toUpperCase()
+  if (
+    productId === 'MDGCSUNRISE' ||
+    productId.startsWith('MDGCSUNRISE') ||
+    productId.startsWith('MDGCSUNR')
+  ) {
+    return '2guide'
+  }
 
-  if (ko.includes('밤도깨비')) {
+  const koParts = [
+    nameKo,
+    extra?.name,
+    extra?.internal_name_ko,
+    extra?.customer_name_ko,
+  ]
+    .map((v) => (v || '').trim())
+    .filter(Boolean)
+  const enParts = [
+    nameEn,
+    extra?.internal_name_en,
+    extra?.customer_name_en,
+  ]
+    .map((v) => (v || '').trim().toLowerCase())
+    .filter(Boolean)
+
+  const koJoined = koParts.join(' ')
+  const enJoined = enParts.join(' ')
+
+  if (koJoined.includes('밤도깨비') || /night\s*goblin|midnight\s*goblin/i.test(enJoined)) {
     return '2guide'
   }
 
   const koGrandCircleDay =
-    (ko.includes('그랜드서클') || ko.includes('그랜드 서클')) && ko.includes('당일')
+    (koJoined.includes('그랜드서클') || koJoined.includes('그랜드 서클')) &&
+    koJoined.includes('당일')
   const enGrandCircleDay =
-    en.includes('grand circle') &&
-    (en.includes('day tour') || /\bday trip\b/i.test(en)) &&
-    !en.includes('night')
+    enJoined.includes('grand circle') &&
+    (enJoined.includes('day tour') || /\bday trip\b/i.test(enJoined)) &&
+    !enJoined.includes('night')
 
   if (koGrandCircleDay || enGrandCircleDay) {
     return '2guide'
   }
 
   return '1guide'
+}
+
+/** 상품 객체에서 팀 구성 기본값 산출 */
+export function getDefaultTeamTypeFromProduct(
+  product?: ProductTeamTypeNameFields | null
+): TeamTypeKey {
+  if (!product) return '1guide'
+  return getDefaultTeamTypeForProduct(product.name_ko, product.name_en, product)
+}
+
+/**
+ * 투어 생성·복사 시 넣을 team_type.
+ * - 원본에 2guide / guide+driver 가 있으면 그대로 유지
+ * - 원본이 비어 있거나 DB 기본값(1guide)만 있고 상품 기본이 2guide 이면 상품 기본 사용
+ */
+export function resolveTeamTypeForTourCreate(opts: {
+  sourceTeamType?: string | null
+  product?: ProductTeamTypeNameFields | null
+}): TeamTypeKey {
+  const productDefault = getDefaultTeamTypeFromProduct(opts.product)
+  const source = normalizeTourTeamType(opts.sourceTeamType)
+  if (source === '2guide' || source === 'guide+driver') return source
+  if (productDefault !== '1guide') return productDefault
+  return source || productDefault
 }
 
 /** 날짜 문자열 → YYYY-MM-DD (비교용) */

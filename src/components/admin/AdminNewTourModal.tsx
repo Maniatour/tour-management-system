@@ -9,6 +9,7 @@ import { generateTourId } from '@/lib/entityIds'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { operatorIdInsert } from '@/lib/operators/scopeQuery'
+import { resolveTeamTypeForTourCreate } from '@/utils/tourUtils'
 
 export type AdminNewTourModalProduct = {
   id: string
@@ -61,6 +62,17 @@ export function AdminNewTourModal({ isOpen, onClose, products, productsLoading }
     setSubmitting(true)
     try {
       const id = generateTourId()
+      const selectedProduct = products.find((p) => p.id === productId.trim())
+      const teamType = resolveTeamTypeForTourCreate({
+        product: selectedProduct
+          ? {
+              id: selectedProduct.id,
+              name: selectedProduct.name,
+              name_ko: selectedProduct.name_ko,
+              name_en: selectedProduct.name_en,
+            }
+          : { id: productId.trim() },
+      })
       const { data: newTour, error } = await supabase
         .from('tours')
         .insert({
@@ -70,6 +82,7 @@ export function AdminNewTourModal({ isOpen, onClose, products, productsLoading }
           reservation_ids: [],
           tour_status: 'scheduled',
           is_private_tour: isPrivateTour,
+          team_type: teamType,
           ...operatorIdInsert(operatorId),
         })
         .select('id')

@@ -20,6 +20,7 @@ import {
   normalizeReservationIds,
   canonicalReservationIdKey,
   normalizeTourDateKey,
+  resolveTeamTypeForTourCreate,
 } from '@/utils/tourUtils'
 import {
   getCustomerName,
@@ -975,6 +976,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const [tourDetailIframeReloadNonce, setTourDetailIframeReloadNonce] = useState(0)
   const [updatingTourDetailModalStatusId, setUpdatingTourDetailModalStatusId] = useState<string | null>(null)
   const [updatingGuideModalAssignmentStatusId, setUpdatingGuideModalAssignmentStatusId] = useState<string | null>(null)
+  const [copyingGuideModalTourId, setCopyingGuideModalTourId] = useState<string | null>(null)
   
   // 행 드래그앤드롭 상태 (상품/차량)
   const [hoveredGuideRow, setHoveredGuideRow] = useState<string | null>(null)
@@ -2848,6 +2850,19 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       setCapacityOverflowCreatingKey(key)
       try {
         const tourId = generateTourId()
+        const product = products.find((p: Product) => p.id === productId)
+        const teamType = resolveTeamTypeForTourCreate({
+          product: product
+            ? {
+                id: product.id,
+                name: product.name,
+                name_ko: product.name_ko,
+                name_en: product.name_en,
+                internal_name_ko: product.internal_name_ko,
+                customer_name_ko: product.customer_name_ko,
+              }
+            : { id: productId },
+        })
         const { error } = await (supabase as any).from('tours').insert({
           id: tourId,
           product_id: productId,
@@ -2855,6 +2870,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           reservation_ids: [],
           tour_status: 'scheduled',
           is_private_tour: false,
+          team_type: teamType,
           ...operatorIdInsert(operatorId),
         })
         if (error) throw error
@@ -2876,7 +2892,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         setCapacityOverflowCreatingKey(null)
       }
     },
-    [fetchData, locale, showMessage]
+    [fetchData, locale, showMessage, products, operatorId]
   )
 
   const openVehicleEditFromSchedule = useCallback(
@@ -5260,6 +5276,74 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       }
     },
     [tours, locale],
+  )
+
+  /** 투어 요약 카드뷰: 같은 상품/날짜로 빈 투어 복사 (예약·가이드·차량은 비움, 팀 구성 유지) */
+  const handleCopyTourFromGuideModal = useCallback(
+    async (sourceTourId: string) => {
+      const source = tours.find((t: Tour) => String(t.id) === String(sourceTourId))
+      if (!source?.product_id || !source?.tour_date) return
+      if (
+        !confirm(
+          locale === 'ko'
+            ? '같은 상품/날짜로 새 투어를 생성하시겠습니까?'
+            : 'Create a new tour with the same product and date?',
+        )
+      ) {
+        return
+      }
+
+      setCopyingGuideModalTourId(sourceTourId)
+      try {
+        const product = products.find((p: Product) => p.id === source.product_id)
+        const teamType = resolveTeamTypeForTourCreate({
+          sourceTeamType: source.team_type,
+          product: product
+            ? {
+                id: product.id,
+                name: product.name,
+                name_ko: product.name_ko,
+                name_en: product.name_en,
+                internal_name_ko: product.internal_name_ko,
+                customer_name_ko: product.customer_name_ko,
+              }
+            : { id: source.product_id },
+        })
+        const newId = generateTourId()
+        const { error } = await (supabase as any).from('tours').insert({
+          id: newId,
+          product_id: source.product_id,
+          tour_date: source.tour_date,
+          reservation_ids: [],
+          tour_status: 'scheduled',
+          is_private_tour: false,
+          team_type: teamType,
+          ...operatorIdInsert(operatorId),
+        })
+        if (error) throw error
+        try {
+          await createTourPhotosBucket()
+        } catch {
+          /* optional */
+        }
+        showMessage(
+          locale === 'ko' ? '완료' : 'Done',
+          locale === 'ko' ? '새 투어가 생성되었습니다.' : 'New tour created.',
+          'success',
+        )
+        await fetchData()
+        setGuideModalContent((prev) => ({
+          ...prev,
+          tourId: newId,
+        }))
+      } catch (e) {
+        console.error('handleCopyTourFromGuideModal', e)
+        showMessage(locale === 'ko' ? '오류' : 'Error', String(e), 'error')
+      } finally {
+        setCopyingGuideModalTourId(null)
+      }
+    },
+    [tours, products, locale, operatorId, fetchData, showMessage],
   )
 
   // 상품별 총계 계산
@@ -9860,6 +9944,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                         onPrintReceipts={() => setTourQuickPrint({ tourId, kind: 'receipts' })}
                         onPrintTipEnvelopes={() => setTourQuickPrint({ tourId, kind: 'tip' })}
                         onPrintBalanceEnvelopes={() => setTourQuickPrint({ tourId, kind: 'balance' })}
+                        onCopyTour={() => {
+                          void handleCopyTourFromGuideModal(tourId)
+                        }}
+                        copyingTour={copyingGuideModalTourId === tourId}
                       />
                     </div>
                   )
@@ -10007,6 +10095,21 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   </svg>
                   투어 상세 열기
                 </button>
+                {isScheduleStaff && guideModalContent.tourId ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleCopyTourFromGuideModal(guideModalContent.tourId)
+                    }}
+                    disabled={copyingGuideModalTourId === guideModalContent.tourId}
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    {locale === 'ko' ? '투어 복사' : 'Copy tour'}
+                  </button>
+                ) : null}
               </div>
               <button
                 onClick={() => setShowGuideModal(false)}

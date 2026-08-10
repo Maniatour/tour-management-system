@@ -10,7 +10,9 @@ import {
 } from '@/lib/reservationCancellationReason'
 import {
   calculateAssignedPeople,
-  getDefaultTeamTypeForProduct,
+  getDefaultTeamTypeFromProduct,
+  normalizeTourTeamType,
+  resolveTeamTypeForTourCreate,
   sumPeopleSameProductDate,
   isReservationDeletedStatus,
   isReservationCancelledStatus,
@@ -319,10 +321,50 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
 
         const tour = tourData as TourRow
         const productFromTour = (tourData as { products?: ProductRow | null }).products ?? null
-        if (tour.team_type) {
-          setTeamType(tour.team_type as '1guide' | '2guide' | 'guide+driver')
-        } else {
-          setTeamType(getDefaultTeamTypeForProduct(productFromTour?.name_ko, productFromTour?.name_en))
+        // DB 컬럼 기본값(1guide)만 있는 밤도깨비 등은 상품 기본(2guide)으로 표시
+        const resolvedTeamType = resolveTeamTypeForTourCreate({
+          sourceTeamType: tour.team_type,
+          product: productFromTour
+            ? {
+                id: productFromTour.id,
+                name: (productFromTour as { name?: string | null }).name ?? null,
+                name_ko: productFromTour.name_ko,
+                name_en: productFromTour.name_en,
+                internal_name_ko:
+                  (productFromTour as { internal_name_ko?: string | null }).internal_name_ko ?? null,
+                customer_name_ko:
+                  (productFromTour as { customer_name_ko?: string | null }).customer_name_ko ?? null,
+              }
+            : null,
+        })
+        const storedNormalized = normalizeTourTeamType(tour.team_type)
+        setTeamType(resolvedTeamType)
+        // 상품 기본이 2guide인데 DB에 1guide(컬럼 기본)만 있으면 즉시 보정 저장 → 복사/스케줄과 일치
+        if (
+          productFromTour &&
+          getDefaultTeamTypeFromProduct({
+            id: productFromTour.id,
+            name: (productFromTour as { name?: string | null }).name ?? null,
+            name_ko: productFromTour.name_ko,
+            name_en: productFromTour.name_en,
+            internal_name_ko:
+              (productFromTour as { internal_name_ko?: string | null }).internal_name_ko ?? null,
+            customer_name_ko:
+              (productFromTour as { customer_name_ko?: string | null }).customer_name_ko ?? null,
+          }) === '2guide' &&
+          storedNormalized === '1guide' &&
+          resolvedTeamType === '2guide'
+        ) {
+          setTourState((prev) => (prev ? { ...prev, team_type: '2guide' } : prev))
+          void supabase
+            .from('tours')
+            .update({ team_type: '2guide' })
+            .eq('id', tour.id)
+            .then(({ error }) => {
+              if (error) {
+                console.warn('팀 구성 기본값(2guide) 보정 저장 실패:', error.message)
+              }
+            })
         }
 
         const productId = tour.product_id

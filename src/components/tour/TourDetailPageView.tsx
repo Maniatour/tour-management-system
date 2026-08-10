@@ -67,7 +67,11 @@ const GuideScheduleAssignmentHistoryModal = dynamic(
 )
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
-import { normalizeReservationIds, isTourDeletedStatus, getDefaultTeamTypeForProduct } from '@/utils/tourUtils'
+import {
+  normalizeReservationIds,
+  isTourDeletedStatus,
+  resolveTeamTypeForTourCreate,
+} from '@/utils/tourUtils'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
 import { RESERVATION_EDIT_MODAL_RECT_KEY } from '@/lib/adminModalRectStorage'
@@ -1461,10 +1465,22 @@ export function TourDetailPageView({
 
     try {
       const tourId = generateTourId()
-      const teamTypeToCopy =
-        tour.team_type ||
-        tourData.teamType ||
-        getDefaultTeamTypeForProduct(tourData.product?.name_ko, tourData.product?.name_en)
+      // UI 선택값 우선. 밤도깨비 등 상품 기본이 2guide인데 DB/상태에 1guide만 있으면 2guide로 복사
+      const teamTypeToCopy = resolveTeamTypeForTourCreate({
+        sourceTeamType: tourData.teamType || tour.team_type,
+        product: tourData.product
+          ? {
+              id: tourData.product.id,
+              name: (tourData.product as { name?: string | null }).name ?? null,
+              name_ko: tourData.product.name_ko,
+              name_en: tourData.product.name_en,
+              internal_name_ko:
+                (tourData.product as { internal_name_ko?: string | null }).internal_name_ko ?? null,
+              customer_name_ko:
+                (tourData.product as { customer_name_ko?: string | null }).customer_name_ko ?? null,
+            }
+          : { id: tour.product_id },
+      })
       const { data: newTour, error } = await supabase
         .from('tours')
         .insert({
@@ -1474,7 +1490,7 @@ export function TourDetailPageView({
           reservation_ids: [],
           tour_status: 'scheduled',
           is_private_tour: false,
-          // 원본의 팀 구성(1가이드 / 2가이드 / 가이드+드라이버) 유지
+          // 원본의 팀 구성(1가이드 / 2가이드 / 가이드+드라이버) 유지 · 상품 기본 반영
           team_type: teamTypeToCopy,
         })
         .select()
