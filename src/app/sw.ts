@@ -1,6 +1,6 @@
 import { defaultCache } from '@serwist/next/worker'
 import type { PrecacheEntry, SerwistGlobalConfig } from 'serwist'
-import { Serwist } from 'serwist'
+import { disableNavigationPreload, Serwist } from 'serwist'
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -18,23 +18,44 @@ function isStaffAppPath(url: URL): boolean {
   return STAFF_APP_PATH.test(url.pathname)
 }
 
+function cloneNavigateResponse(response: Response): Response {
+  if (!response.redirected) return response
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  })
+}
+
 /**
  * Strategy(NetworkOnly/NetworkFirst)를 거치지 않고 fetch만 사용.
  * NetworkOnly.handle()은 실패 시 done 프라미스가 Uncaught no-response를 남길 수 있음.
  * 리다이렉트된 navigate 응답은 Chrome SW 제약으로 재구성.
+ *
+ * 과거 SW가 navigation preload를 켠 채로 남아 있으면 Chrome이 preload 요청을 시작하는데,
+ * 여기서 preloadResponse를 기다리지 않으면 콘솔 경고가 난다.
  */
 async function handleNetworkOnlySafe(options: {
   request: Request
   event?: ExtendableEvent
 }): Promise<Response> {
   try {
+    if (
+      options.request.mode === 'navigate' &&
+      options.event instanceof FetchEvent &&
+      'preloadResponse' in options.event
+    ) {
+      try {
+        const preload = (await options.event.preloadResponse) as Response | undefined
+        if (preload) return cloneNavigateResponse(preload)
+      } catch {
+        // preload 실패 시 일반 fetch로 계속
+      }
+    }
+
     const response = await fetch(options.request)
-    if (options.request.mode === 'navigate' && response.redirected) {
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-      })
+    if (options.request.mode === 'navigate') {
+      return cloneNavigateResponse(response)
     }
     return response
   } catch {
@@ -45,6 +66,9 @@ async function handleNetworkOnlySafe(options: {
     })
   }
 }
+
+// Serwist는 navigationPreload:false 일 때 enable만 생략하고, 이전 SW가 켠 preload는 끄지 않음
+disableNavigationPreload()
 
 // Push 알림 (기존 public/sw.js 동작 유지)
 self.addEventListener('push', (event) => {
@@ -88,7 +112,7 @@ const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST ?? [],
   skipWaiting: true,
   clientsClaim: true,
-  // preload 실패 시 NetworkOnly no-response와 경합 → admin 문서에서 Uncaught 유발
+  // 켜지 않음. 과거 등록분 해제는 상단 disableNavigationPreload()가 activate에서 처리
   navigationPreload: false,
   // 공개 투어 채팅(/chat/[code])·직원 앱은 런타임 캐시(NetworkFirst)와 맞지 않음
   // → 네트워크만 사용하고 실패 시에도 promise reject 금지
