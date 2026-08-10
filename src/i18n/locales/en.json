@@ -5799,6 +5799,15 @@
       "managerContact": "Contact",
       "contractUpload": "Contract Upload",
       "contractView": "View Contract"
+    },
+    "commissionHistory": {
+      "title": "Commission rate history",
+      "hint": "Only channel master rate changes are logged. Existing reservation pricing commission snapshots stay unchanged.",
+      "loading": "Loading history…",
+      "empty": "No changes recorded yet.",
+      "loadError": "Could not load history.",
+      "initial": "Baseline {rate}",
+      "changed": "{from} → {to}"
     }
   },
   "companyExpense": {

@@ -19,6 +19,7 @@ import {
 import { loadResidentStatusAmountsForReservation } from '@/lib/saveResidentStatusWithPricing'
 import { getEffectivePickupHotelId, getPickupHotelNameById } from '@/lib/effectivePickupHotel'
 import type { PickupResolveContext } from '@/lib/pickupGroupPreset'
+import { isActiveTourHotelBookingForList } from '@/lib/tourHotelReferences'
 import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
 
 // ---------------------------------------------------------------------------
@@ -73,6 +74,7 @@ export interface PrintHotelBooking {
   rn_number?: string | null
   booking_reference?: string | null
   reservation_name?: string | null
+  status?: string | null
 }
 
 export interface TourPrintModalProps {
@@ -595,6 +597,12 @@ export default function TourPrintModal({
     return rows
   }, [ticketBookings])
 
+  // 부킹 관리(프린트): 투어 상세와 동일하게 취소된 호텔 부킹 제외
+  const activeHotelBookings = useMemo(
+    () => tourHotelBookings.filter((b) => isActiveTourHotelBookingForList(b.status)),
+    [tourHotelBookings]
+  )
+
   const handlePrint = () => {
     const target = document.getElementById('tour-print-content')
     if (!target) return
@@ -676,7 +684,7 @@ export default function TourPrintModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-[820px] max-h-[92vh] overflow-hidden flex flex-col">
         <header className="flex items-center justify-between p-4 border-b flex-shrink-0">
           <h2 className="text-lg font-bold text-gray-900">{L.title}</h2>
@@ -806,12 +814,12 @@ export default function TourPrintModal({
               {/* 부킹 관리 */}
               <section className="tp-section">
                 <h2 className="tp-h2">{L.bookingSection}</h2>
-                {ticketRows.length === 0 && tourHotelBookings.length === 0 ? (
+                {ticketRows.length === 0 && activeHotelBookings.length === 0 ? (
                   <p className="tp-empty">{L.noBooking}</p>
                 ) : (
                   <>
                     {ticketRows.length > 0 && (
-                      <table className="tp-table" style={{ marginBottom: tourHotelBookings.length > 0 ? '16px' : 0 }}>
+                      <table className="tp-table" style={{ marginBottom: activeHotelBookings.length > 0 ? '16px' : 0 }}>
                         <thead>
                           <tr>
                             <th>{L.company}</th>
@@ -837,7 +845,7 @@ export default function TourPrintModal({
                         </tbody>
                       </table>
                     )}
-                    {tourHotelBookings.length > 0 && (
+                    {activeHotelBookings.length > 0 && (
                       <table className="tp-table">
                         <thead>
                           <tr>
@@ -847,7 +855,7 @@ export default function TourPrintModal({
                           </tr>
                         </thead>
                         <tbody>
-                          {tourHotelBookings.map((b) => (
+                          {activeHotelBookings.map((b) => (
                             <tr key={b.id}>
                               <td>
                                 {b.hotel || '—'}

@@ -15,7 +15,7 @@ import TourAudienceLibraryManagerModal from '@/components/product/TourAudienceLi
 import TourAudienceLibraryPicker from '@/components/product/TourAudienceLibraryPicker'
 import { normalizeAdminEditLocale, type AdminEditLocale } from '@/lib/adminEditLocales'
 import {
-  TOUR_AUDIENCE_KIND_LABELS,
+  getTourAudienceKindLabel,
   fetchProductAttachedTourAudienceItems,
   fetchTourAudienceLibrary,
   getTourAudienceLocalizedText,
@@ -350,11 +350,11 @@ export default function CustomerPageTourAudienceEmbed({
         <div className="space-y-3">
           {renderItemGroup(
             recommended,
-            TOUR_AUDIENCE_KIND_LABELS.recommended[editLocale === 'en' ? 'en' : 'ko']
+            getTourAudienceKindLabel('recommended', editLocale)
           )}
           {renderItemGroup(
             notRecommended,
-            TOUR_AUDIENCE_KIND_LABELS.not_recommended[editLocale === 'en' ? 'en' : 'ko']
+            getTourAudienceKindLabel('not_recommended', editLocale)
           )}
           {activeItem ? (
             <div className="flex items-center justify-end gap-1">

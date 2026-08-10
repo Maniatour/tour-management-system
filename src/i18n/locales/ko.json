@@ -7137,6 +7137,15 @@
       "managerContact": "연락처",
       "contractUpload": "계약서 업로드",
       "contractView": "계약서 보기"
+    },
+    "commissionHistory": {
+      "title": "커미션 변경 이력",
+      "hint": "채널 마스터 요율 변경만 기록됩니다. 기존 예약 가격정보의 커미션은 그대로 유지됩니다.",
+      "loading": "이력을 불러오는 중…",
+      "empty": "아직 기록된 변경이 없습니다.",
+      "loadError": "이력을 불러오지 못했습니다.",
+      "initial": "초기/기준 {rate}",
+      "changed": "{from} → {to}"
     }
   },
   "options": {

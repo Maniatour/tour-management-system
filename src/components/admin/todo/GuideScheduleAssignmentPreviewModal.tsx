@@ -231,7 +231,7 @@ export function GuideScheduleAssignmentPreviewModal({
 
   return (
     <div
-      className="fixed inset-0 z-[220] flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
     >
       <div

@@ -34,9 +34,45 @@ export type AttachedProductTourAudience = TourAudienceLibraryItem & {
   link_is_active: boolean
 }
 
-export const TOUR_AUDIENCE_KIND_LABELS: Record<TourAudienceKind, { ko: string; en: string }> = {
-  recommended: { ko: '추천', en: 'Recommended for' },
-  not_recommended: { ko: '추천하지 않는 분', en: 'Not recommended for' },
+/** Section headers — also seeded in content_library_ui_labels for admin edits. */
+export const TOUR_AUDIENCE_KIND_LABELS: Record<
+  TourAudienceKind,
+  Partial<Record<SiteLocale, string>> & { ko: string; en: string }
+> = {
+  recommended: {
+    ko: '추천',
+    en: 'Recommended for',
+    ja: 'おすすめ',
+    'zh-CN': '推荐对象',
+    'zh-TW': '推薦對象',
+    es: 'Recomendado para',
+    fr: 'Recommandé pour',
+    de: 'Empfohlen für',
+  },
+  not_recommended: {
+    ko: '추천하지 않는 분',
+    en: 'Not recommended for',
+    ja: 'おすすめしない方',
+    'zh-CN': '不推荐对象',
+    'zh-TW': '不推薦對象',
+    es: 'No recomendado para',
+    fr: 'Non recommandé pour',
+    de: 'Nicht empfohlen für',
+  },
+}
+
+export function getTourAudienceKindLabel(
+  kind: TourAudienceKind,
+  locale: string,
+  override?: Partial<Record<SiteLocale, string>> | null
+): string {
+  const preferred = isSiteLocale(locale) ? locale : 'en'
+  const map = { ...TOUR_AUDIENCE_KIND_LABELS[kind], ...(override || {}) }
+  for (const code of contentFallbackOrder(preferred)) {
+    const value = map[code]?.trim()
+    if (value) return value
+  }
+  return map.en || map.ko || kind
 }
 
 function trimOrEmpty(value: unknown): string {

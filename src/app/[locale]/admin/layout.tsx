@@ -6,6 +6,7 @@ import AdminAuthBoundary from '@/components/auth/AdminAuthBoundary'
 import AdminAuthGuard from '@/components/auth/AdminAuthGuard'
 import AdminChrome from '@/components/admin/AdminChrome'
 import ReservationPricingAuditNotificationListener from '@/components/admin/ReservationPricingAuditNotificationListener'
+import CustomerPaymentNotificationListener from '@/components/admin/CustomerPaymentNotificationListener'
 import { AudioPlayerProvider } from '@/contexts/AudioPlayerContext'
 import { GmailReservationImportSyncProvider } from '@/contexts/GmailReservationImportSyncContext'
 import { isSiteLocale } from '@/lib/siteLocales'
@@ -38,6 +39,7 @@ export default async function AdminLayout({ children, params }: AdminLayoutProps
             <AdminChrome locale={locale}>
               {children}
               <ReservationPricingAuditNotificationListener locale={locale} />
+              <CustomerPaymentNotificationListener locale={locale} />
             </AdminChrome>
           </GmailReservationImportSyncProvider>
           </AdminAuthGuard>

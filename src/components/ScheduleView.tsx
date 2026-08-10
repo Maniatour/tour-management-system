@@ -5,7 +5,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useR
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone, UserCheck, History } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone, UserCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
@@ -163,6 +163,7 @@ import { useScheduleViewData } from '@/hooks/useScheduleViewData'
 import ScheduleMessageConfirmModals from '@/components/schedule/ScheduleMessageConfirmModals'
 import { aggregateScheduleBreakdownFromDailyData } from '@/lib/scheduleProductGridHelpers'
 import type { ScheduleGuideDailyData, ScheduleGuideScheduleRow } from '@/lib/scheduleGuideGridTypes'
+import type { TourQuickPrintRequest } from '@/components/admin/todo/TourQuickPrintHost'
 import { isSuperAdminActor } from '@/lib/superAdmin'
 import { isManagerTeamPosition } from '@/lib/roles'
 import {
@@ -215,6 +216,27 @@ const GuideScheduleAssignmentHistoryModal = dynamic(
 
 const GuideScheduleAssignmentBulkModal = dynamic(
   () => import('@/components/schedule/GuideScheduleAssignmentBulkModal'),
+  { ssr: false, loading: () => null },
+)
+
+const GuideScheduleAssignmentPreviewModal = dynamic(
+  () =>
+    import('@/components/admin/todo/GuideScheduleAssignmentPreviewModal').then(
+      (m) => m.GuideScheduleAssignmentPreviewModal,
+    ),
+  { ssr: false, loading: () => null },
+)
+
+const GuideScheduleConfirmPreviewModal = dynamic(
+  () =>
+    import('@/components/admin/todo/GuideScheduleConfirmPreviewModal').then(
+      (m) => m.GuideScheduleConfirmPreviewModal,
+    ),
+  { ssr: false, loading: () => null },
+)
+
+const TourQuickPrintHost = dynamic(
+  () => import('@/components/admin/todo/TourQuickPrintHost').then((m) => m.TourQuickPrintHost),
   { ssr: false, loading: () => null },
 )
 
@@ -1089,6 +1111,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const [showGuideScheduleBulkModal, setShowGuideScheduleBulkModal] = useState(false)
   const [showGuideScheduleAssignmentBulkModal, setShowGuideScheduleAssignmentBulkModal] = useState(false)
   const [guideAssignmentHistoryTourId, setGuideAssignmentHistoryTourId] = useState<string | null>(null)
+  const [guideModalScheduleAssignmentTourId, setGuideModalScheduleAssignmentTourId] = useState<string | null>(null)
+  const [guideModalScheduleConfirmTourId, setGuideModalScheduleConfirmTourId] = useState<string | null>(null)
+  const [tourQuickPrint, setTourQuickPrint] = useState<TourQuickPrintRequest>(null)
   const [priceInventoryInitial, setPriceInventoryInitial] = useState<{
     productId: string
     date: string
@@ -4985,11 +5010,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       return String(a.id).localeCompare(String(b.id))
     })
 
-    /** 해당일 전체 투어 기준: 호텔 id → 사용 투어 id 집합 */
+    /** 같은 날·같은 상품 투어 기준: 호텔 id → 사용 투어 id 집합 */
     const hotelIdToTourIds = new Map<string, Set<string>>()
-    for (const t of tours) {
-      if (isTourCancelled(t.tour_status) || isTourDeleted(t.tour_status)) continue
-      if (normalizeTourDateKey(t.tour_date) !== tourDate) continue
+    for (const t of related) {
       const tid = String(t.id)
       const assignedIds = new Set(
         Array.isArray(t.reservation_ids) ? (t.reservation_ids as string[]).map(String) : [],
@@ -9395,6 +9418,28 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         }
       />
 
+      <GuideScheduleAssignmentPreviewModal
+        isOpen={!!guideModalScheduleAssignmentTourId}
+        tourId={guideModalScheduleAssignmentTourId}
+        locale={locale}
+        onClose={() => setGuideModalScheduleAssignmentTourId(null)}
+        onSent={() => void handleClearCacheAndRefresh()}
+      />
+
+      <GuideScheduleConfirmPreviewModal
+        isOpen={!!guideModalScheduleConfirmTourId}
+        tourId={guideModalScheduleConfirmTourId}
+        locale={locale}
+        onClose={() => setGuideModalScheduleConfirmTourId(null)}
+        onSent={() => void handleClearCacheAndRefresh()}
+      />
+
+      <TourQuickPrintHost
+        locale={locale}
+        request={tourQuickPrint}
+        onClose={() => setTourQuickPrint(null)}
+      />
+
       {scheduleLeavePromptOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
@@ -9638,6 +9683,18 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                           setGuideModalContent((prev) => ({ ...prev, tourId }))
                           void updateGuideModalAssignmentStatus(tourId, status)
                         }}
+                        showQuickActions={isSelected}
+                        canSendGuideSchedule={Boolean(
+                          (tour.tour_guide_id && String(tour.tour_guide_id).trim()) ||
+                            (tour.assistant_id && String(tour.assistant_id).trim()),
+                        )}
+                        onPrintTourInfo={() => setTourQuickPrint({ tourId, kind: 'tourInfo' })}
+                        onSendScheduleAssignment={() => setGuideModalScheduleAssignmentTourId(tourId)}
+                        onSendScheduleConfirm={() => setGuideModalScheduleConfirmTourId(tourId)}
+                        onViewAssignmentHistory={() => setGuideAssignmentHistoryTourId(tourId)}
+                        onPrintReceipts={() => setTourQuickPrint({ tourId, kind: 'receipts' })}
+                        onPrintTipEnvelopes={() => setTourQuickPrint({ tourId, kind: 'tip' })}
+                        onPrintBalanceEnvelopes={() => setTourQuickPrint({ tourId, kind: 'balance' })}
                       />
                     </div>
                   )
@@ -9768,7 +9825,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               </div>
             ) : null}
 
-            <div className="mt-5 flex flex-wrap justify-between gap-2">
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => {
@@ -9785,18 +9842,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   </svg>
                   투어 상세 열기
                 </button>
-                {guideModalContent.tourId && isScheduleStaff ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setGuideAssignmentHistoryTourId(guideModalContent.tourId)
-                    }}
-                    className="px-4 py-2 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors flex items-center gap-2"
-                  >
-                    <History className="w-4 h-4" />
-                    {locale === 'ko' ? '배정·컨펌 기록' : 'Assignment history'}
-                  </button>
-                ) : null}
               </div>
               <button
                 onClick={() => setShowGuideModal(false)}

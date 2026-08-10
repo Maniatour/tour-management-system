@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import Image from 'next/image'
 import { useTranslations } from 'next-intl'
+import { ChannelCommissionRateHistory } from '@/components/channels/ChannelCommissionRateHistory'
 
 interface Channel {
   id: string
@@ -260,6 +261,8 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
               체크 시: 판매가격(기본 가격)에만 커미션 및 쿠폰 할인 적용, 초이스 가격과 불포함 금액은 커미션/쿠폰에서 제외되어 밸런스로 처리되어 현금 수금
             </p>
           </div>
+
+          {channel?.id ? <ChannelCommissionRateHistory channelId={channel.id} /> : null}
           
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.description')}</label>

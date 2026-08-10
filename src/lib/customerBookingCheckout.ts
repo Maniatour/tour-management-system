@@ -27,6 +27,7 @@ import {
   isPerUnitPricing,
   parseChoicePricingUnit,
 } from '@/lib/choicePricingUnit'
+import { notifyStaffOfCustomerPayment } from '@/lib/customerPaymentNotifications'
 
 /** @deprecated Prefer KOVEgAS_DIRECT_CHANNEL_ID — kept for existing imports */
 export const HOMEPAGE_CHANNEL_ID = KOVEgAS_DIRECT_CHANNEL_ID
@@ -1329,6 +1330,8 @@ async function finalizeSingleReservationPayment(
     .ilike('note', `%${args.paymentIntentId}%`)
     .maybeSingle()
 
+  let paymentRecordId: string | null = pendingRow?.id ?? null
+
   if (pendingRow?.id) {
     const { error: payUpdateError } = await admin
       .from('payment_records')
@@ -1344,19 +1347,24 @@ async function finalizeSingleReservationPayment(
     if (payUpdateError) throw new Error(`결제 기록 확정 실패: ${payUpdateError.message}`)
   } else {
     const operatorId = await lookupReservationOperatorId(admin, args.reservationId)
-    const { error: payInsertError } = await admin.from('payment_records').insert({
-      operator_id: operatorId,
-      reservation_id: args.reservationId,
-      amount: args.amountUsdForRecord,
-      payment_method: 'card',
-      payment_status: 'confirmed',
-      note: `${STRIPE_PI_NOTE_PREFIX}${args.paymentIntentId}`,
-      submit_by: 'customer_web_checkout',
-      submit_on: new Date().toISOString(),
-      confirmed_by: 'stripe_webhook_or_confirm',
-      confirmed_on: new Date().toISOString(),
-    })
+    const { data: insertedPayment, error: payInsertError } = await admin
+      .from('payment_records')
+      .insert({
+        operator_id: operatorId,
+        reservation_id: args.reservationId,
+        amount: args.amountUsdForRecord,
+        payment_method: 'card',
+        payment_status: 'confirmed',
+        note: `${STRIPE_PI_NOTE_PREFIX}${args.paymentIntentId}`,
+        submit_by: 'customer_web_checkout',
+        submit_on: new Date().toISOString(),
+        confirmed_by: 'stripe_webhook_or_confirm',
+        confirmed_on: new Date().toISOString(),
+      })
+      .select('id')
+      .maybeSingle()
     if (payInsertError) throw new Error(`결제 기록 저장 실패: ${payInsertError.message}`)
+    paymentRecordId = insertedPayment?.id ?? null
   }
 
   // 예약 status는 pending/inquiry 유지 — 관리자가 시스템에서 수동으로 confirmed 처리
@@ -1370,6 +1378,13 @@ async function finalizeSingleReservationPayment(
       invErr
     )
   }
+
+  await notifyStaffOfCustomerPayment(admin, {
+    reservationId: args.reservationId,
+    paymentIntentId: args.paymentIntentId,
+    paymentRecordId,
+    amountUsd: args.amountUsdForRecord,
+  })
 
   if (args.sendEmail && reservation.customer_id) {
     const { data: customer } = await admin

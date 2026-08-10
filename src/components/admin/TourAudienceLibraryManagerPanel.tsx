@@ -10,10 +10,10 @@ import { getAdminEditLocaleLabel, normalizeAdminEditLocale, type AdminEditLocale
 import { supabase } from '@/lib/supabase'
 import type { SiteLocale } from '@/lib/siteLocales'
 import {
-  TOUR_AUDIENCE_KIND_LABELS,
   buildTourAudienceLibraryPayload,
   fetchTourAudienceLibrary,
   getTourAudienceFilledLocales,
+  getTourAudienceKindLabel,
   getTourAudienceLocalizedText,
   tourAudienceDraftFromLibraryItem,
   type TourAudienceKind,
@@ -195,7 +195,7 @@ export default function TourAudienceLibraryManagerPanel({
                   <ContentLibraryLocaleBadges locales={getTourAudienceFilledLocales(item)} />
                 </div>
                 <div className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {TOUR_AUDIENCE_KIND_LABELS[item.audience_kind].ko}
+                  {getTourAudienceKindLabel(item.audience_kind, 'ko')}
                 </div>
                 <div className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
                   {getTourAudienceLocalizedText(item, 'ko') || getTourAudienceLocalizedText(item, 'en')}
@@ -238,8 +238,8 @@ export default function TourAudienceLibraryManagerPanel({
               }
               className={`${INPUT_CLASS} bg-background`}
             >
-              <option value="recommended">{TOUR_AUDIENCE_KIND_LABELS.recommended.ko}</option>
-              <option value="not_recommended">{TOUR_AUDIENCE_KIND_LABELS.not_recommended.ko}</option>
+              <option value="recommended">{getTourAudienceKindLabel('recommended', 'ko')}</option>
+              <option value="not_recommended">{getTourAudienceKindLabel('not_recommended', 'ko')}</option>
             </select>
           </label>
           <label className="block space-y-1">

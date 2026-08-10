@@ -64,6 +64,7 @@ type LocalTourHotelBooking = {
   rn_number?: string | null
   booking_reference?: string | null
   reservation_name?: string | null
+  status?: string | null
 }
 
 function aggregateTicketBookingsForPrint(ticketBookings: LocalTicketBooking[]): LocalTicketBooking[] {
@@ -256,7 +257,7 @@ export function TourQuickPrintHost({ locale, request, onClose }: TourQuickPrintH
   return (
     <>
       {waiting && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/30">
+        <div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/30">
           <div className="flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm text-gray-700 shadow-lg">
             <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
             {isKo ? '인쇄 준비 중…' : 'Preparing print…'}

@@ -16,6 +16,7 @@ import ContentLibraryLocaleBadges from '@/components/admin/ContentLibraryLocaleB
 import FaqLibraryManagerPanel from '@/components/admin/FaqLibraryManagerPanel'
 import WhyChooseLibraryManagerPanel from '@/components/admin/WhyChooseLibraryManagerPanel'
 import TourAudienceLibraryManagerPanel from '@/components/admin/TourAudienceLibraryManagerPanel'
+import ContentLibraryUiLabelsPanel from '@/components/admin/ContentLibraryUiLabelsPanel'
 import LightRichEditor from '@/components/LightRichEditor'
 import {
   getAdminEditLocaleLabel,
@@ -37,7 +38,7 @@ import {
 } from '@/lib/reusableContentLibrary'
 import type { SiteLocale } from '@/lib/siteLocales'
 
-type TabId = 'faq' | 'why-choose' | 'tour-audience' | 'operation' | 'policy'
+type TabId = 'faq' | 'why-choose' | 'tour-audience' | 'ui-labels' | 'operation' | 'policy'
 
 const OPERATION_KINDS: ReusableDetailKind[] = [...REUSABLE_OPERATION_KINDS]
 const POLICY_KINDS: ReusableDetailKind[] = [...REUSABLE_POLICY_KINDS]
@@ -68,7 +69,7 @@ export default function AdminContentLibraryPage() {
   const [editLocale, setEditLocale] = useState<AdminEditLocale>('ko')
 
   const loadAll = useCallback(async () => {
-    if (tab === 'faq' || tab === 'why-choose' || tab === 'tour-audience') {
+    if (tab === 'faq' || tab === 'why-choose' || tab === 'tour-audience' || tab === 'ui-labels') {
       setLoading(false)
       return
     }
@@ -178,7 +179,7 @@ export default function AdminContentLibraryPage() {
           재사용 콘텐츠 라이브러리
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          FAQ · Why choose Mania Tour · 추천 대상 · 투어 운영 안내 · 정책을 한 항목에 여러 언어로 저장하고, 상품 편집에서 연결해 재사용합니다.
+          FAQ · Why choose · 추천 대상 · 짧은 라벨 · 투어 운영 안내 · 정책을 한 항목에 여러 언어로 저장하고, 상품 편집에서 연결해 재사용합니다.
         </p>
       </div>
 
@@ -188,6 +189,7 @@ export default function AdminContentLibraryPage() {
             { id: 'faq' as const, label: 'FAQ', icon: HelpCircle },
             { id: 'why-choose' as const, label: 'Why choose', icon: Library },
             { id: 'tour-audience' as const, label: '추천 대상', icon: Library },
+            { id: 'ui-labels' as const, label: '짧은 라벨', icon: Library },
             { id: 'operation' as const, label: '운영 안내', icon: Library },
             { id: 'policy' as const, label: '정책', icon: Library },
           ] as const
@@ -213,7 +215,7 @@ export default function AdminContentLibraryPage() {
       </div>
 
       <div className="relative">
-        {tab !== 'faq' && tab !== 'why-choose' && tab !== 'tour-audience' ? (
+        {tab !== 'faq' && tab !== 'why-choose' && tab !== 'tour-audience' && tab !== 'ui-labels' ? (
           <>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
@@ -241,6 +243,8 @@ export default function AdminContentLibraryPage() {
         <WhyChooseLibraryManagerPanel />
       ) : tab === 'tour-audience' ? (
         <TourAudienceLibraryManagerPanel />
+      ) : tab === 'ui-labels' ? (
+        <ContentLibraryUiLabelsPanel />
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
           <div className="space-y-2 rounded-xl border border-border/60 bg-card p-3">

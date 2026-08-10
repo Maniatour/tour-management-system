@@ -14,6 +14,11 @@ import {
   type AttachedProductTourAudience,
   type TourAudienceKind,
 } from '@/lib/tourAudienceLibrary'
+import {
+  fetchContentLibraryUiLabels,
+  tourAudienceKindLabelFromRows,
+  type ContentLibraryUiLabelRow,
+} from '@/lib/contentLibraryUiLabels'
 
 type ProductTourAudienceDisplayProps = {
   productId: string
@@ -67,13 +72,21 @@ export default function ProductTourAudienceDisplay({
   const { isEditMode } = useCustomerPageEditMode()
   const locale = useLocale()
   const [items, setItems] = useState<AttachedProductTourAudience[]>([])
+  const [uiLabels, setUiLabels] = useState<ContentLibraryUiLabelRow[]>([])
   const [loading, setLoading] = useState(true)
 
   const loadItems = useCallback(async () => {
     setLoading(true)
     try {
-      const attached = await fetchProductAttachedTourAudienceItems(supabase as never, productId)
+      const [attached, labels] = await Promise.all([
+        fetchProductAttachedTourAudienceItems(supabase as never, productId),
+        fetchContentLibraryUiLabels(supabase as never, [
+          'tour_audience.recommended',
+          'tour_audience.not_recommended',
+        ]).catch(() => [] as ContentLibraryUiLabelRow[]),
+      ])
       setItems(attached)
+      setUiLabels(labels)
     } catch (error) {
       console.error('추천 대상 로드 오류:', error)
       setItems([])
@@ -133,13 +146,13 @@ export default function ProductTourAudienceDisplay({
         )}
         <div className="airbnb-tour-audience-grid">
           <AudienceColumn
-            title={t('tourAudienceRecommended')}
+            title={tourAudienceKindLabelFromRows(uiLabels, 'recommended', locale)}
             items={recommended}
             locale={locale}
             kind="recommended"
           />
           <AudienceColumn
-            title={t('tourAudienceNotRecommended')}
+            title={tourAudienceKindLabelFromRows(uiLabels, 'not_recommended', locale)}
             items={notRecommended}
             locale={locale}
             kind="not_recommended"

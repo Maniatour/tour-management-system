@@ -5,8 +5,8 @@ import { useTranslations } from 'next-intl'
 import ContentLibraryLocaleBadges from '@/components/admin/ContentLibraryLocaleBadges'
 import type { AdminEditLocale } from '@/lib/adminEditLocales'
 import {
-  TOUR_AUDIENCE_KIND_LABELS,
   getTourAudienceFilledLocales,
+  getTourAudienceKindLabel,
   getTourAudienceLocalizedText,
   type TourAudienceKind,
   type TourAudienceLibraryItem,
@@ -28,7 +28,7 @@ type TourAudienceLibraryPickerProps = {
 }
 
 function kindLabel(kind: TourAudienceKind, locale: AdminEditLocale) {
-  return TOUR_AUDIENCE_KIND_LABELS[kind][locale === 'en' ? 'en' : 'ko']
+  return getTourAudienceKindLabel(kind, locale)
 }
 
 export default function TourAudienceLibraryPicker({

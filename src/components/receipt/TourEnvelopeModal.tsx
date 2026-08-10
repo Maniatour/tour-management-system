@@ -725,7 +725,7 @@ export default function TourEnvelopeModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/50 p-4">
       <style dangerouslySetInnerHTML={{ __html: ENVELOPE_GUIDE_STYLES }} />
       <div className="bg-white rounded-lg shadow-xl w-full max-w-[min(95vw,520px)] max-h-[90vh] overflow-hidden flex flex-col">
         <header className="flex items-center justify-between p-4 border-b flex-shrink-0">

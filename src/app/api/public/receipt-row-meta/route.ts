@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 
 /** 비로그인 영수증 등: products RLS(비활성 상품) 우회 없이 메타만 서버에서 조회 */
+/** 예약 ID: R + 난수 접미사 (entityIds) · 레거시 UUID 허용 */
 const RESERVATION_ID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  /^(?:R[0-9a-zA-Z]{6,32}|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i
 
 export async function GET(request: NextRequest) {
   const reservationId = request.nextUrl.searchParams.get('reservation_id')?.trim() ?? ''

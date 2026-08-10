@@ -1,8 +1,23 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import ReactCountryFlag from 'react-country-flag'
-import { ArrowLeftRight, Bus, Calendar, Hotel, User, Users, X } from 'lucide-react'
+import {
+  ArrowLeftRight,
+  Bus,
+  Calendar,
+  DollarSign,
+  FileText,
+  History,
+  Hotel,
+  Mail,
+  Printer,
+  Smartphone,
+  User,
+  UserCheck,
+  Users,
+  X,
+} from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -37,7 +52,7 @@ export type ScheduleGuideTourInfoSummary = {
   assignedJa: number
   /** 배정 예약의 픽업 호텔 수 (픽업 스케줄: 호텔 ID별 픽업 수) */
   pickupHotelGroupCount: number
-  /** 배정 예약 픽업 호텔 내부용 이름 (당일 다른 투어와 공유 시 sharedSameDay) */
+  /** 배정 예약 픽업 호텔 내부용 이름 (같은 날·같은 상품의 다른 투어와 공유 시 sharedSameDay) */
   pickupHotelItems: Array<{
     hotelId: string
     label: string
@@ -107,6 +122,16 @@ type ScheduleGuideTourInfoCardProps = {
   onSelectVehicle: (id: string | null) => void
   onSelectTourStatus: (status: string) => void
   onSelectAssignmentStatus: (status: GuideAssignmentStatusValue) => void
+  /** 선택된 카드일 때 티켓 EA 행 오른쪽에 표시할 빠른 액션 */
+  showQuickActions?: boolean
+  canSendGuideSchedule?: boolean
+  onPrintTourInfo?: () => void
+  onSendScheduleAssignment?: () => void
+  onSendScheduleConfirm?: () => void
+  onViewAssignmentHistory?: () => void
+  onPrintReceipts?: () => void
+  onPrintTipEnvelopes?: () => void
+  onPrintBalanceEnvelopes?: () => void
 }
 
 /** 아이콘 전용 상태 뱃지: 배경·테두리로 상태 구분 */
@@ -194,6 +219,15 @@ export default function ScheduleGuideTourInfoCard({
   onSelectVehicle,
   onSelectTourStatus,
   onSelectAssignmentStatus,
+  showQuickActions = false,
+  canSendGuideSchedule = false,
+  onPrintTourInfo,
+  onSendScheduleAssignment,
+  onSendScheduleConfirm,
+  onViewAssignmentHistory,
+  onPrintReceipts,
+  onPrintTipEnvelopes,
+  onPrintBalanceEnvelopes,
 }: ScheduleGuideTourInfoCardProps) {
   const [editTarget, setEditTarget] = useState<EditTarget>(null)
 
@@ -208,11 +242,93 @@ export default function ScheduleGuideTourInfoCard({
 
   const ticketBadges = useMemo(() => {
     const order: Array<'X' | 'L' | 'U'> = ['L', 'X', 'U']
-    return order.map((k) => ({
-      key: k,
-      count: summary.ticketCountsByCanyon[k] || 0,
-    }))
+    return order
+      .filter((k) => (summary.ticketCountsByCanyon[k] || 0) > 0)
+      .map((k) => ({
+        key: k,
+        count: summary.ticketCountsByCanyon[k] || 0,
+      }))
   }, [summary.ticketCountsByCanyon])
+
+  const quickActionButtons: ReactNode =
+    showQuickActions ? (
+      <div
+        className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        {onPrintTourInfo ? (
+          <button
+            type="button"
+            onClick={onPrintTourInfo}
+            className="rounded-md border border-gray-200 bg-white p-1.5 text-gray-600 hover:bg-gray-50"
+            title={locale === 'ko' ? '투어 정보 인쇄' : 'Print tour info'}
+          >
+            <FileText className="h-4 w-4" />
+          </button>
+        ) : null}
+        {canSendGuideSchedule && onSendScheduleAssignment ? (
+          <button
+            type="button"
+            onClick={onSendScheduleAssignment}
+            className="rounded-md border border-violet-200 bg-violet-50 p-1.5 text-violet-700 hover:bg-violet-100"
+            title={locale === 'ko' ? '가이드·어시 스케줄 부여 SMS' : 'Send schedule assignment SMS'}
+          >
+            <UserCheck className="h-4 w-4" />
+          </button>
+        ) : null}
+        {canSendGuideSchedule && onSendScheduleConfirm ? (
+          <button
+            type="button"
+            onClick={onSendScheduleConfirm}
+            className="rounded-md border border-indigo-200 bg-indigo-50 p-1.5 text-indigo-700 hover:bg-indigo-100"
+            title={locale === 'ko' ? '가이드·어시 스케줄 컨펌 발송' : 'Send schedule confirm'}
+          >
+            <Smartphone className="h-4 w-4" />
+          </button>
+        ) : null}
+        {isStaff && onViewAssignmentHistory ? (
+          <button
+            type="button"
+            onClick={onViewAssignmentHistory}
+            className="rounded-md border border-slate-200 bg-slate-50 p-1.5 text-slate-700 hover:bg-slate-100"
+            title={locale === 'ko' ? '배정·컨펌 기록' : 'Assignment history'}
+          >
+            <History className="h-4 w-4" />
+          </button>
+        ) : null}
+        {onPrintReceipts ? (
+          <button
+            type="button"
+            onClick={onPrintReceipts}
+            className="rounded-md border border-gray-200 bg-white p-1.5 text-gray-600 hover:bg-gray-50"
+            title={locale === 'ko' ? '영수증 일괄 인쇄' : 'Print receipts'}
+          >
+            <Printer className="h-4 w-4" />
+          </button>
+        ) : null}
+        {onPrintTipEnvelopes ? (
+          <button
+            type="button"
+            onClick={onPrintTipEnvelopes}
+            className="rounded-md border border-gray-200 bg-white p-1.5 text-gray-600 hover:bg-gray-50"
+            title={locale === 'ko' ? '팁 봉투 인쇄' : 'Print tip envelopes'}
+          >
+            <Mail className="h-4 w-4" />
+          </button>
+        ) : null}
+        {onPrintBalanceEnvelopes ? (
+          <button
+            type="button"
+            onClick={onPrintBalanceEnvelopes}
+            className="rounded-md border border-gray-200 bg-white p-1.5 text-gray-600 hover:bg-gray-50"
+            title={locale === 'ko' ? 'Balance 봉투 인쇄' : 'Print balance envelopes'}
+          >
+            <DollarSign className="h-4 w-4" />
+          </button>
+        ) : null}
+      </div>
+    ) : null
 
   const canSwap =
     isStaff &&
@@ -502,8 +618,8 @@ export default function ScheduleGuideTourInfoCard({
                       title={
                         item.sharedSameDay
                           ? locale === 'ko'
-                            ? '같은 날 다른 투어에도 있는 픽업 호텔'
-                            : 'Also on another tour this day'
+                            ? '같은 날·같은 상품의 다른 투어에도 있는 픽업 호텔'
+                            : 'Also on another same-product tour this day'
                           : item.groupNumber != null
                             ? `G${item.groupNumber} · ${item.label}`
                             : item.label
@@ -522,7 +638,7 @@ export default function ScheduleGuideTourInfoCard({
           </span>
         </div>
 
-        {/* 티켓 EA */}
+        {/* 티켓 EA + (선택 시) 빠른 액션 */}
         <div className="flex flex-wrap items-center gap-1.5">
           {ticketBadges.map((b) => (
             <span
@@ -532,9 +648,7 @@ export default function ScheduleGuideTourInfoCard({
               🏜️🎫 {b.key} : {b.count}
             </span>
           ))}
-          <span className="text-[10px] text-gray-400 tabular-nums ml-0.5">
-            Confirm EA {summary.confirmedEa}
-          </span>
+          {quickActionButtons}
         </div>
       </div>
 
