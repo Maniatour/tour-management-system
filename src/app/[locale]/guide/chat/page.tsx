@@ -11,6 +11,10 @@ import { useTranslations, useLocale } from 'next-intl'
 import { createClientSupabase } from '@/lib/supabase'
 import { useSearchParams } from 'next/navigation'
 import { todayInLasVegas } from '@/lib/dailyReport/dateUtils'
+import {
+  fetchGuideToursVisibleUntil,
+  filterToursByGuideVisibleUntil,
+} from '@/lib/guideToursVisibleUntil'
 
 interface TeamChatRoom {
   id: string
@@ -227,16 +231,22 @@ export default function GuideChatPage() {
         
         if (!currentUserEmail) return []
 
-        // 최근 30일간의 투어 데이터 가져오기
+        // 최근 30일간의 투어 데이터 가져오기 (+ 가이드 공개 마감일)
         const thirtyDaysAgo = new Date()
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
         const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0]
 
-        const { data: toursData, error } = await supabaseClient
+        const guideVisibleUntil = await fetchGuideToursVisibleUntil(supabaseClient)
+        let toursQuery = supabaseClient
           .from('tours')
           .select('*')
           .or(`tour_guide_id.eq.${currentUserEmail},assistant_id.eq.${currentUserEmail}`)
           .gte('tour_date', thirtyDaysAgoStr)
+        if (guideVisibleUntil) {
+          toursQuery = toursQuery.lte('tour_date', guideVisibleUntil)
+        }
+
+        const { data: toursDataRaw, error } = await toursQuery
           .order('tour_date', { ascending: false })
           .limit(50)
 
@@ -245,8 +255,10 @@ export default function GuideChatPage() {
           return []
         }
 
+        const toursData = filterToursByGuideVisibleUntil(toursDataRaw || [], guideVisibleUntil)
+
         // 상품 정보 가져오기
-        const productIds = [...new Set((toursData || []).map(tour => tour.product_id).filter((id): id is string => id != null))]
+        const productIds = [...new Set(toursData.map(tour => tour.product_id).filter((id): id is string => id != null))]
         let productMap = new Map()
         let productEnMap = new Map()
         

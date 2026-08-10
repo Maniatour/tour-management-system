@@ -5,6 +5,7 @@ import {
   getGoogleBusinessAccessToken,
   listGoogleBusinessLocations,
 } from '@/lib/googleBusinessConnection'
+import { isGoogleBusinessTokenExpiredError } from '@/lib/googleBusinessOAuth'
 
 /**
  * GET /api/admin/google-business/locations?account=accounts/123
@@ -59,7 +60,8 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('[google-business/locations]', error)
     const message = error instanceof Error ? error.message : 'locations_failed'
-    const status = message === 'not_connected' ? 400 : 500
+    const status =
+      message === 'not_connected' ? 400 : isGoogleBusinessTokenExpiredError(message) ? 401 : 500
     return NextResponse.json({ ok: false, error: message }, { status })
   }
 }

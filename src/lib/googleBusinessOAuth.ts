@@ -163,6 +163,31 @@ export async function exchangeGoogleBusinessAuthCode(input: {
   }
 }
 
+/** Stable error code when Google refresh token is expired, revoked, or otherwise invalid. */
+export const GOOGLE_BUSINESS_TOKEN_EXPIRED_OR_REVOKED = 'token_expired_or_revoked'
+
+export function isGoogleBusinessRefreshTokenInvalid(
+  detail: string,
+  oauthError?: string | null
+): boolean {
+  const err = (oauthError || '').toLowerCase()
+  const text = detail.toLowerCase()
+  return (
+    err === 'invalid_grant' ||
+    text.includes('invalid_grant') ||
+    text.includes('expired or revoked') ||
+    text.includes('token has been expired') ||
+    text.includes('token has been revoked')
+  )
+}
+
+export function isGoogleBusinessTokenExpiredError(message: string): boolean {
+  return (
+    message === GOOGLE_BUSINESS_TOKEN_EXPIRED_OR_REVOKED ||
+    isGoogleBusinessRefreshTokenInvalid(message)
+  )
+}
+
 export async function refreshGoogleBusinessAccessToken(
   refreshToken: string
 ): Promise<{ accessToken: string; expiresIn: number | null }> {
@@ -185,7 +210,11 @@ export async function refreshGoogleBusinessAccessToken(
   }
 
   if (!tokenRes.ok || tokenData.error || !tokenData.access_token) {
-    throw new Error(tokenData.error_description || tokenData.error || 'token_refresh_failed')
+    const detail = tokenData.error_description || tokenData.error || 'token_refresh_failed'
+    if (isGoogleBusinessRefreshTokenInvalid(detail, tokenData.error)) {
+      throw new Error(GOOGLE_BUSINESS_TOKEN_EXPIRED_OR_REVOKED)
+    }
+    throw new Error(detail)
   }
 
   return {

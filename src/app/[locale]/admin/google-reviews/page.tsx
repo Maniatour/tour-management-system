@@ -16,6 +16,7 @@ import {
   type ReviewSource,
   type ReviewSourceTabWithCount,
 } from '@/lib/reviewSources'
+import { isGoogleBusinessTokenExpiredError } from '@/lib/googleBusinessOAuth'
 import type {
   GoogleBusinessAccountItem,
   GoogleBusinessConnectionStatus,
@@ -63,6 +64,7 @@ export default function AdminGoogleReviewsPage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [activeSource, setActiveSource] = useState<ReviewSource>('google')
   const [statusLoadFailed, setStatusLoadFailed] = useState(false)
+  const [tokenExpired, setTokenExpired] = useState(false)
   const [connectionPanelOpen, setConnectionPanelOpen] = useState(true)
   const [sourceReviewSummaries, setSourceReviewSummaries] = useState<
     Partial<Record<ReviewSourceTabWithCount, GoogleReviewSourceTabSummary>>
@@ -76,11 +78,11 @@ export default function AdminGoogleReviewsPage() {
 
   const googleTabStatus = useMemo((): GoogleTabStatus => {
     if (loadingStatus) return 'loading'
-    if (oauthError || statusLoadFailed) return 'error'
+    if (oauthError || statusLoadFailed || tokenExpired) return 'error'
     if (!status?.connected) return 'disconnected'
     if (!status.googleLocationName || locationsHint) return 'warning'
     return 'connected'
-  }, [loadingStatus, oauthError, status, statusLoadFailed, locationsHint])
+  }, [loadingStatus, oauthError, status, statusLoadFailed, tokenExpired, locationsHint])
 
   const googleTabStatusLabel = useMemo(() => {
     switch (googleTabStatus) {
@@ -277,8 +279,17 @@ export default function AdminGoogleReviewsPage() {
       const data = (await res.json()) as AccountsResponse
       if (!res.ok || !data.ok) {
         console.error('[admin/google-reviews] accounts', data.error)
+        if (data.error && isGoogleBusinessTokenExpiredError(data.error)) {
+          setTokenExpired(true)
+          setLocationsHint(
+            isKo
+              ? 'Google 연결이 만료되었거나 철회되었습니다. 「다시 연결」을 눌러 권한을 다시 허용하세요.'
+              : 'Google access expired or was revoked. Click Reconnect and grant access again.'
+          )
+        }
         return
       }
+      setTokenExpired(false)
       setAccounts(data.accounts ?? [])
       setSelectedAccount((prev) => prev || data.accounts?.[0]?.name || '')
     } catch (error) {
@@ -286,7 +297,7 @@ export default function AdminGoogleReviewsPage() {
     } finally {
       setLoadingAccounts(false)
     }
-  }, [])
+  }, [isKo])
 
   const loadLocations = useCallback(
     async (accountName: string) => {
@@ -303,10 +314,20 @@ export default function AdminGoogleReviewsPage() {
         )
         const data = (await res.json()) as LocationsResponse
         if (!res.ok || !data.ok) {
+          if (data.error && isGoogleBusinessTokenExpiredError(data.error)) {
+            setTokenExpired(true)
+            setLocationsHint(
+              isKo
+                ? 'Google 연결이 만료되었거나 철회되었습니다. 「다시 연결」을 눌러 권한을 다시 허용하세요.'
+                : 'Google access expired or was revoked. Click Reconnect and grant access again.'
+            )
+            return
+          }
           const err = data.error || (isKo ? '위치 목록을 불러오지 못했습니다.' : 'Failed to load locations.')
           setLocationsHint(err)
           return
         }
+        setTokenExpired(false)
         setLocations(data.locations ?? [])
         if (data.resolvedAccountName && data.resolvedAccountName !== accountName) {
           setSelectedAccount(data.resolvedAccountName)
@@ -338,6 +359,8 @@ export default function AdminGoogleReviewsPage() {
 
   useEffect(() => {
     if (searchParams.get('success') === '1') {
+      setTokenExpired(false)
+      setLocationsHint(null)
       void loadStatus()
     }
   }, [searchParams, loadStatus])
@@ -408,6 +431,8 @@ export default function AdminGoogleReviewsPage() {
       setLocations([])
       setSelectedAccount('')
       setSelectedLocation('')
+      setTokenExpired(false)
+      setLocationsHint(null)
       setStatus(emptyStatus())
       setStatusLoadFailed(false)
     } catch (error) {
@@ -554,10 +579,14 @@ export default function AdminGoogleReviewsPage() {
           </div>
           {loadingStatus ? (
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground shrink-0" aria-hidden />
-          ) : status?.connected ? (
+          ) : status?.connected && !tokenExpired ? (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-3 py-1 text-xs font-medium text-success shrink-0">
               <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
               {isKo ? '연결됨' : 'Connected'}
+            </span>
+          ) : tokenExpired ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-danger/10 px-3 py-1 text-xs font-medium text-danger shrink-0">
+              {isKo ? '재연결 필요' : 'Reconnect needed'}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground shrink-0">
@@ -570,6 +599,27 @@ export default function AdminGoogleReviewsPage() {
         <div className="space-y-6 pt-4 mt-2 border-t border-border/50">
         {status?.connected ? (
           <div className="space-y-4">
+            {tokenExpired ? (
+              <div className="rounded-xl border border-danger/30 bg-danger/5 p-4 text-sm space-y-3">
+                <p className="text-danger font-medium">
+                  {isKo
+                    ? 'Google OAuth 토큰이 만료되었거나 철회되었습니다.'
+                    : 'Google OAuth token expired or was revoked.'}
+                </p>
+                <p className="text-muted-foreground">
+                  {isKo
+                    ? '계정·위치 목록을 불러올 수 없습니다. 아래 「다시 연결」로 Google 권한을 다시 허용하세요.'
+                    : 'Accounts and locations cannot be loaded. Use Reconnect below to grant Google access again.'}
+                </p>
+                <a
+                  href={connectUrl}
+                  className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-95"
+                >
+                  <Link2 className="h-4 w-4" aria-hidden />
+                  {isKo ? '다시 연결' : 'Reconnect'}
+                </a>
+              </div>
+            ) : null}
             <div className="rounded-xl border border-border/50 bg-muted/30 p-4 text-sm space-y-2">
               <p>
                 <span className="text-muted-foreground">{isKo ? 'Google 계정' : 'Google account'}: </span>

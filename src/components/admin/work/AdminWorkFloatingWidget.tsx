@@ -27,12 +27,11 @@ import {
   clampFloatingPanelPosition,
   clampFloatingPanelSize,
   defaultFloatingPanelPosition,
-  fabBottomCss,
-  FAB_RIGHT_PX,
   suggestFloatingPanelSize,
   ADMIN_FLOATING_FAB_Z_CLASS,
   type FloatingPanelSize,
 } from '@/lib/adminFloatingFabLayout'
+import { useDraggableAdminFab } from '@/hooks/useDraggableAdminFab'
 import { AdminFloatingPanelShell } from '@/components/admin/AdminFloatingPanelShell'
 import { useAdminMobileViewport } from '@/hooks/useAdminMobileViewport'
 import {
@@ -60,6 +59,7 @@ import { AdminWorkCredentialVaultPanel } from '@/components/admin/work/AdminWork
 import { canAccessStaffCredentialVault } from '@/lib/staffCredentialVault'
 
 const STORAGE_KEY = 'adminWorkWidget'
+const FAB_POS_STORAGE_KEY = 'adminWorkWidget.fabPos'
 const HEADER_HEIGHT = 50
 const TAB_BAR_HEIGHT = 42
 const DEFAULT_SIZE: FloatingPanelSize = { width: 400, height: 560 }
@@ -134,6 +134,11 @@ export default function AdminWorkFloatingWidget({ locale }: AdminWorkFloatingWid
 
   const work = useTeamBoardWorkData({ enabled: visible, loadOnMount: false })
   const isMobile = useAdminMobileViewport()
+  const {
+    fabStyle,
+    onPointerDown: onFabPointerDown,
+    consumeClickIfDragged,
+  } = useDraggableAdminFab(FAB_POS_STORAGE_KEY, FAB_STACK_INDEX)
 
   const [panelOpen, setPanelOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<WorkTab>('announcements')
@@ -951,12 +956,13 @@ export default function AdminWorkFloatingWidget({ locale }: AdminWorkFloatingWid
       <>
         <button
           type="button"
-          onClick={openWidget}
-          className={`fixed ${ADMIN_FLOATING_FAB_Z_CLASS} flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-sky-600 to-blue-700 text-white shadow-xl ring-2 ring-white/20 transition hover:scale-105 hover:shadow-blue-900/30 active:scale-95 lg:h-14 lg:w-14 lg:shadow-2xl`}
-          style={{
-            right: `${FAB_RIGHT_PX / 16}rem`,
-            bottom: fabBottomCss(FAB_STACK_INDEX),
+          onPointerDown={onFabPointerDown}
+          onClick={() => {
+            if (consumeClickIfDragged()) return
+            openWidget()
           }}
+          className={`fixed ${ADMIN_FLOATING_FAB_Z_CLASS} flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-sky-600 to-blue-700 text-white shadow-xl ring-2 ring-white/20 transition hover:scale-105 hover:shadow-blue-900/30 active:scale-95 lg:h-14 lg:w-14 lg:shadow-2xl`}
+          style={fabStyle}
           aria-label={isKo ? '업무 관리 열기' : 'Open work management'}
           title={headerTitle}
         >

@@ -15,6 +15,10 @@ import { useAuth } from '@/contexts/AuthContext'
 import { reservationExcludedFromTourSettlementAggregates } from '@/lib/tourStatsCalculator'
 import { chunkStrings } from '@/lib/supabaseInChunks'
 import { teamMemberNameForLocale, teamMemberNickDisplayName } from '@/lib/teamMemberDisplayName'
+import {
+  fetchGuideToursVisibleUntil,
+  filterToursByGuideVisibleUntil,
+} from '@/lib/guideToursVisibleUntil'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 
@@ -83,16 +87,26 @@ export default function GuideTours({}: GuideToursProps) {
         query = query.or(`tour_guide_id.eq.${currentUserEmail},assistant_id.eq.${currentUserEmail}`)
       }
       // 관리자/매니저는 모든 투어를 볼 수 있음
+
+      const guideVisibleUntil = await fetchGuideToursVisibleUntil(supabase)
+      const applyGuideVisibleCutoff = userRole === 'team_member' || isSimulating
+      if (applyGuideVisibleCutoff && guideVisibleUntil) {
+        query = query.lte('tour_date', guideVisibleUntil)
+      }
       
       const { data, error } = await query.order('tour_date', { ascending: false })
       
       if (error) throw error
-      return data || []
+      const rows = data || []
+      if (applyGuideVisibleCutoff && guideVisibleUntil) {
+        return filterToursByGuideVisibleUntil(rows, guideVisibleUntil)
+      }
+      return rows
     },
     cacheTime: 2 * 60 * 1000, // 2분 캐시
     ...(currentUserEmail
       ? {
-          cacheKey: `guide-tours-${currentUserEmail}-${userRole}`,
+          cacheKey: `guide-tours-${currentUserEmail}-${userRole}-${isSimulating ? 'sim' : 'live'}`,
           offlineGuideCache: true as const,
         }
       : {}),

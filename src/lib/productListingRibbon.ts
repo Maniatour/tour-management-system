@@ -5,8 +5,6 @@ export const PRODUCT_LISTING_RIBBON_SHOW_TAG = 'likely-to-sell-out'
 /** @deprecated legacy explicit hide tag */
 export const PRODUCT_LISTING_RIBBON_HIDE_TAG = 'hide-likely-to-sell-out'
 
-const SMALL_GROUP_MAX_PARTICIPANTS = 20
-
 export type ProductListingRibbonId =
   | 'likely-to-sell-out'
   | 'best-seller'
@@ -105,14 +103,7 @@ export function resolveProductListingRibbon(product: RibbonProduct): ResolvedPro
     }
   }
 
-  if (product.max_participants != null && product.max_participants <= SMALL_GROUP_MAX_PARTICIPANTS) {
-    return {
-      id: 'likely-to-sell-out',
-      variant: 'likely-to-sell-out',
-      source: 'auto',
-    }
-  }
-
+  // Do not auto-apply urgency badges — only explicit ribbon tags should show scarcity/promo labels.
   return null
 }
 

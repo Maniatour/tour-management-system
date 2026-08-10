@@ -15,6 +15,7 @@ import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import type { ScheduleProductRef } from '@/lib/scheduleAirportPickDropGroup'
 
 import type { ScheduleDateNoteEntry } from '@/lib/scheduleDateNotes'
+import { GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS } from '@/lib/guideToursVisibleUntil'
 
 export type ScheduleProductGridProps = {
   isDisplayMode: boolean
@@ -34,6 +35,7 @@ export type ScheduleProductGridProps = {
   scheduleHealthProductCellAlertSet: Set<string>
   scheduleInteractionDragging: boolean
   isToday: (dateString: string) => boolean
+  isGuideVisibleUntilCutoff: (dateString: string) => boolean
   openDateNoteModal: (dateString: string) => void
   productScheduleData: Record<string, ScheduleProductGridProductRow>
   productTotals: Record<string, ScheduleProductDayTotal>
@@ -75,6 +77,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
     scheduleHealthProductCellAlertSet,
     scheduleInteractionDragging,
     isToday,
+    isGuideVisibleUntilCutoff,
     openDateNoteModal,
     productScheduleData,
     productTotals,
@@ -130,6 +133,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
     products,
     scheduleHealthProductCellAlertSet,
     isToday,
+    isGuideVisibleUntilCutoff,
     handleProductRowDragOver,
     handleProductRowDragLeave,
     handleProductRowDrop,
@@ -236,8 +240,13 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
                         : healthHeaderAlert
                           ? 'bg-red-600 text-[#ffff00]'
                           : 'bg-[color-mix(in_oklch,var(--primary)_5%,white)] text-gray-700'
-                    }`}
+                    } ${isGuideVisibleUntilCutoff(dateString) ? GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS : ''}`}
                     style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
+                    title={
+                      isGuideVisibleUntilCutoff(dateString)
+                        ? '가이드 공개 마감일 — 이 날짜 이후 투어는 가이드에게 보이지 않습니다'
+                        : undefined
+                    }
                   >
                     <ScheduleHoverTooltip
                       disabled={scheduleInteractionDragging}
@@ -344,7 +353,9 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
                 return (
                   <td
                     key={dateString}
-                    className="p-0 text-center text-xs"
+                    className={`p-0 text-center text-xs ${
+                      isGuideVisibleUntilCutoff(dateString) ? GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS : ''
+                    }`}
                     style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                   >
                     <div className={`${isToday(dateString) ? 'border-2 border-red-500 bg-red-50' : ''} px-1 py-0.5`}>

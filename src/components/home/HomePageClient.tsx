@@ -35,8 +35,8 @@ function HomePageInner() {
   const isAdmin = userRole === 'admin' || userRole === 'manager'
 
   const getPriceLabel = (price: number | null) => {
-    if (price == null) {
-      return locale === 'en' ? 'Pricing to be announced' : '가격 추후 공지'
+    if (price == null || !(Number.isFinite(price) && price > 0)) {
+      return locale === 'en' ? t('priceOnRequest') : t('priceOnRequest')
     }
 
     const formatted = new Intl.NumberFormat('en-US', {

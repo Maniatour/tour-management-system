@@ -19,6 +19,7 @@ const STATIC_PATHS = [
   '/privacy-policy',
   '/sms-terms',
   '/cancellation-refund-policy',
+  '/cookie-policy',
 ] as const
 
 async function fetchPublishedProductIds(): Promise<string[]> {

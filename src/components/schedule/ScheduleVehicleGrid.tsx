@@ -11,6 +11,7 @@ import type {
   ScheduleVehicleGridMonthDay,
   VehicleOilMaintenanceSummary,
 } from '@/lib/scheduleVehicleGridTypes'
+import { GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS } from '@/lib/guideToursVisibleUntil'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Tour = any
@@ -31,6 +32,7 @@ export type ScheduleVehicleGridProps = {
   tours: Tour[]
   tourCoversScheduleDate: (tour: Tour, dateString: string) => boolean
   isToday: (dateString: string) => boolean
+  isGuideVisibleUntilCutoff: (dateString: string) => boolean
   draggedVehicleRowId: string | null
   canEditVehicleFromSchedule: boolean
   defaultPresetIds: string[]
@@ -68,6 +70,7 @@ export default function ScheduleVehicleGrid(props: ScheduleVehicleGridProps) {
     tours,
     tourCoversScheduleDate,
     isToday,
+    isGuideVisibleUntilCutoff,
     draggedVehicleRowId,
     canEditVehicleFromSchedule,
     defaultPresetIds,
@@ -288,7 +291,9 @@ export default function ScheduleVehicleGrid(props: ScheduleVehicleGridProps) {
                       locale === 'ko'
                         ? '엔진오일 교체 필요 — 투어 배정 전 정비 권장'
                         : 'Engine oil change needed before next tour assignment'
-                    const baseTdClass = isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''
+                    const baseTdClass = `${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''} ${
+                      isGuideVisibleUntilCutoff(dateString) ? GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS : ''
+                    }`
                     const rentalBgClass = isInRentalPeriod ? 'bg-amber-200' : ''
                     const maintenanceGapBgClass = needsMaintenanceGap ? 'bg-orange-50 ring-1 ring-orange-400 ring-inset' : ''
                     const cellHoverContent = needsMaintenanceGap
@@ -405,7 +410,9 @@ export default function ScheduleVehicleGrid(props: ScheduleVehicleGridProps) {
                 return (
                   <td
                     key={dateString}
-                    className={`px-1 py-0.5 text-center text-xs ${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''}`}
+                    className={`px-1 py-0.5 text-center text-xs ${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''} ${
+                      isGuideVisibleUntilCutoff(dateString) ? GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS : ''
+                    }`}
                     style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                   >
                     {isMismatch ? (

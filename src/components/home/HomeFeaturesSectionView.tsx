@@ -18,7 +18,7 @@ export default function HomeFeaturesSectionView({
   if (variant === 'maniatour-trust-six') {
     return (
       <CustomerPageZone zone="home-features">
-        <section className="kv-section kv-section--muted">
+        <section id="home-about" className="kv-section kv-section--muted">
           <div className="kv-container">
             <HomeManiaTourSectionHeader title={t('homeWhyManiaTourTitle')} />
             <div className="kv-features-grid">

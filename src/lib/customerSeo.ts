@@ -2,9 +2,9 @@ import type { Metadata } from 'next'
 import { ROUTING_LOCALES, normalizeSiteLocale, type SiteLocale } from '@/lib/siteLocales'
 
 /** Public marketing site name (customer-facing). */
-export const CUSTOMER_SEO_SITE_NAME = 'Kovegas'
+export const CUSTOMER_SEO_SITE_NAME = 'Mania Tour'
 
-export const CUSTOMER_SEO_BRAND_LINE = 'Kovegas · Las Vegas Mania Tour'
+export const CUSTOMER_SEO_BRAND_LINE = 'Las Vegas Mania Tour'
 
 const DEFAULT_OG_PATH = '/images/destinations/grand-canyon.jpg'
 
@@ -26,36 +26,36 @@ type SeoCopy = {
 
 const SEO_COPY: Record<string, SeoCopy> = {
   ko: {
-    titleDefault: 'Kovegas | 라스베이거스·그랜드캐년 투어',
-    titleTemplate: '%s | Kovegas',
+    titleDefault: 'Mania Tour | 라스베이거스·그랜드캐년 투어',
+    titleTemplate: '%s | Mania Tour',
     description:
-      '라스베이거스 출발 그랜드캐년, 앤텔롭캐년, 자이언 등 남서부 USA 투어. 소그룹·한국어 가이드·호텔 픽업. Kovegas(Mania Tour)에서 안전하게 예약하세요.',
-    homeTitle: 'Kovegas | 라스베이거스·그랜드캐년·앤텔롭 투어',
+      '라스베이거스 출발 그랜드캐년, 앤텔롭캐년, 자이언 등 남서부 USA 투어. 소그룹·한국어 가이드·호텔 픽업. Mania Tour에서 안전하게 예약하세요.',
+    homeTitle: 'Mania Tour | 라스베이거스·그랜드캐년·앤텔롭 투어',
     homeDescription:
-      '그랜드캐년, 앤텔롭캐년, 자이언, 브라이스 등 인기 투어를 한곳에서. 소그룹·현지 가이드·무료 취소 옵션. Kovegas에서 바로 예약하세요.',
+      '그랜드캐년, 앤텔롭캐년, 자이언, 브라이스 등 인기 투어를 한곳에서. 소그룹·현지 가이드·무료 취소 옵션. Mania Tour에서 바로 예약하세요.',
     productsTitle: '투어 상품',
     productsDescription:
-      '라스베이거스 출발 당일·숙박 투어, 헬리콥터, 쇼 티켓까지. Kovegas 전체 투어 상품을 확인하세요.',
+      '라스베이거스 출발 당일·숙박 투어, 헬리콥터, 쇼 티켓까지. Mania Tour 전체 투어 상품을 확인하세요.',
     productsTagsTitle: '투어 카테고리·태그',
-    productsTagsDescription: '목적지·여행 스타일별로 Kovegas 투어를 찾아보세요.',
+    productsTagsDescription: '목적지·여행 스타일별로 Mania Tour 투어를 찾아보세요.',
     travelGuideTitle: '트래블 가이드',
     travelGuideDescription: '라스베이거스와 남서부 USA 여행 팁, 일정 추천, 현지 가이드 아티클.',
     customTourTitle: '맞춤 투어 문의',
     customTourDescription: '일정·인원에 맞춘 프라이빗·소그룹 맞춤 투어를 문의하세요.',
   },
   en: {
-    titleDefault: 'Kovegas | Las Vegas & Grand Canyon Tours',
-    titleTemplate: '%s | Kovegas',
+    titleDefault: 'Mania Tour | Las Vegas & Grand Canyon Tours',
+    titleTemplate: '%s | Mania Tour',
     description:
-      'Grand Canyon, Antelope Canyon, Zion and more from Las Vegas. Small groups, hotel pickup, local guides. Book safely with Kovegas (Mania Tour).',
-    homeTitle: 'Kovegas | Las Vegas, Grand Canyon & Antelope Tours',
+      'Grand Canyon, Antelope Canyon, Zion and more from Las Vegas. Small groups, hotel pickup, local guides. Book safely with Mania Tour.',
+    homeTitle: 'Mania Tour | Las Vegas, Grand Canyon & Antelope Tours',
     homeDescription:
       'Book top Southwest USA tours from Las Vegas — Grand Canyon, Antelope Canyon, Zion, Bryce. Small groups and expert local guides.',
     productsTitle: 'Tours',
     productsDescription:
-      'Browse day trips, overnight tours, helicopter flights and show tickets from Las Vegas with Kovegas.',
+      'Browse day trips, overnight tours, helicopter flights and show tickets from Las Vegas with Mania Tour.',
     productsTagsTitle: 'Tour categories',
-    productsTagsDescription: 'Explore Kovegas tours by destination and travel style.',
+    productsTagsDescription: 'Explore Mania Tour by destination and travel style.',
     travelGuideTitle: 'Travel Guide',
     travelGuideDescription: 'Tips and guides for Las Vegas and the American Southwest.',
     customTourTitle: 'Custom tour inquiry',
@@ -184,12 +184,16 @@ export function buildOrganizationJsonLd(locale: string) {
     '@context': 'https://schema.org',
     '@type': 'TravelAgency',
     name: CUSTOMER_SEO_SITE_NAME,
-    alternateName: ['Mania Tour', 'Las Vegas Mania Tour', '코베가스'],
+    alternateName: ['Las Vegas Mania Tour', '마니아투어', 'Kovegas'],
     url: absoluteCustomerUrl(customerLocalizedPath(locale, '/')),
     description: copy.description,
     image: absoluteCustomerUrl(DEFAULT_OG_PATH),
     areaServed: ['Las Vegas', 'Grand Canyon', 'Antelope Canyon', 'Southwest USA'],
-    sameAs: [],
+    sameAs: [
+      'https://www.instagram.com/lasvegasmania/',
+      'https://www.facebook.com/lasvegasmania',
+      'https://www.youtube.com/@lasvegasmania',
+    ],
     brand: {
       '@type': 'Brand',
       name: CUSTOMER_SEO_BRAND_LINE,

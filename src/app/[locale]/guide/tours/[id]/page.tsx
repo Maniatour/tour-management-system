@@ -65,6 +65,10 @@ import {
   formatBalanceEnvelopeLine,
 } from '@/utils/balanceEnvelopeBreakdown'
 import { residentFeeAmountsFromPricingChoicesJson, residentFeeCountsFromPricingChoicesJson } from '@/utils/usResidentChoiceSync'
+import {
+  fetchGuideToursVisibleUntil,
+  isTourDateVisibleToGuide,
+} from '@/lib/guideToursVisibleUntil'
 
 // 타입 정의 (DB 스키마 기반) — 픽업 잔액 헬퍼보다 먼저 두어 타입 순서 유지
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -633,6 +637,20 @@ export default function GuideTourDetailPage() {
       if (userRole === 'team_member' && (tourData as TourRow & { tour_guide_id?: string; assistant_id?: string })?.tour_guide_id !== currentUserEmail && (tourData as TourRow & { tour_guide_id?: string; assistant_id?: string })?.assistant_id !== currentUserEmail) {
         setError(t('errors.noAccess'))
         return
+      }
+
+      // 가이드 공개 마감일 이후 투어는 가이드(또는 시뮬레이션)에게 숨김
+      const applyGuideVisibleCutoff = userRole === 'team_member' || isSimulating
+      if (applyGuideVisibleCutoff) {
+        const visibleUntil = await fetchGuideToursVisibleUntil(supabase)
+        if (!isTourDateVisibleToGuide((tourData as TourRow).tour_date, visibleUntil)) {
+          setError(
+            locale === 'ko'
+              ? '가이드 공개 기간이 지난 투어입니다. 목록에서 확인할 수 없습니다.'
+              : 'This tour is outside the guide visibility window.'
+          )
+          return
+        }
       }
 
       setTour(tourData)

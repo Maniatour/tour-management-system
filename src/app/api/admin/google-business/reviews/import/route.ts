@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireGoogleBusinessAdminAuth } from '@/lib/googleBusinessAdminAuth'
 import { importGoogleBusinessReviewsPage } from '@/lib/googleReviewImport'
+import { isGoogleBusinessTokenExpiredError } from '@/lib/googleBusinessOAuth'
 
 export const maxDuration = 60
 
@@ -31,7 +32,11 @@ export async function POST(request: NextRequest) {
     console.error('[google-business/reviews/import]', error)
     const message = error instanceof Error ? error.message : 'import_failed'
     const status =
-      message === 'location_not_selected' || message === 'not_connected' ? 400 : 500
+      message === 'location_not_selected' || message === 'not_connected'
+        ? 400
+        : isGoogleBusinessTokenExpiredError(message)
+          ? 401
+          : 500
     return NextResponse.json({ ok: false, error: message }, { status })
   }
 }

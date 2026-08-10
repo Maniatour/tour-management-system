@@ -466,7 +466,7 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
       if (reservationIds.length > 1) {
         params.set('ids', reservationIds.join(','))
       }
-      window.location.href = `/${isEnglish ? 'en' : 'ko'}/booking/confirmation?${params.toString()}`
+      window.location.href = `/${locale}/booking/confirmation?${params.toString()}`
     } finally {
       setLoading(false)
     }
@@ -518,7 +518,7 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
       if (reservationIds.length > 1) {
         params.set('ids', reservationIds.join(','))
       }
-      window.location.href = `/${isEnglish ? 'en' : 'ko'}/booking/confirmation?${params.toString()}`
+      window.location.href = `/${locale}/booking/confirmation?${params.toString()}`
     } catch (error) {
       console.error('예약 생성 오류:', error)
       alert(

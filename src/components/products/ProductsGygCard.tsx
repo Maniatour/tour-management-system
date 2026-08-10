@@ -203,11 +203,14 @@ export default function ProductsGygCard({
     <h3 className="gyg-listing-card-title line-clamp-2">{title}</h3>
   )
 
-  const formattedPrice = `${new Intl.NumberFormat(locale === 'en' ? 'en-US' : 'ko-KR', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(price)}+`
+  const formattedPrice =
+    !(Number.isFinite(price) && price > 0)
+      ? tCommon('priceOnRequest')
+      : `${new Intl.NumberFormat(locale === 'en' ? 'en-US' : 'ko-KR', {
+          style: 'currency',
+          currency: 'USD',
+          maximumFractionDigits: 0,
+        }).format(price)}+`
 
   const priceBlock = adminCardEdits ? (
     <button
@@ -221,12 +224,12 @@ export default function ProductsGygCard({
       title={adminCardEdits.editPriceLabel}
       aria-label={adminCardEdits.editPriceLabel}
     >
-      {priceLabel.trim() ? `${priceLabel} ` : null}
+      {Number.isFinite(price) && price > 0 && priceLabel.trim() ? `${priceLabel} ` : null}
       <span className="font-bold text-[#ff5533]">{formattedPrice}</span>
     </button>
   ) : (
     <p className={`gyg-listing-card-price${footerStart ? '' : ' ml-auto'}`}>
-      {priceLabel.trim() ? `${priceLabel} ` : null}
+      {Number.isFinite(price) && price > 0 && priceLabel.trim() ? `${priceLabel} ` : null}
       <span className="font-bold text-[#ff5533]">{formattedPrice}</span>
     </p>
   )

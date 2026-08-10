@@ -31,6 +31,7 @@ type PendingOffChange = {
 }
 
 import type { ScheduleDateNoteEntry } from '@/lib/scheduleDateNotes'
+import { GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS } from '@/lib/guideToursVisibleUntil'
 
 export type ScheduleGuideGridProps = {
   locale: string
@@ -38,6 +39,7 @@ export type ScheduleGuideGridProps = {
   dayColumnWidthCalc: string
   dynamicMinTableWidthPx: number
   isToday: (dateString: string) => boolean
+  isGuideVisibleUntilCutoff: (dateString: string) => boolean
   guideTotals: Record<string, ScheduleGuideDayTotal>
   guideVsProductDailyTotalMismatch: ScheduleGuideVsProductMismatch
   guideScheduleData: Record<string, ScheduleGuideScheduleRow>
@@ -115,6 +117,7 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
     dayColumnWidthCalc,
     dynamicMinTableWidthPx,
     isToday,
+    isGuideVisibleUntilCutoff,
     guideTotals,
     guideVsProductDailyTotalMismatch,
     guideScheduleData,
@@ -188,6 +191,7 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
     monthDays,
     dayColumnWidthCalc,
     isToday,
+    isGuideVisibleUntilCutoff,
     selectedTeamMembers,
     cdlDriverEmailSet,
     cdlKoreanDriverEmailSet,
@@ -308,7 +312,9 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
                 {monthDays.map(({ date, dayOfWeek, dateString, isEdgePadding }) => (
                   <th 
                     key={dateString} 
-                    className="p-0 text-center text-xs font-medium text-gray-700"
+                    className={`p-0 text-center text-xs font-medium text-gray-700 ${
+                      isGuideVisibleUntilCutoff(dateString) ? GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS : ''
+                    }`}
                     style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                   >
                     <div className={`${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''} ${isEdgePadding ? 'bg-slate-100/80' : ''} px-1 py-0.5`}>
@@ -351,7 +357,9 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
                   return (
                     <td
                       key={dateString}
-                      className="px-0 py-0 text-center text-xs"
+                      className={`px-0 py-0 text-center text-xs ${
+                        isGuideVisibleUntilCutoff(dateString) ? GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS : ''
+                      }`}
                       style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                     >
                       <div className={`px-1 py-0.5 ${cellWrapClass} ${valueClass}`}>

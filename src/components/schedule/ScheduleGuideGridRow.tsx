@@ -21,6 +21,7 @@ import {
 } from '@/lib/guideAssignmentStatus'
 import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import type { ScheduleGuideGridProps } from '@/components/schedule/ScheduleGuideGrid'
+import { GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS } from '@/lib/guideToursVisibleUntil'
 
 function tourMatchesScheduleDate(tour: Tour, dateString: string): boolean {
   return normalizeTourDateKey(tour.tour_date) === dateString
@@ -35,6 +36,7 @@ export type ScheduleGuideGridRowProps = Pick<
   | 'monthDays'
   | 'dayColumnWidthCalc'
   | 'isToday'
+  | 'isGuideVisibleUntilCutoff'
   | 'selectedTeamMembers'
   | 'cdlDriverEmailSet'
   | 'cdlKoreanDriverEmailSet'
@@ -147,6 +149,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
     getTourSummary,
     getGuideScheduleTourHoverText,
     isToday,
+    isGuideVisibleUntilCutoff,
   } = props
   const getProductDisplayProps = getScheduleProductDisplayProps
 
@@ -417,7 +420,9 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
               return (
                 <div 
                   key={dateString} 
-                  className={`px-1 py-0 text-center text-xs relative ${getGuideScheduleCellBgClass(dateString, true)}`}
+                  className={`px-1 py-0 text-center text-xs relative ${getGuideScheduleCellBgClass(dateString, true)} ${
+                    isGuideVisibleUntilCutoff(dateString) ? GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS : ''
+                  }`}
                   style={{ minWidth: '40px', boxSizing: 'border-box' }}
                 >
                   <div
@@ -499,7 +504,9 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
             return (
               <div 
                 key={dateString} 
-                className={`px-1 py-0 text-center text-xs relative ${getGuideScheduleCellBgClass(dateString, Boolean(dayData))}`}
+                className={`px-1 py-0 text-center text-xs relative ${getGuideScheduleCellBgClass(dateString, Boolean(dayData))} ${
+                  isGuideVisibleUntilCutoff(dateString) ? GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS : ''
+                }`}
                 style={{ minWidth: '40px', boxSizing: 'border-box' }}
               >
                 <div

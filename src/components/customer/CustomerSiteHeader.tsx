@@ -147,9 +147,9 @@ export default function CustomerSiteHeader({ brandName }: CustomerSiteHeaderProp
         { href: `/${locale}/products`, label: t('navTours') },
         { href: `/${locale}/products/tags`, label: t('navDestinations') },
         { href: `/${locale}/products?tag=${encodeURIComponent('당일')}`, label: t('navTourStyles') },
-        { href: `/${locale}/products/tags`, label: t('navTravelGuide') },
+        { href: `/${locale}/travel-guide`, label: t('navTravelGuide') },
         { href: `/${locale}#home-reviews`, label: t('navReviews') },
-        { href: `/${locale}/products`, label: t('navAboutUs') },
+        { href: `/${locale}#home-about`, label: t('navAboutUs') },
       ]
     : [
         { href: `/${locale}/products/tags`, label: t('navPlacesToSee') },

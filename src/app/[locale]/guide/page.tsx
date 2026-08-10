@@ -19,6 +19,10 @@ import GuideVehicleBadge from '@/components/guide/GuideVehicleBadge'
 import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
 import { fetchPersonallyRespondedTourIds } from '@/lib/guideAssignmentStatus'
 import { translateOffScheduleReason } from '@/lib/offScheduleReasonI18n'
+import {
+  fetchGuideToursVisibleUntil,
+  filterToursByGuideVisibleUntil,
+} from '@/lib/guideToursVisibleUntil'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Omit<Tour, 'assignment_status'> & {
@@ -646,7 +650,7 @@ export default function GuideDashboard() {
           return
         }
 
-        // 투어 가이드가 배정된 투어 가져오기 (최근 30일 + 미래 30일)
+        // 투어 가이드가 배정된 투어 가져오기 (최근 30일 + 미래 30일, 가이드 공개 마감일 적용)
         const thirtyDaysAgo = new Date()
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
         const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0]
@@ -655,10 +659,18 @@ export default function GuideDashboard() {
         thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30)
         const thirtyDaysLaterStr = thirtyDaysLater.toISOString().split('T')[0]
 
+        const guideVisibleUntil = await fetchGuideToursVisibleUntil(supabase)
+        const applyGuideVisibleCutoff = userRole === 'team_member' || isSimulating
+        const upperBound =
+          applyGuideVisibleCutoff && guideVisibleUntil && guideVisibleUntil < thirtyDaysLaterStr
+            ? guideVisibleUntil
+            : thirtyDaysLaterStr
+
         console.log('Tour query date range:', { 
           from: thirtyDaysAgoStr, 
-          to: thirtyDaysLaterStr, 
+          to: upperBound, 
           today: today,
+          guideVisibleUntil,
           currentUserEmail,
           userRole,
           isSimulating
@@ -669,7 +681,7 @@ export default function GuideDashboard() {
           .from('tours')
           .select('*')
           .gte('tour_date', thirtyDaysAgoStr)
-          .lte('tour_date', thirtyDaysLaterStr)
+          .lte('tour_date', upperBound)
           .order('tour_date', { ascending: true })
           .limit(100)
 
@@ -688,10 +700,14 @@ export default function GuideDashboard() {
           return
         }
 
-        console.log('Raw tours data from database:', toursData)
+        const toursWithinGuideHorizon = applyGuideVisibleCutoff
+          ? filterToursByGuideVisibleUntil(toursData || [], guideVisibleUntil)
+          : (toursData || [])
+
+        console.log('Raw tours data from database:', toursWithinGuideHorizon)
         
         // 오늘 날짜의 투어가 있는지 확인
-        const todayTours = (toursData || []).filter(tour => tour.tour_date === today)
+        const todayTours = toursWithinGuideHorizon.filter(tour => tour.tour_date === today)
         console.log('Today tours in raw data:', todayTours.map(t => ({ 
           id: t.id, 
           tour_date: t.tour_date, 
@@ -701,7 +717,7 @@ export default function GuideDashboard() {
         })))
 
         // 상품 정보 가져오기
-        const productIds = [...new Set((toursData || []).map(tour => tour.product_id).filter((id): id is string => Boolean(id)))]
+        const productIds = [...new Set(toursWithinGuideHorizon.map(tour => tour.product_id).filter((id): id is string => Boolean(id)))]
         let productMap = new Map()
         let productEnMap = new Map()
         let productInternalKoMap = new Map()
@@ -730,8 +746,8 @@ export default function GuideDashboard() {
         }
 
         // 팀원 정보 가져오기
-        const guideEmails = [...new Set((toursData || []).map(tour => tour.tour_guide_id).filter((e): e is string => Boolean(e)))]
-        const assistantEmails = [...new Set((toursData || []).map(tour => tour.assistant_id).filter((e): e is string => Boolean(e)))]
+        const guideEmails = [...new Set(toursWithinGuideHorizon.map(tour => tour.tour_guide_id).filter((e): e is string => Boolean(e)))]
+        const assistantEmails = [...new Set(toursWithinGuideHorizon.map(tour => tour.assistant_id).filter((e): e is string => Boolean(e)))]
         const allEmails = [...new Set([...guideEmails, ...assistantEmails])]
         
         let teamMap = new Map()
@@ -804,7 +820,7 @@ export default function GuideDashboard() {
         }
 
         // 차량 정보 가져오기
-        const vehicleIds = [...new Set((toursData || []).map(tour => tour.tour_car_id).filter((id): id is string => Boolean(id)))]
+        const vehicleIds = [...new Set(toursWithinGuideHorizon.map(tour => tour.tour_car_id).filter((id): id is string => Boolean(id)))]
         
         let vehicleMap = new Map<string, { vehicle_number: string | null; rental_agreement_file_url: string | null }>()
         if (vehicleIds.length > 0) {
@@ -859,7 +875,7 @@ export default function GuideDashboard() {
         }
 
         // 예약 정보로 인원 계산
-        const reservationIds = [...new Set((toursData || []).flatMap(tour => {
+        const reservationIds = [...new Set(toursWithinGuideHorizon.flatMap(tour => {
           return normalizeReservationIds(tour.reservation_ids)
         }))]
 
@@ -911,7 +927,7 @@ export default function GuideDashboard() {
         }
 
         // 투어 데이터 확장
-        const extendedTours: ExtendedTour[] = (toursData || []).map(tour => {
+        const extendedTours: ExtendedTour[] = toursWithinGuideHorizon.map(tour => {
           let assignedPeople = 0
           let assignedAdults = 0
           let assignedChildren = 0

@@ -212,3 +212,65 @@ export function setAdminTodoDockLayoutActive(active: boolean, width?: number): v
   root.classList.remove(ADMIN_TODO_DOCKED_HTML_CLASS)
   root.style.removeProperty(ADMIN_TODO_DOCK_WIDTH_CSS_VAR)
 }
+
+export type AdminFabPosition = { left: number; top: number }
+
+const FAB_DRAG_EDGE_MARGIN_PX = 8
+
+/** 스택 인덱스 기준 기본 FAB 위치 (오른쪽 하단 고정 스택과 동일) */
+export function defaultAdminFabPosition(stackIndex = 0): AdminFabPosition {
+  if (typeof window === 'undefined') return { left: 0, top: 0 }
+  const size = getFabSize()
+  const vw = readViewportWidth()
+  const vh = readViewportHeight()
+  const footer = readEffectiveFooterOffsetPx()
+  const safeBottom = readSafeAreaBottomPx()
+  const bottom = footer + safeBottom + fabBottomExtraPx(stackIndex)
+  return {
+    left: vw - FAB_RIGHT_PX - size,
+    top: vh - bottom - size,
+  }
+}
+
+export function clampAdminFabPosition(left: number, top: number): AdminFabPosition {
+  if (typeof window === 'undefined') return { left, top }
+  const size = getFabSize()
+  const m = FAB_DRAG_EDGE_MARGIN_PX
+  const vw = readViewportWidth()
+  const vh = readViewportHeight()
+  return {
+    left: Math.min(Math.max(m, left), Math.max(m, vw - size - m)),
+    top: Math.min(Math.max(m, top), Math.max(m, vh - size - m)),
+  }
+}
+
+export function readSavedAdminFabPosition(
+  storageKey: string,
+  stackIndex = 0,
+): AdminFabPosition {
+  if (typeof window === 'undefined') return defaultAdminFabPosition(stackIndex)
+  try {
+    const raw = localStorage.getItem(storageKey)
+    if (raw) {
+      const parsed = JSON.parse(raw) as AdminFabPosition
+      if (Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) {
+        return clampAdminFabPosition(parsed.left, parsed.top)
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return defaultAdminFabPosition(stackIndex)
+}
+
+export function writeSavedAdminFabPosition(
+  storageKey: string,
+  pos: AdminFabPosition,
+): void {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(pos))
+  } catch {
+    /* ignore */
+  }
+}

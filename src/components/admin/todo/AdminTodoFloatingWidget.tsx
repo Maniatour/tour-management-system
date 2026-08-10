@@ -158,11 +158,11 @@ import {
   clampFloatingPanelSize,
   clampDockedFloatingPanelWidth,
   defaultFloatingPanelPosition,
-  fabBottomCss,
   setAdminTodoDockLayoutActive,
   ADMIN_FLOATING_FAB_Z_CLASS,
   type FloatingPanelSize,
 } from '@/lib/adminFloatingFabLayout'
+import { useDraggableAdminFab } from '@/hooks/useDraggableAdminFab'
 import { AdminFloatingPanelShell } from '@/components/admin/AdminFloatingPanelShell'
 import { useAdminMobileViewport } from '@/hooks/useAdminMobileViewport'
 import {
@@ -212,6 +212,7 @@ function panelVisibleInTab(tab: TodoListTab, completed: boolean, linkedOnHold: b
 }
 
 const STORAGE_KEY = ADMIN_TODO_WIDGET_STORAGE_KEY
+const FAB_POS_STORAGE_KEY = `${ADMIN_TODO_WIDGET_STORAGE_KEY}.fabPos`
 const HEADER_HEIGHT = 50
 const FAB_STACK_INDEX = 0
 const DEFAULT_SIZE: FloatingPanelSize = { width: 380, height: 520 }
@@ -327,6 +328,11 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
   const { panelOpen, setPanelOpen, openTodoAction } = useAdminTodo()
   const manualCtx = useTeamBoardManualOptional()
   const isMobile = useAdminMobileViewport()
+  const {
+    fabStyle,
+    onPointerDown: onFabPointerDown,
+    consumeClickIfDragged,
+  } = useDraggableAdminFab(FAB_POS_STORAGE_KEY, FAB_STACK_INDEX)
 
   const [pendingCount, setPendingCount] = useState(0)
   const [isMinimized, setIsMinimized] = useState(() =>
@@ -2105,12 +2111,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
       <>
         <button
         type="button"
-        onClick={openWidget}
-        className={`fixed ${ADMIN_FLOATING_FAB_Z_CLASS} flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-emerald-600 to-emerald-700 text-white shadow-xl ring-2 ring-white/20 transition hover:scale-105 hover:shadow-emerald-900/30 active:scale-95 lg:h-14 lg:w-14 lg:shadow-2xl`}
-        style={{
-          right: '1rem',
-          bottom: fabBottomCss(FAB_STACK_INDEX),
+        onPointerDown={onFabPointerDown}
+        onClick={() => {
+          if (consumeClickIfDragged()) return
+          openWidget()
         }}
+        className={`fixed ${ADMIN_FLOATING_FAB_Z_CLASS} flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-emerald-600 to-emerald-700 text-white shadow-xl ring-2 ring-white/20 transition hover:scale-105 hover:shadow-emerald-900/30 active:scale-95 lg:h-14 lg:w-14 lg:shadow-2xl`}
+        style={fabStyle}
         aria-label={isKo ? '업무 Todo 열기' : 'Open work todos'}
         title={headerTitle}
       >

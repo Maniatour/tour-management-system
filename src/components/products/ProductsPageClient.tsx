@@ -21,7 +21,7 @@ import {
   getPreviewProductDisplayName,
 } from '@/lib/customerPageDisplayFromBindings'
 import { useCustomerPageDisplayBindings } from '@/hooks/useCustomerPageDisplayBindings'
-import { fetchProductPrimaryImage } from '@/lib/fetchProductPrimaryImage'
+import { withPrimaryImages } from '@/lib/fetchProductPrimaryImagesBatch'
 import { useCustomerPageSoftReload } from '@/hooks/useCustomerPageSoftReload'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
 import ProductsListingPublicView from '@/components/products/ProductsListingPublicView'
@@ -121,16 +121,7 @@ export default function ProductsPageClient() {
 
         const productsWithImages = isPreviewMode
           ? rows.map((product) => ({ ...product, primary_image: null as string | null }))
-          : await Promise.all(
-              rows.map(async (product) => {
-                try {
-                  const primaryImage = await fetchProductPrimaryImage(product.id)
-                  return { ...product, primary_image: primaryImage }
-                } catch {
-                  return { ...product, primary_image: null as string | null }
-                }
-              })
-            )
+          : await withPrimaryImages(rows)
 
         const productsWithChoicePrices = await withLowestChoicePrices(productsWithImages)
         const ids = productsWithChoicePrices.map((p) => p.id)

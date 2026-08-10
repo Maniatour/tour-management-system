@@ -5,7 +5,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useR
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone, UserCheck } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone, UserCheck, History } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
@@ -174,6 +174,12 @@ import {
   mergeAssignmentStatusResetOnStaffChange,
   type GuideAssignmentChangeItem,
 } from '@/lib/guideAssignmentSchedule'
+import {
+  GUIDE_TOURS_VISIBLE_UNTIL_SETTING_KEY,
+  normalizeGuideToursVisibleUntil,
+  isGuideVisibleUntilCutoffDay,
+  buildGuideToursVisibleUntilSetting,
+} from '@/lib/guideToursVisibleUntil'
 
 const VehicleEditModal = dynamic(() => import('@/components/VehicleEditModal'), {
   ssr: false,
@@ -211,6 +217,11 @@ const GuideScheduleConfirmBulkModal = dynamic(
 
 const GuideScheduleAssignmentHistoryModal = dynamic(
   () => import('@/components/schedule/GuideScheduleAssignmentHistoryModal'),
+  { ssr: false, loading: () => null },
+)
+
+const OffScheduleHistoryModal = dynamic(
+  () => import('@/components/schedule/OffScheduleHistoryModal'),
   { ssr: false, loading: () => null },
 )
 
@@ -732,6 +743,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const toursAssignmentBaselineRef = useRef<Record<string, { tour_guide_id: string | null; assistant_id: string | null }>>({})
   const loadUserSettingsRef = useRef<() => Promise<void>>(async () => {})
   const [currentDate, setCurrentDate] = useState(new Date())
+  /** 가이드 페이지에 이 날짜(포함)까지만 투어 표시. null이면 제한 없음 */
+  const [guideToursVisibleUntil, setGuideToursVisibleUntil] = useState<string | null>(null)
 
   const {
     firstDayOfMonth,
@@ -1107,6 +1120,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
   // 일괄 오프 스케줄 모달 상태
   const [showBatchOffModal, setShowBatchOffModal] = useState(false)
+  const [showOffScheduleHistoryModal, setShowOffScheduleHistoryModal] = useState(false)
   const [showPriceInventoryModal, setShowPriceInventoryModal] = useState(false)
   const [showGuideScheduleBulkModal, setShowGuideScheduleBulkModal] = useState(false)
   const [showGuideScheduleAssignmentBulkModal, setShowGuideScheduleAssignmentBulkModal] = useState(false)
@@ -1223,7 +1237,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   // 공유 설정 저장 (관리자만, 데이터베이스에 저장)
   const saveSharedSetting = async (
     key: string,
-    value: string[] | number | boolean | Record<string, string[]>
+    value:
+      | string
+      | string[]
+      | number
+      | boolean
+      | Record<string, string>
+      | Record<string, string[]>
+      | null
   ) => {
     if (!canManageSharedSchedule || !user?.id) return
     
@@ -1237,9 +1258,18 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           .eq('setting_key', key)
         return
       }
+
+      if (value === '' || value === null) {
+        await supabase
+          .from('shared_settings')
+          .delete()
+          .eq('setting_key', key)
+        localStorage.removeItem(`shared_${key}`)
+        return
+      }
       
-      if (value === null || value === undefined) {
-        console.log('Skipping save for null/undefined value:', key)
+      if (value === undefined) {
+        console.log('Skipping save for undefined value:', key)
         return
       }
 
@@ -1277,7 +1307,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   // 사용자 설정 저장
   const saveUserSetting = async (
     key: string,
-    value: string[] | number | boolean | Record<string, string[]>,
+    value:
+      | string
+      | string[]
+      | number
+      | boolean
+      | Record<string, string>
+      | Record<string, string[]>
+      | null,
     saveAsShared: boolean = false
   ) => {
     try {
@@ -1287,8 +1324,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         return
       }
       
-      if (value === null || value === undefined) {
-        console.log('Skipping save for null/undefined value:', key)
+      if (value === undefined) {
+        console.log('Skipping save for undefined value:', key)
         return
       }
 
@@ -1315,7 +1352,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       const { data: sharedSettings, error: sharedError } = await supabase
         .from('shared_settings')
         .select('setting_key, setting_value')
-        .in('setting_key', ['schedule_selected_products', 'schedule_selected_team_members', 'schedule_product_colors', 'schedule_vehicle_row_order', SCHEDULE_MISC_TOUR_PRODUCTS_SETTING_KEY])
+        .in('setting_key', [
+          'schedule_selected_products',
+          'schedule_selected_team_members',
+          'schedule_product_colors',
+          'schedule_vehicle_row_order',
+          SCHEDULE_MISC_TOUR_PRODUCTS_SETTING_KEY,
+          GUIDE_TOURS_VISIBLE_UNTIL_SETTING_KEY,
+        ])
 
       if (sharedError) {
         console.warn('Error loading shared settings from database:', sharedError)
@@ -1324,9 +1368,18 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       // 공유 설정을 Map으로 변환
       type SharedSetting = {
         setting_key: string
-        setting_value: string[] | number | boolean | Record<string, string[]>
+        setting_value:
+          | string
+          | string[]
+          | number
+          | boolean
+          | Record<string, string>
+          | Record<string, string[]>
       }
-      const sharedSettingsMap = new Map<string, string[] | number | boolean | Record<string, string[]>>()
+      const sharedSettingsMap = new Map<
+        string,
+        string | string[] | number | boolean | Record<string, string> | Record<string, string[]>
+      >()
       if (sharedSettings) {
         (sharedSettings as SharedSetting[]).forEach(setting => {
           sharedSettingsMap.set(setting.setting_key, setting.setting_value)
@@ -1423,6 +1476,19 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           console.warn('Error parsing saved misc tour products:', parseError)
         }
       }
+
+      const sharedGuideVisibleUntilRaw = sharedSettingsMap.has(GUIDE_TOURS_VISIBLE_UNTIL_SETTING_KEY)
+        ? sharedSettingsMap.get(GUIDE_TOURS_VISIBLE_UNTIL_SETTING_KEY)
+        : sharedError
+          ? (() => {
+              const cached = localStorage.getItem(`shared_${GUIDE_TOURS_VISIBLE_UNTIL_SETTING_KEY}`)
+              return cached ? JSON.parse(cached) : null
+            })()
+          : null
+      if (!sharedError && !sharedSettingsMap.has(GUIDE_TOURS_VISIBLE_UNTIL_SETTING_KEY)) {
+        localStorage.removeItem(`shared_${GUIDE_TOURS_VISIBLE_UNTIL_SETTING_KEY}`)
+      }
+      setGuideToursVisibleUntil(normalizeGuideToursVisibleUntil(sharedGuideVisibleUntilRaw))
     } catch (error) {
       console.warn('Error in loadUserSettings, using localStorage fallback:', error)
       // localStorage에서 직접 로드
@@ -1478,6 +1544,18 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           console.warn('Error parsing saved misc tour products from localStorage:', parseError)
         }
       }
+
+      try {
+        const cachedVisibleUntil =
+          localStorage.getItem(`shared_${GUIDE_TOURS_VISIBLE_UNTIL_SETTING_KEY}`)
+        setGuideToursVisibleUntil(
+          cachedVisibleUntil
+            ? normalizeGuideToursVisibleUntil(JSON.parse(cachedVisibleUntil))
+            : null,
+        )
+      } catch {
+        setGuideToursVisibleUntil(null)
+      }
     }
   }, [currentDate])
 
@@ -1510,6 +1588,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           key === 'schedule_product_colors' ||
           key === 'schedule_vehicle_row_order' ||
           key === SCHEDULE_MISC_TOUR_PRODUCTS_SETTING_KEY ||
+          key === GUIDE_TOURS_VISIBLE_UNTIL_SETTING_KEY ||
+          key === `shared_${GUIDE_TOURS_VISIBLE_UNTIL_SETTING_KEY}` ||
           key === 'schedule_pending_draft'
         ) {
           keysToRemove.push(key)
@@ -1860,6 +1940,34 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     const todayString = dayjs().format('YYYY-MM-DD')
     return dateString === todayString
   }
+
+  const isGuideVisibleUntilCutoff = useCallback(
+    (dateString: string) => isGuideVisibleUntilCutoffDay(dateString, guideToursVisibleUntil),
+    [guideToursVisibleUntil],
+  )
+
+  /** 오늘 ~ 가이드 공개 마감일 사이의 일수 (마감일 미설정 시 null) */
+  const guideVisibleHorizonDays = useMemo(() => {
+    if (!guideToursVisibleUntil) return null
+    const todayStr = dayjs().format('YYYY-MM-DD')
+    const days = dayjs(guideToursVisibleUntil).diff(dayjs(todayStr), 'day')
+    return Number.isFinite(days) ? days : null
+  }, [guideToursVisibleUntil])
+
+  const handleGuideToursVisibleUntilChange = useCallback(
+    async (raw: string) => {
+      const next = normalizeGuideToursVisibleUntil(raw)
+      setGuideToursVisibleUntil(next)
+      if (!canManageSharedSchedule) return
+      await saveSharedSetting(
+        GUIDE_TOURS_VISIBLE_UNTIL_SETTING_KEY,
+        next ? buildGuideToursVisibleUntilSetting(next) : null,
+      )
+    },
+    // saveSharedSetting closes over canManageSharedSchedule/user; intentional inline use
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [canManageSharedSchedule],
+  )
 
   // Off 날짜 확인 함수 (pending 변경사항 포함)
   const isOffDate = useCallback((teamMemberId: string, dateString: string) => {
@@ -6734,6 +6842,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 <CalendarOff className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
 
+              {/* 오프 스케줄 히스토리 (생성 건 확인·수정·삭제) */}
+              <button
+                type="button"
+                onClick={() => setShowOffScheduleHistoryModal(true)}
+                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+                title={locale === 'ko' ? '오프 스케줄 히스토리' : 'Off schedule history'}
+                aria-label={locale === 'ko' ? '오프 스케줄 히스토리' : 'Off schedule history'}
+              >
+                <History className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+
               {/* Price & Inventory (OTA 가격·재고 추적) */}
               <button
                 type="button"
@@ -6823,6 +6942,39 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               >
                 오늘
               </button>
+              <label
+                className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50/80 px-1.5 py-1 text-[10px] sm:text-xs text-red-800 whitespace-nowrap"
+                title="이 날짜 이후의 투어는 가이드 페이지에 표시되지 않습니다. 라스베이거스 자정마다 하루씩 자동으로 늘어납니다."
+              >
+                <span className="font-medium tabular-nums">
+                  {guideVisibleHorizonDays == null
+                    ? '+ 일 보임'
+                    : `+ ${guideVisibleHorizonDays}일 보임`}
+                </span>
+                <input
+                  type="date"
+                  value={guideToursVisibleUntil || ''}
+                  onChange={(e) => {
+                    void handleGuideToursVisibleUntilChange(e.target.value)
+                  }}
+                  disabled={!canManageSharedSchedule}
+                  className="h-7 sm:h-8 max-w-[9.5rem] rounded-md border border-red-300 bg-white px-1 text-[11px] sm:text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-400 disabled:opacity-60"
+                  aria-label="가이드에게 보여줄 마지막 날짜"
+                />
+                {guideToursVisibleUntil && canManageSharedSchedule ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleGuideToursVisibleUntilChange('')
+                    }}
+                    className="rounded px-1 text-red-600 hover:bg-red-100"
+                    title="마감일 해제"
+                    aria-label="마감일 해제"
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </label>
             </div>
           </div>
 
@@ -6999,6 +7151,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             scheduleHealthProductCellAlertSet={scheduleHealthProductCellAlertSet}
             scheduleInteractionDragging={scheduleInteractionDragging}
             isToday={isToday}
+            isGuideVisibleUntilCutoff={isGuideVisibleUntilCutoff}
             openDateNoteModal={openDateNoteModal}
             productScheduleData={productScheduleData}
             productTotals={productTotals}
@@ -7044,6 +7197,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             dayColumnWidthCalc={dayColumnWidthCalc}
             dynamicMinTableWidthPx={dynamicMinTableWidthPx}
             isToday={isToday}
+            isGuideVisibleUntilCutoff={isGuideVisibleUntilCutoff}
             guideTotals={guideTotals}
             guideVsProductDailyTotalMismatch={guideVsProductDailyTotalMismatch}
             guideScheduleData={guideScheduleData}
@@ -7432,6 +7586,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               tours={tours}
               tourCoversScheduleDate={tourCoversScheduleDate}
               isToday={isToday}
+              isGuideVisibleUntilCutoff={isGuideVisibleUntilCutoff}
               draggedVehicleRowId={draggedVehicleRowId}
               canEditVehicleFromSchedule={canEditVehicleFromSchedule}
               defaultPresetIds={defaultPresetIds}
@@ -9418,6 +9573,16 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         }
       />
 
+      <OffScheduleHistoryModal
+        isOpen={showOffScheduleHistoryModal}
+        onClose={() => setShowOffScheduleHistoryModal(false)}
+        locale={locale}
+        teamMembers={teamMembers}
+        scopeMonth={currentDate}
+        approverEmail={user?.email ?? null}
+        onAfterChange={() => void fetchData()}
+      />
+
       <GuideScheduleAssignmentPreviewModal
         isOpen={!!guideModalScheduleAssignmentTourId}
         tourId={guideModalScheduleAssignmentTourId}
@@ -10117,7 +10282,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         </div>
       )}
 
-      {/* 오프 스케줄 액션 모달 */}
+      {/* 오프 스케줄 액션 모달 (+ 빈 칸: 해당일 투어 배정) */}
       {showOffScheduleActionModal && selectedOffSchedule && (() => {
         // 기존 오프 스케줄인지 확인 (reason이 있고, offSchedules에 존재하는지 확인)
         const existingOffSchedule = offSchedules.find(off => 
@@ -10125,45 +10290,225 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           off.off_date === selectedOffSchedule.off_date
         )
         const isNewSchedule = !existingOffSchedule && (!selectedOffSchedule.reason || selectedOffSchedule.reason.trim() === '')
-        
+        const memberEmail = selectedOffSchedule.team_email
+        const memberDisplayName = resolveScheduleMemberDisplay(memberEmail)
+        const closeOffScheduleModal = () => {
+          setShowOffScheduleActionModal(false)
+          setSelectedOffSchedule(null)
+          setNewOffScheduleReason('')
+        }
+        const dayToursForAssign = isNewSchedule
+          ? tours
+              .filter((t) => t.tour_date === selectedOffSchedule.off_date)
+              .filter((t) => {
+                const s = (t.tour_status || '').toString().toLowerCase()
+                return s !== 'cancelled' && !s.includes('cancel') && s !== 'deleted'
+              })
+          : []
+
         return (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
-            <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
-              <div className="flex items-center justify-between mb-4">
+            <div
+              className={`bg-white rounded-lg p-6 w-full mx-4 shadow-xl ${
+                isNewSchedule
+                  ? 'max-w-lg max-h-[85vh] overflow-hidden flex flex-col'
+                  : 'max-w-md'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-4 shrink-0">
                 <h3 className="text-lg font-semibold text-gray-900">
-                  {isNewSchedule ? '오프 스케줄 추가' : '오프 스케줄 액션'}
+                  {isNewSchedule
+                    ? `스케줄 — ${memberDisplayName} / ${selectedOffSchedule.off_date}`
+                    : '오프 스케줄 액션'}
                 </h3>
                 <button
-                  onClick={() => {
-                    setShowOffScheduleActionModal(false)
-                    setSelectedOffSchedule(null)
-                    setNewOffScheduleReason('')
-                  }}
+                  onClick={closeOffScheduleModal}
                   className="text-gray-400 hover:text-gray-600 transition-colors"
                 >
                   <X className="w-6 h-6" />
                 </button>
               </div>
               
-              <div className="mb-6">
+              <div className={`mb-4 ${isNewSchedule ? 'overflow-y-auto flex-1 min-h-0' : 'mb-6'}`}>
                 <div className="text-sm text-gray-600 mb-4">
                   <span className="font-medium">날짜:</span> {dayjs(selectedOffSchedule.off_date).format('YYYY년 MM월 DD일 (ddd)')}
                 </div>
                 
                 {isNewSchedule ? (
-                  <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      사유
-                    </label>
-                    <input
-                      type="text"
-                      value={newOffScheduleReason}
-                      onChange={(e) => setNewOffScheduleReason(e.target.value)}
-                      placeholder="오프 스케줄 사유를 입력하세요"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
-                      autoFocus
-                    />
-                  </div>
+                  <>
+                    <div className="mb-4">
+                      <div className="text-sm font-semibold text-gray-900 mb-2">오프 스케줄 추가</div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        사유
+                      </label>
+                      <input
+                        type="text"
+                        value={newOffScheduleReason}
+                        onChange={(e) => setNewOffScheduleReason(e.target.value)}
+                        placeholder="오프 스케줄 사유를 입력하세요"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!newOffScheduleReason.trim()) {
+                            showMessage('입력 필요', '사유를 입력해주세요.', 'error')
+                            return
+                          }
+                          
+                          try {
+                            const { error } = await supabase
+                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                              .from('off_schedules' as any)
+                              .insert({
+                                id: crypto.randomUUID(),
+                                team_email: selectedOffSchedule.team_email,
+                                off_date: selectedOffSchedule.off_date,
+                                reason: newOffScheduleReason.trim(),
+                                status: 'pending'
+                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                              } as any)
+
+                            if (error) {
+                              console.error('Error creating off schedule:', error)
+                              showMessage('생성 실패', '오프 스케줄 생성에 실패했습니다.', 'error')
+                              return
+                            }
+
+                            await fetchData()
+                            closeOffScheduleModal()
+                            showMessage('생성 완료', '오프 스케줄이 생성되었습니다.', 'success')
+                          } catch (error) {
+                            console.error('Error creating off schedule:', error)
+                            showMessage('오류 발생', '오프 스케줄 생성 중 오류가 발생했습니다.', 'error')
+                          }
+                        }}
+                        className="mt-3 w-full px-4 py-2.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors font-medium"
+                      >
+                        오프 스케줄 추가
+                      </button>
+                    </div>
+
+                    <div className="border-t border-gray-200 pt-4">
+                      <div className="text-sm font-semibold text-gray-900 mb-2">해당일 투어 배정</div>
+                      <p className="text-xs text-gray-500 mb-3">
+                        이 가이드를 해당일 투어에 가이드 또는 어시스턴트로 배정합니다.
+                      </p>
+                      <div className="space-y-2">
+                        {dayToursForAssign.length === 0 ? (
+                          <p className="text-sm text-gray-500 py-2">해당 날짜에 배정 가능한 투어가 없습니다.</p>
+                        ) : (
+                          dayToursForAssign.map((tour) => {
+                            const summary = getTourSummaryCore(tour)
+                            const isGuideAssigned =
+                              String(tour.tour_guide_id || '').trim() === memberEmail
+                            const isAssistantAssigned =
+                              String(tour.assistant_id || '').trim() === memberEmail
+                            const allowsAssistant = String(tour.team_type || '') !== '1guide'
+                            return (
+                              <div
+                                key={tour.id}
+                                className={`flex flex-col gap-2 p-3 border rounded-lg ${
+                                  isGuideAssigned || isAssistantAssigned
+                                    ? 'bg-muted/50 border-border'
+                                    : 'bg-gray-50 border-gray-200'
+                                }`}
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <div className="font-medium text-gray-900 truncate min-w-0">
+                                      {summary.productName}
+                                    </div>
+                                    <span
+                                      className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium tabular-nums text-primary shrink-0"
+                                      title="배정 인원 / 정원"
+                                    >
+                                      <Users size={12} aria-hidden />
+                                      {summary.assignedPeople}/{summary.capacityDenom}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs text-gray-700">
+                                    <span className="inline-flex items-center gap-1 font-medium tabular-nums">
+                                      <ReactCountryFlag
+                                        countryCode="KR"
+                                        svg
+                                        style={{ width: '16px', height: '12px', borderRadius: '2px' }}
+                                        aria-hidden
+                                      />
+                                      {summary.assignedKo}
+                                    </span>
+                                    <span className="text-gray-300">/</span>
+                                    <span className="inline-flex items-center gap-1 font-medium tabular-nums">
+                                      <ReactCountryFlag
+                                        countryCode="US"
+                                        svg
+                                        style={{ width: '16px', height: '12px', borderRadius: '2px' }}
+                                        aria-hidden
+                                      />
+                                      {summary.assignedEn + summary.assignedJa}
+                                      {summary.assignedJa > 0 ? (
+                                        <span className="inline-flex items-center gap-1 text-gray-500">
+                                          (
+                                          <ReactCountryFlag
+                                            countryCode="JP"
+                                            svg
+                                            style={{ width: '16px', height: '12px', borderRadius: '2px' }}
+                                            aria-hidden
+                                          />
+                                          {summary.assignedJa})
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    가이드: {summary.guideName}
+                                    {allowsAssistant ? ` · 어시: ${summary.assistantName}` : ' · 1가이드'}
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={isGuideAssigned}
+                                    onClick={() => {
+                                      if (isGuideAssigned) return
+                                      applyGuideModalGuideValue(tour.id, memberEmail)
+                                      closeOffScheduleModal()
+                                    }}
+                                    className={`px-3 py-1.5 text-sm rounded-lg whitespace-nowrap ${
+                                      isGuideAssigned
+                                        ? 'bg-gray-300 text-gray-500 cursor-default'
+                                        : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                                    }`}
+                                  >
+                                    {isGuideAssigned ? '현재 가이드' : '가이드로 배정'}
+                                  </button>
+                                  {allowsAssistant ? (
+                                    <button
+                                      type="button"
+                                      disabled={isAssistantAssigned}
+                                      onClick={() => {
+                                        if (isAssistantAssigned) return
+                                        applyGuideModalAssistantValue(tour.id, memberEmail)
+                                        closeOffScheduleModal()
+                                      }}
+                                      className={`px-3 py-1.5 text-sm rounded-lg whitespace-nowrap ${
+                                        isAssistantAssigned
+                                          ? 'bg-gray-300 text-gray-500 cursor-default'
+                                          : 'bg-sky-600 text-white hover:bg-sky-700'
+                                      }`}
+                                    >
+                                      {isAssistantAssigned ? '현재 어시' : '어시로 배정'}
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </div>
+                            )
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </>
                 ) : (
                   <>
                     <div className="text-sm text-gray-600 mb-2">
@@ -10181,49 +10526,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 )}
               </div>
 
-              <div className="flex flex-col space-y-3">
-                {isNewSchedule ? (
-                  <button
-                    onClick={async () => {
-                      if (!newOffScheduleReason.trim()) {
-                        showMessage('입력 필요', '사유를 입력해주세요.', 'error')
-                        return
-                      }
-                      
-                      try {
-                        const { error } = await supabase
-                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                          .from('off_schedules' as any)
-                          .insert({
-                            id: crypto.randomUUID(),
-                            team_email: selectedOffSchedule.team_email,
-                            off_date: selectedOffSchedule.off_date,
-                            reason: newOffScheduleReason.trim(),
-                            status: 'pending'
-                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                          } as any)
-
-                        if (error) {
-                          console.error('Error creating off schedule:', error)
-                          showMessage('생성 실패', '오프 스케줄 생성에 실패했습니다.', 'error')
-                          return
-                        }
-
-                        await fetchData()
-                        setShowOffScheduleActionModal(false)
-                        setSelectedOffSchedule(null)
-                        setNewOffScheduleReason('')
-                        showMessage('생성 완료', '오프 스케줄이 생성되었습니다.', 'success')
-                      } catch (error) {
-                        console.error('Error creating off schedule:', error)
-                        showMessage('오류 발생', '오프 스케줄 생성 중 오류가 발생했습니다.', 'error')
-                      }
-                    }}
-                    className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium"
-                  >
-                    오프 스케줄 추가
-                  </button>
-                ) : (
+              <div className={`flex flex-col space-y-3 ${isNewSchedule ? 'shrink-0 pt-3 border-t border-gray-200' : ''}`}>
+                {!isNewSchedule ? (
                   <>
                     {selectedOffSchedule.status === 'pending' && (
                       <button
@@ -10272,16 +10576,12 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                       삭제
                     </button>
                   </>
-                )}
+                ) : null}
                 <button
-                  onClick={() => {
-                    setShowOffScheduleActionModal(false)
-                    setSelectedOffSchedule(null)
-                    setNewOffScheduleReason('')
-                  }}
+                  onClick={closeOffScheduleModal}
                   className="w-full px-4 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors font-medium"
                 >
-                  취소
+                  {isNewSchedule ? '닫기' : '취소'}
                 </button>
               </div>
             </div>

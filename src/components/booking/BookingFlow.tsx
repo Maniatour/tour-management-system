@@ -829,12 +829,6 @@ export default function BookingFlow({
         
         setDatePrices(pricingMap)
         setChoiceAvailability(choiceAvailabilityMap)
-        
-        // 테스트를 위해 임시로 마감된 날짜 추가
-        closedDatesSet.add('2025-11-01')
-        closedDatesSet.add('2025-11-02')
-        
-        console.log('마감된 날짜들:', Array.from(closedDatesSet))
         setClosedDates(closedDatesSet)
 
         // 2. 기존 tours 테이블에서 실제 투어 정보 조회 (참고용)
@@ -1149,43 +1143,14 @@ export default function BookingFlow({
           return
         }
 
-        console.log('예약 인원수 조회 결과:', data)
-        console.log('상품 ID:', product.id)
-
-        // 테스트를 위해 임시 더미 데이터 추가
-        const dummyData = [
-          { tour_date: '2025-10-28', total_people: 2, status: 'confirmed' },
-          { tour_date: '2025-10-29', total_people: 5, status: 'confirmed' },
-          { tour_date: '2025-10-30', total_people: 12, status: 'confirmed' },
-          { tour_date: '2025-10-31', total_people: 1, status: 'confirmed' },
-          { tour_date: '2025-11-03', total_people: 3, status: 'Canceled' }, // 이건 제외되어야 함
-          { tour_date: '2025-11-04', total_people: 2, status: 'canceled' }, // 이것도 제외되어야 함
-          { tour_date: '2025-11-05', total_people: 4, status: 'CANCELED' } // 이것도 제외되어야 함
-        ]
-        
-        console.log('더미 데이터 추가:', dummyData)
-
-        // 날짜별로 예약 인원수 합계 계산
         const counts: Record<string, number> = {}
-        
-        // 실제 데이터 처리
         data?.forEach((reservation) => {
           const st = String(reservation.status ?? '').toLowerCase()
           if (st.includes('cancel') || st === 'inquiry') return
           const date = reservation.tour_date
           counts[date] = (counts[date] || 0) + (reservation.total_people || 0)
         })
-        
-        // 더미 데이터 처리 (canceled 상태 제외)
-        dummyData.forEach((reservation: { tour_date: string; total_people: number; status: string }) => {
-          // canceled가 포함된 상태는 제외
-          if (!reservation.status.toLowerCase().includes('canceled')) {
-            const date = reservation.tour_date
-            counts[date] = (counts[date] || 0) + (reservation.total_people || 0)
-          }
-        })
 
-        console.log('계산된 예약 인원수:', counts)
         setReservationCounts(counts)
       } catch (error) {
         console.error('예약 인원수 조회 오류:', error)
@@ -2483,7 +2448,7 @@ export default function BookingFlow({
         id: result.reservationId,
         email: bookingData.customerInfo.email || '',
       })
-      window.location.href = `/${isEnglish ? 'en' : 'ko'}/booking/confirmation?${params.toString()}`
+      window.location.href = `/${locale}/booking/confirmation?${params.toString()}`
     } finally {
       setLoading(false)
     }
@@ -2533,7 +2498,7 @@ export default function BookingFlow({
         id: reservationId,
         email: checkoutBody.customerInfo.email || '',
       })
-      window.location.href = `/${isEnglish ? 'en' : 'ko'}/booking/confirmation?${params.toString()}`
+      window.location.href = `/${locale}/booking/confirmation?${params.toString()}`
     } catch (error) {
       console.error('예약 생성 오류:', error)
       alert(

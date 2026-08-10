@@ -20,6 +20,7 @@ import {
   type ScheduleMonthDayCell,
   type ScheduleProductGridProductRow,
 } from '@/lib/scheduleProductGridHelpers'
+import { GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS } from '@/lib/guideToursVisibleUntil'
 
 export type ScheduleProductGridRowProps = {
   productId: string
@@ -41,6 +42,7 @@ export type ScheduleProductGridRowProps = {
   products: ScheduleProductRef[]
   scheduleHealthProductCellAlertSet: Set<string>
   isToday: (dateString: string) => boolean
+  isGuideVisibleUntilCutoff: (dateString: string) => boolean
   handleProductRowDragOver: (e: DragEvent, productId: string) => void
   handleProductRowDragLeave: (e: DragEvent) => void
   handleProductRowDrop: (e: DragEvent, productId: string) => void
@@ -75,6 +77,7 @@ export default function ScheduleProductGridRow({
   miscTourDayProductBreakdown,
   scheduleHealthProductCellAlertSet,
   isToday,
+  isGuideVisibleUntilCutoff,
   handleProductRowDragOver,
   handleProductRowDragLeave,
   handleProductRowDrop,
@@ -174,7 +177,9 @@ export default function ScheduleProductGridRow({
         return (
           <td
             key={dateString}
-            className="p-0 text-center text-xs overflow-visible"
+            className={`p-0 text-center text-xs overflow-visible ${
+              isGuideVisibleUntilCutoff(dateString) ? GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS : ''
+            }`}
             style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
           >
             {(() => {
