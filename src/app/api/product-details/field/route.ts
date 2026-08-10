@@ -15,6 +15,10 @@ import {
   type ProductDetailEmailEditableField,
 } from '@/lib/fetchProductDetailsForEmail'
 import { requireStaffApiAuth } from '@/lib/api-security'
+import {
+  syncLocaleTasksAfterDetailsWrite,
+  toLocaleSyncFieldKey,
+} from '@/lib/productLocaleSyncTasks'
 
 /**
  * service role → Bearer JWT → cookie session. Anon-only clients cannot UPDATE (RLS).
@@ -135,13 +139,14 @@ export async function PATCH(request: NextRequest) {
       id: string
       section_titles?: unknown
       customer_page_visibility?: unknown
+      [key: string]: unknown
     }
 
     let row: PatchRow | null = null
     let hasCustomerPageVisibilityColumn = true
 
     const firstRes = await buildBaseQuery(
-      'id, section_titles, customer_page_visibility'
+      `id, section_titles, customer_page_visibility, ${field}`
     ).maybeSingle()
 
     const errMsg = firstRes.error?.message ?? ''
@@ -155,7 +160,7 @@ export async function PATCH(request: NextRequest) {
 
     if (missingVis) {
       hasCustomerPageVisibilityColumn = false
-      const fallback = await buildBaseQuery('id, section_titles').maybeSingle()
+      const fallback = await buildBaseQuery(`id, section_titles, ${field}`).maybeSingle()
       if (fallback.error && (fallback.error as { code?: string }).code !== 'PGRST116') {
         console.error('[product-details/field] 조회 오류:', fallback.error)
         return NextResponse.json(
@@ -214,6 +219,11 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
+    const previousFieldValue =
+      typeof row[field] === 'string' ? String(row[field]) : row[field] == null ? '' : String(row[field])
+    const contentChanged =
+      previousFieldValue.trim() !== strValue.trim()
+
     const { error: updateError } = await db
       .from('product_details_multilingual')
       .update(patch as never)
@@ -225,6 +235,19 @@ export async function PATCH(request: NextRequest) {
         { error: '저장 실패', details: updateError.message },
         { status: 500 }
       )
+    }
+
+    if (contentChanged) {
+      const syncFieldKey = toLocaleSyncFieldKey(field)
+      if (syncFieldKey) {
+        await syncLocaleTasksAfterDetailsWrite({
+          productId,
+          languageCode,
+          fieldKeys: [syncFieldKey],
+          updatedBy: auth.userEmail ?? null,
+          client: db,
+        })
+      }
     }
 
     return NextResponse.json({

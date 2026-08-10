@@ -5,11 +5,13 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import {
+  Check,
   ChevronDown,
   ChevronRight,
   ExternalLink,
   Languages,
   Loader2,
+  RefreshCw,
   Search,
   X,
 } from 'lucide-react'
@@ -32,6 +34,14 @@ import {
   type LocaleReadinessFieldKey,
 } from '@/lib/adminProductLocaleReadiness'
 import { fetchProductFieldTranslations } from '@/lib/productFieldTranslations'
+import { isAdminProductSoftDeleted } from '@/lib/adminProductDelete'
+import {
+  clearLocaleFromSyncTask,
+  fetchOpenLocaleSyncTasks,
+  resolveLocaleSyncTask,
+  type ProductLocaleSyncTask,
+} from '@/lib/productLocaleSyncTasks'
+import type { SiteLocale } from '@/lib/siteLocales'
 
 type ProductLocaleReadinessModalProps = {
   isOpen: boolean
@@ -59,12 +69,12 @@ function percentTextTone(percent: number): string {
 
 function ProgressCell({ percent, label }: { percent: number; label: string }) {
   return (
-    <div className="min-w-[7rem]" title={`${label} ${percent}%`}>
-      <div className="flex items-center justify-between gap-2 mb-1">
-        <span className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">
+    <div className="min-w-[5.5rem] w-[5.5rem] xl:min-w-[6.5rem] xl:w-[6.5rem]" title={`${label} ${percent}%`}>
+      <div className="flex items-center justify-between gap-1 mb-1">
+        <span className="text-[10px] xl:text-[11px] font-medium text-gray-500 uppercase tracking-wide truncate">
           {label}
         </span>
-        <span className={`text-xs font-semibold tabular-nums ${percentTextTone(percent)}`}>
+        <span className={`text-[11px] xl:text-xs font-semibold tabular-nums shrink-0 ${percentTextTone(percent)}`}>
           {percent}%
         </span>
       </div>
@@ -87,32 +97,50 @@ export default function ProductLocaleReadinessModal({
   embedded = false,
 }: ProductLocaleReadinessModalProps) {
   const t = useTranslations('products.localeReadiness')
+  const tProducts = useTranslations('products')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [rows, setRows] = useState<ProductLocaleReadiness[]>([])
+  const [syncTasks, setSyncTasks] = useState<ProductLocaleSyncTask[]>([])
+  const [viewMode, setViewMode] = useState<'readiness' | 'syncNeeds'>('readiness')
+  const [resolvingTaskId, setResolvingTaskId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [incompleteOnly, setIncompleteOnly] = useState(true)
+  const [selectedStatus, setSelectedStatus] = useState<string>('all')
+  const [selectedPublish, setSelectedPublish] = useState<'all' | 'published' | 'unpublished'>('all')
   const [sortKey, setSortKey] = useState<SortKey>('overall')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const fieldLabel = (key: LocaleReadinessFieldKey): string => {
-    try {
-      return t(`fields.${key}`)
-    } catch {
-      return key
-    }
+    const messageKey = `fields.${key}` as const
+    return t.has(messageKey) ? t(messageKey) : key
+  }
+
+  const statusLabel = (status: string | null | undefined): string => {
+    const value = String(status ?? '').trim()
+    if (!value) return ''
+    const messageKey = `status.${value}` as const
+    return tProducts.has(messageKey) ? tProducts(messageKey) : value
   }
 
   const localeLabel = (code: AdminEditLocale): string => localeReadinessLabel(code)
 
+  const activeProducts = useMemo(
+    () =>
+      products.filter(
+        (p) => !isAdminProductSoftDeleted((p as { status?: string | null }).status)
+      ),
+    [products]
+  )
+
   const productIdsKey = useMemo(
     () =>
-      products
+      activeProducts
         .map((p) => p.id)
         .filter(Boolean)
         .sort()
         .join(','),
-    [products]
+    [activeProducts]
   )
 
   useEffect(() => {
@@ -126,7 +154,10 @@ export default function ProductLocaleReadinessModal({
       try {
         const ids = productIdsKey ? productIdsKey.split(',') : []
         if (ids.length === 0) {
-          if (!cancelled) setRows([])
+          if (!cancelled) {
+            setRows([])
+            setSyncTasks([])
+          }
           return
         }
 
@@ -338,18 +369,22 @@ export default function ProductLocaleReadinessModal({
           tourCourses,
         })
 
-        const computed = computeProductsLocaleReadiness(products, detailRows, {
+        const computed = computeProductsLocaleReadiness(activeProducts, detailRows, {
           homepageChannelId: homepageChannelId ?? null,
           uiLocale: locale,
           translationRows,
           relatedByProduct,
         })
+        const openSyncTasks = await fetchOpenLocaleSyncTasks({ productIds: ids })
+        if (cancelled) return
         setRows(computed)
+        setSyncTasks(openSyncTasks)
       } catch (e) {
         console.error('locale readiness load error', e)
         if (!cancelled) {
           setError(t('loadError'))
           setRows([])
+          setSyncTasks([])
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -364,9 +399,107 @@ export default function ProductLocaleReadinessModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: reload when id set / channel / open
   }, [isOpen, productIdsKey, homepageChannelId, locale, t])
 
+  const productNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const row of rows) map.set(row.productId, row.productName)
+    for (const product of activeProducts) {
+      if (!map.has(product.id)) {
+        map.set(product.id, product.name?.trim() || product.id)
+      }
+    }
+    return map
+  }, [rows, activeProducts])
+
+  const syncTaskCountByProduct = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const task of syncTasks) {
+      map.set(task.product_id, (map.get(task.product_id) || 0) + 1)
+    }
+    return map
+  }, [syncTasks])
+
+  const formatSyncDate = (iso: string): string => {
+    if (!iso) return '—'
+    const date = new Date(iso)
+    if (Number.isNaN(date.getTime())) return '—'
+    return date.toLocaleString(locale === 'en' ? 'en-US' : 'ko-KR', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
+
+  const reloadSyncTasks = async () => {
+    const ids = productIdsKey ? productIdsKey.split(',') : []
+    if (ids.length === 0) {
+      setSyncTasks([])
+      return
+    }
+    const openSyncTasks = await fetchOpenLocaleSyncTasks({ productIds: ids })
+    setSyncTasks(openSyncTasks)
+  }
+
+  const handleResolveTask = async (taskId: string) => {
+    setResolvingTaskId(taskId)
+    try {
+      const ok = await resolveLocaleSyncTask({ taskId })
+      if (ok) {
+        setSyncTasks((prev) => prev.filter((task) => task.id !== taskId))
+      }
+    } finally {
+      setResolvingTaskId(null)
+    }
+  }
+
+  const handleClearPendingLocale = async (taskId: string, code: SiteLocale) => {
+    setResolvingTaskId(`${taskId}:${code}`)
+    try {
+      const ok = await clearLocaleFromSyncTask({ taskId, locale: code })
+      if (ok) await reloadSyncTasks()
+    } finally {
+      setResolvingTaskId(null)
+    }
+  }
+
+  const statusCounts = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const row of rows) {
+      const key = String(row.status ?? '').trim() || 'unknown'
+      map.set(key, (map.get(key) || 0) + 1)
+    }
+    const items = [...map.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([value, count]) => ({ value, count }))
+    return [{ value: 'all', count: rows.length }, ...items]
+  }, [rows])
+
+  const publishCounts = useMemo(() => {
+    const published = rows.filter((r) => r.isPublished).length
+    const unpublished = rows.length - published
+    return [
+      { value: 'all' as const, count: rows.length },
+      { value: 'published' as const, count: published },
+      { value: 'unpublished' as const, count: unpublished },
+    ]
+  }, [rows])
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     let list = rows
+
+    if (selectedStatus !== 'all') {
+      list = list.filter(
+        (r) => String(r.status ?? '').trim() === selectedStatus
+      )
+    }
+
+    if (selectedPublish === 'published') {
+      list = list.filter((r) => r.isPublished)
+    } else if (selectedPublish === 'unpublished') {
+      list = list.filter((r) => !r.isPublished)
+    }
 
     if (q) {
       list = list.filter(
@@ -391,21 +524,59 @@ export default function ProductLocaleReadinessModal({
       return (a.byLocale[sortKey]?.percent ?? 0) - (b.byLocale[sortKey]?.percent ?? 0)
     })
     return sorted
-  }, [rows, search, incompleteOnly, sortKey, locale])
+  }, [rows, search, incompleteOnly, sortKey, locale, selectedStatus, selectedPublish])
+
+  const filteredSyncTasks = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    let list = syncTasks
+
+    if (selectedStatus !== 'all' || selectedPublish !== 'all') {
+      const allowedIds = new Set(
+        rows
+          .filter((row) => {
+            if (
+              selectedStatus !== 'all' &&
+              String(row.status ?? '').trim() !== selectedStatus
+            ) {
+              return false
+            }
+            if (selectedPublish === 'published' && !row.isPublished) return false
+            if (selectedPublish === 'unpublished' && row.isPublished) return false
+            return true
+          })
+          .map((row) => row.productId)
+      )
+      list = list.filter((task) => allowedIds.has(task.product_id))
+    }
+
+    if (q) {
+      list = list.filter((task) => {
+        const name = productNameById.get(task.product_id) || ''
+        return (
+          name.toLowerCase().includes(q) ||
+          task.product_id.toLowerCase().includes(q) ||
+          fieldLabel(task.field_key).toLowerCase().includes(q)
+        )
+      })
+    }
+
+    return list
+    // fieldLabel depends on t; include t for locale message updates
+  }, [syncTasks, search, selectedStatus, selectedPublish, rows, productNameById, t])
 
   const summary = useMemo(() => {
-    const incomplete = rows.filter((r) =>
+    const incomplete = filtered.filter((r) =>
       LOCALE_READINESS_LOCALES.some((code) => r.byLocale[code].percent < 100)
     ).length
     const avgByLocale = Object.fromEntries(
-      LOCALE_READINESS_LOCALES.map((code) => [code, averageLocalePercent(rows, code)])
+      LOCALE_READINESS_LOCALES.map((code) => [code, averageLocalePercent(filtered, code)])
     ) as Record<AdminEditLocale, number>
     const overallAvg =
-      rows.length === 0
+      filtered.length === 0
         ? 0
-        : Math.round(rows.reduce((s, r) => s + r.overallPercent, 0) / rows.length)
-    return { incomplete, avgByLocale, overallAvg }
-  }, [rows])
+        : Math.round(filtered.reduce((s, r) => s + r.overallPercent, 0) / filtered.length)
+    return { incomplete, avgByLocale, overallAvg, syncNeeds: syncTasks.length }
+  }, [filtered, syncTasks.length])
 
   if (!isOpen) return null
 
@@ -417,7 +588,7 @@ export default function ProductLocaleReadinessModal({
         className={
           embedded
             ? 'relative z-10 flex flex-col w-full min-h-[70vh] bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden'
-            : 'relative z-10 flex flex-col w-full max-w-5xl max-h-[90vh] bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden'
+            : 'relative z-10 flex flex-col w-full max-w-[min(98vw,1920px)] max-h-[90vh] bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden'
         }
       >
         <div className="flex items-start justify-between gap-3 px-4 sm:px-6 py-4 border-b border-gray-200">
@@ -434,11 +605,18 @@ export default function ProductLocaleReadinessModal({
             <p className="mt-1 text-sm text-gray-600">{t('subtitle')}</p>
             {!loading && !error ? (
               <p className="mt-2 text-xs text-gray-500">
-                {t('summaryMulti', {
-                  count: rows.length,
-                  avgOverall: summary.overallAvg,
-                  incomplete: summary.incomplete,
-                })}
+                {viewMode === 'syncNeeds'
+                  ? t('syncNeedsSummary', { count: filteredSyncTasks.length })
+                  : t('summaryMulti', {
+                      count: filtered.length,
+                      avgOverall: summary.overallAvg,
+                      incomplete: summary.incomplete,
+                    })}
+                {summary.syncNeeds > 0 ? (
+                  <span className="ml-2 text-amber-700">
+                    · {t('syncNeedsBadge', { count: summary.syncNeeds })}
+                  </span>
+                ) : null}
               </p>
             ) : null}
           </div>
@@ -454,41 +632,182 @@ export default function ProductLocaleReadinessModal({
           ) : null}
         </div>
 
-        <div className="px-4 sm:px-6 py-3 border-b border-gray-100 flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between bg-gray-50/80">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t('searchPlaceholder')}
-              className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="inline-flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={incompleteOnly}
-                onChange={(e) => setIncompleteOnly(e.target.checked)}
-                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-              />
-              {t('incompleteOnly')}
-            </label>
-            <select
-              value={sortKey}
-              onChange={(e) => setSortKey(e.target.value as SortKey)}
-              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700"
-              aria-label={t('sortLabel')}
+        <div className="px-4 sm:px-6 py-3 border-b border-gray-100 bg-gray-50/80 space-y-3">
+          <div
+            className="inline-flex flex-wrap items-center gap-1 rounded-lg border border-gray-200 bg-white p-1"
+            role="tablist"
+            aria-label={t('viewMode')}
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === 'readiness'}
+              onClick={() => setViewMode('readiness')}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                viewMode === 'readiness'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+              }`}
             >
-              <option value="overall">{t('sortOverall')}</option>
-              {LOCALE_READINESS_LOCALES.map((code) => (
-                <option key={code} value={code}>
-                  {localeLabel(code)}
-                </option>
-              ))}
-              <option value="name">{t('sortName')}</option>
-            </select>
+              <Languages className="h-3.5 w-3.5" />
+              {t('viewReadiness')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === 'syncNeeds'}
+              onClick={() => setViewMode('syncNeeds')}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                viewMode === 'syncNeeds'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+              }`}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              {t('viewSyncNeeds')}
+              {summary.syncNeeds > 0 ? (
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
+                    viewMode === 'syncNeeds' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {summary.syncNeeds}
+                </span>
+              ) : null}
+            </button>
           </div>
+
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t('searchPlaceholder')}
+                className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {(selectedStatus !== 'all' || selectedPublish !== 'all' || search) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedStatus('all')
+                    setSelectedPublish('all')
+                    setSearch('')
+                  }}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 underline"
+                >
+                  {tProducts('clearFilters')}
+                </button>
+              )}
+              {viewMode === 'readiness' ? (
+                <>
+                  <label className="inline-flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={incompleteOnly}
+                      onChange={(e) => setIncompleteOnly(e.target.checked)}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    {t('incompleteOnly')}
+                  </label>
+                  <select
+                    value={sortKey}
+                    onChange={(e) => setSortKey(e.target.value as SortKey)}
+                    className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700"
+                    aria-label={t('sortLabel')}
+                  >
+                    <option value="overall">{t('sortOverall')}</option>
+                    {LOCALE_READINESS_LOCALES.map((code) => (
+                      <option key={code} value={code}>
+                        {localeLabel(code)}
+                      </option>
+                    ))}
+                    <option value="name">{t('sortName')}</option>
+                  </select>
+                </>
+              ) : (
+                <p className="text-xs text-amber-800 max-w-xl">{t('syncNeedsHint')}</p>
+              )}
+            </div>
+          </div>
+
+          {rows.length > 0 ? (
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <div
+                className="inline-flex flex-wrap items-center gap-1 rounded-lg border border-gray-200 bg-white p-1"
+                role="group"
+                aria-label={t('filterStatus')}
+              >
+                {statusCounts.map((status) => {
+                  const active = selectedStatus === status.value
+                  return (
+                    <button
+                      key={status.value}
+                      type="button"
+                      onClick={() => setSelectedStatus(status.value)}
+                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                        active
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                      }`}
+                    >
+                      <span>
+                        {status.value === 'all'
+                          ? tProducts('all')
+                          : statusLabel(status.value)}
+                      </span>
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
+                          active ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'
+                        }`}
+                      >
+                        {status.count}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div
+                className="inline-flex flex-wrap items-center gap-1 rounded-lg border border-gray-200 bg-white p-1"
+                role="group"
+                aria-label={t('filterPublish')}
+              >
+                {publishCounts.map((publish) => {
+                  const active = selectedPublish === publish.value
+                  return (
+                    <button
+                      key={publish.value}
+                      type="button"
+                      onClick={() => setSelectedPublish(publish.value)}
+                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                        active
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                      }`}
+                    >
+                      <span>
+                        {publish.value === 'all'
+                          ? tProducts('all')
+                          : publish.value === 'published'
+                            ? t('published')
+                            : t('unpublished')}
+                      </span>
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
+                          active ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'
+                        }`}
+                      >
+                        {publish.count}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex-1 overflow-y-auto px-2 sm:px-4 py-2">
@@ -499,21 +818,119 @@ export default function ProductLocaleReadinessModal({
             </div>
           ) : error ? (
             <div className="py-12 text-center text-sm text-rose-600">{error}</div>
+          ) : viewMode === 'syncNeeds' ? (
+            filteredSyncTasks.length === 0 ? (
+              <div className="py-12 text-center text-sm text-gray-500">{t('syncNeedsEmpty')}</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-left text-xs text-gray-500">
+                      <th className="px-3 py-2 font-medium">{t('syncColProduct')}</th>
+                      <th className="px-3 py-2 font-medium">{t('syncColField')}</th>
+                      <th className="px-3 py-2 font-medium">{t('syncColSource')}</th>
+                      <th className="px-3 py-2 font-medium">{t('syncColUpdated')}</th>
+                      <th className="px-3 py-2 font-medium">{t('syncColPending')}</th>
+                      <th className="px-3 py-2 font-medium text-right">{t('syncColActions')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredSyncTasks.map((task) => {
+                      const productName =
+                        productNameById.get(task.product_id) || task.product_id
+                      const busy = resolvingTaskId === task.id
+                      return (
+                        <tr key={task.id} className="align-top hover:bg-amber-50/40">
+                          <td className="px-3 py-3">
+                            <div className="font-medium text-gray-900">{productName}</div>
+                            <div className="mt-0.5 text-[11px] text-gray-400 font-mono truncate max-w-[14rem]">
+                              {task.product_id}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 text-gray-800">{fieldLabel(task.field_key)}</td>
+                          <td className="px-3 py-3">
+                            <span className="inline-flex rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                              {localeLabel(task.source_locale)}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 text-xs text-gray-600 whitespace-nowrap">
+                            <div>{formatSyncDate(task.source_updated_at)}</div>
+                            {task.source_updated_by ? (
+                              <div className="mt-0.5 text-[11px] text-gray-400 truncate max-w-[10rem]">
+                                {task.source_updated_by}
+                              </div>
+                            ) : null}
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="flex flex-wrap gap-1.5">
+                              {task.pending_locales.map((code) => {
+                                const clearing = resolvingTaskId === `${task.id}:${code}`
+                                return (
+                                  <button
+                                    key={code}
+                                    type="button"
+                                    disabled={clearing || busy}
+                                    onClick={() => void handleClearPendingLocale(task.id, code)}
+                                    className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                                    title={t('markLocaleDone')}
+                                  >
+                                    {clearing ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : null}
+                                    {localeLabel(code)}
+                                    <X className="h-3 w-3 opacity-60" />
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-end gap-2">
+                              <Link
+                                href={buildAdminProductCustomerEditPath(locale, task.product_id)}
+                                className="inline-flex items-center justify-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                              >
+                                {t('editCustomerPage')}
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </Link>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void handleResolveTask(task.id)}
+                                className="inline-flex items-center justify-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+                              >
+                                {busy ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Check className="h-3.5 w-3.5" />
+                                )}
+                                {t('markAllDone')}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )
           ) : filtered.length === 0 ? (
             <div className="py-12 text-center text-sm text-gray-500">{t('empty')}</div>
           ) : (
             <ul className="divide-y divide-gray-100">
               {filtered.map((row) => {
                 const open = expandedId === row.productId
+                const syncCount = syncTaskCountByProduct.get(row.productId) || 0
                 return (
                   <li key={row.productId} className="py-3 px-2 sm:px-3">
-                    <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+                    <div className="flex flex-col xl:flex-row xl:items-center gap-3">
                       <button
                         type="button"
                         onClick={() =>
                           setExpandedId(open ? null : row.productId)
                         }
-                        className="flex items-start gap-2 text-left min-w-0 flex-1"
+                        className="flex items-start gap-2 text-left w-full min-w-0 xl:w-[24rem] xl:min-w-[24rem] xl:max-w-[24rem] xl:shrink-0 xl:grow-0"
                       >
                         {open ? (
                           <ChevronDown className="h-4 w-4 mt-1 text-gray-400 shrink-0" />
@@ -537,18 +954,34 @@ export default function ProductLocaleReadinessModal({
                             {row.status ? (
                               <>
                                 <span aria-hidden>·</span>
-                                <span>{row.status}</span>
+                                <span>{statusLabel(row.status)}</span>
                               </>
                             ) : null}
                             <span aria-hidden>·</span>
                             <span className="tabular-nums">
                               {t('overall', { percent: row.overallPercent })}
                             </span>
+                            {syncCount > 0 ? (
+                              <>
+                                <span aria-hidden>·</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setViewMode('syncNeeds')
+                                    setSearch(row.productName)
+                                  }}
+                                  className="text-amber-700 hover:text-amber-900 underline-offset-2 hover:underline"
+                                >
+                                  {t('syncNeedsBadge', { count: syncCount })}
+                                </button>
+                              </>
+                            ) : null}
                           </div>
                         </div>
                       </button>
 
-                      <div className="flex flex-wrap items-center gap-3 lg:gap-4 pl-6 lg:pl-0 max-w-full overflow-x-auto">
+                      <div className="flex flex-nowrap items-center gap-2.5 xl:gap-3 pl-6 xl:pl-0 flex-1 min-w-0 overflow-x-auto">
                         {LOCALE_READINESS_LOCALES.map((code) => (
                           <ProgressCell
                             key={code}
@@ -558,7 +991,7 @@ export default function ProductLocaleReadinessModal({
                         ))}
                         <Link
                           href={buildAdminProductCustomerEditPath(locale, row.productId)}
-                          className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800 shrink-0 ml-auto"
                           onClick={(e) => e.stopPropagation()}
                         >
                           {t('editCustomerPage')}
@@ -568,42 +1001,69 @@ export default function ProductLocaleReadinessModal({
                     </div>
 
                     {open ? (
-                      <div className="mt-3 ml-6 grid gap-3 sm:grid-cols-2">
-                        {LOCALE_READINESS_LOCALES.map((code) => {
-                          const score = row.byLocale[code]
-                          return (
-                            <div
-                              key={code}
-                              className="rounded-lg border border-gray-200 bg-gray-50/80 p-3"
-                            >
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm font-semibold text-gray-800">
-                                  {localeLabel(code)}
-                                </span>
-                                <span
-                                  className={`text-xs font-semibold tabular-nums ${percentTextTone(score.percent)}`}
-                                >
-                                  {score.filled}/{score.total} ({score.percent}%)
-                                </span>
-                              </div>
-                              {score.missingKeys.length === 0 ? (
-                                <p className="text-xs text-emerald-700">{t('allReady')}</p>
-                              ) : (
-                                <ul className="space-y-1">
-                                  {score.missingKeys.map((key) => (
-                                    <li
-                                      key={key}
-                                      className="text-xs text-gray-700 flex items-center gap-1.5"
-                                    >
-                                      <span className="h-1.5 w-1.5 rounded-full bg-rose-400 shrink-0" />
-                                      {fieldLabel(key)}
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
+                      <div className="mt-3 ml-6 space-y-3">
+                        {syncCount > 0 ? (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3">
+                            <div className="text-xs font-semibold text-amber-900 mb-2">
+                              {t('syncNeedsForProduct')}
                             </div>
-                          )
-                        })}
+                            <ul className="space-y-1.5">
+                              {syncTasks
+                                .filter((task) => task.product_id === row.productId)
+                                .map((task) => (
+                                  <li
+                                    key={task.id}
+                                    className="text-xs text-amber-900 flex flex-wrap items-center gap-x-2 gap-y-1"
+                                  >
+                                    <span className="font-medium">{fieldLabel(task.field_key)}</span>
+                                    <span className="text-amber-700/80">
+                                      ({localeLabel(task.source_locale)} · {formatSyncDate(task.source_updated_at)})
+                                    </span>
+                                    <span className="text-amber-800">
+                                      → {task.pending_locales.map((code) => localeLabel(code)).join(', ')}
+                                    </span>
+                                  </li>
+                                ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {LOCALE_READINESS_LOCALES.map((code) => {
+                            const score = row.byLocale[code]
+                            return (
+                              <div
+                                key={code}
+                                className="rounded-lg border border-gray-200 bg-gray-50/80 p-3"
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-sm font-semibold text-gray-800">
+                                    {localeLabel(code)}
+                                  </span>
+                                  <span
+                                    className={`text-xs font-semibold tabular-nums ${percentTextTone(score.percent)}`}
+                                  >
+                                    {score.filled}/{score.total} ({score.percent}%)
+                                  </span>
+                                </div>
+                                {score.missingKeys.length === 0 ? (
+                                  <p className="text-xs text-emerald-700">{t('allReady')}</p>
+                                ) : (
+                                  <ul className="space-y-1">
+                                    {score.missingKeys.map((key) => (
+                                      <li
+                                        key={key}
+                                        className="text-xs text-gray-700 flex items-center gap-1.5"
+                                      >
+                                        <span className="h-1.5 w-1.5 rounded-full bg-rose-400 shrink-0" />
+                                        {fieldLabel(key)}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
                       </div>
                     ) : null}
                   </li>

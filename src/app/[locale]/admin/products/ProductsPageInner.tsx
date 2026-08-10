@@ -995,147 +995,165 @@ export default function AdminProducts() {
         </div>
       </div>
 
-      {/* 검색 및 필터 섹션 */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
-        {/* 카테고리와 서브카테고리 탭 */}
-        <div className="space-y-0">
-          {/* 카테고리 탭 */}
-          {categories.length > 1 && (
-            <div className="border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <nav className="flex space-x-4 overflow-x-auto">
-                  {categories.map((category) => (
+      {/* 검색 및 필터 섹션 — 2단: 검색+상태/배포 / 카테고리·서브 */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 space-y-3">
+        {/* 1단: 검색 + 상태·배포 세그먼트 */}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="relative w-full max-w-md shrink-0">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+            <input
+              {...BROWSER_AUTOFILL_OFF_PROPS}
+              type="search"
+              id="admin-products-search"
+              name="admin-products-search"
+              role="searchbox"
+              placeholder={t('searchPlaceholder')}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center min-w-0">
+            {statusCounts.length > 1 && (
+              <div
+                className="inline-flex flex-wrap items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1"
+                role="group"
+                aria-label={t('basicInfoTab.salesStatus')}
+              >
+                {statusCounts.map((status) => {
+                  const active = selectedStatus === status.value
+                  return (
                     <button
-                      key={category.value}
-                      onClick={() => handleCategorySelect(category.value)}
-                      className={`flex items-center space-x-1 py-2 px-2 border-b-2 font-medium text-xs whitespace-nowrap transition-colors ${
-                        selectedCategory === category.value
-                          ? 'border-primary text-primary'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      key={status.value}
+                      type="button"
+                      onClick={() => setSelectedStatus(status.value)}
+                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                        active
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'text-gray-600 hover:bg-white hover:text-gray-900'
                       }`}
                     >
-                      <span>{category.label}</span>
-                      <span className={`px-1.5 py-0.5 rounded-full text-xs ${
-                        selectedCategory === category.value
-                          ? 'bg-primary/10 text-primary'
-                          : 'bg-gray-100 text-gray-500'
-                      }`}>
+                      <span>
+                        {status.labelKey === 'all' ? t('all') : t(`status.${status.labelKey}`)}
+                      </span>
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
+                          active ? 'bg-white/20 text-white' : 'bg-gray-200/80 text-gray-600'
+                        }`}
+                      >
+                        {status.count}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {products.length > 0 && (
+              <div
+                className="inline-flex flex-wrap items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1"
+                role="group"
+                aria-label={t('publishToggle')}
+              >
+                {publishCounts.map((publish) => {
+                  const active = selectedPublish === publish.value
+                  return (
+                    <button
+                      key={publish.value}
+                      type="button"
+                      onClick={() => setSelectedPublish(publish.value as typeof selectedPublish)}
+                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                        active
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'text-gray-600 hover:bg-white hover:text-gray-900'
+                      }`}
+                    >
+                      <span>
+                        {publish.labelKey === 'all'
+                          ? t('all')
+                          : publish.labelKey === 'published'
+                            ? t('published')
+                            : t('unpublished')}
+                      </span>
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
+                          active ? 'bg-white/20 text-white' : 'bg-gray-200/80 text-gray-600'
+                        }`}
+                      >
+                        {publish.count}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 2단: 카테고리 · 서브카테고리 칩 */}
+        {(categories.length > 1 || subCategories.length > 1) && (
+          <div className="space-y-2 border-t border-gray-100 pt-3">
+            {categories.length > 1 && (
+              <nav className="flex flex-wrap gap-1.5" aria-label={t('basicInfoTab.category')}>
+                {categories.map((category) => {
+                  const active = selectedCategory === category.value
+                  return (
+                    <button
+                      key={category.value}
+                      type="button"
+                      onClick={() => handleCategorySelect(category.value)}
+                      className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                        active
+                          ? 'bg-slate-800 text-white shadow-sm'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900'
+                      }`}
+                    >
+                      <span className={active ? 'text-white' : undefined}>{category.label}</span>
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
+                          active ? 'bg-white/25 text-white' : 'bg-white text-gray-500'
+                        }`}
+                      >
                         {category.count}
                       </span>
                     </button>
-                  ))}
-                </nav>
-                
-                {/* 검색창 — autocomplete off로 Chrome 카드번호 자동완성 방지 */}
-                <div className="relative flex-shrink-0">
-                  <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-                  <input
-                    {...BROWSER_AUTOFILL_OFF_PROPS}
-                    type="search"
-                    id="admin-products-search"
-                    name="admin-products-search"
-                    role="searchbox"
-                    placeholder={t('searchPlaceholder')}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-56 pl-7 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
-                  />
-                </div>
-                        </div>
-                      </div>
-          )}
-
-          {/* 서브카테고리 탭 */}
-          {subCategories.length > 1 && (
-            <div className="border-b border-gray-200">
-              <nav className="flex space-x-4 overflow-x-auto px-3">
-                {subCategories.map((subCategory) => (
-                  <button
-                    key={subCategory.value}
-                    onClick={() => setSelectedSubCategory(subCategory.value)}
-                    className={`flex items-center space-x-1 py-2 px-2 border-b-2 font-medium text-xs whitespace-nowrap transition-colors ${
-                      selectedSubCategory === subCategory.value
-                        ? 'border-primary text-primary'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
-                  >
-                    <span>{subCategory.label}</span>
-                    <span className={`px-1.5 py-0.5 rounded-full text-xs ${
-                      selectedSubCategory === subCategory.value
-                        ? 'bg-primary/10 text-primary'
-                        : 'bg-gray-100 text-gray-500'
-                    }`}>
-                      {subCategory.count}
-                    </span>
-                  </button>
-                ))}
+                  )
+                })}
               </nav>
-            </div>
-          )}
+            )}
 
-          {/* 상태 탭 */}
-          {statusCounts.length > 1 && (
-            <div className="border-b border-gray-200">
-              <nav className="flex space-x-4 overflow-x-auto px-3">
-                {statusCounts.map((status) => (
-                  <button
-                    key={status.value}
-                    onClick={() => setSelectedStatus(status.value)}
-                    className={`flex items-center space-x-1 py-2 px-2 border-b-2 font-medium text-xs whitespace-nowrap transition-colors ${
-                      selectedStatus === status.value
-                        ? 'border-green-500 text-green-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
-                  >
-                    <span>{status.labelKey === 'all' ? t('all') : t(`status.${status.labelKey}`)}</span>
-                    <span className={`px-1.5 py-0.5 rounded-full text-xs ${
-                      selectedStatus === status.value
-                        ? 'bg-green-100 text-green-600'
-                        : 'bg-gray-100 text-gray-500'
-                    }`}>
-                      {status.count}
-                    </span>
-                  </button>
-                ))}
+            {subCategories.length > 1 && (
+              <nav className="flex flex-wrap gap-1.5" aria-label={t('subCategory')}>
+                {subCategories.map((subCategory) => {
+                  const active = selectedSubCategory === subCategory.value
+                  return (
+                    <button
+                      key={subCategory.value}
+                      type="button"
+                      onClick={() => setSelectedSubCategory(subCategory.value)}
+                      className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                        active
+                          ? 'bg-slate-800 text-white shadow-sm'
+                          : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                      }`}
+                    >
+                      <span className={active ? 'text-white' : undefined}>{subCategory.label}</span>
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
+                          active ? 'bg-white/25 text-white' : 'bg-gray-100 text-gray-500'
+                        }`}
+                      >
+                        {subCategory.count}
+                      </span>
+                    </button>
+                  )
+                })}
               </nav>
-            </div>
-          )}
-
-          {/* 배포 여부 탭 */}
-          {products.length > 0 && (
-            <div className="border-b border-gray-200">
-              <nav className="flex space-x-4 overflow-x-auto px-3">
-                {publishCounts.map((publish) => (
-                  <button
-                    key={publish.value}
-                    onClick={() => setSelectedPublish(publish.value)}
-                    className={`flex items-center space-x-1 py-2 px-2 border-b-2 font-medium text-xs whitespace-nowrap transition-colors ${
-                      selectedPublish === publish.value
-                        ? 'border-blue-500 text-blue-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
-                  >
-                    <span>
-                      {publish.labelKey === 'all'
-                        ? t('all')
-                        : publish.labelKey === 'published'
-                          ? t('published')
-                          : t('unpublished')}
-                    </span>
-                    <span className={`px-1.5 py-0.5 rounded-full text-xs ${
-                      selectedPublish === publish.value
-                        ? 'bg-blue-100 text-blue-600'
-                        : 'bg-gray-100 text-gray-500'
-                    }`}>
-                      {publish.count}
-                    </span>
-                  </button>
-                ))}
-              </nav>
-            </div>
-          )}
-                      </div>
-                    </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* 결과 요약 및 뷰 전환 - 모바일 2줄 정리 */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-sm text-gray-600">
@@ -2017,7 +2035,9 @@ export default function AdminProducts() {
       <ProductLocaleReadinessModal
         isOpen={isLocaleReadinessModalOpen}
         onClose={() => setIsLocaleReadinessModalOpen(false)}
-        products={filteredProducts}
+        products={products.filter(
+          (p) => !isAdminProductSoftDeleted((p as { status?: string | null }).status)
+        )}
         homepageChannelId={homepageChannel?.id ?? null}
         locale={locale}
       />

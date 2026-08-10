@@ -1,6 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { normalizeSiteLocale } from '@/lib/siteLocales'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import {
+  changedLocaleSyncDetailFields,
+  syncLocaleTasksAfterDetailsWrite,
+} from '@/lib/productLocaleSyncTasks'
 
 export const DEFAULT_PRODUCT_DETAILS_VARIANT_KEY = 'default'
 
@@ -168,9 +172,9 @@ export async function upsertDefaultProductDetailsMultilingual(
     updated_at: new Date().toISOString(),
   }
 
-  const findExistingRowId = async (): Promise<string | null> => {
+  const findExistingRow = async (): Promise<Record<string, unknown> | null> => {
     const { data, error } = await fromUntypedTable(client, 'product_details_multilingual')
-      .select('id')
+      .select('*')
       .eq('product_id', params.productId)
       .eq('language_code', languageCode)
       .is('channel_id', null)
@@ -181,33 +185,34 @@ export async function upsertDefaultProductDetailsMultilingual(
       throw error
     }
 
-    return data?.id ? String(data.id) : null
+    return (data as Record<string, unknown> | null) ?? null
   }
 
-  const updateById = async (rowId: string) => {
+  const trackSyncTasks = async (previous: Record<string, unknown> | null) => {
+    const fieldKeys = previous
+      ? changedLocaleSyncDetailFields(previous, params.patch)
+      : changedLocaleSyncDetailFields(null, params.patch)
+    await syncLocaleTasksAfterDetailsWrite({
+      productId: params.productId,
+      languageCode,
+      fieldKeys,
+      client,
+    })
+  }
+
+  const updateById = async (rowId: string, previous: Record<string, unknown> | null) => {
     const { error } = await fromUntypedTable(client, 'product_details_multilingual')
       .update(patchWithTimestamp)
       .eq('id', rowId)
 
     if (error) throw error
+    await trackSyncTasks(previous)
     return rowId
   }
 
-  let rowId = params.existingRowId?.trim() || null
-
-  if (rowId) {
-    const verifiedId = await findExistingRowId()
-    if (verifiedId && verifiedId !== rowId) {
-      rowId = verifiedId
-    }
-    if (rowId) {
-      return { id: await updateById(rowId) }
-    }
-  }
-
-  rowId = await findExistingRowId()
-  if (rowId) {
-    return { id: await updateById(rowId) }
+  let existing = await findExistingRow()
+  if (existing?.id) {
+    return { id: await updateById(String(existing.id), existing) }
   }
 
   const { data, error } = await fromUntypedTable(client, 'product_details_multilingual')
@@ -216,13 +221,14 @@ export async function upsertDefaultProductDetailsMultilingual(
     .single()
 
   if (!error && data?.id) {
+    await trackSyncTasks(null)
     return { id: String(data.id) }
   }
 
   if (error && (error as SupabaseErrorShape).code === '23505') {
-    rowId = await findExistingRowId()
-    if (rowId) {
-      return { id: await updateById(rowId) }
+    existing = await findExistingRow()
+    if (existing?.id) {
+      return { id: await updateById(String(existing.id), existing) }
     }
   }
 

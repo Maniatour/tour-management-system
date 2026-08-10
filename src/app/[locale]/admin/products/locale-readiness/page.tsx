@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useLocale, useTranslations } from 'next-intl'
 import { ArrowLeft, Languages } from 'lucide-react'
 import ProductLocaleReadinessModal from '@/components/admin/ProductLocaleReadinessModal'
+import { isAdminProductSoftDeleted } from '@/lib/adminProductDelete'
 import { supabase } from '@/lib/supabase'
 import type { ProductLocaleReadinessSource } from '@/lib/adminProductLocaleReadiness'
 
@@ -38,13 +39,17 @@ export default function ProductLocaleReadinessPage() {
                 'is_published',
               ].join(', ')
             )
+            .neq('status', 'deleted')
             .order('name', { ascending: true }),
           supabase.from('channels').select('id, name').ilike('name', '%home%').limit(5),
         ])
 
         if (cancelled) return
 
-        setProducts((productRows || []) as unknown as ProductLocaleReadinessSource[])
+        const activeProducts = ((productRows || []) as unknown as ProductLocaleReadinessSource[]).filter(
+          (p) => !isAdminProductSoftDeleted((p as { status?: string | null }).status)
+        )
+        setProducts(activeProducts)
         const home =
           (channelRows || []).find((c) => /home|homepage|웹|홈/i.test(c.name || '')) ||
           (channelRows || [])[0]
@@ -65,7 +70,7 @@ export default function ProductLocaleReadinessPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-none px-2 py-6 sm:px-4 lg:px-5 xl:px-6">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-start gap-3">
             <Languages className="mt-0.5 h-6 w-6 text-indigo-600" />

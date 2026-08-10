@@ -5,6 +5,10 @@ import {
   isSiteLocale,
   type SiteLocale,
 } from '@/lib/siteLocales'
+import {
+  syncLocaleTasksAfterDetailsWrite,
+  toLocaleSyncFieldKey,
+} from '@/lib/productLocaleSyncTasks'
 
 /** Scalar product fields stored in product_field_translations. */
 export const PRODUCT_TRANSLATION_FIELDS = [
@@ -189,6 +193,19 @@ export async function upsertProductFieldTranslation(params: {
   value: string
 }): Promise<void> {
   const trimmed = params.value.trim()
+  const syncFieldKey = toLocaleSyncFieldKey(params.fieldKey)
+
+  let previousValue = ''
+  if (syncFieldKey) {
+    const { data: existing } = await supabase
+      .from('product_field_translations')
+      .select('value')
+      .eq('product_id', params.productId)
+      .eq('field_key', params.fieldKey)
+      .eq('locale', params.locale)
+      .maybeSingle()
+    previousValue = typeof existing?.value === 'string' ? existing.value.trim() : ''
+  }
 
   if (!trimmed) {
     const { error } = await supabase
@@ -198,6 +215,13 @@ export async function upsertProductFieldTranslation(params: {
       .eq('field_key', params.fieldKey)
       .eq('locale', params.locale)
     if (error) throw error
+    if (syncFieldKey && previousValue) {
+      await syncLocaleTasksAfterDetailsWrite({
+        productId: params.productId,
+        languageCode: params.locale,
+        fieldKeys: [syncFieldKey],
+      })
+    }
     return
   }
 
@@ -212,6 +236,14 @@ export async function upsertProductFieldTranslation(params: {
     { onConflict: 'product_id,field_key,locale' }
   )
   if (error) throw error
+
+  if (syncFieldKey && previousValue !== trimmed) {
+    await syncLocaleTasksAfterDetailsWrite({
+      productId: params.productId,
+      languageCode: params.locale,
+      fieldKeys: [syncFieldKey],
+    })
+  }
 }
 
 export async function upsertProductFieldTranslations(params: {
