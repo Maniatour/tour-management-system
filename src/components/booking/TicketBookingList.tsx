@@ -7130,6 +7130,19 @@ export default function TicketBookingList() {
                                       {buildTicketRnGroups(dayBookings).map((g) => {
                                         const groupChangePending = g.rows.some(isTicketBookingChangeRequestPending);
                                         const totalEa = g.rows.reduce((sum, booking) => sum + booking.ea, 0);
+                                        const pendingTotalEa = g.rows.reduce((sum, booking) => {
+                                          if (ticketBookingPendingQtyDiffers(booking)) {
+                                            return sum + Number(booking.pending_ea);
+                                          }
+                                          return sum + (Number(booking.ea) || 0);
+                                        }, 0);
+                                        const showQtyChange =
+                                          groupChangePending &&
+                                          g.rows.some(ticketBookingPendingQtyDiffers) &&
+                                          pendingTotalEa !== totalEa;
+                                        const qtyChipText = showQtyChange
+                                          ? `${totalEa}${t('items')} > ${pendingTotalEa}${t('items')}`
+                                          : `${totalEa}${t('items')}`;
                                         const firstBooking = g.rows[0]!;
                                         const withTour = g.rows.filter((b) => Boolean(b.tour_id));
                                         const clipState: 'linked' | 'none' | 'partial' =
@@ -7260,9 +7273,19 @@ export default function TicketBookingList() {
                                                   companyChip.name
                                                 )}
                                               </span>
-                                              <span className="shrink-0 tabular-nums opacity-95">
-                                                {totalEa}
-                                                {t('items')}
+                                              <span
+                                                className={`shrink-0 tabular-nums opacity-95 ${
+                                                  showQtyChange ? 'font-semibold text-red-700' : ''
+                                                }`}
+                                                title={
+                                                  showQtyChange
+                                                    ? locale.startsWith('en')
+                                                      ? `Quantity change requested: ${totalEa} > ${pendingTotalEa}`
+                                                      : `수량 변경 요청: ${totalEa}개 > ${pendingTotalEa}개`
+                                                    : undefined
+                                                }
+                                              >
+                                                {qtyChipText}
                                               </span>
                                               <span className="inline-flex shrink-0 items-center rounded-full bg-indigo-100 px-1 py-px text-[7px] sm:text-[10px] font-bold text-indigo-900 ring-1 ring-indigo-200/90">
                                                 {g.label === 'RN# 없음' ? '—' : g.label}
