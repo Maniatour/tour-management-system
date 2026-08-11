@@ -33,6 +33,8 @@ import BookingHistory from './BookingHistory';
 import TicketBookingReservationDetailModal, {
   type TicketBookingReservationDetailRow,
 } from './TicketBookingReservationDetailModal';
+import TicketBookingActionPanel from './TicketBookingActionPanel';
+import TicketBookingQtyTimeline from './TicketBookingQtyTimeline';
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal';
 import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries';
 import {
@@ -111,9 +113,11 @@ import {
 } from '@/lib/ticketBookingCancelDue';
 import { normalizeReservationIds, isReservationCancelledStatus } from '@/utils/tourUtils';
 import { isTourCancelled } from '@/utils/tourStatusUtils';
+import { resolveAntelopeCheckInDate } from '@/lib/scheduleVehicleOilMaintenance';
 import {
   aggregateTourChoiceCounts,
   choiceLabelToTourCountKey,
+  formatTourChoiceCountsChipLabel,
   tourChoiceCountsHasDisplayable,
   type ReservationChoiceRow,
   type TourChoiceCounts,
@@ -121,6 +125,10 @@ import {
 import {
   buildTicketDateViewGroups,
   formatCanyonCountsInline,
+  aggregateTicketEaByCanyon,
+  mergeTourChoiceCounts,
+  canyonLxCountsMismatch,
+  formatDayTourTicketCanyonCompare,
   type TicketDateViewBookingRow,
   type TicketDateViewGroup,
 } from '@/lib/ticketBookingDateView';
@@ -179,6 +187,16 @@ import {
   ticketBookingPendingQtyDiffers,
   ticketBookingPendingTimeDiffers,
 } from '@/lib/ticketBookingWorkflow';
+import {
+  formatTicketBookingSummaryLine,
+  isTicketBookingCancelDueHighlight,
+  isVendorCancelApproval,
+  matchesTicketWorkboardFilter,
+  resolveTicketBookingUnifiedStatus,
+  getTicketBookingUnifiedStatusBadgeClass,
+  type TicketWorkboardFilter,
+} from '@/lib/ticketBookingDisplay';
+import { localDateYmd as ticketLocalDateYmd } from '@/lib/ticketBookingCancelDue';
 
 /** 로컬 달력 YYYY-MM-DD (달력 칸 기준과 투어 기간 교차 판별용) */
 function localYmdFromDate(date: Date): string {
@@ -722,6 +740,8 @@ interface TourEvent {
   id: string;
   tour_date: string;
   tour_end_datetime?: string | null;
+  /** 투어 상세 — 앤텔롭 캐년 체크인일 (입장권 인원 대조 기준) */
+  antelope_check_in_date?: string | null;
   tour_status?: string | null;
   product_id?: string | null;
   reservation_ids: string[];
@@ -735,6 +755,8 @@ interface TourEvent {
   /** team 조회 후 표시용 */
   guide_display_name?: string;
   assistant_display_name?: string;
+  /** 예약 초이스 합산 (X/L/U) — 달력 투어 칩 */
+  choice_counts?: TourChoiceCounts;
   products?: {
     name: string;
     name_en?: string;
@@ -744,21 +766,6 @@ interface TourEvent {
 /** 수량·시간 변경 요청 진행 중(`change_status === requested`) */
 function isTicketBookingChangeRequestPending(booking: Pick<TicketBooking, 'change_status'>): boolean {
   return String(booking.change_status ?? 'none').toLowerCase().trim() === 'requested';
-}
-
-/** 변경 요청 중이면 예약(확정) 뱃지 대신 변경 축만 표시 */
-function showChangeAxisInsteadOfBookingStatus(
-  booking: Pick<TicketBooking, 'change_status' | 'booking_status' | 'vendor_status'>
-): boolean {
-  return isTicketBookingChangeRequestPending(booking);
-}
-
-function hasSecondaryChangeAxisBadge(
-  booking: Pick<TicketBooking, 'change_status' | 'booking_status' | 'vendor_status'>
-): boolean {
-  if (showChangeAxisInsteadOfBookingStatus(booking)) return false;
-  if (isWorkflowInitialPhase(booking)) return false;
-  return String(booking.change_status ?? 'none').toLowerCase() !== 'none';
 }
 
 function ticketCalendarProductKey(tour: TourEvent): string {
@@ -806,6 +813,44 @@ function isSeeCanyonSupplierCompany(company: string | null | undefined): boolean
   const k = (company || '').trim().toLowerCase().replace(/\s+/g, ' ');
   if (!k) return false;
   return k === 'see canyon' || k.includes('see canyon');
+}
+
+/** 달력 칩용 공급업체 약칭: 🏜️SEE / 🏜️X / 🏜️Dix / 🏜️Ken */
+function ticketBookingCalendarSupplierChipParts(company: string | null | undefined): {
+  emoji: string;
+  name: string;
+  /** SEE Canyon 계열 — 이름(SEE)을 bold */
+  emphasizeName: boolean;
+} {
+  const raw = (company || '').trim();
+  if (!raw) return { emoji: '', name: '—', emphasizeName: false };
+  const k = raw.toLowerCase().replace(/\s+/g, ' ');
+  if (k === 'see canyon' || k.includes('see canyon')) {
+    return { emoji: '🏜️', name: 'SEE', emphasizeName: true };
+  }
+  if (
+    k === 'antelope x' ||
+    k.includes('antelope x') ||
+    k === 'x' ||
+    /^antelope\s*x\b/.test(k)
+  ) {
+    return { emoji: '🏜️', name: 'X', emphasizeName: false };
+  }
+  if (k.includes('dixie') || k === 'dix' || k.startsWith("dixie's") || k.startsWith('dixies')) {
+    return { emoji: '🏜️', name: 'Dix', emphasizeName: false };
+  }
+  if (
+    k === 'mei tour' ||
+    k.includes('mei tour') ||
+    k.includes("ken's") ||
+    k.includes('kens') ||
+    k === 'ken' ||
+    /\bken\b/.test(k)
+  ) {
+    return { emoji: '🏜️', name: 'Ken', emphasizeName: false };
+  }
+  const short = raw.length > 8 ? `${raw.slice(0, 7)}…` : raw;
+  return { emoji: '🏜️', name: short, emphasizeName: false };
 }
 
 /** 티켓 부킹 공급처(company)별 구분색 — 스케줄 프리셋 팔레트와 동일 소스, 문자열 해시로 고정 */
@@ -1063,55 +1108,23 @@ function TicketCalendarRnBookingChipTooltip({
             <div className="space-y-3">
               {rows.map((b) => {
                 const changePending = isTicketBookingChangeRequestPending(b);
-                const cs = String(b.change_status ?? 'none').toLowerCase();
-                const showChangeBadge = !isWorkflowInitialPhase(b) && cs !== 'none';
                 return (
                   <div
                     key={b.id}
                     className="space-y-1.5 border-b border-gray-100 pb-2 last:border-0 last:pb-0"
                   >
                     <div className="flex flex-wrap items-center gap-1">
-                      {changePending ? (
-                        <span
-                          className={`inline-flex max-w-full items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${getChangeAxisStatusBadgeClass(b.change_status)}`}
-                        >
-                          {formatTicketBookingAxisLabel(tAxis, 'change', b.change_status)}
-                        </span>
-                      ) : (
-                        <>
+                      {(() => {
+                        const unified = resolveTicketBookingUnifiedStatus(b, locale);
+                        return (
                           <span
-                            className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${getBookingAxisStatusBadgeClass(b.booking_status)}`}
+                            className={`inline-flex max-w-full items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${getTicketBookingUnifiedStatusBadgeClass(unified.key)}`}
+                            title={unified.detail}
                           >
-                            <TicketBookingBookingStatusIcon
-                              status={b.booking_status}
-                              className="h-3 w-3 shrink-0"
-                              title={formatTicketBookingAxisLabel(tAxis, 'booking', b.booking_status)}
-                            />
-                            <span className="truncate">
-                              {formatTicketBookingAxisLabel(tAxis, 'booking', b.booking_status)}
-                            </span>
+                            {unified.label}
                           </span>
-                          <span
-                            className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${getVendorAxisStatusBadgeClass(b.vendor_status)}`}
-                          >
-                            <TicketBookingVendorStatusIcon
-                              status={b.vendor_status}
-                              className="h-3 w-3 shrink-0"
-                              title={formatTicketBookingAxisLabel(tAxis, 'vendor', b.vendor_status)}
-                            />
-                            <span className="truncate">
-                              {formatTicketBookingAxisLabel(tAxis, 'vendor', b.vendor_status)}
-                            </span>
-                          </span>
-                          {showChangeBadge ? (
-                            <span
-                              className={`inline-flex max-w-full items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${getChangeAxisStatusBadgeClass(b.change_status)}`}
-                            >
-                              {formatTicketBookingAxisLabel(tAxis, 'change', b.change_status)}
-                            </span>
-                          ) : null}
-                        </>
-                      )}
+                        );
+                      })()}
                     </div>
                     {changePending ? (
                       <div className="space-y-1 rounded-md bg-red-50 px-2 py-1.5 ring-1 ring-red-200">
@@ -1222,6 +1235,8 @@ export default function TicketBookingList() {
   const [cancelDeadlineFilter, setCancelDeadlineFilter] = useState(false);
   /** 예매 요청·변경 요청 등 벤더 응답 대기 행만 */
   const [pendingRequestOnlyFilter, setPendingRequestOnlyFilter] = useState(false);
+  /** 워크보드: Cancel Due 임박 / 미결제 / 투어 당일 (요청 중은 pendingRequestOnlyFilter와 병행) */
+  const [workboardFilter, setWorkboardFilter] = useState<TicketWorkboardFilter>('none');
   /** 동일 RN#에 부킹 행이 2건 이상인 것만 */
   const [multiRnOnlyFilter, setMultiRnOnlyFilter] = useState(false);
   /** 검수(확인) 완료된 부킹 숨김 */
@@ -1282,8 +1297,9 @@ export default function TicketBookingList() {
     null | { bookingId: string; axis: 'booking' | 'vendor' }
   >(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
-  const axisBadgeRefs = useRef<Map<string, HTMLSpanElement>>(new Map());
-  const [tourDetailModalTourId, setTourDetailModalTourId] = useState<string | null>(null);
+  const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; title: string } | null>(
+    null
+  );
   const [invoiceQuickBooking, setInvoiceQuickBooking] = useState<TicketBooking | null>(null);
   /** 모달 Invoice# — ref로 두어 타이핑 시 부모(TicketBookingList) 전체 리렌더를 막음 */
   const invoiceQuickDraftRef = useRef('');
@@ -2501,6 +2517,7 @@ export default function TicketBookingList() {
           id,
           tour_date,
           tour_end_datetime,
+          antelope_check_in_date,
           tour_status,
           product_id,
           reservation_ids,
@@ -2610,6 +2627,51 @@ export default function TicketBookingList() {
         }
       }
 
+      const choiceRowsByResId = new Map<string, ReservationChoiceRow[]>();
+      for (let i = 0; i < reservationIdList.length; i += RES_BATCH) {
+        const batchIds = reservationIdList.slice(i, i + RES_BATCH);
+        if (batchIds.length === 0) continue;
+        const { data: rcData, error: rcErr } = await supabase
+          .from('reservation_choices')
+          .select(
+            `
+            reservation_id,
+            quantity,
+            choice_options (
+              option_key,
+              option_name_ko,
+              option_name
+            )
+          `
+          )
+          .in('reservation_id', batchIds);
+        if (rcErr) {
+          console.warn('달력 투어 초이스 조회:', rcErr);
+          break;
+        }
+        for (const row of (rcData || []) as Array<{
+          reservation_id: string | null;
+          quantity?: number | null;
+          choice_options?: {
+            option_key?: string | null;
+            option_name_ko?: string | null;
+            option_name?: string | null;
+          } | null;
+        }>) {
+          const rid = row.reservation_id?.trim();
+          if (!rid) continue;
+          const opt = row.choice_options;
+          const choiceKey = choiceLabelToTourCountKey(
+            opt?.option_name_ko ?? null,
+            opt?.option_name ?? null,
+            opt?.option_key ?? null
+          );
+          const list = choiceRowsByResId.get(rid) || [];
+          list.push({ choiceKey, quantity: Number(row.quantity) || 1 });
+          choiceRowsByResId.set(rid, list);
+        }
+      }
+
       const tourEventsWithReservations = toursData.map((tour: TourEvent) => {
         const ids = tour.reservation_ids || [];
         if (ids.length === 0) {
@@ -2647,6 +2709,8 @@ export default function TicketBookingList() {
           0
         );
 
+        const choiceCounts = aggregateTourChoiceCounts(activeReservations, choiceRowsByResId);
+
         return {
           ...tour,
           total_reservations: activeReservations.length,
@@ -2654,6 +2718,9 @@ export default function TicketBookingList() {
           adults: totalAdults,
           child: totalChild,
           infant: totalInfant,
+          ...(tourChoiceCountsHasDisplayable(choiceCounts)
+            ? { choice_counts: choiceCounts }
+            : {}),
         };
       });
 
@@ -2690,15 +2757,6 @@ export default function TicketBookingList() {
       document.removeEventListener('click', handleClickOutside);
     };
   }, [openAxisDropdown]);
-
-  useEffect(() => {
-    if (!tourDetailModalTourId) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setTourDetailModalTourId(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [tourDetailModalTourId]);
 
   useEffect(() => {
     fetchTourEvents();
@@ -4211,6 +4269,7 @@ export default function TicketBookingList() {
 
   // 모든 필터를 적용한 부킹 목록 (입력/필터/뷰 변경 시에만 재계산)
   const filteredBookings = useMemo(() => {
+    const todayYmd = ticketLocalDateYmd();
     return bookingsPassingBaseFilters.filter((booking) => {
       if (hideAuditedFilter && Boolean(booking.audited)) return false;
       if (multiRnOnlyFilter && !multiRnBookingIdSet.has(booking.id)) return false;
@@ -4219,6 +4278,17 @@ export default function TicketBookingList() {
       }
       if (pendingRequestOnlyFilter) {
         return isTicketBookingPendingRequestState(booking);
+      }
+      if (workboardFilter !== 'none') {
+        const sp = supplierProductsMap.get(booking.company || '');
+        if (
+          !matchesTicketWorkboardFilter(booking, workboardFilter, {
+            supplierProduct: sp ?? null,
+            todayYmd,
+          })
+        ) {
+          return false;
+        }
       }
       return ticketBookingMatchesStatusFilters(booking, selectedStatusFilters);
     });
@@ -4231,6 +4301,8 @@ export default function TicketBookingList() {
     pendingRequestOnlyFilter,
     needsReviewEaMismatch,
     viewMode,
+    workboardFilter,
+    supplierProductsMap,
   ]);
 
   // 정렬된 부킹 목록 (정렬 필드/방향 변경 시에만 재계산)
@@ -4687,20 +4759,6 @@ export default function TicketBookingList() {
     [tTbAxis]
   );
 
-  const toggleAxisDropdown = useCallback((bookingId: string, axis: 'booking' | 'vendor') => {
-    const key = `${bookingId}:${axis}`;
-    const el = axisBadgeRefs.current.get(key);
-    if (el) {
-      const rect = el.getBoundingClientRect();
-      const vw = typeof window !== 'undefined' ? window.innerWidth : rect.left + 280;
-      const left = Math.min(rect.left, Math.max(8, vw - 260));
-      setDropdownPosition({ top: rect.bottom + 4, left });
-    }
-    setOpenAxisDropdown((prev) =>
-      prev?.bookingId === bookingId && prev?.axis === axis ? null : { bookingId, axis }
-    );
-  }, []);
-
   const BOOKING_AXIS_DROPDOWN_CHANGE_REQUEST = '__booking_axis_dropdown_change_request__';
 
   const renderTicketBookingAxisDropdownPortal = (booking: TicketBooking) => {
@@ -4869,8 +4927,21 @@ export default function TicketBookingList() {
     );
   };
 
+  const getTourDetailModalTitle = useCallback(
+    (tourId: string) => {
+      const tour = tourEvents.find((t) => t.id === tourId);
+      if (!tour) return '투어 상세';
+      const productName =
+        tour.products?.name || tour.products?.name_en || tour.product_id || '투어';
+      const [, m, d] = (tour.tour_date || '').split('-');
+      const datePart = m && d ? `${m}/${d}` : '';
+      return datePart ? `${datePart} ${productName}` : productName;
+    },
+    [tourEvents]
+  );
+
   const handleTourClick = (tourId: string) => {
-    setTourDetailModalTourId(tourId);
+    setTourDetailModal({ tourId, title: getTourDetailModalTitle(tourId) });
   };
 
   const getCCStatusText = (cc: string) => {
@@ -5021,7 +5092,6 @@ export default function TicketBookingList() {
     const axisChipClassModal = isModalForm
       ? 'inline-flex w-full min-w-0 min-h-[2.35rem] max-w-full items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-semibold rounded-full cursor-pointer hover:opacity-90 transition-opacity'
       : 'inline-flex max-w-full items-center gap-1 truncate px-2 py-0.5 text-xs font-semibold rounded-full flex-shrink-0 cursor-pointer hover:opacity-90';
-    const axisIconClassModal = isModalForm ? 'h-3.5 w-3.5 shrink-0' : 'h-3 w-3 shrink-0';
     return (
       <div
         key={booking.id}
@@ -5046,86 +5116,28 @@ export default function TicketBookingList() {
         ) : null}
         {isModalForm ? (
           <div className="space-y-2">
-            {showChangeAxisInsteadOfBookingStatus(booking) ? (
-              <span
-                className={`${axisChipClassModal} w-full ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
-              >
-                {formatTicketBookingAxisLabel(tTbAxis, 'change', booking.change_status)}
-              </span>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                <span
-                  ref={(el) => {
-                    const key = `${booking.id}:booking`;
-                    if (el) axisBadgeRefs.current.set(key, el);
-                    else axisBadgeRefs.current.delete(key);
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  className={`${axisChipClassModal} ${getBookingAxisStatusBadgeClass(booking.booking_status)}`}
+            {(() => {
+              const unified = resolveTicketBookingUnifiedStatus(booking, locale);
+              return (
+                <button
+                  type="button"
+                  className={`${axisChipClassModal} w-full ${getTicketBookingUnifiedStatusBadgeClass(unified.key)}`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    toggleAxisDropdown(booking.id, 'booking');
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      toggleAxisDropdown(booking.id, 'booking');
-                    }
+                    setAxesDialogBooking(booking);
                   }}
                   title={
-                    locale === 'ko' ? '클릭하여 예약 상태 변경 (다축과 동일 목록)' : 'Change booking status'
+                    locale.startsWith('en')
+                      ? `Unified status · ${unified.detail} (click to edit axes)`
+                      : `통합 상태 · ${unified.detail} (클릭하면 상세 축 편집)`
                   }
                 >
-                  <TicketBookingBookingStatusIcon
-                    status={booking.booking_status}
-                    className={axisIconClassModal}
-                    title={formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
-                  />
-                  <span className="min-w-0 truncate text-center">
-                    {formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
-                  </span>
-                </span>
-                <span
-                  ref={(el) => {
-                    const key = `${booking.id}:vendor`;
-                    if (el) axisBadgeRefs.current.set(key, el);
-                    else axisBadgeRefs.current.delete(key);
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  className={`${axisChipClassModal} ${getVendorAxisStatusBadgeClass(booking.vendor_status)}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleAxisDropdown(booking.id, 'vendor');
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      toggleAxisDropdown(booking.id, 'vendor');
-                    }
-                  }}
-                  title={
-                    locale === 'ko'
-                      ? '클릭하여 벤더 상태 변경 (다축과 동일 목록)'
-                      : 'Change vendor status'
-                  }
-                >
-                  <TicketBookingVendorStatusIcon
-                    status={booking.vendor_status}
-                    className={axisIconClassModal}
-                    title={formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
-                  />
-                  <span className="min-w-0 truncate text-center">
-                    {formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
-                  </span>
-                </span>
-              </div>
-            )}
+                  <span className="min-w-0 truncate text-center font-semibold">{unified.label}</span>
+                </button>
+              );
+            })()}
             <div className="flex flex-wrap items-center gap-2">
-              {showChangeRequestButton(booking) && !showChangeAxisInsteadOfBookingStatus(booking) ? (
+              {showChangeRequestButton(booking) ? (
                 <button
                   type="button"
                   className="inline-flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-full border border-amber-400 bg-amber-50 text-amber-950 hover:bg-amber-100 disabled:opacity-50"
@@ -5172,103 +5184,27 @@ export default function TicketBookingList() {
               </div>
             ) : null}
             {renderVendorChangeActionButtons(booking, 'card')}
-            {hasSecondaryChangeAxisBadge(booking) ? (
-              <span
-                className={`inline-flex w-full max-w-full items-center justify-center rounded-full px-2.5 py-1.5 text-[11px] font-semibold ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
-              >
-                {formatTicketBookingAxisLabel(tTbAxis, 'change', booking.change_status)}
-              </span>
-            ) : null}
           </div>
         ) : (
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1 space-y-1">
               <div className="flex flex-wrap items-center gap-1.5">
-                {showChangeAxisInsteadOfBookingStatus(booking) ? (
-                  <span
-                    className={`inline-flex max-w-full truncate px-2 py-0.5 text-[10px] font-semibold rounded-full ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
-                  >
-                    {formatTicketBookingAxisLabel(tTbAxis, 'change', booking.change_status)}
-                  </span>
-                ) : (
-                  <>
-                <span
-                  ref={(el) => {
-                    const key = `${booking.id}:booking`;
-                    if (el) axisBadgeRefs.current.set(key, el);
-                    else axisBadgeRefs.current.delete(key);
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  className={`${axisChipClassModal} ${getBookingAxisStatusBadgeClass(booking.booking_status)}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleAxisDropdown(booking.id, 'booking');
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      toggleAxisDropdown(booking.id, 'booking');
-                    }
-                  }}
-                  title={
-                    locale === 'ko' ? '클릭하여 예약 상태 변경 (다축과 동일 목록)' : 'Change booking status'
-                  }
-                >
-                  <TicketBookingBookingStatusIcon
-                    status={booking.booking_status}
-                    className={axisIconClassModal}
-                    title={formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
-                  />
-                  <span className="truncate">
-                    {formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
-                  </span>
-                </span>
-                <span
-                  ref={(el) => {
-                    const key = `${booking.id}:vendor`;
-                    if (el) axisBadgeRefs.current.set(key, el);
-                    else axisBadgeRefs.current.delete(key);
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  className={`${axisChipClassModal} ${getVendorAxisStatusBadgeClass(booking.vendor_status)}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleAxisDropdown(booking.id, 'vendor');
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      toggleAxisDropdown(booking.id, 'vendor');
-                    }
-                  }}
-                  title={
-                    locale === 'ko'
-                      ? '클릭하여 벤더 상태 변경 (다축과 동일 목록)'
-                      : 'Change vendor status'
-                  }
-                >
-                  <TicketBookingVendorStatusIcon
-                    status={booking.vendor_status}
-                    className={axisIconClassModal}
-                    title={formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
-                  />
-                  <span className="truncate">
-                    {formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
-                  </span>
-                </span>
-                {hasSecondaryChangeAxisBadge(booking) ? (
-                  <span
-                    className={`inline-flex max-w-full truncate px-2 py-0.5 text-[10px] font-semibold rounded-full ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
-                  >
-                    {formatTicketBookingAxisLabel(tTbAxis, 'change', booking.change_status)}
-                  </span>
-                ) : null}
-                  </>
-                )}
+                {(() => {
+                  const unified = resolveTicketBookingUnifiedStatus(booking, locale);
+                  return (
+                    <button
+                      type="button"
+                      className={`inline-flex max-w-full truncate px-2 py-0.5 text-[10px] font-semibold rounded-full ${getTicketBookingUnifiedStatusBadgeClass(unified.key)}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAxesDialogBooking(booking);
+                      }}
+                      title={unified.detail}
+                    >
+                      {unified.label}
+                    </button>
+                  );
+                })()}
               </div>
               <button
                 type="button"
@@ -5290,107 +5226,283 @@ export default function TicketBookingList() {
           </div>
         )}
         {isModalForm ? (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <FormField label={formLabel('카테고리', 'Category')}>
-              <span className="font-medium text-gray-900">{booking.category}</span>
-            </FormField>
-            <FormField label={formLabel('공급업체', 'Supplier')}>
-              <span
-                className="inline-block max-w-full truncate rounded px-2 py-1 text-xs font-semibold ring-1 ring-black/10"
-                style={{ backgroundColor: supplierStyle.backgroundColor, color: supplierStyle.color }}
-              >
-                {booking.company}
-              </span>
-            </FormField>
-            <FormField label={formLabel('날짜', 'Check-in date')}>
-              <span className="font-medium tabular-nums">
-                {booking.check_in_date ? new Date(booking.check_in_date).toISOString().split('T')[0] : '-'}
-              </span>
-            </FormField>
-            <FormField label={formLabel('시간', 'Time')}>
-              <span
-                className={`font-medium ${ticketBookingPendingTimeDiffers(booking) ? 'font-semibold text-red-600' : ''}`}
-              >
-                {formatTimeArrow(booking)}
-              </span>
-            </FormField>
-            <FormField label={formLabel('수량', 'Quantity')}>
-              <span
-                className={`font-medium ${ticketBookingPendingQtyDiffers(booking) ? 'font-semibold text-red-600' : ''}`}
-              >
-                {formatQtyArrow(booking)}
-              </span>
-            </FormField>
-            {cancelDueDate ? (
-              <FormField label="Cancel Due">
-                <span className={isOverdue ? 'text-red-600 font-semibold' : 'font-medium'}>{cancelDueDate}</span>
-              </FormField>
-            ) : null}
-            <FormField label="RN#">
-              <span className="font-medium truncate">{booking.rn_number?.trim() || '—'}</span>
-            </FormField>
-            <FormField label={formLabel('Invoice#', 'Invoice #')}>
-              <span className="font-medium truncate">{booking.invoice_number?.trim() || '—'}</span>
-            </FormField>
-            <FormField label={formLabel('Zelle 확인#', 'Zelle confirmation #')}>
-              <span className="font-medium truncate">{booking.zelle_confirmation_number?.trim() || '—'}</span>
-            </FormField>
-            <FormField label={formLabel('EA 금액', 'EA amount')} title={formLabel('(비용 − 수입) ÷ 수량', '(Expense − income) ÷ qty')}>
-              <span
-                className={`font-medium tabular-nums ${ticketBookingPendingExpenseDiffers(booking) ? 'font-semibold text-red-600' : ''}`}
-              >
-                {formatEaMarginUsdArrow(booking)}
-              </span>
-            </FormField>
-            <FormField label={formLabel('비용 (USD)', 'Expense (USD)')}>
-              <span
-                className={`font-medium ${ticketBookingPendingExpenseDiffers(booking) ? 'font-semibold text-red-600' : ''}`}
-              >
-                {formatExpenseArrow(booking)}
-              </span>
-            </FormField>
-            <FormField label={formLabel('제출일', 'Submitted')}>
-              <span className="font-medium tabular-nums">
-                {booking.submit_on ? new Date(booking.submit_on).toISOString().split('T')[0] : '-'}
-              </span>
-            </FormField>
-            <div className="col-span-2 grid grid-cols-2 gap-2 sm:col-span-3">
-              <FormField label={formLabel('투어', 'Tour')}>
-                {booking.tour_id ? (
-                  booking.tours ? (
-                    <TicketBookingTourDisplay
-                      locale={locale}
-                      tours={booking.tours}
-                      tourFallback={t('tour')}
-                    />
-                  ) : (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                {formLabel('지금 상태', 'Current status')}
+              </div>
+              {(() => {
+                const unified = resolveTicketBookingUnifiedStatus(booking, locale);
+                return (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getTicketBookingUnifiedStatusBadgeClass(unified.key)}`}
+                      title={unified.detail}
+                    >
+                      {unified.label}
+                    </span>
+                    <p className="text-xs text-slate-600 break-words">
+                      {formatTicketBookingSummaryLine(booking, locale)}
+                    </p>
+                  </div>
+                );
+              })()}
+              {isVendorCancelApproval(booking) ? (
+                <p className="mt-1 text-xs text-red-700">
+                  {locale.startsWith('en')
+                    ? 'Quantity on file is the original hold; effective seats are 0 after cancel approval.'
+                    : '기록 수량은 원래 가예약 수량입니다. 취소 승인 후 유효 수량은 0입니다.'}
+                </p>
+              ) : null}
+              {ticketBookingPendingQtyDiffers(booking) ? (
+                <p className="mt-1 text-xs font-semibold text-orange-800">
+                  {locale.startsWith('en') ? 'Qty change: ' : '수량 변경: '}
+                  {formatQtyArrow(booking)}
+                </p>
+              ) : null}
+            </div>
+
+            <div>
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                {formLabel('예약 정보', 'Booking')}
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <FormField label={formLabel('카테고리', 'Category')}>
+                  <span className="font-medium text-gray-900">{booking.category}</span>
+                </FormField>
+                <FormField label={formLabel('공급업체', 'Supplier')}>
+                  <span
+                    className="inline-block max-w-full truncate rounded px-2 py-1 text-xs font-semibold ring-1 ring-black/10"
+                    style={{ backgroundColor: supplierStyle.backgroundColor, color: supplierStyle.color }}
+                  >
+                    {booking.company}
+                  </span>
+                </FormField>
+                <FormField label={formLabel('날짜', 'Check-in date')}>
+                  <span className="font-medium tabular-nums">
+                    {booking.check_in_date ? new Date(booking.check_in_date).toISOString().split('T')[0] : '-'}
+                  </span>
+                </FormField>
+                <FormField label={formLabel('시간', 'Time')}>
+                  <span
+                    className={`font-medium ${ticketBookingPendingTimeDiffers(booking) ? 'font-semibold text-red-600' : ''}`}
+                  >
+                    {formatTimeArrow(booking)}
+                  </span>
+                </FormField>
+                <FormField label={formLabel('수량', 'Quantity')}>
+                  <span
+                    className={`font-medium ${ticketBookingPendingQtyDiffers(booking) ? 'font-semibold text-red-600' : ''}`}
+                  >
+                    {formatQtyArrow(booking)}
+                  </span>
+                </FormField>
+                {cancelDueDate ? (
+                  <FormField label="Cancel Due">
+                    <span className={isOverdue ? 'text-red-600 font-semibold' : 'font-medium'}>{cancelDueDate}</span>
+                  </FormField>
+                ) : null}
+                <FormField label="RN#">
+                  <span className="font-medium truncate">{booking.rn_number?.trim() || '—'}</span>
+                </FormField>
+                <div className="col-span-2 grid grid-cols-2 gap-2 sm:col-span-3">
+                  <FormField label={formLabel('투어', 'Tour')}>
+                    {booking.tour_id ? (
+                      booking.tours ? (
+                        <TicketBookingTourDisplay
+                          locale={locale}
+                          tours={booking.tours}
+                          tourFallback={t('tour')}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          className="text-left text-xs font-medium text-amber-800 underline decoration-amber-400/80 underline-offset-2 hover:text-amber-950"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setLinkTourModalBooking(booking);
+                          }}
+                        >
+                          {locale.startsWith('en') ? 'Linked' : '연결됨'}
+                        </button>
+                      )
+                    ) : (
+                      <button
+                        type="button"
+                        className="text-left text-xs font-medium text-red-600 underline decoration-red-400/80 underline-offset-2 hover:text-red-800"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLinkTourModalBooking(booking);
+                        }}
+                      >
+                        {locale.startsWith('en') ? 'Not linked · link' : '미연결 · 연결'}
+                      </button>
+                    )}
+                  </FormField>
+                  <FormField label={formLabel('예약자', 'Reservation name')}>
+                    <span className="font-medium break-words text-gray-900">{booking.reservation_name || '—'}</span>
+                  </FormField>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-gray-200 bg-white px-3 py-2.5">
+              <TicketBookingQtyTimeline booking={booking} locale={locale} />
+            </div>
+
+            <div>
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                {formLabel('비용·결제', 'Cost & payment')}
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <FormField label={formLabel('Invoice#', 'Invoice #')}>
+                  <span className="font-medium truncate">{booking.invoice_number?.trim() || '—'}</span>
+                </FormField>
+                <FormField label={formLabel('Zelle 확인#', 'Zelle confirmation #')}>
+                  <span className="font-medium truncate">{booking.zelle_confirmation_number?.trim() || '—'}</span>
+                </FormField>
+                <FormField label={formLabel('EA 금액', 'EA amount')} title={formLabel('(비용 − 수입) ÷ 수량', '(Expense − income) ÷ qty')}>
+                  <span
+                    className={`font-medium tabular-nums ${ticketBookingPendingExpenseDiffers(booking) ? 'font-semibold text-red-600' : ''}`}
+                  >
+                    {formatEaMarginUsdArrow(booking)}
+                  </span>
+                </FormField>
+                <FormField label={formLabel('비용 (USD)', 'Expense (USD)')}>
+                  <span
+                    className={`font-medium ${ticketBookingPendingExpenseDiffers(booking) ? 'font-semibold text-red-600' : ''}`}
+                  >
+                    {formatExpenseArrow(booking)}
+                  </span>
+                </FormField>
+                <FormField label={formLabel('결제상태', 'Payment')}>
+                  <span className="font-medium">
+                    {formatTicketBookingAxisLabel(tTbAxis, 'payment', booking.payment_status)}
+                  </span>
+                </FormField>
+                <FormField label={formLabel('제출일', 'Submitted')}>
+                  <span className="font-medium tabular-nums">
+                    {booking.submit_on ? new Date(booking.submit_on).toISOString().split('T')[0] : '-'}
+                  </span>
+                </FormField>
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                {formLabel('액션', 'Actions')}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {showVendorInitialActions(booking) ? (
+                  <>
                     <button
                       type="button"
-                      className="text-left text-xs font-medium text-amber-800 underline decoration-amber-400/80 underline-offset-2 hover:text-amber-950"
+                      className="inline-flex h-9 items-center rounded-lg bg-slate-800 px-3 text-xs font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+                      disabled={workflowActionSavingId === booking.id}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setLinkTourModalBooking(booking);
+                        setVendorConfirmModalBooking(booking);
                       }}
                     >
-                      {locale.startsWith('en') ? 'Linked' : '연결됨'}
+                      {formLabel('벤더 가예약 승인', 'Vendor accept hold')}
                     </button>
-                  )
-                ) : (
+                    <button
+                      type="button"
+                      className="inline-flex h-9 items-center rounded-lg border border-red-300 bg-red-50 px-3 text-xs font-medium text-red-900 hover:bg-red-100 disabled:opacity-50"
+                      disabled={workflowActionSavingId === booking.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void runWorkflowRpc(booking, 'workflow_vendor_reject_initial');
+                      }}
+                    >
+                      {formLabel('벤더 거절', 'Vendor reject')}
+                    </button>
+                  </>
+                ) : null}
+                {showVendorChangeActions(booking) ? (
+                  <>
+                    <button
+                      type="button"
+                      className="inline-flex h-9 items-center rounded-lg bg-slate-800 px-3 text-xs font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+                      disabled={workflowActionSavingId === booking.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void runWorkflowRpc(
+                          booking,
+                          'workflow_vendor_confirm_change',
+                          buildVendorConfirmChangePayload(booking)
+                        );
+                      }}
+                    >
+                      {formLabel('변경 승인', 'Accept change')}
+                    </button>
+                    {ticketBookingHasMultiplePendingChanges(booking) ? (
+                      <button
+                        type="button"
+                        className="inline-flex h-9 items-center rounded-lg border border-amber-500 bg-amber-50 px-3 text-xs font-medium text-amber-950 hover:bg-amber-100 disabled:opacity-50"
+                        disabled={workflowActionSavingId === booking.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setVendorPartialChangeModalBooking(booking);
+                        }}
+                      >
+                        {formLabel('부분 확정', 'Partial confirm')}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="inline-flex h-9 items-center rounded-lg border border-red-300 bg-red-50 px-3 text-xs font-medium text-red-900 hover:bg-red-100 disabled:opacity-50"
+                      disabled={workflowActionSavingId === booking.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void runWorkflowRpc(booking, 'workflow_vendor_reject_change');
+                      }}
+                    >
+                      {formLabel('변경 거절', 'Reject change')}
+                    </button>
+                  </>
+                ) : null}
+                {showChangeRequestButton(booking) ? (
                   <button
                     type="button"
-                    className="text-left text-xs font-medium text-red-600 underline decoration-red-400/80 underline-offset-2 hover:text-red-800"
+                    className="inline-flex h-9 items-center rounded-lg border border-amber-400 bg-amber-50 px-3 text-xs font-medium text-amber-950 hover:bg-amber-100 disabled:opacity-50"
+                    disabled={workflowActionSavingId === booking.id}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setLinkTourModalBooking(booking);
+                      setChangeModalBooking(booking);
                     }}
                   >
-                    {locale.startsWith('en') ? 'Not linked · link' : '미연결 · 연결'}
+                    {formLabel('수량 변경', 'Change quantity')}
                   </button>
-                )}
-              </FormField>
-              <FormField label={formLabel('예약자', 'Reservation name')}>
-                <span className="font-medium break-words text-gray-900">{booking.reservation_name || '—'}</span>
-              </FormField>
+                ) : null}
+                {showPaymentCompleteButton(booking) ? (
+                  <button
+                    type="button"
+                    className="inline-flex h-9 items-center rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-xs font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                    disabled={workflowActionSavingId === booking.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPaymentModalBooking(booking);
+                    }}
+                  >
+                    {formLabel('결제 기록', 'Record payment')}
+                  </button>
+                ) : null}
+              </div>
+              <TicketBookingActionPanel
+                bookingId={booking.id}
+                axes={{
+                  booking_status: booking.booking_status,
+                  vendor_status: booking.vendor_status,
+                  change_status: booking.change_status,
+                  payment_status: booking.payment_status,
+                  refund_status: booking.refund_status,
+                  operation_status: booking.operation_status,
+                }}
+                onApplied={() => {
+                  void fetchBookings();
+                }}
+              />
             </div>
           </div>
         ) : (
@@ -5471,15 +5583,22 @@ export default function TicketBookingList() {
           )}
         </div>
         )}
-        <div className="pt-2 border-t border-gray-100">
-          <BookingAuditCell
-            audit={booking}
-            disabled={!user?.email}
-            saving={bookingAuditSavingId === booking.id}
-            onToggle={(next) => void handleToggleTicketBookingAudit(booking, next)}
-          />
-        </div>
+        {!isModalForm ? (
+          <div className="pt-2 border-t border-gray-100">
+            <BookingAuditCell
+              audit={booking}
+              disabled={!user?.email}
+              saving={bookingAuditSavingId === booking.id}
+              onToggle={(next) => void handleToggleTicketBookingAudit(booking, next)}
+            />
+          </div>
+        ) : null}
         <div className="flex flex-wrap gap-1.5 pt-2 border-t border-gray-100">
+          {isModalForm ? (
+            <span className="w-full text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+              {locale.startsWith('en') ? 'Attachments' : '첨부'}
+            </span>
+          ) : null}
           <button
             type="button"
             onClick={(e) => {
@@ -5504,7 +5623,10 @@ export default function TicketBookingList() {
         {renderTicketBookingAxisDropdownPortal(booking)}
         {isModalForm ? (
           <>
-            <div className="pt-2 border-t border-gray-100">
+            <div className="pt-2 border-t border-gray-100 space-y-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                {locale.startsWith('en') ? 'Review · statement' : '검수 · 명세'}
+              </div>
               <BookingAuditCell
                 audit={booking}
                 disabled={!user?.email}
@@ -5553,11 +5675,14 @@ export default function TicketBookingList() {
             ) : null}
             <th
               className={`${TICKET_TABLE_TH} sticky left-0 z-10 min-w-[8.5rem] bg-gray-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]${showRnRowSelection ? ' left-9' : ''}`}
-              title={t('ticketTableStatusThHintSummary')}
+              title={
+                locale === 'ko'
+                  ? '예약·벤더·변경을 합친 통합 상태 (클릭 시 상세 축 편집)'
+                  : 'Unified status from booking · vendor · change'
+              }
             >
               상태
             </th>
-            <th className={TICKET_TABLE_TH}>벤더</th>
             <th className={TICKET_TABLE_TH}>결제</th>
             <th className={`${TICKET_TABLE_TH} hidden xl:table-cell max-w-[6rem]`}>환불</th>
             <th className={TICKET_TABLE_TH}>공급</th>
@@ -5621,66 +5746,23 @@ export default function TicketBookingList() {
       : 'hover:bg-gray-50';
     const supplierStyle = ticketBookingSupplierColors(booking.company);
 
-    const bookingStatusBadge = (
-      <span
-        ref={(el) => {
-          const key = `${booking.id}:booking`;
-          if (el) {
-            axisBadgeRefs.current.set(key, el);
-          } else {
-            axisBadgeRefs.current.delete(key);
-          }
-        }}
-        className={`inline-flex max-w-full min-h-[1.625rem] items-center gap-1.5 px-2 py-1 text-xs font-semibold rounded-full cursor-pointer hover:opacity-90 transition-opacity ${getBookingAxisStatusBadgeClass(booking.booking_status)}`}
+    const unified = resolveTicketBookingUnifiedStatus(booking, locale);
+    const unifiedStatusBadge = (
+      <button
+        type="button"
+        className={`inline-flex max-w-full min-h-[1.625rem] items-center gap-1.5 px-2 py-1 text-xs font-semibold rounded-full cursor-pointer hover:opacity-90 transition-opacity ${getTicketBookingUnifiedStatusBadgeClass(unified.key)}`}
         onClick={(e) => {
           e.stopPropagation();
-          toggleAxisDropdown(booking.id, 'booking');
-        }}
-        title={
-          locale === 'ko' ? '클릭하여 예약 상태 변경 (다축과 동일 목록)' : 'Change booking status'
-        }
-      >
-        <TicketBookingBookingStatusIcon
-          status={booking.booking_status}
-          className="h-3.5 w-3.5 shrink-0"
-          title={formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
-        />
-        <span className="truncate">
-          {formatTicketBookingAxisLabel(tTbAxis, 'booking', booking.booking_status)}
-        </span>
-      </span>
-    );
-
-    const vendorStatusBadge = (
-      <span
-        ref={(el) => {
-          const key = `${booking.id}:vendor`;
-          if (el) {
-            axisBadgeRefs.current.set(key, el);
-          } else {
-            axisBadgeRefs.current.delete(key);
-          }
-        }}
-        className={`inline-flex max-w-full min-h-[1.625rem] items-center gap-1.5 px-2 py-1 text-xs font-semibold rounded-full cursor-pointer hover:opacity-90 transition-opacity ${getVendorAxisStatusBadgeClass(booking.vendor_status)}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          toggleAxisDropdown(booking.id, 'vendor');
+          setAxesDialogBooking(booking);
         }}
         title={
           locale === 'ko'
-            ? '클릭하여 벤더 상태 변경 (다축과 동일 목록)'
-            : 'Change vendor status'
+            ? `${unified.detail} · 클릭하여 상세 축 편집`
+            : `${unified.detail} · click to edit axes`
         }
       >
-        <TicketBookingVendorStatusIcon
-          status={booking.vendor_status}
-          className="h-3.5 w-3.5 shrink-0"
-          title={formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
-        />
-        <span className="truncate">
-          {formatTicketBookingAxisLabel(tTbAxis, 'vendor', booking.vendor_status)}
-        </span>
-      </span>
+        <span className="truncate">{unified.label}</span>
+      </button>
     );
 
     const axisDropdownPortal = renderTicketBookingAxisDropdownPortal(booking);
@@ -5714,16 +5796,8 @@ export default function TicketBookingList() {
     >
       <div className="relative z-50 space-y-1.5 px-0.5 py-0.5">
         <div className="flex flex-wrap items-center gap-1.5">
-          {showChangeAxisInsteadOfBookingStatus(booking) ? (
-            <span
-              className={`inline-flex max-w-full min-h-[1.625rem] items-center gap-1.5 px-2 py-1 text-xs font-semibold rounded-full ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
-            >
-              {formatTicketBookingAxisLabel(tTbAxis, 'change', booking.change_status)}
-            </span>
-          ) : (
-            bookingStatusBadge
-          )}
-          {showChangeRequestButton(booking) && !showChangeAxisInsteadOfBookingStatus(booking) ? (
+          {unifiedStatusBadge}
+          {showChangeRequestButton(booking) ? (
             <button
               type="button"
               className="inline-flex h-[1.625rem] w-[1.625rem] shrink-0 items-center justify-center rounded-full border border-amber-400 bg-amber-50 text-amber-950 hover:bg-amber-100 disabled:opacity-50"
@@ -5743,55 +5817,39 @@ export default function TicketBookingList() {
             </button>
           ) : null}
         </div>
-        {hasSecondaryChangeAxisBadge(booking) ? (
-          <div className="px-0.5">
-            <span
-              className={`inline-flex max-w-full truncate px-2 py-0.5 text-[10px] font-semibold rounded-full ${getChangeAxisStatusBadgeClass(booking.change_status)}`}
+        {showVendorInitialActions(booking) ? (
+          <div className="flex flex-wrap items-center gap-1">
+            <button
+              type="button"
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-50"
+              disabled={workflowActionSavingId === booking.id}
+              title={locale === 'ko' ? '벤더 확정' : 'Confirm vendor'}
+              aria-label={locale === 'ko' ? '벤더 확정' : 'Confirm vendor'}
+              onClick={(e) => {
+                e.stopPropagation();
+                setVendorConfirmModalBooking(booking);
+              }}
             >
-              {formatTicketBookingAxisLabel(
-                tTbAxis,
-                'change',
-                booking.change_status
-              )}
-            </span>
+              <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-red-300 bg-red-50 text-red-900 hover:bg-red-100 disabled:opacity-50"
+              disabled={workflowActionSavingId === booking.id}
+              title={locale === 'ko' ? '벤더 거절' : 'Reject vendor'}
+              aria-label={locale === 'ko' ? '벤더 거절' : 'Reject vendor'}
+              onClick={(e) => {
+                e.stopPropagation();
+                void runWorkflowRpc(booking, 'workflow_vendor_reject_initial');
+              }}
+            >
+              <X className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+            </button>
           </div>
         ) : null}
+        {renderVendorChangeActionButtons(booking, 'row')}
         {axisDropdownPortal}
       </div>
-    </td>
-    <td className="align-middle px-2 py-1.5 text-[10px] leading-snug max-w-[9rem]">
-      <div className="relative z-40">{vendorStatusBadge}</div>
-      {showVendorInitialActions(booking) ? (
-        <div className="mt-1 flex flex-wrap items-center gap-1">
-          <button
-            type="button"
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-50"
-            disabled={workflowActionSavingId === booking.id}
-            title={locale === 'ko' ? '벤더 확정' : 'Confirm vendor'}
-            aria-label={locale === 'ko' ? '벤더 확정' : 'Confirm vendor'}
-            onClick={(e) => {
-              e.stopPropagation();
-              setVendorConfirmModalBooking(booking);
-            }}
-          >
-            <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
-          </button>
-          <button
-            type="button"
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-red-300 bg-red-50 text-red-900 hover:bg-red-100 disabled:opacity-50"
-            disabled={workflowActionSavingId === booking.id}
-            title={locale === 'ko' ? '벤더 거절' : 'Reject vendor'}
-            aria-label={locale === 'ko' ? '벤더 거절' : 'Reject vendor'}
-            onClick={(e) => {
-              e.stopPropagation();
-              void runWorkflowRpc(booking, 'workflow_vendor_reject_initial');
-            }}
-          >
-            <X className="h-4 w-4" strokeWidth={2.5} aria-hidden />
-          </button>
-        </div>
-      ) : null}
-      {renderVendorChangeActionButtons(booking, 'row')}
     </td>
     <td className="align-middle px-2 py-1.5 text-[10px] leading-snug max-w-[7rem]">
       {isWorkflowInitialPhase(booking) ? (
@@ -6142,28 +6200,27 @@ export default function TicketBookingList() {
         </div>
       </div>
 
-      {/* 필터 - 모바일: 2열/스택, 데스크톱: 그리드 */}
-      <div className="min-w-0 border-t border-gray-100 px-3 py-3 sm:px-4 sm:py-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4">
-          <div className="flex-1 min-w-0">
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-              {t('search')}
-            </label>
+      {/* 필터 */}
+      <div className="min-w-0 space-y-3 border-t border-gray-100 px-3 py-3 sm:px-4 sm:py-4">
+        {/* 1행: 기본 조건 */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-12 lg:gap-3">
+          <div className="min-w-0 lg:col-span-3">
+            <label className="mb-1 block text-xs font-medium text-gray-600">{t('search')}</label>
             <div className="relative">
-              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={12} />
-              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+              <input
+                {...BROWSER_AUTOFILL_OFF_PROPS}
+                type="search"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder={`${t('search')}...`}
-                className="w-full pl-6 pr-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-xs sm:text-sm"
+                className="h-9 w-full rounded-lg border border-gray-300 bg-white py-1.5 pl-8 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
           </div>
 
-          <div className="flex-1 min-w-0">
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-              {t('status')}
-            </label>
+          <div className="min-w-0 lg:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-gray-600">{t('status')}</label>
             <TicketBookingStatusMultiFilter
               locale={locale}
               t={t}
@@ -6190,14 +6247,12 @@ export default function TicketBookingList() {
             />
           </div>
 
-          <div className="flex-1 min-w-0">
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-              {t('tourConnection')}
-            </label>
+          <div className="min-w-0 lg:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-gray-600">{t('tourConnection')}</label>
             <select
               value={tourFilter}
               onChange={(e) => setTourFilter(e.target.value)}
-              className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-xs sm:text-sm"
+              className="h-9 w-full rounded-lg border border-gray-300 bg-white px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
               <option value="all">{t('allBookings')}</option>
               <option value="connected">{t('tourConnected')}</option>
@@ -6205,14 +6260,12 @@ export default function TicketBookingList() {
             </select>
           </div>
 
-          <div className="flex-1 min-w-0">
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-              {t('vendorFilter')}
-            </label>
+          <div className="min-w-0 lg:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-gray-600">{t('vendorFilter')}</label>
             <select
               value={companyFilter}
               onChange={(e) => setCompanyFilter(e.target.value)}
-              className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-xs sm:text-sm"
+              className="h-9 w-full rounded-lg border border-gray-300 bg-white px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
               <option value="all">{t('allVendors')}</option>
               {companyFilter !== 'all' &&
@@ -6227,13 +6280,13 @@ export default function TicketBookingList() {
             </select>
           </div>
 
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
-              <label className="block text-xs sm:text-sm font-medium text-gray-700">
+          <div className="min-w-0 sm:col-span-2 lg:col-span-3">
+            <div className="mb-1 flex flex-wrap items-center gap-2">
+              <label className="text-xs font-medium text-gray-600">
                 {dateRangeBasis === 'submit_on' ? t('submitDateRange') : t('checkInDateRange')}
               </label>
               <div
-                className="inline-flex rounded-md border border-gray-200 p-0.5 bg-white"
+                className="inline-flex rounded-md border border-gray-200 bg-white p-0.5"
                 role="group"
                 aria-label={t('dateRangeBasisAria')}
               >
@@ -6241,7 +6294,7 @@ export default function TicketBookingList() {
                   type="button"
                   onClick={() => setDateRangeBasis('check_in')}
                   aria-pressed={dateRangeBasis === 'check_in'}
-                  className={`px-2 py-0.5 rounded text-[10px] sm:text-xs font-medium transition-colors ${
+                  className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
                     dateRangeBasis === 'check_in'
                       ? 'bg-primary text-primary-foreground'
                       : 'text-gray-600 hover:bg-gray-50'
@@ -6253,7 +6306,7 @@ export default function TicketBookingList() {
                   type="button"
                   onClick={() => setDateRangeBasis('submit_on')}
                   aria-pressed={dateRangeBasis === 'submit_on'}
-                  className={`px-2 py-0.5 rounded text-[10px] sm:text-xs font-medium transition-colors ${
+                  className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
                     dateRangeBasis === 'submit_on'
                       ? 'bg-primary text-primary-foreground'
                       : 'text-gray-600 hover:bg-gray-50'
@@ -6262,19 +6315,49 @@ export default function TicketBookingList() {
                   {t('dateRangeBasisSubmitOn')}
                 </button>
               </div>
+              <div className="ml-auto flex flex-wrap gap-1">
+                {TICKET_CHECK_IN_YEAR_PRESETS.map((year) => {
+                  const active = isTicketCheckInYearPresetActive(checkInDateFrom, checkInDateTo, year);
+                  return (
+                    <button
+                      key={year}
+                      type="button"
+                      onClick={() => {
+                        if (active) {
+                          setCheckInDateFrom('');
+                          setCheckInDateTo('');
+                        } else {
+                          const { from, to } = ticketCheckInYearRange(year);
+                          setCheckInDateFrom(from);
+                          setCheckInDateTo(to);
+                        }
+                      }}
+                      aria-pressed={active}
+                      aria-label={t('checkInYearPresetAria', { year })}
+                      className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                        active
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {year}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <div className="flex items-center gap-1.5">
               <div className="relative min-w-0 flex-1">
-                <Calendar className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={12} />
+                <Calendar className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
                 <input
                   type="date"
                   value={checkInDateFrom}
                   onChange={(e) => setCheckInDateFrom(e.target.value)}
                   aria-label={t('dateRangeStart')}
-                  className="w-full pl-6 pr-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-xs sm:text-sm"
+                  className="h-9 w-full rounded-lg border border-gray-300 bg-white py-1.5 pl-8 pr-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
-              <span className="text-gray-400 text-xs shrink-0">–</span>
+              <span className="shrink-0 text-xs text-gray-400">–</span>
               <div className="relative min-w-0 flex-1">
                 <input
                   type="date"
@@ -6282,142 +6365,176 @@ export default function TicketBookingList() {
                   onChange={(e) => setCheckInDateTo(e.target.value)}
                   aria-label={t('dateRangeEnd')}
                   min={checkInDateFrom || undefined}
-                  className="w-full px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-xs sm:text-sm"
+                  className="h-9 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
             </div>
-            <div className="flex flex-wrap gap-1 mt-1">
-              {TICKET_CHECK_IN_YEAR_PRESETS.map((year) => {
-                const active = isTicketCheckInYearPresetActive(checkInDateFrom, checkInDateTo, year);
-                return (
-                  <button
-                    key={year}
-                    type="button"
-                    onClick={() => {
-                      if (active) {
-                        setCheckInDateFrom('');
-                        setCheckInDateTo('');
-                      } else {
-                        const { from, to } = ticketCheckInYearRange(year);
-                        setCheckInDateFrom(from);
-                        setCheckInDateTo(to);
-                      }
-                    }}
-                    aria-pressed={active}
-                    aria-label={t('checkInYearPresetAria', { year })}
-                    className={`px-2 py-0.5 rounded-md text-xs font-medium transition-colors ${
-                      active
-                        ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {year}
-                  </button>
-                );
-              })}
-            </div>
           </div>
+        </div>
 
-          <div className="min-w-0 sm:col-span-2 lg:col-span-1">
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-              필터
-            </label>
-            <div className="flex flex-wrap gap-2">
+        {/* 2행: 빠른 필터 칩 */}
+        <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 px-3 py-2.5">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-gray-600">
+              {locale === 'ko' ? '빠른 필터' : 'Quick filters'}
+            </span>
+            {(futureEventFilter ||
+              cancelDeadlineFilter ||
+              pendingRequestOnlyFilter ||
+              workboardFilter !== 'none' ||
+              multiRnOnlyFilter ||
+              hideAuditedFilter) && (
               <button
+                type="button"
+                className="text-[11px] font-medium text-gray-500 underline-offset-2 hover:text-gray-800 hover:underline"
                 onClick={() => {
-                  const newValue = !futureEventFilter;
-                  setFutureEventFilter(newValue);
-                  // 필터 활성화 시 자동으로 날짜순 정렬
-                  if (newValue) {
+                  setFutureEventFilter(false);
+                  setCancelDeadlineFilter(false);
+                  setPendingRequestOnlyFilter(false);
+                  setWorkboardFilter('none');
+                  setMultiRnOnlyFilter(false);
+                  setHideAuditedFilter(false);
+                }}
+              >
+                {locale === 'ko' ? '빠른 필터 초기화' : 'Clear quick filters'}
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                {
+                  key: 'future',
+                  active: futureEventFilter,
+                  label: locale === 'ko' ? '다가올 일정' : 'Future',
+                  title: locale === 'ko' ? '체크인이 미래인 건' : 'Future check-in dates',
+                  activeClass: 'bg-slate-800 text-white border-slate-800',
+                  onClick: () => {
+                    const newValue = !futureEventFilter;
+                    setFutureEventFilter(newValue);
+                    if (newValue) {
+                      setSortField('date');
+                      setSortDirection('asc');
+                    }
+                  },
+                },
+                {
+                  key: 'cancel_deadline',
+                  active: cancelDeadlineFilter,
+                  label: locale === 'ko' ? '취소기한 지남' : 'Past cancel due',
+                  title:
+                    locale === 'ko'
+                      ? 'Cancel Due가 지났고 아직 체크인 전인 건'
+                      : 'Cancel due passed, before check-in',
+                  activeClass: 'bg-red-600 text-white border-red-600',
+                  onClick: () => {
+                    const newValue = !cancelDeadlineFilter;
+                    setCancelDeadlineFilter(newValue);
+                    if (newValue) {
+                      setSortField('date');
+                      setSortDirection('asc');
+                    }
+                  },
+                },
+                {
+                  key: 'pending',
+                  active: pendingRequestOnlyFilter,
+                  label: `${locale === 'ko' ? '벤더 대기' : 'Awaiting vendor'}${pendingRequestCount > 0 ? ` ${pendingRequestCount}` : ''}`,
+                  title:
+                    locale === 'ko'
+                      ? '예매·변경 요청 중(벤더 응답 대기)'
+                      : 'Awaiting vendor response',
+                  activeClass: 'bg-red-600 text-white border-red-600',
+                  onClick: () => {
+                    setPendingRequestOnlyFilter((v) => !v);
+                    if (viewMode === 'table' && needsReviewEaMismatch) {
+                      setNeedsReviewEaMismatch(false);
+                    }
+                    if (!pendingRequestOnlyFilter) setWorkboardFilter('none');
+                  },
+                },
+                {
+                  key: 'cancel_due_soon',
+                  active: workboardFilter === 'cancel_due',
+                  label: locale === 'ko' ? 'Cancel Due 임박' : 'Cancel Due soon',
+                  title:
+                    locale === 'ko'
+                      ? 'Cancel Due 2일 이내 또는 지남(체크인 전)'
+                      : 'Cancel Due within 2 days or past',
+                  activeClass: 'bg-orange-600 text-white border-orange-600',
+                  onClick: () => {
+                    setWorkboardFilter((f) => (f === 'cancel_due' ? 'none' : 'cancel_due'));
+                    setPendingRequestOnlyFilter(false);
                     setSortField('date');
                     setSortDirection('asc');
-                  }
-                }}
-                className={`flex-1 px-4 py-1 rounded-md text-xs sm:text-sm font-medium transition-colors ${
-                  futureEventFilter
-                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Future Event
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const newValue = !cancelDeadlineFilter;
-                  setCancelDeadlineFilter(newValue);
-                  if (newValue) {
+                  },
+                },
+                {
+                  key: 'unpaid',
+                  active: workboardFilter === 'unpaid',
+                  label: locale === 'ko' ? '미결제' : 'Unpaid',
+                  title: locale === 'ko' ? '유효 수량 있고 미결제' : 'Unpaid with active qty',
+                  activeClass: 'bg-amber-600 text-white border-amber-600',
+                  onClick: () => {
+                    setWorkboardFilter((f) => (f === 'unpaid' ? 'none' : 'unpaid'));
+                    setPendingRequestOnlyFilter(false);
+                  },
+                },
+                {
+                  key: 'tour_day',
+                  active: workboardFilter === 'tour_day',
+                  label: locale === 'ko' ? '투어 당일' : 'Tour day',
+                  title: locale === 'ko' ? '체크인 오늘' : 'Check-in today',
+                  activeClass: 'bg-sky-600 text-white border-sky-600',
+                  onClick: () => {
+                    setWorkboardFilter((f) => (f === 'tour_day' ? 'none' : 'tour_day'));
+                    setPendingRequestOnlyFilter(false);
                     setSortField('date');
                     setSortDirection('asc');
-                  }
-                }}
-                className={`flex-1 px-4 py-1 rounded-md text-xs sm:text-sm font-medium transition-colors ${
-                  cancelDeadlineFilter
-                    ? 'bg-red-600 text-white hover:bg-red-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                취소 기한
-              </button>
+                  },
+                },
+                {
+                  key: 'multi_rn',
+                  active: multiRnOnlyFilter,
+                  label: `${locale === 'ko' ? 'RN# 다중' : 'Multi RN#'}${multiRnGroupCount > 0 ? ` ${multiRnGroupCount}` : ''}`,
+                  title:
+                    locale === 'ko'
+                      ? '같은 RN#에 부킹 2건 이상'
+                      : 'RN# groups with 2+ bookings',
+                  activeClass: 'bg-violet-600 text-white border-violet-600',
+                  onClick: () => {
+                    const next = !multiRnOnlyFilter;
+                    setMultiRnOnlyFilter(next);
+                    if (next && viewMode === 'table') {
+                      setTicketTableLayout('byRn');
+                    }
+                  },
+                },
+                {
+                  key: 'hide_audited',
+                  active: hideAuditedFilter,
+                  label: `${tAudit('hideAudited')}${auditedCount > 0 ? ` ${auditedCount}` : ''}`,
+                  title: tAudit('hideAuditedTitle'),
+                  activeClass: 'bg-emerald-600 text-white border-emerald-600',
+                  onClick: () => setHideAuditedFilter((v) => !v),
+                },
+              ] as const
+            ).map((chip) => (
               <button
+                key={chip.key}
                 type="button"
-                onClick={() => {
-                  setPendingRequestOnlyFilter((v) => !v);
-                  if (viewMode === 'table' && needsReviewEaMismatch) {
-                    setNeedsReviewEaMismatch(false);
-                  }
-                }}
-                className={`flex-1 px-4 py-1 rounded-md text-xs sm:text-sm font-medium transition-colors ${
-                  pendingRequestOnlyFilter
-                    ? 'bg-red-600 text-white hover:bg-red-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                onClick={chip.onClick}
+                title={chip.title}
+                aria-pressed={chip.active}
+                className={`inline-flex h-8 shrink-0 items-center rounded-full border px-3 text-xs font-medium transition-colors ${
+                  chip.active
+                    ? chip.activeClass
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-white'
                 }`}
-                title={
-                  locale === 'ko'
-                    ? '예매 요청·변경 요청 중(벤더 응답 대기) 부킹만 표시합니다.'
-                    : 'Show only bookings awaiting vendor response (initial or change request).'
-                }
               >
-                {locale === 'ko' ? '요청 중' : 'Pending'}
-                {pendingRequestCount > 0 ? ` (${pendingRequestCount})` : ''}
+                {chip.label}
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const next = !multiRnOnlyFilter;
-                  setMultiRnOnlyFilter(next);
-                  if (next && viewMode === 'table') {
-                    setTicketTableLayout('byRn');
-                  }
-                }}
-                className={`flex-1 px-4 py-1 rounded-md text-xs sm:text-sm font-medium transition-colors ${
-                  multiRnOnlyFilter
-                    ? 'bg-violet-600 text-white hover:bg-violet-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-                title={
-                  locale === 'ko'
-                    ? '같은 RN#에 부킹이 2건 이상인 그룹만 표시합니다. (RN# 없음 단일 행은 제외)'
-                    : 'Show only RN# groups with two or more booking rows (excludes rows without RN#).'
-                }
-              >
-                {locale === 'ko' ? 'RN# 다중' : 'Multi RN#'}
-                {multiRnGroupCount > 0 ? ` (${multiRnGroupCount})` : ''}
-              </button>
-              <button
-                type="button"
-                onClick={() => setHideAuditedFilter((v) => !v)}
-                className={`flex-1 px-4 py-1 rounded-md text-xs sm:text-sm font-medium transition-colors ${
-                  hideAuditedFilter
-                    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-                title={tAudit('hideAuditedTitle')}
-              >
-                {tAudit('hideAudited')}
-                {auditedCount > 0 ? ` (${auditedCount})` : ''}
-              </button>
-            </div>
+            ))}
           </div>
         </div>
       </div>
@@ -6874,6 +6991,14 @@ export default function TicketBookingList() {
                               const isToday = date.toDateString() === now.toDateString();
                               const dayBookings = groupedByDate[dateString] || [];
 
+                              const dayHasCancelDueWarn = dayBookings.some((b) =>
+                                isTicketBookingCancelDueHighlight(
+                                  b,
+                                  supplierProductsMap.get(b.company || ''),
+                                  localYmdFromDate(now)
+                                )
+                              );
+
                               const dayBookingsEaNonCancelled = dayBookings
                                 .filter(isTicketBookingCountingStatus)
                                 .reduce((sum, booking) => sum + (Number(booking.ea) || 0), 0);
@@ -6886,26 +7011,48 @@ export default function TicketBookingList() {
                                     String(a.id).localeCompare(String(b.id))
                                 );
 
-                              const toursStartingThisDay = dayTours.filter(
-                                (tr) => ymdFromDbDate(tr.tour_date) === dateString
+                              /** 입장권 대조: 투어 출발일이 아니라 앤텔롭 캐년 체크인일 기준 */
+                              const toursAntelopeCheckInToday = tourEvents.filter(
+                                (tr) => resolveAntelopeCheckInDate(tr) === dateString
                               );
                               const spanningContinuationOnly =
-                                dayTours.length > 0 && toursStartingThisDay.length === 0;
+                                dayTours.length > 0 &&
+                                toursAntelopeCheckInToday.length === 0 &&
+                                dayBookingsEaNonCancelled === 0;
 
-                              const sumTourPeopleStartsToday = toursStartingThisDay.reduce(
+                              const sumTourPeopleAntelopeToday = toursAntelopeCheckInToday.reduce(
                                 (sum, tr) => sum + (Number(tr.total_people) || 0),
                                 0
                               );
 
+                              const dayTourChoiceCounts = mergeTourChoiceCounts(
+                                ...toursAntelopeCheckInToday.map((tr) => tr.choice_counts || {})
+                              );
+                              const dayTicketCanyonCounts = aggregateTicketEaByCanyon(
+                                dayBookings.filter(isTicketBookingCountingStatus)
+                              );
+                              const canyonCompareParts = formatDayTourTicketCanyonCompare(
+                                dayTourChoiceCounts,
+                                dayTicketCanyonCounts
+                              );
+                              const canyonHeadcountMismatch =
+                                canyonCompareParts.length > 0 &&
+                                canyonLxCountsMismatch(dayTourChoiceCounts, dayTicketCanyonCounts);
+
                               let tourBookingHeadcountMismatch = false;
                               if (!spanningContinuationOnly) {
-                                if (
-                                  toursStartingThisDay.length > 0 &&
-                                  sumTourPeopleStartsToday !== dayBookingsEaNonCancelled
-                                ) {
-                                  tourBookingHeadcountMismatch = true;
+                                if (toursAntelopeCheckInToday.length > 0) {
+                                  if (canyonCompareParts.length > 0) {
+                                    tourBookingHeadcountMismatch =
+                                      canyonHeadcountMismatch ||
+                                      sumTourPeopleAntelopeToday !== dayBookingsEaNonCancelled;
+                                  } else if (
+                                    sumTourPeopleAntelopeToday !== dayBookingsEaNonCancelled
+                                  ) {
+                                    tourBookingHeadcountMismatch = true;
+                                  }
                                 } else if (
-                                  toursStartingThisDay.length === 0 &&
+                                  toursAntelopeCheckInToday.length === 0 &&
                                   dayTours.length === 0 &&
                                   dayBookingsEaNonCancelled > 0
                                 ) {
@@ -6916,10 +7063,14 @@ export default function TicketBookingList() {
                               const cellOutlineClass =
                                 tourBookingHeadcountMismatch ?
                                   'border-2 border-red-500 shadow-sm shadow-red-200/70'
+                                : dayHasCancelDueWarn ?
+                                  'border-2 border-orange-400 shadow-sm shadow-orange-100/80'
                                 : 'border border-gray-200';
 
                               const cellBgClass = tourBookingHeadcountMismatch
                                 ? 'bg-yellow-50'
+                                : dayHasCancelDueWarn
+                                  ? 'bg-orange-50/70'
                                 : isCurrentMonth
                                   ? 'bg-white'
                                   : 'bg-gray-50';
@@ -6944,15 +7095,37 @@ export default function TicketBookingList() {
                                     <div className="relative z-[25] space-y-0.5">
                                       <div
                                         className={`text-[11px] sm:text-sm font-semibold leading-tight ${
-                                          sumTourPeopleStartsToday !== dayBookingsEaNonCancelled
+                                          sumTourPeopleAntelopeToday !== dayBookingsEaNonCancelled ||
+                                          canyonHeadcountMismatch
                                             ? 'text-red-600'
                                             : 'text-primary'
                                         }`}
                                       >
-                                        {t('tourPeopleReservationsSummary', {
-                                          tourPeople: sumTourPeopleStartsToday,
-                                          reservations: dayBookingsEaNonCancelled,
-                                        })}
+                                        <div>
+                                          {t('tourPeopleReservationsSummary', {
+                                            tourPeople: sumTourPeopleAntelopeToday,
+                                            reservations: dayBookingsEaNonCancelled,
+                                          })}
+                                        </div>
+                                        {canyonCompareParts.length > 0 ? (
+                                          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] sm:text-xs font-bold tabular-nums">
+                                            {canyonCompareParts.map((part) => (
+                                              <span
+                                                key={part.key}
+                                                className={
+                                                  part.mismatch ? 'text-red-600' : 'text-inherit'
+                                                }
+                                                title={
+                                                  locale.startsWith('en')
+                                                    ? `Tour ${part.key} / Ticket EA ${part.key}`
+                                                    : `투어 ${part.key} / 입장권 ${part.key}`
+                                                }
+                                              >
+                                                {part.text}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        ) : null}
                                       </div>
                                       {buildTicketRnGroups(dayBookings).map((g) => {
                                         const groupChangePending = g.rows.some(isTicketBookingChangeRequestPending);
@@ -6987,8 +7160,14 @@ export default function TicketBookingList() {
                                         const titleLine = `${clipTitle} · ${subtitleParts.join(' · ')}${detailTail}`;
 
                                         const timeShort = (firstBooking.time || '').replace(/:\d{2}$/, '');
-                                        const companyShort = (firstBooking.company || '').trim();
+                                        const companyChip = ticketBookingCalendarSupplierChipParts(
+                                          firstBooking.company
+                                        );
                                         const supplierStyle = ticketBookingSupplierColors(firstBooking.company);
+                                        const unifiedStatus = resolveTicketBookingUnifiedStatus(
+                                          firstBooking,
+                                          locale
+                                        );
 
                                         return (
                                           <TicketCalendarRnBookingChipTooltip
@@ -7054,34 +7233,32 @@ export default function TicketBookingList() {
                                                 )}
                                               </span>
                                               <span
-                                                className="inline-flex shrink-0 items-center gap-px sm:gap-0.5"
-                                                title={[
-                                                  formatTicketBookingAxisLabel(tTbAxis, 'booking', firstBooking.booking_status),
-                                                  formatTicketBookingAxisLabel(tTbAxis, 'vendor', firstBooking.vendor_status),
-                                                ].join(' · ')}
-                                                aria-label={[
-                                                  formatTicketBookingAxisLabel(tTbAxis, 'booking', firstBooking.booking_status),
-                                                  formatTicketBookingAxisLabel(tTbAxis, 'vendor', firstBooking.vendor_status),
-                                                ].join(' · ')}
+                                                className={`inline-flex shrink-0 items-center rounded px-0.5 text-[7px] sm:text-[9px] font-bold leading-none ring-1 ring-black/10 ${getTicketBookingUnifiedStatusBadgeClass(unifiedStatus.key)}`}
+                                                title={unifiedStatus.detail}
+                                                aria-label={unifiedStatus.label}
                                               >
-                                                <TicketBookingBookingStatusIcon
-                                                  status={firstBooking.booking_status}
-                                                  variant="tile"
-                                                  className="h-3 w-3 sm:h-3.5 sm:w-3.5"
-                                                  title={formatTicketBookingAxisLabel(tTbAxis, 'booking', firstBooking.booking_status)}
-                                                />
-                                                <TicketBookingVendorStatusIcon
-                                                  status={firstBooking.vendor_status}
-                                                  variant="tile"
-                                                  className="h-3 w-3 sm:h-3.5 sm:w-3.5"
-                                                  title={formatTicketBookingAxisLabel(tTbAxis, 'vendor', firstBooking.vendor_status)}
-                                                />
+                                                {unifiedStatus.shortLabel}
                                               </span>
                                               <span className="shrink-0 font-semibold tabular-nums opacity-95">
                                                 {timeShort}
                                               </span>
                                               <span className="min-w-0 truncate font-medium opacity-95">
-                                                {companyShort || '—'}
+                                                {companyChip.emoji ? (
+                                                  <>
+                                                    <span aria-hidden>{companyChip.emoji}</span>
+                                                    <span
+                                                      className={
+                                                        companyChip.emphasizeName
+                                                          ? 'font-extrabold'
+                                                          : undefined
+                                                      }
+                                                    >
+                                                      {companyChip.name}
+                                                    </span>
+                                                  </>
+                                                ) : (
+                                                  companyChip.name
+                                                )}
                                               </span>
                                               <span className="shrink-0 tabular-nums opacity-95">
                                                 {totalEa}
@@ -7124,7 +7301,23 @@ export default function TicketBookingList() {
                                     tourEndYmd !== tourStartYmd
                                       ? ` · ${tourStartYmd}→${tourEndYmd}`
                                       : '';
-                                  const baseTitle = `${getProductName(tour.products)} - ${t('adults')}:${tour.adults}${t('people')}, ${t('children')}:${tour.child}${t('people')}, ${t('infants')}:${tour.infant}${t('people')} (${t('total')} ${tour.total_people}${t('people')})${multiDayHint}`;
+                                  const isOvernightTour =
+                                    (ticketCalendarTourFixedSpanDays(tour.product_id) ?? 1) > 1;
+                                  const antelopeCheckInYmd = isOvernightTour
+                                    ? resolveAntelopeCheckInDate(tour)
+                                    : '';
+                                  const antelopeCheckInChipLabel = (() => {
+                                    if (!antelopeCheckInYmd) return '';
+                                    const [, m, d] = antelopeCheckInYmd.split('-');
+                                    if (!m || !d) return '';
+                                    return `AC ${Number(m)}/${Number(d)}`;
+                                  })();
+                                  const antelopeCheckInTitleHint = antelopeCheckInChipLabel
+                                    ? locale.startsWith('ko')
+                                      ? ` · 앤텔롭 체크인: ${antelopeCheckInYmd}`
+                                      : ` · Antelope check-in: ${antelopeCheckInYmd}`
+                                    : '';
+                                  const baseTitle = `${getProductName(tour.products)} - ${t('adults')}:${tour.adults}${t('people')}, ${t('children')}:${tour.child}${t('people')}, ${t('infants')}:${tour.infant}${t('people')} (${t('total')} ${tour.total_people}${t('people')})${multiDayHint}${antelopeCheckInTitleHint}`;
                                   const staffTitle = [
                                     guideName &&
                                       `${t('ticketCalendarTourGuideLabel')}: ${guideName}`,
@@ -7150,6 +7343,9 @@ export default function TicketBookingList() {
                                     }
                                     return `${tourName} ${totalPeople}${t('people')}`;
                                   })();
+                                  const choiceChipLabel = formatTourChoiceCountsChipLabel(
+                                    tour.choice_counts
+                                  );
 
                                   const tourChipProps = ticketCalendarTourChipDisplayProps(
                                     tour,
@@ -7172,7 +7368,11 @@ export default function TicketBookingList() {
                                           minHeight: TICKET_CAL_TOUR_LANE_MIN_PX,
                                           ...tourChipProps.style,
                                         }}
-                                        title={chipTitle}
+                                        title={
+                                          choiceChipLabel
+                                            ? `${chipTitle} · ${choiceChipLabel}`
+                                            : chipTitle
+                                        }
                                         onClick={() => handleTourClick(tour.id)}
                                       >
                                         <div
@@ -7185,6 +7385,23 @@ export default function TicketBookingList() {
                                           }}
                                         >
                                           <span className="min-w-0 flex-1 truncate">{peopleText}</span>
+                                          {antelopeCheckInChipLabel ? (
+                                            <span
+                                              className="shrink-0 rounded bg-amber-100 px-1 py-px text-[8px] font-bold tabular-nums text-amber-950 shadow-sm ring-1 ring-amber-300/80 sm:text-[10px]"
+                                              title={
+                                                locale.startsWith('ko')
+                                                  ? `앤텔롭 캐년 체크인: ${antelopeCheckInYmd}`
+                                                  : `Antelope Canyon check-in: ${antelopeCheckInYmd}`
+                                              }
+                                            >
+                                              {antelopeCheckInChipLabel}
+                                            </span>
+                                          ) : null}
+                                          {choiceChipLabel ? (
+                                            <span className="shrink-0 rounded bg-white/85 px-1 py-px text-[8px] font-bold tabular-nums text-neutral-900 shadow-sm ring-1 ring-black/10 sm:text-[10px]">
+                                              {choiceChipLabel}
+                                            </span>
+                                          ) : null}
                                           {staffNamesOnly.map((name, si) => (
                                             <span
                                               key={`${tour.id}-ovl-staff-${si}-${name}`}
@@ -8260,29 +8477,22 @@ export default function TicketBookingList() {
         </div>
       )}
 
-      {/* 투어 상세 (달력·테이블에서 투어 클릭 시) */}
+      {/* 투어 상세 — 투어관리 스케줄뷰와 동일 모달/헤더 */}
       <TourDetailResizableDialog
-        open={Boolean(tourDetailModalTourId)}
-        onOpenChange={(open) => !open && setTourDetailModalTourId(null)}
-        tourId={tourDetailModalTourId}
-        onNavigateToTour={setTourDetailModalTourId}
-        stackLevel="elevated"
-        accessibilityTitle="투어 상세"
-        header={
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-lg font-semibold text-gray-900 truncate pr-2">투어 상세</h3>
-            {tourDetailModalTourId ? (
-              <a
-                href={`/${locale}/admin/tours/${tourDetailModalTourId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm font-medium text-primary hover:text-primary/80 hover:underline whitespace-nowrap"
-              >
-                새 탭에서 열기
-              </a>
-            ) : null}
-          </div>
+        open={!!tourDetailModal}
+        modal={false}
+        onOpenChange={(open) => {
+          if (!open) setTourDetailModal(null);
+        }}
+        tourId={tourDetailModal?.tourId ?? null}
+        onNavigateToTour={(nextTourId) =>
+          setTourDetailModal({
+            tourId: nextTourId,
+            title: getTourDetailModalTitle(nextTourId),
+          })
         }
+        accessibilityTitle={tourDetailModal?.title ?? '투어 상세'}
+        titleFallback={tourDetailModal?.title ?? '투어 상세'}
       />
     </div>
   );

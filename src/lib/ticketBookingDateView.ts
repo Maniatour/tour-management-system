@@ -220,6 +220,31 @@ export function formatCanyonCountsInline(counts: TourChoiceCounts): string {
   return keys.map((k) => `${k}: ${counts[k]}`).join(' · ')
 }
 
+/**
+ * 달력 일별 요약 — 투어 초이스 합 vs 입장권 EA 합
+ * 예: [{ key:'X', text:'🏜️X 4/4', mismatch:false }, ...]
+ */
+export function formatDayTourTicketCanyonCompare(
+  tourCounts: TourChoiceCounts,
+  ticketCounts: TourChoiceCounts
+): Array<{ key: 'X' | 'L' | 'U'; text: string; mismatch: boolean }> {
+  const keys = Array.from(
+    new Set([...tourChoiceCountsDisplayKeys(tourCounts), ...tourChoiceCountsDisplayKeys(ticketCounts)])
+  ) as Array<'X' | 'L' | 'U'>
+  const order: Array<'X' | 'L' | 'U'> = ['X', 'L', 'U']
+  return order
+    .filter((k) => keys.includes(k))
+    .map((k) => {
+      const tourN = tourCounts[k] || 0
+      const ticketN = ticketCounts[k] || 0
+      return {
+        key: k,
+        text: `🏜️${k} ${tourN}/${ticketN}`,
+        mismatch: tourN !== ticketN,
+      }
+    })
+}
+
 /** 스케줄 디스플레이 달력 — 투어별 🏜️ X/L 예약·입장권 뱃지 (Price & Inventory 형식) */
 export function buildTourCanyonDisplayBadges(
   choiceCounts: TourChoiceCounts,

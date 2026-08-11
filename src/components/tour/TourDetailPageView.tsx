@@ -27,6 +27,10 @@ import {
   filterTicketBookingsExcludedFromMainUi,
   canRequestTicketBookingSoftDelete,
 } from '@/lib/ticketBookingSoftDelete'
+import {
+  getDefaultAntelopeCheckInDate,
+  resolveAntelopeCheckInDate,
+} from '@/lib/scheduleVehicleOilMaintenance'
 import { useFloatingChat } from '@/contexts/FloatingChatContext'
 import { SkeletonCard, SkeletonText } from '@/components/tour/TourUIComponents'
 import { TeamAndVehicleAssignment } from '@/components/tour/TeamAndVehicleAssignment'
@@ -621,9 +625,21 @@ export function TourDetailPageView({
     if (!tourData.tour) return
 
     try {
+      const prev = tourData.tour
+      const oldDefault = getDefaultAntelopeCheckInDate(prev.tour_date, prev.product_id)
+      const newDefault = getDefaultAntelopeCheckInDate(date, prev.product_id)
+      const currentAntelope = resolveAntelopeCheckInDate(prev)
+      const shouldSyncAntelope =
+        Boolean(newDefault) && (!prev.antelope_check_in_date || currentAntelope === oldDefault)
+
+      const updates: { tour_date: string; antelope_check_in_date?: string } = { tour_date: date }
+      if (shouldSyncAntelope && newDefault) {
+        updates.antelope_check_in_date = newDefault
+      }
+
       const { error } = await (supabase as any)
         .from('tours')
-        .update({ tour_date: date })
+        .update(updates)
         .eq('id', tourData.tour.id)
 
       if (error) {
@@ -633,10 +649,53 @@ export function TourDetailPageView({
       }
 
       // 투어 데이터 업데이트
-      tourData.setTour((prev: TourRow | null) => prev ? { ...prev, tour_date: date } : null)
+      tourData.setTour((prevTour: TourRow | null) =>
+        prevTour
+          ? {
+              ...prevTour,
+              tour_date: date,
+              ...(shouldSyncAntelope && newDefault
+                ? { antelope_check_in_date: newDefault }
+                : {}),
+            }
+          : null
+      )
     } catch (error) {
       console.error('투어 날짜 업데이트 오류:', error)
       alert(locale === 'ko' ? '투어 날짜 업데이트 중 오류가 발생했습니다.' : 'Error updating tour date.')
+    }
+  }
+
+  // 앤텔롭 캐년 체크인 날짜 업데이트 핸들러
+  const handleAntelopeCheckInDateChange = async (date: string) => {
+    if (!tourData.tour) return
+
+    try {
+      const { error } = await (supabase as any)
+        .from('tours')
+        .update({ antelope_check_in_date: date })
+        .eq('id', tourData.tour.id)
+
+      if (error) {
+        console.error('앤텔롭 체크인 날짜 업데이트 오류:', error)
+        alert(
+          locale === 'ko'
+            ? '앤텔롭 캐년 체크인 날짜 업데이트 중 오류가 발생했습니다.'
+            : 'Error updating Antelope Canyon check-in date.'
+        )
+        return
+      }
+
+      tourData.setTour((prev: TourRow | null) =>
+        prev ? { ...prev, antelope_check_in_date: date } : null
+      )
+    } catch (error) {
+      console.error('앤텔롭 체크인 날짜 업데이트 오류:', error)
+      alert(
+        locale === 'ko'
+          ? '앤텔롭 캐년 체크인 날짜 업데이트 중 오류가 발생했습니다.'
+          : 'Error updating Antelope Canyon check-in date.'
+      )
     }
   }
 
@@ -669,9 +728,23 @@ export function TourDetailPageView({
     if (!tourData.tour) return
 
     try {
+      const prev = tourData.tour
+      const oldDefault = getDefaultAntelopeCheckInDate(prev.tour_date, prev.product_id)
+      const newDefault = getDefaultAntelopeCheckInDate(prev.tour_date, productId)
+      const currentAntelope = resolveAntelopeCheckInDate(prev)
+      const shouldSyncAntelope =
+        Boolean(newDefault) && (!prev.antelope_check_in_date || currentAntelope === oldDefault)
+
+      const updates: { product_id: string; antelope_check_in_date?: string } = {
+        product_id: productId,
+      }
+      if (shouldSyncAntelope && newDefault) {
+        updates.antelope_check_in_date = newDefault
+      }
+
       const { error } = await (supabase as any)
         .from('tours')
-        .update({ product_id: productId })
+        .update(updates)
         .eq('id', tourData.tour.id)
 
       if (error) {
@@ -2449,6 +2522,7 @@ export function TourDetailPageView({
               onTourNoteChange={handleTourNoteChange}
               onPrivateTourToggle={handlePrivateTourToggle}
               onTourDateChange={handleTourDateChange}
+              onAntelopeCheckInDateChange={handleAntelopeCheckInDateChange}
               onTourTimeChange={handleTourTimeChange}
               onProductChange={handleTourProductUpdate}
               {...(modalLightLoad

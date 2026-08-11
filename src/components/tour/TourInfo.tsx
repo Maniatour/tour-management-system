@@ -5,6 +5,7 @@ import { Edit2, Check, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { TourStatusModal } from './modals/TourStatusModal'
 import { useTourDetailSectionChrome } from './TourDetailModalChromeContext'
+import { resolveAntelopeCheckInDate } from '@/lib/scheduleVehicleOilMaintenance'
 
 interface TourInfoProps {
   tour: any
@@ -16,6 +17,7 @@ interface TourInfoProps {
   onTourNoteChange: (note: string) => void
   onPrivateTourToggle: () => void
   onTourDateChange?: (date: string) => Promise<void>
+  onAntelopeCheckInDateChange?: (date: string) => Promise<void>
   onTourTimeChange?: (datetime: string) => Promise<void>
   onProductChange?: (productId: string) => Promise<void>
   /** 투어 최대 수용 인원 수동 저장 (미지정 시 기본 정보에 필드 숨김) */
@@ -49,6 +51,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   onTourNoteChange,
   onPrivateTourToggle,
   onTourDateChange,
+  onAntelopeCheckInDateChange,
   onTourTimeChange,
   onProductChange,
   onMaxParticipantsChange,
@@ -85,6 +88,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   const [editingProduct, setEditingProduct] = useState(false)
   const [showStatusModal, setShowStatusModal] = useState(false)
   const [editingDate, setEditingDate] = useState(false)
+  const [editingAntelopeCheckIn, setEditingAntelopeCheckIn] = useState(false)
   const [editingTime, setEditingTime] = useState(false)
   const [editingMaxParticipants, setEditingMaxParticipants] = useState(false)
   const [maxParticipantsInput, setMaxParticipantsInput] = useState('12')
@@ -92,11 +96,21 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   const [loadingProducts, setLoadingProducts] = useState(false)
   const [selectedProductId, setSelectedProductId] = useState(tour.product_id || '')
   const [dateValue, setDateValue] = useState(tour.tour_date || '')
+  const resolvedAntelopeCheckIn = resolveAntelopeCheckInDate(tour)
+  const [antelopeCheckInValue, setAntelopeCheckInValue] = useState(resolvedAntelopeCheckIn)
   const [timeValue, setTimeValue] = useState(defaultTimeStr)
 
   useEffect(() => {
     if (!editingTime) setTimeValue(defaultTimeStr)
   }, [defaultTimeStr, editingTime])
+
+  useEffect(() => {
+    if (!editingDate) setDateValue(tour.tour_date || '')
+  }, [tour.tour_date, editingDate])
+
+  useEffect(() => {
+    if (!editingAntelopeCheckIn) setAntelopeCheckInValue(resolvedAntelopeCheckIn)
+  }, [resolvedAntelopeCheckIn, editingAntelopeCheckIn])
 
   const defaultMaxParticipants = 12
   const resolvedMaxParticipants =
@@ -161,6 +175,18 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   const handleDateCancel = () => {
     setDateValue(tour.tour_date || '')
     setEditingDate(false)
+  }
+
+  const handleAntelopeCheckInSave = async () => {
+    if (onAntelopeCheckInDateChange && antelopeCheckInValue) {
+      await onAntelopeCheckInDateChange(antelopeCheckInValue)
+      setEditingAntelopeCheckIn(false)
+    }
+  }
+
+  const handleAntelopeCheckInCancel = () => {
+    setAntelopeCheckInValue(resolvedAntelopeCheckIn)
+    setEditingAntelopeCheckIn(false)
   }
 
   // 시간 편집 핸들러
@@ -299,6 +325,51 @@ export const TourInfo: React.FC<TourInfoProps> = ({
                 {onTourDateChange && (
                   <button
                     onClick={() => setEditingDate(true)}
+                    className="p-1 text-gray-400 hover:text-gray-600 rounded flex-shrink-0"
+                    title={params.locale === 'ko' ? '편집' : 'Edit'}
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex justify-between items-center gap-2">
+            <span className={`${chrome.bodyCaption} flex-shrink-0`}>{t('antelopeCheckInDate')}:</span>
+            {editingAntelopeCheckIn ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={antelopeCheckInValue}
+                  onChange={(e) => setAntelopeCheckInValue(e.target.value)}
+                  className={`${chrome.bodyField} focus:outline-none focus:ring-2 focus:ring-ring`}
+                />
+                <button
+                  onClick={handleAntelopeCheckInSave}
+                  className="p-1 text-green-600 hover:bg-green-50 rounded"
+                  title={params.locale === 'ko' ? '저장' : 'Save'}
+                >
+                  <Check size={16} />
+                </button>
+                <button
+                  onClick={handleAntelopeCheckInCancel}
+                  className="p-1 text-red-600 hover:bg-red-50 rounded"
+                  title={params.locale === 'ko' ? '취소' : 'Cancel'}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <span className={`font-medium ${chrome.bodyText} truncate`}>
+                  {resolvedAntelopeCheckIn || '-'}
+                </span>
+                {onAntelopeCheckInDateChange && (
+                  <button
+                    onClick={() => {
+                      setAntelopeCheckInValue(resolvedAntelopeCheckIn)
+                      setEditingAntelopeCheckIn(true)
+                    }}
                     className="p-1 text-gray-400 hover:text-gray-600 rounded flex-shrink-0"
                     title={params.locale === 'ko' ? '편집' : 'Edit'}
                   >

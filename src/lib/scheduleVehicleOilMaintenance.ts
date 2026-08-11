@@ -117,6 +117,33 @@ function ymdFromDbDate(value: string | null | undefined): string {
 }
 
 /**
+ * 앤텔롭 캐년 체크인 기본일.
+ * 당일 투어 = 투어일, 숙박·멀티데이 = 2일차(투어일+1).
+ */
+export function getDefaultAntelopeCheckInDate(
+  tourDate: string | null | undefined,
+  productId: string | null | undefined
+): string {
+  const start = ymdFromDbDate(tourDate)
+  if (!start) return ''
+  if (getMultiDayTourDays(String(productId || '').trim()) > 1) {
+    return dayjs(start).add(1, 'day').format('YYYY-MM-DD')
+  }
+  return start
+}
+
+/** 저장된 체크인일이 있으면 사용, 없으면 상품·투어일 기준 기본값 */
+export function resolveAntelopeCheckInDate(tour: {
+  tour_date?: string | null
+  product_id?: string | null
+  antelope_check_in_date?: string | null
+}): string {
+  const stored = ymdFromDbDate(tour.antelope_check_in_date)
+  if (stored) return stored
+  return getDefaultAntelopeCheckInDate(tour.tour_date, tour.product_id)
+}
+
+/**
  * 투어 달력 표시용 종료일 (YYYY-MM-DD).
  * 숙박·멀티데이 상품은 product_id 일수, 아니면 tour_end_datetime, 기본은 시작일.
  */

@@ -169,11 +169,20 @@ export function formatQtyArrow(booking: {
   ea: number | null | undefined
   change_status?: string | null
   pending_ea?: number | null
+  booking_status?: string | null
+  status?: string | null
 }): string {
   const cur = booking.ea ?? 0
+  const bs = (booking.booking_status ?? booking.status ?? '').toLowerCase()
+  if (bs === 'cancelled' || bs === 'canceled' || bs === 'failed' || bs === 'expired') {
+    return `원래 ${cur}개 / 유효 0개`
+  }
   const cs = (booking.change_status ?? 'none').toLowerCase()
   if (cs === 'requested' && booking.pending_ea != null && booking.pending_ea !== cur) {
-    return `${cur}개 > ${booking.pending_ea}개`
+    const pend = booking.pending_ea
+    const delta = pend - cur
+    const deltaStr = delta > 0 ? `+${delta}` : String(delta)
+    return `${cur}개 → ${pend}개 (${deltaStr})`
   }
   return `${cur}개`
 }

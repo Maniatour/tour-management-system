@@ -10501,6 +10501,7 @@ export type Database = {
           assignment_status: string | null
           assistant_fee: number | null
           assistant_id: string | null
+          antelope_check_in_date: string | null
           created_at: string | null
           guide_fee: number | null
           id: string
@@ -10528,6 +10529,7 @@ export type Database = {
           assignment_status?: string | null
           assistant_fee?: number | null
           assistant_id?: string | null
+          antelope_check_in_date?: string | null
           created_at?: string | null
           guide_fee?: number | null
           id?: string
@@ -10555,6 +10557,7 @@ export type Database = {
           assignment_status?: string | null
           assistant_fee?: number | null
           assistant_id?: string | null
+          antelope_check_in_date?: string | null
           created_at?: string | null
           guide_fee?: number | null
           id?: string

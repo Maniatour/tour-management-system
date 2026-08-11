@@ -91,3 +91,11 @@ export function tourChoiceCountsHasDisplayable(counts: TourChoiceCounts | undefi
 export function tourChoiceCountsDisplayKeys(counts: TourChoiceCounts): Array<'X' | 'L' | 'U'> {
   return CHOICE_DISPLAY_ORDER.filter((k) => (counts[k] || 0) > 0) as Array<'X' | 'L' | 'U'>
 }
+
+/** 달력 투어 칩용: `🏜️X 4,🏜️L 5` */
+export function formatTourChoiceCountsChipLabel(counts: TourChoiceCounts | undefined | null): string {
+  if (!counts) return ''
+  const keys = tourChoiceCountsDisplayKeys(counts)
+  if (keys.length === 0) return ''
+  return keys.map((k) => `🏜️${k} ${counts[k]}`).join(',')
+}

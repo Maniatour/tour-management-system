@@ -68,6 +68,7 @@ export default function QuickPaymentRequestForm({
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<QuickPaymentResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [showCardFeeConfirm, setShowCardFeeConfirm] = useState(false)
 
   useEffect(() => {
     // 모달이 새로 열리며 initials가 바뀔 때만 필드 동기화 (제출 중/결과 화면에서 리셋되지 않도록)
@@ -82,6 +83,7 @@ export default function QuickPaymentRequestForm({
     setResult(null)
     setError(null)
     setSendEmail(true)
+    setShowCardFeeConfirm(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- remount via key handles open; avoid wiping result on parent re-renders
   }, [initials?.email, initials?.recipientName, initials?.description, initials?.amountUsd, initials?.reservationId])
 
@@ -97,30 +99,50 @@ export default function QuickPaymentRequestForm({
     setSendEmail(true)
     setResult(null)
     setError(null)
+    setShowCardFeeConfirm(false)
   }
 
-  const handleSubmit = async (e?: React.FormEvent | React.MouseEvent) => {
-    e?.preventDefault()
-    e?.stopPropagation()
-    if (submitting) return
-
+  const validateBeforeSubmit = (): number | null => {
     setError(null)
     setResult(null)
 
     const amountUsd = Number(amount)
     if (!email.trim()) {
       setError(locale === 'ko' ? '수신자 이메일을 입력해 주세요.' : 'Recipient email is required.')
-      return
+      return null
     }
     if (!description.trim()) {
       setError(locale === 'ko' ? '청구 내용을 입력해 주세요.' : 'Description is required.')
-      return
+      return null
     }
     if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
       setError(locale === 'ko' ? '금액은 0보다 커야 합니다.' : 'Amount must be greater than zero.')
+      return null
+    }
+    return amountUsd
+  }
+
+  const handleSubmitClick = (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault()
+    e?.stopPropagation()
+    if (submitting) return
+
+    if (validateBeforeSubmit() == null) return
+
+    if (sendEmail) {
+      setShowCardFeeConfirm(true)
       return
     }
+    void submitPaymentRequest()
+  }
 
+  const submitPaymentRequest = async () => {
+    if (submitting) return
+
+    const amountUsd = validateBeforeSubmit()
+    if (amountUsd == null) return
+
+    setShowCardFeeConfirm(false)
     setSubmitting(true)
     try {
       const response = await fetchApiWithAuth('/api/invoices/quick-payment-request', {
@@ -263,7 +285,7 @@ export default function QuickPaymentRequestForm({
       ) : (
         <form
           onSubmit={(e) => {
-            void handleSubmit(e)
+            handleSubmitClick(e)
           }}
           noValidate
           className={
@@ -312,8 +334,15 @@ export default function QuickPaymentRequestForm({
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="qp-amount" className="text-sm font-medium text-foreground">
-              {locale === 'ko' ? '금액 (USD)' : 'Amount (USD)'}
+            <label htmlFor="qp-amount" className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm font-medium text-foreground">
+              <span>{locale === 'ko' ? '금액 (USD)' : 'Amount (USD)'}</span>
+              {amount.trim() !== '' ? (
+                <span className="text-xs font-medium text-red-600">
+                  {locale === 'ko'
+                    ? '수수료 포함 금액인지 확인하세요'
+                    : 'Confirm this amount includes the fee'}
+                </span>
+              ) : null}
             </label>
             <div className="relative">
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
@@ -343,6 +372,7 @@ export default function QuickPaymentRequestForm({
                   { value: 'Non-Resident Fee', labelKo: 'Non-Resident Fee', labelEn: 'Non-Resident Fee' },
                   { value: 'Tour Balance', labelKo: 'Tour Balance', labelEn: 'Tour Balance' },
                   { value: 'Guide Tips', labelKo: 'Guide Tips', labelEn: 'Guide Tips' },
+                  { value: '5% Card Fee', labelKo: '5% 카드 수수료', labelEn: '5% Card Fee' },
                 ] as const
               ).map((preset) => {
                 const active = description.trim() === preset.value
@@ -372,8 +402,8 @@ export default function QuickPaymentRequestForm({
               className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
               placeholder={
                 locale === 'ko'
-                  ? '예: Non-Resident Fee, Tour Balance, Guide Tips'
-                  : 'e.g. Non-Resident Fee, Tour Balance, Guide Tips'
+                  ? '예: Non-Resident Fee, Tour Balance, Guide Tips, 5% Card Fee'
+                  : 'e.g. Non-Resident Fee, Tour Balance, Guide Tips, 5% Card Fee'
               }
             />
           </div>
@@ -400,7 +430,7 @@ export default function QuickPaymentRequestForm({
             type="button"
             disabled={submitting}
             onClick={(e) => {
-              void handleSubmit(e)
+              handleSubmitClick(e)
             }}
             className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
           >
@@ -424,6 +454,70 @@ export default function QuickPaymentRequestForm({
           </button>
         </form>
       )}
+
+      {showCardFeeConfirm
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setShowCardFeeConfirm(false)
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="qp-card-fee-confirm-title"
+            >
+              <div
+                className="relative w-full max-w-sm rounded-xl border border-border bg-background p-5 shadow-lg"
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <h3
+                  id="qp-card-fee-confirm-title"
+                  className="text-base font-semibold tracking-tight text-foreground"
+                >
+                  {locale === 'ko' ? '카드 수수료 확인' : 'Confirm card fee'}
+                </h3>
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                  {locale === 'ko'
+                    ? '청구 금액에 카드 수수료(5%)가 포함되어 있는지 확인하셨나요? 확인 후 이메일을 발송합니다.'
+                    : 'Have you confirmed that this amount includes the 5% card fee? Email will be sent after you confirm.'}
+                </p>
+                <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowCardFeeConfirm(false)}
+                    className="inline-flex h-11 items-center justify-center rounded-xl border border-border bg-background px-4 text-sm font-medium hover:bg-muted"
+                  >
+                    {locale === 'ko' ? '돌아가기' : 'Go back'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => {
+                      void submitPaymentRequest()
+                    }}
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                        {locale === 'ko' ? '처리 중…' : 'Processing…'}
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4" aria-hidden />
+                        {locale === 'ko' ? '확인 후 보내기' : 'Confirm & send'}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </>
   )
 
