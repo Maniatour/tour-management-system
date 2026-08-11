@@ -25,6 +25,8 @@ type HistoryRow = {
 export type QtyTimelineItem = {
   key: string
   delta: number | null
+  /** 이 이벤트 반영 후 유효 수량 (예: +1 → afterQty 11) */
+  afterQty: number | null
   label: string
   tone: 'start' | 'up' | 'down' | 'pending' | 'neutral'
   at: string | null
@@ -87,6 +89,8 @@ export function buildTicketBookingQtyTimeline(
   })
 
   let seeded = false
+  let runningQty = 0
+
   for (const row of chron) {
     const oldV = asRecord(row.old_values)
     const newV = asRecord(row.new_values)
@@ -96,9 +100,11 @@ export function buildTicketBookingQtyTimeline(
 
     if (action === 'created' || (oldEa == null && newEa != null && !seeded)) {
       const qty = newEa ?? getTicketBookingOriginalQty(booking)
+      runningQty = qty
       items.push({
         key: `created-${row.id}`,
         delta: qty,
+        afterQty: runningQty,
         label: isEn ? 'Hold created' : '가예약 등록',
         tone: 'start',
         at: row.changed_at,
@@ -109,9 +115,11 @@ export function buildTicketBookingQtyTimeline(
 
     if (oldEa != null && newEa != null && oldEa !== newEa) {
       const delta = newEa - oldEa
+      runningQty = newEa
       items.push({
         key: `ea-${row.id}`,
         delta,
+        afterQty: runningQty,
         label:
           row.reason?.trim() ||
           (isEn
@@ -131,22 +139,29 @@ export function buildTicketBookingQtyTimeline(
     const newCs = readChangeStatus(newV)
     const oldPend = readPendingEa(oldV)
     const newPend = readPendingEa(newV)
-    const baseEa = newEa ?? oldEa ?? getTicketBookingOriginalQty(booking)
+    const baseEa = newEa ?? oldEa ?? runningQty
 
     if (newCs === 'requested' && newPend != null && newPend !== baseEa && oldCs !== 'requested') {
       const delta = newPend - baseEa
       items.push({
         key: `req-${row.id}`,
         delta,
+        afterQty: newPend,
         label: isEn ? 'Change requested (awaiting vendor)' : '변경 요청 (벤더 대기)',
         tone: 'pending',
         at: row.changed_at,
       })
     } else if (oldCs === 'requested' && newCs !== 'requested' && oldPend != null) {
       const accepted = newEa != null && newEa === oldPend
+      if (accepted) {
+        runningQty = oldPend
+      } else if (newEa != null) {
+        runningQty = newEa
+      }
       items.push({
         key: `res-${row.id}`,
         delta: accepted ? oldPend - (oldEa ?? baseEa) : null,
+        afterQty: runningQty,
         label: accepted
           ? isEn
             ? 'Vendor accepted'
@@ -162,9 +177,11 @@ export function buildTicketBookingQtyTimeline(
 
   if (!seeded) {
     const qty = getTicketBookingOriginalQty(booking)
+    runningQty = qty
     items.push({
       key: 'seed',
       delta: qty,
+      afterQty: runningQty,
       label: isEn ? 'Hold on file' : '가예약 기록',
       tone: 'start',
       at: booking.created_at ?? null,
@@ -180,6 +197,7 @@ export function buildTicketBookingQtyTimeline(
       items.push({
         key: 'live-pending',
         delta: pend - orig,
+        afterQty: pend,
         label: isEn ? 'Change requested (awaiting vendor)' : '변경 요청 (벤더 대기)',
         tone: 'pending',
         at: null,
@@ -192,9 +210,11 @@ export function buildTicketBookingQtyTimeline(
       (it) => it.delta === -orig || (it.delta != null && it.delta < 0 && Math.abs(it.delta) >= orig)
     )
     if (!hasFullCancel) {
+      runningQty = 0
       items.push({
         key: 'cancelled',
         delta: -orig,
+        afterQty: runningQty,
         label: isEn ? 'Fully cancelled' : '전량 취소',
         tone: 'down',
         at: null,
@@ -208,9 +228,15 @@ export function buildTicketBookingQtyTimeline(
 type Props = {
   booking: TicketBookingQtyTimelineBooking
   locale?: string
+  /** 모달 등 외부 제목이 있을 때 섹션 헤딩 숨김 */
+  hideHeading?: boolean
 }
 
-export default function TicketBookingQtyTimeline({ booking, locale = 'ko' }: Props) {
+export default function TicketBookingQtyTimeline({
+  booking,
+  locale = 'ko',
+  hideHeading = false,
+}: Props) {
   const isEn = locale.startsWith('en')
   const [history, setHistory] = useState<HistoryRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -256,9 +282,11 @@ export default function TicketBookingQtyTimeline({ booking, locale = 'ko' }: Pro
 
   return (
     <section className="space-y-2">
-      <h4 className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-        {isEn ? 'Quantity timeline' : '수량 타임라인'}
-      </h4>
+      {!hideHeading ? (
+        <h4 className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+          {isEn ? 'Quantity timeline' : '수량 타임라인'}
+        </h4>
+      ) : null}
       {loading ? (
         <p className="text-xs text-muted-foreground" aria-live="polite">
           {isEn ? 'Loading…' : '불러오는 중…'}
@@ -290,11 +318,19 @@ export default function TicketBookingQtyTimeline({ booking, locale = 'ko' }: Pro
                   : it.delta > 0
                     ? `+${it.delta}`
                     : String(it.delta)
+            const qtyText =
+              it.afterQty != null ? (
+                <>
+                  <span className="text-muted-foreground"> = </span>
+                  <span className={`font-semibold tabular-nums ${deltaClass}`}>{it.afterQty}</span>
+                </>
+              ) : null
             const when = formatAt(it.at, locale)
             return (
               <li key={it.key} className="relative text-sm">
                 <span className={`absolute -left-[1.35rem] top-1.5 h-2.5 w-2.5 rounded-full ${dotClass}`} />
                 <span className={`font-medium tabular-nums ${deltaClass}`}>{deltaText}</span>
+                {qtyText}
                 <span className="text-muted-foreground"> {it.label}</span>
                 {when ? <span className="ml-1 text-[10px] text-gray-400">{when}</span> : null}
               </li>

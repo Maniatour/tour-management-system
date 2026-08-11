@@ -245,6 +245,55 @@ export function formatDayTourTicketCanyonCompare(
     })
 }
 
+/** 투어 초이스 vs 입장권 EA — X/L별 실행 업무 (추가 부킹 / 취소) */
+export type DayCanyonBookingActionTask = {
+  key: 'X' | 'L' | 'U'
+  diffEa: number
+  kind: 'book_more' | 'cancel'
+  text: string
+}
+
+export function buildDayCanyonBookingActionTasks(
+  tourCounts: TourChoiceCounts,
+  ticketCounts: TourChoiceCounts,
+  locale = 'ko'
+): DayCanyonBookingActionTask[] {
+  const isEn = locale.startsWith('en')
+  const keys = Array.from(
+    new Set([...tourChoiceCountsDisplayKeys(tourCounts), ...tourChoiceCountsDisplayKeys(ticketCounts)])
+  ) as Array<'X' | 'L' | 'U'>
+  const order: Array<'X' | 'L' | 'U'> = ['X', 'L', 'U']
+  const out: DayCanyonBookingActionTask[] = []
+  for (const k of order) {
+    if (!keys.includes(k)) continue
+    const tourN = tourCounts[k] || 0
+    const ticketN = ticketCounts[k] || 0
+    if (tourN === ticketN) continue
+    if (tourN > ticketN) {
+      const diffEa = tourN - ticketN
+      out.push({
+        key: k,
+        diffEa,
+        kind: 'book_more',
+        text: isEn
+          ? `🏜️${k} ${diffEa} EA more booking needed`
+          : `🏜️${k} ${diffEa} EA 추가 부킹 필요`,
+      })
+    } else {
+      const diffEa = ticketN - tourN
+      out.push({
+        key: k,
+        diffEa,
+        kind: 'cancel',
+        text: isEn
+          ? `🏜️${k} ${diffEa} EA cancellation needed`
+          : `🏜️${k} ${diffEa} EA 취소 필요`,
+      })
+    }
+  }
+  return out
+}
+
 /** 스케줄 디스플레이 달력 — 투어별 🏜️ X/L 예약·입장권 뱃지 (Price & Inventory 형식) */
 export function buildTourCanyonDisplayBadges(
   choiceCounts: TourChoiceCounts,

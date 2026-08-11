@@ -21,7 +21,14 @@ import {
   getTicketBookingTimeSelectOptions,
   normalizeDbTimeToTicketSelectSlot,
 } from '@/lib/ticketBookingTimeSelect';
-import { fetchTicketToursForCheckIn } from '@/lib/ticketBookingToursForCheckIn';
+import { fetchTicketToursForCheckIn, formatTicketTourPickerLabel } from '@/lib/ticketBookingToursForCheckIn';
+import {
+  normalizeTicketBookingTourIds,
+  primaryTourIdFromTourIds,
+  ticketBookingTourLinkPayload,
+} from '@/lib/ticketBookingTourIds';
+import { Users } from 'lucide-react';
+import { formatTourChoiceCountsChipLabel } from '@/lib/tourChoiceCounts';
 import { buildTicketBookingRequestEmail } from '@/lib/ticketBookingVendorEmail';
 import { useTeamMemberDisplayName } from '@/lib/useTeamMemberDisplayName';
 import TicketBookingVendorEmailCopyBlock from '@/components/booking/TicketBookingVendorEmailCopyBlock';
@@ -65,6 +72,8 @@ interface TicketBooking {
   /** Zelle 결제 시 Confirmation 번호 */
   zelle_confirmation_number?: string | null;
   tour_id: string | null;
+  /** 연결된 투어 다중 선택 */
+  tour_ids?: string[];
   reservation_id?: string; // 예약 ID 추가
   note: string;
   status: string;
@@ -102,6 +111,7 @@ function buildTicketBookingFormState(
     invoice_number: '',
     zelle_confirmation_number: '',
     tour_id: tourId || null,
+    tour_ids: tourId ? [tourId] : [],
     reservation_id: '',
     note: '',
     status: 'tentative',
@@ -111,6 +121,11 @@ function buildTicketBookingFormState(
   };
 
   if (!booking) return initialData;
+
+  const tourIds = normalizeTicketBookingTourIds(
+    (booking as TicketBooking).tour_ids,
+    booking.tour_id ?? tourId ?? null
+  );
 
   return {
     ...initialData,
@@ -126,7 +141,8 @@ function buildTicketBookingFormState(
     rn_number: booking.rn_number ?? initialData.rn_number,
     invoice_number: String(booking.invoice_number ?? '').trim(),
     zelle_confirmation_number: String(booking.zelle_confirmation_number ?? '').trim(),
-    tour_id: booking.tour_id ?? tourId ?? initialData.tour_id,
+    tour_ids: tourIds,
+    tour_id: primaryTourIdFromTourIds(tourIds),
     reservation_id: booking.reservation_id ?? initialData.reservation_id ?? '',
     note: booking.note ?? initialData.note,
     status: String(normalizeTicketBookingStatusFromDb(booking.status ?? '')),
@@ -283,6 +299,8 @@ export default function TicketBookingForm({
     /** 드롭다운 표시용 (team 조회 후 채움) */
     guide_display?: string;
     assistant_display?: string;
+    total_people?: number;
+    choice_counts?: import('@/lib/tourChoiceCounts').TourChoiceCounts;
   }
 
   interface Reservation {
@@ -326,10 +344,10 @@ export default function TicketBookingForm({
 
   /** 체크인이 투어 달력 구간(시작~종료일)에 포함되는 투어 (선택 tour는 구간 밖이어도 병합) */
   useEffect(() => {
-    const tourIdToMerge = formData.tour_id ?? null;
-    void fetchTours(formData.check_in_date, tourIdToMerge);
-    // 투어 드롭다운 값만 바꿀 때는 재조회하지 않음
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- formData.tour_id 제외
+    const tourIdsToMerge = normalizeTicketBookingTourIds(formData.tour_ids, formData.tour_id);
+    void fetchTours(formData.check_in_date, tourIdsToMerge);
+    // 투어 선택만 바꿀 때는 재조회하지 않음
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- formData.tour_ids / tour_id 제외
   }, [formData.check_in_date]);
 
   /** 예약 선택: 체크인일과 동일한 tour_date 행만 조회 (날짜 변경 시 예약 연결 초기화) */
@@ -444,7 +462,7 @@ export default function TicketBookingForm({
     }
   };
 
-  const fetchTours = async (checkInDate: string, tourIdToMerge: string | null) => {
+  const fetchTours = async (checkInDate: string, tourIdsToMerge: string[]) => {
     try {
       if (!checkInDate || !String(checkInDate).trim()) {
         setTours([]);
@@ -452,7 +470,7 @@ export default function TicketBookingForm({
         return;
       }
       setToursLoading(true);
-      const rows = await fetchTicketToursForCheckIn(supabase as any, checkInDate, tourIdToMerge);
+      const rows = await fetchTicketToursForCheckIn(supabase as any, checkInDate, tourIdsToMerge);
       setTours(rows as Tour[]);
     } catch (error) {
       console.error('투어 목록 조회 오류:', error);
@@ -850,7 +868,8 @@ export default function TicketBookingForm({
          }
        }
 
-      const tourId = formData.tour_id && formData.tour_id.trim() !== '' ? formData.tour_id : null;
+      const tourLinks = ticketBookingTourLinkPayload(formData.tour_ids, formData.tour_id);
+      const tourId = tourLinks.tour_id;
       const reservationId = formData.reservation_id && formData.reservation_id.trim() !== '' ? formData.reservation_id : null;
 
       const existingFileUrls = Array.isArray(formData.uploaded_file_urls)
@@ -899,6 +918,7 @@ export default function TicketBookingForm({
           ? {}
           : { zelle_confirmation_number: zelleDb }),
         tour_id: tourId,
+        tour_ids: tourLinks.tour_ids,
         reservation_id: reservationId,
         note: formData.note || null,
         season: formData.season || null,
@@ -958,6 +978,7 @@ export default function TicketBookingForm({
             ? {}
             : { zelle_confirmation_number: zelleDb }),
           tour_id: dbPayloadBase.tour_id,
+          tour_ids: dbPayloadBase.tour_ids,
           reservation_id: dbPayloadBase.reservation_id,
           note: dbPayloadBase.note,
           season: dbPayloadBase.season,
@@ -1016,6 +1037,7 @@ export default function TicketBookingForm({
         ...formData,
         ...(savedId ? { id: savedId } : {}),
         tour_id: tourId,
+        tour_ids: tourLinks.tour_ids,
         ...(reservationId ? { reservation_id: reservationId } : {}),
         uploaded_file_urls: mergedFileUrls,
         uploaded_files: [],
@@ -1615,54 +1637,100 @@ export default function TicketBookingForm({
             </div>
             </div>
 
-            {/* ⑤a 투어 선택 | 예약 선택 */}
+            {/* ⑤a 투어 선택(다중) | 예약 선택 */}
             <div className="ticket-form-row grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t('selectTourOptional')}
+                {normalizeTicketBookingTourIds(formData.tour_ids, formData.tour_id).length > 0 ? (
+                  <span className="ml-1.5 font-normal text-muted-foreground">
+                    ({normalizeTicketBookingTourIds(formData.tour_ids, formData.tour_id).length}
+                    {locale === 'ko' ? '개 선택' : ' selected'})
+                  </span>
+                ) : null}
               </label>
-              <select
-                name="tour_id"
-                value={formData.tour_id || ''}
-                onChange={handleChange}
-                disabled={Boolean(formData.check_in_date?.trim()) && toursLoading}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-gray-50 disabled:text-gray-500"
+              <div
+                className={`max-h-44 overflow-y-auto rounded-md border border-gray-300 bg-white px-2 py-1.5 ${
+                  Boolean(formData.check_in_date?.trim()) && toursLoading
+                    ? 'bg-gray-50 text-gray-500'
+                    : ''
+                }`}
+                role="group"
+                aria-label={t('selectTourOptional')}
               >
-                <option value="">{t('selectTourPlaceholder')}</option>
                 {!formData.check_in_date?.trim() ? (
-                  <option value="" disabled>
-                    {t('enterCheckInToLoadTours')}
-                  </option>
+                  <p className="px-1 py-1.5 text-sm text-gray-500">{t('enterCheckInToLoadTours')}</p>
                 ) : toursLoading ? (
-                  <option value="" disabled>
-                    {t('loadingTourOptions')}
-                  </option>
+                  <p className="px-1 py-1.5 text-sm text-gray-500">{t('loadingTourOptions')}</p>
                 ) : tours.length > 0 ? (
-                  tours.map((tour) => {
-                    const productName =
-                      tour.products?.name ||
-                      (locale === 'ko' ? '상품명 없음' : 'No product');
-                    const g = tour.guide_display?.trim();
-                    const a = tour.assistant_display?.trim();
-                    const nameParts = [g, a].filter(Boolean) as string[];
-                    const label =
-                      nameParts.length > 0
-                        ? `${tour.tour_date} ${productName}, ${nameParts.join(', ')}`
-                        : `${tour.tour_date} ${productName}`;
-                    return (
-                      <option key={tour.id} value={tour.id}>
-                        {label}
-                      </option>
-                    );
-                  })
+                  <ul className="space-y-0.5">
+                    {tours.map((tour) => {
+                      const baseLabel = formatTicketTourPickerLabel(tour, locale, {
+                        peopleMode: 'omit',
+                      });
+                      const people =
+                        tour.total_people != null && Number.isFinite(Number(tour.total_people))
+                          ? Number(tour.total_people)
+                          : null;
+                      const canyon = formatTourChoiceCountsChipLabel(tour.choice_counts)?.replace(
+                        /,/g,
+                        ' '
+                      );
+                      const selectedIds = normalizeTicketBookingTourIds(
+                        formData.tour_ids,
+                        formData.tour_id
+                      );
+                      const checked = selectedIds.includes(tour.id);
+                      return (
+                        <li key={tour.id}>
+                          <label className="flex cursor-pointer items-start gap-2 rounded-md px-1 py-1.5 hover:bg-muted/50">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-ring"
+                              checked={checked}
+                              disabled={Boolean(formData.check_in_date?.trim()) && toursLoading}
+                              onChange={() => {
+                                setFormData((prev) => {
+                                  const current = normalizeTicketBookingTourIds(
+                                    prev.tour_ids,
+                                    prev.tour_id
+                                  );
+                                  const next = checked
+                                    ? current.filter((id) => id !== tour.id)
+                                    : [...current, tour.id];
+                                  return {
+                                    ...prev,
+                                    tour_ids: next,
+                                    tour_id: primaryTourIdFromTourIds(next),
+                                  };
+                                });
+                              }}
+                            />
+                            <span className="inline-flex flex-wrap items-center gap-x-1.5 text-sm leading-snug text-gray-900">
+                              <span>{baseLabel}</span>
+                              {people != null ? (
+                                <span className="inline-flex items-center gap-0.5 tabular-nums">
+                                  <Users className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+                                  <span>{people}</span>
+                                </span>
+                              ) : null}
+                              {canyon ? (
+                                <span className="whitespace-nowrap">{canyon}</span>
+                              ) : null}
+                            </span>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 ) : (
-                  <option value="" disabled>
-                    {t('noToursInCheckInWindow')}
-                  </option>
+                  <p className="px-1 py-1.5 text-sm text-gray-500">{t('noToursInCheckInWindow')}</p>
                 )}
-              </select>
+              </div>
               <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-2 leading-snug">
-                {t('selectTourHelpText')}
+                {locale === 'ko'
+                  ? '여러 투어를 함께 연결할 수 있습니다. 기존 단일 연결도 그대로 표시됩니다.'
+                  : 'You can link multiple tours. Existing single links still appear here.'}
               </p>
             </div>
 
@@ -1675,7 +1743,7 @@ export default function TicketBookingForm({
                 value={formData.reservation_id || ''}
                 onChange={handleChange}
                 disabled={
-                  Boolean(formData.tour_id) ||
+                  normalizeTicketBookingTourIds(formData.tour_ids, formData.tour_id).length > 0 ||
                   !formData.check_in_date?.trim() ||
                   reservationsLoading
                 }
@@ -1705,7 +1773,7 @@ export default function TicketBookingForm({
                 )}
               </select>
               <p className="text-[11px] mt-0.5 leading-snug text-gray-500">
-                {!formData.tour_id
+                {normalizeTicketBookingTourIds(formData.tour_ids, formData.tour_id).length === 0
                   ? t('selectReservationHelpText')
                   : t('selectReservationDisabledWhenTour')}
               </p>

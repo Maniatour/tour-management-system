@@ -27,7 +27,6 @@ import TicketBookingDeletionReviewModal from '@/components/booking/TicketBooking
 import { supabase, isAbortLikeError } from '@/lib/supabase';
 import TicketBookingForm from './TicketBookingForm';
 import TicketBookingBulkAddModal from './TicketBookingBulkAddModal';
-import TicketBookingAxisSummary from '@/components/booking/TicketBookingAxisSummary';
 import TicketInvoiceUploadModal from './TicketInvoiceUploadModal';
 import BookingHistory from './BookingHistory';
 import TicketBookingReservationDetailModal, {
@@ -104,6 +103,7 @@ import {
   type TicketBookingStatusFilterKey,
 } from '@/lib/ticketBookingStatusFilter';
 import TicketBookingLinkTourModal from './TicketBookingLinkTourModal';
+import TicketBookingCardView from './TicketBookingCardView';
 import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog';
 import {
   getCancelDeadlineDays,
@@ -112,6 +112,7 @@ import {
   type SeasonDate,
 } from '@/lib/ticketBookingCancelDue';
 import { normalizeReservationIds, isReservationCancelledStatus } from '@/utils/tourUtils';
+import { normalizeTicketBookingTourIds } from '@/lib/ticketBookingTourIds';
 import { isTourCancelled } from '@/utils/tourStatusUtils';
 import { resolveAntelopeCheckInDate } from '@/lib/scheduleVehicleOilMaintenance';
 import {
@@ -129,6 +130,8 @@ import {
   mergeTourChoiceCounts,
   canyonLxCountsMismatch,
   formatDayTourTicketCanyonCompare,
+  buildDayCanyonBookingActionTasks,
+  type DayCanyonBookingActionTask,
   type TicketDateViewBookingRow,
   type TicketDateViewGroup,
 } from '@/lib/ticketBookingDateView';
@@ -343,6 +346,8 @@ const RN_TABLE_GROUP_STYLES: Array<{
 interface TicketBooking {
   id: string;
   tour_id?: string;
+  /** 연결된 투어 다중 (대표는 tour_id) */
+  tour_ids?: string[] | null;
   /** `reservations.id` — 예약자명은 별도 조회해 `reservation_name`에 채움 */
   reservation_id?: string | null;
   submit_on: string;
@@ -361,6 +366,7 @@ interface TicketBooking {
   expense?: number;
   income?: number;
   paid_amount?: number | null;
+  credit_amount?: number | null;
   payment_method: string;
   /** UI 호환: ticket_bookings에 website 컬럼 없음 */
   website?: string;
@@ -398,6 +404,21 @@ interface TicketBooking {
     vehicle_display_name?: string;
     choice_counts?: TourChoiceCounts;
   };
+  /** tour_ids 전체 enrichment */
+  linked_tours?: Array<{
+    tour_id: string;
+    tour_date: string;
+    total_people?: number;
+    products?: {
+      name?: string;
+      name_ko?: string;
+      name_en?: string;
+    };
+    guide_display_name?: string;
+    assistant_display_name?: string;
+    vehicle_display_name?: string;
+    choice_counts?: TourChoiceCounts;
+  }>;
   deletion_requested_at?: string | null;
   deletion_requested_by?: string | null;
   audited?: boolean | null;
@@ -1711,6 +1732,7 @@ export default function TicketBookingList() {
       const TICKET_BOOKING_SELECT_COLUMNS = [
         'id',
         'tour_id',
+        'tour_ids',
         'reservation_id',
         'submit_on',
         'check_in_date',
@@ -1968,7 +1990,9 @@ export default function TicketBookingList() {
           return { ...booking, reservation_name: rn };
         };
 
-        const withTour = list.filter((b) => b.tour_id);
+        const withTour = list.filter(
+          (b) => normalizeTicketBookingTourIds(b.tour_ids, b.tour_id).length > 0
+        );
         if (withTour.length === 0) {
           const rows = list.map((booking) =>
             attachReservationName({
@@ -1980,7 +2004,7 @@ export default function TicketBookingList() {
         }
         const tourIds = [
           ...new Set(
-            withTour.map((b) => b.tour_id).filter((id): id is string => typeof id === 'string' && id.length > 0)
+            withTour.flatMap((b) => normalizeTicketBookingTourIds(b.tour_ids, b.tour_id))
           ),
         ];
         let toursData: TourEvent[] = [];
@@ -2184,8 +2208,14 @@ export default function TicketBookingList() {
             ...booking,
             check_in_date: booking.check_in_date || booking.submit_on,
           });
-          if (booking.tour_id && toursMap.has(booking.tour_id)) {
-            const tour = toursMap.get(booking.tour_id);
+          const linkedTourIds = normalizeTicketBookingTourIds(booking.tour_ids, booking.tour_id);
+          if (linkedTourIds.length === 0) return baseBooking;
+
+          const buildToursPart = (
+            tourId: string
+          ): NonNullable<TicketBooking['tours']> | null => {
+            if (!toursMap.has(tourId)) return null;
+            const tour = toursMap.get(tourId);
             const tr = tour as TourEnrichRow & {
               tour_guide_id?: string | null;
               assistant_id?: string | null;
@@ -2193,7 +2223,7 @@ export default function TicketBookingList() {
             };
             const toursPart: NonNullable<TicketBooking['tours']> = {
               tour_date: tour?.tour_date || '',
-              total_people: tourTotalPeopleByTourId.get(booking.tour_id) ?? 0,
+              total_people: tourTotalPeopleByTourId.get(tourId) ?? 0,
             };
             const guide = resolveStaffDisplay(tr.tour_guide_id);
             const asst = resolveStaffDisplay(tr.assistant_id);
@@ -2214,11 +2244,25 @@ export default function TicketBookingList() {
                   : {}),
               };
             }
-            const choiceCounts = tourChoiceCountsByTourId.get(booking.tour_id);
+            const choiceCounts = tourChoiceCountsByTourId.get(tourId);
             if (choiceCounts) toursPart.choice_counts = choiceCounts;
-            return { ...baseBooking, tours: toursPart };
+            return toursPart;
+          };
+
+          const linked_tours: NonNullable<TicketBooking['linked_tours']> = [];
+          for (const tid of linkedTourIds) {
+            const part = buildToursPart(tid);
+            if (part) linked_tours.push({ tour_id: tid, ...part });
           }
-          return baseBooking;
+          const primaryId = linkedTourIds[0];
+          const primary = primaryId ? buildToursPart(primaryId) : null;
+          return {
+            ...baseBooking,
+            tour_ids: linkedTourIds,
+            tour_id: primaryId,
+            ...(primary ? { tours: primary } : {}),
+            ...(linked_tours.length > 0 ? { linked_tours } : {}),
+          };
         });
         const bookingIds = [
           ...new Set(list.map((b) => b.id).filter((id): id is string => typeof id === 'string' && id.length > 0)),
@@ -2777,6 +2821,7 @@ export default function TicketBookingList() {
     'invoice_number',
     'zelle_confirmation_number',
     'tour_id',
+    'tour_ids',
     'reservation_id',
     'note',
     'status',
@@ -2809,6 +2854,7 @@ export default function TicketBookingList() {
                 ...listRow,
                 ...(data as unknown as TicketBooking),
                 tours: listRow.tours,
+                linked_tours: listRow.linked_tours,
                 reservation_name: listRow.reservation_name,
                 total_price: listRow.total_price,
                 unit_price: listRow.unit_price,
@@ -4361,6 +4407,63 @@ export default function TicketBookingList() {
     return sortedBookings.slice(start, start + listPageSize);
   }, [sortedBookings, listPageEffective, listPageSize]);
 
+  /** 카드뷰 날짜 헤더 — 달력뷰와 동일: 앤텔롭 체크인일 기준 투어 인원 vs 입장권 EA + X/L */
+  const cardViewDayTourCompareByDate = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        tourPeople: number
+        ticketEa: number
+        canyonParts: Array<{ key: string; text: string; mismatch: boolean }>
+        actionTasks: DayCanyonBookingActionTask[]
+        mismatch: boolean
+      }
+    >()
+    const dates = new Set(
+      pagedSortedBookings
+        .map((b) => String(b.check_in_date || '').slice(0, 10))
+        .filter(Boolean)
+    )
+    for (const dateString of dates) {
+      const dayBookings = filteredBookings.filter(
+        (b) => String(b.check_in_date || '').slice(0, 10) === dateString
+      )
+      const counting = dayBookings.filter(isTicketBookingCountingStatus)
+      const ticketEa = counting.reduce((sum, b) => sum + (Number(b.ea) || 0), 0)
+      const toursAntelopeCheckInToday = tourEvents.filter(
+        (tr) => resolveAntelopeCheckInDate(tr) === dateString
+      )
+      const tourPeople = toursAntelopeCheckInToday.reduce(
+        (sum, tr) => sum + (Number(tr.total_people) || 0),
+        0
+      )
+      const dayTourChoiceCounts = mergeTourChoiceCounts(
+        ...toursAntelopeCheckInToday.map((tr) => tr.choice_counts || {})
+      )
+      const dayTicketCanyonCounts = aggregateTicketEaByCanyon(counting)
+      const canyonParts = formatDayTourTicketCanyonCompare(
+        dayTourChoiceCounts,
+        dayTicketCanyonCounts
+      )
+      const actionTasks = buildDayCanyonBookingActionTasks(
+        dayTourChoiceCounts,
+        dayTicketCanyonCounts,
+        locale
+      )
+      const canyonMismatch =
+        canyonParts.length > 0 &&
+        canyonLxCountsMismatch(dayTourChoiceCounts, dayTicketCanyonCounts)
+      map.set(dateString, {
+        tourPeople,
+        ticketEa,
+        canyonParts,
+        actionTasks,
+        mismatch: tourPeople !== ticketEa || canyonMismatch,
+      })
+    }
+    return map
+  }, [pagedSortedBookings, filteredBookings, tourEvents, locale])
+
   const pagedDateViewGroups = useMemo(() => {
     if (!dateViewGroups) return null;
     const start = (listPageEffective - 1) * listPageSize;
@@ -4942,34 +5045,6 @@ export default function TicketBookingList() {
 
   const handleTourClick = (tourId: string) => {
     setTourDetailModal({ tourId, title: getTourDetailModalTitle(tourId) });
-  };
-
-  const getCCStatusText = (cc: string) => {
-    switch (cc) {
-      case 'sent': return 'CC 발송 완료';
-      case 'not_sent': return '미발송';
-      case 'not_needed': return '필요없음';
-      default: return cc || '-';
-    }
-  };
-
-  const getCCStatusColor = (cc: string) => {
-    switch (cc) {
-      case 'sent': return 'bg-green-100 text-green-800';
-      case 'not_sent': return 'bg-yellow-100 text-yellow-800';
-      case 'not_needed': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getPaymentMethodText = (method: string) => {
-    switch (method) {
-      case 'credit_card': return '신용카드';
-      case 'bank_transfer': return '계좌이체';
-      case 'cash': return '현금';
-      case 'other': return '기타';
-      default: return method;
-    }
   };
 
   const goToPreviousMonth = () => {
@@ -7500,167 +7575,21 @@ export default function TicketBookingList() {
             </div>
           </div>
         ) : (
-          /* 카드뷰 - 모바일 컴팩트 */
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
-            {pagedSortedBookings.map((booking) => {
-              const supplierStyle = ticketBookingSupplierColors(booking.company);
-              const changePending = isTicketBookingChangeRequestPending(booking);
-              return (
-              <div
-                key={booking.id}
-                className={`bg-white rounded-xl sm:rounded-lg shadow-sm sm:shadow-md hover:shadow-md sm:hover:shadow-lg transition-shadow ${
-                  changePending ? 'border-2 border-red-600 ring-2 ring-red-500/40' : 'border border-gray-200'
-                }`}
-                style={{ borderLeftWidth: 4, borderLeftColor: supplierStyle.backgroundColor }}
-              >
-                <div className="p-3 sm:p-4 lg:p-6">
-                  {/* 카드 헤더 - 모바일 컴팩트 */}
-                  <div className="flex items-start justify-between gap-2 mb-3 sm:mb-4">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-0.5 sm:mb-1 truncate">
-                        {booking.category}
-                      </h3>
-                      <p
-                        className="text-xs sm:text-sm truncate inline-flex max-w-full rounded px-1.5 py-0.5 font-medium ring-1 ring-black/10"
-                        style={{ backgroundColor: supplierStyle.backgroundColor, color: supplierStyle.color }}
-                      >
-                        {booking.company}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-0.5 sm:mt-1 truncate">{booking.reservation_name}</p>
-                    </div>
-                    <div className="flex flex-shrink-0 flex-col items-end gap-1">
-                      <span className={`inline-flex px-2 py-0.5 sm:py-1 text-xs font-semibold rounded-full ${getTicketBookingStatusBadgeClass(booking.status)}`}>
-                        {formatTicketBookingStatusLabel(booking.status, t, locale)}
-                      </span>
-                      <TicketBookingAxisSummary
-                        booking={booking}
-                        variant="inline"
-                        className="max-w-[12rem] text-right"
-                        omitAxes={['operation']}
-                      />
-                    </div>
-                  </div>
-
-                  {/* 카드 내용 - 모바일 2열 그리드 */}
-                  <div className="space-y-2 sm:space-y-3">
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:contents text-xs sm:text-sm">
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-500">제출일</span>
-                        <span className="font-medium truncate">{booking.submit_on}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-500">시간</span>
-                        <span className="font-medium">{booking.time}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-500">수량</span>
-                        <span className="font-medium">{booking.ea}개</span>
-                      </div>
-                    </div>
-                    
-                    <div className="border-t border-gray-100 pt-2 sm:pt-3">
-                      <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:flex sm:flex-col sm:gap-1 text-xs sm:text-sm">
-                        <div className="flex justify-between sm:mb-0">
-                          <span className="text-gray-500">단가</span>
-                          <span className="font-medium">${booking.unit_price}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">총액</span>
-                          <span className="font-medium text-primary">${booking.total_price}</span>
-                        </div>
-                        <div className="col-span-2 flex justify-between sm:col-span-1">
-                          <span className="text-gray-500">Invoice#</span>
-                          <span className="font-medium truncate max-w-[55%] text-right">
-                            {booking.invoice_number?.trim() || '—'}
-                          </span>
-                        </div>
-                        <div className="col-span-2 flex justify-between sm:col-span-1">
-                          <span className="text-gray-500">Zelle 확인#</span>
-                          <span className="font-medium truncate max-w-[55%] text-right">
-                            {booking.zelle_confirmation_number?.trim() || '—'}
-                          </span>
-                        </div>
-                        <div className="col-span-2 flex flex-wrap gap-2 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => openInvoiceQuickModal(booking)}
-                            className="rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 hover:bg-gray-50"
-                          >
-                            Invoice·첨부
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openZelleAttachmentView(booking)}
-                            className="rounded border border-emerald-200 bg-emerald-50/70 px-2 py-1 text-xs text-emerald-900 hover:bg-emerald-100/80"
-                          >
-                            Zelle 첨부
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="border-t border-gray-100 pt-2 sm:pt-3">
-                      <div className="text-xs sm:text-sm">
-                        <span className="text-gray-500">결제</span>
-                        <div className="mt-0.5 sm:mt-1 font-medium truncate">{getPaymentMethodText(booking.payment_method) || '-'}</div>
-                      </div>
-                      <div className="mt-1.5 sm:mt-2">
-                        <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc ?? '')}`}>
-                          {getCCStatusText(booking.cc ?? '')}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="border-t border-gray-100 pt-2 sm:pt-3">
-                      <div className="text-xs sm:text-sm">
-                        <span className="text-gray-500">투어 연결</span>
-                        <div className="mt-0.5 sm:mt-1">
-                          {booking.tour_id ? (
-                            booking.tours ? (
-                              <div>
-                                <TicketBookingTourDisplay locale={locale} tours={booking.tours} tourFallback={t('tour')} showDetails={false} />
-                                <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800 mt-1">
-                                  연결됨
-                                </span>
-                              </div>
-                            ) : (
-                              <div>
-                                <span className="text-amber-800 text-xs font-medium">연결됨</span>
-                                <button
-                                  type="button"
-                                  className="mt-1.5 inline-flex w-full items-center justify-center rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
-                                  onClick={() => setLinkTourModalBooking(booking)}
-                                >
-                                  투어 확인
-                                </button>
-                              </div>
-                            )
-                          ) : (
-                            <div>
-                              <span className="text-gray-400 text-xs">투어 미연결</span>
-                              <button
-                                type="button"
-                                className="mt-1.5 inline-flex w-full items-center justify-center rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-100"
-                                onClick={() => setLinkTourModalBooking(booking)}
-                              >
-                                투어 선택
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 액션 버튼들 - 모바일 터치 친화 */}
-                  <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-gray-200">
-                    {renderTicketBookingActionButtons(booking, { size: 'touch' })}
-                  </div>
-                </div>
-              </div>
-              );
-            })}
-          </div>
+          /* 카드뷰 — 어제 부킹 v2 목록 레이아웃 (날짜·공급업체 그룹 + 풀폭 카드) */
+          <TicketBookingCardView
+            bookings={pagedSortedBookings}
+            tourLinkSourceBookings={filteredBookings}
+            locale={locale}
+            todayYmd={ticketLocalDateYmd()}
+            getCancelDueDate={getCancelDueDate}
+            getSupplierProduct={(b) => supplierProductsMap.get(b.id) ?? null}
+            onOpenBooking={handleEdit}
+            dayTourCompareByDate={cardViewDayTourCompareByDate}
+            tourPeopleReservationsSummary={(tourPeople, reservations) =>
+              t('tourPeopleReservationsSummary', { tourPeople, reservations })
+            }
+            emptyMessage={locale.startsWith('en') ? 'No bookings to show' : '표시할 부킹이 없습니다'}
+          />
         )}
 
         {sortedBookings.length > 0 && viewMode !== 'calendar' && (

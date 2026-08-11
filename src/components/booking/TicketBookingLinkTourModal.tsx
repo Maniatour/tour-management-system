@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   fetchTicketToursForCheckIn,
+  formatTicketTourPickerLabel,
   type TicketTourPickerRow,
 } from '@/lib/ticketBookingToursForCheckIn';
 
@@ -17,14 +18,7 @@ export type TicketBookingLinkTourModalProps = {
 };
 
 function tourOptionLabel(tour: TicketTourPickerRow, locale: string): string {
-  const productName =
-    tour.products?.name || (locale === 'ko' ? '상품명 없음' : 'No product');
-  const g = tour.guide_display?.trim();
-  const a = tour.assistant_display?.trim();
-  const nameParts = [g, a].filter(Boolean) as string[];
-  return nameParts.length > 0
-    ? `${tour.tour_date} ${productName}, ${nameParts.join(', ')}`
-    : `${tour.tour_date} ${productName}`;
+  return formatTicketTourPickerLabel(tour, locale);
 }
 
 export default function TicketBookingLinkTourModal({

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { ticketBookingTourLinkPayload } from '@/lib/ticketBookingTourIds'
 
 const INSERTABLE_TICKET_BOOKING_COLUMNS = new Set([
   'category',
@@ -14,6 +15,7 @@ const INSERTABLE_TICKET_BOOKING_COLUMNS = new Set([
   'payment_method',
   'rn_number',
   'tour_id',
+  'tour_ids',
   'note',
   'status',
   'season',
@@ -58,7 +60,9 @@ function buildTicketBookingInsertPayload(
   }
 
   payload.submitted_by = userEmail
-  payload.tour_id = normalizeOptionalId(payload.tour_id)
+  const links = ticketBookingTourLinkPayload(payload.tour_ids, payload.tour_id as string | null)
+  payload.tour_ids = links.tour_ids
+  payload.tour_id = links.tour_id
   payload.reservation_id = normalizeOptionalId(payload.reservation_id)
   payload.statement_line_id = normalizeOptionalId(payload.statement_line_id)
 
