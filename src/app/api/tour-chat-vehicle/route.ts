@@ -1,39 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
-
-function simplifyUrl(url: string): string {
-  if (!url) return url
-  try {
-    const u = new URL(url)
-    u.search = ''
-    u.hash = ''
-    return u.toString()
-  } catch {
-    return url
-  }
-}
+import {
+  pickCustomerFacingVehiclePhotos,
+  simplifyVehiclePhotoUrl,
+  type VehicleRentalDocUrls,
+} from '@/lib/resolveCustomerVehiclePhotos'
 
 function toPublicPhotoUrl(
   photo: { photo_url?: string | null; photo_name?: string | null },
   db: typeof supabase
-): { url: string; alt?: string } | null {
+): { url: string; alt?: string; photo_url: string } | null {
   const raw = photo.photo_url
   if (!raw) return null
   if (raw.startsWith('data:image') || raw.startsWith('http')) {
+    const url = simplifyVehiclePhotoUrl(raw)
     return {
-      url: simplifyUrl(raw),
+      url,
+      photo_url: url,
       ...(photo.photo_name ? { alt: photo.photo_name } : {}),
     }
   }
   try {
     const { data } = db.storage.from('images').getPublicUrl(raw)
+    const url = simplifyVehiclePhotoUrl(data.publicUrl)
     return {
-      url: simplifyUrl(data.publicUrl),
+      url,
+      photo_url: url,
       ...(photo.photo_name ? { alt: photo.photo_name } : {}),
     }
   } catch {
     return {
       url: raw,
+      photo_url: raw,
       ...(photo.photo_name ? { alt: photo.photo_name } : {}),
     }
   }
@@ -80,7 +78,9 @@ export async function POST(request: NextRequest) {
 
     const { data: vehicleData, error: vehicleError } = await admin
       .from('vehicles')
-      .select('vehicle_type, capacity, color')
+      .select(
+        'vehicle_type, capacity, color, rental_reservation_url, rental_agreement_file_url, rental_receipt_url'
+      )
       .eq('id', carId)
       .maybeSingle()
 
@@ -114,14 +114,25 @@ export async function POST(request: NextRequest) {
       .order('display_order', { ascending: true })
       .order('is_primary', { ascending: false })
 
+    const rentalDocs: VehicleRentalDocUrls = {
+      rental_reservation_url: (vehicleData as VehicleRentalDocUrls).rental_reservation_url,
+      rental_agreement_file_url: (vehicleData as VehicleRentalDocUrls).rental_agreement_file_url,
+      rental_receipt_url: (vehicleData as VehicleRentalDocUrls).rental_receipt_url,
+    }
+
     const processedType = (typePhotosData || [])
       .map((p) => toPublicPhotoUrl(p, admin))
-      .filter((x): x is { url: string; alt?: string } => x != null && !!x.url)
+      .filter((x): x is { url: string; alt?: string; photo_url: string } => x != null && !!x.url)
     const processedVehicle = (vehiclePhotosData || [])
       .map((p) => toPublicPhotoUrl(p, admin))
-      .filter((x): x is { url: string; alt?: string } => x != null && !!x.url)
+      .filter((x): x is { url: string; alt?: string; photo_url: string } => x != null && !!x.url)
 
-    const photos = processedVehicle.length > 0 ? processedVehicle : processedType
+    const picked = pickCustomerFacingVehiclePhotos({
+      vehiclePhotos: processedVehicle,
+      typePhotos: processedType,
+      rentalDocs,
+    })
+    const photos = picked.map(({ url, alt }) => ({ url, ...(alt ? { alt } : {}) }))
 
     const capacity =
       (vehicleTypeData?.passenger_capacity as number | null | undefined) ??

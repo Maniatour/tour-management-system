@@ -16,6 +16,10 @@ import {
   hasPickupLocationDescription,
 } from '@/lib/pickupHotelVehicleAccess'
 import { readAuthAccessTokenFromRequest } from '@/lib/authSessionCookie'
+import {
+  pickCustomerFacingVehiclePhotos,
+  simplifyVehiclePhotoUrl,
+} from '@/lib/resolveCustomerVehiclePhotos'
 
 const PICKUP_HOTEL_EMAIL_SELECT =
   'id, hotel, pick_up_location, address, link, media, description_ko, description_en, from_inside_hotel_ko, from_inside_hotel_en, from_outside_hotel_ko, from_outside_hotel_en'
@@ -459,7 +463,9 @@ export async function POST(request: NextRequest) {
         const vehiclesDb = supabaseAdmin ?? supabase
         const { data: vehicleData, error: vehicleError } = await vehiclesDb
           .from('vehicles')
-          .select('vehicle_type, capacity, color')
+          .select(
+            'vehicle_type, capacity, color, rental_reservation_url, rental_agreement_file_url, rental_receipt_url'
+          )
           .eq('id', tourData.tour_car_id)
           .maybeSingle()
 
@@ -498,16 +504,12 @@ export async function POST(request: NextRequest) {
             console.error('[send-pickup-schedule-notification] vehicle_photos 조회 오류:', vehiclePhotosError)
           }
 
-          const simplifyUrl = (url: string): string => {
-            if (!url) return url
-            try {
-              const urlObj = new URL(url)
-              urlObj.search = ''
-              urlObj.hash = ''
-              return urlObj.toString()
-            } catch {
-              return url
-            }
+          const rentalDocs = {
+            rental_reservation_url: (vehicleData as { rental_reservation_url?: string | null })
+              .rental_reservation_url,
+            rental_agreement_file_url: (vehicleData as { rental_agreement_file_url?: string | null })
+              .rental_agreement_file_url,
+            rental_receipt_url: (vehicleData as { rental_receipt_url?: string | null }).rental_receipt_url,
           }
 
           const toPublicPhotoUrl = (photo: any): any => {
@@ -518,18 +520,22 @@ export async function POST(request: NextRequest) {
             if (!photo.photo_url.startsWith('http') && !photo.photo_url.startsWith('data:')) {
               try {
                 const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(photo.photo_url)
-                return { ...photo, photo_url: simplifyUrl(publicUrl) }
+                return { ...photo, photo_url: simplifyVehiclePhotoUrl(publicUrl) }
               } catch (error) {
                 console.error('[send-pickup-schedule-notification] 공개 URL 생성 오류:', error)
                 return photo
               }
             }
-            return { ...photo, photo_url: simplifyUrl(photo.photo_url) }
+            return { ...photo, photo_url: simplifyVehiclePhotoUrl(photo.photo_url) }
           }
 
           const processedTypePhotos = (typePhotosData || []).map(toPublicPhotoUrl).filter((p: any) => p !== null)
           const processedVehiclePhotos = (vehiclePhotosData || []).map(toPublicPhotoUrl).filter((p: any) => p !== null)
-          const displayPhotos = processedVehiclePhotos.length > 0 ? processedVehiclePhotos : processedTypePhotos
+          const displayPhotos = pickCustomerFacingVehiclePhotos({
+            vehiclePhotos: processedVehiclePhotos,
+            typePhotos: processedTypePhotos,
+            rentalDocs,
+          })
 
           // data URL 사진은 클릭 시 새 탭에서 보이도록 Storage에 임시 업로드 후 viewUrl 부여
           const displayPhotosWithViewUrl = await Promise.all(
@@ -551,7 +557,7 @@ export async function POST(request: NextRequest) {
                   return { ...photo, viewUrl: null }
                 }
                 const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(path)
-                return { ...photo, viewUrl: simplifyUrl(publicUrl) }
+                return { ...photo, viewUrl: simplifyVehiclePhotoUrl(publicUrl) }
               } catch (e) {
                 console.warn('[send-pickup-schedule-notification] data URL 업로드 예외:', e)
                 return { ...photo, viewUrl: null }

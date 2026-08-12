@@ -11280,10 +11280,15 @@ export type Database = {
           purchase_date: string | null
           rear_tire_size: string | null
           recent_engine_oil_change_mileage: number | null
+          rental_agreement_file_url: string | null
+          rental_agreement_number: string | null
+          rental_booking_price: number | null
           rental_company: string | null
           rental_end_date: string | null
           rental_notes: string | null
           rental_pickup_location: string | null
+          rental_receipt_url: string | null
+          rental_reservation_url: string | null
           rental_return_location: string | null
           rental_start_date: string | null
           rental_total_cost: number | null
@@ -11327,10 +11332,15 @@ export type Database = {
           purchase_date?: string | null
           rear_tire_size?: string | null
           recent_engine_oil_change_mileage?: number | null
+          rental_agreement_file_url?: string | null
+          rental_agreement_number?: string | null
+          rental_booking_price?: number | null
           rental_company?: string | null
           rental_end_date?: string | null
           rental_notes?: string | null
           rental_pickup_location?: string | null
+          rental_receipt_url?: string | null
+          rental_reservation_url?: string | null
           rental_return_location?: string | null
           rental_start_date?: string | null
           rental_total_cost?: number | null
@@ -11374,10 +11384,15 @@ export type Database = {
           purchase_date?: string | null
           rear_tire_size?: string | null
           recent_engine_oil_change_mileage?: number | null
+          rental_agreement_file_url?: string | null
+          rental_agreement_number?: string | null
+          rental_booking_price?: number | null
           rental_company?: string | null
           rental_end_date?: string | null
           rental_notes?: string | null
           rental_pickup_location?: string | null
+          rental_receipt_url?: string | null
+          rental_reservation_url?: string | null
           rental_return_location?: string | null
           rental_start_date?: string | null
           rental_status?: string | null

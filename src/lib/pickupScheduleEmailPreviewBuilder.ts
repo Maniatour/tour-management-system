@@ -10,6 +10,10 @@ import {
   type PickupResolveContext,
 } from '@/lib/pickupGroupPreset'
 import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
+import {
+  pickCustomerFacingVehiclePhotos,
+  simplifyVehiclePhotoUrl,
+} from '@/lib/resolveCustomerVehiclePhotos'
 
 export type PickupScheduleEmailPreviewResult = {
   emailContent: {
@@ -359,7 +363,9 @@ async function fetchTourDetailsForPickup(
   const vehiclePromise = tourData.tour_car_id
     ? vehiclesDb
         .from('vehicles')
-        .select('vehicle_type, capacity, color')
+        .select(
+          'vehicle_type, capacity, color, rental_reservation_url, rental_agreement_file_url, rental_receipt_url'
+        )
         .eq('id', tourData.tour_car_id as string)
         .maybeSingle()
     : Promise.resolve({ data: null })
@@ -371,7 +377,16 @@ async function fetchTourDetailsForPickup(
   ])
   tourGuideInfo = guideResult.data
   assistantInfo = assistantResult.data
-  const vehicleData = vehicleResult.data
+  const vehicleData = vehicleResult.data as
+    | {
+        vehicle_type?: string | null
+        capacity?: number | null
+        color?: string | null
+        rental_reservation_url?: string | null
+        rental_agreement_file_url?: string | null
+        rental_receipt_url?: string | null
+      }
+    | null
 
   if (vehicleData?.vehicle_type) {
     const { data: vehicleTypeData } = await routeDb
@@ -397,18 +412,6 @@ async function fetchTourDetailsForPickup(
         : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     ])
 
-    const simplifyUrl = (url: string): string => {
-      if (!url) return url
-      try {
-        const urlObj = new URL(url)
-        urlObj.search = ''
-        urlObj.hash = ''
-        return urlObj.toString()
-      } catch {
-        return url
-      }
-    }
-
     const toPublicPhotoUrl = (photo: Record<string, unknown>) => {
       if (!photo.photo_url) return null
       const photoUrl = String(photo.photo_url)
@@ -418,15 +421,21 @@ async function fetchTourDetailsForPickup(
           const {
             data: { publicUrl },
           } = supabase.storage.from('images').getPublicUrl(photoUrl)
-          return { ...photo, photo_url: simplifyUrl(publicUrl) }
+          return { ...photo, photo_url: simplifyVehiclePhotoUrl(publicUrl) }
         } catch {
           return photo
         }
       }
       if (photoUrl.startsWith('http')) {
-        return { ...photo, photo_url: simplifyUrl(photoUrl) }
+        return { ...photo, photo_url: simplifyVehiclePhotoUrl(photoUrl) }
       }
       return photo
+    }
+
+    const rentalDocs = {
+      rental_reservation_url: vehicleData.rental_reservation_url,
+      rental_agreement_file_url: vehicleData.rental_agreement_file_url,
+      rental_receipt_url: vehicleData.rental_receipt_url,
     }
 
     const processedTypePhotos = (typePhotosResult.data || [])
@@ -435,8 +444,11 @@ async function fetchTourDetailsForPickup(
     const processedVehiclePhotos = (vehiclePhotosResult.data || [])
       .map((p) => toPublicPhotoUrl(p as Record<string, unknown>))
       .filter((p): p is Record<string, unknown> => p !== null)
-    const displayPhotos =
-      processedVehiclePhotos.length > 0 ? processedVehiclePhotos : processedTypePhotos
+    const displayPhotos = pickCustomerFacingVehiclePhotos({
+      vehiclePhotos: processedVehiclePhotos,
+      typePhotos: processedTypePhotos,
+      rentalDocs,
+    })
 
     // 미리보기: data URL은 그대로 사용 (Storage 업로드 생략)
     const displayPhotosWithViewUrl = displayPhotos.map((photo) => {

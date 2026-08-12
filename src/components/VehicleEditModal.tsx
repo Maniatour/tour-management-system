@@ -19,6 +19,7 @@ import {
   VEHICLE_FUEL_TYPES,
 } from '@/lib/vehicleMaintenanceApplicability'
 import VehicleTypeManagementModal from './VehicleTypeManagementModal'
+import { isCustomerFacingVehiclePhotoUrl } from '@/lib/resolveCustomerVehiclePhotos'
 
 interface Vehicle {
   id?: string
@@ -362,12 +363,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
   const [showVehicleTypeManagement, setShowVehicleTypeManagement] = useState(false)
 
   // 차량 사진 가져오기
-  const fetchVehiclePhotos = async (_vehicleId: string) => {
-    // vehicle_photos 조회는 선택적이므로 에러가 발생해도 무시
-    // 현재 Supabase 서버에서 500 에러가 발생하고 있어 조용히 처리
-    // 차량 편집은 정상적으로 진행되며, 사진이 없어도 문제없음
-    // TODO: Supabase 서버 문제 해결 후 아래 코드 활성화
-    /*
+  const fetchVehiclePhotos = async (vehicleId: string) => {
     try {
       const { data, error } = await supabase
         .from('vehicle_photos')
@@ -375,28 +371,36 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
         .eq('vehicle_id', vehicleId)
         .limit(100)
 
-      if (!error && data && data.length > 0) {
-        const sortedPhotos = data.sort((a, b) => {
+      if (error) {
+        console.warn('vehicle_photos 조회 오류:', error.message)
+        setVehiclePhotos([])
+        return
+      }
+
+      if (data && data.length > 0) {
+        const sortedPhotos = [...data].sort((a, b) => {
           if (a.is_primary && !b.is_primary) return -1
           if (!a.is_primary && b.is_primary) return 1
           return (a.display_order || 0) - (b.display_order || 0)
         })
-        
+
         setVehiclePhotos(sortedPhotos)
-        
-        const primaryPhoto = sortedPhotos.find(photo => photo.is_primary)
+
+        const primaryPhoto = sortedPhotos.find((photo) => photo.is_primary)
         if (primaryPhoto) {
           setPrimaryPhotoId(primaryPhoto.id)
+        } else {
+          setPrimaryPhotoId(null)
         }
       } else {
         setVehiclePhotos([])
+        setPrimaryPhotoId(null)
       }
     } catch (error) {
+      console.warn('vehicle_photos 조회 예외:', error)
       setVehiclePhotos([])
+      setPrimaryPhotoId(null)
     }
-    */
-    // 임시로 빈 배열로 설정하여 에러 방지
-    setVehiclePhotos([])
   }
 
   // 차종 목록 가져오기 (최적화: 필요한 컬럼만 선택, 인덱스 활용)
@@ -525,6 +529,8 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
     if (vehicle) {
       // 차량 사진 가져오기
       fetchVehiclePhotos(vehicle.id!)
+      setImagePreviews([])
+      setImageFiles([])
       
       // null 값들을 기본값으로 변환
       setFormData({
@@ -636,6 +642,10 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
       setPendingRentalReservationFile(null)
       setPendingRentalAgreementFile(null)
       setPendingRentalReceiptFile(null)
+      setVehiclePhotos([])
+      setPrimaryPhotoId(null)
+      setImagePreviews([])
+      setImageFiles([])
     }
     if (vehicle) {
       setPendingRentalReservationFile(null)
@@ -1027,12 +1037,21 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
       onSave(vehicleData)
       
       // 새로 추가된 사진들을 vehicle_photos 테이블에 저장
+      // Rental reservations 등 렌탈 문서 URL은 차량 사진으로 저장하지 않음
       if (imagePreviews.length > 0 && vehicle?.id) {
+        const rentalDocs = {
+          rental_reservation_url: rentalReservationUrl,
+          rental_agreement_file_url: rentalAgreementFileUrl,
+          rental_receipt_url: rentalReceiptUrl,
+        }
         // 기존에 저장된 사진의 URL 목록
         const existingPhotoUrls = new Set(vehiclePhotos.map(photo => photo.photo_url))
         
-        // 새로 추가된 사진만 필터링 (기존 사진 제외)
-        const newPhotoUrls = imagePreviews.filter(url => !existingPhotoUrls.has(url))
+        // 새로 추가된 사진만 필터링 (기존 사진·렌탈 문서 제외)
+        const newPhotoUrls = imagePreviews.filter(
+          (url) =>
+            !existingPhotoUrls.has(url) && isCustomerFacingVehiclePhotoUrl(url, rentalDocs)
+        )
         
         if (newPhotoUrls.length > 0) {
           // 기존에 is_primary = true인 사진이 있는지 확인
@@ -2019,7 +2038,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                           />
                         </label>
                       </div>
-                      <p className="text-xs text-gray-500">차량 사진을 업로드하세요</p>
+                      <p className="text-xs text-gray-500">차량 사진을 업로드하세요 (Rental reservations 문서는 위 렌탈 섹션에만 업로드)</p>
                       <p className="text-[11px] text-gray-400">Ctrl+V로 이미지 붙여넣기</p>
                     </div>
                   )}
