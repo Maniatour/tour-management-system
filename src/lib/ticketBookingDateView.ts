@@ -276,8 +276,8 @@ export function buildDayCanyonBookingActionTasks(
         diffEa,
         kind: 'book_more',
         text: isEn
-          ? `🏜️${k} ${diffEa} EA more booking needed`
-          : `🏜️${k} ${diffEa} EA 추가 부킹 필요`,
+          ? `${diffEa} EA more booking needed`
+          : `${diffEa} EA 추가 부킹 필요`,
       })
     } else {
       const diffEa = ticketN - tourN
@@ -286,8 +286,8 @@ export function buildDayCanyonBookingActionTasks(
         diffEa,
         kind: 'cancel',
         text: isEn
-          ? `🏜️${k} ${diffEa} EA cancellation needed`
-          : `🏜️${k} ${diffEa} EA 취소 필요`,
+          ? `${diffEa} EA cancellation needed`
+          : `${diffEa} EA 취소 필요`,
       })
     }
   }

@@ -74,6 +74,44 @@ function formatAt(iso: string | null | undefined, locale: string): string {
   }
 }
 
+/** 같은 시각(분)·같은 수량 변화는 한 줄로 합침 */
+function sameTimelineMinute(a: string | null, b: string | null): boolean {
+  if (!a && !b) return true
+  if (!a || !b) return false
+  const ta = new Date(a).getTime()
+  const tb = new Date(b).getTime()
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return a === b
+  return Math.floor(ta / 60_000) === Math.floor(tb / 60_000)
+}
+
+function mergeSameMomentQtyTimelineItems(items: QtyTimelineItem[]): QtyTimelineItem[] {
+  if (items.length <= 1) return items
+  const out: QtyTimelineItem[] = []
+  for (const it of items) {
+    const prev = out[out.length - 1]
+    const canMerge =
+      prev != null &&
+      prev.tone !== 'start' &&
+      it.tone !== 'start' &&
+      sameTimelineMinute(prev.at, it.at) &&
+      prev.delta === it.delta &&
+      prev.afterQty === it.afterQty
+
+    if (canMerge && prev) {
+      const tone = it.tone === 'pending' ? prev.tone : it.tone
+      out[out.length - 1] = {
+        ...prev,
+        key: `${prev.key}+${it.key}`,
+        label: `${prev.label} > ${it.label}`,
+        tone,
+      }
+    } else {
+      out.push(it)
+    }
+  }
+  return out
+}
+
 /** booking_history + 현재 스냅샷으로 수량 타임라인 구성 */
 export function buildTicketBookingQtyTimeline(
   booking: TicketBookingQtyTimelineBooking,
@@ -222,7 +260,7 @@ export function buildTicketBookingQtyTimeline(
     }
   }
 
-  return items
+  return mergeSameMomentQtyTimelineItems(items)
 }
 
 type Props = {

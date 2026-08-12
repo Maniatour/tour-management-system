@@ -172,6 +172,8 @@ export default function ProductLocaleReadinessModal({
             'slogan1',
             'slogan2',
             'slogan3',
+            'slogan4',
+            'slogan5',
             'description',
             'included',
             'not_included',
@@ -203,6 +205,8 @@ export default function ProductLocaleReadinessModal({
                   'slogan1',
                   'slogan2',
                   'slogan3',
+                  'slogan4',
+                  'slogan5',
                   'description',
                   'included',
                   'not_included',
@@ -575,7 +579,19 @@ export default function ProductLocaleReadinessModal({
       filtered.length === 0
         ? 0
         : Math.round(filtered.reduce((s, r) => s + r.overallPercent, 0) / filtered.length)
-    return { incomplete, avgByLocale, overallAvg, syncNeeds: syncTasks.length }
+    const sourceInputAvg =
+      filtered.length === 0
+        ? 0
+        : Math.round(
+            filtered.reduce((s, r) => s + r.sourceInputPercent, 0) / filtered.length
+          )
+    return {
+      incomplete,
+      avgByLocale,
+      overallAvg,
+      sourceInputAvg,
+      syncNeeds: syncTasks.length,
+    }
   }, [filtered, syncTasks.length])
 
   if (!isOpen) return null
@@ -611,6 +627,7 @@ export default function ProductLocaleReadinessModal({
                       count: filtered.length,
                       avgOverall: summary.overallAvg,
                       incomplete: summary.incomplete,
+                      avgSourceInput: summary.sourceInputAvg,
                     })}
                 {summary.syncNeeds > 0 ? (
                   <span className="ml-2 text-amber-700">
@@ -959,22 +976,37 @@ export default function ProductLocaleReadinessModal({
                             ) : null}
                             <span aria-hidden>·</span>
                             <span className="tabular-nums">
+                              {t('sourceInput', {
+                                percent: row.sourceInputPercent,
+                                count: row.sourceInputFieldCount,
+                              })}
+                            </span>
+                            <span aria-hidden>·</span>
+                            <span className="tabular-nums">
                               {t('overall', { percent: row.overallPercent })}
                             </span>
                             {syncCount > 0 ? (
                               <>
                                 <span aria-hidden>·</span>
-                                <button
-                                  type="button"
+                                <span
+                                  role="link"
+                                  tabIndex={0}
                                   onClick={(e) => {
                                     e.stopPropagation()
                                     setViewMode('syncNeeds')
                                     setSearch(row.productName)
                                   }}
-                                  className="text-amber-700 hover:text-amber-900 underline-offset-2 hover:underline"
+                                  onKeyDown={(e) => {
+                                    if (e.key !== 'Enter' && e.key !== ' ') return
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    setViewMode('syncNeeds')
+                                    setSearch(row.productName)
+                                  }}
+                                  className="text-amber-700 hover:text-amber-900 underline-offset-2 hover:underline cursor-pointer"
                                 >
                                   {t('syncNeedsBadge', { count: syncCount })}
-                                </button>
+                                </span>
                               </>
                             ) : null}
                           </div>
@@ -1002,6 +1034,12 @@ export default function ProductLocaleReadinessModal({
 
                     {open ? (
                       <div className="mt-3 ml-6 space-y-3">
+                        <p className="text-xs text-gray-500">
+                          {t('sourceBaselineHint', {
+                            count: row.sourceInputFieldCount,
+                            percent: row.sourceInputPercent,
+                          })}
+                        </p>
                         {syncCount > 0 ? (
                           <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3">
                             <div className="text-xs font-semibold text-amber-900 mb-2">

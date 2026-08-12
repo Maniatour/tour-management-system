@@ -111,3 +111,18 @@ export function isAntelopeTourChoiceBadgeLabel(label: string | null | undefined)
   if (!trimmed) return false
   return trimmed.startsWith(`${ANTLOPE_EMOJI} `)
 }
+
+/**
+ * 동일 앤텔롭 뱃지(🏜️ L 등)가 타상품 초이스 잔존으로 두 번 나올 때 한 번만 남긴다.
+ * L/X/U가 서로 다르면 모두 유지.
+ */
+export function dedupeAntelopeTourChoiceBadges<T extends { name: string }>(choices: T[]): T[] {
+  const seen = new Set<string>()
+  return choices.filter((choice) => {
+    if (!isAntelopeTourChoiceBadgeLabel(choice.name)) return true
+    const key = String(choice.name).trim()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}

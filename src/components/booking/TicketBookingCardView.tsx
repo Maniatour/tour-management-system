@@ -26,6 +26,7 @@ import {
   type TicketBookingTourEnrichment,
 } from '@/lib/ticket-booking-tour-display'
 import { tourChoiceCountsDisplayKeys } from '@/lib/tourChoiceCounts'
+import { ticketBookingCanyonKeyFromBooking } from '@/lib/ticketBookingDateView'
 import TicketBookingQtyTimeline from './TicketBookingQtyTimeline'
 
 export type TicketBookingCardViewRow = {
@@ -59,17 +60,113 @@ export type TicketBookingCardViewRow = {
 const tourBadgeBase =
   'inline-flex max-w-full shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-tight'
 
-type DayTourCompareSummary = {
+/** 지급처(업체) 그룹 배경 — 이름 기준 고정 색 */
+const COMPANY_SECTION_SURFACE = [
+  'border-sky-200/80 bg-sky-50/70',
+  'border-emerald-200/80 bg-emerald-50/70',
+  'border-amber-200/80 bg-amber-50/70',
+  'border-violet-200/80 bg-violet-50/70',
+  'border-rose-200/80 bg-rose-50/70',
+  'border-indigo-200/80 bg-indigo-50/70',
+] as const
+
+/** 자주 쓰는 지급처 — 항상 동일 색 */
+const COMPANY_SECTION_SURFACE_BY_NAME: Record<string, (typeof COMPANY_SECTION_SURFACE)[number]> = {
+  'antelope x': 'border-sky-200/80 bg-sky-50/70',
+  'see canyon': 'border-emerald-200/80 bg-emerald-50/70',
+  dixie: 'border-emerald-200/80 bg-emerald-50/70',
+  'antelope canyon': 'border-amber-200/80 bg-amber-50/70',
+  'horseshoe bend': 'border-violet-200/80 bg-violet-50/70',
+}
+
+function normalizeCompanyKey(company: string): string {
+  return company.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function hashCompanySurfaceIndex(key: string): number {
+  let h = 2166136261
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return Math.abs(h) % COMPANY_SECTION_SURFACE.length
+}
+
+function companySectionSurface(company: string): string {
+  const key = normalizeCompanyKey(company)
+  if (!key || key === '—') return COMPANY_SECTION_SURFACE[0]
+  const mapped = COMPANY_SECTION_SURFACE_BY_NAME[key]
+  if (mapped) return mapped
+  if (key.includes('antelope') && /\bx\b/.test(key)) {
+    return COMPANY_SECTION_SURFACE_BY_NAME['antelope x']
+  }
+  if (key.includes('see canyon') || key.includes('dixie')) {
+    return COMPANY_SECTION_SURFACE_BY_NAME['see canyon']
+  }
+  return COMPANY_SECTION_SURFACE[hashCompanySurfaceIndex(key)]
+}
+
+type CanyonActionTask = {
+  key: string
+  diffEa: number
+  kind: 'book_more' | 'cancel'
+  text: string
+}
+
+export type DayTourCompareSummary = {
   tourPeople: number
   ticketEa: number
   canyonParts: Array<{ key: string; text: string; mismatch: boolean }>
-  actionTasks?: Array<{
-    key: string
-    diffEa: number
-    kind: 'book_more' | 'cancel'
-    text: string
-  }>
+  actionTasks?: CanyonActionTask[]
   mismatch: boolean
+}
+
+/** 지급처에 해당하는 캐년 키(X/L) 업무 뱃지만 표시 */
+function actionTasksForCompany(
+  company: string,
+  tasks: CanyonActionTask[] | undefined
+): CanyonActionTask[] {
+  if (!tasks?.length) return []
+  const canyonKey = ticketBookingCanyonKeyFromBooking({ company })
+  if (!canyonKey) return []
+  return tasks.filter((t) => t.key === canyonKey)
+}
+
+function CanyonActionTaskBadges({
+  tasks,
+  isEn,
+  compact = false,
+}: {
+  tasks: CanyonActionTask[]
+  isEn: boolean
+  compact?: boolean
+}) {
+  if (tasks.length === 0) return null
+  return (
+    <>
+      {tasks.map((task) => (
+        <span
+          key={`${task.key}-${task.kind}`}
+          className={`inline-flex items-center rounded-full font-semibold leading-tight ring-1 ${
+            compact
+              ? 'px-1.5 py-0.5 text-[10px]'
+              : 'px-2.5 py-0.5 text-xs sm:text-sm'
+          } ${
+            task.kind === 'book_more'
+              ? 'bg-amber-50 text-amber-950 ring-amber-200'
+              : 'bg-red-50 text-red-800 ring-red-200'
+          }`}
+          title={
+            isEn
+              ? `Tour ${task.key} vs ticket EA — action needed`
+              : `투어 ${task.key} vs 입장권 EA — 실행 필요`
+          }
+        >
+          {task.text}
+        </span>
+      ))}
+    </>
+  )
 }
 
 type LinkedTourBadge = {
@@ -93,6 +190,10 @@ type Props<T extends TicketBookingCardViewRow> = {
    */
   tourLinkSourceBookings?: T[]
   emptyMessage?: string
+  /** 업무 TODO 위젯 등 — 날짜·업체·카드 타이포/여백 축소 */
+  density?: 'default' | 'compact'
+  /** compact 기본 true — 금액 줄 숨김 */
+  hideAmounts?: boolean
 }
 
 function collectLinkedToursForBooking(
@@ -121,10 +222,12 @@ function TourLinkBadgeChip({
   locale,
   isEn,
   tours,
+  compact = false,
 }: {
   locale: string
   isEn: boolean
   tours: TicketBookingTourEnrichment
+  compact?: boolean
 }) {
   const tourProductName = getTicketBookingProductName(
     locale,
@@ -138,10 +241,13 @@ function TourLinkBadgeChip({
   const tourChoiceKeys = tours.choice_counts
     ? tourChoiceCountsDisplayKeys(tours.choice_counts)
     : []
+  const badgeClass = compact
+    ? 'inline-flex max-w-full shrink-0 items-center gap-0.5 rounded-full px-1 py-0.5 text-[9px] font-semibold leading-tight'
+    : tourBadgeBase
 
   return (
     <span
-      className={`${tourBadgeBase} max-w-full gap-1 bg-indigo-50 text-indigo-950 ring-1 ring-indigo-200/80`}
+      className={`${badgeClass} max-w-full gap-1 bg-indigo-50 text-indigo-950 ring-1 ring-indigo-200/80`}
       title={[
         tourProductName,
         tourPeople != null
@@ -155,11 +261,16 @@ function TourLinkBadgeChip({
         .join(' ')}
     >
       {tourProductName ? (
-        <span className="max-w-[5.5rem] truncate">{tourProductName}</span>
+        <span className={`truncate ${compact ? 'max-w-[4.5rem]' : 'max-w-[5.5rem]'}`}>
+          {tourProductName}
+        </span>
       ) : null}
       {tourPeople != null ? (
         <span className="inline-flex items-center gap-0.5 tabular-nums">
-          <Users className="h-3 w-3 shrink-0 opacity-80" aria-hidden />
+          <Users
+            className={`shrink-0 opacity-80 ${compact ? 'h-2.5 w-2.5' : 'h-3 w-3'}`}
+            aria-hidden
+          />
           <span>{tourPeople}</span>
         </span>
       ) : null}
@@ -193,8 +304,12 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
   tourPeopleReservationsSummary,
   tourLinkSourceBookings,
   emptyMessage,
+  density = 'default',
+  hideAmounts,
 }: Props<T>) {
   const isEn = locale.startsWith('en')
+  const compact = density === 'compact'
+  const showAmounts = hideAmounts === undefined ? !compact : !hideAmounts
   const [qtyTimelineBooking, setQtyTimelineBooking] = useState<T | null>(null)
   const [qtyTimelineAnchor, setQtyTimelineAnchor] = useState<{
     top: number
@@ -287,8 +402,14 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
 
   if (bookings.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-muted/10 px-6 py-16 text-center">
-        <p className="text-base font-medium text-foreground">
+      <div
+        className={
+          compact
+            ? 'rounded-md border border-dashed border-border bg-muted/10 px-3 py-4 text-center'
+            : 'rounded-xl border border-dashed border-border bg-muted/10 px-6 py-16 text-center'
+        }
+      >
+        <p className={compact ? 'text-[11px] font-medium text-foreground' : 'text-base font-medium text-foreground'}>
           {emptyMessage || (isEn ? 'No bookings to show' : '표시할 부킹이 없습니다')}
         </p>
       </div>
@@ -302,10 +423,18 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
         return (
           <Fragment key={dayGroup.date}>
             {dayIdx > 0 ? (
-              <div className="mb-2 mt-8 border-t-2 border-gray-300" role="separator" aria-hidden />
+              <div
+                className={
+                  compact
+                    ? 'mb-3 mt-3 border-t border-gray-200'
+                    : 'mb-10 mt-10 border-t-2 border-gray-300'
+                }
+                role="separator"
+                aria-hidden
+              />
             ) : null}
 
-            <section className={dayIdx === 0 ? 'pb-4' : 'pb-4 pt-1'}>
+            <section className={dayIdx === 0 ? (compact ? 'pb-1' : 'pb-4') : compact ? 'pb-1 pt-1' : 'pb-4 pt-3'}>
               {(() => {
                 const compare = dayTourCompareByDate?.get(dayGroup.date)
                 const summaryText =
@@ -317,42 +446,40 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                         : `투어 : ${compare.tourPeople}명 / 예약 : ${compare.ticketEa}개`
                       : null
                 return (
-                  <div className="mb-3 space-y-1">
-                    <h3 className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-base font-semibold tracking-tight text-foreground">
+                  <>
+                  <div className={compact ? 'mb-1.5 space-y-0.5' : 'mb-3 space-y-1'}>
+                    <h3
+                      className={
+                        compact
+                          ? 'flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12px] font-semibold tracking-tight text-foreground'
+                          : 'flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xl font-semibold tracking-tight text-foreground md:text-2xl'
+                      }
+                    >
                       <span>{dayGroup.date}</span>
-                      <span className="text-sm font-normal text-muted-foreground">
+                      <span
+                        className={
+                          compact
+                            ? 'text-[11px] font-normal text-muted-foreground'
+                            : 'text-base font-normal text-muted-foreground md:text-lg'
+                        }
+                      >
                         {dayCount}
                         {isEn ? (dayCount === 1 ? ' booking' : ' bookings') : '건'}
                       </span>
-                      {compare && compare.actionTasks && compare.actionTasks.length > 0
-                        ? compare.actionTasks.map((task) => (
-                            <span
-                              key={`${task.key}-${task.kind}`}
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold leading-tight ring-1 ${
-                                task.kind === 'book_more'
-                                  ? 'bg-amber-50 text-amber-950 ring-amber-200'
-                                  : 'bg-red-50 text-red-800 ring-red-200'
-                              }`}
-                              title={
-                                isEn
-                                  ? `Tour ${task.key} vs ticket EA — action needed`
-                                  : `투어 ${task.key} vs 입장권 EA — 실행 필요`
-                              }
-                            >
-                              {task.text}
-                            </span>
-                          ))
-                        : null}
                     </h3>
                     {summaryText ? (
                       <div
-                        className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-semibold leading-tight ${
-                          compare?.mismatch ? 'text-red-600' : 'text-primary'
-                        }`}
+                        className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 font-semibold leading-tight ${
+                          compact ? 'text-[11px]' : 'gap-x-3 gap-y-1 text-sm'
+                        } ${compare?.mismatch ? 'text-red-600' : 'text-primary'}`}
                       >
                         <span className="whitespace-nowrap">{summaryText}</span>
                         {compare && compare.canyonParts.length > 0 ? (
-                          <span className="flex flex-nowrap items-center gap-x-1.5 text-xs font-bold tabular-nums sm:text-sm">
+                          <span
+                            className={`flex flex-nowrap items-center gap-x-1.5 font-bold tabular-nums ${
+                              compact ? 'text-[10px]' : 'text-xs sm:text-sm'
+                            }`}
+                          >
                             {compare.canyonParts.map((part) => (
                               <span
                                 key={part.key}
@@ -371,20 +498,36 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                       </div>
                     ) : null}
                   </div>
-                )
-              })()}
 
-              <div className="space-y-4">
-                {dayGroup.companies.map(({ company, rows }) => (
-                  <div key={`${dayGroup.date}__${company}`}>
-                    <h4 className="mb-2 text-sm font-semibold text-foreground">
-                      {company}
-                      <span className="ml-2 font-normal text-muted-foreground">
-                        {rows.length}
-                        {isEn ? '' : '건'}
+              <div className={compact ? 'space-y-2' : 'space-y-4'}>
+                {dayGroup.companies.map(({ company, rows }) => {
+                  const companyTasks = actionTasksForCompany(company, compare?.actionTasks)
+                  return (
+                  <div
+                    key={`${dayGroup.date}__${company}`}
+                    className={`rounded-xl border ${
+                      compact ? 'rounded-lg p-2' : 'rounded-2xl p-3 sm:p-4'
+                    } ${companySectionSurface(company)}`}
+                  >
+                    <h4
+                      className={`flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold text-foreground ${
+                        compact ? 'mb-1.5 text-[11px]' : 'mb-2.5 text-sm'
+                      }`}
+                    >
+                      <span>
+                        {company}
+                        <span className="ml-1.5 font-normal text-muted-foreground">
+                          {rows.length}
+                          {isEn ? '' : '건'}
+                        </span>
                       </span>
+                      <CanyonActionTaskBadges
+                        tasks={companyTasks}
+                        isEn={isEn}
+                        compact={compact}
+                      />
                     </h4>
-                    <ul className="flex flex-wrap gap-3">
+                    <ul className={compact ? 'flex flex-col gap-1.5' : 'flex flex-wrap gap-3'}>
                       {rows.map((booking) => {
                         const unified = resolveTicketBookingUnifiedStatus(booking, locale)
                         const eff = getTicketBookingEffectiveQty(booking)
@@ -413,7 +556,11 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                         return (
                           <li
                             key={booking.id}
-                            className="w-full max-w-[22.5rem] shrink-0 sm:w-[22.5rem]"
+                            className={
+                              compact
+                                ? 'w-full shrink-0'
+                                : 'w-full max-w-[22.5rem] shrink-0 sm:w-[22.5rem]'
+                            }
                           >
                             <div
                               role="button"
@@ -425,7 +572,9 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                                   onOpenBooking(booking)
                                 }
                               }}
-                              className={`flex h-full w-full cursor-pointer flex-col rounded-xl border bg-white p-3.5 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                              className={`flex h-full w-full cursor-pointer flex-col border bg-white text-left shadow-sm transition hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                                compact ? 'rounded-lg p-2' : 'rounded-xl p-3.5'
+                              } ${
                                 qtyPending || unified.key === 'change_pending'
                                   ? 'border-red-300 ring-1 ring-red-200'
                                   : 'border-border/60'
@@ -433,25 +582,45 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                             >
                               {/* 1줄: 상태 칩 (왼쪽) + 수량 타임라인 (오른쪽 끝) */}
                               <div className="flex items-start justify-between gap-2">
-                                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                <div className="flex min-w-0 flex-wrap items-center gap-1">
                                   <span
-                                    className={`inline-flex rounded-lg border px-2 py-0.5 text-xs font-medium ${getTicketBookingUnifiedStatusBadgeClass(unified.key)}`}
+                                    className={`inline-flex rounded-md border font-medium ${
+                                      compact ? 'px-1.5 py-0.5 text-[10px]' : 'rounded-lg px-2 py-0.5 text-xs'
+                                    } ${getTicketBookingUnifiedStatusBadgeClass(unified.key)}`}
                                     title={unified.detail}
                                   >
                                     {unified.label}
                                   </span>
                                   {awaitingVendor ? (
-                                    <span className="inline-flex rounded-lg border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-800">
+                                    <span
+                                      className={`inline-flex border border-orange-200 bg-orange-50 font-medium text-orange-800 ${
+                                        compact
+                                          ? 'rounded-md px-1.5 py-0.5 text-[10px]'
+                                          : 'rounded-lg px-2 py-0.5 text-xs'
+                                      }`}
+                                    >
                                       {isEn ? 'Awaiting vendor' : '벤더 응답 대기'}
                                     </span>
                                   ) : null}
                                   {cancelWarn && cancelDue ? (
-                                    <span className="inline-flex rounded-lg border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+                                    <span
+                                      className={`inline-flex border border-red-200 bg-red-50 font-medium text-red-700 ${
+                                        compact
+                                          ? 'rounded-md px-1.5 py-0.5 text-[10px]'
+                                          : 'rounded-lg px-2 py-0.5 text-xs'
+                                      }`}
+                                    >
                                       Cancel Due {cancelDue}
                                     </span>
                                   ) : null}
                                   {!hasLinkedTour ? (
-                                    <span className="inline-flex rounded-lg border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
+                                    <span
+                                      className={`inline-flex border border-amber-200 bg-amber-50 font-medium text-amber-900 ${
+                                        compact
+                                          ? 'rounded-md px-1.5 py-0.5 text-[10px]'
+                                          : 'rounded-lg px-2 py-0.5 text-xs'
+                                      }`}
+                                    >
                                       {isEn ? 'No tour' : '투어 미연결'}
                                     </span>
                                   ) : null}
@@ -463,7 +632,11 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                                       : undefined
                                   }
                                   type="button"
-                                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground transition hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  className={`inline-flex shrink-0 items-center justify-center border border-border/70 bg-muted/40 text-muted-foreground transition hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                                    compact
+                                      ? 'h-6 w-6 rounded-md'
+                                      : 'h-7 w-7 rounded-lg'
+                                  }`}
                                   title={qtyTimelineLabel}
                                   aria-label={qtyTimelineLabel}
                                   aria-expanded={qtyTimelineBooking?.id === booking.id}
@@ -485,21 +658,33 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                                     setQtyTimelineBooking(booking)
                                   }}
                                 >
-                                  <History className="h-3.5 w-3.5" aria-hidden />
+                                  <History className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} aria-hidden />
                                 </button>
                               </div>
 
                               {/* 2줄: 시간 · RN (왼쪽) + 유효 수량 (오른쪽 끝) */}
-                              <div className="mt-2 flex w-full items-center justify-between gap-2">
-                                <p className="min-w-0 shrink text-base font-semibold tabular-nums text-foreground">
+                              <div className={`flex w-full items-center justify-between gap-2 ${compact ? 'mt-1' : 'mt-2'}`}>
+                                <p
+                                  className={`min-w-0 shrink font-semibold tabular-nums text-foreground ${
+                                    compact ? 'text-[12px]' : 'text-base'
+                                  }`}
+                                >
                                   {timeLabel}
                                   {rn ? (
-                                    <span className="ml-2 text-sm font-medium text-muted-foreground">
+                                    <span
+                                      className={`ml-1.5 font-medium text-muted-foreground ${
+                                        compact ? 'text-[10px]' : 'text-sm'
+                                      }`}
+                                    >
                                       RN# {rn}
                                     </span>
                                   ) : null}
                                 </p>
-                                <p className="shrink-0 text-sm tabular-nums text-muted-foreground">
+                                <p
+                                  className={`shrink-0 tabular-nums text-muted-foreground ${
+                                    compact ? 'text-[11px]' : 'text-sm'
+                                  }`}
+                                >
                                   <span className="font-semibold text-foreground">{eff} EA</span>
                                   {qtyPending && booking.pending_ea != null ? (
                                     <span className="ml-1 font-semibold text-orange-700">
@@ -510,43 +695,56 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                               </div>
 
                               {/* 3줄: 투어 뱃지 (왼쪽) · 금액 (오른쪽 끝) */}
-                              <div className="mt-2 flex w-full items-end justify-between gap-2 text-sm leading-snug">
-                                <div className="flex min-w-0 flex-wrap gap-1">
-                                  {hasLinkedTour
-                                    ? linkedTours.map((lt) => (
-                                        <TourLinkBadgeChip
-                                          key={lt.tourId}
-                                          locale={locale}
-                                          isEn={isEn}
-                                          tours={lt.tours}
-                                        />
-                                      ))
-                                    : null}
-                                </div>
-                                <p
-                                  className="shrink-0 whitespace-nowrap text-right font-semibold tabular-nums text-foreground"
-                                  title={
-                                    expenseArrow && expenseArrow.includes('>')
-                                      ? expenseArrow
-                                      : undefined
-                                  }
+                              {(hasLinkedTour || showAmounts) ? (
+                                <div
+                                  className={`flex w-full items-end justify-between gap-2 leading-snug ${
+                                    compact ? 'mt-1 text-[10px]' : 'mt-2 text-sm'
+                                  }`}
                                 >
-                                  {formatUsd(paid)} / {amountMain}
-                                  {credit > 0 ? (
-                                    <span className="ml-1 font-normal text-muted-foreground">
-                                      · {isEn ? 'cr' : '크레딧'} {formatUsd(credit)}
-                                    </span>
+                                  <div className="flex min-w-0 flex-wrap gap-1">
+                                    {hasLinkedTour
+                                      ? linkedTours.map((lt) => (
+                                          <TourLinkBadgeChip
+                                            key={lt.tourId}
+                                            locale={locale}
+                                            isEn={isEn}
+                                            tours={lt.tours}
+                                            compact={compact}
+                                          />
+                                        ))
+                                      : null}
+                                  </div>
+                                  {showAmounts ? (
+                                    <p
+                                      className="shrink-0 whitespace-nowrap text-right font-semibold tabular-nums text-foreground"
+                                      title={
+                                        expenseArrow && expenseArrow.includes('>')
+                                          ? expenseArrow
+                                          : undefined
+                                      }
+                                    >
+                                      {formatUsd(paid)} / {amountMain}
+                                      {credit > 0 ? (
+                                        <span className="ml-1 font-normal text-muted-foreground">
+                                          · {isEn ? 'cr' : '크레딧'} {formatUsd(credit)}
+                                        </span>
+                                      ) : null}
+                                    </p>
                                   ) : null}
-                                </p>
-                              </div>
+                                </div>
+                              ) : null}
                             </div>
                           </li>
                         )
                       })}
                     </ul>
                   </div>
-                ))}
+                  )
+                })}
               </div>
+                  </>
+                )
+              })()}
             </section>
           </Fragment>
         )

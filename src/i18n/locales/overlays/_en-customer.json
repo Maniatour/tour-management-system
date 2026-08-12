@@ -757,8 +757,10 @@
     "localeReadiness": {
       "button": "Locale readiness",
       "title": "Locale readiness",
-      "subtitle": "See how much customer-facing content (name, summary, details, FAQ, choices, schedules, tour courses) is filled per language. Hidden or unused items are excluded.",
+      "subtitle": "Translation % is based only on fields actually filled in KO/EN. Unused empty slots and customer-hidden sections are excluded.",
       "summary": "{count} products · KO avg {avgKo}% · EN avg {avgEn}% · Incomplete {incomplete}",
+      "sourceInput": "Input {percent}% ({count} fields)",
+      "sourceBaselineHint": "Baseline: {count} fields (filled in KO/EN) · Source input {percent}% (both KO and EN filled). Locale % below is translation completeness against this baseline.",
       "searchPlaceholder": "Search products…",
       "incompleteOnly": "Incomplete only",
       "sortLabel": "Sort",
@@ -805,7 +807,7 @@
       },
       "pageTitle": "Locale readiness",
       "backToProducts": "Back to products",
-      "summaryMulti": "{count} products · Overall avg {avgOverall}% · Incomplete {incomplete}"
+      "summaryMulti": "{count} products · Input avg {avgSourceInput}% · Translation avg {avgOverall}% · Incomplete {incomplete}"
     },
     "totalProducts": "Total {count} products",
     "searchResults": "search results",

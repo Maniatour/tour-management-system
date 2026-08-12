@@ -50,7 +50,13 @@ import {
   fetchTeamDisplayNameByEmail,
   fetchTeamDisplayNameMap,
 } from '@/utils/paymentRecordNoteDisplay'
-import { isChoiceOptionUuid, simplifyChoiceLabel, isAntelopeTourChoiceBadgeLabel } from '@/utils/choiceLabels'
+import {
+  isChoiceOptionUuid,
+  simplifyChoiceLabel,
+  isAntelopeTourChoiceBadgeLabel,
+  dedupeAntelopeTourChoiceBadges,
+} from '@/utils/choiceLabels'
+import { normalizeReservationChoicesForProduct } from '@/lib/normalizeReservationChoicesForProduct'
 import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
 import type { PickupHotelAssignmentOption } from '@/utils/pickupHotelUtils'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
@@ -269,13 +275,14 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const [reservationChoices, setReservationChoices] = useState<Array<{
     choice_id: string
     option_id: string
-    option_name?: string
-    option_name_ko?: string
-    option_key?: string
-    internal_name?: string
-    badge_icon_url?: string
-    choice_group?: string
-    choice_group_ko?: string
+    option_name?: string | undefined
+    option_name_ko?: string | undefined
+    option_key?: string | undefined
+    internal_name?: string | undefined
+    badge_icon_url?: string | undefined
+    choice_group?: string | undefined
+    choice_group_ko?: string | undefined
+    product_id?: string | undefined
   }>>([])
 
   /** 잔액·투어 봉투 등 라인 산식: DB `pricing_adults` 우선 (예약 카드 adults와 불일치 시 방지) */
@@ -844,6 +851,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     type ProductChoiceEmbed = {
       choice_group?: string | null
       choice_group_ko?: string | null
+      product_id?: string | null
     }
     type RcRow = {
       choice_id?: string | null
@@ -884,7 +892,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           ${choiceOptionsSelect},
           product_choices (
             choice_group,
-            choice_group_ko
+            choice_group_ko,
+            product_id
           )
         `)
           .eq('reservation_id', reservation.id)
@@ -1010,6 +1019,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             badge_icon_url?: string
             choice_group?: string
             choice_group_ko?: string
+            product_id?: string
           } = {
             choice_id: item.choice_id as string,
             option_id: item.option_id as string,
@@ -1025,14 +1035,114 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           if (badge_icon_url) choiceItem.badge_icon_url = badge_icon_url
           if (pc?.choice_group) choiceItem.choice_group = pc.choice_group
           if (pc?.choice_group_ko) choiceItem.choice_group_ko = pc.choice_group_ko
+          if (pc?.product_id) choiceItem.product_id = pc.product_id
           return choiceItem
         })
 
-      setReservationChoices(choices)
+      let normalizedChoices = choices
+      const reservationProductId =
+        typeof reservation.product_id === 'string' ? reservation.product_id : null
+      if (reservationProductId && choices.length > 0) {
+        const { data: productChoicesData } = await supabase
+          .from('product_choices')
+          .select(
+            `
+            id,
+            choice_group,
+            choice_group_ko,
+            options:choice_options (
+              id,
+              option_key,
+              option_name,
+              option_name_ko
+            )
+          `
+          )
+          .eq('product_id', reservationProductId)
+          .order('sort_order')
+
+        if (productChoicesData?.length) {
+          const remapped = normalizeReservationChoicesForProduct(
+            choices.map((c) => {
+              const input: {
+                choice_id: string
+                option_id: string
+                option_key?: string
+                option_name_ko?: string
+                choice_options: {
+                  option_key: string | null
+                  option_name: string | null
+                  option_name_ko: string | null
+                  product_choices: {
+                    id: string
+                    product_id: string | null
+                    choice_group_ko: string | null
+                  }
+                }
+              } = {
+                choice_id: c.choice_id,
+                option_id: c.option_id,
+                choice_options: {
+                  option_key: c.option_key ?? null,
+                  option_name: c.option_name ?? null,
+                  option_name_ko: c.option_name_ko ?? null,
+                  product_choices: {
+                    id: c.choice_id,
+                    product_id: c.product_id ?? null,
+                    choice_group_ko: c.choice_group_ko ?? null,
+                  },
+                },
+              }
+              if (c.option_key) input.option_key = c.option_key
+              if (c.option_name_ko) input.option_name_ko = c.option_name_ko
+              return input
+            }),
+            reservationProductId,
+            productChoicesData
+          )
+          const byKey = new Map(
+            choices.map((c) => [`${c.choice_id}:${c.option_id}`, c] as const)
+          )
+          normalizedChoices = remapped.map((row) => {
+            const prev =
+              byKey.get(`${row.choice_id}:${row.option_id}`) ||
+              choices.find(
+                (c) =>
+                  (c.option_name_ko &&
+                    c.option_name_ko === row.choice_options?.option_name_ko) ||
+                  (c.option_name && c.option_name === row.choice_options?.option_name)
+              )
+            const next: (typeof choices)[number] = {
+              choice_id: row.choice_id,
+              option_id: row.option_id,
+              product_id: reservationProductId,
+            }
+            const option_name =
+              row.choice_options?.option_name ?? prev?.option_name
+            const option_name_ko =
+              row.choice_options?.option_name_ko ?? prev?.option_name_ko
+            const option_key =
+              row.choice_options?.option_key ?? row.option_key ?? prev?.option_key
+            const choice_group_ko =
+              row.choice_options?.product_choices?.choice_group_ko ??
+              prev?.choice_group_ko
+            if (option_name) next.option_name = option_name
+            if (option_name_ko) next.option_name_ko = option_name_ko
+            if (option_key) next.option_key = option_key
+            if (prev?.internal_name) next.internal_name = prev.internal_name
+            if (prev?.badge_icon_url) next.badge_icon_url = prev.badge_icon_url
+            if (prev?.choice_group) next.choice_group = prev.choice_group
+            if (choice_group_ko) next.choice_group_ko = choice_group_ko
+            return next
+          })
+        }
+      }
+
+      setReservationChoices(normalizedChoices)
     } catch (error) {
       if (!isAbortError(error)) console.error('예약 초이스 조회 중 오류:', error)
     }
-  }, [reservation.id, isAbortError])
+  }, [reservation.id, reservation.product_id, isAbortError])
 
   // 컴포넌트 마운트 시 가격 정보, 입금 내역, 채널 정보, 고객 정보 가져오기
   useEffect(() => {
@@ -1404,7 +1514,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         selectedChoices.push(choiceItem)
       })
       if (selectedChoices.length > 0) {
-        return selectedChoices.filter((choice) => isAntelopeTourChoiceBadgeLabel(choice.name))
+        return dedupeAntelopeTourChoiceBadges(
+          selectedChoices.filter((choice) => isAntelopeTourChoiceBadgeLabel(choice.name))
+        )
       }
     }
 
@@ -1491,7 +1603,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       }
     }
 
-    return selectedChoices.filter((choice) => isAntelopeTourChoiceBadgeLabel(choice.name))
+    return dedupeAntelopeTourChoiceBadges(
+      selectedChoices.filter((choice) => isAntelopeTourChoiceBadgeLabel(choice.name))
+    )
   }
 
   const getPickupHotelName = () => {

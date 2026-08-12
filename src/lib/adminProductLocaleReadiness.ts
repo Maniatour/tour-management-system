@@ -82,6 +82,16 @@ export type ProductLocaleReadiness = {
   byLocale: Record<AdminEditLocale, LocaleReadinessScore>
   /** 언어별 % 평균 */
   overallPercent: number
+  /**
+   * KO∪EN에 실제 입력된 기본·상세 필드 수.
+   * 번역 % 분모의 기준(미사용 빈 칸 제외).
+   */
+  sourceInputFieldCount: number
+  /**
+   * 소스 입력 완성도: 기준 필드 중 KO·EN이 모두 채워진 비율.
+   * (한쪽만 있으면 미완료로 집계)
+   */
+  sourceInputPercent: number
 }
 
 export type ProductDetailsMultilingualRow = {
@@ -165,11 +175,98 @@ export type LocaleReadinessRelatedBundle = {
 export const LOCALE_READINESS_LOCALES: readonly AdminEditLocale[] =
   ADMIN_EDIT_LOCALE_OPTIONS.map((o) => o.locale)
 
+/** 번역 분모 기준이 되는 소스 언어 (입력 원문) */
+export const LOCALE_READINESS_SOURCE_LOCALES = ['ko', 'en'] as const
+
+export type LocaleReadinessSourceLocale =
+  (typeof LOCALE_READINESS_SOURCE_LOCALES)[number]
+
 export function isLocaleReadinessFilled(value: unknown): boolean {
   if (value == null) return false
   if (typeof value === 'string') return value.trim().length > 0
   if (Array.isArray(value)) return value.length > 0
   return Boolean(value)
+}
+
+function detailFieldRaw(
+  row: ProductDetailsMultilingualRow | null,
+  key: LocaleReadinessDetailField
+): unknown {
+  if (!row) return null
+  return (row as Record<string, unknown>)[key]
+}
+
+/**
+ * KO∪EN에 값이 있는 기본·상세 필드만 번역 준비도 분모에 포함.
+ * 고객 페이지에서 숨긴 필드는 제외. 미사용 빈 칸(예: 하이라이트 4·5)도 제외.
+ */
+export function buildSourceActiveBasicDetailKeys(
+  product: ProductLocaleReadinessSource,
+  detailRows: ProductDetailsMultilingualRow[],
+  translationRows: ProductFieldTranslationRow[] = [],
+  homepageChannelId?: string | null
+): Set<LocaleReadinessFieldKey> {
+  const active = new Set<LocaleReadinessFieldKey>()
+  const koRow = pickBestDetailsRow(detailRows, 'ko', homepageChannelId)
+  const enRow = pickBestDetailsRow(detailRows, 'en', homepageChannelId)
+  const visibility =
+    koRow?.customer_page_visibility ?? enRow?.customer_page_visibility
+
+  for (const key of ['customerName', 'summary'] as const) {
+    const koFilled = isLocaleReadinessFilled(
+      basicValue(product, 'ko', key, translationRows)
+    )
+    const enFilled = isLocaleReadinessFilled(
+      basicValue(product, 'en', key, translationRows)
+    )
+    if (koFilled || enFilled) active.add(key)
+  }
+
+  for (const key of LOCALE_READINESS_DETAIL_FIELDS) {
+    if (!isProductDetailVisibleOnCustomerPage(visibility, key)) continue
+    const koFilled = isLocaleReadinessFilled(detailFieldRaw(koRow, key))
+    const enFilled = isLocaleReadinessFilled(detailFieldRaw(enRow, key))
+    if (koFilled || enFilled) active.add(key)
+  }
+
+  return active
+}
+
+function computeSourceInputPercent(
+  product: ProductLocaleReadinessSource,
+  detailRows: ProductDetailsMultilingualRow[],
+  sourceActiveKeys: Set<LocaleReadinessFieldKey>,
+  translationRows: ProductFieldTranslationRow[],
+  homepageChannelId?: string | null
+): number {
+  if (sourceActiveKeys.size === 0) return 100
+
+  const koRow = pickBestDetailsRow(detailRows, 'ko', homepageChannelId)
+  const enRow = pickBestDetailsRow(detailRows, 'en', homepageChannelId)
+  let bothFilled = 0
+
+  for (const key of sourceActiveKeys) {
+    if (key === 'customerName' || key === 'summary') {
+      const koOk = isLocaleReadinessFilled(
+        basicValue(product, 'ko', key, translationRows)
+      )
+      const enOk = isLocaleReadinessFilled(
+        basicValue(product, 'en', key, translationRows)
+      )
+      if (koOk && enOk) bothFilled += 1
+      continue
+    }
+    if (
+      (LOCALE_READINESS_DETAIL_FIELDS as readonly string[]).includes(key)
+    ) {
+      const detailKey = key as LocaleReadinessDetailField
+      const koOk = isLocaleReadinessFilled(detailFieldRaw(koRow, detailKey))
+      const enOk = isLocaleReadinessFilled(detailFieldRaw(enRow, detailKey))
+      if (koOk && enOk) bothFilled += 1
+    }
+  }
+
+  return Math.round((bothFilled / sourceActiveKeys.size) * 100)
 }
 
 function hasExactLocaleText(
@@ -312,23 +409,35 @@ export function computeLocaleReadinessScore(
   locale: AdminEditLocale,
   detailsRow: ProductDetailsMultilingualRow | null,
   translationRows: ProductFieldTranslationRow[] = [],
-  related?: LocaleReadinessRelatedBundle
+  related?: LocaleReadinessRelatedBundle,
+  /**
+   * KO∪EN에 입력된 기본·상세 필드. 없으면(미전달) 기존처럼 가시성만 반영.
+   * 전달 시 소스에 없는 빈 칸은 분모에서 제외.
+   */
+  sourceActiveKeys?: Set<LocaleReadinessFieldKey>
 ): LocaleReadinessScore {
   const fields: LocaleReadinessFieldStatus[] = []
+  const gateBySource = sourceActiveKeys != null
 
   for (const key of ['customerName', 'summary'] as const) {
+    const unused = gateBySource && !sourceActiveKeys!.has(key)
     fields.push({
       key,
       kind: 'basic',
-      filled: isLocaleReadinessFilled(basicValue(product, locale, key, translationRows)),
-      hidden: false,
+      filled:
+        !unused &&
+        isLocaleReadinessFilled(basicValue(product, locale, key, translationRows)),
+      hidden: unused,
     })
   }
 
   const visibility = detailsRow?.customer_page_visibility
   for (const key of LOCALE_READINESS_DETAIL_FIELDS) {
-    const hidden = !isProductDetailVisibleOnCustomerPage(visibility, key)
-    const raw = detailsRow ? (detailsRow as Record<string, unknown>)[key] : null
+    // sourceActiveKeys already excludes customer-hidden + unused empty slots
+    const hidden = gateBySource
+      ? !sourceActiveKeys!.has(key)
+      : !isProductDetailVisibleOnCustomerPage(visibility, key)
+    const raw = detailFieldRaw(detailsRow, key)
     fields.push({
       key,
       kind: 'detail',
@@ -381,15 +490,31 @@ export function computeProductLocaleReadiness(
   let percentSum = 0
   const translationRows = options?.translationRows || []
   const related = options?.related || emptyRelatedBundle()
+  const homepageChannelId = options?.homepageChannelId ?? null
+
+  const sourceActiveKeys = buildSourceActiveBasicDetailKeys(
+    product,
+    detailRows,
+    translationRows,
+    homepageChannelId
+  )
+  const sourceInputPercent = computeSourceInputPercent(
+    product,
+    detailRows,
+    sourceActiveKeys,
+    translationRows,
+    homepageChannelId
+  )
 
   for (const locale of LOCALE_READINESS_LOCALES) {
-    const row = pickBestDetailsRow(detailRows, locale, options?.homepageChannelId)
+    const row = pickBestDetailsRow(detailRows, locale, homepageChannelId)
     const score = computeLocaleReadinessScore(
       product,
       locale,
       row,
       translationRows,
-      related
+      related,
+      sourceActiveKeys
     )
     byLocale[locale] = score
     percentSum += score.percent
@@ -402,6 +527,8 @@ export function computeProductLocaleReadiness(
     isPublished: product.is_published !== false,
     byLocale,
     overallPercent: Math.round(percentSum / LOCALE_READINESS_LOCALES.length),
+    sourceInputFieldCount: sourceActiveKeys.size,
+    sourceInputPercent,
   }
 }
 

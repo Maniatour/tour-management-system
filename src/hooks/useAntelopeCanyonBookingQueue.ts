@@ -92,6 +92,9 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
   const [mismatchRows, setMismatchRows] = useState<AntelopeCanyonMismatchTourRow[]>([])
   const [cancelDueRows, setCancelDueRows] = useState<AntelopeCanyonCancelDueTourRow[]>([])
   const [toursById, setToursById] = useState<Record<string, AntelopeCanyonTourLite>>({})
+  const [supplierProductsByBookingId, setSupplierProductsByBookingId] = useState<
+    Map<string, { season_dates: SeasonDate[] | null }>
+  >(() => new Map())
   const [loading, setLoading] = useState(false)
   const dateRange = useMemo(() => antelopeCanyonBookingMismatchDateRange(), [])
   const cancelDueCheckInYmd = useMemo(() => antelopeCanyonBookingCancelDueCheckInYmd(), [])
@@ -101,6 +104,7 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
       setMismatchRows([])
       setCancelDueRows([])
       setToursById({})
+      setSupplierProductsByBookingId(new Map())
       return
     }
 
@@ -152,6 +156,7 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
       const reservations = (reservationsData || []) as ReservationLite[]
 
       const supplierMap = await fetchSupplierProductsByBookingIds(allTickets.map((t) => t.id))
+      setSupplierProductsByBookingId(supplierMap)
 
       const byId: Record<string, AntelopeCanyonTourLite> = {}
       for (const tour of tours) {
@@ -182,6 +187,7 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
       setMismatchRows([])
       setCancelDueRows([])
       setToursById({})
+      setSupplierProductsByBookingId(new Map())
     } finally {
       setLoading(false)
     }
@@ -195,6 +201,7 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
     mismatchRows,
     cancelDueRows,
     toursById,
+    supplierProductsByBookingId,
     loading,
     reload,
     dateRange,

@@ -28,6 +28,7 @@ import {
   RESERVATION_EDIT_MODAL_RECT_KEY,
 } from '@/lib/adminModalRectStorage'
 import { formatLasVegasDateTime } from '@/lib/dailyReport/dateUtils'
+import { normalizeReservationChoicesForProduct } from '@/lib/normalizeReservationChoicesForProduct'
 
 /** 브라우저에서 customers INSERT 시 RLS(team↔is_staff 재귀 등)로 실패할 때 API+service role 경로 사용 */
 async function insertCustomerForReservationForm(
@@ -2138,7 +2139,7 @@ export default function ReservationForm({
       const choicesData: Record<string, any> = {}
 
       // reservation_choices 데이터 또는 fallback 데이터 사용
-      const choicesToProcess = (reservationChoicesData && reservationChoicesData.length > 0) 
+      const choicesToProcessRaw = (reservationChoicesData && reservationChoicesData.length > 0) 
         ? reservationChoicesData 
         : fallbackChoicesData.map(fc => ({
             choice_id: fc.choice_id,
@@ -2147,9 +2148,20 @@ export default function ReservationForm({
             total_price: fc.total_price,
             choice_options: {
               option_key: fc.option_key || '',
+              option_name: fc.option_name || '',
               option_name_ko: fc.option_name_ko || ''
             } // fallback 데이터의 option_key와 option_name_ko 포함
           }))
+
+      // 타상품(예: MDGC1D) 앤텔롭 초이스가 1박2일(MNGC1N)에 남아 로어가 2번 보이던 문제 방지
+      const choicesToProcess =
+        allProductChoices.length > 0
+          ? normalizeReservationChoicesForProduct(
+              choicesToProcessRaw as any[],
+              actualProductId,
+              allProductChoices
+            )
+          : choicesToProcessRaw
       
       if (choicesToProcess && choicesToProcess.length > 0) {
         choicesToProcess.forEach((rc: any) => {
@@ -6854,7 +6866,14 @@ export default function ReservationForm({
                             return product ? (product as { name_ko?: string; name?: string }).name_ko || (product as { name?: string }).name || formData.productId : formData.productId
                           })()}
                         </span>
-                        {Array.isArray(formData.selectedChoices) && formData.selectedChoices.length > 0 && formData.selectedChoices.map((sc: { choice_id: string; option_id: string; option_name_ko?: string; option_key?: string }) => {
+                        {Array.isArray(formData.selectedChoices) && formData.selectedChoices.length > 0 && formData.selectedChoices
+                          .filter((sc: { choice_id: string; option_id: string }) => {
+                            if (sc.option_id === '__undecided__' || sc.option_id === 'undecided') return true
+                            const pcs = formData.productChoices
+                            if (!Array.isArray(pcs) || pcs.length === 0) return true
+                            return pcs.some((c: { id: string }) => c.id === sc.choice_id)
+                          })
+                          .map((sc: { choice_id: string; option_id: string; option_name_ko?: string; option_key?: string }) => {
                           const label = sc.option_id === '__undecided__'
                             ? '미정'
                             : ((sc as { option_name_ko?: string; option_key?: string }).option_name_ko

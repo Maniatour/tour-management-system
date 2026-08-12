@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import Image from 'next/image'
 import type { Reservation } from '@/types/reservation'
-import { isChoiceOptionUuid, simplifyChoiceLabel } from '@/utils/choiceLabels'
+import { isChoiceOptionUuid, simplifyChoiceLabel, dedupeAntelopeTourChoiceBadges } from '@/utils/choiceLabels'
 
 interface ChoiceRow {
   choice_id: string
@@ -154,23 +154,34 @@ export const ChoicesDisplay = React.memo(function ChoicesDisplay({
     return null
   }
 
-  return (
-    <>
-      {selectedChoices.map((choice, index) => {
+  const displayChoices = dedupeAntelopeTourChoiceBadges(
+    selectedChoices
+      .map((choice) => {
         const optionName =
           choice.choice_options?.option_name_ko ||
           choice.choice_options?.option_name ||
           ''
         const optionKey = choice.choice_options?.option_key
-        const groupName = choice.choice_options?.product_choices?.choice_group_ko || ''
         const displayLabel = simplifyChoiceLabel(
           optionName,
           optionKey && !isChoiceOptionUuid(optionKey) ? optionKey : null,
           choice.choice_options?.internal_name
         )
-        if (!displayLabel && !choice.choice_options?.badge_icon_url) return null
+        const name = displayLabel || choice.choice_options?.internal_name || optionName || ''
+        return { ...choice, name }
+      })
+      .filter((choice) => Boolean(choice.name || choice.choice_options?.badge_icon_url))
+  )
 
-        const label = displayLabel || choice.choice_options?.internal_name || optionName || '·'
+  if (displayChoices.length === 0) {
+    return null
+  }
+
+  return (
+    <>
+      {displayChoices.map((choice, index) => {
+        const groupName = choice.choice_options?.product_choices?.choice_group_ko || ''
+        const label = choice.name || choice.choice_options?.internal_name || '·'
         const badgeIconUrl = choice.choice_options?.badge_icon_url?.trim()
         const badgeClass = getGroupColorClasses(choice.choice_id, groupName, label)
 

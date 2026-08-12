@@ -1,4 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import {
+  normalizeReservationChoicesForProduct,
+  type ProductChoiceLike,
+  type ReservationChoiceRowLike,
+} from '@/lib/normalizeReservationChoicesForProduct'
 
 export type ResolvedChoiceRow = {
   choice_id: string
@@ -224,6 +229,146 @@ async function fetchProductChoiceGroups(
   return map
 }
 
+async function fetchProductChoicesForProduct(
+  db: SupabaseClient,
+  productId: string
+): Promise<ProductChoiceLike[]> {
+  if (!productId.trim()) return []
+  const { data, error } = await db
+    .from('product_choices')
+    .select(
+      `
+      id,
+      choice_group,
+      choice_group_ko,
+      options:choice_options (
+        id,
+        option_key,
+        option_name,
+        option_name_ko
+      )
+    `
+    )
+    .eq('product_id', productId)
+    .order('sort_order')
+  if (error) {
+    console.error('product_choices for product 조회 실패:', error.message)
+    return []
+  }
+  return (data ?? []) as ProductChoiceLike[]
+}
+
+async function fetchChoiceProductIds(
+  db: SupabaseClient,
+  choiceIds: string[]
+): Promise<Map<string, string | null>> {
+  const map = new Map<string, string | null>()
+  const ids = [...new Set(choiceIds.filter(Boolean))]
+  if (ids.length === 0) return map
+  const { data, error } = await db
+    .from('product_choices')
+    .select('id, product_id')
+    .in('id', ids)
+  if (error) {
+    console.error('product_choices.product_id 조회 실패:', error.message)
+    return map
+  }
+  for (const row of (data ?? []) as Array<{ id: string; product_id: string | null }>) {
+    map.set(row.id, row.product_id)
+  }
+  return map
+}
+
+function toNormalizeInput(
+  rows: ResolvedChoiceRow[],
+  choiceProductIdByChoiceId: Map<string, string | null>
+): ReservationChoiceRowLike[] {
+  return rows.map((row) => {
+    const mapped: ReservationChoiceRowLike = {
+      choice_id: row.choice_id,
+      option_id: row.option_id,
+      quantity: row.quantity,
+      choice_options: {
+        option_key: row.choice_options?.option_key ?? null,
+        option_name: row.choice_options?.option_name ?? null,
+        option_name_ko: row.choice_options?.option_name_ko ?? null,
+        product_choices: {
+          id: row.choice_id,
+          product_id: choiceProductIdByChoiceId.get(row.choice_id) ?? null,
+          choice_group_ko: row.product_choices?.choice_group_ko ?? null,
+        },
+      },
+    }
+    if (row.option_key) mapped.option_key = row.option_key
+    const nameKo = row.choice_options?.option_name_ko
+    if (nameKo) mapped.option_name_ko = nameKo
+    return mapped
+  })
+}
+
+function fromNormalizeOutput(
+  rows: ReservationChoiceRowLike[],
+  originalByKey: Map<string, ResolvedChoiceRow>
+): ResolvedChoiceRow[] {
+  return rows.map((row) => {
+    const origKey = `${row.choice_id}:${row.option_id}`
+    const orig =
+      originalByKey.get(origKey) ||
+      [...originalByKey.values()].find(
+        (o) =>
+          normName(o.choice_options?.option_name_ko) ===
+            normName(row.choice_options?.option_name_ko) ||
+          normName(o.choice_options?.option_name) === normName(row.choice_options?.option_name)
+      )
+    return toResolved(
+      row.choice_id,
+      row.option_id,
+      Math.max(1, toNumber(row.quantity, orig?.quantity ?? 1)),
+      {
+        id: row.option_id,
+        choice_id: row.choice_id,
+        option_key: row.choice_options?.option_key ?? row.option_key ?? null,
+        option_name: row.choice_options?.option_name ?? null,
+        option_name_ko: row.choice_options?.option_name_ko ?? row.option_name_ko ?? null,
+        internal_name: orig?.choice_options?.internal_name ?? null,
+        badge_icon_url: orig?.choice_options?.badge_icon_url ?? null,
+        adult_price: null,
+      },
+      row.choice_options?.product_choices?.choice_group_ko ??
+        orig?.product_choices?.choice_group_ko ??
+        null
+    )
+  })
+}
+
+function normName(s: string | null | undefined): string {
+  return (s ?? '').trim().toLowerCase()
+}
+
+async function normalizeResolvedForReservationProduct(
+  db: SupabaseClient,
+  reservationProductId: string | null | undefined,
+  rows: ResolvedChoiceRow[]
+): Promise<ResolvedChoiceRow[]> {
+  if (!rows.length || !reservationProductId) return rows
+  const [productChoices, choiceProductIds] = await Promise.all([
+    fetchProductChoicesForProduct(db, reservationProductId),
+    fetchChoiceProductIds(
+      db,
+      rows.map((r) => r.choice_id)
+    ),
+  ])
+  if (!productChoices.length) return rows
+
+  const originalByKey = new Map(rows.map((r) => [`${r.choice_id}:${r.option_id}`, r]))
+  const normalized = normalizeReservationChoicesForProduct(
+    toNormalizeInput(rows, choiceProductIds),
+    reservationProductId,
+    productChoices
+  )
+  return fromNormalizeOutput(normalized, originalByKey)
+}
+
 function resolveJsonItems(
   items: JsonChoiceItem[],
   byOptionId: Map<string, ChoiceOptionRow>,
@@ -367,14 +512,23 @@ export async function resolveReservationChoices(
   }
 
   if (fromRc.length > 0 && orphanItems.length === 0) {
-    return fromRc
+    const { data: resMeta } = await db
+      .from('reservations')
+      .select('product_id')
+      .eq('id', reservationId)
+      .maybeSingle()
+    return normalizeResolvedForReservationProduct(
+      db,
+      (resMeta as { product_id?: string | null } | null)?.product_id,
+      fromRc
+    )
   }
 
   const [{ data: reservation, error: resError }, { data: pricingRow, error: pricingError }] =
     await Promise.all([
       db
         .from('reservations')
-        .select('choices, adults, child, total_people')
+        .select('choices, adults, child, total_people, product_id')
         .eq('id', reservationId)
         .maybeSingle(),
       // reservations.choices 가 비어도 reservation_pricing.choices 에 초이스가 남아있는 경우가 많음
@@ -462,10 +616,18 @@ export async function resolveReservationChoices(
         seen.add(key)
       }
     }
-    return fromRc
+    return normalizeResolvedForReservationProduct(
+      db,
+      (reservation as { product_id?: string | null } | null)?.product_id,
+      fromRc
+    )
   }
 
-  return resolved
+  return normalizeResolvedForReservationProduct(
+    db,
+    (reservation as { product_id?: string | null } | null)?.product_id,
+    resolved
+  )
 }
 
 /**
@@ -548,14 +710,15 @@ export async function resolveReservationChoicesBatch(
     if ((out.get(rid) ?? []).length === 0) needJsonIds.add(rid)
   }
 
-  if (needJsonIds.size === 0) return out
+  const productIdByRid = new Map<string, string | null>()
 
+  if (needJsonIds.size > 0) {
   const jsonIds = [...needJsonIds]
   const [{ data: reservations, error: resErr }, { data: pricingRows, error: pricingErr }] =
     await Promise.all([
       db
         .from('reservations')
-        .select('id, choices, adults, child, total_people')
+        .select('id, choices, adults, child, total_people, product_id')
         .in('id', jsonIds),
       // reservations.choices 가 비어도 reservation_pricing.choices 에서 초이스 복원
       db.from('reservation_pricing').select('reservation_id, choices').in('reservation_id', jsonIds),
@@ -563,8 +726,7 @@ export async function resolveReservationChoicesBatch(
 
   if (resErr) {
     console.error('reservations.choices batch 조회 실패:', resErr.message)
-    return out
-  }
+  } else {
   if (pricingErr) {
     // pricing 조회 실패해도 치명적이지 않음
   }
@@ -587,6 +749,7 @@ export async function resolveReservationChoicesBatch(
     adults?: number | null
     child?: number | null
     total_people?: number | null
+    product_id?: string | null
   }
 
   const allItems: Array<{ reservationId: string; item: JsonChoiceItem }> = []
@@ -601,6 +764,7 @@ export async function resolveReservationChoicesBatch(
       child: toNumber(row.child, 0),
       total_people: toNumber(row.total_people, 0),
     })
+    productIdByRid.set(rid, row.product_id ?? null)
     const fromRes = row.choices?.required
     const required =
       Array.isArray(fromRes) && fromRes.length > 0 ? fromRes : pricingChoicesByRid.get(rid)
@@ -635,6 +799,35 @@ export async function resolveReservationChoicesBatch(
     out.set(
       rid,
       resolveJsonItems(items, byOptionId, byChoiceId, groupByChoiceId, guestByRid.get(rid))
+    )
+  }
+  }
+  }
+
+  // RC로 이미 채워진 예약 + JSON 해석 예약 모두: 타상품 초이스 리매치/중복 제거
+  const allRidsNeedingNorm = unique.filter((id) => (out.get(id) ?? []).length > 0)
+  if (allRidsNeedingNorm.length > 0) {
+    const missingProductMeta = allRidsNeedingNorm.filter((id) => !productIdByRid.has(id))
+    if (missingProductMeta.length > 0) {
+      const { data: metaRows } = await db
+        .from('reservations')
+        .select('id, product_id')
+        .in('id', missingProductMeta)
+      for (const row of (metaRows ?? []) as Array<{ id?: string; product_id?: string | null }>) {
+        if (row.id) productIdByRid.set(row.id, row.product_id ?? null)
+      }
+    }
+
+    await Promise.all(
+      allRidsNeedingNorm.map(async (rid) => {
+        const rows = out.get(rid) ?? []
+        const normalized = await normalizeResolvedForReservationProduct(
+          db,
+          productIdByRid.get(rid),
+          rows
+        )
+        out.set(rid, normalized)
+      })
     )
   }
 
