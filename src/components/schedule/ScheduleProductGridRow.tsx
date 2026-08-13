@@ -403,6 +403,7 @@ export default function ScheduleProductGridRow({
       >
         <ScheduleTotalColumnWithTooltip
           total={product.totalPeople}
+          tourCount={product.totalTours}
           breakdown={aggregateScheduleBreakdownFromDailyData(product.dailyData, monthDaysCoreDateStrings)}
           valueClassName={(() => {
             const rowWaiting = monthDaysCore.reduce(

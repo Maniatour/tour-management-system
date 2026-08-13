@@ -1,0 +1,447 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+import dayjs from 'dayjs'
+import timezone from 'dayjs/plugin/timezone'
+import utc from 'dayjs/plugin/utc'
+import { LV_TZ, toLasVegasDateKey } from '@/lib/dailyReport/dateUtils'
+import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { isTourCancelled } from '@/utils/tourStatusUtils'
+import { newSopId, type SopDocument, type SopSection } from '@/types/sopStructure'
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
+
+/** 후기 1포인트당 가이드 보너스 (USD) */
+export const REVIEW_BONUS_USD_PER_POINT = 5
+
+export function ratingToReviewBonusPoints(rating: number): number {
+  switch (Math.round(rating)) {
+    case 1:
+      return -3
+    case 2:
+      return -2
+    case 3:
+      return -1
+    case 4:
+      return 0
+    case 5:
+      return 1
+    default:
+      return 0
+  }
+}
+
+export function reviewBonusAmountUsd(points: number): number {
+  return points * REVIEW_BONUS_USD_PER_POINT
+}
+
+/** 2주급 시작일이 16일 이후면 해당 월 후기 보너스를 이 지급분에 포함 */
+export function isSecondHalfPayPeriod(startDate: string): boolean {
+  const day = Number.parseInt(startDate.slice(8, 10), 10)
+  return Number.isFinite(day) && day >= 16
+}
+
+export function payPeriodCalendarMonth(startDate: string): { year: number; month: number } | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return null
+  const year = Number.parseInt(startDate.slice(0, 4), 10)
+  const month = Number.parseInt(startDate.slice(5, 7), 10)
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null
+  return { year, month }
+}
+
+export type ReviewBonusReviewRow = {
+  id: string
+  rating: number
+  points: number
+  importedAt: string
+  importedDateLv: string
+  authorName: string | null
+  reviewSource: string | null
+}
+
+export type ReviewBonusSummary = {
+  year: number
+  month: number
+  monthStart: string
+  monthEnd: string
+  includedInThisPayPeriod: boolean
+  reviewCount: number
+  fiveStarCount: number
+  fourStarCount: number
+  threeStarCount: number
+  twoStarCount: number
+  oneStarCount: number
+  totalPoints: number
+  amountUsd: number
+  reviews: ReviewBonusReviewRow[]
+}
+
+function emptySummary(
+  year: number,
+  month: number,
+  includedInThisPayPeriod: boolean
+): ReviewBonusSummary {
+  const start = dayjs.tz(`${year}-${String(month).padStart(2, '0')}-01`, LV_TZ)
+  return {
+    year,
+    month,
+    monthStart: start.format('YYYY-MM-DD'),
+    monthEnd: start.endOf('month').format('YYYY-MM-DD'),
+    includedInThisPayPeriod,
+    reviewCount: 0,
+    fiveStarCount: 0,
+    fourStarCount: 0,
+    threeStarCount: 0,
+    twoStarCount: 0,
+    oneStarCount: 0,
+    totalPoints: 0,
+    amountUsd: 0,
+    reviews: [],
+  }
+}
+
+function monthUtcRange(year: number, month: number): { startIso: string; endIso: string } {
+  const start = dayjs.tz(`${year}-${String(month).padStart(2, '0')}-01`, LV_TZ).startOf('month')
+  return {
+    startIso: start.toISOString(),
+    endIso: start.endOf('month').toISOString(),
+  }
+}
+
+async function fetchByIds<T>(
+  ids: string[],
+  load: (chunk: string[]) => Promise<T[]>
+): Promise<T[]> {
+  const out: T[] = []
+  for (let i = 0; i < ids.length; i += 100) {
+    out.push(...(await load(ids.slice(i, i + 100))))
+  }
+  return out
+}
+
+function normalizeEmail(value: string | null | undefined): string {
+  return (value || '').trim().toLowerCase()
+}
+
+type GoogleReviewRow = {
+  id: string
+  rating: number | null
+  imported_at: string
+  author_name: string | null
+  review_source: string | null
+  exclude_staff_rating: boolean | null
+}
+
+function toReviewRow(row: GoogleReviewRow): ReviewBonusReviewRow | null {
+  if (row.rating == null || row.exclude_staff_rating) return null
+  const importedDateLv = toLasVegasDateKey(row.imported_at)
+  if (!importedDateLv) return null
+  const rating = Number(row.rating)
+  if (!Number.isFinite(rating)) return null
+  return {
+    id: row.id,
+    rating,
+    points: ratingToReviewBonusPoints(rating),
+    importedAt: row.imported_at,
+    importedDateLv,
+    authorName: row.author_name,
+    reviewSource: row.review_source,
+  }
+}
+
+function summarize(
+  year: number,
+  month: number,
+  includedInThisPayPeriod: boolean,
+  reviews: ReviewBonusReviewRow[]
+): ReviewBonusSummary {
+  const start = dayjs.tz(`${year}-${String(month).padStart(2, '0')}-01`, LV_TZ)
+  const counts = { five: 0, four: 0, three: 0, two: 0, one: 0 }
+  let totalPoints = 0
+  for (const review of reviews) {
+    totalPoints += review.points
+    if (review.rating >= 5) counts.five += 1
+    else if (review.rating >= 4) counts.four += 1
+    else if (review.rating >= 3) counts.three += 1
+    else if (review.rating >= 2) counts.two += 1
+    else counts.one += 1
+  }
+  const sorted = [...reviews].sort((a, b) => b.importedDateLv.localeCompare(a.importedDateLv))
+  return {
+    year,
+    month,
+    monthStart: start.format('YYYY-MM-DD'),
+    monthEnd: start.endOf('month').format('YYYY-MM-DD'),
+    includedInThisPayPeriod,
+    reviewCount: reviews.length,
+    fiveStarCount: counts.five,
+    fourStarCount: counts.four,
+    threeStarCount: counts.three,
+    twoStarCount: counts.two,
+    oneStarCount: counts.one,
+    totalPoints,
+    amountUsd: includedInThisPayPeriod ? reviewBonusAmountUsd(totalPoints) : 0,
+    reviews: sorted,
+  }
+}
+
+/**
+ * 해당 월(1일~말일, 라스베가스)에 입력된 후기를 가이드 이메일 기준으로 집계.
+ * 2주급 시작일이 16일 미만이면 금액은 0 (16~말일 지급분에서만 포함).
+ */
+export async function fetchGuideReviewBonusForPayPeriod(
+  client: SupabaseClient,
+  params: {
+    staffEmail: string
+    operatorId: string
+    startDate: string
+  }
+): Promise<ReviewBonusSummary> {
+  const month = payPeriodCalendarMonth(params.startDate)
+  if (!month) return emptySummary(new Date().getFullYear(), 1, false)
+
+  const includedInThisPayPeriod = isSecondHalfPayPeriod(params.startDate)
+  if (!includedInThisPayPeriod) {
+    return emptySummary(month.year, month.month, false)
+  }
+
+  const staffEmail = normalizeEmail(params.staffEmail)
+  if (!staffEmail) return emptySummary(month.year, month.month, true)
+
+  const { startIso, endIso } = monthUtcRange(month.year, month.month)
+  const { data: reviewRows, error: reviewError } = await fromUntypedTable(client, 'google_reviews')
+    .select('id, rating, imported_at, author_name, review_source, exclude_staff_rating')
+    .eq('operator_id', params.operatorId)
+    .not('rating', 'is', null)
+    .gte('imported_at', startIso)
+    .lte('imported_at', endIso)
+
+  if (reviewError) {
+    console.error('[reviewBonusPoints] google_reviews:', reviewError.message)
+    return emptySummary(month.year, month.month, true)
+  }
+
+  const bounds = emptySummary(month.year, month.month, true)
+  const monthReviews = ((reviewRows ?? []) as GoogleReviewRow[]).filter((row) => {
+    const lv = toLasVegasDateKey(row.imported_at)
+    if (!lv) return false
+    return lv >= bounds.monthStart && lv <= bounds.monthEnd
+  })
+  if (monthReviews.length === 0) return emptySummary(month.year, month.month, true)
+
+  const monthIds = monthReviews.map((row) => row.id)
+  const attributedIds = new Set<string>()
+
+  const staffLinks = await fetchByIds(monthIds, async (chunk) => {
+    const { data, error } = await fromUntypedTable(client, 'google_review_staff')
+      .select('google_review_id, staff_email')
+      .eq('operator_id', params.operatorId)
+      .in('google_review_id', chunk)
+    if (error) {
+      console.error('[reviewBonusPoints] google_review_staff:', error.message)
+      return []
+    }
+    return (data ?? []) as Array<{ google_review_id: string; staff_email: string }>
+  })
+
+  for (const link of staffLinks) {
+    if (normalizeEmail(link.staff_email) === staffEmail) {
+      attributedIds.add(link.google_review_id)
+    }
+  }
+
+  const tourLinks = await fetchByIds(monthIds, async (chunk) => {
+    const { data, error } = await fromUntypedTable(client, 'google_review_tours')
+      .select('google_review_id, tour_id')
+      .eq('operator_id', params.operatorId)
+      .in('google_review_id', chunk)
+    if (error) {
+      console.error('[reviewBonusPoints] google_review_tours:', error.message)
+      return []
+    }
+    return (data ?? []) as Array<{ google_review_id: string; tour_id: string }>
+  })
+
+  const tourIds = [...new Set(tourLinks.map((row) => row.tour_id).filter(Boolean))]
+  if (tourIds.length > 0) {
+    const tours = await fetchByIds(tourIds, async (chunk) => {
+      const { data, error } = await client
+        .from('tours')
+        .select('id, tour_guide_id, assistant_id, tour_status')
+        .in('id', chunk)
+      if (error) {
+        console.error('[reviewBonusPoints] tours:', error.message)
+        return []
+      }
+      return (data ?? []) as Array<{
+        id: string
+        tour_guide_id: string | null
+        assistant_id: string | null
+        tour_status: string | null
+      }>
+    })
+    const matchingTourIds = new Set(
+      tours
+        .filter((tour) => {
+          if (isTourCancelled(tour.tour_status)) return false
+          return (
+            normalizeEmail(tour.tour_guide_id) === staffEmail ||
+            normalizeEmail(tour.assistant_id) === staffEmail
+          )
+        })
+        .map((tour) => tour.id)
+    )
+    for (const link of tourLinks) {
+      if (matchingTourIds.has(link.tour_id)) attributedIds.add(link.google_review_id)
+    }
+  }
+
+  const reviews = monthReviews
+    .filter((row) => attributedIds.has(row.id))
+    .map(toReviewRow)
+    .filter((row): row is ReviewBonusReviewRow => row != null)
+
+  return summarize(month.year, month.month, true, reviews)
+}
+
+export function formatReviewBonusMonthLabel(year: number, month: number, locale: 'ko' | 'en'): string {
+  if (locale === 'en') {
+    return dayjs(new Date(year, month - 1, 1)).format('MMMM YYYY')
+  }
+  return `${year}년 ${month}월`
+}
+
+export function reviewBonusSopSectionAlreadyExists(sections: Array<{ title_ko?: string; title_en?: string }>): boolean {
+  return sections.some((section) => {
+    const ko = (section.title_ko || '').replace(/\s+/g, '')
+    const en = (section.title_en || '').toLowerCase()
+    return ko.includes('후기포인트') || en.includes('review bonus') || en.includes('review point')
+  })
+}
+
+export const REVIEW_BONUS_SOP_POLICY_KO = `후기는 **시스템에 입력된 날짜(라스베가스 기준)** 로 해당 월(1일~말일)에 받은 건만 집계합니다. 투어 출발일이 아닙니다.
+
+**지급 시기:** 해당 월 **16일~말일 2주급**에 포함합니다. 1~15일 지급분에는 넣지 않습니다.
+
+**포인트**
+| 별점 | 포인트 |
+|------|--------|
+| 5점 | +1 |
+| 4점 | 0 |
+| 3점 | -1 |
+| 2점 | -2 |
+| 1점 | -3 |
+
+**금액:** 1포인트 = **$5**. 합산 포인트가 음수이면 해당 기간 가이드 지급액에서 차감합니다.
+
+**대상:** 후기에 연결된 가이드·어시스턴트. 스태프 평점 제외로 표시된 후기는 집계하지 않습니다.`
+
+export const REVIEW_BONUS_SOP_POLICY_EN = `Reviews count by **the date they were entered in the system (Las Vegas time)** for that calendar month (1st–last day). Not the tour departure date.
+
+**Pay timing:** Included in that month’s **16th–end biweekly payroll**. Not included in the 1st–15th pay.
+
+**Points**
+| Stars | Points |
+|-------|--------|
+| 5 | +1 |
+| 4 | 0 |
+| 3 | -1 |
+| 2 | -2 |
+| 1 | -3 |
+
+**Amount:** 1 point = **$5**. A negative total is deducted from that period’s guide pay.
+
+**Who:** Guide/assistant linked to the review. Reviews marked exclude-from-staff-rating are omitted.`
+
+export function createReviewBonusSopSection(sortOrder: number): SopSection {
+  return {
+    id: newSopId(),
+    title_ko: '후기 포인트 제도',
+    title_en: 'Review bonus points',
+    sort_order: sortOrder,
+    hub_category: 'guide',
+    content_type: 'regulation',
+    target_roles: ['guide', 'driver', 'office', 'office manager', 'op'],
+    content_ko: REVIEW_BONUS_SOP_POLICY_KO,
+    content_en: REVIEW_BONUS_SOP_POLICY_EN,
+    categories: [
+      {
+        id: newSopId(),
+        title_ko: '운영 규칙',
+        title_en: 'Operating rules',
+        content_ko: REVIEW_BONUS_SOP_POLICY_KO,
+        content_en: REVIEW_BONUS_SOP_POLICY_EN,
+        sort_order: 0,
+        checklist_items: [
+          {
+            id: newSopId(),
+            title_ko: '후기 입력 시 가이드·어시스턴트 연결 확인',
+            title_en: 'Link guide/assistant when entering a review',
+            sort_order: 0,
+            parent_id: null,
+          },
+          {
+            id: newSopId(),
+            title_ko: '월말 2주급(16~말일)에서 후기 포인트·금액 확인 후 지급',
+            title_en: 'Confirm review points & amount on 16th–end payroll before paying',
+            sort_order: 1,
+            parent_id: null,
+          },
+          {
+            id: newSopId(),
+            title_ko: '스태프 평점 제외 후기는 포인트에서 빼기',
+            title_en: 'Omit exclude-from-staff-rating reviews from points',
+            sort_order: 2,
+            parent_id: null,
+          },
+        ],
+      },
+    ],
+  }
+}
+
+export function addReviewBonusSopSectionIfMissing(doc: SopDocument): {
+  doc: SopDocument
+  added: boolean
+} {
+  if (reviewBonusSopSectionAlreadyExists(doc.sections)) {
+    return { doc, added: false }
+  }
+  return {
+    doc: {
+      ...doc,
+      sections: [...doc.sections, createReviewBonusSopSection(doc.sections.length)],
+    },
+    added: true,
+  }
+}
+
+export const REVIEW_BONUS_GUIDE_NOTICE_KO = `안녕하세요, 가이드 여러분.
+
+이번 달부터 **고객 후기 포인트 제도**를 2주급에 반영합니다.
+
+■ 산정
+• 매월 1일~말일, **후기가 시스템에 입력된 날짜** 기준입니다. (투어 날짜가 아닙니다)
+• 별점 → 포인트: 5점 +1 / 4점 0 / 3점 -1 / 2점 -2 / 1점 -3
+• 1포인트 = $5 (합산이 마이너스면 해당 기간 급여에서 차감)
+
+■ 지급
+• 해당 월 **16일~말일 2주급**에 포함됩니다.
+• 1~15일 지급분에는 후기 보너스가 들어가지 않습니다.
+
+좋은 후기는 고객 신뢰와 바로 연결됩니다. 안전하고 친절한 투어 부탁드립니다.
+궁금한 점은 사무실로 연락 주세요.`
+
+export const REVIEW_BONUS_GUIDE_NOTICE_EN = `Hello team,
+
+Starting this month, **guest review bonus points** will be included in biweekly pay.
+
+■ How it is calculated
+• Calendar month (1st–last day), based on the **date the review was entered in our system** (Las Vegas time)—not the tour date.
+• Stars → points: 5 = +1 / 4 = 0 / 3 = −1 / 2 = −2 / 1 = −3
+• $5 per point. A negative total is deducted from that period’s pay.
+
+■ When you receive it
+• Included in that month’s **16th–end biweekly pay**.
+• Not included in the 1st–15th pay.
+
+Great reviews come from safe, kind tours. Please reach out to the office with any questions.`

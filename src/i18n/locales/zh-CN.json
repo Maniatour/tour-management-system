@@ -2068,6 +2068,7 @@
     "passCoversPeople": "覆盖范围最多 {count}",
     "capacitySelectToMatch": "请选择适合您的聚会规模的客房或旅客选项。",
     "noRoomsForPartySize": "没有适合此聚会规模的房间选择。调整出行人数。",
+    "noVehiclesForPartySize": "没有适合此人数的车辆。请减少人数或选择更大的车辆。",
     "selectDateToSeeOptions": "选择日期和旅客人数以查看预订选项。",
     "selectDatePlaceholder": "选择日期",
     "previousMonth": "上个月",

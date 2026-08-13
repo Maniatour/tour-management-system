@@ -11,6 +11,12 @@ import {
 import type { Json } from '@/lib/database.types'
 import { reservationAdminManualDocument } from '@/lib/reservationAdminManualDocument'
 import { productsHomeSectionsManualDocument } from '@/lib/productsHomeSectionsManualDocument'
+import {
+  REVIEW_BONUS_GUIDE_NOTICE_EN,
+  REVIEW_BONUS_GUIDE_NOTICE_KO,
+  REVIEW_BONUS_SOP_POLICY_EN,
+  REVIEW_BONUS_SOP_POLICY_KO,
+} from '@/lib/reviewBonusPoints'
 
 type ArticleSeed = {
   slug: string
@@ -671,6 +677,40 @@ export function defaultKnowledgeArticleSeeds(): ArticleSeed[] {
       ])
     ),
 
+    seed(
+      'guide-review-bonus-points',
+      '후기 포인트 제도 (가이드 안내)',
+      'Review bonus points (guide notice)',
+      '별점 포인트·$5·월 1~말일 입력일 기준·16~말일 2주급 지급',
+      'Star points, $5 each, calendar month by entry date, paid on 16th–end payroll',
+      'guide',
+      'regulation',
+      ['guide', 'driver'],
+      50,
+      doc('후기 포인트', 'Review bonus points', [
+        sec('제도 안내', 'Policy', 0, [
+          cat(
+            '가이드 안내문',
+            'Guide notice',
+            REVIEW_BONUS_GUIDE_NOTICE_KO,
+            REVIEW_BONUS_GUIDE_NOTICE_EN,
+            0
+          ),
+          cat(
+            '규정',
+            'Rules',
+            REVIEW_BONUS_SOP_POLICY_KO,
+            REVIEW_BONUS_SOP_POLICY_EN,
+            1,
+            checks([
+              { ko: '후기는 입력된 날짜 기준으로 해당 월에 집계됨을 이해', en: 'Reviews count by entry date in that calendar month' },
+              { ko: '16~말일 2주급에서 포인트 금액 확인', en: 'Check point amount on 16th–end payroll' },
+            ])
+          ),
+        ]),
+      ])
+    ),
+
     // ─── 시스템 ───
     seed(
       'system-admin-reservation',
@@ -869,6 +909,7 @@ export function defaultKnowledgeArticleSeeds(): ArticleSeed[] {
             checks([
               { ko: '팀보드 Weekly Todo 전 항목 완료', en: 'Complete all team-board weekly todos' },
               { ko: '정산 시트·회계 시스템 입력', en: 'Enter accounting system / sheet' },
+              { ko: '16~말일 2주급: 해당 월 후기 포인트·금액 확인', en: '2nd-half payroll: confirm monthly review bonus points & amount' },
             ])
           ),
         ]),
@@ -893,6 +934,36 @@ export function defaultKnowledgeArticleSeeds(): ArticleSeed[] {
             '- **투어 지출**: 가이드 제출 + 영수증 사진\n- **회사 지출**: vehicle maintenance, 사무용품 등\n- 승인 한도 초과 시 **office manager** 사전 승인\n- 통화·환율은 Pricing과 동일 기준',
             '- **Tour expenses**: guide submission + receipt photo\n- **Company expenses**: vehicle, office supplies, etc.\n- Over limit: **office manager** pre-approval\n- Currency/rates same as Pricing',
             0
+          ),
+        ]),
+      ])
+    ),
+
+    seed(
+      'office-review-bonus-payroll',
+      '후기 포인트 · 2주급 정산',
+      'Review bonus — biweekly payroll',
+      '월 1~말일 입력 후기 집계, 16~말일 2주급에 $5/포인트 반영',
+      'Count reviews entered 1st–last day; pay $5/point on 16th–end payroll',
+      'office',
+      'playbook',
+      ['office', 'office manager'],
+      30,
+      doc('후기 포인트 정산', 'Review bonus payroll', [
+        sec('2주급', 'Biweekly pay', 0, [
+          cat(
+            '사무 절차',
+            'Office procedure',
+            REVIEW_BONUS_SOP_POLICY_KO +
+              '\n\n**정산 위치:** 출석 관리 → 2주급 계산기 → 기간을 **16일~말일**로 선택 → **후기 보너스 포인트** 영역에서 합산·금액을 확인한 뒤 총 급여에 포함해 지급합니다.',
+            REVIEW_BONUS_SOP_POLICY_EN +
+              '\n\n**Where:** Attendance → Biweekly calculator → set period to **16th–end** → confirm **Review bonus points** total, then include it in total pay.',
+            0,
+            checks([
+              { ko: '후기 관리에서 해당 월 후기·가이드 연결 확인', en: 'Confirm month’s reviews are linked to the guide' },
+              { ko: '2주급 계산기 16~말일 기간에서 포인트·금액 확인', en: 'Confirm points & amount on 16th–end biweekly calculator' },
+              { ko: '음수 포인트는 차감됨을 가이드에게 설명', en: 'Explain negative points as a deduction' },
+            ])
           ),
         ]),
       ])

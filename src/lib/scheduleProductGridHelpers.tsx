@@ -157,10 +157,13 @@ export function ScheduleLangFlagsHoverLine({
 
 export function ScheduleTotalColumnWithTooltip({
   total,
+  tourCount = 0,
   valueClassName,
   breakdown,
 }: {
   total: number
+  /** 확정(confirmed) 투어 건수 — 인원 뒤에 `24 (6)` 형태로 표시 */
+  tourCount?: number
   valueClassName: string
   breakdown: { ko: number; en: number; ja?: number; choiceCounts: Record<string, number> }
 }) {
@@ -181,10 +184,17 @@ export function ScheduleTotalColumnWithTooltip({
           <div className="whitespace-nowrap break-keep leading-tight">
             엑스 {x}명 / 로어 {l}명
           </div>
+          {tourCount > 0 ? (
+            <div className="whitespace-nowrap break-keep leading-tight mt-1 text-gray-300">
+              확정 투어 {tourCount}건
+            </div>
+          ) : null}
         </>
       }
     >
-      <div className={`${valueClassName} cursor-default`}>{total}</div>
+      <div className={`${valueClassName} cursor-default whitespace-nowrap tabular-nums`}>
+        {tourCount > 0 ? `${total} (${tourCount})` : total}
+      </div>
     </ScheduleHoverTooltip>
   )
 }

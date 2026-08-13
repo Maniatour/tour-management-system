@@ -6,6 +6,7 @@ import {
   getQuantityOptionNameLower,
   isPassCoverQuantityOption,
 } from '@/lib/bookingFlowQuantityChoices'
+import { isPerUnitPricing } from '@/lib/choicePricingUnit'
 
 export type CapacityOptionLike = {
   option_id: string
@@ -36,13 +37,19 @@ function parseCapacityFromOptionName(option: {
   option_name?: string | null
   option_name_ko?: string | null
   option_name_en?: string | null
+  option_description?: string | null
+  option_description_ko?: string | null
 }): number | null {
   const fromKey = parseCapacityFromOptionKey(option.option_key)
   if (fromKey != null) return fromKey
 
-  const names = [option.option_name_ko, option.option_name, option.option_name_en].filter(
-    Boolean
-  ) as string[]
+  const names = [
+    option.option_name_ko,
+    option.option_name,
+    option.option_name_en,
+    option.option_description_ko,
+    option.option_description,
+  ].filter(Boolean) as string[]
 
   for (const name of names) {
     const koMatch = name.match(
@@ -50,6 +57,12 @@ function parseCapacityFromOptionName(option: {
     )
     if (koMatch) {
       const n = parseInt(koMatch[1] || koMatch[2] || koMatch[3] || koMatch[4] || '', 10)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+
+    const vehicleKo = name.match(/(\d+)\s*인승|최대\s*(\d+)\s*인/)
+    if (vehicleKo) {
+      const n = parseInt(vehicleKo[1] || vehicleKo[2] || '', 10)
       if (Number.isFinite(n) && n > 0) return n
     }
 
@@ -73,6 +86,20 @@ function parseCapacityFromOptionName(option: {
       if (Number.isFinite(n) && n > 0) return n
     }
 
+    const seaterMatch = lower.match(/(\d+)\s*-?\s*seater/)
+    if (seaterMatch) {
+      const n = parseInt(seaterMatch[1], 10)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+
+    const maxPeopleMatch = lower.match(
+      /(?:max(?:imum)?|up to)\s*(\d+)\s*(?:people|persons|passengers|pax|travelers)/
+    )
+    if (maxPeopleMatch) {
+      const n = parseInt(maxPeopleMatch[1], 10)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+
     const enMatch = lower.match(/(\d+)\s*(?:person|people|pax)\b/)
     if (enMatch) {
       const n = parseInt(enMatch[1], 10)
@@ -90,6 +117,8 @@ export function getOptionCapacity(option: {
   option_name?: string | null
   option_name_ko?: string | null
   option_name_en?: string | null
+  option_description?: string | null
+  option_description_ko?: string | null
 }): number | null {
   const parsed = parseCapacityFromOptionName(option)
   const dbCap =
@@ -141,6 +170,34 @@ export function looksLikeRoomChoiceGroup(
     /\d\s*인\s*1\s*실/.test(label) ||
     label.includes('인실') ||
     label.includes('1실')
+  )
+}
+
+/** 차량/리무진 초이스로 보이는지 (이름 기준) */
+export function looksLikeVehicleChoiceGroup(
+  choiceName?: string | null,
+  options?: Array<{
+    option_name?: string | null
+    option_name_ko?: string | null
+    option_name_en?: string | null
+  }>
+): boolean {
+  const label = getChoiceLabelLower(choiceName, options)
+  return (
+    label.includes('차량') ||
+    label.includes('리무진') ||
+    label.includes('세단') ||
+    label.includes('승합') ||
+    label.includes('인승') ||
+    label.includes('vehicle') ||
+    label.includes('limousine') ||
+    label.includes('limo') ||
+    label.includes('sedan') ||
+    label.includes('suv') ||
+    /\bvan\b/.test(label) ||
+    label.includes('shuttle') ||
+    label.includes('transfer') ||
+    label.includes('seater')
   )
 }
 
@@ -217,6 +274,35 @@ export function isAccommodationCapacityGroup(
   return countOccupancyNamedOptions(options) >= 2
 }
 
+/**
+ * 차량/단위 수용 인원 필터 대상.
+ * - 객실·인원/패스 그룹은 제외
+ * - per_unit(차량 고정가)이거나 그룹명이 차량으로 보일 때
+ * - 실제 수용 인원(2명 이상 또는 옵션별 상이)이 있을 때만 필터
+ */
+export function usesVehicleCapacitySelection(
+  pricingUnit: string | null | undefined,
+  choiceType: string | null | undefined,
+  options: Array<{
+    option_key?: string | null
+    capacity?: number | null
+    option_name?: string | null
+    option_name_ko?: string | null
+    option_name_en?: string | null
+    option_description?: string | null
+    option_description_ko?: string | null
+  }>,
+  choiceName?: string | null
+): boolean {
+  if (looksLikePeopleFeeChoiceGroup(choiceName, options)) return false
+  if (looksLikeRoomChoiceGroup(choiceName, options)) return false
+  if (usesCapacityQuantitySelection(choiceType, options, choiceName)) return false
+  const isUnitOrVehicle =
+    isPerUnitPricing(pricingUnit) || looksLikeVehicleChoiceGroup(choiceName, options)
+  if (!isUnitOrVehicle) return false
+  return hasVariedOrMultiCapacity(options)
+}
+
 /** quantity + 객실 → capacity 필터/합산 UI */
 export function usesCapacityQuantitySelection(
   choiceType: string | null | undefined,
@@ -280,6 +366,39 @@ export function filterOptionsByPartySize<T extends { capacity?: number | null }>
   partySize: number
 ): T[] {
   return options.filter((option) => isOptionVisibleForPartySize(option, partySize))
+}
+
+/** 예약 인원보다 작은 차량은 숨김. capacity 없는 옵션은 항상 표시 */
+export function isVehicleOptionVisibleForPartySize(
+  option: {
+    option_key?: string | null
+    capacity?: number | null
+    option_name?: string | null
+    option_name_ko?: string | null
+    option_name_en?: string | null
+    option_description?: string | null
+    option_description_ko?: string | null
+  },
+  partySize: number
+): boolean {
+  if (partySize <= 0) return true
+  const cap = getOptionCapacity(option)
+  if (cap == null) return true
+  return cap >= partySize
+}
+
+export function filterVehicleOptionsByPartySize<
+  T extends {
+    option_key?: string | null
+    capacity?: number | null
+    option_name?: string | null
+    option_name_ko?: string | null
+    option_name_en?: string | null
+    option_description?: string | null
+    option_description_ko?: string | null
+  },
+>(options: T[], partySize: number): T[] {
+  return options.filter((option) => isVehicleOptionVisibleForPartySize(option, partySize))
 }
 
 /** Σ (capacity × quantity). capacity 없으면 1로 간주 — 객실용 */

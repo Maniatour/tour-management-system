@@ -3762,7 +3762,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
         if (!isEdgePadding) {
           totalPeople += dayTotalPeople
-          totalTours += dayTours.length
+          totalTours += dayTours.filter((t) => isTourConfirmedStatus(t.tour_status)).length
         }
       })
 

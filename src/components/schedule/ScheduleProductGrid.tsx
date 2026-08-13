@@ -391,6 +391,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
               >
                 <ScheduleTotalColumnWithTooltip
                   total={Object.values(productScheduleData).reduce((sum, product) => sum + product.totalPeople, 0)}
+                  tourCount={Object.values(productScheduleData).reduce((sum, product) => sum + product.totalTours, 0)}
                   breakdown={productScheduleGrandBreakdown}
                   valueClassName="font-medium text-gray-900"
                 />

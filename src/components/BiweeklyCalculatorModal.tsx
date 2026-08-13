@@ -2,7 +2,7 @@
 import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone, Search, ChevronDown, ExternalLink, Mail } from 'lucide-react'
+import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone, Search, ChevronDown, ExternalLink, Mail, Star } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
@@ -32,6 +32,12 @@ import {
   GUIDE_FEES_STANDARD_LEAF_ID,
   unifiedStandardTriggerLabel,
 } from '@/lib/companyExpenseStandardUnified'
+import {
+  fetchGuideReviewBonusForPayPeriod,
+  formatReviewBonusMonthLabel,
+  type ReviewBonusSummary,
+} from '@/lib/reviewBonusPoints'
+import BiweeklyReviewBonusSection from '@/components/attendance/BiweeklyReviewBonusSection'
 
 interface BiweeklyCalculatorModalProps {
   isOpen: boolean
@@ -193,6 +199,9 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   const [tourPay, setTourPay] = useState<number>(0)
   const [tipPay, setTipPay] = useState<number>(0)
   const [personalCarPay, setPersonalCarPay] = useState<number>(0)
+  const [reviewBonusPay, setReviewBonusPay] = useState<number>(0)
+  const [reviewBonusSummary, setReviewBonusSummary] = useState<ReviewBonusSummary | null>(null)
+  const [reviewBonusLoading, setReviewBonusLoading] = useState(false)
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<string>('')
@@ -353,8 +362,14 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   }
 
   // 총 급여 계산 함수
-  const calculateTotalPay = (attendanceSalary: number, tourSalary: number, tipSalary: number, personalCarSalary: number) => {
-    return attendanceSalary + tourSalary + tipSalary + personalCarSalary
+  const calculateTotalPay = (
+    attendanceSalary: number,
+    tourSalary: number,
+    tipSalary: number,
+    personalCarSalary: number,
+    reviewBonusSalary: number
+  ) => {
+    return attendanceSalary + tourSalary + tipSalary + personalCarSalary + reviewBonusSalary
   }
 
   // 출퇴근 기록 조회
@@ -796,11 +811,17 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     setHourlyRate(String(getHourlyRateForEmployeeOnDate(employeeRatePeriods, selectedEmployee, endDate, 15)))
   }, [isOpen, endDate, startDate, selectedEmployee, employeeRatePeriods])
 
-  // 선택한 출퇴근 정산법·투어·팁·Personal Car 변경 시 총 급여 계산
+  // 선택한 출퇴근 정산법·투어·팁·Personal Car·후기 보너스 변경 시 총 급여 계산
   useEffect(() => {
-    const total = calculateTotalPay(selectedAttendancePay, tourPay, tipPay, personalCarPay)
+    const total = calculateTotalPay(
+      selectedAttendancePay,
+      tourPay,
+      tipPay,
+      personalCarPay,
+      reviewBonusPay
+    )
     setTotalPay(total)
-  }, [selectedAttendancePay, tourPay, tipPay, personalCarPay])
+  }, [selectedAttendancePay, tourPay, tipPay, personalCarPay, reviewBonusPay])
 
   // 투어 Fee 테이블의 Prepaid Tips 합계를 Tips Share Subtotal(tipPay)과 동기화 (Pay Summary와 아래 테이블 일치)
   useEffect(() => {
@@ -817,6 +838,40 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       setTourFees([])
     }
   }, [selectedEmployee, startDate, endDate])
+
+  useEffect(() => {
+    if (!selectedEmployee || !startDate) {
+      setReviewBonusSummary(null)
+      setReviewBonusPay(0)
+      setReviewBonusLoading(false)
+      return
+    }
+    let cancelled = false
+    setReviewBonusLoading(true)
+    fetchGuideReviewBonusForPayPeriod(supabase, {
+      staffEmail: selectedEmployee,
+      operatorId: activeOperatorId,
+      startDate,
+    })
+      .then((summary) => {
+        if (cancelled) return
+        setReviewBonusSummary(summary)
+        setReviewBonusPay(summary.amountUsd)
+      })
+      .catch((error) => {
+        console.error('후기 보너스 조회 오류:', error)
+        if (!cancelled) {
+          setReviewBonusSummary(null)
+          setReviewBonusPay(0)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setReviewBonusLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedEmployee, startDate, activeOperatorId])
 
   // 직원 변경 시 해당 직원의 회사 지출 지불 내역 전체 조회 (기간 무관)
   useEffect(() => {
@@ -1319,6 +1374,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     setTourPay(0)
     setTipPay(0)
     setPersonalCarPay(0)
+    setReviewBonusPay(0)
+    setReviewBonusSummary(null)
     setAttendanceRecords([])
     setEmployeeMealDates(new Set())
     setPeriodMealCounts({})
@@ -1366,6 +1423,12 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       guideFeeSubtotal: 'Guide Fee Subtotal:',
       tipsShareSubtotal: 'Tips Share Subtotal:',
       personalCarSubtotal: 'Personal Car Subtotal:',
+      reviewBonusSubtotal: 'Review Bonus:',
+      reviewBonusSection: 'Review Bonus Points',
+      reviewImportedDate: 'Entered',
+      reviewAuthor: 'Author',
+      reviewRating: 'Stars',
+      reviewPoints: 'Points',
       totalPay: 'Total Pay:',
       attendanceSection: (days: number, sessions: number) => `Attendance (${days} days, ${sessions} sessions)`,
       date: 'Date',
@@ -1404,6 +1467,12 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       guideFeeSubtotal: '가이드 Fee 소계:',
       tipsShareSubtotal: 'Tips 쉐어 소계:',
       personalCarSubtotal: 'Personal Car 소계:',
+      reviewBonusSubtotal: '후기 보너스:',
+      reviewBonusSection: '후기 보너스 포인트',
+      reviewImportedDate: '입력일',
+      reviewAuthor: '작성자',
+      reviewRating: '별점',
+      reviewPoints: '포인트',
       totalPay: '총 급여:',
       attendanceSection: (days: number, sessions: number) => `출퇴근 기록 (${days}일, 총 ${sessions}회)`,
       date: '출근 날짜',
@@ -1618,6 +1687,10 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <span>${pr.personalCarSubtotal}</span>
                   <span>$${formatCurrency(personalCarPay)}</span>
                 </div>
+                <div class="calculation-item">
+                  <span>${pr.reviewBonusSubtotal}</span>
+                  <span>${reviewBonusPay < 0 ? '-' : ''}$${formatCurrency(Math.abs(reviewBonusPay))}</span>
+                </div>
                 <div class="calculation-item total">
                   <span>${pr.totalPay}</span>
                   <span>$${formatCurrency(totalPay)}</span>
@@ -1719,6 +1792,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               </tbody>
             </table>
           ` : ''}
+          ${reviewBonusPrintTableHtml(pr)}
         </body>
         </html>
       `
@@ -1813,11 +1887,74 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   }
 
   // 숫자 포맷팅 함수 (천 단위 구분 기호 추가)
-  const formatCurrency = (amount: number) => {
+  function formatCurrency(amount: number) {
     return amount.toLocaleString('en-US', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     })
+  }
+
+  function escapeHtml(value: string) {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+  }
+
+  function reviewBonusPrintTableHtml(pr: ReturnType<typeof getPrintLabels>) {
+    if (!reviewBonusSummary || !reviewBonusSummary.includedInThisPayPeriod) {
+      const monthLabel = reviewBonusSummary
+        ? formatReviewBonusMonthLabel(reviewBonusSummary.year, reviewBonusSummary.month, pr.title === 'Biweekly Pay Calculator' ? 'en' : 'ko')
+        : ''
+      const note =
+        pr.title === 'Biweekly Pay Calculator'
+          ? `${monthLabel} review bonus is paid with the 16th–end payroll, not this period.`
+          : `${monthLabel} 후기 보너스는 16일~말일 2주급에 포함되며 이 기간에는 지급하지 않습니다.`
+      return `
+            <div class="section-title">${pr.reviewBonusSection}</div>
+            <p style="font-size:12px;color:#4b5563;margin:0 0 16px;">${escapeHtml(note)}</p>
+          `
+    }
+    const monthLabel = formatReviewBonusMonthLabel(
+      reviewBonusSummary.year,
+      reviewBonusSummary.month,
+      pr.title === 'Biweekly Pay Calculator' ? 'en' : 'ko'
+    )
+    const rows =
+      reviewBonusSummary.reviews.length > 0
+        ? reviewBonusSummary.reviews
+            .map(
+              (review) => `
+                  <tr>
+                    <td>${escapeHtml(review.importedDateLv)}</td>
+                    <td>${escapeHtml(review.authorName || '—')}</td>
+                    <td>${review.rating}</td>
+                    <td>${review.points > 0 ? '+' : ''}${review.points}</td>
+                  </tr>`
+            )
+            .join('')
+        : `<tr><td colspan="4">${pr.title === 'Biweekly Pay Calculator' ? 'No linked reviews this month.' : '이 달에 연결된 후기가 없습니다.'}</td></tr>`
+    return `
+            <div class="section-title">${pr.reviewBonusSection} (${escapeHtml(monthLabel)})</div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>${pr.reviewImportedDate}</th>
+                  <th>${pr.reviewAuthor}</th>
+                  <th>${pr.reviewRating}</th>
+                  <th>${pr.reviewPoints}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows}
+                <tr style="font-weight: bold; background: #f3f4f6;">
+                  <td colspan="3">${pr.total} (${reviewBonusSummary.totalPoints > 0 ? '+' : ''}${reviewBonusSummary.totalPoints})</td>
+                  <td>${reviewBonusPay < 0 ? '-' : ''}$${formatCurrency(Math.abs(reviewBonusPay))}</td>
+                </tr>
+              </tbody>
+            </table>
+          `
   }
 
   // 날짜를 MM/DD/YYYY 형식으로 변환 (라스베가스 시간 기준)
@@ -2032,6 +2169,10 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <span>${pr.personalCarSubtotal}</span>
                   <span>$${formatCurrency(personalCarTotal)}</span>
                 </div>
+                <div class="calculation-item">
+                  <span>${pr.reviewBonusSubtotal}</span>
+                  <span>${reviewBonusPay < 0 ? '-' : ''}$${formatCurrency(Math.abs(reviewBonusPay))}</span>
+                </div>
                 <div class="calculation-item total">
                   <span>${pr.totalPay}</span>
                   <span>$${formatCurrency(totalPay)}</span>
@@ -2133,6 +2274,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               </tbody>
             </table>
           ` : ''}
+          ${reviewBonusPrintTableHtml(pr)}
         </body>
         </html>
       `
@@ -2722,6 +2864,25 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                         ${formatCurrency(personalCarPay)}
                       </span>
                     </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-gray-600">
+                        <Star className="w-3 h-3 inline mr-1" />
+                        후기 보너스:
+                      </span>
+                      <span
+                        className={`text-sm font-bold tabular-nums ${
+                          reviewBonusPay > 0
+                            ? 'text-emerald-700'
+                            : reviewBonusPay < 0
+                              ? 'text-red-600'
+                              : 'text-gray-700'
+                        }`}
+                      >
+                        {reviewBonusLoading
+                          ? '계산 중...'
+                          : `${reviewBonusPay < 0 ? '-' : ''}$${formatCurrency(Math.abs(reviewBonusPay))}`}
+                      </span>
+                    </div>
                     <div className="flex items-center justify-between border-t pt-1">
                       <span className="text-xs font-medium text-gray-700">
                         <DollarSign className="w-3 h-3 inline mr-1" />
@@ -3238,6 +3399,14 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                 </div>
               </div>
             </div>
+          )}
+
+          {selectedEmployee && (startDate || reviewBonusLoading) && (
+            <BiweeklyReviewBonusSection
+              summary={reviewBonusSummary}
+              loading={reviewBonusLoading}
+              formatCurrency={formatCurrency}
+            />
           )}
 
           {/* 회사 지출: 선택된 직원(가이드 이름/닉네임 매칭)에게 Guide Fee, Wage 등으로 지불한 내역 */}

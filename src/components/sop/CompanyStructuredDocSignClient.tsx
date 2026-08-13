@@ -9,6 +9,7 @@ import SopDocumentWithToc from '@/components/sop/SopDocumentWithToc'
 import SopSignedPdfPrintRoot from '@/components/sop/SopSignedPdfPrintRoot'
 import { captureSignedStructuredDocPdfBlob } from '@/lib/sopPreviewPrintAndPdf'
 import { markdownToHtml } from '@/components/LightRichEditor'
+import { fetchFirstPendingHubArticleSign } from '@/lib/hubArticleAcknowledgment'
 import {
   parseSopDocumentJson,
   sopText,
@@ -16,7 +17,18 @@ import {
   type SopEditLocale,
 } from '@/types/sopStructure'
 
-export type CompanyStructuredDocSignKind = 'sop' | 'employee_contract'
+export type CompanyStructuredDocSignKind = 'sop' | 'employee_contract' | 'hub_article'
+
+function afterSignHref(
+  documentType: CompanyStructuredDocSignKind,
+  locale: string,
+  userRole: string | null | undefined
+): string {
+  if (documentType === 'hub_article') {
+    return userRole === 'team_member' ? `/${locale}/guide/operations-hub` : `/${locale}/admin/operations-hub`
+  }
+  return userRole === 'team_member' ? `/${locale}/guide` : `/${locale}/admin/sop`
+}
 
 type VersionRow = {
   id: string
@@ -50,7 +62,7 @@ export default function CompanyStructuredDocSignClient({
   const pathname = usePathname() || ''
   const searchParams = useSearchParams()
   const versionParam = searchParams.get('version')
-  const { authUser, userRole, loading, isInitialized } = useAuth()
+  const { authUser, userRole, userPosition, loading, isInitialized } = useAuth()
   const locale = pathname.split('/').filter(Boolean)[0] || 'ko'
   const isEn = locale === 'en'
 
@@ -66,6 +78,7 @@ export default function CompanyStructuredDocSignClient({
   const [viewLang, setViewLang] = useState<SopEditLocale>(isEn ? 'en' : 'ko')
 
   const isContract = documentType === 'employee_contract'
+  const isHub = documentType === 'hub_article'
 
   useEffect(() => {
     setViewLang(isEn ? 'en' : 'ko')
@@ -81,8 +94,33 @@ export default function CompanyStructuredDocSignClient({
       return
     }
 
-    const versionQuery =
-      documentType === 'sop'
+    let versionId = versionParam
+    if (isHub && !versionId) {
+      const pending = await fetchFirstPendingHubArticleSign(authUser.id, userPosition)
+      versionId = pending?.versionId ?? null
+    }
+
+    const loadErrorText = isEn
+      ? isHub
+        ? 'Could not load the document.'
+        : isContract
+          ? 'Could not load the contract.'
+          : 'Could not load SOP.'
+      : isHub
+        ? '문서를 불러오지 못했습니다.'
+        : isContract
+          ? '계약서를 불러오지 못했습니다.'
+          : 'SOP를 불러오지 못했습니다.'
+
+    const versionQuery = isHub
+      ? versionId
+        ? supabase
+            .from('company_knowledge_article_sign_versions')
+            .select('id, title, body_structure, version_number, published_at')
+            .eq('id', versionId)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null })
+      : documentType === 'sop'
         ? versionParam
           ? supabase
               .from('company_sop_versions')
@@ -111,20 +149,18 @@ export default function CompanyStructuredDocSignClient({
     const { data, error } = await versionQuery
 
     if (error || !data) {
-      setLoadError(
-        isEn
-          ? isContract
-            ? 'Could not load the contract.'
-            : 'Could not load SOP.'
-          : isContract
-            ? '계약서를 불러오지 못했습니다.'
-            : 'SOP를 불러오지 못했습니다.'
-      )
+      setLoadError(loadErrorText)
       return
     }
 
-    const sigQuery =
-      documentType === 'sop'
+    const sigQuery = isHub
+      ? supabase
+          .from('company_knowledge_article_signatures')
+          .select('id')
+          .eq('version_id', data.id)
+          .eq('user_id', authUser.id)
+          .maybeSingle()
+      : documentType === 'sop'
         ? supabase.from('sop_signatures').select('id').eq('version_id', data.id).eq('user_id', authUser.id).maybeSingle()
         : supabase
             .from('employee_contract_signatures')
@@ -139,11 +175,26 @@ export default function CompanyStructuredDocSignClient({
       setAlreadySigned(true)
     }
 
-    const row = data as VersionRow
+    const raw = data as {
+      id: string
+      title: string
+      body_md?: string | null
+      body_structure: unknown
+      version_number: number
+      published_at: string
+    }
+    const row: VersionRow = {
+      id: raw.id,
+      title: raw.title,
+      body_md: raw.body_md ?? null,
+      body_structure: raw.body_structure,
+      version_number: raw.version_number,
+      published_at: raw.published_at,
+    }
     setVersion(row)
     const parsed = parseSopDocumentJson(row.body_structure)
     setStructureDoc(parsed)
-  }, [authUser?.id, documentType, isEn, isInitialized, loading, staffOk, versionParam])
+  }, [authUser?.id, documentType, isContract, isEn, isHub, isInitialized, loading, staffOk, userPosition, versionParam])
 
   useEffect(() => {
     void load()
@@ -215,7 +266,11 @@ export default function CompanyStructuredDocSignClient({
       const signedAtText = new Date().toLocaleString(isEn ? 'en-US' : 'ko-KR')
       const blob = await captureSignedStructuredDocPdfBlob(printRoot, sigDataUrl, signedAtText)
       const storagePath = `${authUser.id}/${version.id}.pdf`
-      const bucket = isContract ? 'employee-contract-signatures' : 'sop-signatures'
+      const bucket = isHub
+        ? 'hub-article-signatures'
+        : isContract
+          ? 'employee-contract-signatures'
+          : 'sop-signatures'
 
       const { error: upErr } = await supabase.storage.from(bucket).upload(storagePath, blob, {
         contentType: 'application/pdf',
@@ -236,8 +291,9 @@ export default function CompanyStructuredDocSignClient({
         pdf_storage_path: storagePath,
       }
 
-      const { error: insErr } =
-        documentType === 'sop'
+      const { error: insErr } = isHub
+        ? await supabase.from('company_knowledge_article_signatures').insert(insertPayload)
+        : documentType === 'sop'
           ? await supabase.from('sop_signatures').insert(insertPayload)
           : await supabase.from('employee_contract_signatures').insert(insertPayload)
 
@@ -247,11 +303,7 @@ export default function CompanyStructuredDocSignClient({
         return
       }
 
-      if (userRole === 'team_member') {
-        router.replace(`/${locale}/guide`)
-      } else {
-        router.replace(`/${locale}/admin/sop`)
-      }
+      router.replace(afterSignHref(documentType, locale, userRole))
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -280,7 +332,17 @@ export default function CompanyStructuredDocSignClient({
       <div className="mx-auto max-w-3xl p-6">
         <p className="text-red-600">
           {loadError ||
-            (isEn ? (isContract ? 'No contract found.' : 'No SOP found.') : isContract ? '계약서가 없습니다.' : 'SOP가 없습니다.')}
+            (isEn
+              ? isHub
+                ? 'No document found.'
+                : isContract
+                  ? 'No contract found.'
+                  : 'No SOP found.'
+              : isHub
+                ? '서명할 문서가 없습니다.'
+                : isContract
+                  ? '계약서가 없습니다.'
+                  : 'SOP가 없습니다.')}
         </p>
       </div>
     )
@@ -296,7 +358,7 @@ export default function CompanyStructuredDocSignClient({
         <Button
           type="button"
           onClick={() =>
-            router.push(userRole === 'team_member' ? `/${locale}/guide` : `/${locale}/admin/sop`)
+            router.push(afterSignHref(documentType, locale, userRole))
           }
         >
           {isEn ? 'Back' : '돌아가기'}

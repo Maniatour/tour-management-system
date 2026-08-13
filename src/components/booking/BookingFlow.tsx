@@ -29,6 +29,7 @@ import {
 import {
   clampPeopleQuantitiesForPartySize,
   filterOptionsByPartySize,
+  filterVehicleOptionsByPartySize,
   getCapacityCoverage,
   getDefaultRoomQuantities,
   getMaxPeopleQuantityForOption,
@@ -40,11 +41,13 @@ import {
   isPeopleCoverageSufficient,
   usesCapacityQuantitySelection,
   usesPeopleQuantitySelection,
+  usesVehicleCapacitySelection,
 } from '@/lib/choiceOptionCapacity'
 import {
   calculateChoiceLineTotalFromUnitPrice,
   isPerUnitPricing,
 } from '@/lib/choicePricingUnit'
+import { filterGroupedChoicesByPartySize } from '@/lib/productChoiceGrouping'
 import { fetchPublicDirectChannelBrowser } from '@/lib/operators/fetchPublicDirectChannelBrowser'
 
 function bookingChoiceLabel(group: {
@@ -1342,7 +1345,7 @@ export default function BookingFlow({
   ])
 
   // 필수 선택: productChoices에서 필수인 것들 (현재 추가 선택에 있던 내용을 필수로 이동)
-  const groupedChoices = productChoices.reduce((groups, choice) => {
+  const groupedChoicesUnfiltered = productChoices.reduce((groups, choice) => {
     const groupKey = choice.choice_id
     if (!groups[groupKey]) {
       // 같은 choice_id를 가진 모든 항목 중에서 설명이 있는 항목 찾기
@@ -1385,6 +1388,15 @@ export default function BookingFlow({
     })
     return groups
   }, {} as Record<string, ChoiceGroup>)
+
+  const partySizeForChoices =
+    bookingData.participants.adults +
+    bookingData.participants.children +
+    bookingData.participants.infants
+  const groupedChoices = filterGroupedChoicesByPartySize(
+    groupedChoicesUnfiltered,
+    partySizeForChoices
+  ) as Record<string, ChoiceGroup>
 
   // 필수 선택: productChoices의 모든 내용
   const requiredChoices = Object.values(groupedChoices)
@@ -1432,6 +1444,57 @@ export default function BookingFlow({
       console.log('BookingFlow - productChoices가 비어있습니다. productChoices:', productChoices)
     }
   }, [productChoices])
+
+  useEffect(() => {
+    const partySize =
+      bookingData.participants.adults +
+      bookingData.participants.children +
+      bookingData.participants.infants
+    if (partySize <= 0) return
+
+    setBookingData((prev) => {
+      let changed = false
+      const nextOptions = { ...prev.selectedOptions }
+
+      for (const group of Object.values(groupedChoicesUnfiltered)) {
+        const label = bookingChoiceLabel(group)
+        if (
+          !usesVehicleCapacitySelection(
+            group.pricing_unit,
+            group.choice_type,
+            group.options,
+            label
+          )
+        ) {
+          continue
+        }
+
+        const visible = filterVehicleOptionsByPartySize(group.options, partySize)
+        const selectedId = nextOptions[group.choice_id]
+        if (selectedId && visible.some((opt) => opt.option_id === selectedId)) continue
+
+        const fallback =
+          visible.find((opt) => opt.is_default)?.option_id || visible[0]?.option_id || ''
+        if (fallback) {
+          if (nextOptions[group.choice_id] !== fallback) {
+            nextOptions[group.choice_id] = fallback
+            changed = true
+          }
+        } else if (selectedId) {
+          delete nextOptions[group.choice_id]
+          changed = true
+        }
+      }
+
+      if (!changed) return prev
+      return { ...prev, selectedOptions: nextOptions }
+    })
+  }, [
+    bookingData.participants.adults,
+    bookingData.participants.children,
+    bookingData.participants.infants,
+    productChoices,
+  ])
   
   // 추가 선택: product_options 테이블에서 가져온 내용
   const optionalChoices: ChoiceGroup[] = productOptions.map(option => ({
@@ -2153,7 +2216,7 @@ export default function BookingFlow({
         const selectedOptionId = bookingData.selectedOptions[group.choice_id]
         if (!selectedOptionId) continue
         const option = group.options.find((opt) => opt.option_id === selectedOptionId)
-        const cap = option?.capacity
+        const cap = option ? getOptionCapacity(option) : null
         if (
           typeof cap === 'number' &&
           Number.isFinite(cap) &&
@@ -3174,6 +3237,13 @@ export default function BookingFlow({
                         </div>
                           )
                         })()
+                      ) : group.options.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        {translate(
+                          '현재 인원에 맞는 차량이 없습니다. 인원을 줄이거나 더 큰 차량이 있는 상품을 선택해 주세요.',
+                          'No vehicles fit this party size. Please reduce travelers or choose a larger vehicle.'
+                        )}
+                      </p>
                       ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {group.options.map((option: ChoiceOption, optionIndex: number) => {

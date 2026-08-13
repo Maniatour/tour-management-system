@@ -38,6 +38,7 @@ import {
   sopText,
 } from '@/types/sopStructure'
 import { cn } from '@/lib/utils'
+import { addReviewBonusSopSectionIfMissing } from '@/lib/reviewBonusPoints'
 
 export type SectionVersionHistoryRow = {
   id: string
@@ -421,6 +422,19 @@ export default function SopStructureEditor({
         },
       ],
     })
+  }
+
+  const addReviewBonusSection = () => {
+    const result = addReviewBonusSopSectionIfMissing(value)
+    if (!result.added) {
+      window.alert(
+        isEn
+          ? 'A Review bonus points section is already in this document.'
+          : '이 문서에 후기 포인트 제도 섹션이 이미 있습니다.'
+      )
+      return
+    }
+    emit(result.doc)
   }
 
   const removeSection = (sectionId: string) => {
@@ -1506,10 +1520,16 @@ export default function SopStructureEditor({
             })}
           </div>
           {!hideAddSection ? (
+          <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" className="gap-1" disabled={disabled} onClick={addSection}>
             <Plus className="h-4 w-4" />
             {isEn ? 'Add section' : '섹션 추가'}
           </Button>
+          <Button type="button" variant="outline" className="gap-1" disabled={disabled} onClick={addReviewBonusSection}>
+            <Plus className="h-4 w-4" />
+            {isEn ? 'Add review bonus policy' : '후기 포인트 제도 섹션 추가'}
+          </Button>
+          </div>
           ) : null}
         </div>
       ) : !hideEditorChrome ? (
@@ -1949,10 +1969,16 @@ export default function SopStructureEditor({
       ))}
 
           {!hideAddSection ? (
+          <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" className="gap-1" disabled={disabled} onClick={addSection}>
             <Plus className="h-4 w-4" />
             {isEn ? 'Add section' : '섹션 추가'}
           </Button>
+          <Button type="button" variant="outline" className="gap-1" disabled={disabled} onClick={addReviewBonusSection}>
+            <Plus className="h-4 w-4" />
+            {isEn ? 'Add review bonus policy' : '후기 포인트 제도 섹션 추가'}
+          </Button>
+          </div>
           ) : null}
         </div>
       ) : null}

@@ -7984,6 +7984,7 @@
     "passCoversPeople": "Covers up to {count}",
     "capacitySelectToMatch": "Please select room or traveler options that match your party size.",
     "noRoomsForPartySize": "No room options fit this party size. Adjust the number of travelers.",
+    "noVehiclesForPartySize": "No vehicles fit this party size. Please reduce travelers or choose a larger vehicle.",
     "selectDateToSeeOptions": "Select a date and number of travelers to see booking options.",
     "selectDatePlaceholder": "Select date",
     "previousMonth": "Previous month",

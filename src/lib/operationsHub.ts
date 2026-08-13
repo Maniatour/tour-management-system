@@ -2,6 +2,7 @@ import type { SopDocument, SopEditLocale, SopSection } from '@/types/sopStructur
 import type { OperationsContentType, OperationsHubCategory } from '@/types/sopStructure'
 import { newSopId, parseSopDocumentJson, prefillSortOrders, sopText } from '@/types/sopStructure'
 import { sopSectionAnchorId } from '@/lib/sopDocumentToc'
+import type { HubAcknowledgmentMode } from '@/lib/hubArticleAcknowledgment'
 
 /** @deprecated import from @/types/sopStructure */
 export type { OperationsHubCategory, OperationsContentType } from '@/types/sopStructure'
@@ -21,6 +22,7 @@ export type HubEntry = {
   content_type: OperationsContentType
   target_roles: string[]
   sort_order: number
+  acknowledgment_mode?: HubAcknowledgmentMode
   /** sop_section일 때 SOP 페이지 앵커 */
   sopAnchorId?: string
 }
@@ -48,6 +50,7 @@ export type KnowledgeArticleRow = {
   is_published: boolean
   published_at: string | null
   updated_at: string
+  acknowledgment_mode?: HubAcknowledgmentMode
 }
 
 export const HUB_CATEGORIES: Array<{
@@ -145,6 +148,7 @@ export function articleRowToHubEntry(row: KnowledgeArticleRow): HubEntry {
     content_type: normalizeContentType(row.content_type),
     target_roles: row.target_roles ?? [],
     sort_order: row.sort_order,
+    acknowledgment_mode: row.acknowledgment_mode === 'signature' ? 'signature' : 'none',
   }
 }
 

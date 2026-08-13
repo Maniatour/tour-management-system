@@ -8047,6 +8047,7 @@
     "passCoversPeople": "최대 {count}명 커버",
     "capacitySelectToMatch": "예약 인원에 맞게 객실·인원 옵션을 선택해 주세요.",
     "noRoomsForPartySize": "현재 인원에 맞는 객실 옵션이 없습니다. 인원을 조정해 주세요.",
+    "noVehiclesForPartySize": "현재 인원에 맞는 차량이 없습니다. 인원을 줄이거나 더 큰 차량을 선택해 주세요.",
     "selectDateToSeeOptions": "날짜와 인원을 선택하면 예약 옵션이 표시됩니다.",
     "selectDatePlaceholder": "날짜 선택",
     "previousMonth": "이전 달",

@@ -2066,6 +2066,7 @@
     "passCoversPeople": "{count} までをカバー",
     "capacitySelectToMatch": "ご宴会の規模に合わせて客室または旅行者のオプションをお選びください。",
     "noRoomsForPartySize": "この人数のパーティーに適した部屋のオプションはありません。旅行者の数を調整します。",
+    "noVehiclesForPartySize": "この人数に合う車両がありません。人数を減らすか、より大きな車両を選択してください。",
     "selectDateToSeeOptions": "日付と旅行者数を選択して予約オプションを表示します。",
     "selectDatePlaceholder": "日付を選択してください",
     "previousMonth": "前月",

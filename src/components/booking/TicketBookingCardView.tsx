@@ -10,11 +10,14 @@ import { History, Users } from 'lucide-react'
 import type { SeasonDate } from '@/lib/ticketBookingCancelDue'
 import {
   getTicketBookingEffectiveQty,
+  getTicketBookingOriginalQty,
   getTicketBookingUnifiedStatusBadgeClass,
   isTicketBookingCancelDueHighlight,
+  isTicketBookingCancelledStatus,
   resolveTicketBookingUnifiedStatus,
 } from '@/lib/ticketBookingDisplay'
 import {
+  deriveTicketBookingUnitPriceUsd,
   formatExpenseArrow,
   formatHHMM,
   isTicketBookingPendingRequestState,
@@ -293,6 +296,60 @@ function formatUsd(n: number): string {
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
 }
 
+/** 지급처 그룹 — 지불할 총 비용 뱃지: `19EA * $82 = $1,558` */
+function companyPayableCostBadge(rows: TicketBookingCardViewRow[]): {
+  text: string
+  totalEa: number
+  unitPrice: number
+  total: number
+} | null {
+  let totalEa = 0
+  let totalExpense = 0
+  const unitKeys = new Set<string>()
+  let sharedUnit = 0
+
+  for (const b of rows) {
+    if (isTicketBookingCancelledStatus(b)) continue
+    const ea = getTicketBookingEffectiveQty(b)
+    if (!(ea > 0)) continue
+    const expense = getTicketBookingEffectiveExpenseUsd(b)
+    const unit = deriveTicketBookingUnitPriceUsd(
+      Number(b.ea ?? 0),
+      Number(b.expense ?? 0),
+      b.unit_price ?? null
+    )
+    totalEa += ea
+    totalExpense += Number.isFinite(expense) ? expense : 0
+    if (unit > 0) {
+      const key = (Math.round(unit * 100) / 100).toFixed(2)
+      unitKeys.add(key)
+      sharedUnit = unit
+    }
+  }
+
+  if (totalEa <= 0) return null
+
+  const unitPrice =
+    unitKeys.size === 1
+      ? sharedUnit
+      : totalExpense > 0
+        ? totalExpense / totalEa
+        : 0
+  if (!(unitPrice > 0)) return null
+
+  const total =
+    unitKeys.size === 1
+      ? Math.round(unitPrice * totalEa * 100) / 100
+      : Math.round(totalExpense * 100) / 100
+
+  return {
+    text: `${totalEa}EA * ${formatUsd(unitPrice)} = ${formatUsd(total)}`,
+    totalEa,
+    unitPrice,
+    total,
+  }
+}
+
 export default function TicketBookingCardView<T extends TicketBookingCardViewRow>({
   bookings,
   locale,
@@ -502,6 +559,7 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
               <div className={compact ? 'space-y-2' : 'space-y-4'}>
                 {dayGroup.companies.map(({ company, rows }) => {
                   const companyTasks = actionTasksForCompany(company, compare?.actionTasks)
+                  const payable = companyPayableCostBadge(rows)
                   return (
                   <div
                     key={`${dayGroup.date}__${company}`}
@@ -521,6 +579,22 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                           {isEn ? '' : '건'}
                         </span>
                       </span>
+                      {payable ? (
+                        <span
+                          className={`inline-flex items-center rounded-full bg-slate-900/90 font-semibold tabular-nums text-white ring-1 ring-slate-700/40 ${
+                            compact
+                              ? 'px-1.5 py-0.5 text-[10px]'
+                              : 'px-2.5 py-0.5 text-xs sm:text-sm'
+                          }`}
+                          title={
+                            isEn
+                              ? 'Total amount due for this supplier'
+                              : '이 지급처에 지불할 총 비용'
+                          }
+                        >
+                          {payable.text}
+                        </span>
+                      ) : null}
                       <CanyonActionTaskBadges
                         tasks={companyTasks}
                         isEn={isEn}
@@ -531,6 +605,7 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                       {rows.map((booking) => {
                         const unified = resolveTicketBookingUnifiedStatus(booking, locale)
                         const eff = getTicketBookingEffectiveQty(booking)
+                        const currentEa = getTicketBookingOriginalQty(booking)
                         const awaitingVendor = isTicketBookingPendingRequestState(booking)
                         const cancelDue = getCancelDueDate(booking)
                         const supplierProduct = getSupplierProduct?.(booking)
@@ -685,7 +760,9 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                                     compact ? 'text-[11px]' : 'text-sm'
                                   }`}
                                 >
-                                  <span className="font-semibold text-foreground">{eff} EA</span>
+                                  <span className="font-semibold text-foreground">
+                                    {qtyPending ? currentEa : eff} EA
+                                  </span>
                                   {qtyPending && booking.pending_ea != null ? (
                                     <span className="ml-1 font-semibold text-orange-700">
                                       {'>'} {Number(booking.pending_ea)} EA

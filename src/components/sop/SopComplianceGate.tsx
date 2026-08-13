@@ -13,8 +13,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { fetchFirstPendingHubArticleSign } from '@/lib/hubArticleAcknowledgment'
 
-type GateKind = 'sop' | 'employee_contract' | 'campaign'
+type GateKind = 'sop' | 'employee_contract' | 'hub_article' | 'campaign'
 
 const CAMPAIGN_DEFER_STORAGE_KEY = 'sop_compliance_campaign_defer'
 const CAMPAIGN_DEFER_MS = 60 * 60 * 1000 // 1시간 동안 동일 캠페인 게이트 숨김
@@ -46,11 +47,11 @@ function writeDeferredCampaign(campaignId: string) {
   )
 }
 
-/** 직원: 게시 SOP·계약서 미서명, 또는 관리자 발송「확인·서명」캠페인 대기 시 모달 */
+/** 직원: 게시 SOP·계약서·허브 규정 미서명, 또는 관리자 발송「확인·서명」캠페인 대기 시 모달 */
 export default function SopComplianceGate() {
   const pathname = usePathname() || ''
   const router = useRouter()
-  const { authUser, userRole, loading, isInitialized, isSimulating } = useAuth()
+  const { authUser, userRole, userPosition, loading, isInitialized, isSimulating } = useAuth()
   const [blocked, setBlocked] = useState(false)
   const [gateKind, setGateKind] = useState<GateKind>('sop')
   const [versionId, setVersionId] = useState<string | null>(null)
@@ -70,6 +71,8 @@ export default function SopComplianceGate() {
     pathname.includes('/sop/sign') ||
     pathname.includes('/sop/campaign-sign') ||
     pathname.includes('/employee-contract/sign') ||
+    pathname.includes('/operations-hub/sign') ||
+    pathname.includes('/operations-hub') ||
     pathname.includes('/guide/sop') ||
     pathname.includes('/embed') ||
     pathname.includes('/photos/')
@@ -137,6 +140,17 @@ export default function SopComplianceGate() {
       }
     }
 
+    const pendingHub = await fetchFirstPendingHubArticleSign(authUser.id, userPosition)
+    if (pendingHub) {
+      setGateKind('hub_article')
+      setVersionId(pendingHub.versionId)
+      setCampaignId(null)
+      setTitle(pendingHub.title)
+      setVersionNumber(pendingHub.versionNumber)
+      setBlocked(true)
+      return
+    }
+
     const email = (authUser.email || '').trim().toLowerCase()
     if (email) {
       const deferredCampaignId = readDeferredCampaignId()
@@ -182,6 +196,7 @@ export default function SopComplianceGate() {
   }, [
     authUser?.email,
     authUser?.id,
+    userPosition,
     isInitialized,
     isEn,
     loading,
@@ -210,6 +225,8 @@ export default function SopComplianceGate() {
     if (!versionId) return
     if (gateKind === 'sop') {
       router.push(`/${locale}/sop/sign?version=${versionId}`)
+    } else if (gateKind === 'hub_article') {
+      router.push(`/${locale}/operations-hub/sign?version=${versionId}`)
     } else {
       router.push(`/${locale}/employee-contract/sign?version=${versionId}`)
     }
@@ -238,6 +255,7 @@ export default function SopComplianceGate() {
 
   const isContract = gateKind === 'employee_contract'
   const isCampaign = gateKind === 'campaign'
+  const isHub = gateKind === 'hub_article'
 
   return (
     <Dialog open={blocked} modal onOpenChange={() => {}}>
@@ -253,7 +271,11 @@ export default function SopComplianceGate() {
               ? isEn
                 ? 'Sign request from your manager'
                 : '관리자 발송: 문서 확인·서명이 필요합니다'
-              : isContract
+              : isHub
+                ? isEn
+                  ? 'Action required: sign the operations document'
+                  : '필수: 운영 문서 숙지 서명이 필요합니다'
+                : isContract
                 ? isEn
                   ? 'Action required: sign the employment contract'
                   : '필수: 직원 계약서 서명이 필요합니다'
@@ -267,7 +289,11 @@ export default function SopComplianceGate() {
                 ? isEn
                   ? 'Open the document, review it, and save your signature. A PDF is stored for you and the office.'
                   : '문서를 확인한 뒤 전자서명을 저장해 주세요. PDF는 본인과 사무실에서 동일하게 보관됩니다.'
-                : isContract
+                : isHub
+                  ? isEn
+                    ? `Version ${versionNumber} is in effect. You must read and sign this operations document before using the system.`
+                    : `현재 적용 중인 운영 문서는 제${versionNumber}판입니다. 내용을 확인하고 전자서명(PDF 보관)까지 완료해 주세요.`
+                  : isContract
                   ? isEn
                     ? `Version ${versionNumber} is in effect. You must read and sign before using the system.`
                     : `현재 적용 중인 직원 계약서는 제${versionNumber}판입니다. 내용을 확인하고 전자서명(PDF 보관)까지 완료해 주세요.`
@@ -287,6 +313,22 @@ export default function SopComplianceGate() {
               onClick={() => router.push(`/${locale}/guide/sop`)}
             >
               {isEn ? 'Read SOP (table of contents)' : 'SOP 내용 먼저 읽기 (목차)'}
+            </Button>
+          ) : null}
+          {isHub ? (
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              onClick={() =>
+                router.push(
+                  userRole === 'team_member'
+                    ? `/${locale}/guide/operations-hub`
+                    : `/${locale}/admin/operations-hub`
+                )
+              }
+            >
+              {isEn ? 'Open Operations Hub' : '운영 허브에서 먼저 읽기'}
             </Button>
           ) : null}
           <Button type="button" onClick={goSign} className="w-full">

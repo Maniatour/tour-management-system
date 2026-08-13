@@ -11559,6 +11559,7 @@ export type Database = {
           created_at: string
           updated_at: string
           updated_by: string | null
+          acknowledgment_mode: string
         }
         Insert: {
           id?: string
@@ -11579,6 +11580,7 @@ export type Database = {
           created_at?: string
           updated_at?: string
           updated_by?: string | null
+          acknowledgment_mode?: string
         }
         Update: {
           id?: string
@@ -11599,8 +11601,85 @@ export type Database = {
           created_at?: string
           updated_at?: string
           updated_by?: string | null
+          acknowledgment_mode?: string
         }
         Relationships: []
+      },
+      company_knowledge_article_sign_versions: {
+        Row: {
+          id: string
+          article_id: string
+          version_number: number
+          title: string
+          body_structure: Json
+          published_at: string
+          published_by: string | null
+        }
+        Insert: {
+          id?: string
+          article_id: string
+          version_number: number
+          title?: string
+          body_structure: Json
+          published_at?: string
+          published_by?: string | null
+        }
+        Update: {
+          id?: string
+          article_id?: string
+          version_number?: number
+          title?: string
+          body_structure?: Json
+          published_at?: string
+          published_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_knowledge_article_sign_versions_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "company_knowledge_articles"
+            referencedColumns: ["id"]
+          },
+        ]
+      },
+      company_knowledge_article_signatures: {
+        Row: {
+          id: string
+          version_id: string
+          user_id: string
+          signer_email: string
+          signer_name: string
+          pdf_storage_path: string
+          signed_at: string
+        }
+        Insert: {
+          id?: string
+          version_id: string
+          user_id: string
+          signer_email: string
+          signer_name: string
+          pdf_storage_path: string
+          signed_at?: string
+        }
+        Update: {
+          id?: string
+          version_id?: string
+          user_id?: string
+          signer_email?: string
+          signer_name?: string
+          pdf_storage_path?: string
+          signed_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_knowledge_article_signatures_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "company_knowledge_article_sign_versions"
+            referencedColumns: ["id"]
+          },
+        ]
       },
       company_sop_draft: {
         Row: {

@@ -2068,6 +2068,7 @@
     "passCoversPeople": "Couvre jusqu'à {count}",
     "capacitySelectToMatch": "Veuillez sélectionner les options de chambre ou de voyageur qui correspondent à la taille de votre groupe.",
     "noRoomsForPartySize": "Aucune option de salle ne convient à cette taille de groupe. Ajustez le nombre de voyageurs.",
+    "noVehiclesForPartySize": "Aucun véhicule ne convient à cette taille de groupe. Réduisez le nombre de voyageurs ou choisissez un véhicule plus grand.",
     "selectDateToSeeOptions": "Sélectionnez une date et un nombre de voyageurs pour voir les options de réservation.",
     "selectDatePlaceholder": "Sélectionnez une date",
     "previousMonth": "Mois précédent",

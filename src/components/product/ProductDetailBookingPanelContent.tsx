@@ -199,6 +199,8 @@ export default function ProductDetailBookingPanelContent({
                         }
                       />
                     )
+                  ) : group.options.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">{t('noVehiclesForPartySize')}</p>
                   ) : (
                     <select
                       id={`choice-${group.choice_id}-${variant}`}

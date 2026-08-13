@@ -284,6 +284,9 @@ export default function ProductDetailAirbnbOptionsSection({
                 />
               )
             ) : displayMode === 'card' ? (
+              group.options.length === 0 ? (
+                <p className="text-sm text-[#6b7280]">{t('noVehiclesForPartySize')}</p>
+              ) : (
               <div className="space-y-3" role="radiogroup">
                 {group.options.map((option) => {
                   const selected = selectedOptions[group.choice_id] === option.option_id
@@ -303,6 +306,9 @@ export default function ProductDetailAirbnbOptionsSection({
                   )
                 })}
               </div>
+              )
+            ) : group.options.length === 0 ? (
+              <p className="text-sm text-[#6b7280]">{t('noVehiclesForPartySize')}</p>
             ) : (
               <div className="space-y-3" role="radiogroup">
                 {group.options.map((option) => {

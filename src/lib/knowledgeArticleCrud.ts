@@ -9,6 +9,10 @@ import {
 import type { KnowledgeArticleDraftForm } from '@/lib/knowledgeArticleForm'
 import { KNOWLEDGE_ARTICLE_SELECT } from '@/lib/knowledgeArticleForm'
 import { sopDocumentToJson } from '@/types/sopStructure'
+import {
+  ensureHubArticleSignVersion,
+  normalizeAcknowledgmentMode,
+} from '@/lib/hubArticleAcknowledgment'
 
 export type SaveKnowledgeArticleResult =
   | { ok: true; slug: string; id: string; updated_at: string | null }
@@ -28,6 +32,8 @@ export async function saveKnowledgeArticle(
     expectedUpdatedAt?: string | null
     /** 충돌이어도 덮어쓰기 */
     force?: boolean
+    /** 문서 설정 저장 시: 본문·제목이 바뀌면 새 서명판을 만들고 재서명을 요청 */
+    bumpSignVersion?: boolean
   }
 ): Promise<SaveKnowledgeArticleResult> {
   const slugSource = form.slug.trim() || form.title_en.trim() || form.title_ko.trim()
@@ -50,6 +56,7 @@ export async function saveKnowledgeArticle(
     target_roles: form.target_roles,
     sort_order: form.sort_order,
     is_published: form.is_published,
+    acknowledgment_mode: normalizeAcknowledgmentMode(form.acknowledgment_mode),
     body_layout: normalizeBodyLayout(form.body_layout),
     published_at: form.is_published ? new Date().toISOString() : null,
     updated_by: userId,
@@ -93,10 +100,14 @@ export async function saveKnowledgeArticle(
       return { ok: false, error: 'article not found' }
     }
 
+    const savedId = form.id
+    const signErr = await syncHubArticleSignVersionAfterSave(savedId, userId, options?.bumpSignVersion === true)
+    if (signErr) console.warn('[knowledge-article] sign version', signErr)
+
     return {
       ok: true,
       slug,
-      id: form.id,
+      id: savedId,
       updated_at: (data as { updated_at?: string }).updated_at ?? null,
     }
   }
@@ -113,7 +124,45 @@ export async function saveKnowledgeArticle(
     .single()
   if (error) return { ok: false, error: error.message }
   const row = data as { id: string; updated_at?: string }
+  const signErr = await syncHubArticleSignVersionAfterSave(row.id, userId, options?.bumpSignVersion === true)
+  if (signErr) console.warn('[knowledge-article] sign version', signErr)
   return { ok: true, slug, id: row.id, updated_at: row.updated_at ?? null }
+}
+
+async function syncHubArticleSignVersionAfterSave(
+  articleId: string,
+  userId: string | null,
+  bumpIfChanged: boolean
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('company_knowledge_articles')
+    .select('is_published, acknowledgment_mode, title_ko, title_en, body_structure')
+    .eq('id', articleId)
+    .maybeSingle()
+
+  if (error || !data) return error?.message ?? 'article not found after save'
+
+  const row = data as {
+    is_published: boolean
+    acknowledgment_mode: string
+    title_ko: string
+    title_en: string
+    body_structure: Json
+  }
+
+  if (!row.is_published || normalizeAcknowledgmentMode(row.acknowledgment_mode) !== 'signature') {
+    return null
+  }
+
+  const title = (row.title_ko || '').trim() || (row.title_en || '').trim()
+  const result = await ensureHubArticleSignVersion({
+    articleId,
+    publishedBy: userId,
+    title,
+    bodyStructure: row.body_structure,
+    bumpIfChanged,
+  })
+  return result.ok ? null : result.error
 }
 
 export async function deleteKnowledgeArticle(

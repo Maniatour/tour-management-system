@@ -20,6 +20,7 @@ import {
   usesCapacityQuantitySelection,
   usesPeopleQuantitySelection,
   usesQuantitySelection,
+  usesVehicleCapacitySelection,
 } from '@/lib/choiceOptionCapacity'
 
 function groupChoiceLabel(group: {
@@ -179,23 +180,41 @@ export function useProductDetailChoices(
   )
 
   const capacitySelectionComplete = useMemo(() => {
-    for (const group of Object.values(groupedChoices)) {
+    for (const group of Object.values(groupedChoicesAll)) {
       const label = groupChoiceLabel(group)
+      const visibleGroup = groupedChoices[group.choice_id]
+      const visibleOptions = visibleGroup?.options ?? []
       const quantities = selectedChoiceQuantities[group.choice_id] ?? {}
 
       if (usesCapacityQuantitySelection(group.choice_type, group.options, label)) {
-        if (group.options.length === 0) return false
-        if (!isCapacityCoverageExact(group.options, quantities, partySize)) return false
+        if (visibleOptions.length === 0) return false
+        if (!isCapacityCoverageExact(visibleOptions, quantities, partySize)) return false
         continue
       }
 
       if (usesPeopleQuantitySelection(group.choice_type, group.options, label)) {
         if (!isPeopleCoverageSufficient(group.options, quantities, partySize)) return false
         if (isPeopleCoverageOver(group.options, quantities, partySize)) return false
+        continue
+      }
+
+      if (
+        usesVehicleCapacitySelection(
+          group.pricing_unit,
+          group.choice_type,
+          group.options,
+          label
+        )
+      ) {
+        if (visibleOptions.length === 0) return false
+        const selectedId = selectedOptions[group.choice_id]
+        if (!selectedId || !visibleOptions.some((opt) => opt.option_id === selectedId)) {
+          return false
+        }
       }
     }
     return true
-  }, [groupedChoices, selectedChoiceQuantities, partySize])
+  }, [groupedChoicesAll, groupedChoices, selectedChoiceQuantities, selectedOptions, partySize])
 
   const handleOptionChange = (choiceId: string, optionId: string) => {
     setSelectedOptions((prev) => ({

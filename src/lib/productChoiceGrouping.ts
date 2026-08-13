@@ -2,8 +2,10 @@ import type { ProductChoice } from '@/components/product/productDetailTypes'
 import type { ProductChoiceGroup } from '@/components/product/ProductDetailChoiceDescriptionModal'
 import {
   filterOptionsByPartySize,
+  filterVehicleOptionsByPartySize,
   usesCapacityQuantitySelection,
   usesQuantitySelection,
+  usesVehicleCapacitySelection,
 } from '@/lib/choiceOptionCapacity'
 import {
   getChoiceGroupLocalizedText,
@@ -104,8 +106,9 @@ export function groupProductChoices(
 
 /**
  * 예약 인원에 맞게 옵션을 필터한 그룹.
- * quantity + 객실 capacity 그룹만 capacity > 인원 옵션을 숨기고,
- * 단일 선택(single) 초이스는 capacity 유무와 관계없이 전부 표시한다.
+ * - quantity + 객실: 인원보다 큰 객실 숨김
+ * - 차량/단위(per_unit): 인원보다 작은 차량 숨김
+ * - 그 외 단일 선택 초이스는 capacity와 관계없이 전부 표시
  */
 export function filterGroupedChoicesByPartySize(
   groupedChoices: Record<string, ProductChoiceGroup>,
@@ -113,16 +116,25 @@ export function filterGroupedChoicesByPartySize(
 ): Record<string, ProductChoiceGroup> {
   const filtered: Record<string, ProductChoiceGroup> = {}
   for (const [choiceId, group] of Object.entries(groupedChoices)) {
-    const shouldFilterByCapacity = usesCapacityQuantitySelection(
+    const choiceLabel = group.choice_name_ko || group.choice_name || group.choice_name_en
+    const shouldFilterRooms = usesCapacityQuantitySelection(
       group.choice_type,
       group.options,
-      group.choice_name_ko || group.choice_name || group.choice_name_en
+      choiceLabel
+    )
+    const shouldFilterVehicles = usesVehicleCapacitySelection(
+      group.pricing_unit,
+      group.choice_type,
+      group.options,
+      choiceLabel
     )
     filtered[choiceId] = {
       ...group,
-      options: shouldFilterByCapacity
+      options: shouldFilterRooms
         ? filterOptionsByPartySize(group.options, partySize)
-        : group.options,
+        : shouldFilterVehicles
+          ? filterVehicleOptionsByPartySize(group.options, partySize)
+          : group.options,
     }
   }
   return filtered

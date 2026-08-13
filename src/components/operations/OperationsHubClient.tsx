@@ -14,6 +14,7 @@ import {
   ListChecks,
   Loader2,
   Pencil,
+  PenLine,
   Plus,
   Printer,
   Save,
@@ -79,6 +80,11 @@ import {
   type KnowledgeArticleDraftForm,
 } from '@/lib/knowledgeArticleForm'
 import { deleteKnowledgeArticle, saveKnowledgeArticle } from '@/lib/knowledgeArticleCrud'
+import {
+  fetchHubArticleSignStatus,
+  normalizeAcknowledgmentMode,
+  type HubArticleSignStatus,
+} from '@/lib/hubArticleAcknowledgment'
 import { migrateHubDocDataImages } from '@/lib/hubManualImageUpload'
 import LegalPagesHubPanel from '@/components/operations/LegalPagesHubPanel'
 import { AdminWorkCredentialVaultPanel } from '@/components/admin/work/AdminWorkCredentialVaultPanel'
@@ -130,6 +136,33 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     expectedUpdatedAtRef.current = readArticle?.updated_at ?? null
   }, [readArticle?.updated_at])
 
+  useEffect(() => {
+    if (!readArticle?.id || !authUser?.id) {
+      setHubSignStatus(null)
+      return
+    }
+    if (
+      normalizeAcknowledgmentMode(readArticle.acknowledgment_mode) !== 'signature' ||
+      !readArticle.is_published
+    ) {
+      setHubSignStatus(null)
+      return
+    }
+    let cancelled = false
+    void fetchHubArticleSignStatus(readArticle.id, authUser.id).then((status) => {
+      if (!cancelled) setHubSignStatus(status)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    authUser?.id,
+    readArticle?.acknowledgment_mode,
+    readArticle?.id,
+    readArticle?.is_published,
+    readArticle?.updated_at,
+  ])
+
   const markReadDirty = useCallback(() => {
     editGenerationRef.current += 1
     readDirtyRef.current = true
@@ -162,6 +195,8 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
   const [historyOpen, setHistoryOpen] = useState(false)
   const [bulkImportOpen, setBulkImportOpen] = useState(false)
   const [credentialVaultOpen, setCredentialVaultOpen] = useState(false)
+  const [hubSignStatus, setHubSignStatus] = useState<HubArticleSignStatus | null>(null)
+  const [hubPdfOpening, setHubPdfOpening] = useState(false)
   const [bodyViewMode, setBodyViewMode] = useState<'structure' | 'raw'>('structure')
   const [sourceRawEditing, setSourceRawEditing] = useState(false)
   const previewA4Ref = useRef<HTMLDivElement | null>(null)
@@ -678,7 +713,8 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
     const saveOpts: {
       metadataOnly?: boolean
       expectedUpdatedAt?: string | null
-    } = { metadataOnly: !!form.id }
+      bumpSignVersion?: boolean
+    } = { metadataOnly: !!form.id, bumpSignVersion: true }
     if (form.id && readArticle?.id === form.id) {
       saveOpts.expectedUpdatedAt = expectedUpdatedAtRef.current
     }
@@ -1005,6 +1041,11 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
                           <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-gray-600">
                             {contentTypeLabel(entry.content_type, viewLang)}
                           </span>
+                          {entry.acknowledgment_mode === 'signature' ? (
+                            <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-800">
+                              {isEn ? 'Sign required' : '서명 필요'}
+                            </span>
+                          ) : null}
                           {entry.slug && unpublishedSlugs.has(entry.slug) ? (
                             <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
                               {isEn ? 'Draft' : '초안'}
@@ -1115,6 +1156,11 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
                         {hubCategoryLabel(readArticle.hub_category, modalViewLang)}
                         {' · '}
                         {contentTypeLabel(readArticle.content_type, modalViewLang)}
+                        {normalizeAcknowledgmentMode(readArticle.acknowledgment_mode) === 'signature'
+                          ? modalUiEn
+                            ? ' · Signature required'
+                            : ' · 서명 필요'
+                          : ''}
                         {!readArticle.is_published ? (modalUiEn ? ' · Draft' : ' · 초안') : ''}
                       </p>
                     </div>
@@ -1124,6 +1170,50 @@ export default function OperationsHubClient({ basePath, enableAdminCrud }: Props
                     className="-mx-1 flex max-w-full flex-wrap items-center gap-1 overflow-x-auto px-1 pb-0.5 sm:mx-0 sm:max-w-[min(100%,28rem)] sm:flex-nowrap sm:justify-end sm:gap-1.5 sm:overflow-visible sm:px-0 sm:pb-0"
                     data-no-drag
                   >
+                    {hubSignStatus ? (
+                      hubSignStatus.signed && hubSignStatus.pdfPath ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
+                          disabled={hubPdfOpening}
+                          onClick={() => {
+                            const path = hubSignStatus.pdfPath
+                            if (!path) return
+                            setHubPdfOpening(true)
+                            void supabase.storage
+                              .from('hub-article-signatures')
+                              .createSignedUrl(path, 3600)
+                              .then(({ data, error }) => {
+                                setHubPdfOpening(false)
+                                if (error || !data?.signedUrl) return
+                                window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+                              })
+                          }}
+                        >
+                          <FileText className="mr-1 h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">
+                            {modalUiEn ? 'Signed PDF' : '서명 PDF'}
+                          </span>
+                          <span className="sm:hidden">PDF</span>
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 shrink-0 touch-manipulation px-2.5 text-xs"
+                          onClick={() =>
+                            router.push(
+                              `/${locale}/operations-hub/sign?version=${hubSignStatus.versionId}`
+                            )
+                          }
+                        >
+                          <PenLine className="mr-1 h-3.5 w-3.5" />
+                          {modalUiEn ? 'Sign' : '서명'}
+                        </Button>
+                      )
+                    ) : null}
                     <Button
                       type="button"
                       size="sm"

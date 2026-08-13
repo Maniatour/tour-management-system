@@ -187,6 +187,33 @@ export default function KnowledgeArticleEditorPanel({
           />
           {isEn ? 'Published (visible in hub)' : '게시 (허브에 표시)'}
         </label>
+        <label className="block text-sm">
+          <span className="text-gray-700">{isEn ? 'Staff acknowledgment' : '직원 숙지'}</span>
+          <select
+            value={form.acknowledgment_mode}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                acknowledgment_mode: e.target.value === 'signature' ? 'signature' : 'none',
+              }))
+            }
+            className="mt-1 w-full max-w-md rounded-md border border-gray-300 px-2 py-2 text-sm"
+          >
+            <option value="none">{isEn ? 'Manual — no signature' : '매뉴얼 — 서명 없음'}</option>
+            <option value="signature">
+              {isEn ? 'Regulation — signature required' : '규정 — 숙지 서명 필요'}
+            </option>
+          </select>
+          <span className="mt-1 block text-[11px] text-gray-500">
+            {form.acknowledgment_mode === 'signature'
+              ? isEn
+                ? 'Published documents require a signed PDF before staff can use the system. Saving document settings creates a new sign version if the title or body changed.'
+                : '게시한 문서는 직원이 로그인 후 서명·PDF 보관까지 해야 합니다. 문서 설정에서 저장하면 제목·본문이 바뀐 경우 새 서명판이 만들어집니다.'
+              : isEn
+                ? 'Default for playbooks and system guides. Existing manuals stay unsigned.'
+                : '워크플로·시스템 가이드 기본값입니다. 기존 매뉴얼은 서명하지 않습니다.'}
+          </span>
+        </label>
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4">
