@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import type { DragEvent } from 'react'
+import type { DragEvent, ReactNode } from 'react'
 import dayjs from 'dayjs'
 import type {
   ScheduleGuideDayTotal,
@@ -107,7 +107,7 @@ export type ScheduleGuideGridProps = {
   openTourDetailModal: (tourId: string) => void
   showGuideModalContent: (title: string, content: string, tourId?: string) => void
   getTourSummary: (tour: Tour) => string
-  getGuideScheduleTourHoverText: (tour: Tour) => string
+  getGuideScheduleTourHoverText: (tour: Tour) => ReactNode
 }
 
 export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {

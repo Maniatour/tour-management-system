@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import GuideAssignmentStatusStripe from '@/components/schedule/GuideAssignmentStatusIcon'
 import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import {
@@ -50,7 +51,7 @@ type GuideScheduleAssignedTourBoxesProps = {
   openTourDetailModal: (tourId: string) => void
   showGuideModalContent: (title: string, content: string, tourId?: string) => void
   getTourSummary: (tour: Tour) => string
-  getGuideScheduleTourHoverText: (tour: Tour) => string
+  getGuideScheduleTourHoverText: (tour: Tour) => ReactNode
   tooltipFallback: string
 }
 

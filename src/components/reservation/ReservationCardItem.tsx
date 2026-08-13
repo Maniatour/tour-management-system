@@ -17,6 +17,7 @@ import {
   getStatusColor, 
   normalizeTourDateKey
 } from '@/utils/reservationUtils'
+import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { isRebookingCancellationReason } from '@/lib/reservationCancellationReason'
 import { ResidentStatusIcon } from '@/components/reservation/ResidentStatusIcon'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
@@ -422,6 +423,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     tourInfoMap.forEach((info, tourId) => {
       if (String(info.productId ?? '').trim() !== productId) return
       if (normalizeTourDateKey(info.tourDate) !== tourDateKey) return
+      if (isTourCancelled(info.status)) return
       badges.push({
         tourId,
         assigned: info.totalPeople,

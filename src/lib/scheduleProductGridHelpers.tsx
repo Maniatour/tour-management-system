@@ -128,13 +128,15 @@ export function ScheduleLangFlagsHoverLine({
   ko,
   en,
   ja = 0,
+  className = 'flex items-center gap-2 mb-1.5 flex-nowrap',
 }: {
   ko: number
   en: number
   ja?: number
+  className?: string
 }) {
   return (
-    <div className="flex items-center gap-2 mb-1.5 flex-nowrap">
+    <div className={className}>
       <span className="inline-flex items-center gap-1 shrink-0">
         <ReactCountryFlag countryCode="KR" svg style={{ width: '1em', height: '0.75em' }} />
         <span>{ko}</span>

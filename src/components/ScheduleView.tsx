@@ -156,6 +156,7 @@ import ScheduleProductGrid from '@/components/schedule/ScheduleProductGrid'
 import ScheduleGuideGrid from '@/components/schedule/ScheduleGuideGrid'
 import ScheduleVehicleGrid from '@/components/schedule/ScheduleVehicleGrid'
 import ScheduleGuideTourInfoCard from '@/components/schedule/ScheduleGuideTourInfoCard'
+import ScheduleTourHoverTooltipContent from '@/components/schedule/ScheduleTourHoverTooltipContent'
 import { useScheduleDisplayCalendar } from '@/hooks/useScheduleDisplayCalendar'
 import { useScheduleViewDialogs } from '@/hooks/useScheduleViewDialogs'
 import { useScheduleViewDateNotes } from '@/hooks/useScheduleViewDateNotes'
@@ -5007,20 +5008,26 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     ]
   )
 
-  /** 가이드 스케줄 셀 호버: 상세 모달과 동일 집계, 빠른 확인용 줄 순서 */
+  /** 가이드 스케줄 셀 호버: 라벨 없이 아이콘·뱃지로 한눈에 확인 */
   const getGuideScheduleTourHoverText = (tour: Tour) => {
     const c = getTourSummaryCore(tour)
-    const lines = [
-      `투어: ${c.productName}${c.isPrivateTour ? ' (단독투어)' : ''}`,
-      getTourAssignmentStatusTooltipLine(tour, locale),
-      `가이드: ${c.guideName}`,
-      `어시스턴트: ${c.assistantName}`,
-      `차량: ${c.vehicleNumber}`,
-      `인원: ${c.assignedPeople} / ${c.totalPeopleAll}`,
-      `배정 언어: ko ${c.assignedKo} / en ${c.assignedEn}`,
-    ]
-    if (c.choiceLine) lines.push(c.choiceLine)
-    return lines.join('\n')
+    return (
+      <ScheduleTourHoverTooltipContent
+        productName={c.productName}
+        tourDate={c.tourDate}
+        isPrivateTour={c.isPrivateTour}
+        assignedPeople={c.assignedPeople}
+        guideName={c.guideName}
+        assistantName={c.assistantName}
+        vehicleNumber={c.vehicleNumber}
+        assignmentStatus={c.assignmentStatus}
+        locale={locale}
+        assignedKo={c.assignedKo}
+        assignedEn={c.assignedEn}
+        assignedJa={c.assignedJa}
+        choiceCounts={c.choiceCounts}
+      />
+    )
   }
 
   const getTourSummary = (tour: Tour) => {
