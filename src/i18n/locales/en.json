@@ -4726,7 +4726,7 @@
           "cancel_requested": "Cancellation requested",
           "cancelled": "Cancelled",
           "no_show": "No-show",
-          "failed": "Booking failed",
+          "failed": "Fully cancelled",
           "expired": "Hold / request expired"
         },
         "vendor": {

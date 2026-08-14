@@ -678,7 +678,9 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                         const unified = resolveTicketBookingUnifiedStatus(booking, locale)
                         const eff = getTicketBookingEffectiveQty(booking)
                         const currentEa = getTicketBookingOriginalQty(booking)
-                        const awaitingVendor = isTicketBookingPendingRequestState(booking)
+                        const cancelled = isTicketBookingCancelledStatus(booking)
+                        const awaitingVendor =
+                          !cancelled && isTicketBookingPendingRequestState(booking)
                         const cancelDue = getCancelDueDate(booking)
                         const supplierProduct = getSupplierProduct?.(booking)
                         const cancelWarn =
@@ -688,7 +690,8 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                             supplierProduct ?? null,
                             todayYmd
                           )
-                        const qtyPending = ticketBookingPendingQtyDiffers(booking)
+                        const qtyPending =
+                          !cancelled && ticketBookingPendingQtyDiffers(booking)
                         const paid = Number(booking.paid_amount ?? 0)
                         const credit = Number(booking.credit_amount ?? 0)
                         const expected = getTicketBookingEffectiveExpenseUsd(booking)

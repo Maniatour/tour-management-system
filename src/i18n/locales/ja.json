@@ -1858,7 +1858,7 @@
           "cancel_requested": "キャンセルが要求されました",
           "cancelled": "キャンセル",
           "no_show": "ノーショー",
-          "failed": "予約に失敗しました",
+          "failed": "全量キャンセル",
           "expired": "保留/リクエストの有効期限が切れました"
         },
         "vendor": {

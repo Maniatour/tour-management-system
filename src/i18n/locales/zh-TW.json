@@ -1860,7 +1860,7 @@
           "cancel_requested": "已請求取消",
           "cancelled": "取消",
           "no_show": "缺席",
-          "failed": "預訂失敗",
+          "failed": "全部取消",
           "expired": "保留/請求已過期"
         },
         "vendor": {

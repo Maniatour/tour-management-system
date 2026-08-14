@@ -839,8 +839,11 @@ interface TourEvent {
   };
 }
 
-/** 수량·시간 변경 요청 진행 중(`change_status === requested`) */
-function isTicketBookingChangeRequestPending(booking: Pick<TicketBooking, 'change_status'>): boolean {
+/** 수량·시간 변경 요청 진행 중(`change_status === requested`) — 전량 취소 건은 제외 */
+function isTicketBookingChangeRequestPending(
+  booking: Pick<TicketBooking, 'change_status' | 'booking_status' | 'status'>
+): boolean {
+  if (isTicketBookingCancelledStatus(booking)) return false;
   return String(booking.change_status ?? 'none').toLowerCase().trim() === 'requested';
 }
 

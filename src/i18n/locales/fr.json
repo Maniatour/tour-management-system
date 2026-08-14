@@ -1860,7 +1860,7 @@
           "cancel_requested": "Annulation demandée",
           "cancelled": "Annulé",
           "no_show": "Non-présentation",
-          "failed": "La réservation a échoué",
+          "failed": "Annulation totale",
           "expired": "Mise en attente/demande expirée"
         },
         "vendor": {

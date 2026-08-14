@@ -1860,7 +1860,7 @@
           "cancel_requested": "Stornierung beantragt",
           "cancelled": "Abgesagt",
           "no_show": "No-Show",
-          "failed": "Die Buchung ist fehlgeschlagen",
+          "failed": "Vollständig storniert",
           "expired": "Sperre/Anfrage abgelaufen"
         },
         "vendor": {

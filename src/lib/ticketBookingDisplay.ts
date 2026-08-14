@@ -187,16 +187,16 @@ const UNIFIED_LABELS: Record<
     shortEn: 'V-CXL',
   },
   cancelled: {
-    ko: '취소됨',
-    en: 'Cancelled',
+    ko: '전량 취소',
+    en: 'Fully cancelled',
     shortKo: '취소',
     shortEn: 'CXL',
   },
   failed: {
-    ko: '예약 실패',
-    en: 'Failed',
-    shortKo: '실패',
-    shortEn: 'Fail',
+    ko: '전량 취소',
+    en: 'Fully cancelled',
+    shortKo: '취소',
+    shortEn: 'CXL',
   },
   expired: {
     ko: '만료',
@@ -229,8 +229,8 @@ export function resolveTicketBookingUnifiedStatus(
 
   let key: TicketBookingUnifiedStatusKey = 'other'
 
-  if (bs === 'failed') key = 'failed'
-  else if (bs === 'expired') key = 'expired'
+  // `failed`는 가예약 전량 취소(벤더 거절 버튼 등)에 쓰이므로 예약 실패가 아니라 취소로 표시
+  if (bs === 'expired') key = 'expired'
   else if (bs === 'no_show') key = 'no_show'
   else if (isTicketBookingCancelledStatus(b) && vs === 'confirmed') key = 'cancel_approved'
   else if (isTicketBookingCancelledStatus(b) && vs === 'cancelled') key = 'vendor_cancelled'
