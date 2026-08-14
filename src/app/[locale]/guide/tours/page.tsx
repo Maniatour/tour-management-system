@@ -19,6 +19,8 @@ import {
   fetchGuideToursVisibleUntil,
   filterToursByGuideVisibleUntil,
 } from '@/lib/guideToursVisibleUntil'
+import { GuideBackupTourBadge } from '@/components/guide/GuideBackupTourBadge'
+import { isGuideBackupTour } from '@/lib/guideBackupTour'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 
@@ -666,7 +668,15 @@ export default function GuideTours({}: GuideToursProps) {
             </button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-          {listViewTours.map((tour) => (
+          {listViewTours.map((tour) => {
+            const isBackupTour = isGuideBackupTour({
+              assignedPeople: tour.assigned_people,
+              tourGuideId: tour.tour_guide_id,
+              assistantId: tour.assistant_id,
+              tourStatus: tour.tour_status || tour.status,
+              assignmentStatus: tour.assignment_status,
+            })
+            return (
             <div
               key={tour.id}
               onClick={() => handleTourClick(tour)}
@@ -706,11 +716,17 @@ export default function GuideTours({}: GuideToursProps) {
                     {navigatingToTour === tour.id && (
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
                     )}
+                    {isBackupTour && <GuideBackupTourBadge />}
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${getStatusBadgeClasses(tour.status || tour.tour_status)}`}>
                       {(tour.status || tour.tour_status) || '-'}
                     </span>
                   </div>
                 </div>
+                {isBackupTour && (
+                  <p className="text-[11px] leading-4 text-amber-800">
+                    {gt('backupScheduleHint')}
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-1.5">
                   <span className="inline-flex items-center px-2 py-0.5 border border-border rounded text-xs text-primary bg-primary/5">
                     {locale === 'en' ? (tour.guide_name_en || tour.guide_name || '-') : (tour.guide_name || '-')}
@@ -724,7 +740,8 @@ export default function GuideTours({}: GuideToursProps) {
                 </div>
               </div>
             </div>
-          ))}
+            )
+          })}
           {listViewTours.length === 0 && (
             <div className="col-span-full text-center text-sm text-gray-500 py-6">{gt('noToursThisMonth')}</div>
           )}

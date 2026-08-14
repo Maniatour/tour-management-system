@@ -4525,6 +4525,13 @@
       "ticketNeedCheckColStatus": "Status",
       "ticketNeedCheckColEa": "Qty",
       "ticketNeedCheckOpenEdit": "Edit",
+      "ticketIssueFollowUpButton": "Issues",
+      "ticketIssueFollowUpButtonShort": "Issue",
+      "ticketIssueFollowUpButtonTitle": "Ticket bookings marked as having an issue",
+      "ticketIssueFollowUpTitle": "Issues — follow up",
+      "ticketIssueFollowUpHint": "Only bookings with the issue flag on. Open to follow up, or clear the flag.",
+      "ticketIssueFollowUpEmpty": "No bookings are marked as having an issue.",
+      "ticketIssueFollowUpClear": "Clear issue",
       "search": "Search",
       "status": "Status",
       "ticketTableStatusDisplayLabel": "Status display",
@@ -4693,6 +4700,8 @@
         "refundNoteLabel": "Note",
         "creditAmountLabel": "Credit amount (USD)",
         "refundedAmountLabel": "Refunded amount (USD)",
+        "issueToggleTitleOn": "Issue is on. Click again to clear.",
+        "issueToggleTitleOff": "Mark this booking as having an issue. Follow up from booking management.",
         "actions": {
           "request_booking": "Request booking",
           "mark_tentative": "Mark tentative",
@@ -4704,7 +4713,7 @@
           "request_refund": "Request refund",
           "mark_credit_received": "Credit received",
           "mark_refunded": "Mark refunded",
-          "report_issue": "Report issue"
+          "report_issue": "Issue"
         }
       },
       "ticketBookingAxis": {
@@ -4841,7 +4850,8 @@
       "scheduleView": "Schedule View",
       "searchPlaceholder": "Search by tour ID, product ID...",
       "navigatingToTour": "Navigating to tour detail page...",
-      "noToursThisMonth": "No assigned tours for this month."
+      "noToursThisMonth": "No assigned tours for this month.",
+      "backupScheduleHint": "This is a backup for extra bookings. The tour may or may not actually run."
     },
     "ticketBookingEdit": "Edit Ticket Booking",
     "ticketBookingAdd": "Add Ticket Booking",
@@ -4898,6 +4908,8 @@
       "assistant": "Assistant",
       "vehicle": "Vehicle",
       "people": "People",
+      "backupSchedule": "Backup schedule",
+      "backupScheduleHint": "This is a backup for extra bookings. The tour may or may not actually run.",
       "status": "Status",
       "viewDetails": "View Details",
       "reservationCalendar": "Tour Calendar",
@@ -7263,6 +7275,9 @@
     "tourCard": {
       "unassigned": "Unassigned",
       "today": "Today",
+      "backupSchedule": "Backup schedule",
+      "backupScheduleShort": "Backup",
+      "backupScheduleHint": "This is a backup for extra bookings. The tour may or may not actually run.",
       "viewRentalAgreement": "View rental agreement",
       "rentalAgreementTitle": "Rental Agreement",
       "rentalAgreementPreviewUnavailable": "Preview is not available for this file type. Please open in a new window.",
@@ -7344,6 +7359,8 @@
       "oneGuideDriver": "1 Guide + Driver"
     },
     "noProductInfo": "No Product Info",
+    "backupSchedule": "Backup schedule",
+    "backupScheduleHint": "This is a backup for extra bookings. The tour may or may not actually run.",
     "unassigned": "Not Assigned",
     "noGuideAssigned": "No Guide Assigned",
     "twoGuides": "2 Guides",

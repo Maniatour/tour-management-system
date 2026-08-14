@@ -304,7 +304,7 @@ export function useTourHandlers() {
 
   // 예약 배정 함수
   const handleAssignReservation = useCallback(
-    async (tour: { id: string }, reservationId: string) => {
+    async (tour: { id: string; reservation_ids?: unknown }, reservationId: string) => {
       if (!tour) return
 
       const rid = String(reservationId).trim()

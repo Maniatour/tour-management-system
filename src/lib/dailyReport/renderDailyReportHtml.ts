@@ -1,6 +1,7 @@
 import type { DailyReportData } from '@/lib/dailyReport/types'
 import { formatReportDateLabel, formatReportDateRangeLabel, isSingleDayReport } from '@/lib/dailyReport/dateUtils'
 import { formatUsd } from '@/lib/dailyReport/moneyUtils'
+import { getStatusText } from '@/utils/tourStatusUtils'
 
 function esc(s: string): string {
   return s
@@ -24,9 +25,9 @@ function breakdownTable(title: string, rows: DailyReportData['reservationSummary
     .map(
       (r) => `<tr>
         <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;">${esc(r.name)}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:center;">${r.newCount}건/${r.newGuests}명</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:center;color:#dc2626;">${r.cancelledCount}건/${r.cancelledGuests}명</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:center;font-weight:600;">${r.netCount}건/${r.netGuests}명</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:center;">${r.newCount}예약 ${r.newGuests}인</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:center;color:#dc2626;">${r.cancelledCount}예약 ${r.cancelledGuests}인</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:center;font-weight:600;">${r.netCount}예약 ${r.netGuests}인</td>
       </tr>`
     )
     .join('')
@@ -287,21 +288,20 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
 
   const tomorrowRows = data.tomorrowSchedule.tours
     .map((t) => {
-      const statusColor = t.isFullyAssigned ? '#059669' : '#dc2626'
-      const statusText = t.isFullyAssigned ? '배정완료' : '배정필요'
+      const statusText = getStatusText(t.tourStatus, 'ko')
       return `<tr>
-        <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:13px;">${esc(t.productName)}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:13px;">${esc(t.productName)} <span style="display:inline-block;margin-left:4px;padding:1px 8px;border-radius:999px;background:#f1f5f9;font-size:11px;font-weight:600;">${esc(statusText)}</span></td>
         <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:13px;">${esc(t.guideName ?? '—')}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:13px;">${esc(t.assistantName ?? '—')}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;text-align:center;font-weight:600;">${t.guestCount}인</td>
         <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:13px;">${esc(t.vehicleLabel ?? '—')}</td>
-        <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;text-align:center;">${t.reservationCount}</td>
-        <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-weight:600;color:${statusColor};font-size:12px;">${statusText}</td>
       </tr>`
     })
     .join('')
 
   const tomorrowBody = `
-    <p style="margin:0 0 12px;color:#6b7280;font-size:14px;">${esc(tomorrowLabel)} — 투어 ${data.tomorrowSchedule.totalTours}건 · 배정 필요 ${data.tomorrowSchedule.unassignedCount}건</p>
-    ${tomorrowRows ? `<table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#f9fafb;"><th style="padding:8px;text-align:left;">상품</th><th>가이드</th><th>차량</th><th>예약</th><th>상태</th></tr></thead><tbody>${tomorrowRows}</tbody></table>` : '<p>내일 투어 없음</p>'}
+    <p style="margin:0 0 12px;color:#6b7280;font-size:14px;">${esc(tomorrowLabel)} — 투어 ${data.tomorrowSchedule.totalTours}건 · ${data.tomorrowSchedule.totalGuests}인 · 배정 필요 ${data.tomorrowSchedule.unassignedCount}건</p>
+    ${tomorrowRows ? `<table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#f9fafb;"><th style="padding:8px;text-align:left;">상품</th><th>가이드</th><th>어시</th><th>인원</th><th>차량</th></tr></thead><tbody>${tomorrowRows}</tbody></table>` : '<p>내일 투어 없음</p>'}
     ${sectionNotes(data.tomorrowSchedule.notes)}
   `
 

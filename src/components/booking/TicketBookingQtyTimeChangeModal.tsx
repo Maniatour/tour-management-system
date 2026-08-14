@@ -7,7 +7,10 @@ import {
   getTicketBookingTimeSlotColors,
   normalizeDbTimeToTicketSelectSlot,
 } from '@/lib/ticketBookingTimeSelect'
-import { buildTicketBookingChangeRequestEmail } from '@/lib/ticketBookingVendorEmail'
+import {
+  buildTicketBookingChangeRequestEmail,
+  type TicketBookingVendorEmailSameDayTicket,
+} from '@/lib/ticketBookingVendorEmail'
 import { useTeamMemberDisplayName } from '@/lib/useTeamMemberDisplayName'
 import TicketBookingVendorEmailCopyBlock from '@/components/booking/TicketBookingVendorEmailCopyBlock'
 
@@ -50,6 +53,9 @@ export type TicketBookingQtyTimeChangeModalProps = {
   rnNumber?: string | null
   note?: string | null
   submittedBy?: string | null
+  currentBookingId?: string
+  /** 같은 체크인일·같은 업체 티켓 (현재 건 포함, 취소 행 제외) */
+  sameDayTickets?: TicketBookingVendorEmailSameDayTicket[]
   onClose: () => void
   onSubmit: (pendingEa: number, pendingTime: string) => void | Promise<void>
   saving?: boolean
@@ -68,6 +74,8 @@ export default function TicketBookingQtyTimeChangeModal({
   rnNumber,
   note,
   submittedBy,
+  currentBookingId,
+  sameDayTickets = [],
   onClose,
   onSubmit,
   saving,
@@ -103,10 +111,43 @@ export default function TicketBookingQtyTimeChangeModal({
     Number.isFinite(parsedEa) && parsedEa >= 0 && unitUsd > 0
       ? Math.round(unitUsd * parsedEa * 100) / 100
       : null
+  const qtyChanged = Number.isFinite(parsedEa) && parsedEa !== initialEa
+  const timeChanged =
+    Boolean(time.trim()) &&
+    normalizeDbTimeToTicketSelectSlot(time) !== normalizedInitial
+  const amountChanged =
+    projectedExpense != null &&
+    Math.abs(projectedExpense - (Number.isFinite(initialExpense) ? initialExpense : 0)) > 0.001
 
   const vendorEmailDraft = useMemo(() => {
     const reqEa = Number.isFinite(parsedEa) && parsedEa >= 0 ? parsedEa : initialEa
     const reqTime = time.trim() || normalizedInitial
+    let foundCurrent = false
+    const tickets: TicketBookingVendorEmailSameDayTicket[] = sameDayTickets.map((ticket) => {
+      const isCurrent = Boolean(
+        (currentBookingId && ticket.id === currentBookingId) || ticket.isCurrent
+      )
+      if (!isCurrent) return { ...ticket, isCurrent: false }
+      foundCurrent = true
+      return {
+        ...ticket,
+        rnNumber: rnNumber ?? ticket.rnNumber ?? null,
+        checkInDate: checkInDate || ticket.checkInDate,
+        time: reqTime,
+        quantity: reqEa,
+        isCurrent: true,
+      }
+    })
+    if (!foundCurrent) {
+      tickets.push({
+        ...(currentBookingId ? { id: currentBookingId } : {}),
+        rnNumber: rnNumber ?? null,
+        checkInDate,
+        time: reqTime,
+        quantity: reqEa,
+        isCurrent: true,
+      })
+    }
     return buildTicketBookingChangeRequestEmail({
       company,
       checkInDate,
@@ -118,6 +159,7 @@ export default function TicketBookingQtyTimeChangeModal({
       currentTime: initialTime,
       requestedQuantity: reqEa,
       requestedTime: reqTime,
+      sameDayTickets: tickets,
     })
   }, [
     company,
@@ -131,6 +173,8 @@ export default function TicketBookingQtyTimeChangeModal({
     parsedEa,
     time,
     normalizedInitial,
+    currentBookingId,
+    sameDayTickets,
   ])
 
   if (!open) return null
@@ -155,7 +199,7 @@ export default function TicketBookingQtyTimeChangeModal({
       onClick={() => !saving && onClose()}
     >
       <div
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
+        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl"
         onClick={(ev) => ev.stopPropagation()}
       >
         <h3 className="text-base font-semibold text-gray-900">{title}</h3>
@@ -163,86 +207,117 @@ export default function TicketBookingQtyTimeChangeModal({
           수량·시간 변경 요청 후 예약은 「변경 요청」, 벤더는 「응답 대기」로 바뀝니다.
         </p>
 
-        <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs">
-          <div className="mb-2 font-medium text-gray-800">기존 예약</div>
-          <dl className="space-y-1.5">
-            <div className="flex justify-between gap-3">
-              <dt className="text-gray-500">수량</dt>
-              <dd className="font-medium tabular-nums text-gray-900">{initialEa}개</dd>
-            </div>
-            <div className="flex justify-between gap-3">
-              <dt className="text-gray-500">시간</dt>
-              <dd className="font-medium text-gray-900">{displayTimeLabel(initialTime)}</dd>
-            </div>
-            <div className="flex justify-between gap-3">
-              <dt className="text-gray-500">금액(비용)</dt>
-              <dd className="font-semibold tabular-nums text-gray-900">
-                ${formatMoneyUsd(Number.isFinite(initialExpense) ? initialExpense : 0)}
-              </dd>
-            </div>
-          </dl>
-        </div>
-
         <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-          <div className="text-[11px] font-medium text-gray-700">변경 요청 값</div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600">
-              {t('quantity')} <span className="font-normal text-gray-400">(요청)</span>
-            </label>
-            <input
-              type="number"
-              min={0}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-              value={ea}
-              onChange={(e) => setEa(e.target.value)}
-              disabled={!!saving}
-            />
-            {unitUsd > 0 ? (
-              <p className="mt-1 text-[10px] text-gray-500">
-                단가 약 <span className="tabular-nums">${formatMoneyUsd(unitUsd)}</span> / 1개
-              </p>
-            ) : initialExpense > 0 ? (
-              <p className="mt-1 text-[10px] text-amber-700">
-                기존 수량·금액으로 단가를 계산할 수 없어 예상 금액을 표시하지 않습니다.
-              </p>
-            ) : null}
-            {projectedExpense != null ? (
-              <div className="mt-2 rounded-md border border-border bg-primary/5 px-3 py-2 text-xs text-blue-950">
-                <span className="text-primary">변경 수량 기준 예상 금액</span>{' '}
-                <span className="font-semibold tabular-nums">${formatMoneyUsd(projectedExpense)}</span>
+          <div className="overflow-hidden rounded-xl border border-border/60">
+            <div className="grid grid-cols-2 divide-x divide-border/60">
+              <div className="bg-muted/40 px-3 py-2 text-center text-xs font-semibold text-muted-foreground">
+                기존
               </div>
-            ) : null}
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600">
-              {t('time')} <span className="font-normal text-gray-400">(요청)</span> *
-            </label>
-            <select
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              disabled={!!saving}
-              required
-            >
-              <option value="">{t('selectTime')}</option>
-              {showExtraSlot && extraColors ?
-                <option
-                  value={normalizedInitial}
-                  style={{
-                    backgroundColor: extraColors.bg,
-                    color: extraColors.text,
-                  }}
+              <div className="bg-primary/5 px-3 py-2 text-center text-xs font-semibold text-primary">
+                변경
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 divide-x divide-border/60 border-t border-border/60">
+              <div className="px-3 py-3">
+                <p className="text-[10px] font-medium tracking-wide text-muted-foreground">수량</p>
+                <p className="mt-1.5 text-sm font-semibold tabular-nums text-foreground">
+                  {initialEa}개
+                </p>
+              </div>
+              <div className="px-3 py-3">
+                <label htmlFor="ticket-qty-time-change-ea" className="text-[10px] font-medium tracking-wide text-muted-foreground">
+                  {t('quantity')}
+                </label>
+                <input
+                  id="ticket-qty-time-change-ea"
+                  type="number"
+                  min={0}
+                  className={`mt-1.5 h-11 w-full rounded-lg border border-input px-3 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring ${
+                    qtyChanged ? 'font-semibold text-red-600' : ''
+                  }`}
+                  value={ea}
+                  onChange={(e) => setEa(e.target.value)}
+                  disabled={!!saving}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 divide-x divide-border/60 border-t border-border/60">
+              <div className="px-3 py-3">
+                <p className="text-[10px] font-medium tracking-wide text-muted-foreground">시간</p>
+                <p className="mt-1.5 text-sm font-semibold text-foreground">
+                  {displayTimeLabel(initialTime)}
+                </p>
+              </div>
+              <div className="px-3 py-3">
+                <label htmlFor="ticket-qty-time-change-time" className="text-[10px] font-medium tracking-wide text-muted-foreground">
+                  {t('time')} *
+                </label>
+                <select
+                  id="ticket-qty-time-change-time"
+                  className={`mt-1.5 h-11 w-full rounded-lg border border-input px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${
+                    timeChanged ? 'font-semibold text-red-600' : ''
+                  }`}
+                  value={time}
+                  onChange={(e) => setTime(e.target.value)}
+                  disabled={!!saving}
+                  required
                 >
-                  {normalizedInitial}
-                </option>
-              : null}
-              {slotOptions.map(({ value, bg, text }) => (
-                <option key={value} value={value} style={{ backgroundColor: bg, color: text }}>
-                  {value}
-                </option>
-              ))}
-            </select>
+                  <option value="">{t('selectTime')}</option>
+                  {showExtraSlot && extraColors ?
+                    <option
+                      value={normalizedInitial}
+                      style={{
+                        backgroundColor: extraColors.bg,
+                        color: extraColors.text,
+                      }}
+                    >
+                      {normalizedInitial}
+                    </option>
+                  : null}
+                  {slotOptions.map(({ value, bg, text }) => (
+                    <option key={value} value={value} style={{ backgroundColor: bg, color: text }}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 divide-x divide-border/60 border-t border-border/60">
+              <div className="px-3 py-3">
+                <p className="text-[10px] font-medium tracking-wide text-muted-foreground">금액</p>
+                <p className="mt-1.5 text-sm font-semibold tabular-nums text-foreground">
+                  ${formatMoneyUsd(Number.isFinite(initialExpense) ? initialExpense : 0)}
+                </p>
+              </div>
+              <div className="px-3 py-3">
+                <p className="text-[10px] font-medium tracking-wide text-muted-foreground">금액</p>
+                {projectedExpense != null ? (
+                  <p
+                    className={`mt-1.5 text-sm font-semibold tabular-nums ${
+                      amountChanged ? 'text-red-600' : 'text-foreground'
+                    }`}
+                  >
+                    ${formatMoneyUsd(projectedExpense)}
+                  </p>
+                ) : (
+                  <p className="mt-1.5 text-sm text-muted-foreground">—</p>
+                )}
+              </div>
+            </div>
           </div>
+
+          {unitUsd > 0 ? (
+            <p className="text-[10px] text-muted-foreground">
+              단가 약 <span className="tabular-nums">${formatMoneyUsd(unitUsd)}</span> / 1개
+            </p>
+          ) : initialExpense > 0 ? (
+            <p className="text-[10px] text-amber-700">
+              기존 수량·금액으로 단가를 계산할 수 없어 예상 금액을 표시하지 않습니다.
+            </p>
+          ) : null}
 
           <TicketBookingVendorEmailCopyBlock
             subject={vendorEmailDraft.subject}

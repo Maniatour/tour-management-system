@@ -1261,28 +1261,54 @@ export function TourDetailPageView({
 
 
   const handleAssignReservation = async (reservationId: string) => {
-    if (!tourData.tour) return
+    const tour = tourData.tour
+    if (!tour) return
 
-    const pendingReservation = tourData.pendingReservations.find((r: any) => r.id === reservationId)
+    const currentReservationIds = tourData.getEffectiveTourReservationIds()
+    const alreadyAssigned = currentReservationIds.some((id) =>
+      reservationIdsLooselyEqual(id, reservationId)
+    )
+    const optimisticIds = alreadyAssigned
+      ? currentReservationIds
+      : [...currentReservationIds, reservationId]
+
+    const pendingReservation = tourData.pendingReservations.find((r: any) =>
+      reservationIdsLooselyEqual(r.id, reservationId)
+    )
     if (pendingReservation) {
+      tourData.beginAssignmentIdsMutation(optimisticIds)
+      tourData.setTour((prev: TourRow | null) =>
+        prev ? { ...prev, reservation_ids: optimisticIds } : null
+      )
+      tourData.setAssignedReservationsForced((prev: any) =>
+        prev.some((r: any) => reservationIdsLooselyEqual(r.id, reservationId))
+          ? prev
+          : [...prev, pendingReservation]
+      )
+      tourData.setPendingReservationsForced((prev: any) =>
+        prev.filter((r: any) => !reservationIdsLooselyEqual(r.id, reservationId))
+      )
+
       const updatedReservationIds = await tourHandlers.handleAssignReservation(
-        { ...tourData.tour },
+        { ...tour, reservation_ids: currentReservationIds },
         reservationId
       )
-      if (updatedReservationIds) {
-        tourData.setAssignedReservations([...tourData.assignedReservations, pendingReservation])
-        tourData.setPendingReservations(tourData.pendingReservations.filter((r: any) => r.id !== reservationId))
-        tourData.setTour((prev: TourRow | null) =>
-          prev ? { ...prev, reservation_ids: updatedReservationIds } : null
-        )
+      if (!updatedReservationIds) {
+        tourData.clearAssignmentIdsMutationOverride()
         if (tourData.refreshReservations) {
           await tourData.refreshReservations()
         }
+        return
       }
+      tourData.setTour((prev: TourRow | null) =>
+        prev ? { ...prev, reservation_ids: updatedReservationIds } : null
+      )
       return
     }
 
-    const otherTourReservation = tourData.otherToursAssignedReservations.find((r: any) => r.id === reservationId)
+    const otherTourReservation = tourData.otherToursAssignedReservations.find((r: any) =>
+      reservationIdsLooselyEqual(r.id, reservationId)
+    )
     if (otherTourReservation) {
       const fromTourId =
         (otherTourReservation as { assigned_tour_id?: string | null }).assigned_tour_id ||
@@ -1291,19 +1317,35 @@ export function TourDetailPageView({
         alert('원본 투어 정보를 찾을 수 없습니다.')
         return
       }
+
+      tourData.beginAssignmentIdsMutation(optimisticIds)
+      tourData.setTour((prev: TourRow | null) =>
+        prev ? { ...prev, reservation_ids: optimisticIds } : null
+      )
+      tourData.setAssignedReservationsForced((prev: any) =>
+        prev.some((r: any) => reservationIdsLooselyEqual(r.id, reservationId))
+          ? prev
+          : [...prev, { ...otherTourReservation, assigned_tour_id: tour.id }]
+      )
+      tourData.setOtherToursAssignedReservationsForced((prev: any) =>
+        prev.filter((r: any) => !reservationIdsLooselyEqual(r.id, reservationId))
+      )
+
       const moved = await tourHandlers.handleMoveReservationBetweenTours(
         reservationId,
         fromTourId,
-        tourData.tour.id
+        tour.id
       )
-      if (moved) {
-        tourData.setTour((prev: TourRow | null) =>
-          prev ? { ...prev, reservation_ids: moved.newToIds } : null
-        )
+      if (!moved) {
+        tourData.clearAssignmentIdsMutationOverride()
         if (tourData.refreshReservations) {
           await tourData.refreshReservations()
         }
+        return
       }
+      tourData.setTour((prev: TourRow | null) =>
+        prev ? { ...prev, reservation_ids: moved.newToIds } : null
+      )
     }
   }
 
@@ -1410,25 +1452,72 @@ export function TourDetailPageView({
 
   const handleAssignAllReservations = async () => {
     if (!tourData.tour) return
+    const pending = tourData.pendingReservations
+    if (!pending.length) return
+
+    const currentReservationIds = tourData.getEffectiveTourReservationIds()
+    const optimisticIds = [
+      ...currentReservationIds,
+      ...pending
+        .map((r: any) => String(r.id))
+        .filter((id: string) => !currentReservationIds.some((existing) => reservationIdsLooselyEqual(existing, id))),
+    ]
+
+    tourData.beginAssignmentIdsMutation(optimisticIds)
+    tourData.setTour((prev: TourRow | null) =>
+      prev ? { ...prev, reservation_ids: optimisticIds } : null
+    )
+    tourData.setAssignedReservationsForced((prev: any) => {
+      const existing = prev as any[]
+      const toAdd = pending.filter(
+        (r: any) => !existing.some((row: any) => reservationIdsLooselyEqual(row.id, r.id))
+      )
+      return [...existing, ...toAdd]
+    })
+    tourData.setPendingReservationsForced([])
+
     const updatedReservationIds = await tourHandlers.handleAssignAllReservations({
       ...tourData.tour,
-      reservation_ids: tourData.tour.reservation_ids || []
-    }, tourData.pendingReservations)
-    if (updatedReservationIds) {
-      tourData.setAssignedReservations([...tourData.assignedReservations, ...tourData.pendingReservations])
-      tourData.setPendingReservations([])
-      tourData.setTour((prev: TourRow | null) => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
+      reservation_ids: currentReservationIds,
+    }, pending)
+    if (!updatedReservationIds) {
+      tourData.clearAssignmentIdsMutationOverride()
+      if (tourData.refreshReservations) {
+        await tourData.refreshReservations()
+      }
+      return
     }
+    tourData.setTour((prev: TourRow | null) => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
   }
 
   const handleUnassignAllReservations = async () => {
     if (!tourData.tour) return
+    const assigned = tourData.assignedReservations
+
+    tourData.beginAssignmentIdsMutation([])
+    tourData.setTour((prev: TourRow | null) =>
+      prev ? { ...prev, reservation_ids: [] } : null
+    )
+    tourData.setAssignedReservationsForced([])
+    tourData.setPendingReservationsForced((prev: any) => {
+      const existing = prev as any[]
+      const toAdd = assigned.filter(
+        (r: any) => !existing.some((row: any) => reservationIdsLooselyEqual(row.id, r.id))
+      )
+      return [...existing, ...toAdd]
+    })
+
     const updatedReservationIds = await tourHandlers.handleUnassignAllReservations(tourData.tour)
-    if (updatedReservationIds !== undefined) {
-      tourData.setPendingReservations([...tourData.pendingReservations, ...tourData.assignedReservations])
-      tourData.setAssignedReservations([])
-      tourData.setTour((prev: TourRow | null) => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
+    if (updatedReservationIds === undefined) {
+      tourData.clearAssignmentIdsMutationOverride()
+      if (tourData.refreshReservations) {
+        await tourData.refreshReservations()
+      }
+      return
     }
+    tourData.setTour((prev: TourRow | null) =>
+      prev ? { ...prev, reservation_ids: updatedReservationIds } : null
+    )
   }
 
   const [cancellationReasonModalOpen, setCancellationReasonModalOpen] = useState(false)
@@ -2718,7 +2807,10 @@ export function TourDetailPageView({
               currentTourId={tourData.tour?.id ?? ''}
               productId={tourData.tour?.product_id ?? null}
               tourDate={tourData.tour?.tour_date ?? null}
-              onAutoAssignSuccess={tourData.refreshReservations}
+              onAutoAssignSuccess={async () => {
+                tourData.clearAssignmentIdsMutationOverride()
+                await tourData.refreshReservations()
+              }}
               allProducts={tourData.allProducts ?? []}
               onCommunicationChannelChange={handleCommunicationChannelChange}
             />

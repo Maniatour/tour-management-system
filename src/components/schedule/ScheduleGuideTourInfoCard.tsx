@@ -6,6 +6,7 @@ import {
   ArrowLeftRight,
   Bus,
   Calendar,
+  Car,
   DollarSign,
   FileText,
   History,
@@ -88,7 +89,20 @@ type VehicleOption = { id: string; label: string }
 
 type StatusOption = { value: string; label: string }
 
-type EditTarget = 'guide' | 'assistant' | 'vehicle' | 'tourStatus' | 'assignmentStatus' | null
+type TourTeamType = '1guide' | '2guide' | 'guide+driver'
+
+type EditTarget = 'guide' | 'assistant' | 'vehicle' | 'tourStatus' | 'assignmentStatus' | 'teamType' | null
+
+const TEAM_TYPE_OPTIONS: Array<{
+  value: TourTeamType
+  ko: string
+  en: string
+  Icon: typeof User
+}> = [
+  { value: '1guide', ko: '1가이드', en: '1 Guide', Icon: User },
+  { value: '2guide', ko: '2가이드', en: '2 Guides', Icon: Users },
+  { value: 'guide+driver', ko: '가이드 & 드라이버', en: 'Guide & Driver', Icon: Car },
+]
 
 const NO_GUIDE = '__no_guide__'
 const NO_ASSISTANT = '__no_assistant__'
@@ -117,6 +131,9 @@ type ScheduleGuideTourInfoCardProps = {
   tourStatusValue: string
   updatingTourStatus?: boolean
   updatingAssignmentStatus?: boolean
+  teamType: TourTeamType
+  updatingTeamType?: boolean
+  onSelectTeamType: (type: TourTeamType) => void
   onSelectGuide: (email: string | null) => void
   onSelectAssistant: (email: string | null) => void
   onSwapGuideAssistant: () => void
@@ -217,6 +234,9 @@ export default function ScheduleGuideTourInfoCard({
   tourStatusValue,
   updatingTourStatus = false,
   updatingAssignmentStatus = false,
+  teamType,
+  updatingTeamType = false,
+  onSelectTeamType,
   onSelectGuide,
   onSelectAssistant,
   onSwapGuideAssistant,
@@ -359,15 +379,25 @@ export default function ScheduleGuideTourInfoCard({
 
   const closeEdit = () => setEditTarget(null)
 
+  const currentTeamTypeOption =
+    TEAM_TYPE_OPTIONS.find((option) => option.value === teamType) || TEAM_TYPE_OPTIONS[0]
+  const currentTeamTypeLabel =
+    locale === 'ko' ? currentTeamTypeOption.ko : currentTeamTypeOption.en
+  const CurrentTeamTypeIcon = currentTeamTypeOption.Icon
+
   const editTitle =
     editTarget === 'guide'
       ? locale === 'ko'
         ? '가이드 변경'
         : 'Change guide'
       : editTarget === 'assistant'
-        ? locale === 'ko'
-          ? '어시스턴트 변경'
-          : 'Change assistant'
+        ? teamType === 'guide+driver'
+          ? locale === 'ko'
+            ? '드라이버 변경'
+            : 'Change driver'
+          : locale === 'ko'
+            ? '어시스턴트 변경'
+            : 'Change assistant'
         : editTarget === 'vehicle'
           ? locale === 'ko'
             ? '차량 변경'
@@ -380,7 +410,11 @@ export default function ScheduleGuideTourInfoCard({
               ? locale === 'ko'
                 ? '배정 상태 변경'
                 : 'Change assignment status'
-              : ''
+              : editTarget === 'teamType'
+                ? locale === 'ko'
+                  ? '팀 구성 변경'
+                  : 'Change team type'
+                : ''
 
   return (
     <div className="space-y-3">
@@ -505,7 +539,7 @@ export default function ScheduleGuideTourInfoCard({
           </div>
         </div>
 
-        {/* 스태프 · 차량 */}
+        {/* 스태프 · 차량 · 팀 구성 */}
         <div className="flex flex-wrap items-center gap-2 mb-2.5">
           <button
             type="button"
@@ -533,9 +567,13 @@ export default function ScheduleGuideTourInfoCard({
                 }}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
                 title={
-                  locale === 'ko'
-                    ? '가이드 ↔ 어시스턴트 교체'
-                    : 'Swap guide ↔ assistant'
+                  teamType === 'guide+driver'
+                    ? locale === 'ko'
+                      ? '가이드 ↔ 드라이버 교체'
+                      : 'Swap guide ↔ driver'
+                    : locale === 'ko'
+                      ? '가이드 ↔ 어시스턴트 교체'
+                      : 'Swap guide ↔ assistant'
                 }
               >
                 <ArrowLeftRight className="h-3.5 w-3.5" />
@@ -549,13 +587,21 @@ export default function ScheduleGuideTourInfoCard({
                 }}
                 className={staffButtonClass(summary.assistantAssigned)}
               >
-                <Users className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                {teamType === 'guide+driver' ? (
+                  <Car className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                ) : (
+                  <Users className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                )}
                 <span className="truncate max-w-[8rem]">
                   {summary.assistantAssigned
                     ? summary.assistantName
-                    : locale === 'ko'
-                      ? '어시 미배정'
-                      : 'No assistant'}
+                    : teamType === 'guide+driver'
+                      ? locale === 'ko'
+                        ? '드라이버 미배정'
+                        : 'No driver'
+                      : locale === 'ko'
+                        ? '어시 미배정'
+                        : 'No assistant'}
                 </span>
               </button>
             </>
@@ -578,6 +624,25 @@ export default function ScheduleGuideTourInfoCard({
                   ? '차량 미배정'
                   : 'No vehicle'}
             </span>
+          </button>
+
+          <button
+            type="button"
+            disabled={!isStaff || updatingTeamType}
+            onClick={(e) => {
+              e.stopPropagation()
+              openEdit('teamType')
+            }}
+            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
+            title={locale === 'ko' ? '팀 구성 변경' : 'Change team type'}
+            aria-label={
+              locale === 'ko'
+                ? `팀 구성: ${currentTeamTypeLabel}`
+                : `Team type: ${currentTeamTypeLabel}`
+            }
+          >
+            <CurrentTeamTypeIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className="whitespace-nowrap">{currentTeamTypeLabel}</span>
           </button>
         </div>
 
@@ -800,6 +865,35 @@ export default function ScheduleGuideTourInfoCard({
                       } ${getAssignmentStatusBadgeColor(status)}`}
                     >
                       {getAssignmentStatusLabel(status, locale)}
+                    </button>
+                  )
+                })}
+              </div>
+            ) : null}
+
+            {editTarget === 'teamType' ? (
+              <div className="space-y-2">
+                {TEAM_TYPE_OPTIONS.map((option) => {
+                  const selected = teamType === option.value
+                  const label = locale === 'ko' ? option.ko : option.en
+                  const Icon = option.Icon
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      disabled={updatingTeamType}
+                      onClick={() => {
+                        onSelectTeamType(option.value)
+                        closeEdit()
+                      }}
+                      className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                        selected
+                          ? 'border-primary bg-primary/5 font-semibold text-primary'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                      <span>{label}</span>
                     </button>
                   )
                 })}

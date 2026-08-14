@@ -26,6 +26,7 @@ import {
 } from '@/utils/reservationPricingBalance'
 import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
 import { amountToNumber, mergeCategoryAmounts, roundUsd } from '@/lib/dailyReport/moneyUtils'
+import { resolveProductInternalName } from '@/utils/reservationUtils'
 import type { DailyReportTourFinancial, DailyReportTourSummary } from '@/lib/dailyReport/types'
 
 const BATCH = 150
@@ -51,14 +52,7 @@ type TourRow = {
 }
 
 function productInternalName(p: TourRow['products']): string {
-  return (
-    p?.internal_name_ko?.trim() ||
-    p?.internal_name_en?.trim() ||
-    p?.name?.trim() ||
-    p?.name_ko?.trim() ||
-    p?.name_en?.trim() ||
-    '상품 미지정'
-  )
+  return resolveProductInternalName(p) || '상품 미지정'
 }
 
 function isCashPayment(method: string | null, cashSet: Set<string>): boolean {

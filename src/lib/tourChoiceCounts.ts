@@ -1,5 +1,7 @@
 /** 투어·스케줄·입장권 목록 — 예약 초이스를 X / L / U 로 합산 (거주자·패스 등 제외) */
 
+import { getReservationPartySize } from '@/utils/reservationUtils'
+
 export type TourChoiceCountKey = 'X' | 'L' | 'U' | '_other'
 
 export type TourChoiceCounts = Partial<Record<TourChoiceCountKey, number>>
@@ -57,16 +59,27 @@ export type ReservationChoiceRow = { choiceKey: TourChoiceCountKey; quantity: nu
  * 거주자·패스 등 다른 초이스 행이 있어도 예약 인원은 캐년 1종에 전부 반영.
  */
 export function aggregateTourChoiceCounts(
-  reservations: Array<{ id: string; total_people?: number | null }>,
+  reservations: Array<{
+    id: string
+    total_people?: number | null | undefined
+    adults?: number | null
+    child?: number | null
+    infant?: number | null
+    children?: number | null
+    infants?: number | null
+  }>,
   choiceRowsByResId: Map<string, ReservationChoiceRow[]>
 ): TourChoiceCounts {
   const counts: TourChoiceCounts = {}
+  const seen = new Set<string>()
   for (const res of reservations) {
+    if (seen.has(res.id)) continue
+    seen.add(res.id)
     const allRows = choiceRowsByResId.get(res.id) || []
     const canyonRows = allRows.filter((r) => isCanyonTourChoiceKey(r.choiceKey))
     if (canyonRows.length === 0) continue
 
-    const people = Number(res.total_people) || 0
+    const people = getReservationPartySize(res as Record<string, unknown>)
     if (canyonRows.length === 1) {
       const key = canyonRows[0]!.choiceKey
       if (isCanyonTourChoiceKey(key)) {

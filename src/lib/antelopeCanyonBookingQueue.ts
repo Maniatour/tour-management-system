@@ -10,7 +10,12 @@ import {
 } from '@/lib/ticketBookingCancelDue'
 import { isTicketBookingPendingRequestState } from '@/lib/ticketBookingWorkflow'
 import { filterTicketBookingsExcludedFromMainUi } from '@/lib/ticketBookingSoftDelete'
-import type { TourChoiceCounts } from '@/lib/tourChoiceCounts'
+import {
+  aggregateTourChoiceCounts,
+  tourChoiceCountsHasDisplayable,
+  type ReservationChoiceRow,
+  type TourChoiceCounts,
+} from '@/lib/tourChoiceCounts'
 import { tourProductRequiresTicketBookingCount } from '@/lib/ticketBookingCountTourProducts'
 import {
   canonicalReservationIdKey,
@@ -36,6 +41,9 @@ export type AntelopeCanyonTicketLite = {
   pending_ea?: number | null
   pending_time?: string | null
   deletion_requested_at?: string | null
+  expense?: number | null
+  paid_amount?: number | null
+  credit_amount?: number | null
 }
 
 export type AntelopeCanyonTourLite = {
@@ -44,7 +52,13 @@ export type AntelopeCanyonTourLite = {
   product_id?: string | null
   tour_status?: string | null
   reservation_ids?: unknown
+  /** 투어 상세 — 앤텔롭 캐년 체크인일 (입장권 인원 대조 기준) */
+  antelope_check_in_date?: string | null
   products?: { name?: string | null; name_ko?: string | null; name_en?: string | null } | null
+  /** 부킹 카드뷰 투어 뱃지와 동일 — 배정 예약 인원 합 */
+  total_people?: number | null
+  /** 부킹 카드뷰 투어 뱃지와 동일 — 초이스별 인원 (X / L / U) */
+  choice_counts?: TourChoiceCounts
 }
 
 export type ReservationLite = {
@@ -149,6 +163,48 @@ export function computeTourAssignedPeople(
     if (!assignedCanon.has(canonicalReservationIdKey(String(r.id)))) return sum
     return sum + (Number(r.total_people) || 0)
   }, 0)
+}
+
+/**
+ * 부킹 카드뷰 투어 뱃지와 동일: 투어에 배정된 예약 총인원 + 초이스별 인원.
+ */
+export function enrichAntelopeCanyonToursForTourBadge(
+  tours: AntelopeCanyonTourLite[],
+  reservations: ReservationLite[],
+  choiceRowsByResId: Map<string, ReservationChoiceRow[]>
+): AntelopeCanyonTourLite[] {
+  const resById = new Map<string, ReservationLite>()
+  for (const r of reservations) {
+    const id = String(r.id || '').trim()
+    if (!id) continue
+    resById.set(id, r)
+    const canon = canonicalReservationIdKey(id)
+    if (canon !== id) resById.set(canon, r)
+  }
+
+  return tours.map((tour) => {
+    const assigned: Array<{ id: string; total_people?: number | null }> = []
+    let peopleSum = 0
+    for (const rid of normalizeReservationIds(tour.reservation_ids)) {
+      const r = resById.get(rid) || resById.get(canonicalReservationIdKey(rid))
+      if (!r || isReservationCancelledStatus(r.status)) continue
+      peopleSum += Number(r.total_people) || 0
+      const lookupId = choiceRowsByResId.has(r.id)
+        ? r.id
+        : choiceRowsByResId.has(canonicalReservationIdKey(r.id))
+          ? canonicalReservationIdKey(r.id)
+          : choiceRowsByResId.has(rid)
+            ? rid
+            : r.id
+      assigned.push({ id: lookupId, total_people: r.total_people ?? null })
+    }
+    const counts = aggregateTourChoiceCounts(assigned, choiceRowsByResId)
+    return {
+      ...tour,
+      total_people: peopleSum,
+      ...(tourChoiceCountsHasDisplayable(counts) ? { choice_counts: counts } : {}),
+    }
+  })
 }
 
 function productDisplayName(tour: AntelopeCanyonTourLite): string {

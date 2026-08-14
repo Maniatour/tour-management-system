@@ -1,29 +1,30 @@
 // 투어 관련 유틸리티 함수들
 
-/** tours.reservation_ids를 string[]로 정규화 (배열/JSON 문자열/콤마 구분 문자열/단일 UUID 지원) */
+/** tours.reservation_ids를 string[]로 정규화 (배열/JSON 문자열/콤마 구분 문자열/단일 UUID 지원, 중복 제거) */
 export function normalizeReservationIds(reservationIds: unknown): string[] {
-  if (reservationIds == null) return []
-  if (Array.isArray(reservationIds)) {
-    return reservationIds.map((id) => String(id).trim()).filter((id) => id.length > 0)
-  }
-  if (typeof reservationIds === 'string') {
+  let ids: string[] = []
+  if (reservationIds == null) {
+    ids = []
+  } else if (Array.isArray(reservationIds)) {
+    ids = reservationIds.map((id) => String(id).trim()).filter((id) => id.length > 0)
+  } else if (typeof reservationIds === 'string') {
     const trimmed = reservationIds.trim()
     if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
       try {
         const parsed = JSON.parse(trimmed)
-        return Array.isArray(parsed)
+        ids = Array.isArray(parsed)
           ? parsed.map((v: unknown) => String(v).trim()).filter((v: string) => v.length > 0)
           : []
       } catch {
-        return []
+        ids = []
       }
+    } else if (trimmed.includes(',')) {
+      ids = trimmed.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+    } else {
+      ids = trimmed.length > 0 ? [trimmed] : []
     }
-    if (trimmed.includes(',')) {
-      return trimmed.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
-    }
-    return trimmed.length > 0 ? [trimmed] : []
   }
-  return []
+  return [...new Set(ids)]
 }
 
 /**

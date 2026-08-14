@@ -10,6 +10,7 @@ import type {
 } from '@/lib/dailyReport/types'
 import { formatReportDateLabel, formatReportDateRangeLabel, isSingleDayReport } from '@/lib/dailyReport/dateUtils'
 import { formatUsd } from '@/lib/dailyReport/moneyUtils'
+import { getStatusColor, getStatusText } from '@/utils/tourStatusUtils'
 import {
   Dialog,
   DialogContent,
@@ -695,6 +696,10 @@ function ActivityHistorySection({
   )
 }
 
+function formatBreakdownCount(count: number, guests: number, isKo: boolean): string {
+  return isKo ? `${count}예약 ${guests}인` : `${count} res ${guests} pax`
+}
+
 function BreakdownTable({
   title,
   rows,
@@ -723,14 +728,14 @@ function BreakdownTable({
           {rows.map((row) => (
             <tr key={row.id} className="border-t border-border/40">
               <td className="px-2 py-1 font-medium sm:px-3 sm:py-1.5">{row.name}</td>
-              <td className="px-2 py-1 text-center text-emerald-700 sm:px-3 sm:py-1.5">
-                {row.newCount}/{row.newGuests}
+              <td className="px-2 py-1 text-center tabular-nums text-emerald-700 sm:px-3 sm:py-1.5">
+                {formatBreakdownCount(row.newCount, row.newGuests, isKo)}
               </td>
-              <td className="px-2 py-1 text-center text-red-600 sm:px-3 sm:py-1.5">
-                {row.cancelledCount}/{row.cancelledGuests}
+              <td className="px-2 py-1 text-center tabular-nums text-red-600 sm:px-3 sm:py-1.5">
+                {formatBreakdownCount(row.cancelledCount, row.cancelledGuests, isKo)}
               </td>
-              <td className="px-2 py-1 text-center font-semibold sm:px-3 sm:py-1.5">
-                {row.netCount}/{row.netGuests}
+              <td className="px-2 py-1 text-center font-semibold tabular-nums sm:px-3 sm:py-1.5">
+                {formatBreakdownCount(row.netCount, row.netGuests, isKo)}
               </td>
             </tr>
           ))}
@@ -1070,50 +1075,49 @@ export function DailyReportDocument({ data, locale = 'ko' }: DailyReportDocument
             </SectionTitle>
             <p className="mb-2 text-[11px] text-muted-foreground sm:mb-3 sm:text-sm">
               {tomorrowLabel} — {data.tomorrowSchedule.totalTours}
-              {isKo ? '건' : ' tours'} · {isKo ? '배정필요' : 'need'}{' '}
+              {isKo ? '건' : ' tours'} · {data.tomorrowSchedule.totalGuests}
+              {isKo ? '인' : ' pax'} · {isKo ? '배정필요' : 'need'}{' '}
               {data.tomorrowSchedule.unassignedCount}
             </p>
             {data.tomorrowSchedule.tours.length > 0 ? (
               <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-border/60 sm:rounded-xl">
-                <table className="w-full min-w-[26rem] text-[11px] sm:min-w-0 sm:text-sm">
+                <table className="w-full min-w-[28rem] text-[11px] sm:min-w-0 sm:text-sm">
                   <thead className="bg-muted/50">
                     <tr>
                       <th className="px-2 py-1 text-left sm:px-3 sm:py-1.5">{isKo ? '상품' : 'Product'}</th>
                       <th className="px-2 py-1 text-left sm:px-3 sm:py-1.5">{isKo ? '가이드' : 'Guide'}</th>
+                      <th className="px-2 py-1 text-left sm:px-3 sm:py-1.5">{isKo ? '어시' : 'Asst'}</th>
+                      <th className="px-2 py-1 text-center sm:px-3 sm:py-1.5">{isKo ? '인원' : 'Pax'}</th>
                       <th className="px-2 py-1 text-left sm:px-3 sm:py-1.5">
                         <Bus className="inline h-3 w-3 sm:h-3.5 sm:w-3.5" />
                       </th>
-                      <th className="px-2 py-1 text-center sm:px-3 sm:py-1.5">{isKo ? '예약' : 'Res'}</th>
-                      <th className="px-2 py-1 text-center sm:px-3 sm:py-1.5">{isKo ? '상태' : 'St'}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.tomorrowSchedule.tours.map((t) => (
                       <tr key={t.id} className="border-t border-border/40">
-                        <td className="px-2 py-1 font-medium sm:px-3 sm:py-1.5">{t.productName}</td>
+                        <td className="px-2 py-1 sm:px-3 sm:py-1.5">
+                          <div className="flex min-w-0 flex-wrap items-center gap-1">
+                            <span className="font-medium leading-tight">{t.productName}</span>
+                            <span
+                              className={`inline-flex shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold sm:px-2 sm:text-xs ${getStatusColor(t.tourStatus)}`}
+                            >
+                              {getStatusText(t.tourStatus, locale)}
+                            </span>
+                          </div>
+                        </td>
                         <td className="px-2 py-1 text-muted-foreground sm:px-3 sm:py-1.5">
                           {t.guideName ?? '—'}
                         </td>
                         <td className="px-2 py-1 text-muted-foreground sm:px-3 sm:py-1.5">
-                          {t.vehicleLabel ?? '—'}
+                          {t.assistantName ?? '—'}
                         </td>
-                        <td className="px-2 py-1 text-center sm:px-3 sm:py-1.5">{t.reservationCount}</td>
-                        <td className="px-2 py-1 text-center sm:px-3 sm:py-1.5">
-                          <span
-                            className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold sm:px-2 sm:text-xs ${
-                              t.isFullyAssigned
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : 'bg-red-100 text-red-700'
-                            }`}
-                          >
-                            {t.isFullyAssigned
-                              ? isKo
-                                ? '완료'
-                                : 'OK'
-                              : isKo
-                                ? '필요'
-                                : 'Need'}
-                          </span>
+                        <td className="px-2 py-1 text-center font-semibold tabular-nums sm:px-3 sm:py-1.5">
+                          {t.guestCount}
+                          {isKo ? '인' : ''}
+                        </td>
+                        <td className="px-2 py-1 text-muted-foreground sm:px-3 sm:py-1.5">
+                          {t.vehicleLabel ?? '—'}
                         </td>
                       </tr>
                     ))}

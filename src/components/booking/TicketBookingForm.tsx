@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, useId } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay';
 import { fetchUploadApi } from '@/lib/uploadClient';
@@ -32,6 +32,7 @@ import { formatTourChoiceCountsChipLabel } from '@/lib/tourChoiceCounts';
 import { buildTicketBookingRequestEmail } from '@/lib/ticketBookingVendorEmail';
 import { useTeamMemberDisplayName } from '@/lib/useTeamMemberDisplayName';
 import TicketBookingVendorEmailCopyBlock from '@/components/booking/TicketBookingVendorEmailCopyBlock';
+import { TicketBookingRelatedDocuments } from '@/components/booking/TicketBookingRelatedDocuments';
 import { isTicketBookingOffsetOrCancelRow } from '@/lib/ticketBookingSoftDelete';
 
 /** 원격 DB에 ticket_bookings.zelle_confirmation_number 가 아직 없을 때 PostgREST PGRST204 */
@@ -226,6 +227,8 @@ export default function TicketBookingForm({
   const t = useTranslations('booking.ticketBooking');
   const tCal = useTranslations('booking.calendar');
   const locale = useLocale();
+  const fileInputId = useId();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState<TicketBooking>(() =>
     buildTicketBookingFormState(booking, tourId)
   );
@@ -742,9 +745,19 @@ export default function TicketBookingForm({
   // 파일 업로드 핸들러
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || [])
+    if (files.length > 0) {
+      setFormData(prev => ({
+        ...prev,
+        uploaded_files: [...(prev.uploaded_files || []), ...files]
+      }))
+    }
+    event.target.value = ''
+  }
+
+  const removeExistingUrl = (index: number) => {
     setFormData(prev => ({
       ...prev,
-      uploaded_files: [...(prev.uploaded_files || []), ...files]
+      uploaded_file_urls: (prev.uploaded_file_urls || []).filter((_, i) => i !== index)
     }))
   }
 
@@ -781,7 +794,7 @@ export default function TicketBookingForm({
     
     const files = Array.from(e.dataTransfer.files)
     const validFiles = files.filter(file => {
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
       return allowedTypes.includes(file.type) && file.size <= 10 * 1024 * 1024
     })
     
@@ -806,7 +819,7 @@ export default function TicketBookingForm({
       if (item.kind === 'file') {
         const file = item.getAsFile()
         if (file) {
-          const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf']
+          const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf']
           if (allowedTypes.includes(file.type) && file.size <= 10 * 1024 * 1024) {
             files.push(file)
           }
@@ -1866,12 +1879,12 @@ export default function TicketBookingForm({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t('attachDocuments')}
               </label>
-            <div 
-              className={`min-h-[12rem] flex flex-col border-2 border-dashed rounded-lg p-6 text-center transition-all duration-200 ${
-                isUploading 
-                  ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50' 
-                  : isDragOver 
-                    ? 'border-primary bg-primary/10 scale-105 cursor-pointer' 
+            <div
+              className={`min-h-[8rem] flex flex-col border-2 border-dashed rounded-lg p-6 text-center transition-all duration-200 ${
+                isUploading
+                  ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50'
+                  : isDragOver
+                    ? 'border-primary bg-primary/10 scale-105 cursor-pointer'
                     : 'border-gray-300 hover:border-blue-400 hover:bg-muted/50 cursor-pointer'
               }`}
               onDragOver={!isUploading ? handleDragOver : undefined}
@@ -1880,14 +1893,14 @@ export default function TicketBookingForm({
               onDrop={!isUploading ? handleDrop : undefined}
               onPaste={!isUploading ? handlePaste : undefined}
               tabIndex={!isUploading ? 0 : -1}
-              onClick={!isUploading ? () => document.getElementById('ticket_file_upload')?.click() : undefined}
+              onClick={!isUploading ? () => fileInputRef.current?.click() : undefined}
             >
               <div className="flex flex-1 flex-col items-center justify-center space-y-2">
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
-                  isUploading 
-                    ? 'bg-primary/10' 
-                    : isDragOver 
-                      ? 'bg-blue-200' 
+                  isUploading
+                    ? 'bg-primary/10'
+                    : isDragOver
+                      ? 'bg-blue-200'
                       : 'bg-gray-100'
                 }`}>
                   {isUploading ? (
@@ -1910,10 +1923,10 @@ export default function TicketBookingForm({
                   <p className={`text-sm font-medium transition-colors ${
                     isDragOver ? 'text-foreground' : 'text-gray-900'
                   }`}>
-                    {isUploading 
-                      ? t('uploading') 
-                      : isDragOver 
-                        ? t('dropFilesHere') 
+                    {isUploading
+                      ? t('uploading')
+                      : isDragOver
+                        ? t('dropFilesHere')
                         : t('dragOrClickFiles')
                     }
                   </p>
@@ -1925,58 +1938,70 @@ export default function TicketBookingForm({
                   {t('supportedFormats')}
                 </div>
               </div>
-              
+            </div>
               <input
-                id="ticket_file_upload"
+                ref={fileInputRef}
+                id={fileInputId}
                 type="file"
                 multiple
                 accept="image/*,.pdf,.doc,.docx"
                 onChange={handleFileUpload}
                 className="hidden"
               />
-              
-              {/* 업로드된 파일 목록 */}
-              {formData.uploaded_files && formData.uploaded_files.length > 0 && (
-                <div className="mt-6 pt-4 border-t border-gray-200">
-                  <h4 className="text-sm font-medium mb-3 text-gray-900">{t('uploadedFiles')} ({formData.uploaded_files.length})</h4>
-                  <div className="space-y-2">
-                    {formData.uploaded_files.map((file, index) => (
-                      <div key={index} className="flex items-center justify-between bg-white border border-gray-200 p-3 rounded-lg hover:bg-gray-50">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-8 h-8 bg-primary/10 rounded flex items-center justify-center">
-                            {file.type.startsWith('image/') ? (
-                              <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                              </svg>
-                            ) : (
-                              <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
-                            )}
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{file.name}</p>
-                            <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            removeFile(index)
-                          }}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50 p-1 rounded"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+
+              {(formData.uploaded_file_urls?.length || 0) > 0 ? (
+                <div className="mt-3">
+                  <TicketBookingRelatedDocuments
+                    urls={formData.uploaded_file_urls ?? []}
+                    openLabel={locale === 'ko' ? '문서 열기' : 'Open document'}
+                    closeLabel={locale === 'ko' ? '닫기' : 'Close'}
+                    imageClassName="h-44 w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                    onRemove={removeExistingUrl}
+                    removeLabel={locale === 'ko' ? '문서 제거' : 'Remove document'}
+                  />
                 </div>
-              )}
-            </div>
+              ) : null}
+
+              {formData.uploaded_files && formData.uploaded_files.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  <h4 className="text-sm font-medium text-gray-900">
+                    {t('uploadedFiles')} ({formData.uploaded_files.length})
+                  </h4>
+                  {formData.uploaded_files.map((file, index) => (
+                    <div
+                      key={`${file.name}-${file.size}-${index}`}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white p-3"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-primary/10">
+                          {file.type.startsWith('image/') ? (
+                            <svg className="h-4 w-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          ) : (
+                            <svg className="h-4 w-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-gray-900">{file.name}</p>
+                          <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeFile(index)}
+                        className="shrink-0 rounded p-1 text-red-600 hover:bg-red-50 hover:text-red-700"
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
             </div>
           </div>

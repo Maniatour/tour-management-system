@@ -21,6 +21,7 @@ import {
   canonicalReservationIdKey,
   normalizeTourDateKey,
   resolveTeamTypeForTourCreate,
+  normalizeTourTeamType,
 } from '@/utils/tourUtils'
 import {
   getCustomerName,
@@ -41,6 +42,7 @@ import {
 } from '@/utils/tourStatusUtils'
 import {
   computeVehicleOilMaintenanceSummary,
+  resolveAntelopeCheckInDate,
   type ScheduleTourForOil,
   type ScheduleVehicleOilMeta,
   type VehicleOilMaintenanceSummary,
@@ -137,12 +139,16 @@ import {
   buildTourCanyonDisplayBadges,
   formatTourCanyonChoiceCardLine,
   aggregateTicketEaByCanyon,
+  ticketBookingCanyonKeyFromBooking,
 } from '@/lib/ticketBookingDateView'
 import {
   aggregateTourChoiceCounts,
+  formatTourChoiceCountsChipLabel,
   tourChoiceCountsDisplayKeys,
+  tourChoiceCountsHasDisplayable,
   type ReservationChoiceRow,
   type TourChoiceCountKey,
+  type TourChoiceCounts,
 } from '@/lib/tourChoiceCounts'
 import {
   resolveDisplayOtaSaleStatus,
@@ -509,12 +515,35 @@ function resolveTourStatusSelectValue(
   return ci?.value ?? current
 }
 
+/** 부킹 행 호버: 투어 배정 인원 vs 입장권 수량 차이 뱃지 */
+function scheduleBookingCanyonQtyActionBadge(
+  tourN: number,
+  ticketN: number,
+  locale: string,
+): { kind: 'book_more' | 'cancel'; label: string } | null {
+  if (tourN === ticketN) return null
+  if (!(tourN > 0 || ticketN > 0)) return null
+  const diff = Math.abs(ticketN - tourN)
+  const isKo = locale === 'ko' || locale.startsWith('ko')
+  if (ticketN > tourN) {
+    return {
+      kind: 'cancel',
+      label: isKo ? `${diff}개 취소 필요` : `${diff} to cancel`,
+    }
+  }
+  return {
+    kind: 'book_more',
+    label: isKo ? `${diff}개 추가 구매 필요` : `${diff} more to purchase`,
+  }
+}
+
 /** 입장권 부킹에 연결된 투어 안내 문구 (미연결 시 고정 문구) */
 function formatConnectedTourLabelForTicketBookingTooltip(
   tour: Tour | undefined,
   activeTeam: Team[],
   inactiveTeam: Team[],
-  assignedPeople?: number
+  assignedPeople?: number,
+  choiceCounts?: TourChoiceCounts | null,
 ): string {
   if (!tour?.id) return '연결되지 않음'
   const productName = (
@@ -528,11 +557,13 @@ function formatConnectedTourLabelForTicketBookingTooltip(
     typeof assignedPeople === 'number' && Number.isFinite(assignedPeople)
       ? ` 배정 ${Math.max(0, Math.floor(assignedPeople))}명`
       : ''
+  const canyonChip = formatTourChoiceCountsChipLabel(choiceCounts)
+  const canyonSuffix = canyonChip ? ` (${canyonChip})` : ''
   if (teamTypeStr === '1guide' || !tour.assistant_id || !String(tour.assistant_id).trim()) {
-    return `${productName} (${guideName})${peopleSuffix}`
+    return `${productName} (${guideName})${peopleSuffix}${canyonSuffix}`
   }
   const asstName = resolveScheduleMemberDisplayForBookingTooltip(tour.assistant_id, activeTeam, inactiveTeam)
-  return `${productName} (${guideName}, ${asstName})${peopleSuffix}`
+  return `${productName} (${guideName}, ${asstName})${peopleSuffix}${canyonSuffix}`
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -582,15 +613,25 @@ function ticketCompanyShortTag(company: string): string {
   return /[a-zA-Z]/.test(ch) ? ch.toUpperCase() : ch
 }
 
-/** 스케줄 부킹 행: 체크인일 우선, 없으면 연결 투어 시작일 */
+/** 스케줄 부킹 행: 체크인일 우선, 없으면 연결 투어의 앤텔롭 체크인일(당일 투어는 투어일) */
 function resolveScheduleTicketBookingDisplayYmd(
   booking: Pick<ScheduleTicketBookingRow, 'check_in_date' | 'tour_id'>,
-  tourStartYmdByTourId: Map<string, string>
+  tourTicketCompareYmdByTourId: Map<string, string>
 ): string | null {
   const checkIn = booking.check_in_date ? String(booking.check_in_date).trim().slice(0, 10) : null
   if (checkIn) return checkIn
-  if (booking.tour_id) return tourStartYmdByTourId.get(String(booking.tour_id)) ?? null
+  if (booking.tour_id) return tourTicketCompareYmdByTourId.get(String(booking.tour_id)) ?? null
   return null
+}
+
+function buildTourTicketCompareYmdByTourId(tours: Tour[]): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const tour of tours) {
+    if (!tour?.id) continue
+    const ymd = resolveAntelopeCheckInDate(tour)
+    if (ymd) map.set(String(tour.id), ymd)
+  }
+  return map
 }
 
 function aggregateTicketDetailsForScheduleDisplay(
@@ -977,6 +1018,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const [tourDetailIframeReloadNonce, setTourDetailIframeReloadNonce] = useState(0)
   const [updatingTourDetailModalStatusId, setUpdatingTourDetailModalStatusId] = useState<string | null>(null)
   const [updatingGuideModalAssignmentStatusId, setUpdatingGuideModalAssignmentStatusId] = useState<string | null>(null)
+  const [updatingGuideModalTeamTypeId, setUpdatingGuideModalTeamTypeId] = useState<string | null>(null)
   const [copyingGuideModalTourId, setCopyingGuideModalTourId] = useState<string | null>(null)
   
   // 행 드래그앤드롭 상태 (상품/차량)
@@ -2105,7 +2147,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           const { data: batch, error } = await supabase
             .from('tours')
             .select(
-              'id, tour_date, tour_status, tour_car_id, product_id, tour_guide_id, assistant_id, team_type, reservation_ids, products(name)',
+              'id, tour_date, tour_status, tour_car_id, product_id, tour_guide_id, assistant_id, team_type, reservation_ids, antelope_check_in_date, products(name)',
             )
             .eq('operator_id', activeOperatorId)
             .gte('tour_date', fetchStart)
@@ -2162,9 +2204,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         const ticketTourIdSet = new Set<string>()
         for (const t of weekTours) {
           if (isTourCancelled(t.tour_status)) continue
+          const antelopeYmd = resolveAntelopeCheckInDate(t)
           for (let d = 0; d < 4; d++) {
             const ds = today.add(d, 'day').format('YYYY-MM-DD')
-            if (tourCoversScheduleDate(t, ds)) {
+            if (antelopeYmd === ds) {
               ticketTourIdSet.add(String(t.id))
               break
             }
@@ -2205,7 +2248,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     return () => {
       cancelled = true
     }
-  }, [tourCoversScheduleDate, activeOperatorId, isDisplayMode])
+  }, [activeOperatorId, isDisplayMode])
 
   // 월 컬럼: 전월 마지막 날 + 해당 월 전체 + 익월 첫날 (예: 5월 뷰 → 4/30 … 5/31 … 6/1)
   // display 모드: 오늘부터 displayDayCount일 (패딩 없음)
@@ -4890,7 +4933,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     const spotsLeft = Math.max(0, capacityDenom - assignedPeople)
     const guideAssigned = !!(tour.tour_guide_id && String(tour.tour_guide_id).trim())
     const assistantAssigned = !!(tour.assistant_id && String(tour.assistant_id).trim())
-    const requiresAssistant = tour.team_type !== '1guide'
+    const requiresAssistant = (normalizeTourTeamType(tour.team_type) || '1guide') !== '1guide'
     const canyonBadges = buildTourCanyonDisplayBadges(choiceCounts, tourTicketBookings)
     const assignmentStatus = resolveTourDisplayAssignmentStatus(tour)
 
@@ -5285,6 +5328,42 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     [tours, locale],
   )
 
+  const applyGuideModalTeamType = useCallback(
+    async (tourId: string, type: '1guide' | '2guide' | 'guide+driver') => {
+      const tour = tours.find((t) => String(t.id) === String(tourId))
+      if (!tour) return
+      const current = normalizeTourTeamType(tour.team_type) || '1guide'
+      if (current === type) return
+
+      setUpdatingGuideModalTeamTypeId(tourId)
+      try {
+        const ok = await tourHandlers.handleTeamTypeChange(tour, type)
+        if (!ok) return
+
+        const next: Tour = {
+          ...tour,
+          team_type: type,
+          ...(type === '1guide' ? { assistant_id: null } : {}),
+        }
+        setTours((prev) => prev.map((t) => (String(t.id) === String(tourId) ? next : t)))
+        setUnassignedTours((prev) => {
+          const needsGuide = !next.tour_guide_id
+          const needsAssistant = next.team_type !== '1guide' && !next.assistant_id
+          const exists = prev.some((t) => String(t.id) === String(tourId))
+          if (needsGuide || needsAssistant) {
+            return exists
+              ? prev.map((t) => (String(t.id) === String(tourId) ? next : t))
+              : [...prev, next]
+          }
+          return prev.filter((t) => String(t.id) !== String(tourId))
+        })
+      } finally {
+        setUpdatingGuideModalTeamTypeId(null)
+      }
+    },
+    [tours, tourHandlers],
+  )
+
   /** 투어 요약 카드뷰: 같은 상품/날짜로 빈 투어 복사 (예약·가이드·차량은 비움, 팀 구성 유지) */
   const handleCopyTourFromGuideModal = useCallback(
     async (sourceTourId: string) => {
@@ -5571,16 +5650,18 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     for (const tour of wt) {
       if (isTourCancelled(tour.tour_status)) continue
       if (!tourProductRequiresTicketBookingCount(tour)) continue
+      const antelopeYmd = resolveAntelopeCheckInDate(tour)
       let touchesFour = false
       for (let d = 0; d < 4; d++) {
         const ds = today.add(d, 'day').format('YYYY-MM-DD')
-        if (tourCoversScheduleDate(tour, ds)) {
+        if (antelopeYmd === ds) {
           touchesFour = true
           break
         }
       }
       if (!touchesFour) continue
       const tourDateStr = String(tour.tour_date || '').slice(0, 10)
+      const mismatchDateStr = antelopeYmd || tourDateStr
       const dayReservations = resList.filter((r) => {
         const rd = String(r.tour_date || '').slice(0, 10)
         return (
@@ -5606,7 +5687,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       if (assignedPeople !== ticketEa) {
         ticketPeopleMismatch.push({
           tourId: tour.id,
-          tourDate: tourDateStr,
+          tourDate: mismatchDateStr,
           productName: (
             (tour as { products?: { name?: string } }).products?.name ||
             tour.product_id ||
@@ -5826,6 +5907,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       ticketCount: number; 
       hotelCount: number; 
       totalCount: number;
+      lxCounts: { L: number; X: number };
+      tourLxCounts: { L: number; X: number };
+      tourAssignedPeople: number;
       ticketDetails: Array<{
         id: string
         company: string
@@ -5834,6 +5918,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         booking_status?: string | null
         vendor_status?: string | null
         connectedTourLabel: string
+        canyonKey?: 'L' | 'X' | 'U' | null
       }>;
       hotelDetails: Array<{ hotel: string; rooms: number }>;
     } } = {}
@@ -5843,12 +5928,16 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         ticketCount: 0, 
         hotelCount: 0, 
         totalCount: 0,
+        lxCounts: { L: 0, X: 0 },
+        tourLxCounts: { L: 0, X: 0 },
+        tourAssignedPeople: 0,
         ticketDetails: [],
         hotelDetails: []
       }
     })
 
     const tourStartYmdByTourId = new Map<string, string>()
+    const tourTicketCompareYmdByTourId = buildTourTicketCompareYmdByTourId(tours)
     const toursByIdForBookings = new Map<string, Tour>()
     tours.forEach(tour => {
       if (tour.id && tour.tour_date) {
@@ -5859,12 +5948,60 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
     /** 투어당 1회만 예약 스캔 (입장권 행마다 반복하면 부킹×예약으로 매우 느려짐) */
     const assignedPeopleByTourId = new Map<string, number>()
+    const choiceCountsByTourId = new Map<string, TourChoiceCounts>()
+    const choiceRowsByResId = new Map<string, ReservationChoiceRow[]>()
+    for (const rc of reservationChoices) {
+      const rid = String(rc.reservation_id || '').trim()
+      if (!rid) continue
+      const list = choiceRowsByResId.get(rid) ?? []
+      list.push({
+        choiceKey: (rc.choiceKey || '_other') as TourChoiceCountKey,
+        quantity: rc.quantity ?? 1,
+      })
+      choiceRowsByResId.set(rid, list)
+      const canon = canonicalReservationIdKey(rid)
+      if (canon !== rid) choiceRowsByResId.set(canon, list)
+    }
     for (const tour of tours) {
       if (!tour?.id) continue
+      const tid = String(tour.id)
       assignedPeopleByTourId.set(
-        String(tour.id),
+        tid,
         computeTourAssignedPeopleForScheduleTooltip(tour, reservations)
       )
+      const tourDate = (tour.tour_date || '').toString().trim().substring(0, 10)
+      const productId = tour.product_id
+      const assignedCanon = new Set<string>()
+      for (const rawId of normalizeReservationIds(tour.reservation_ids)) {
+        if (rawId) assignedCanon.add(canonicalReservationIdKey(rawId))
+      }
+      if (!tourDate || productId == null || productId === '' || assignedCanon.size === 0) {
+        choiceCountsByTourId.set(tid, {})
+        continue
+      }
+      const st = (s: string | null | undefined) => (s || '').toLowerCase().trim()
+      const assignedResList = reservations.filter((r) => {
+        if (String(r.product_id) !== String(productId)) return false
+        const rd = r.tour_date ? String(r.tour_date).trim().substring(0, 10) : ''
+        if (rd !== tourDate) return false
+        const ss = st(r.status)
+        if (ss !== 'confirmed' && ss !== 'recruiting') return false
+        return assignedCanon.has(canonicalReservationIdKey(String(r.id)))
+      })
+      choiceCountsByTourId.set(tid, aggregateTourChoiceCounts(assignedResList, choiceRowsByResId))
+    }
+
+    for (const tour of tours) {
+      if (!tour?.id) continue
+      if (isTourCancelled(tour.tour_status)) continue
+      if (!tourProductRequiresTicketBookingCount(tour)) continue
+      const ymd = resolveAntelopeCheckInDate(tour)
+      if (!ymd || !dailyTotals[ymd]) continue
+      const tid = String(tour.id)
+      dailyTotals[ymd].tourAssignedPeople += assignedPeopleByTourId.get(tid) ?? 0
+      const counts = choiceCountsByTourId.get(tid)
+      dailyTotals[ymd].tourLxCounts.L += counts?.L || 0
+      dailyTotals[ymd].tourLxCounts.X += counts?.X || 0
     }
 
     // 입장권 부킹 합산 (체크인일 기준; 멀티데이·밤도깨비·당일·앤텔롭+홀슈 연결 투어만, 가예약·홀드는 미연결도 표시)
@@ -5877,11 +6014,15 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         if (!linkedTour || !tourProductRequiresTicketBookingCount(linkedTour)) return
       }
 
-      const dateString = resolveScheduleTicketBookingDisplayYmd(booking, tourStartYmdByTourId)
+      const dateString = resolveScheduleTicketBookingDisplayYmd(booking, tourTicketCompareYmdByTourId)
 
       if (dateString && dailyTotals[dateString]) {
         dailyTotals[dateString].ticketCount += booking.ea || 0
         dailyTotals[dateString].totalCount += booking.ea || 0
+        const canyonKey = ticketBookingCanyonKeyFromBooking(booking)
+        if (canyonKey === 'L' || canyonKey === 'X') {
+          dailyTotals[dateString].lxCounts[canyonKey] += booking.ea || 0
+        }
         const assignedForTour =
           linkedTour && booking.tour_id
             ? assignedPeopleByTourId.get(String(booking.tour_id)) ?? 0
@@ -5890,7 +6031,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           linkedTour,
           teamMembers,
           inactiveTeamMembers,
-          assignedForTour
+          assignedForTour,
+          linkedTour && booking.tour_id
+            ? choiceCountsByTourId.get(String(booking.tour_id))
+            : undefined
         )
         dailyTotals[dateString].ticketDetails.push({
           id: booking.id,
@@ -5900,7 +6044,21 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           booking_status: booking.booking_status ?? null,
           vendor_status: booking.vendor_status ?? null,
           connectedTourLabel,
+          canyonKey: canyonKey === 'L' || canyonKey === 'X' || canyonKey === 'U' ? canyonKey : null,
         })
+      }
+    })
+
+    monthDays.forEach(({ dateString }) => {
+      const d = dailyTotals[dateString]
+      if (!d) return
+      if (tourChoiceCountsHasDisplayable(d.tourLxCounts)) return
+      if (d.tourAssignedPeople <= 0) return
+      const ticketKeys = (['L', 'X'] as const).filter((k) => (d.lxCounts[k] || 0) > 0)
+      if (ticketKeys.length === 1) {
+        d.tourLxCounts[ticketKeys[0]] = d.tourAssignedPeople
+      } else if (ticketKeys.length === 0) {
+        d.tourLxCounts.L = d.tourAssignedPeople
       }
     })
 
@@ -5925,7 +6083,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     })
 
     return dailyTotals
-  }, [ticketBookings, tourHotelBookings, tours, monthDays, teamMembers, inactiveTeamMembers, reservations])
+  }, [ticketBookings, tourHotelBookings, tours, monthDays, teamMembers, inactiveTeamMembers, reservations, reservationChoices])
 
   const bookingDetailRowsByDate = useMemo(() => {
     const out: Record<string, ScheduleBookingDetailRow[]> = {}
@@ -5954,56 +6112,21 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     return out
   }, [bookingTotals, monthDays])
 
-  /** 부킹 행 셀: 티켓 인원 불일치 · 멀티데이 호텔 미부킹 */
+  /** 부킹 행 셀: 티켓 인원 불일치 · 멀티데이 호텔 미부킹
+   * 입장권 수량 대조는 투어 출발일이 아니라 앤텔롭 캐년 체크인일 기준 (숙박투어 = 2일차 또는 저장된 날짜). */
   const bookingCellAlerts = useMemo(() => {
     const byDate: Record<string, { ticketMismatch: boolean; multiDayHotelMissing: boolean }> = {}
     monthDays.forEach(({ dateString }) => {
       byDate[dateString] = { ticketMismatch: false, multiDayHotelMissing: false }
     })
 
-    const tourStartYmdByTourId = new Map<string, string>()
-    const toursById = new Map<string, Tour>()
-    for (const tour of tours) {
-      if (!tour?.id) continue
-      toursById.set(String(tour.id), tour)
-      if (tour.tour_date) tourStartYmdByTourId.set(String(tour.id), String(tour.tour_date).slice(0, 10))
-    }
-
-    const activeTicketsByTourId = new Map<string, ScheduleTicketBookingRow[]>()
-    for (const booking of ticketBookings) {
-      if (!booking.tour_id || !isTicketBookingActiveForScheduleGrid(booking)) continue
-      const tid = String(booking.tour_id)
-      const list = activeTicketsByTourId.get(tid) ?? []
-      list.push(booking)
-      activeTicketsByTourId.set(tid, list)
-    }
-
     monthDays.forEach(({ dateString }) => {
       let tourPeople = 0
-      const toursCountedForDay = new Set<string>()
-
-      for (const booking of ticketBookings) {
-        if (!isTicketBookingActiveForScheduleGrid(booking) || !booking.tour_id) continue
-        const displayYmd = resolveScheduleTicketBookingDisplayYmd(booking, tourStartYmdByTourId)
-        if (displayYmd !== dateString) continue
-        const tid = String(booking.tour_id)
-        if (toursCountedForDay.has(tid)) continue
-        const tour = toursById.get(tid)
-        if (!tour || isTourCancelled(tour.tour_status)) continue
-        if (!tourProductRequiresTicketBookingCount(tour)) continue
-        toursCountedForDay.add(tid)
-        tourPeople += computeTourAssignedPeopleForScheduleTooltip(tour, reservations)
-      }
-
       for (const tour of tours) {
         if (isTourCancelled(tour.tour_status)) continue
         if (!tourProductRequiresTicketBookingCount(tour)) continue
-        const tourStart = String(tour.tour_date || '').slice(0, 10)
-        if (tourStart !== dateString) continue
-        const tid = String(tour.id)
-        if ((activeTicketsByTourId.get(tid)?.length ?? 0) > 0) continue
-        const assigned = computeTourAssignedPeopleForScheduleTooltip(tour, reservations)
-        if (assigned > 0) tourPeople += assigned
+        if (resolveAntelopeCheckInDate(tour) !== dateString) continue
+        tourPeople += computeTourAssignedPeopleForScheduleTooltip(tour, reservations)
       }
 
       const ticketEa = bookingTotals[dateString]?.ticketCount ?? 0
@@ -6036,7 +6159,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     reservations,
     bookingTotals,
     tourHotelBookings,
-    ticketBookings,
     getMultiDayTourDays,
   ])
 
@@ -7356,27 +7478,52 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             <div className="overflow-visible">
               <table className="w-full border-collapse" style={{tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px`}}>
                 <tbody>
+                  {(['L', 'X'] as const).map((canyonKey) => {
+                    const isFirstLxRow = canyonKey === 'L'
+                    const isLastLxRow = canyonKey === 'X'
+                    const rowTopBorder = isFirstLxRow ? 'border-t-2 border-t-gray-800' : ''
+                    const rowBottomBorder =
+                      bookingRowExpanded || !isLastLxRow
+                        ? 'border-b border-b-gray-300'
+                        : 'border-b-2 border-b-gray-800'
+                    return (
                   <tr
+                    key={`schedule-booking-${canyonKey}`}
                     className="group bg-purple-50 cursor-pointer hover:bg-purple-100/90 transition-colors"
                     onClick={() => setBookingRowExpanded(v => !v)}
                     title={bookingRowExpanded ? '클릭하여 상세 접기' : '클릭하여 시간·업체별 상세 펼치기'}
                   >
                     <td
-                      className={`px-2 py-0.5 text-xs font-medium text-gray-900 border-t-2 border-t-gray-800 sticky left-0 z-40 bg-purple-50 group-hover:bg-purple-100/90 border-r border-r-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)] ${bookingRowExpanded ? 'border-b border-b-gray-300' : 'border-b-2 border-b-gray-800'}`}
+                      className={`px-2 py-0.5 text-xs font-medium text-gray-900 sticky left-0 z-40 bg-purple-50 group-hover:bg-purple-100/90 border-r border-r-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)] ${rowTopBorder} ${rowBottomBorder}`}
                       style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}
                     >
                       <div className="flex items-center gap-0.5">
-                        {bookingRowExpanded ? (
-                          <ChevronDown className="w-3.5 h-3.5 shrink-0 text-gray-600" aria-hidden />
+                        {isFirstLxRow ? (
+                          bookingRowExpanded ? (
+                            <ChevronDown className="w-3.5 h-3.5 shrink-0 text-gray-600" aria-hidden />
+                          ) : (
+                            <ChevronRight className="w-3.5 h-3.5 shrink-0 text-gray-600" aria-hidden />
+                          )
                         ) : (
-                          <ChevronRight className="w-3.5 h-3.5 shrink-0 text-gray-600" aria-hidden />
+                          <span className="w-3.5 h-3.5 shrink-0" aria-hidden />
                         )}
-                        부킹
+                        {`🏜️${canyonKey}`}
                       </div>
                     </td>
                     {monthDays.map(({ dateString }) => {
                       const bookingData = bookingTotals[dateString]
-                      const hasBooking = bookingData && bookingData.totalCount > 0
+                      const canyonCount = bookingData?.lxCounts[canyonKey] ?? 0
+                      const hasCanyonCount = canyonCount > 0
+                      const canyonQtyAction = scheduleBookingCanyonQtyActionBadge(
+                        bookingData?.tourLxCounts[canyonKey] ?? 0,
+                        canyonCount,
+                        locale,
+                      )
+                      const ticketDetailsForCanyon = (bookingData?.ticketDetails ?? []).filter(
+                        (d) => d.canyonKey === canyonKey,
+                      )
+                      const showHotelInTooltip = canyonKey === 'L' && (bookingData?.hotelDetails.length ?? 0) > 0
+                      const hoverCellKey = `${dateString}:${canyonKey}`
                       const cellAlert = bookingCellAlerts.byDate[dateString]
                       const isBookingAlert =
                         cellAlert?.ticketMismatch || cellAlert?.multiDayHotelMissing
@@ -7391,20 +7538,20 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                       const valueClass = isBookingAlert
                         ? ''
                         : `font-medium ${
-                            !hasBooking || bookingData.totalCount === 0
+                            !hasCanyonCount
                               ? 'text-gray-300'
-                              : bookingData.totalCount < 5
+                              : canyonCount < 5
                                 ? 'text-primary'
                                 : 'text-red-600'
                           } ${isToday(dateString) ? 'text-red-700' : ''}`
                       return (
                         <td 
                           key={dateString} 
-                          className={`p-0 text-center text-xs relative border-t-2 border-t-gray-800 ${bookingRowExpanded ? 'border-b border-b-gray-300' : 'border-b-2 border-b-gray-800'}`}
+                          className={`p-0 text-center text-xs relative ${rowTopBorder} ${rowBottomBorder}`}
                           style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                           onMouseEnter={() => {
                             if (scheduleInteractionDragging) return
-                            setHoveredBookingDate(dateString)
+                            setHoveredBookingDate(hoverCellKey)
                           }}
                           onMouseLeave={() => {
                             if (scheduleInteractionDragging) return
@@ -7417,7 +7564,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                               isBookingAlert
                                 ? [
                                     cellAlert?.ticketMismatch
-                                      ? '해당일 투어 배정 인원과 입장권 구매 수량이 다릅니다.'
+                                      ? '앤텔롭 캐년 체크인일 기준 투어 배정 인원과 입장권 구매 수량이 다릅니다.'
                                       : '',
                                     cellAlert?.multiDayHotelMissing
                                       ? '멀티데이 투어에 호텔 부킹이 없습니다.'
@@ -7428,20 +7575,35 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                                 : undefined
                             }
                           >
-                            {hasBooking ? (
-                              <div className={valueClass}>{bookingData.totalCount}</div>
+                            {hasCanyonCount ? (
+                              <div className={valueClass}>{canyonCount}</div>
                             ) : (
                               <div className={isBookingAlert ? '' : 'text-gray-300'}>-</div>
                             )}
                           </div>
                           {/* 마우스 오버 시 부킹 상세 정보 표시 */}
-                          {hoveredBookingDate === dateString && (hasBooking || isBookingAlert) && bookingData && (
+                          {hoveredBookingDate === hoverCellKey &&
+                            (hasCanyonCount || showHotelInTooltip || isBookingAlert || canyonQtyAction) &&
+                            bookingData && (
                             <div className="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-1 w-[22rem] max-w-[min(22rem,calc(100vw-2rem))] p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg pointer-events-none">
-                              <div className="font-semibold mb-2">{dateString}</div>
-                              {bookingData.ticketDetails.length > 0 && (
+                              <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                                <div className="font-semibold">{dateString} · 🏜️{canyonKey}</div>
+                                {canyonQtyAction ? (
+                                  <span
+                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold leading-tight ${
+                                      canyonQtyAction.kind === 'cancel'
+                                        ? 'bg-red-500 text-white'
+                                        : 'bg-amber-400 text-amber-950'
+                                    }`}
+                                  >
+                                    {canyonQtyAction.label}
+                                  </span>
+                                ) : null}
+                              </div>
+                              {ticketDetailsForCanyon.length > 0 && (
                                 <div className="mb-2">
                                   <div className="font-semibold text-yellow-400 mb-1">입장권 부킹</div>
-                                  {bookingData.ticketDetails.map((detail, idx) => (
+                                  {ticketDetailsForCanyon.map((detail, idx) => (
                                     <div
                                       key={idx}
                                       className="ml-2 mb-1.5 flex flex-wrap items-baseline gap-x-1 gap-y-0.5 break-words"
@@ -7479,7 +7641,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                                   ))}
                                 </div>
                               )}
-                              {bookingData.hotelDetails.length > 0 && (
+                              {showHotelInTooltip && (
                                 <div>
                                   <div className="font-semibold text-yellow-400 mb-1">호텔 부킹</div>
                                   {bookingData.hotelDetails.map((detail, idx) => (
@@ -7496,17 +7658,19 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                       )
                     })}
                     <td
-                      className={`px-2 py-0.5 text-center text-xs font-medium border-t-2 border-t-gray-800 ${bookingRowExpanded ? 'border-b border-b-gray-300' : 'border-b-2 border-b-gray-800'}`}
+                      className={`px-2 py-0.5 text-center text-xs font-medium ${rowTopBorder} ${rowBottomBorder}`}
                       style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}
                     >
                       <div>
                         {monthDaysCore.reduce(
-                          (sum, d) => sum + (bookingTotals[d.dateString]?.totalCount ?? 0),
+                          (sum, d) => sum + (bookingTotals[d.dateString]?.lxCounts[canyonKey] ?? 0),
                           0
                         )}
                       </div>
                     </td>
                   </tr>
+                    )
+                  })}
                   {bookingRowExpanded && (
                     <tr className="bg-purple-50/80">
                       <td className="px-2 py-0.5 text-[10px] text-gray-500 align-top border-b-2 border-b-gray-800 sticky left-0 z-40 bg-purple-50 border-r border-r-gray-300 shadow-[1px_0_0_0_rgb(209,213,219)]" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
@@ -9915,6 +10079,12 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                         tourStatusValue={statusValue || ''}
                         updatingTourStatus={updatingTourDetailModalStatusId === tourId}
                         updatingAssignmentStatus={updatingGuideModalAssignmentStatusId === tourId}
+                        teamType={normalizeTourTeamType(tour.team_type) || '1guide'}
+                        updatingTeamType={updatingGuideModalTeamTypeId === tourId}
+                        onSelectTeamType={(type) => {
+                          setGuideModalContent((prev) => ({ ...prev, tourId }))
+                          void applyGuideModalTeamType(tourId, type)
+                        }}
                         onSelectGuide={(email) => {
                           setGuideModalContent((prev) => ({ ...prev, tourId }))
                           applyGuideModalGuideValue(tourId, email)

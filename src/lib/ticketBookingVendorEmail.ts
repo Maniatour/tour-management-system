@@ -23,6 +23,20 @@ export type TicketBookingRequestEmailInput = {
   submitterDisplayName?: string | null
 }
 
+export type TicketBookingVendorEmailSameDayTicket = {
+  id?: string | undefined
+  rnNumber?: string | null | undefined
+  checkInDate: string
+  time: string
+  quantity: number
+  /** 변경 전 수량 — 있으면 Pax를 `4 → 7` 형태로 표시 */
+  previousQuantity?: number | undefined
+  /** 변경 전 시간 — 있으면 Time을 `10:15 → 09:30` 형태로 표시 */
+  previousTime?: string | undefined
+  /** 이번 변경 요청 대상 행 */
+  isCurrent?: boolean | undefined
+}
+
 export type TicketBookingChangeRequestEmailInput = {
   company: string
   checkInDate: string
@@ -34,6 +48,8 @@ export type TicketBookingChangeRequestEmailInput = {
   requestedTime: string
   note?: string | null
   submitterDisplayName?: string | null
+  /** 같은 체크인일·같은 업체 티켓 (현재 건 포함) */
+  sameDayTickets?: TicketBookingVendorEmailSameDayTicket[]
 }
 
 const RED_BOLD_OPEN = '<span style="color:#dc2626;font-weight:700">'
@@ -114,11 +130,120 @@ function signOffHtml(displayName: string | null | undefined): string {
   ].join('')
 }
 
+function compareSameDayTickets(
+  a: TicketBookingVendorEmailSameDayTicket,
+  b: TicketBookingVendorEmailSameDayTicket
+): number {
+  const ta = formatTicketBookingVendorEmailTime(a.time)
+  const tb = formatTicketBookingVendorEmailTime(b.time)
+  if (ta !== tb) return ta.localeCompare(tb)
+  const ra = String(a.rnNumber || '').trim()
+  const rb = String(b.rnNumber || '').trim()
+  if (ra !== rb) return ra.localeCompare(rb)
+  return String(a.id || '').localeCompare(String(b.id || ''))
+}
+
+function sameDayPaxChanged(ticket: TicketBookingVendorEmailSameDayTicket): boolean {
+  const to = Number.isFinite(ticket.quantity) ? ticket.quantity : 0
+  const from = ticket.previousQuantity
+  return from != null && Number.isFinite(from) && from !== to
+}
+
+function sameDayPaxPlain(ticket: TicketBookingVendorEmailSameDayTicket): string {
+  const to = Number.isFinite(ticket.quantity) ? String(ticket.quantity) : '0'
+  if (!sameDayPaxChanged(ticket)) return to
+  return `${ticket.previousQuantity} → ${to}`
+}
+
+function sameDayPaxHtml(ticket: TicketBookingVendorEmailSameDayTicket): string {
+  const to = Number.isFinite(ticket.quantity) ? String(ticket.quantity) : '0'
+  if (!sameDayPaxChanged(ticket)) return escapeHtml(to)
+  return htmlArrow(String(ticket.previousQuantity), to, true)
+}
+
+function sameDayTimeChanged(ticket: TicketBookingVendorEmailSameDayTicket): boolean {
+  const to = formatTicketBookingVendorEmailTime(ticket.time)
+  const from = ticket.previousTime
+    ? formatTicketBookingVendorEmailTime(ticket.previousTime)
+    : ''
+  return Boolean(from && from !== '—' && from !== to)
+}
+
+function sameDayTimePlain(ticket: TicketBookingVendorEmailSameDayTicket): string {
+  const to = formatTicketBookingVendorEmailTime(ticket.time)
+  if (!sameDayTimeChanged(ticket)) return to
+  return `${formatTicketBookingVendorEmailTime(ticket.previousTime)} → ${to}`
+}
+
+function sameDayTimeHtml(ticket: TicketBookingVendorEmailSameDayTicket): string {
+  const to = formatTicketBookingVendorEmailTime(ticket.time)
+  if (!sameDayTimeChanged(ticket)) return escapeHtml(to)
+  return htmlArrow(formatTicketBookingVendorEmailTime(ticket.previousTime), to, true)
+}
+
+function formatSameDayTicketPlain(ticket: TicketBookingVendorEmailSameDayTicket): string {
+  const rn = String(ticket.rnNumber || '').trim() || '—'
+  const date = formatCheckInDateCompact(ticket.checkInDate)
+  const time = sameDayTimePlain(ticket)
+  const qty = sameDayPaxPlain(ticket)
+  const mark = ticket.isCurrent ? '  ← this request' : ''
+  return `RN # ${rn} · Check-in ${date} · Time ${time} · Pax ${qty}${mark}`
+}
+
+function buildSameDayReferenceHtml(tickets: TicketBookingVendorEmailSameDayTicket[]): string {
+  if (tickets.length === 0) return ''
+  const headerCell =
+    'padding:8px 8px;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#64748b;background:#e2e8f0;border-bottom:1px solid #cbd5e1;text-align:left;white-space:nowrap'
+  const rowsHtml = tickets
+    .map((ticket, i) => {
+      const rn = String(ticket.rnNumber || '').trim() || '—'
+      const date = formatCheckInDateCompact(ticket.checkInDate)
+      const timeHtml = sameDayTimeHtml(ticket)
+      const qtyHtml = sameDayPaxHtml(ticket)
+      const border = i < tickets.length - 1 ? 'border-bottom:1px solid #e2e8f0;' : ''
+      const bg = ticket.isCurrent ? 'background:#eff6ff;' : 'background:#ffffff;'
+      const weight =
+        ticket.isCurrent || sameDayPaxChanged(ticket) || sameDayTimeChanged(ticket)
+          ? 'font-weight:700;'
+          : ''
+      const rnHtml = ticket.isCurrent
+        ? `${escapeHtml(rn)}<div style="font-size:10px;font-weight:600;color:#2563eb;margin-top:2px">this request</div>`
+        : escapeHtml(rn)
+      const cell = `padding:8px;${border}${bg}${weight}font-size:12px;color:#0f172a;vertical-align:top`
+      return [
+        '<tr>',
+        `<td style="${cell}">${rnHtml}</td>`,
+        `<td style="${cell}">${escapeHtml(date)}</td>`,
+        `<td style="${cell}">${timeHtml}</td>`,
+        `<td style="${cell}">${qtyHtml}</td>`,
+        '</tr>',
+      ].join('')
+    })
+    .join('')
+
+  return [
+    '<div style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;margin:0 0 8px">',
+    'Same-day tickets (reference)',
+    '</div>',
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"',
+    ' style="border-collapse:separate;border:1px solid #cbd5e1;border-radius:8px;overflow:hidden">',
+    '<tr>',
+    `<th style="${headerCell}">RN #</th>`,
+    `<th style="${headerCell}">Check-in</th>`,
+    `<th style="${headerCell}">Time</th>`,
+    `<th style="${headerCell}">Pax</th>`,
+    '</tr>',
+    rowsHtml,
+    '</table>',
+  ].join('')
+}
+
 function buildEmailCardHtml(options: {
   badge: string
   company: string
   rows: CardRow[]
   footerHtml: string
+  extraHtml?: string
 }): string {
   const rowsHtml = options.rows
     .map((r, i) => {
@@ -148,7 +273,7 @@ function buildEmailCardHtml(options: {
 
   return [
     '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"',
-    ' style="max-width:480px;border-collapse:separate;border:1px solid #94a3b8;border-radius:12px;',
+    ' style="max-width:540px;border-collapse:separate;border:1px solid #94a3b8;border-radius:12px;',
     'overflow:hidden;background:#ffffff;box-shadow:0 4px 14px rgba(15,23,42,0.08)">',
     '<tr>',
     '<td style="background:linear-gradient(135deg,#1d4ed8 0%,#1e3a8a 100%);padding:16px 18px">',
@@ -170,6 +295,15 @@ function buildEmailCardHtml(options: {
     '</table>',
     '</td>',
     '</tr>',
+    ...(options.extraHtml
+      ? [
+          '<tr>',
+          '<td style="padding:0 16px 16px">',
+          options.extraHtml,
+          '</td>',
+          '</tr>',
+        ]
+      : []),
     '<tr>',
     '<td style="padding:14px 18px;background:#f1f5f9;border-top:1px solid #e2e8f0">',
     options.footerHtml,
@@ -213,16 +347,15 @@ export function buildTicketBookingRequestEmail(
   const plainLines = ['Hi,', 'Booking request:']
   const rows: CardRow[] = []
 
-  if (rn) {
-    plainLines.push(`RN #: ${rn}`)
-    rows.push({ label: 'RN #', plain: rn, html: escapeHtml(rn) })
-  }
+  const rnLabel = rn || '—'
+  plainLines.push(`RN #: ${rnLabel}`)
+  rows.push({ label: 'RN #', plain: rnLabel, html: escapeHtml(rnLabel) })
   plainLines.push(`Check-in: ${dateLabel}`)
   rows.push({ label: 'Check-in', plain: dateLabel, html: escapeHtml(dateLabel) })
-  plainLines.push(`Pax: ${qty}`)
-  rows.push({ label: 'Pax', plain: qty, html: redBoldHtml(qty) })
   plainLines.push(`Time: ${timeLabel}`)
   rows.push({ label: 'Time', plain: timeLabel, html: redBoldHtml(timeLabel) })
+  plainLines.push(`Pax: ${qty}`)
+  rows.push({ label: 'Pax', plain: qty, html: redBoldHtml(qty) })
 
   if (category) {
     plainLines.push(`Category: ${category}`)
@@ -244,13 +377,13 @@ export function buildTicketBookingRequestEmail(
       plain: 'Booking request:',
       html: '<strong style="color:#0f172a">Booking request:</strong>',
     },
-    ...(rn ? [{ plain: `RN #: ${rn}`, html: fullLineHtml('RN #', escapeHtml(rn)) }] : []),
+    { plain: `RN #: ${rnLabel}`, html: fullLineHtml('RN #', escapeHtml(rnLabel)) },
     {
       plain: `Check-in: ${dateLabel}`,
       html: fullLineHtml('Check-in', escapeHtml(dateLabel)),
     },
-    { plain: `Pax: ${qty}`, html: fullLineHtml('Pax', redBoldHtml(qty)) },
     { plain: `Time: ${timeLabel}`, html: fullLineHtml('Time', redBoldHtml(timeLabel)) },
+    { plain: `Pax: ${qty}`, html: fullLineHtml('Pax', redBoldHtml(qty)) },
     ...(category ?
       [{ plain: `Category: ${category}`, html: fullLineHtml('Category', escapeHtml(category)) }]
     : []),
@@ -294,25 +427,60 @@ export function buildTicketBookingChangeRequestEmail(
   if (rn) {
     plainLines.push(`RN #: ${rn}`)
     rows.push({ label: 'RN #', plain: rn, html: escapeHtml(rn) })
+  } else {
+    plainLines.push('RN #: —')
+    rows.push({ label: 'RN #', plain: '—', html: escapeHtml('—') })
   }
   plainLines.push(`Check-in: ${dateLabel}`)
   rows.push({ label: 'Check-in', plain: dateLabel, html: escapeHtml(dateLabel) })
-  plainLines.push(plainArrow('Pax', String(curQty), String(reqQty), qtyChanged))
-  rows.push({
-    label: 'Pax',
-    plain: String(curQty),
-    html: htmlArrow(String(curQty), String(reqQty), qtyChanged),
-  })
   plainLines.push(plainArrow('Time', curTime, reqTime, timeChanged))
   rows.push({
     label: 'Time',
     plain: curTime,
     html: htmlArrow(curTime, reqTime, timeChanged),
   })
+  plainLines.push(plainArrow('Pax', String(curQty), String(reqQty), qtyChanged))
+  rows.push({
+    label: 'Pax',
+    plain: String(curQty),
+    html: htmlArrow(String(curQty), String(reqQty), qtyChanged),
+  })
 
   if (note) {
     plainLines.push(`Note: ${note}`)
     rows.push({ label: 'Note', plain: note, html: escapeHtml(note) })
+  }
+
+  const currentSameDay: TicketBookingVendorEmailSameDayTicket = {
+    rnNumber: rn || null,
+    checkInDate: dateLabel,
+    time: reqTime,
+    previousTime: curTime,
+    quantity: reqQty,
+    previousQuantity: curQty,
+    isCurrent: true,
+  }
+  const sameDayTickets = [...(input.sameDayTickets ?? [])].map((ticket) =>
+    ticket.isCurrent
+      ? {
+          ...ticket,
+          previousQuantity: curQty,
+          quantity: reqQty,
+          previousTime: curTime,
+          time: reqTime,
+          isCurrent: true,
+        }
+      : ticket
+  )
+  if (sameDayTickets.length === 0) {
+    sameDayTickets.push(currentSameDay)
+  }
+  sameDayTickets.sort(compareSameDayTickets)
+
+  plainLines.push('')
+  plainLines.push('Same-day tickets (reference):')
+  for (const ticket of sameDayTickets) {
+    plainLines.push(formatSameDayTicketPlain(ticket))
   }
 
   const footerHtml = signOffHtml(input.submitterDisplayName)
@@ -322,28 +490,38 @@ export function buildTicketBookingChangeRequestEmail(
       plain: 'Change request:',
       html: '<strong style="color:#0f172a">Change request:</strong>',
     },
-    ...(rn ? [{ plain: `RN #: ${rn}`, html: fullLineHtml('RN #', escapeHtml(rn)) }] : []),
+    { plain: `RN #: ${rn || '—'}`, html: fullLineHtml('RN #', escapeHtml(rn || '—')) },
     {
       plain: `Check-in: ${dateLabel}`,
       html: fullLineHtml('Check-in', escapeHtml(dateLabel)),
     },
     {
-      plain: plainArrow('Pax', String(curQty), String(reqQty), qtyChanged),
-      html: fullLineHtml('Pax', htmlArrow(String(curQty), String(reqQty), qtyChanged)),
-    },
-    {
       plain: plainArrow('Time', curTime, reqTime, timeChanged),
       html: fullLineHtml('Time', htmlArrow(curTime, reqTime, timeChanged)),
     },
+    {
+      plain: plainArrow('Pax', String(curQty), String(reqQty), qtyChanged),
+      html: fullLineHtml('Pax', htmlArrow(String(curQty), String(reqQty), qtyChanged)),
+    },
     ...(note ? [{ plain: `Note: ${note}`, html: fullLineHtml('Note', escapeHtml(note)) }] : []),
+    { plain: '', html: '&nbsp;' },
+    {
+      plain: 'Same-day tickets (reference):',
+      html: '<strong style="color:#0f172a">Same-day tickets (reference):</strong>',
+    },
+    ...sameDayTickets.map((ticket) => ({
+      plain: formatSameDayTicketPlain(ticket),
+      html: escapeHtml(formatSameDayTicketPlain(ticket)),
+    })),
   ]
 
-  const bodyPlain = `${joinPlain(plainLines)}\n\n${signOffPlain(input.submitterDisplayName)}`
+  const bodyPlain = `${plainLines.join('\n')}\n\n${signOffPlain(input.submitterDisplayName)}`
   const bodyHtml = buildEmailCardHtml({
     badge: 'Change Request',
     company,
     rows,
     footerHtml,
+    extraHtml: buildSameDayReferenceHtml(sameDayTickets),
   })
   const bodyTextHtml = buildSimpleTextEmailBody(textLines, footerHtml)
 

@@ -69,6 +69,8 @@ import {
   fetchGuideToursVisibleUntil,
   isTourDateVisibleToGuide,
 } from '@/lib/guideToursVisibleUntil'
+import { GuideBackupTourBadge } from '@/components/guide/GuideBackupTourBadge'
+import { isGuideBackupTour } from '@/lib/guideBackupTour'
 
 // 타입 정의 (DB 스키마 기반) — 픽업 잔액 헬퍼보다 먼저 두어 타입 순서 유지
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -1144,6 +1146,13 @@ export default function GuideTourDetailPage() {
 
   // 총 인원 계산
   const totalPeople = reservations.reduce((sum, reservation) => sum + (reservation.total_people || 0), 0)
+  const isBackupTour = isGuideBackupTour({
+    assignedPeople: totalPeople,
+    tourGuideId: tour?.tour_guide_id,
+    assistantId: tour?.assistant_id,
+    tourStatus: tour?.tour_status,
+    assignmentStatus: (tour as TourRow & { assignment_status?: string } | null)?.assignment_status,
+  })
   
   // 아코디언 토글 함수
   const toggleSection = (sectionId: string) => {
@@ -1580,6 +1589,7 @@ export default function GuideTourDetailPage() {
                 <h2 className="text-lg font-semibold text-gray-900">{t('tourInfo')}</h2>
               </button>
               <div className="flex items-center space-x-2">
+                {isBackupTour && <GuideBackupTourBadge />}
                 <span className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${
                   (tour as TourRow & { assignment_status?: string }).assignment_status === 'confirmed' ? 'bg-green-100 text-green-800' :
                   (tour as TourRow & { assignment_status?: string }).assignment_status === 'assigned' ? 'bg-primary/10 text-primary' :
@@ -1656,6 +1666,10 @@ export default function GuideTourDetailPage() {
                     </div>
                   </div>
             
+            {isBackupTour && (
+              <GuideBackupTourBadge variant="banner" />
+            )}
+
             {/* 날짜, 인원, 차량 - 뱃지 스타일 */}
             <div className="flex flex-wrap gap-2">
               <span className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-primary/10 text-primary">

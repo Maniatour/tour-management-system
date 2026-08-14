@@ -7,20 +7,25 @@ import {
   isTicketBookingCancelledStatus,
   type TicketBookingDisplaySnap,
 } from '@/lib/ticketBookingDisplay'
+import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
 
 export type TicketBookingQtyTimelineBooking = TicketBookingDisplaySnap & {
   id: string
   created_at?: string | null
+  submitted_by?: string | null
 }
 
 type HistoryRow = {
   id: string
   action: string
   changed_at: string | null
+  changed_by: string | null
   reason: string | null
   old_values: Record<string, unknown> | null
   new_values: Record<string, unknown> | null
 }
+
+export type QtyTimelineActorKind = 'created' | 'requested' | 'modified'
 
 export type QtyTimelineItem = {
   key: string
@@ -30,6 +35,8 @@ export type QtyTimelineItem = {
   label: string
   tone: 'start' | 'up' | 'down' | 'pending' | 'neutral'
   at: string | null
+  actorEmail: string | null
+  actorKind: QtyTimelineActorKind
 }
 
 function asRecord(v: unknown): Record<string, unknown> | null {
@@ -104,6 +111,11 @@ function mergeSameMomentQtyTimelineItems(items: QtyTimelineItem[]): QtyTimelineI
         key: `${prev.key}+${it.key}`,
         label: `${prev.label} > ${it.label}`,
         tone,
+        actorEmail: prev.actorEmail || it.actorEmail,
+        actorKind:
+          prev.actorKind === 'requested' || it.actorKind === 'requested'
+            ? 'requested'
+            : it.actorKind,
       }
     } else {
       out.push(it)
@@ -146,6 +158,8 @@ export function buildTicketBookingQtyTimeline(
         label: isEn ? 'Hold created' : '가예약 등록',
         tone: 'start',
         at: row.changed_at,
+        actorEmail: row.changed_by,
+        actorKind: 'created',
       })
       seeded = true
       continue
@@ -169,6 +183,8 @@ export function buildTicketBookingQtyTimeline(
               : '수량 증가'),
         tone: delta < 0 ? 'down' : 'up',
         at: row.changed_at,
+        actorEmail: row.changed_by,
+        actorKind: 'modified',
       })
       seeded = true
     }
@@ -188,6 +204,8 @@ export function buildTicketBookingQtyTimeline(
         label: isEn ? 'Change requested (awaiting vendor)' : '변경 요청 (벤더 대기)',
         tone: 'pending',
         at: row.changed_at,
+        actorEmail: row.changed_by,
+        actorKind: 'requested',
       })
     } else if (oldCs === 'requested' && newCs !== 'requested' && oldPend != null) {
       const accepted = newEa != null && newEa === oldPend
@@ -209,6 +227,8 @@ export function buildTicketBookingQtyTimeline(
             : '벤더 거절·해제',
         tone: accepted ? (oldPend - (oldEa ?? baseEa) < 0 ? 'down' : 'up') : 'neutral',
         at: row.changed_at,
+        actorEmail: row.changed_by,
+        actorKind: 'modified',
       })
     }
   }
@@ -223,6 +243,8 @@ export function buildTicketBookingQtyTimeline(
       label: isEn ? 'Hold on file' : '가예약 기록',
       tone: 'start',
       at: booking.created_at ?? null,
+      actorEmail: booking.submitted_by ?? null,
+      actorKind: 'created',
     })
   }
 
@@ -239,6 +261,8 @@ export function buildTicketBookingQtyTimeline(
         label: isEn ? 'Change requested (awaiting vendor)' : '변경 요청 (벤더 대기)',
         tone: 'pending',
         at: null,
+        actorEmail: null,
+        actorKind: 'requested',
       })
     }
   }
@@ -256,6 +280,8 @@ export function buildTicketBookingQtyTimeline(
         label: isEn ? 'Fully cancelled' : '전량 취소',
         tone: 'down',
         at: null,
+        actorEmail: null,
+        actorKind: 'modified',
       })
     }
   }
@@ -270,6 +296,19 @@ type Props = {
   hideHeading?: boolean
 }
 
+function actorKindLabel(kind: QtyTimelineActorKind, isEn: boolean): string {
+  if (kind === 'requested') return isEn ? 'Requested by' : '요청'
+  if (kind === 'created') return isEn ? 'Created by' : '등록'
+  return isEn ? 'Updated by' : '수정'
+}
+
+function fallbackActorLabel(email: string): string {
+  const em = email.trim()
+  if (!em || em.toLowerCase() === 'system') return ''
+  const local = em.split('@')[0] || em
+  return local
+}
+
 export default function TicketBookingQtyTimeline({
   booking,
   locale = 'ko',
@@ -277,6 +316,7 @@ export default function TicketBookingQtyTimeline({
 }: Props) {
   const isEn = locale.startsWith('en')
   const [history, setHistory] = useState<HistoryRow[]>([])
+  const [nameByEmail, setNameByEmail] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -285,7 +325,7 @@ export default function TicketBookingQtyTimeline({
       setLoading(true)
       const { data, error } = await supabase
         .from('booking_history')
-        .select('id, action, changed_at, reason, old_values, new_values')
+        .select('id, action, changed_at, changed_by, reason, old_values, new_values')
         .eq('booking_type', 'ticket')
         .eq('booking_id', booking.id)
         .order('changed_at', { ascending: true })
@@ -293,30 +333,66 @@ export default function TicketBookingQtyTimeline({
       if (error) {
         console.warn('qty timeline history', error)
         setHistory([])
-      } else {
-        setHistory(
-          (data || []).map((row) => ({
-            id: String(row.id),
-            action: String(row.action ?? ''),
-            changed_at: row.changed_at ?? null,
-            reason: row.reason ?? null,
-            old_values: asRecord(row.old_values),
-            new_values: asRecord(row.new_values),
-          }))
-        )
+        setNameByEmail(new Map())
+        setLoading(false)
+        return
       }
+      const rows: HistoryRow[] = (data || []).map((row) => ({
+        id: String(row.id),
+        action: String(row.action ?? ''),
+        changed_at: row.changed_at ?? null,
+        changed_by: row.changed_by ? String(row.changed_by) : null,
+        reason: row.reason ?? null,
+        old_values: asRecord(row.old_values),
+        new_values: asRecord(row.new_values),
+      }))
+      setHistory(rows)
+
+      const emails = [
+        ...new Set(
+          [
+            ...rows.map((r) => String(r.changed_by || '').trim()),
+            String(booking.submitted_by || '').trim(),
+          ].filter((em) => em.includes('@'))
+        ),
+      ]
+      if (emails.length === 0) {
+        setNameByEmail(new Map())
+        setLoading(false)
+        return
+      }
+      const { data: teamData, error: teamError } = await supabase
+        .from('team')
+        .select('email, nick_name, name_ko, name_en, display_name')
+        .in('email', emails)
+      if (cancelled) return
+      const map = new Map<string, string>()
+      if (!teamError && teamData) {
+        for (const member of teamData) {
+          const key = String(member.email || '').trim().toLowerCase()
+          const label = teamMemberNameForLocale(member, locale)
+          if (key && label) map.set(key, label)
+        }
+      }
+      setNameByEmail(map)
       setLoading(false)
     }
     void load()
     return () => {
       cancelled = true
     }
-  }, [booking.id])
+  }, [booking.id, booking.submitted_by, locale])
 
   const items = useMemo(
     () => buildTicketBookingQtyTimeline(booking, history, locale),
     [booking, history, locale]
   )
+
+  const resolveActorName = (email: string | null | undefined): string => {
+    const em = String(email || '').trim()
+    if (!em) return ''
+    return nameByEmail.get(em.toLowerCase()) || fallbackActorLabel(em)
+  }
 
   return (
     <section className="space-y-2">
@@ -364,13 +440,24 @@ export default function TicketBookingQtyTimeline({
                 </>
               ) : null
             const when = formatAt(it.at, locale)
+            const actorName = resolveActorName(it.actorEmail)
             return (
               <li key={it.key} className="relative text-sm">
                 <span className={`absolute -left-[1.35rem] top-1.5 h-2.5 w-2.5 rounded-full ${dotClass}`} />
                 <span className={`font-medium tabular-nums ${deltaClass}`}>{deltaText}</span>
                 {qtyText}
                 <span className="text-muted-foreground"> {it.label}</span>
-                {when ? <span className="ml-1 text-[10px] text-gray-400">{when}</span> : null}
+                {actorName || when ? (
+                  <div className="mt-0.5 text-[11px] leading-snug text-slate-500">
+                    {actorName ? (
+                      <span className="font-medium text-slate-700">
+                        {actorKindLabel(it.actorKind, isEn)} {actorName}
+                      </span>
+                    ) : null}
+                    {actorName && when ? <span className="text-gray-300"> · </span> : null}
+                    {when ? <span className="text-[10px] text-gray-400">{when}</span> : null}
+                  </div>
+                ) : null}
               </li>
             )
           })}

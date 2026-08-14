@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ExternalLink, Loader2, RefreshCw } from 'lucide-react'
+import { Loader2, RefreshCw } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import { TodoPanelStatusButtons } from '@/components/admin/todo/TodoPanelStatusButtons'
 import { TodoPanelTourStatusButtons } from '@/components/admin/todo/TodoPanelTourStatusButtons'
@@ -23,23 +23,29 @@ import {
   type AntelopeCanyonMismatchTourRow,
   type AntelopeCanyonTicketLite,
   type AntelopeCanyonTourLite,
+  isAntelopeCanyonTicketBooking,
 } from '@/lib/antelopeCanyonBookingQueue'
 import {
   aggregateTicketEaByCanyon,
   buildDayCanyonBookingActionTasks,
   canyonLxCountsMismatch,
   formatDayTourTicketCanyonCompare,
+  isTicketBookingEaCountingStatus,
+  mergeTourChoiceCounts,
 } from '@/lib/ticketBookingDateView'
 import { getCancelDueDateForTicketBooking, localDateYmd } from '@/lib/ticketBookingCancelDue'
+import type { TicketBookingTourEnrichment } from '@/lib/ticket-booking-tour-display'
+import { resolveAntelopeCheckInDate } from '@/lib/scheduleVehicleOilMaintenance'
+import { tourProductRequiresTicketBookingCount } from '@/lib/ticketBookingCountTourProducts'
 import {
   tourChoiceCountsDisplayKeys,
+  tourChoiceCountsHasDisplayable,
   type TourChoiceCounts,
 } from '@/lib/tourChoiceCounts'
 import {
   countTodoPanelTourProgress,
   getTodoPanelTourStatus,
   todoPanelTourRowClassName,
-  todoPanelTourTitleClassName,
   type TodoPanelTourItemState,
 } from '@/lib/todoPanelTourCompletion'
 import { useTodoPanelTourCompletion } from '@/hooks/useTodoPanelTourCompletion'
@@ -90,9 +96,9 @@ type WorkItem = {
   tickets: AntelopeCanyonTicketLite[]
 }
 
-/** mismatch / cancel 이 같은 day::YYYY-MM-DD id 를 공유할 수 있어 kind 를 합친다. */
-function workItemKey(item: Pick<WorkItem, 'kind' | 'id'>): string {
-  return `${item.kind}::${item.id}`
+/** 날짜 단위 처리 상태 키 */
+function dateWorkKey(date: string): string {
+  return `date::${date}`
 }
 
 function formatShortDate(raw: string): string {
@@ -105,12 +111,33 @@ function formatShortDate(raw: string): string {
   return `${month}/${day}`
 }
 
+function tourLiteToEnrichment(linkedTour: AntelopeCanyonTourLite): TicketBookingTourEnrichment {
+  const products = linkedTour.products
+    ? {
+        ...(linkedTour.products.name != null ? { name: linkedTour.products.name } : {}),
+        ...(linkedTour.products.name_en != null ? { name_en: linkedTour.products.name_en } : {}),
+        ...(linkedTour.products.name_ko != null ? { name_ko: linkedTour.products.name_ko } : {}),
+      }
+    : undefined
+  return {
+    tour_date: linkedTour.tour_date,
+    ...(linkedTour.total_people != null && Number.isFinite(Number(linkedTour.total_people))
+      ? { total_people: Number(linkedTour.total_people) }
+      : {}),
+    ...(linkedTour.choice_counts && tourChoiceCountsHasDisplayable(linkedTour.choice_counts)
+      ? { choice_counts: linkedTour.choice_counts }
+      : {}),
+    ...(products && Object.keys(products).length > 0 ? { products } : {}),
+  }
+}
+
 function toDetailRow(
   ticket: AntelopeCanyonTicketLite,
   toursById: Record<string, AntelopeCanyonTourLite>
 ): TicketBookingReservationDetailRow {
   const tourId = String(ticket.tour_id || '').trim()
   const linkedTour = tourId ? toursById[tourId] : undefined
+  const enrichment = linkedTour ? tourLiteToEnrichment(linkedTour) : undefined
   return {
     id: ticket.id,
     tour_id: ticket.tour_id,
@@ -133,21 +160,10 @@ function toDetailRow(
       ? {
           tours: {
             tour_date: linkedTour.tour_date,
-            ...(linkedTour.products
-              ? {
-                  products: {
-                    ...(linkedTour.products.name != null
-                      ? { name: linkedTour.products.name }
-                      : {}),
-                    ...(linkedTour.products.name_en != null
-                      ? { name_en: linkedTour.products.name_en }
-                      : {}),
-                    ...(linkedTour.products.name_ko != null
-                      ? { name_ko: linkedTour.products.name_ko }
-                      : {}),
-                  },
-                }
+            ...(typeof enrichment?.total_people === 'number'
+              ? { total_people: enrichment.total_people }
               : {}),
+            ...(enrichment?.products ? { products: enrichment.products } : {}),
           },
         }
       : {}),
@@ -175,32 +191,14 @@ function ticketToCardRow(
     vendor_status: ticket.vendor_status ?? null,
     change_status: ticket.change_status ?? null,
     tour_id: ticket.tour_id ?? null,
-    ...(linkedTour
-      ? {
-          tours: {
-            tour_date: linkedTour.tour_date,
-            ...(linkedTour.products
-              ? {
-                  products: {
-                    ...(linkedTour.products.name != null
-                      ? { name: linkedTour.products.name }
-                      : {}),
-                    ...(linkedTour.products.name_en != null
-                      ? { name_en: linkedTour.products.name_en }
-                      : {}),
-                    ...(linkedTour.products.name_ko != null
-                      ? { name_ko: linkedTour.products.name_ko }
-                      : {}),
-                  },
-                }
-              : {}),
-          },
-        }
-      : {}),
+    expense: ticket.expense ?? null,
+    paid_amount: ticket.paid_amount ?? null,
+    credit_amount: ticket.credit_amount ?? null,
+    ...(linkedTour ? { tours: tourLiteToEnrichment(linkedTour) } : {}),
   }
 }
 
-/** 티켓 캐년 키가 하나면 투어 인원을 그 키에 매핑 (부킹 관리 카드뷰와 동일 뱃지) */
+/** 티켓 캐년 키가 하나면 투어 인원을 그 키에 매핑 (초이스 합계가 없을 때만) */
 function approximateTourChoiceCounts(
   tourPeople: number,
   ticketCounts: TourChoiceCounts
@@ -213,6 +211,31 @@ function approximateTourChoiceCounts(
     return { L: tourPeople }
   }
   return {}
+}
+
+function toursForAntelopeCheckInDate(
+  date: string,
+  toursById: Record<string, AntelopeCanyonTourLite>
+): AntelopeCanyonTourLite[] {
+  const seen = new Set<string>()
+  const out: AntelopeCanyonTourLite[] = []
+  for (const tour of Object.values(toursById)) {
+    if (!tour?.id || seen.has(tour.id)) continue
+    if (!tourProductRequiresTicketBookingCount(tour)) continue
+    if (resolveAntelopeCheckInDate(tour) !== date) continue
+    seen.add(tour.id)
+    out.push(tour)
+  }
+  return out
+}
+
+function collectDayTourChoiceCounts(
+  date: string,
+  toursById: Record<string, AntelopeCanyonTourLite>
+): TourChoiceCounts {
+  return mergeTourChoiceCounts(
+    ...toursForAntelopeCheckInDate(date, toursById).map((tour) => tour.choice_counts || {})
+  )
 }
 
 function workDateFromMismatch(row: AntelopeCanyonMismatchTourRow): string {
@@ -231,7 +254,6 @@ export function AntelopeCanyonBookingPanel({
   onToggleLinkedTodo,
   onCompletedChange,
   onEditRequest,
-  onOpenTourDetail,
   onHold = false,
   holdEnabled = false,
   onToggleHold,
@@ -246,6 +268,7 @@ export function AntelopeCanyonBookingPanel({
     mismatchRows,
     cancelDueRows,
     toursById,
+    allTickets,
     supplierProductsByBookingId,
     loading,
     reload,
@@ -308,10 +331,8 @@ export function AntelopeCanyonBookingPanel({
   }, [mismatchRows, cancelDueRows])
 
   const progress = useMemo(() => {
-    return countTodoPanelTourProgress(
-      workItems.map((w) => workItemKey(w)),
-      tourState
-    )
+    const dateKeys = [...new Set(workItems.map((w) => w.date).filter(Boolean))].map(dateWorkKey)
+    return countTodoPanelTourProgress(dateKeys, tourState)
   }, [workItems, tourState])
 
   const dateRangeLabel = useMemo(() => {
@@ -338,12 +359,21 @@ export function AntelopeCanyonBookingPanel({
   }, [isKo, workItems, progress])
 
   const cardBookings = useMemo((): TicketBookingCardViewRow[] => {
+    const workDates = new Set(workItems.map((item) => item.date).filter(Boolean))
     const byId = new Map<string, TicketBookingCardViewRow>()
-    for (const item of workItems) {
-      for (const ticket of item.tickets) {
-        if (!ticket?.id || byId.has(ticket.id)) continue
-        byId.set(ticket.id, ticketToCardRow(ticket, toursById))
+    for (const ticket of allTickets) {
+      const date = String(ticket.check_in_date || '').slice(0, 10)
+      if (!workDates.has(date)) continue
+      if (!ticket?.id || byId.has(ticket.id)) continue
+      const tourId = String(ticket.tour_id || '').trim()
+      const linkedTour = tourId ? toursById[tourId] : undefined
+      if (
+        !isAntelopeCanyonTicketBooking(ticket) &&
+        !(linkedTour && tourProductRequiresTicketBookingCount(linkedTour))
+      ) {
+        continue
       }
+      byId.set(ticket.id, ticketToCardRow(ticket, toursById))
     }
     return Array.from(byId.values()).sort(
       (a, b) =>
@@ -351,43 +381,42 @@ export function AntelopeCanyonBookingPanel({
         String(a.company).localeCompare(String(b.company)) ||
         String(a.time).localeCompare(String(b.time))
     )
-  }, [workItems, toursById])
+  }, [workItems, allTickets, toursById])
 
   const dayTourCompareByDate = useMemo(() => {
     const map = new Map<string, DayTourCompareSummary>()
-    const byDate = new Map<string, WorkItem[]>()
-    for (const item of workItems) {
-      const list = byDate.get(item.date) || []
-      list.push(item)
-      byDate.set(item.date, list)
-    }
+    const dates = new Set(workItems.map((item) => item.date).filter(Boolean))
 
-    for (const [date, items] of byDate) {
-      // 당일 합산 행 우선, 없으면 인원·티켓 최대값 사용 (중복 집계 방지)
-      const preferred =
-        items.find((i) => i.id.startsWith('day::')) ||
-        items.reduce((best, cur) =>
-          cur.ticketEa > best.ticketEa || cur.tourPeople > best.tourPeople ? cur : best
-        )
-      const ticketCounts =
-        Object.keys(preferred.ticketCounts).length > 0
-          ? preferred.ticketCounts
-          : aggregateTicketEaByCanyon(preferred.tickets)
-      const tourCounts = approximateTourChoiceCounts(preferred.tourPeople, ticketCounts)
+    for (const date of dates) {
+      const dayTours = toursForAntelopeCheckInDate(date, toursById)
+      const fromTours = collectDayTourChoiceCounts(date, toursById)
+      const dayBookings = cardBookings.filter(
+        (b) => String(b.check_in_date || '').slice(0, 10) === date
+      )
+      const counting = dayBookings.filter((b) => isTicketBookingEaCountingStatus(b.status))
+      const ticketCounts = aggregateTicketEaByCanyon(counting)
+      const ticketEa = counting.reduce((sum, b) => sum + (Number(b.ea) || 0), 0)
+      const tourPeople = dayTours.reduce(
+        (sum, tour) => sum + (Number(tour.total_people) || 0),
+        0
+      )
+      const tourCounts = tourChoiceCountsHasDisplayable(fromTours)
+        ? fromTours
+        : approximateTourChoiceCounts(tourPeople, ticketCounts)
       const canyonParts = formatDayTourTicketCanyonCompare(tourCounts, ticketCounts)
       const actionTasks = buildDayCanyonBookingActionTasks(tourCounts, ticketCounts, locale)
       const canyonMismatch =
         canyonParts.length > 0 && canyonLxCountsMismatch(tourCounts, ticketCounts)
       map.set(date, {
-        tourPeople: preferred.tourPeople,
-        ticketEa: preferred.ticketEa,
+        tourPeople,
+        ticketEa,
         canyonParts,
         actionTasks,
-        mismatch: preferred.tourPeople !== preferred.ticketEa || canyonMismatch,
+        mismatch: tourPeople !== ticketEa || canyonMismatch,
       })
     }
     return map
-  }, [workItems, locale])
+  }, [workItems, locale, toursById, cardBookings])
 
   const workItemsByDate = useMemo(() => {
     const map = new Map<string, WorkItem[]>()
@@ -435,13 +464,13 @@ export function AntelopeCanyonBookingPanel({
   })
 
   const openTicketDetail = useCallback((ticketId: string) => {
-    const ticket = workItems
-      .flatMap((w) => w.tickets)
-      .find((t) => t.id === ticketId)
+    const ticket =
+      allTickets.find((t) => t.id === ticketId) ||
+      workItems.flatMap((w) => w.tickets).find((t) => t.id === ticketId)
     if (!ticket) return
     setDetailTickets([ticket])
     setDetailOpen(true)
-  }, [workItems])
+  }, [allTickets, workItems])
 
   const sortedDates = useMemo(
     () => Array.from(workItemsByDate.keys()).sort((a, b) => a.localeCompare(b)),
@@ -525,83 +554,53 @@ export function AntelopeCanyonBookingPanel({
             </p>
           ) : (
             sortedDates.map((date) => {
-              const dayItems = workItemsByDate.get(date) || []
               const dayBookings = cardBookings.filter(
                 (b) => String(b.check_in_date || '').slice(0, 10) === date
               )
               const dayCompare = new Map<string, DayTourCompareSummary>()
               const compare = dayTourCompareByDate.get(date)
               if (compare) dayCompare.set(date, compare)
+              const dateKey = dateWorkKey(date)
+              const dateStatus = getTodoPanelTourStatus(dateKey, tourState)
 
               return (
-                <div key={date} className="space-y-1.5">
-                  {dayItems.map((item) => {
-                    const itemKey = workItemKey(item)
-                    const rowStatus = getTodoPanelTourStatus(itemKey, tourState)
-                    return (
-                      <div
-                        key={itemKey}
-                        className={`flex items-center gap-1.5 rounded-md border px-1.5 py-1 ${todoPanelTourRowClassName(rowStatus)}`}
-                      >
-                        <TodoPanelTourStatusButtons
-                          locale={locale}
-                          status={rowStatus}
-                          onSetStatus={(next: TodoPanelTourItemState) =>
-                            setTourStatus(itemKey, next)
-                          }
-                        />
-                        <p
-                          className={`min-w-0 flex-1 truncate text-[10px] font-medium ${todoPanelTourTitleClassName(rowStatus)}`}
-                        >
-                          <span className="tabular-nums text-gray-600">
-                            {formatShortDate(item.date)}
-                          </span>
-                          <span className="mx-1 text-gray-300">·</span>
-                          <span>{item.label}</span>
-                          <span className="mx-1 text-gray-300">·</span>
-                          <span className="tabular-nums text-gray-500">
-                            {item.tourPeople}/{item.ticketEa}
-                          </span>
-                        </p>
-                        {onOpenTourDetail && item.primaryTourId ? (
-                          <button
-                            type="button"
-                            onClick={() => onOpenTourDetail(item.primaryTourId!)}
-                            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                            title={isKo ? '투어 상세' : 'Tour detail'}
-                            aria-label={isKo ? '투어 상세' : 'Tour detail'}
-                          >
-                            <ExternalLink className="h-3 w-3" />
-                          </button>
-                        ) : null}
-                      </div>
-                    )
-                  })}
-
-                  <TicketBookingCardView
-                    bookings={dayBookings}
+                <div
+                  key={date}
+                  className={`flex items-start gap-1.5 rounded-md border p-1.5 ${todoPanelTourRowClassName(dateStatus)}`}
+                >
+                  <TodoPanelTourStatusButtons
                     locale={locale}
-                    todayYmd={todayYmd}
-                    density="compact"
-                    hideAmounts
-                    dayTourCompareByDate={dayCompare}
-                    tourPeopleReservationsSummary={(tourPeople, reservations) =>
-                      isKo
-                        ? `투어 : ${tourPeople}명 / 예약 : ${reservations}개`
-                        : `Tour: ${tourPeople} people / Tickets: ${reservations}`
-                    }
-                    getCancelDueDate={(b) =>
-                      getCancelDueDateForTicketBooking(
-                        { check_in_date: b.check_in_date, company: b.company },
-                        supplierProductsByBookingId.get(b.id) ?? null
-                      )
-                    }
-                    getSupplierProduct={(b) => supplierProductsByBookingId.get(b.id) ?? null}
-                    onOpenBooking={(b) => openTicketDetail(b.id)}
-                    emptyMessage={
-                      isKo ? '표시할 부킹이 없습니다' : 'No bookings to show'
+                    status={dateStatus}
+                    onSetStatus={(next: TodoPanelTourItemState) =>
+                      setTourStatus(dateKey, next)
                     }
                   />
+                  <div className="min-w-0 flex-1">
+                    <TicketBookingCardView
+                      bookings={dayBookings}
+                      locale={locale}
+                      todayYmd={todayYmd}
+                      density="compact"
+                      hideAmounts={false}
+                      dayTourCompareByDate={dayCompare}
+                      tourPeopleReservationsSummary={(tourPeople, reservations) =>
+                        isKo
+                          ? `투어 : ${tourPeople}명 / 예약 : ${reservations}개`
+                          : `Tour: ${tourPeople} people / Tickets: ${reservations}`
+                      }
+                      getCancelDueDate={(b) =>
+                        getCancelDueDateForTicketBooking(
+                          { check_in_date: b.check_in_date, company: b.company },
+                          supplierProductsByBookingId.get(b.id) ?? null
+                        )
+                      }
+                      getSupplierProduct={(b) => supplierProductsByBookingId.get(b.id) ?? null}
+                      onOpenBooking={(b) => openTicketDetail(b.id)}
+                      emptyMessage={
+                        isKo ? '표시할 부킹이 없습니다' : 'No bookings to show'
+                      }
+                    />
+                  </div>
                 </div>
               )
             })

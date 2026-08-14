@@ -25,6 +25,8 @@ import {
   buildDailyReportActivityHistory,
 } from '@/lib/dailyReport/buildActivityHistory'
 import { fetchAdminRegCancelYtdWeekdayAvg } from '@/lib/adminRegCancelYtdWeekdayAvg'
+import { resolveProductInternalName } from '@/utils/reservationUtils'
+import { isTourCancelled } from '@/utils/tourStatusUtils'
 import type {
   DailyReportBreakdownRow,
   DailyReportCountGuests,
@@ -122,6 +124,20 @@ function isCancelledStatus(status: string | null | undefined): boolean {
 function productNameFromMap(productId: string | null, productMap: Map<string, string>): string {
   if (!productId) return '상품 미지정'
   return productMap.get(productId) ?? '상품 미지정'
+}
+
+function dailyReportProductName(
+  product:
+    | {
+        name?: string | null
+        name_ko?: string | null
+        name_en?: string | null
+      }
+    | null
+    | undefined,
+  fallback?: string | null
+): string {
+  return resolveProductInternalName(product, fallback) || '상품 미지정'
 }
 
 function channelNameFromMap(channelId: string | null, channelMap: Map<string, string>): string {
@@ -452,20 +468,15 @@ export async function generateDailyReportData(
 
   const productMap = new Map<string, string>()
   if (productIds.length) {
-    const { data: products } = await client
+    const { data: products, error: productsError } = await client
       .from('products')
-      .select('id, internal_name_ko, internal_name_en, name, name_ko, name_en')
+      .select('id, name, name_ko, name_en, product_code')
       .in('id', productIds)
+    if (productsError) {
+      console.error('daily-report products lookup:', productsError)
+    }
     for (const p of products ?? []) {
-      productMap.set(
-        p.id,
-        p.internal_name_ko?.trim() ||
-          p.internal_name_en?.trim() ||
-          p.name?.trim() ||
-          p.name_ko?.trim() ||
-          p.name_en?.trim() ||
-          '상품 미지정'
-      )
+      productMap.set(p.id, dailyReportProductName(p, p.product_code))
     }
   }
 
@@ -495,7 +506,9 @@ export async function generateDailyReportData(
   }
 
   const todayTours = (todayToursRes.data ?? []) as TourRow[]
-  const tomorrowTours = (tomorrowToursRes.data ?? []) as TourRow[]
+  const tomorrowTours = ((tomorrowToursRes.data ?? []) as TourRow[]).filter(
+    (t) => !isTourCancelled(t.tour_status)
+  )
   const opTodos = (opTodosRes.data ?? []) as OpTodoRow[]
   const todoLogs = (todoLogsRes.data ?? []) as TodoClickRow[]
 
@@ -798,29 +811,58 @@ export async function generateDailyReportData(
   const pendingCount = matrixRows.filter((r) => r.status === 'pending').length
   const onHoldCount = matrixRows.filter((r) => r.status === 'on_hold').length
 
+  const tomorrowReservationIds = [
+    ...new Set(tomorrowTours.flatMap((t) => (Array.isArray(t.reservation_ids) ? t.reservation_ids : []))),
+  ].filter(Boolean)
+
+  type TomorrowReservationRow = {
+    id: string
+    status: string | null
+    total_people: number | null
+    archive: boolean
+  }
+  const tomorrowReservationById = new Map<string, TomorrowReservationRow>()
+  const TOMORROW_RES_BATCH = 150
+  for (let i = 0; i < tomorrowReservationIds.length; i += TOMORROW_RES_BATCH) {
+    const chunk = tomorrowReservationIds.slice(i, i + TOMORROW_RES_BATCH)
+    const { data } = await client
+      .from('reservations')
+      .select('id, status, total_people, archive')
+      .in('id', chunk)
+    for (const row of (data ?? []) as TomorrowReservationRow[]) {
+      tomorrowReservationById.set(row.id, row)
+    }
+  }
+
+  const isActiveTomorrowReservation = (id: string) => {
+    const row = tomorrowReservationById.get(id)
+    if (!row) return false
+    if (row.archive) return false
+    if (isCancelledStatus(row.status)) return false
+    return true
+  }
+
   const tomorrowTourRows = tomorrowTours.map((t) => {
     const guideName = memberNameFn(t.tour_guide_id)
     const assistantName = memberNameFn(t.assistant_id)
     const vehicle = vehicleLabel(vehicleById.get(t.tour_car_id ?? ''))
-    const reservationCount = t.reservation_ids?.length ?? 0
+    const activeResIds = (t.reservation_ids ?? []).filter(isActiveTomorrowReservation)
+    const guestCount = activeResIds.reduce(
+      (sum, id) => sum + (tomorrowReservationById.get(id)?.total_people ?? 0),
+      0
+    )
     const isFullyAssigned = Boolean(t.tour_guide_id && t.tour_car_id)
 
     return {
       id: t.id,
-      productName:
-        t.products?.internal_name_ko?.trim() ||
-        t.products?.internal_name_en?.trim() ||
-        t.products?.name?.trim() ||
-        t.products?.name_ko?.trim() ||
-        t.products?.name_en?.trim() ||
-        '상품 미지정',
+      productName: dailyReportProductName(t.products),
       tourStatus: t.tour_status,
       assignmentStatus: t.assignment_status,
       guideName,
       assistantName,
       vehicleLabel: vehicle,
-      guestCount: reservationCount,
-      reservationCount,
+      guestCount,
+      reservationCount: activeResIds.length,
       isFullyAssigned,
       tourStart: t.tour_start_datetime,
     }

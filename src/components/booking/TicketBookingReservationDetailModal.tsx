@@ -26,6 +26,8 @@ import {
 import TicketBookingActionPanel from '@/components/booking/TicketBookingActionPanel'
 import ScheduleTicketBookingAxisInline from '@/components/booking/ScheduleTicketBookingAxisInline'
 import { TicketBookingTourDisplay } from '@/components/booking/TicketBookingTourDisplay'
+import { History, LayoutGrid, Pencil, Table2, Trash2, X } from 'lucide-react'
+import { TicketBookingIconTipButton } from '@/components/booking/TicketBookingCardActionBar'
 
 /** 입장권 부킹 — 예약 상세 정보 모달에 필요한 행 타입 */
 export type TicketBookingReservationDetailRow = {
@@ -67,6 +69,8 @@ export type TicketBookingReservationDetailRow = {
   unit_price?: number | undefined
   paid_amount?: number | null | undefined
   deletion_requested_at?: string | null | undefined
+  note?: string | null | undefined
+  uploaded_file_urls?: string[] | null | undefined
 }
 
 function getCCStatusText(cc: string) {
@@ -213,7 +217,10 @@ export type TicketBookingReservationDetailModalProps = {
    */
   renderGroupDesktopTable?: (groupRows: TicketBookingReservationDetailRow[]) => ReactNode
   /** 테이블과 함께 제공 시 상단에서 카드/테이블 전환 (TicketBookingList 전용) */
-  renderGroupCardBookings?: (groupRows: TicketBookingReservationDetailRow[]) => ReactNode
+  renderGroupCardBookings?: (
+    groupRows: TicketBookingReservationDetailRow[],
+    ctx: { chromeActions: (booking: TicketBookingReservationDetailRow) => ReactNode }
+  ) => ReactNode
   /** 명세 대조 아이콘 (내장 요약 테이블용) */
   renderStatementReconCell?: (booking: TicketBookingReservationDetailRow) => ReactNode
 }
@@ -249,37 +256,252 @@ export default function TicketBookingReservationDetailModal({
   const tourFallback = t('tour')
   const [detailListView, setDetailListView] = useState<'table' | 'card'>('card')
   const showDetailViewToggle = Boolean(renderGroupDesktopTable && renderGroupCardBookings)
+  const isCardOnlyLayout = showDetailViewToggle && detailListView === 'card'
 
   useEffect(() => {
     if (open) setDetailListView('card')
   }, [open])
 
+  const iconBtnClass =
+    'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-white text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+  const chromeMuted =
+    'border-border/70 bg-white text-muted-foreground hover:bg-muted hover:text-foreground'
+  const headerBooking = !readOnly && bookings.length === 1 ? bookings[0] : null
+  const headerCanSoftDelete =
+    Boolean(headerBooking) &&
+    Boolean(onRequestSoftDelete) &&
+    canSoftDeleteRequest &&
+    !headerBooking?.deletion_requested_at
+  const headerCanHardDeletePending =
+    Boolean(headerBooking) &&
+    Boolean(onHardDelete) &&
+    canHardDeleteBooking &&
+    Boolean(headerBooking?.deletion_requested_at)
+  const headerCanPurgeOffset =
+    Boolean(headerBooking) &&
+    Boolean(onHardDelete) &&
+    canHardDeleteBooking &&
+    !headerBooking?.deletion_requested_at &&
+    isTicketBookingOffsetOrCancelRow({
+      ea: headerBooking?.ea ?? null,
+      status: headerBooking?.status ?? null,
+      booking_status: headerBooking?.booking_status ?? null,
+    })
+
+  const renderCardChromeActions = (booking: TicketBookingReservationDetailRow) => {
+    if (readOnly) return null
+    const canSoft =
+      Boolean(onRequestSoftDelete) && canSoftDeleteRequest && !booking.deletion_requested_at
+    const canHardPending =
+      Boolean(onHardDelete) && canHardDeleteBooking && Boolean(booking.deletion_requested_at)
+    const canPurgeOffset =
+      Boolean(onHardDelete) &&
+      canHardDeleteBooking &&
+      !booking.deletion_requested_at &&
+      isTicketBookingOffsetOrCancelRow({
+        ea: booking.ea ?? null,
+        status: booking.status ?? null,
+        booking_status: booking.booking_status ?? null,
+      })
+    return (
+      <>
+        {onEdit ? (
+          <TicketBookingIconTipButton
+            label={locale === 'en' ? 'Edit' : '편집'}
+            className={chromeMuted}
+            onClick={() => onEdit(booking)}
+          >
+            <Pencil className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+          </TicketBookingIconTipButton>
+        ) : null}
+        {onViewHistory ? (
+          <TicketBookingIconTipButton
+            label={locale === 'en' ? 'History' : '히스토리'}
+            className={chromeMuted}
+            onClick={() => onViewHistory(booking.id)}
+          >
+            <History className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+          </TicketBookingIconTipButton>
+        ) : null}
+        {canSoft ? (
+          <TicketBookingIconTipButton
+            label={locale === 'en' ? 'Request deletion' : '삭제 요청'}
+            className="border-red-200 bg-white text-red-600 hover:bg-red-50 hover:text-red-700"
+            onClick={() => onRequestSoftDelete?.(booking.id)}
+          >
+            <Trash2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+          </TicketBookingIconTipButton>
+        ) : null}
+        {canHardPending ? (
+          <TicketBookingIconTipButton
+            label={locale === 'en' ? 'Permanent delete' : '영구 삭제'}
+            className="border-red-200 bg-white text-red-700 hover:bg-red-50 hover:text-red-800"
+            onClick={() => onHardDelete?.(booking.id)}
+          >
+            <Trash2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+          </TicketBookingIconTipButton>
+        ) : null}
+        {canPurgeOffset ? (
+          <TicketBookingIconTipButton
+            label={locale === 'en' ? 'Permanent delete' : '영구 삭제'}
+            className="border-red-200 bg-white text-red-700 hover:bg-red-50 hover:text-red-800"
+            onClick={() => {
+              if (
+                confirm(
+                  locale === 'ko'
+                    ? '이 조정/취소 행을 바로 영구 삭제하시겠습니까? (되돌릴 수 없습니다)'
+                    : 'Permanently delete this adjustment/cancel row now? This cannot be undone.'
+                )
+              ) {
+                onHardDelete?.(booking.id)
+              }
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+          </TicketBookingIconTipButton>
+        ) : null}
+        {showDetailViewToggle ? (
+          <>
+            <TicketBookingIconTipButton
+              label={t('ticketBookingDetailModalViewTableTitle')}
+              className={chromeMuted}
+              pressed={detailListView === 'table'}
+              onClick={() => setDetailListView('table')}
+            >
+              <Table2 className="h-3.5 w-3.5" aria-hidden />
+            </TicketBookingIconTipButton>
+            <TicketBookingIconTipButton
+              label={t('ticketBookingDetailModalViewCardTitle')}
+              className="border-primary/30 bg-primary/5 text-primary hover:bg-primary/10"
+              pressed={detailListView === 'card'}
+              onClick={() => setDetailListView('card')}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" aria-hidden />
+            </TicketBookingIconTipButton>
+          </>
+        ) : null}
+      </>
+    )
+  }
+
   if (!open) return null
 
   return (
     <div
-      className="fixed inset-0 z-[110] flex items-center justify-center bg-black bg-opacity-50 p-4"
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="ticket-booking-detail-modal-title"
+      onClick={() => onOpenChange(false)}
     >
+      {isCardOnlyLayout ? (
+        <button
+          type="button"
+          onClick={() => onOpenChange(false)}
+          className="absolute right-4 top-4 z-[1] inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          aria-label={locale === 'en' ? 'Close' : '닫기'}
+        >
+          <X className="h-5 w-5" aria-hidden />
+        </button>
+      ) : null}
       <div
-        className={`max-h-[90vh] w-full overflow-y-auto rounded-lg bg-white ${
-          showDetailViewToggle && detailListView === 'card'
-            ? 'max-w-[min(42.667rem,calc(100vw-2rem))] shadow-xl'
-            : 'max-w-none shadow-lg sm:max-w-[min(1920px,calc(100vw-1rem))]'
+        className={`max-h-[90vh] w-full overflow-y-auto ${
+          isCardOnlyLayout
+            ? 'max-w-[min(42.667rem,calc(100vw-2rem))] bg-transparent'
+            : showDetailViewToggle && detailListView === 'card'
+              ? 'max-w-[min(42.667rem,calc(100vw-2rem))] rounded-lg bg-white shadow-xl'
+              : 'max-w-none rounded-lg bg-white shadow-lg sm:max-w-[min(1920px,calc(100vw-1rem))]'
         }`}
+        onClick={(e) => e.stopPropagation()}
       >
         <div
           className={
-            showDetailViewToggle && detailListView === 'card' ? 'p-3 sm:p-4' : 'p-4 sm:p-6'
+            isCardOnlyLayout
+              ? 'p-0'
+              : showDetailViewToggle && detailListView === 'card'
+                ? 'p-3 sm:p-4'
+                : 'p-4 sm:p-6'
           }
         >
+          {isCardOnlyLayout ? (
+            <h3 id="ticket-booking-detail-modal-title" className="sr-only">
+              {t('ticketBookingDetailModalTitle')}
+            </h3>
+          ) : (
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h3 id="ticket-booking-detail-modal-title" className="text-lg font-semibold sm:text-xl">
               {t('ticketBookingDetailModalTitle')}
             </h3>
             <div className="flex flex-wrap items-center justify-end gap-2">
+              {headerBooking ? (
+                <div className="flex items-center gap-1">
+                  {onEdit ? (
+                    <button
+                      type="button"
+                      className={iconBtnClass}
+                      title={locale === 'en' ? 'Edit' : '편집'}
+                      aria-label={locale === 'en' ? 'Edit' : '편집'}
+                      onClick={() => onEdit(headerBooking)}
+                    >
+                      <Pencil className="h-4 w-4" strokeWidth={2} aria-hidden />
+                    </button>
+                  ) : null}
+                  {onViewHistory ? (
+                    <button
+                      type="button"
+                      className={iconBtnClass}
+                      title={locale === 'en' ? 'History' : '히스토리'}
+                      aria-label={locale === 'en' ? 'History' : '히스토리'}
+                      onClick={() => onViewHistory(headerBooking.id)}
+                    >
+                      <History className="h-4 w-4" strokeWidth={2} aria-hidden />
+                    </button>
+                  ) : null}
+                  {headerCanSoftDelete ? (
+                    <button
+                      type="button"
+                      className={`${iconBtnClass} text-red-600 hover:bg-red-50 hover:text-red-700`}
+                      title={locale === 'en' ? 'Request deletion' : '삭제 요청'}
+                      aria-label={locale === 'en' ? 'Request deletion' : '삭제 요청'}
+                      onClick={() => onRequestSoftDelete?.(headerBooking.id)}
+                    >
+                      <Trash2 className="h-4 w-4" strokeWidth={2} aria-hidden />
+                    </button>
+                  ) : null}
+                  {headerCanHardDeletePending ? (
+                    <button
+                      type="button"
+                      className={`${iconBtnClass} text-red-700 hover:bg-red-50 hover:text-red-800`}
+                      title={locale === 'en' ? 'Permanent delete' : '영구 삭제'}
+                      aria-label={locale === 'en' ? 'Permanent delete' : '영구 삭제'}
+                      onClick={() => onHardDelete?.(headerBooking.id)}
+                    >
+                      <Trash2 className="h-4 w-4" strokeWidth={2} aria-hidden />
+                    </button>
+                  ) : null}
+                  {headerCanPurgeOffset ? (
+                    <button
+                      type="button"
+                      className={`${iconBtnClass} text-red-700 hover:bg-red-50 hover:text-red-800`}
+                      title={locale === 'en' ? 'Permanent delete' : '영구 삭제'}
+                      aria-label={locale === 'en' ? 'Permanent delete' : '영구 삭제'}
+                      onClick={() => {
+                        if (
+                          confirm(
+                            locale === 'ko'
+                              ? '이 조정/취소 행을 바로 영구 삭제하시겠습니까? (되돌릴 수 없습니다)'
+                              : 'Permanently delete this adjustment/cancel row now? This cannot be undone.'
+                          )
+                        ) {
+                          onHardDelete?.(headerBooking.id)
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" strokeWidth={2} aria-hidden />
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
               {showDetailViewToggle ? (
                 <div
                   className="inline-flex rounded-lg border border-gray-200 bg-gray-100 p-0.5 shadow-sm"
@@ -326,6 +548,7 @@ export default function TicketBookingReservationDetailModal({
               </button>
             </div>
           </div>
+          )}
 
           {loading ? (
             <p className="py-8 text-center text-gray-500">불러오는 중...</p>
@@ -371,6 +594,7 @@ export default function TicketBookingReservationDetailModal({
                   const finalTimeDisplay = finalBooking?.time ? finalBooking.time.replace(/:\d{2}$/, '') : null
                   return (
                     <div key={`modal-rn-${key}`} className="space-y-2">
+                      {!isCardOnlyLayout ? (
                       <div className="flex flex-col gap-2 rounded-md border border-gray-200 bg-gray-100 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                           <span className="shrink-0 text-sm font-semibold text-gray-800">RN#: {rnGroupLabel(key)}</span>
@@ -391,9 +615,12 @@ export default function TicketBookingReservationDetailModal({
                         </div>
                         <span className="shrink-0 text-xs text-gray-500">{groupBookings.length}건</span>
                       </div>
+                      ) : null}
                       {renderGroupDesktopTable ? (
                         detailListView === 'card' && renderGroupCardBookings ? (
-                          renderGroupCardBookings(groupBookings)
+                          renderGroupCardBookings(groupBookings, {
+                            chromeActions: renderCardChromeActions,
+                          })
                         ) : (
                           renderGroupDesktopTable(groupBookings)
                         )
@@ -758,6 +985,7 @@ export default function TicketBookingReservationDetailModal({
                                               </div>
                                               <TicketBookingActionPanel
                                                 bookingId={booking.id}
+                                                hideAxisSummary
                                                 axes={{
                                                   booking_status: booking.booking_status,
                                                   vendor_status: booking.vendor_status,

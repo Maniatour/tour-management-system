@@ -1,6 +1,7 @@
 /** 입장권 테이블 — 날짜별 투어·티켓 L/X 대조 */
 
 import { formatTicketBookingTourHeadline } from '@/lib/ticket-booking-tour-display'
+import { getTicketBookingEffectiveQty } from '@/lib/ticketBookingDisplay'
 import {
   isCanyonTourChoiceKey,
   choiceLabelToTourCountKey,
@@ -52,17 +53,21 @@ export function ticketBookingCanyonKeyFromBooking(booking: {
 export function aggregateTicketEaByCanyon(
   bookings: Array<{
     ea?: number | null
+    pending_ea?: number | null
     company?: string | null
     category?: string | null
     status?: string | null
+    booking_status?: string | null
+    change_status?: string | null
   }>
 ): TourChoiceCounts {
   const counts: TourChoiceCounts = {}
   for (const b of bookings) {
-    if (!isTicketBookingEaCountingStatus(b.status)) continue
+    const qty = getTicketBookingEffectiveQty(b)
+    if (!(qty > 0)) continue
     const key = ticketBookingCanyonKeyFromBooking(b)
     if (!key || !isCanyonTourChoiceKey(key)) continue
-    counts[key] = (counts[key] || 0) + (Number(b.ea) || 0)
+    counts[key] = (counts[key] || 0) + qty
   }
   return counts
 }
@@ -276,8 +281,8 @@ export function buildDayCanyonBookingActionTasks(
         diffEa,
         kind: 'book_more',
         text: isEn
-          ? `${diffEa} EA more booking needed`
-          : `${diffEa} EA 추가 부킹 필요`,
+          ? `${diffEa} EA more needed`
+          : `${diffEa} EA 추가 필요`,
       })
     } else {
       const diffEa = ticketN - tourN

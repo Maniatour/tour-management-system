@@ -5,7 +5,8 @@ import { X, Users, User, Car, HelpCircle, ArrowRightCircle } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
-import { normalizeReservationIds } from '@/utils/tourUtils'
+import { canonicalReservationIdKey, normalizeReservationIds } from '@/utils/tourUtils'
+import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
@@ -15,6 +16,7 @@ type TourRow = {
   assistant_id: string | null
   reservation_ids: string[] | null
   tour_car_id: string | null
+  tour_status?: string | null
 }
 
 type TeamRow = { email: string; languages: string[] | null; name_ko?: string | null; nick_name?: string | null }
@@ -56,6 +58,28 @@ function normalizeChannelId(id: string | null | undefined): string | null {
 }
 
 type Move = { reservationId: string; reservationLabel: string; fromTourId: string; toTourId: string }
+
+type PriorityKey = 'language' | 'choice' | 'hotel' | 'people'
+
+const PRIORITY_KEYS: PriorityKey[] = ['language', 'choice', 'hotel', 'people']
+const DEFAULT_PRIORITY_ORDER: PriorityKey[] = ['language', 'choice', 'hotel', 'people']
+const PRIORITY_LABELS: Record<PriorityKey, string> = {
+  language: '언어',
+  choice: '초이스',
+  hotel: '호텔',
+  people: '인원',
+}
+const PRIORITY_HELP: Record<PriorityKey, string> = {
+  language:
+    '같은 투어 안에서 고객 언어가 통일되도록 합니다. 한국어 고객은 한국어 가능 가이드/어시스턴트가 있는 투어로 모읍니다.',
+  choice: '초이스(🏜️ L / 🏜️ X 등)가 섞이지 않도록, 같은 초이스끼리 한 투어로 모읍니다. 다른 초이스는 다른 투어와 분리됩니다.',
+  hotel: '같은 픽업 호텔 고객끼리 한 투어로 모을 수 있도록 이동합니다.',
+  people: '투어별 인원이 차량 정원을 초과하면, 초과분을 다른 투어로 나누어 배정합니다.',
+}
+
+function isPriorityKey(value: string): value is PriorityKey {
+  return (PRIORITY_KEYS as string[]).includes(value)
+}
 
 const choiceLabelToKey = (
   nameKo: string | null | undefined,
@@ -180,7 +204,11 @@ export default function AutoAssignModal({
   const [manualOverrides, setManualOverrides] = useState<Map<string, string>>(new Map())
   const [openMoveDropdownRid, setOpenMoveDropdownRid] = useState<string | null>(null)
   const [channelNameById, setChannelNameById] = useState<Map<string, string>>(new Map())
-  const initialToursSetRef = useRef(false)
+  const [priorityOrder, setPriorityOrder] = useState<PriorityKey[]>(DEFAULT_PRIORITY_ORDER)
+  const initialToursSetRef = useRef<{ done: boolean; inactiveTourIdsToClear: string[] }>({
+    done: false,
+    inactiveTourIdsToClear: [],
+  })
 
   useEffect(() => {
     if (!openMoveDropdownRid) return
@@ -266,9 +294,9 @@ export default function AutoAssignModal({
     return tourList.map(t => ({ ...t, reservation_ids: Array.from(updates.get(t.id) || []) }))
   }, [])
 
-  const getMovesForStep = useCallback((stepNum: number, currentTours: TourRow[]): Move[] => {
+  const getMovesForStep = useCallback((priorityKey: PriorityKey, currentTours: TourRow[]): Move[] => {
     const next: Move[] = []
-    if (stepNum === 1) {
+    if (priorityKey === 'language') {
       currentTours.forEach(tour => {
         const ids = tour.reservation_ids || []
         const hasKo = hasKorean(tour)
@@ -285,7 +313,7 @@ export default function AutoAssignModal({
       })
       return next
     }
-    if (stepNum === 2) {
+    if (priorityKey === 'choice') {
       type ChoiceKey = 'L' | 'X' | '_other'
       const choiceOrder: ChoiceKey[] = ['L', 'X', '_other']
       const tourOrder = [...currentTours].sort((a, b) => a.id.localeCompare(b.id))
@@ -306,7 +334,7 @@ export default function AutoAssignModal({
       })
       return next
     }
-    if (stepNum === 3) {
+    if (priorityKey === 'hotel') {
       const countByTourAndHotel = new Map<string, Map<string, number>>()
       currentTours.forEach(tour => {
         const m = new Map<string, number>()
@@ -341,7 +369,7 @@ export default function AutoAssignModal({
       })
       return next
     }
-    if (stepNum === 4) {
+    if (priorityKey === 'people') {
       const tourPeople = (t: TourRow) =>
         reservations.filter(r => (t.reservation_ids || []).includes(r.id)).reduce((sum, r) => sum + peopleCount(r), 0)
       currentTours.forEach(tour => {
@@ -375,13 +403,38 @@ export default function AutoAssignModal({
 
   const proposedTours = useMemo(() => {
     if (initialTours.length === 0) return []
-    let current = initialTours.map(t => ({ ...t, reservation_ids: t.reservation_ids ? [...t.reservation_ids] : null }))
-    for (let stepNum = 1; stepNum <= 4; stepNum++) {
-      const moves = getMovesForStep(stepNum, current)
+    let current: TourRow[] = initialTours.map(t => ({
+      ...t,
+      reservation_ids: t.reservation_ids ? [...t.reservation_ids] : [],
+    }))
+
+    const assignedKeys = new Set(
+      current.flatMap(t => t.reservation_ids || []).map(id => canonicalReservationIdKey(id))
+    )
+    const unassignedIds = reservations
+      .filter(r => {
+        const status = (r.status || '').toLowerCase().trim()
+        if (status !== 'confirmed' && status !== 'recruiting') return false
+        if (!isAssignableReservationStatus(r.status)) return false
+        return !assignedKeys.has(canonicalReservationIdKey(String(r.id)))
+      })
+      .map(r => r.id)
+
+    if (unassignedIds.length > 0) {
+      const seedTargetId = [...current].sort((a, b) => a.id.localeCompare(b.id))[0]?.id
+      current = current.map(t =>
+        t.id === seedTargetId
+          ? { ...t, reservation_ids: [...(t.reservation_ids || []), ...unassignedIds] }
+          : t
+      )
+    }
+
+    for (const priorityKey of priorityOrder) {
+      const moves = getMovesForStep(priorityKey, current)
       current = applyMovesToTours(current, moves)
     }
     return current
-  }, [initialTours, getMovesForStep, applyMovesToTours])
+  }, [initialTours, reservations, priorityOrder, getMovesForStep, applyMovesToTours])
 
   const displayTours = useMemo(() => {
     if (proposedTours.length === 0) return []
@@ -402,9 +455,27 @@ export default function AutoAssignModal({
     setOpenMoveDropdownRid(null)
   }, [])
 
+  const handlePriorityChange = useCallback((index: number, nextKey: PriorityKey) => {
+    setPriorityOrder(prev => {
+      if (prev[index] === nextKey) return prev
+      const next = [...prev]
+      const fromIndex = next.indexOf(nextKey)
+      const previous = next[index]
+      next[index] = nextKey
+      if (fromIndex >= 0) next[fromIndex] = previous
+      return next
+    })
+    setManualOverrides(new Map())
+  }, [])
+
+  const priorityOrderLabel = useMemo(
+    () => priorityOrder.map(key => PRIORITY_LABELS[key]).join('→'),
+    [priorityOrder]
+  )
+
   useEffect(() => {
     if (!isOpen) {
-      initialToursSetRef.current = false
+      initialToursSetRef.current = { done: false, inactiveTourIdsToClear: [] }
       setShowPriorityHelp(false)
       setManualOverrides(new Map())
       setOpenMoveDropdownRid(null)
@@ -420,7 +491,7 @@ export default function AutoAssignModal({
       setLoading(true)
       try {
         const [toursRes, teamRes, vehiclesRes, reservRes, pickupHotelsRes, channelsRes] = await Promise.all([
-          supabase.from('tours').select('id, tour_guide_id, assistant_id, reservation_ids, tour_car_id').eq('product_id', productId).eq('tour_date', tourDate),
+          supabase.from('tours').select('id, tour_guide_id, assistant_id, reservation_ids, tour_car_id, tour_status').eq('product_id', productId).eq('tour_date', tourDate),
           supabase.from('team').select('email, languages, name_ko, nick_name'),
           supabase.from('vehicles').select('id, capacity, nick, vehicle_number, vehicle_type, vehicle_category, rental_company, rental_start_date, rental_end_date').eq('operator_id', activeOperatorId),
           supabase.from('reservations').select('id, customer_id, pickup_hotel, adults, child, infant, status, channel_id').eq('product_id', productId).eq('tour_date', tourDate),
@@ -441,12 +512,17 @@ export default function AutoAssignModal({
         const reservData = reservDataAll.filter(r => isAssignableReservationStatus(r.status))
         setReservations(reservData)
 
-        // Tours — 투어에 남아 있는 취소 예약 id는 모달 기준 배정에서 제거
+        // Tours — 취소·삭제 투어는 배정 대상에서 제외. 그 투어에만 있던 예약은 미배정으로 재배정
         const toursData = (toursRes.data || []) as TourRow[]
-        if (!initialToursSetRef.current) {
-          initialToursSetRef.current = true
+        const activeTours = toursData.filter(t => !isTourCancelled(t.tour_status))
+        const inactiveTours = toursData.filter(t => isTourCancelled(t.tour_status))
+        if (!initialToursSetRef.current.done) {
+          initialToursSetRef.current = {
+            done: true,
+            inactiveTourIdsToClear: inactiveTours.map(t => t.id),
+          }
           setInitialTours(
-            toursData.map(t => ({
+            activeTours.map(t => ({
               ...t,
               reservation_ids: dedupeReservationIds(
                 (t.reservation_ids || []).filter(id => assignableIds.has(id))
@@ -596,9 +672,16 @@ export default function AutoAssignModal({
         const { error } = await supabase.from('tours').update({ reservation_ids: arr }).eq('id', tour.id)
         if (error) throw error
       }
+      for (const tourId of initialToursSetRef.current.inactiveTourIdsToClear) {
+        const { error } = await supabase.from('tours').update({ reservation_ids: [] }).eq('id', tourId)
+        if (error) throw error
+      }
       setInitialTours(displayTours.map(t => ({ ...t, reservation_ids: t.reservation_ids ? [...t.reservation_ids] : null })))
       setManualOverrides(new Map())
-      initialToursSetRef.current = true
+      initialToursSetRef.current = {
+        ...initialToursSetRef.current,
+        done: true,
+      }
       await onSuccess()
       onClose()
     } catch (e) {
@@ -608,8 +691,6 @@ export default function AutoAssignModal({
       setApplying(false)
     }
   }, [displayTours, onSuccess, onClose])
-
-  if (!isOpen) return null
 
   const hasChanges = useMemo(() => {
     if (initialTours.length !== displayTours.length) return true
@@ -625,17 +706,22 @@ export default function AutoAssignModal({
     return false
   }, [initialTours, displayTours])
 
+  if (!isOpen) return null
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] flex flex-col">
         <div className="border-b">
           <div className="flex items-center justify-between p-4">
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold text-gray-900">자동 배정 (언어→초이스→호텔→인원 우선순위 적용 결과)</h2>
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-gray-900">자동 배정</h2>
+                <p className="text-xs text-gray-500 truncate">{priorityOrderLabel} 우선순위 적용 결과</p>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowPriorityHelp(v => !v)}
-                className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+                className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 shrink-0"
                 title="우선순위 설명 보기"
               >
                 <HelpCircle className="w-5 h-5" />
@@ -645,23 +731,42 @@ export default function AutoAssignModal({
               <X className="w-5 h-5" />
             </button>
           </div>
+          <div className="px-4 pb-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-gray-600">우선순위</span>
+              {priorityOrder.map((key, index) => (
+                <label key={`${index}-${key}`} className="inline-flex items-center gap-1">
+                  <span className="text-[11px] text-gray-500 whitespace-nowrap">{index + 1}순위</span>
+                  <select
+                    value={key}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      if (!isPriorityKey(value)) return
+                      handlePriorityChange(index, value)
+                    }}
+                    className="h-8 rounded-lg border border-border bg-white px-2 text-xs font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-ring"
+                    aria-label={`${index + 1}순위`}
+                  >
+                    {PRIORITY_KEYS.map((option) => (
+                      <option key={option} value={option}>
+                        {PRIORITY_LABELS[option]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+          </div>
           {showPriorityHelp && (
             <div className="px-4 pb-4 pt-0">
               <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-sm text-slate-700 space-y-2">
-                <p className="font-medium text-slate-800">자동 배정 시 적용되는 언어→초이스→호텔→인원 우선순위</p>
+                <p className="font-medium text-slate-800">자동 배정 시 적용되는 {priorityOrderLabel} 우선순위</p>
                 <ol className="list-decimal list-inside space-y-1.5">
-                  <li>
-                    <span className="font-medium">언어</span>: 같은 투어 안에서 고객 언어가 통일되도록 합니다. 한국어 고객은 한국어 가능 가이드/어시스턴트가 있는 투어로 모읍니다. 이미 모든 언어가 같으면 변경 없이 다음 조건으로 넘어갑니다.
-                  </li>
-                  <li>
-                    <span className="font-medium">초이스</span>: 초이스(🏜️ L / 🏜️ X 등)가 섞이지 않도록, 같은 초이스끼리 한 투어로 모읍니다. 다른 초이스는 다른 투어와 분리됩니다.
-                  </li>
-                  <li>
-                    <span className="font-medium">픽업 호텔</span>: 같은 픽업 호텔 고객끼리 한 투어로 모을 수 있도록 이동합니다.
-                  </li>
-                  <li>
-                    <span className="font-medium">인원/차량 정원</span>: 투어별 인원이 차량 정원을 초과하면, 초과분을 다른 투어로 나누어 배정합니다.
-                  </li>
+                  {priorityOrder.map((key) => (
+                    <li key={key}>
+                      <span className="font-medium">{PRIORITY_LABELS[key]}</span>: {PRIORITY_HELP[key]}
+                    </li>
+                  ))}
                 </ol>
               </div>
             </div>

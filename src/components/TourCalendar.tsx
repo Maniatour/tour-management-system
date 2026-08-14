@@ -7,6 +7,8 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTranslations, useLocale } from 'next-intl'
 import { isReservationCancelledStatus } from '@/utils/tourUtils'
+import { isGuideBackupTour } from '@/lib/guideBackupTour'
+import { GuideBackupTourBadge } from '@/components/guide/GuideBackupTourBadge'
 import {
   getMultiDayTourDays,
   getTourCalendarEndYmd,
@@ -697,6 +699,16 @@ const TourCalendar = memo(function TourCalendar({
     return total
   }, [allReservations, normalizeReservationIds])
 
+  const isBackupScheduleTour = useCallback((tour: ExtendedTour, assignedPeople: number) => {
+    return isGuideBackupTour({
+      assignedPeople,
+      tourGuideId: tour.tour_guide_id,
+      assistantId: tour.assistant_id,
+      tourStatus: tour.tour_status,
+      assignmentStatus: tour.assignment_status,
+    })
+  }, [])
+
   // 투어별 밸런스 확인: reservation_ids에 있는 예약들의 balance_amount 확인
   const hasBalance = useCallback((tour: ExtendedTour) => {
     const ids = normalizeReservationIds(tour.reservation_ids as unknown)
@@ -1120,6 +1132,11 @@ const TourCalendar = memo(function TourCalendar({
                                   {tour.assigned_people ?? assignedPeople}
                                   {locale === 'en' ? ' pax' : '명'}
                                 </div>
+                                {isGuideChip && isBackupScheduleTour(tour, tour.assigned_people ?? assignedPeople) && (
+                                  <div>
+                                    <GuideBackupTourBadge variant="chip" />
+                                  </div>
+                                )}
                                 {staffNames.length > 0 && (
                                   <div className="opacity-95">{staffNames.join(' · ')}</div>
                                 )}
@@ -1267,6 +1284,11 @@ const TourCalendar = memo(function TourCalendar({
                             {tour.assigned_people ?? assignedPeople}
                             {locale === 'en' ? ' pax' : '명'}
                           </div>
+                          {isGuideChip && isBackupScheduleTour(tour, tour.assigned_people ?? assignedPeople) && (
+                            <div>
+                              <GuideBackupTourBadge variant="chip" />
+                            </div>
+                          )}
                           {staffNames.length > 0 && (
                             <div className="opacity-95">{staffNames.join(' · ')}</div>
                           )}
@@ -1518,6 +1540,12 @@ const TourCalendar = memo(function TourCalendar({
                 {t('peopleUnit')}
                 {hoveredTour.is_private_tour && <span className="ml-1 text-purple-600">({t('privateTour')})</span>}
               </div>
+              {isBackupScheduleTour(hoveredTour, getAssignedPeople(hoveredTour)) && (
+                <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+                  <div className="font-semibold">{t('backupSchedule')}</div>
+                  <div className="mt-0.5 leading-4">{t('backupScheduleHint')}</div>
+                </div>
+              )}
               
               {/* Lower / X / Upper 등 초이스별 인원 */}
               {(() => {

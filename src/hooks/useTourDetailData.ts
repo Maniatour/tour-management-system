@@ -202,6 +202,7 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
     if (reservationIdsOverrideRef.current) return
     setOtherToursAssignedReservationsState(updater)
   }, [])
+  const setOtherToursAssignedReservationsForced = setOtherToursAssignedReservationsState
   const [otherStatusReservations, setOtherStatusReservations] = useState<ReservationRow[]>([])
   const [inactiveReservations, setInactiveReservations] = useState<ReservationRow[]>([])
   const [pickupHotels, setPickupHotels] = useState<PickupHotel[]>([])
@@ -1145,6 +1146,7 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
     sameDayTourIds,
     otherToursAssignedReservations,
     setOtherToursAssignedReservations,
+    setOtherToursAssignedReservationsForced,
     beginAssignmentIdsMutation,
     clearAssignmentIdsMutationOverride,
     getEffectiveTourReservationIds,
@@ -1296,6 +1298,12 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
             : dedupeReservationIdsPreservingOrder(currentTourRow?.reservation_ids ?? tour.reservation_ids)
           if (!reservationIdsOverrideRef.current) {
             tourReservationIdsRef.current = assignedReservationIds
+            setTourState((prev) => {
+              if (!prev) return prev
+              const prevIds = dedupeReservationIdsPreservingOrder(prev.reservation_ids)
+              if (reservationIdsSetsEqual(prevIds, assignedReservationIds)) return prev
+              return { ...prev, reservation_ids: assignedReservationIds }
+            })
           }
 
           let assignedReservations: ExtendedReservationRow[] = []

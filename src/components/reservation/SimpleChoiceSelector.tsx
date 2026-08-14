@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { calculateChoiceLineTotal, isPerUnitPricing } from '@/lib/choicePricingUnit';
 import { getOptionCapacity } from '@/lib/choiceOptionCapacity';
+import { getChoiceOptionLocalizedText } from '@/lib/productChoiceLocales';
 
 // 새로운 간결한 타입 정의
 interface ChoiceOption {
@@ -53,6 +54,11 @@ interface SimpleChoiceSelectorProps {
 
 /** 예약 시점에 알 수 없는 경우가 많은 초이스(미국 거주자 구분, 기타 입장료)에서 "미정" 선택 허용 */
 const UNDECIDED_OPTION_ID = '__undecided__';
+
+/** 한국어명이 비어 있으면 option_name(영문·레거시)으로 표시 — 카쇼 등 i18n 미기입 상품 */
+function choiceOptionLabel(option: Pick<ChoiceOption, 'option_name_ko' | 'option_name'>): string {
+  return getChoiceOptionLocalizedText(option, 'name', 'ko')
+}
 
 export default function SimpleChoiceSelector({
   choices,
@@ -387,7 +393,7 @@ export default function SimpleChoiceSelector({
             const covered = cap * (selection.quantity || 1);
             if (covered < totalPeople) {
               newErrors.push(
-                `${option.option_name_ko || option.option_name} 최대 수용 ${cap}명 × ${selection.quantity || 1}대 = ${covered}명으로, 예약 인원(${totalPeople}명)을 수용할 수 없습니다.`
+                `${choiceOptionLabel(option)} 최대 수용 ${cap}명 × ${selection.quantity || 1}대 = ${covered}명으로, 예약 인원(${totalPeople}명)을 수용할 수 없습니다.`
               );
             }
           }
@@ -580,7 +586,7 @@ export default function SimpleChoiceSelector({
                             choice.id,
                             option.id,
                             option.option_key,
-                            option.option_name_ko,
+                            choiceOptionLabel(option),
                             0,
                             0
                           );
@@ -601,7 +607,7 @@ export default function SimpleChoiceSelector({
                             choice.id,
                             option.id,
                             option.option_key,
-                            option.option_name_ko,
+                            choiceOptionLabel(option),
                             1,
                             selectionTotalPrice
                           );
@@ -629,7 +635,7 @@ export default function SimpleChoiceSelector({
                             choice.id,
                             option.id,
                             option.option_key,
-                            option.option_name_ko,
+                            choiceOptionLabel(option),
                             1,
                             singleChoiceTotalPrice
                           );
@@ -645,7 +651,7 @@ export default function SimpleChoiceSelector({
                             choice.id,
                             option.id,
                             option.option_key,
-                            option.option_name_ko,
+                            choiceOptionLabel(option),
                             0,
                             0
                           );
@@ -658,7 +664,7 @@ export default function SimpleChoiceSelector({
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center space-x-2">
                           <h4 className="font-medium text-gray-900 text-xs">
-                            {option.option_name_ko}
+                            {choiceOptionLabel(option)}
                           </h4>
                           {option.is_default && (
                             <span className="px-1.5 py-0.5 bg-green-100 text-green-800 text-xs rounded-full">
@@ -690,7 +696,7 @@ export default function SimpleChoiceSelector({
                                     choice.id,
                                     option.id,
                                     option.option_key,
-                                    option.option_name_ko,
+                                    choiceOptionLabel(option),
                                     currentQuantity - 1,
                                     calculatePrice(option, currentQuantity - 1, adults, children, infants, isResidentStatusChoice, choice.pricing_unit)
                                   );
@@ -705,7 +711,7 @@ export default function SimpleChoiceSelector({
                                     choice.id,
                                     option.id,
                                     option.option_key,
-                                    option.option_name_ko,
+                                    choiceOptionLabel(option),
                                     0,
                                     0
                                   );
@@ -733,7 +739,7 @@ export default function SimpleChoiceSelector({
                                   choice.id,
                                   option.id,
                                   option.option_key,
-                                  option.option_name_ko,
+                                  choiceOptionLabel(option),
                                   currentQuantity + 1,
                                   calculatePrice(option, currentQuantity + 1, adults, children, infants, isResidentStatusChoice, choice.pricing_unit)
                                 );
@@ -806,7 +812,7 @@ export default function SimpleChoiceSelector({
                                   choice.id,
                                   option.id,
                                   option.option_key,
-                                  option.option_name_ko,
+                                  choiceOptionLabel(option),
                                   currentQuantity,
                                   newTotalPrice
                                 );

@@ -4547,6 +4547,13 @@
       "ticketNeedCheckColStatus": "상태",
       "ticketNeedCheckColEa": "수량",
       "ticketNeedCheckOpenEdit": "편집",
+      "ticketIssueFollowUpButton": "문제 발생",
+      "ticketIssueFollowUpButtonShort": "문제",
+      "ticketIssueFollowUpButtonTitle": "문제 발생으로 표시된 입장권 부킹을 모아 확인합니다",
+      "ticketIssueFollowUpTitle": "문제 발생 — 팔로업",
+      "ticketIssueFollowUpHint": "문제 발생이 켜진 부킹만 표시됩니다. 편집하거나 해제할 수 있습니다.",
+      "ticketIssueFollowUpEmpty": "문제 발생으로 표시된 부킹이 없습니다.",
+      "ticketIssueFollowUpClear": "문제 해제",
       "search": "검색",
       "status": "상태",
       "ticketTableStatusDisplayLabel": "상태 표시",
@@ -4715,6 +4722,8 @@
         "refundNoteLabel": "메모",
         "creditAmountLabel": "크레딧 금액 (USD)",
         "refundedAmountLabel": "환불 금액 (USD)",
+        "issueToggleTitleOn": "문제 발생 상태입니다. 다시 누르면 해제됩니다.",
+        "issueToggleTitleOff": "문제가 있으면 표시합니다. 부킹관리에서 모아 볼 수 있습니다.",
         "actions": {
           "request_booking": "예매 요청",
           "mark_tentative": "가예약 처리",
@@ -4726,7 +4735,7 @@
           "request_refund": "환불 요청",
           "mark_credit_received": "크레딧 받음",
           "mark_refunded": "환불 완료",
-          "report_issue": "문제 발생 기록"
+          "report_issue": "문제 발생"
         }
       },
       "ticketBookingAxis": {
@@ -4863,7 +4872,8 @@
       "scheduleView": "스케줄 뷰",
       "searchPlaceholder": "투어 ID, 상품 ID로 검색...",
       "navigatingToTour": "투어 상세 페이지로 이동 중...",
-      "noToursThisMonth": "해당 월에 배정된 투어가 없습니다."
+      "noToursThisMonth": "해당 월에 배정된 투어가 없습니다.",
+      "backupScheduleHint": "추가 모집용 백업입니다. 실제 투어는 진행될 수도, 진행하지 않을 수도 있습니다."
     },
     "ticketBookingEdit": "입장권 부킹 수정",
     "ticketBookingAdd": "입장권 부킹 추가",
@@ -4920,6 +4930,8 @@
       "assistant": "어시스턴트",
       "vehicle": "차량",
       "people": "인원",
+      "backupSchedule": "백업 스케줄",
+      "backupScheduleHint": "추가 모집용 백업입니다. 실제 투어는 진행될 수도, 진행하지 않을 수도 있습니다.",
       "status": "상태",
       "viewDetails": "상세 보기",
       "reservationCalendar": "투어 달력",
@@ -7313,6 +7325,9 @@
     "tourCard": {
       "unassigned": "미배정",
       "today": "오늘",
+      "backupSchedule": "백업 스케줄",
+      "backupScheduleShort": "백업",
+      "backupScheduleHint": "추가 모집용 백업입니다. 실제 투어는 진행될 수도, 진행하지 않을 수도 있습니다.",
       "viewRentalAgreement": "렌터카 계약서 보기",
       "rentalAgreementTitle": "Rental Agreement",
       "rentalAgreementPreviewUnavailable": "미리보기를 지원하지 않는 형식입니다. 새 창에서 열어 주세요.",
@@ -7394,6 +7409,8 @@
       "oneGuideDriver": "1명 가이드 + 드라이버"
     },
     "noProductInfo": "상품 정보 없음",
+    "backupSchedule": "백업 스케줄",
+    "backupScheduleHint": "추가 모집용 백업입니다. 실제 투어는 진행될 수도, 진행하지 않을 수도 있습니다.",
     "unassigned": "미배정",
     "noGuideAssigned": "가이드 미배정",
     "twoGuides": "2명 가이드",

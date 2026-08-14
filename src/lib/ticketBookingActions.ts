@@ -44,9 +44,6 @@ export function getSuggestedTicketBookingActions(b: TicketBookingAxisSnapshot): 
   if (bs === 'tentative' || bs === 'on_hold') {
     out.push('confirm_booking')
   }
-  if (bs === 'confirmed' && cs === 'none') {
-    out.push('request_change')
-  }
   if (cs === 'requested') {
     out.push('confirm_change')
   }
@@ -63,8 +60,6 @@ export function getSuggestedTicketBookingActions(b: TicketBookingAxisSnapshot): 
     out.push('mark_credit_received', 'mark_refunded')
   }
 
-  out.push('report_issue')
-
   return [...new Set(out)]
 }
 
@@ -79,7 +74,7 @@ const ACTION_LABEL_KO: Record<string, string> = {
   request_refund: '환불 요청',
   mark_credit_received: '크레딧 받음',
   mark_refunded: '환불 완료',
-  report_issue: '문제 발생 기록',
+  report_issue: '문제 발생',
 }
 
 export function ticketBookingActionLabelKo(action: string): string {
@@ -162,6 +157,33 @@ export async function applyTicketBookingSetAxes(
     return { ok: false, error: error.message }
   }
   return { ok: true, data: data as Json }
+}
+
+export function isTicketBookingIssueReported(
+  operationStatus: string | null | undefined
+): boolean {
+  return String(operationStatus ?? '').trim().toLowerCase() === 'issue_reported'
+}
+
+/** 문제 발생 플래그 on/off — 다른 축은 유지하고 operation_status만 토글 */
+export async function applyTicketBookingIssueFlag(
+  bookingId: string,
+  axes: TicketBookingAxisSnapshot,
+  issue: boolean,
+  actorEmail?: string | null
+): Promise<ApplyTicketBookingActionResult> {
+  return applyTicketBookingSetAxes(
+    bookingId,
+    {
+      booking_status: (axes.booking_status ?? 'requested').trim().toLowerCase() || 'requested',
+      vendor_status: (axes.vendor_status ?? 'pending').trim().toLowerCase() || 'pending',
+      change_status: (axes.change_status ?? 'none').trim().toLowerCase() || 'none',
+      payment_status: (axes.payment_status ?? 'not_due').trim().toLowerCase() || 'not_due',
+      refund_status: (axes.refund_status ?? 'none').trim().toLowerCase() || 'none',
+      operation_status: issue ? 'issue_reported' : 'none',
+    },
+    actorEmail
+  )
 }
 
 /** 테이블 워크플로우 전용 RPC 액션 (마이그레이션 `20260609120000_ticket_booking_workflow`) */

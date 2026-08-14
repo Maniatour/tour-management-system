@@ -16,6 +16,8 @@ import {
   GuideAssignmentStatusBadge,
 } from '@/components/guide/GuideAssignmentResponseButtons'
 import GuideVehicleBadge from '@/components/guide/GuideVehicleBadge'
+import { GuideBackupTourBadge } from '@/components/guide/GuideBackupTourBadge'
+import { isGuideBackupTour } from '@/lib/guideBackupTour'
 import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
 import { fetchPersonallyRespondedTourIds } from '@/lib/guideAssignmentStatus'
 import { translateOffScheduleReason } from '@/lib/offScheduleReasonI18n'
@@ -1939,6 +1941,13 @@ function TourCard({
   
   const today = getLasVegasToday()
   const isToday = tour.tour_date === today
+  const isBackupTour = isGuideBackupTour({
+    assignedPeople: tour.assigned_people,
+    tourGuideId: tour.tour_guide_id,
+    assistantId: tour.assistant_id,
+    tourStatus: tour.tour_status,
+    assignmentStatus: assignmentStatus,
+  })
   
   console.log('TourCard date check:', {
     tourId: tour.id,
@@ -2034,11 +2043,19 @@ function TourCard({
               </span>
             </span>
 
+            {isBackupTour && <GuideBackupTourBadge />}
+
           </div>
 
           {/* 배정 상태 배지 - 오른쪽 끝 정렬 (투어 상태 대신 배정 상태 표시) */}
           <GuideAssignmentStatusBadge status={assignmentStatus} locale={locale} />
         </div>
+
+        {isBackupTour && (
+          <p className="text-[11px] leading-4 text-amber-800">
+            {t('tourCard.backupScheduleHint')}
+          </p>
+        )}
 
         <GuideAssignmentResponseButtons
           tourId={tour.id}

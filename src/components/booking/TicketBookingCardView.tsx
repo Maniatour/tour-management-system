@@ -5,8 +5,8 @@
  * 날짜 → 지출 업체 2단 그룹 · 모바일 폭 카드 · 클릭 시 편집 모달.
  */
 
-import { useMemo, useState, useEffect, useRef, Fragment } from 'react'
-import { History, Users } from 'lucide-react'
+import { useMemo, useState, useEffect, useRef, Fragment, type ReactNode } from 'react'
+import { History, Users, Wallet, StickyNote, Paperclip } from 'lucide-react'
 import type { SeasonDate } from '@/lib/ticketBookingCancelDue'
 import {
   getTicketBookingEffectiveQty,
@@ -31,6 +31,11 @@ import {
 import { tourChoiceCountsDisplayKeys } from '@/lib/tourChoiceCounts'
 import { ticketBookingCanyonKeyFromBooking } from '@/lib/ticketBookingDateView'
 import TicketBookingQtyTimeline from './TicketBookingQtyTimeline'
+import TicketBookingCardActionBar, {
+  TicketBookingIconTipButton,
+  type TicketBookingCardActionHandlers,
+} from './TicketBookingCardActionBar'
+import { TicketBookingRelatedDocuments } from './TicketBookingRelatedDocuments'
 
 export type TicketBookingCardViewRow = {
   id: string
@@ -58,6 +63,13 @@ export type TicketBookingCardViewRow = {
   tours?: TicketBookingTourEnrichment | null
   linked_tours?: Array<TicketBookingTourEnrichment & { tour_id: string }> | null
   created_at?: string | null
+  submitted_by?: string | null
+  note?: string | null
+  uploaded_file_urls?: string[] | null
+  invoice_number?: string | null
+  zelle_confirmation_number?: string | null
+  refund_status?: string | null
+  operation_status?: string | null
 }
 
 const tourBadgeBase =
@@ -197,6 +209,15 @@ type Props<T extends TicketBookingCardViewRow> = {
   density?: 'default' | 'compact'
   /** compact 기본 true — 금액 줄 숨김 */
   hideAmounts?: boolean
+  /** 날짜·업체 그룹 없이 카드만 나열 (상세 모달) */
+  flat?: boolean
+  /** 카드 하단 워크플로 액션 줄 */
+  actionHandlers?: TicketBookingCardActionHandlers
+  onSaveNote?: (booking: T, note: string) => void | Promise<void>
+  onAddDocuments?: (booking: T, files: File[]) => void | Promise<void>
+  onRemoveDocument?: (booking: T, index: number) => void | Promise<void>
+  /** 상세 모달 — 편집/삭제/뷰 전환 등 카드 안 아이콘 */
+  chromeActions?: (booking: T) => ReactNode
 }
 
 function collectLinkedToursForBooking(
@@ -245,7 +266,7 @@ function TourLinkBadgeChip({
     ? tourChoiceCountsDisplayKeys(tours.choice_counts)
     : []
   const badgeClass = compact
-    ? 'inline-flex max-w-full shrink-0 items-center gap-0.5 rounded-full px-1 py-0.5 text-[9px] font-semibold leading-tight'
+    ? 'inline-flex max-w-full shrink-0 flex-wrap items-center gap-0.5 rounded-full px-1 py-0.5 text-[9px] font-semibold leading-tight'
     : tourBadgeBase
 
   return (
@@ -363,35 +384,61 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
   emptyMessage,
   density = 'default',
   hideAmounts,
+  flat = false,
+  actionHandlers,
+  onSaveNote,
+  onAddDocuments,
+  onRemoveDocument,
+  chromeActions,
 }: Props<T>) {
   const isEn = locale.startsWith('en')
   const compact = density === 'compact'
   const showAmounts = hideAmounts === undefined ? !compact : !hideAmounts
-  const [qtyTimelineBooking, setQtyTimelineBooking] = useState<T | null>(null)
-  const [qtyTimelineAnchor, setQtyTimelineAnchor] = useState<{
-    top: number
-    left: number
-    bottom: number
-    right: number
+  type PopoverKind = 'qty' | 'note' | 'docs'
+  const [cardPopover, setCardPopover] = useState<{
+    kind: PopoverKind
+    booking: T
+    anchor: { top: number; left: number; bottom: number; right: number }
   } | null>(null)
-  const qtyTimelinePopoverRef = useRef<HTMLDivElement | null>(null)
-  const qtyTimelineTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const [noteDraft, setNoteDraft] = useState('')
+  const [noteSaving, setNoteSaving] = useState(false)
+  const cardPopoverRef = useRef<HTMLDivElement | null>(null)
+  const cardPopoverTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const docsFileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const closeCardPopover = () => setCardPopover(null)
+
+  const openCardPopover = (
+    kind: PopoverKind,
+    booking: T,
+    el: HTMLButtonElement
+  ) => {
+    if (cardPopover?.kind === kind && cardPopover.booking.id === booking.id) {
+      closeCardPopover()
+      return
+    }
+    const rect = el.getBoundingClientRect()
+    cardPopoverTriggerRef.current = el
+    if (kind === 'note') setNoteDraft(String(booking.note || ''))
+    setCardPopover({
+      kind,
+      booking,
+      anchor: { top: rect.top, left: rect.left, bottom: rect.bottom, right: rect.right },
+    })
+  }
 
   useEffect(() => {
-    if (!qtyTimelineBooking) return
+    if (!cardPopover) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setQtyTimelineBooking(null)
-        setQtyTimelineAnchor(null)
-      }
+      if (e.key === 'Escape') closeCardPopover()
     }
     const onPointerDown = (e: MouseEvent | PointerEvent) => {
       const target = e.target as Node | null
       if (!target) return
-      if (qtyTimelinePopoverRef.current?.contains(target)) return
-      if (qtyTimelineTriggerRef.current?.contains(target)) return
-      setQtyTimelineBooking(null)
-      setQtyTimelineAnchor(null)
+      if (cardPopoverRef.current?.contains(target)) return
+      if (cardPopoverTriggerRef.current?.contains(target)) return
+      if (target instanceof Element && target.closest('[data-ticket-booking-docs-lightbox]')) return
+      closeCardPopover()
     }
     document.addEventListener('keydown', onKey)
     document.addEventListener('pointerdown', onPointerDown, true)
@@ -399,7 +446,16 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('pointerdown', onPointerDown, true)
     }
-  }, [qtyTimelineBooking])
+  }, [cardPopover])
+
+  useEffect(() => {
+    setCardPopover((prev) => {
+      if (!prev) return prev
+      const fresh = bookings.find((b) => b.id === prev.booking.id)
+      if (!fresh || fresh === prev.booking) return prev
+      return { ...prev, booking: fresh }
+    })
+  }, [bookings])
 
   /** 같은 RN → 연결 투어 전부 (tour_id 기준 중복 제거) */
   const toursByRn = useMemo(() => {
@@ -426,6 +482,9 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
   }, [bookings, tourLinkSourceBookings])
 
   const groupedByDate = useMemo((): DateCompanyGroup<T>[] => {
+    if (flat) {
+      return [{ date: '__flat__', companies: [{ company: '__flat__', rows: bookings }] }]
+    }
     const byDate = new Map<string, Map<string, T[]>>()
     for (const b of bookings) {
       const date = String(b.check_in_date || '').slice(0, 10) || '—'
@@ -455,7 +514,7 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
             ),
           })),
       }))
-  }, [bookings])
+  }, [bookings, flat])
 
   if (bookings.length === 0) {
     return (
@@ -479,7 +538,7 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
         const dayCount = dayGroup.companies.reduce((s, c) => s + c.rows.length, 0)
         return (
           <Fragment key={dayGroup.date}>
-            {dayIdx > 0 ? (
+            {!flat && dayIdx > 0 ? (
               <div
                 className={
                   compact
@@ -491,7 +550,7 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
               />
             ) : null}
 
-            <section className={dayIdx === 0 ? (compact ? 'pb-1' : 'pb-4') : compact ? 'pb-1 pt-1' : 'pb-4 pt-3'}>
+            <section className={flat ? '' : dayIdx === 0 ? (compact ? 'pb-1' : 'pb-4') : compact ? 'pb-1 pt-1' : 'pb-4 pt-3'}>
               {(() => {
                 const compare = dayTourCompareByDate?.get(dayGroup.date)
                 const summaryText =
@@ -504,6 +563,7 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                       : null
                 return (
                   <>
+                  {!flat ? (
                   <div className={compact ? 'mb-1.5 space-y-0.5' : 'mb-3 space-y-1'}>
                     <h3
                       className={
@@ -555,6 +615,7 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                       </div>
                     ) : null}
                   </div>
+                  ) : null}
 
               <div className={compact ? 'space-y-2' : 'space-y-4'}>
                 {dayGroup.companies.map(({ company, rows }) => {
@@ -563,10 +624,15 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                   return (
                   <div
                     key={`${dayGroup.date}__${company}`}
-                    className={`rounded-xl border ${
-                      compact ? 'rounded-lg p-2' : 'rounded-2xl p-3 sm:p-4'
-                    } ${companySectionSurface(company)}`}
+                    className={
+                      flat
+                        ? ''
+                        : `rounded-xl border ${
+                            compact ? 'rounded-lg p-2' : 'rounded-2xl p-3 sm:p-4'
+                          } ${companySectionSurface(company)}`
+                    }
                   >
+                    {!flat ? (
                     <h4
                       className={`flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold text-foreground ${
                         compact ? 'mb-1.5 text-[11px]' : 'mb-2.5 text-sm'
@@ -581,18 +647,23 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                       </span>
                       {payable ? (
                         <span
-                          className={`inline-flex items-center rounded-full bg-slate-900/90 font-semibold tabular-nums text-white ring-1 ring-slate-700/40 ${
+                          className={`inline-flex items-center gap-0.5 rounded-full bg-slate-900/90 font-semibold tabular-nums text-white ring-1 ring-slate-700/40 ${
                             compact
                               ? 'px-1.5 py-0.5 text-[10px]'
-                              : 'px-2.5 py-0.5 text-xs sm:text-sm'
+                              : 'gap-1 px-2.5 py-0.5 text-xs sm:text-sm'
                           }`}
-                          title={
+                          title={payable.text}
+                          aria-label={
                             isEn
-                              ? 'Total amount due for this supplier'
-                              : '이 지급처에 지불할 총 비용'
+                              ? `Expense ${formatUsd(payable.total)}. ${payable.text}`
+                              : `지출 ${formatUsd(payable.total)}. ${payable.text}`
                           }
                         >
-                          {payable.text}
+                          <Wallet
+                            className={`shrink-0 opacity-90 ${compact ? 'h-2.5 w-2.5' : 'h-3.5 w-3.5'}`}
+                            aria-hidden
+                          />
+                          {formatUsd(payable.total)}
                         </span>
                       ) : null}
                       <CanyonActionTaskBadges
@@ -601,7 +672,8 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                         compact={compact}
                       />
                     </h4>
-                    <ul className={compact ? 'flex flex-col gap-1.5' : 'flex flex-wrap gap-3'}>
+                    ) : null}
+                    <ul className={flat || compact ? 'flex flex-col gap-1.5' : 'flex flex-wrap gap-3'}>
                       {rows.map((booking) => {
                         const unified = resolveTicketBookingUnifiedStatus(booking, locale)
                         const eff = getTicketBookingEffectiveQty(booking)
@@ -632,30 +704,34 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                           <li
                             key={booking.id}
                             className={
-                              compact
+                              flat || compact
                                 ? 'w-full shrink-0'
                                 : 'w-full max-w-[22.5rem] shrink-0 sm:w-[22.5rem]'
                             }
                           >
                             <div
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => onOpenBooking(booking)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault()
-                                  onOpenBooking(booking)
-                                }
-                              }}
-                              className={`flex h-full w-full cursor-pointer flex-col border bg-white text-left shadow-sm transition hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                              role={flat ? undefined : 'button'}
+                              tabIndex={flat ? undefined : 0}
+                              onClick={flat ? undefined : () => onOpenBooking(booking)}
+                              onKeyDown={
+                                flat
+                                  ? undefined
+                                  : (e) => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault()
+                                        onOpenBooking(booking)
+                                      }
+                                    }
+                              }
+                              className={`flex h-full w-full flex-col border bg-white text-left shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                                 compact ? 'rounded-lg p-2' : 'rounded-xl p-3.5'
-                              } ${
+                              } ${flat ? '' : 'cursor-pointer hover:border-primary/40 hover:shadow-md'} ${
                                 qtyPending || unified.key === 'change_pending'
                                   ? 'border-red-300 ring-1 ring-red-200'
                                   : 'border-border/60'
                               }`}
                             >
-                              {/* 1줄: 상태 칩 (왼쪽) + 수량 타임라인 (오른쪽 끝) */}
+                              {/* 1줄: 상태 칩 + 공급업체 (왼쪽) · 타임라인/메모/문서 (오른쪽) */}
                               <div className="flex items-start justify-between gap-2">
                                 <div className="flex min-w-0 flex-wrap items-center gap-1">
                                   <span
@@ -666,6 +742,18 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                                   >
                                     {unified.label}
                                   </span>
+                                  {booking.company?.trim() ? (
+                                    <span
+                                      className={`inline-flex max-w-[9rem] truncate font-medium text-foreground ${
+                                        compact
+                                          ? 'text-[10px]'
+                                          : 'rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-xs'
+                                      }`}
+                                      title={booking.company}
+                                    >
+                                      {booking.company}
+                                    </span>
+                                  ) : null}
                                   {awaitingVendor ? (
                                     <span
                                       className={`inline-flex border border-orange-200 bg-orange-50 font-medium text-orange-800 ${
@@ -700,41 +788,65 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                                     </span>
                                   ) : null}
                                 </div>
-                                <button
-                                  ref={
-                                    qtyTimelineBooking?.id === booking.id
-                                      ? qtyTimelineTriggerRef
-                                      : undefined
-                                  }
-                                  type="button"
-                                  className={`inline-flex shrink-0 items-center justify-center border border-border/70 bg-muted/40 text-muted-foreground transition hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                                    compact
-                                      ? 'h-6 w-6 rounded-md'
-                                      : 'h-7 w-7 rounded-lg'
-                                  }`}
-                                  title={qtyTimelineLabel}
-                                  aria-label={qtyTimelineLabel}
-                                  aria-expanded={qtyTimelineBooking?.id === booking.id}
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    if (qtyTimelineBooking?.id === booking.id) {
-                                      setQtyTimelineBooking(null)
-                                      setQtyTimelineAnchor(null)
-                                      return
-                                    }
-                                    const rect = e.currentTarget.getBoundingClientRect()
-                                    qtyTimelineTriggerRef.current = e.currentTarget
-                                    setQtyTimelineAnchor({
-                                      top: rect.top,
-                                      left: rect.left,
-                                      bottom: rect.bottom,
-                                      right: rect.right,
-                                    })
-                                    setQtyTimelineBooking(booking)
-                                  }}
-                                >
-                                  <History className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} aria-hidden />
-                                </button>
+                                <div className="flex shrink-0 items-center gap-1">
+                                  {([
+                                    {
+                                      kind: 'qty' as const,
+                                      label: qtyTimelineLabel,
+                                      active: false,
+                                      show: true,
+                                      icon: History,
+                                      activeClass: '',
+                                    },
+                                    {
+                                      kind: 'note' as const,
+                                      label: isEn ? 'Memo' : '메모',
+                                      active: Boolean(String(booking.note || '').trim()),
+                                      show:
+                                        Boolean(onSaveNote) ||
+                                        Boolean(String(booking.note || '').trim()),
+                                      icon: StickyNote,
+                                      activeClass: 'border-amber-300 bg-amber-50 text-amber-800',
+                                    },
+                                    {
+                                      kind: 'docs' as const,
+                                      label: isEn ? 'Documents' : '관련 문서',
+                                      active: (booking.uploaded_file_urls ?? []).some(
+                                        (u) => typeof u === 'string' && u.trim() !== ''
+                                      ),
+                                      show:
+                                        Boolean(onAddDocuments) ||
+                                        (booking.uploaded_file_urls ?? []).some(
+                                          (u) => typeof u === 'string' && u.trim() !== ''
+                                        ),
+                                      icon: Paperclip,
+                                      activeClass: 'border-sky-300 bg-sky-50 text-sky-800',
+                                    },
+                                  ]).filter((meta) => meta.show).map((meta) => {
+                                    const Icon = meta.icon
+                                    const open = cardPopover?.kind === meta.kind && cardPopover.booking.id === booking.id
+                                    return (
+                                      <TicketBookingIconTipButton
+                                        key={meta.kind}
+                                        ref={open ? cardPopoverTriggerRef : undefined}
+                                        label={meta.label}
+                                        tip="bottom"
+                                        aria-expanded={open}
+                                        className={
+                                          meta.active
+                                            ? meta.activeClass
+                                            : 'border-border/70 bg-muted/40 text-muted-foreground hover:bg-primary/5 hover:text-foreground'
+                                        }
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          openCardPopover(meta.kind, booking, e.currentTarget)
+                                        }}
+                                      >
+                                        <Icon className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} aria-hidden />
+                                      </TicketBookingIconTipButton>
+                                    )
+                                  })}
+                                </div>
                               </div>
 
                               {/* 2줄: 시간 · RN (왼쪽) + 유효 수량 (오른쪽 끝) */}
@@ -810,6 +922,22 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                                   ) : null}
                                 </div>
                               ) : null}
+
+                              {actionHandlers ? (
+                                <TicketBookingCardActionBar
+                                  booking={booking}
+                                  locale={locale}
+                                  handlers={actionHandlers}
+                                  extra={chromeActions?.(booking)}
+                                />
+                              ) : chromeActions ? (
+                                <div
+                                  className="mt-2 flex flex-nowrap items-center gap-1 overflow-x-auto pb-0.5"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {chromeActions(booking)}
+                                </div>
+                              ) : null}
                             </div>
                           </li>
                         )
@@ -827,32 +955,142 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
         )
       })}
 
-      {qtyTimelineBooking && qtyTimelineAnchor ? (
+      {cardPopover ? (
         <div
-          ref={qtyTimelinePopoverRef}
+          ref={cardPopoverRef}
           role="dialog"
-          aria-label={isEn ? 'Quantity timeline' : '수량 타임라인'}
-          className="fixed z-[80] w-[min(18rem,calc(100vw-1rem))] rounded-xl border border-border/70 bg-white p-3 shadow-lg"
+          aria-label={
+            cardPopover.kind === 'qty'
+              ? isEn
+                ? 'Quantity timeline'
+                : '수량 타임라인'
+              : cardPopover.kind === 'note'
+                ? isEn
+                  ? 'Memo'
+                  : '메모'
+                : isEn
+                  ? 'Related documents'
+                  : '관련 문서'
+          }
+          className={`fixed z-[180] rounded-xl border border-border/70 bg-white p-3 shadow-lg ${
+            cardPopover.kind === 'docs'
+              ? 'w-[min(22rem,calc(100vw-1rem))]'
+              : 'w-[min(20rem,calc(100vw-1rem))]'
+          }`}
           style={{
-            top: Math.max(8, qtyTimelineAnchor.top - 8),
+            top: Math.max(8, cardPopover.anchor.top - 8),
             left: Math.min(
-              Math.max(8, qtyTimelineAnchor.left),
-              typeof window !== 'undefined' ? window.innerWidth - 8 - 288 : qtyTimelineAnchor.left
+              Math.max(8, cardPopover.anchor.left),
+              typeof window !== 'undefined' ? window.innerWidth - 8 - 320 : cardPopover.anchor.left
             ),
             transform: 'translateY(-100%)',
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          <p className="mb-2 text-xs font-semibold text-foreground">
-            {isEn ? 'Quantity timeline' : '수량 타임라인'}
-          </p>
-          <div className="max-h-56 overflow-y-auto">
-            <TicketBookingQtyTimeline
-              booking={qtyTimelineBooking}
-              locale={locale}
-              hideHeading
-            />
-          </div>
+          {cardPopover.kind === 'qty' ? (
+            <>
+              <p className="mb-2 text-xs font-semibold text-foreground">
+                {isEn ? 'Quantity timeline' : '수량 타임라인'}
+              </p>
+              <div className="max-h-56 overflow-y-auto">
+                <TicketBookingQtyTimeline
+                  booking={cardPopover.booking}
+                  locale={locale}
+                  hideHeading
+                />
+              </div>
+            </>
+          ) : null}
+          {cardPopover.kind === 'note' ? (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-foreground">{isEn ? 'Memo' : '메모'}</p>
+              <textarea
+                value={noteDraft}
+                onChange={(e) => setNoteDraft(e.target.value)}
+                rows={5}
+                disabled={!onSaveNote || noteSaving}
+                className="w-full resize-y rounded-lg border border-border/70 bg-white px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:bg-muted/40"
+                placeholder={isEn ? 'Add a memo' : '메모를 입력하세요'}
+              />
+              {onSaveNote ? (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    disabled={noteSaving}
+                    className="inline-flex h-8 items-center rounded-lg bg-slate-800 px-3 text-xs font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+                    onClick={() => {
+                      void (async () => {
+                        setNoteSaving(true)
+                        try {
+                          await onSaveNote(cardPopover.booking, noteDraft)
+                        } finally {
+                          setNoteSaving(false)
+                        }
+                      })()
+                    }}
+                  >
+                    {noteSaving ? '…' : isEn ? 'Save' : '저장'}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {cardPopover.kind === 'docs' ? (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-foreground">
+                {isEn ? 'Related documents' : '관련 문서'}
+              </p>
+              {(cardPopover.booking.uploaded_file_urls ?? []).some(
+                (u) => typeof u === 'string' && u.trim() !== ''
+              ) ? (
+                <div className="max-h-56 overflow-y-auto">
+                  <TicketBookingRelatedDocuments
+                    urls={(cardPopover.booking.uploaded_file_urls ?? []).filter(
+                      (u): u is string => typeof u === 'string' && u.trim() !== ''
+                    )}
+                    openLabel={isEn ? 'Open document' : '문서 열기'}
+                    closeLabel={isEn ? 'Close' : '닫기'}
+                    imageClassName="h-28 w-full object-cover"
+                    {...(onRemoveDocument
+                      ? {
+                          onRemove: (index: number) => {
+                            void onRemoveDocument(cardPopover.booking, index)
+                          },
+                          removeLabel: isEn ? 'Remove' : '삭제',
+                        }
+                      : {})}
+                  />
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {isEn ? 'No documents yet' : '등록된 문서가 없습니다'}
+                </p>
+              )}
+              {onAddDocuments ? (
+                <>
+                  <input
+                    ref={docsFileInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files ?? [])
+                      e.target.value = ''
+                      if (files.length === 0) return
+                      void onAddDocuments(cardPopover.booking, files)
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-full items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-xs font-medium text-foreground hover:bg-muted"
+                    onClick={() => docsFileInputRef.current?.click()}
+                  >
+                    {isEn ? 'Add files' : '파일 추가'}
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

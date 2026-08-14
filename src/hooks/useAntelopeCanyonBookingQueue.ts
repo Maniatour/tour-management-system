@@ -9,6 +9,7 @@ import {
 import {
   buildAntelopeCanyonCancelDueRows,
   buildAntelopeCanyonMismatchRows,
+  enrichAntelopeCanyonToursForTourBadge,
   type AntelopeCanyonCancelDueTourRow,
   type AntelopeCanyonMismatchTourRow,
   type AntelopeCanyonTicketLite,
@@ -16,13 +17,19 @@ import {
   type ReservationLite,
 } from '@/lib/antelopeCanyonBookingQueue'
 import type { SeasonDate } from '@/lib/ticketBookingCancelDue'
+import {
+  choiceLabelToTourCountKey,
+  type ReservationChoiceRow,
+} from '@/lib/tourChoiceCounts'
+import { canonicalReservationIdKey, normalizeReservationIds } from '@/utils/tourUtils'
 import { isTourCancelled, isTourDeleted } from '@/utils/tourStatusUtils'
+import { filterTicketBookingsExcludedFromMainUi } from '@/lib/ticketBookingSoftDelete'
 
 const TICKET_SELECT =
-  'id, tour_id, check_in_date, company, category, time, ea, rn_number, status, booking_status, vendor_status, change_status, pending_ea, pending_time, deletion_requested_at'
+  'id, tour_id, check_in_date, company, category, time, ea, rn_number, status, booking_status, vendor_status, change_status, pending_ea, pending_time, deletion_requested_at, expense, paid_amount, credit_amount'
 
 const TOUR_SELECT =
-  'id, tour_date, product_id, tour_status, reservation_ids, products(name, name_ko, name_en)'
+  'id, tour_date, product_id, tour_status, reservation_ids, antelope_check_in_date, products(name, name_ko, name_en)'
 
 async function fetchSupplierProductsByBookingIds(
   bookingIds: string[]
@@ -75,6 +82,57 @@ async function fetchToursByIds(tourIds: string[]): Promise<AntelopeCanyonTourLit
   return out
 }
 
+async function fetchChoiceRowsByReservationIds(
+  reservationIds: string[]
+): Promise<Map<string, ReservationChoiceRow[]>> {
+  const unique = [...new Set(reservationIds.map((id) => String(id || '').trim()).filter(Boolean))]
+  const choiceRowsByResId = new Map<string, ReservationChoiceRow[]>()
+  if (!unique.length) return choiceRowsByResId
+
+  const BATCH_SIZE = 100
+  for (let i = 0; i < unique.length; i += BATCH_SIZE) {
+    const batchIds = unique.slice(i, i + BATCH_SIZE)
+    const { data, error } = await supabase
+      .from('reservation_choices')
+      .select(
+        'reservation_id, quantity, choice_options!inner(option_key, option_name_ko, option_name)'
+      )
+      .in('reservation_id', batchIds)
+    if (error) {
+      console.warn('useAntelopeCanyonBookingQueue reservation_choices', error)
+      break
+    }
+    for (const row of (data || []) as Array<{
+      reservation_id: string | null
+      quantity?: number | null
+      choice_options?: {
+        option_key?: string | null
+        option_name_ko?: string | null
+        option_name?: string | null
+      } | null
+    }>) {
+      const rid = row.reservation_id?.trim()
+      if (!rid) continue
+      const optRaw = row.choice_options
+      const opt = Array.isArray(optRaw) ? optRaw[0] : optRaw
+      const choiceKey = choiceLabelToTourCountKey(
+        opt?.option_name_ko ?? null,
+        opt?.option_name ?? null,
+        opt?.option_key ?? null
+      )
+      const entry = { choiceKey, quantity: Number(row.quantity) || 1 }
+      const list = choiceRowsByResId.get(rid) || []
+      list.push(entry)
+      choiceRowsByResId.set(rid, list)
+      const canon = canonicalReservationIdKey(rid)
+      if (canon !== rid && !choiceRowsByResId.has(canon)) {
+        choiceRowsByResId.set(canon, list)
+      }
+    }
+  }
+  return choiceRowsByResId
+}
+
 function mergeTours(
   primary: AntelopeCanyonTourLite[],
   linked: AntelopeCanyonTourLite[]
@@ -92,6 +150,7 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
   const [mismatchRows, setMismatchRows] = useState<AntelopeCanyonMismatchTourRow[]>([])
   const [cancelDueRows, setCancelDueRows] = useState<AntelopeCanyonCancelDueTourRow[]>([])
   const [toursById, setToursById] = useState<Record<string, AntelopeCanyonTourLite>>({})
+  const [allTickets, setAllTickets] = useState<AntelopeCanyonTicketLite[]>([])
   const [supplierProductsByBookingId, setSupplierProductsByBookingId] = useState<
     Map<string, { season_dates: SeasonDate[] | null }>
   >(() => new Map())
@@ -104,6 +163,7 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
       setMismatchRows([])
       setCancelDueRows([])
       setToursById({})
+      setAllTickets([])
       setSupplierProductsByBookingId(new Map())
       return
     }
@@ -155,18 +215,42 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
 
       const reservations = (reservationsData || []) as ReservationLite[]
 
+      const resById = new Map<string, ReservationLite>()
+      for (const r of reservations) {
+        const id = String(r.id || '').trim()
+        if (!id) continue
+        resById.set(id, r)
+        const canon = canonicalReservationIdKey(id)
+        if (canon !== id) resById.set(canon, r)
+      }
+      const assignedResIds: string[] = []
+      for (const tour of tours) {
+        for (const rid of normalizeReservationIds(tour.reservation_ids)) {
+          assignedResIds.push(rid)
+          const matched = resById.get(rid) || resById.get(canonicalReservationIdKey(rid))
+          if (matched?.id) assignedResIds.push(matched.id)
+        }
+      }
+      const choiceRowsByResId = await fetchChoiceRowsByReservationIds(assignedResIds)
+      const enrichedTours = enrichAntelopeCanyonToursForTourBadge(
+        tours,
+        reservations,
+        choiceRowsByResId
+      )
+
       const supplierMap = await fetchSupplierProductsByBookingIds(allTickets.map((t) => t.id))
       setSupplierProductsByBookingId(supplierMap)
 
       const byId: Record<string, AntelopeCanyonTourLite> = {}
-      for (const tour of tours) {
+      for (const tour of enrichedTours) {
         if (tour?.id) byId[tour.id] = tour
       }
       setToursById(byId)
+      setAllTickets(filterTicketBookingsExcludedFromMainUi(allTickets))
 
       setMismatchRows(
         buildAntelopeCanyonMismatchRows({
-          tours,
+          tours: enrichedTours,
           reservations,
           ticketBookings: allTickets,
           dateStart: start,
@@ -176,7 +260,7 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
 
       setCancelDueRows(
         buildAntelopeCanyonCancelDueRows({
-          tours,
+          tours: enrichedTours,
           reservations,
           ticketBookings: allTickets,
           supplierProductsByBookingId: supplierMap,
@@ -187,6 +271,7 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
       setMismatchRows([])
       setCancelDueRows([])
       setToursById({})
+      setAllTickets([])
       setSupplierProductsByBookingId(new Map())
     } finally {
       setLoading(false)
@@ -201,6 +286,7 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
     mismatchRows,
     cancelDueRows,
     toursById,
+    allTickets,
     supplierProductsByBookingId,
     loading,
     reload,

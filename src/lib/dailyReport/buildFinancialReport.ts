@@ -10,6 +10,7 @@ import {
   isTicketBookingActiveForReports,
   ticketExpenseForSettlement,
 } from '@/lib/bookingSettlement'
+import { resolveProductInternalName } from '@/utils/reservationUtils'
 import type {
   DailyReportFinancialCategory,
   DailyReportFinancialItem,
@@ -42,14 +43,7 @@ type TourRow = {
 }
 
 function productDisplayName(p: TourRow['products']): string {
-  return (
-    p?.internal_name_ko?.trim() ||
-    p?.internal_name_en?.trim() ||
-    p?.name?.trim() ||
-    p?.name_ko?.trim() ||
-    p?.name_en?.trim() ||
-    '상품 미지정'
-  )
+  return resolveProductInternalName(p) || '상품 미지정'
 }
 
 function tourExpenseDetail(

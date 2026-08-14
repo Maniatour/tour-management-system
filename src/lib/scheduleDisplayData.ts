@@ -65,7 +65,7 @@ export const SCHEDULE_ADMIN_RESERVATION_SELECT =
 
 /** 스케줄 디스플레이·관리자 스케줄뷰 공통 투어 조회 컬럼 (편집·배정에 필요한 필드) */
 export const SCHEDULE_DISPLAY_TOUR_SELECT =
-  'id, tour_date, tour_status, assignment_status, tour_guide_id, assistant_id, tour_car_id, product_id, reservation_ids, team_type, is_private_tour, max_participants, tour_start_datetime, operator_id, products(name)'
+  'id, tour_date, tour_status, assignment_status, tour_guide_id, assistant_id, tour_car_id, product_id, reservation_ids, team_type, is_private_tour, max_participants, tour_start_datetime, operator_id, antelope_check_in_date, products(name)'
 
 /** 미배정 투어 카드 — 상품 inner join */
 export const SCHEDULE_ADMIN_UNASSIGNED_TOUR_SELECT =
@@ -379,7 +379,10 @@ export async function fetchScheduleGridCoreData(
   const sortedVehiclesForMonth = sortVehiclesForGrid(
     filterVehiclesForMonth(vehiclesRaw, monthStart, monthEnd),
   )
-  const toursWithVehicles = attachVehicleNumbersToTours(toursData, vehiclesRaw)
+  const toursWithVehicles = attachVehicleNumbersToTours(
+    await attachAntelopeCheckInDatesIfMissing(supabase, toursData),
+    vehiclesRaw,
+  )
 
   const reservationRows = (reservationsData || []) as Array<{ product_id?: string | null }>
   const tourRows = toursData as Array<{ product_id?: string | null }>
@@ -517,6 +520,42 @@ async function fetchToursInRange(
     if (b.length < TOURS_PAGE_SIZE) break
   }
   return toursData
+}
+
+/** RPC에 antelope_check_in_date가 없으면 별도 조회로 보강 (숙박투어 입장권 대조일) */
+async function attachAntelopeCheckInDatesIfMissing(
+  supabase: SupabaseClient,
+  tours: unknown[],
+): Promise<unknown[]> {
+  const rows = tours as Array<{ id?: string; antelope_check_in_date?: string | null }>
+  if (rows.length === 0) return tours
+  if (rows.every((tour) => tour.antelope_check_in_date !== undefined)) return tours
+
+  const ids = [...new Set(rows.map((tour) => String(tour.id || '').trim()).filter(Boolean))]
+  const byId = new Map<string, string | null>()
+  const PAGE = 200
+  for (let i = 0; i < ids.length; i += PAGE) {
+    const chunk = ids.slice(i, i + PAGE)
+    const { data, error } = await fromUntypedTable(supabase, 'tours')
+      .select('id, antelope_check_in_date')
+      .in('id', chunk)
+    if (error) {
+      console.error('schedule display: antelope_check_in_date fetch failed', error)
+      break
+    }
+    for (const row of data || []) {
+      const r = row as { id: string; antelope_check_in_date: string | null }
+      byId.set(String(r.id), r.antelope_check_in_date)
+    }
+  }
+
+  return rows.map((tour) => ({
+    ...tour,
+    antelope_check_in_date:
+      tour.antelope_check_in_date !== undefined
+        ? tour.antelope_check_in_date
+        : (byId.get(String(tour.id)) ?? null),
+  }))
 }
 
 function isUuid(s: string | null | undefined): boolean {
