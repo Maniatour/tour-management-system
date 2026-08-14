@@ -11,6 +11,34 @@ export function isPickupImportNotDecidedLabel(text: string | null | undefined): 
   return t.includes('not decided') || t.startsWith('❗')
 }
 
+type NotDecidedPickupHotelFields = {
+  id?: string
+  hotel?: string | null
+  pick_up_location?: string | null
+  internal_name?: string | null
+}
+
+function isNotDecidedPickupHotelEntry(hotel: NotDecidedPickupHotelFields): boolean {
+  return (
+    isPickupImportNotDecidedLabel(hotel.hotel) ||
+    isPickupImportNotDecidedLabel(hotel.pick_up_location) ||
+    isPickupImportNotDecidedLabel(hotel.internal_name)
+  )
+}
+
+/** 예약 pickup_hotel 값 또는 카탈로그 호텔이 「❗ Not Decided」인지 */
+export function isNotDecidedPickupHotel(
+  hotelIdOrText: string | null | undefined,
+  pickupHotels?: NotDecidedPickupHotelFields[] | null
+): boolean {
+  const raw = (hotelIdOrText ?? '').trim()
+  if (!raw) return false
+  if (isPickupImportNotDecidedLabel(raw)) return true
+  if (!pickupHotels?.length) return false
+  const hotel = pickupHotels.find((h) => h.id === raw)
+  return hotel ? isNotDecidedPickupHotelEntry(hotel) : false
+}
+
 /**
  * 이메일에서 나온 픽업 문자열이 비어 있거나, 플레이스홀더·너무 일반적이어서 DB 매칭하면 오탐하기 쉬운 경우.
  */

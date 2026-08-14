@@ -5168,6 +5168,8 @@
       "confirm": "확인",
       "tipLabel": "팁",
       "autoGenerateModalTitle": "픽업 스케줄 자동 생성",
+      "autoGenUnnormalizedTitle": "픽업 호텔을 정규화해 주세요",
+      "autoGenUnnormalizedMessage": "시스템에 등록되지 않은 픽업 호텔이 {count}건 있습니다. 예약에서 목록의 호텔로 선택한 뒤 다시 자동 생성해 주세요. 미등록 호텔은 스케줄에서 제외됩니다.",
       "emailPreviewModalTitle": "픽업 스케줄 알림 이메일 미리보기",
       "notificationSent": "픽업 스케줄 알림이 {count}건 발송되었습니다.",
       "notificationSentPartial": " ({failed}건 실패)",

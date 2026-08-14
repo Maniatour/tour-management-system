@@ -5119,6 +5119,8 @@
       "confirm": "OK",
       "tipLabel": "Tip",
       "autoGenerateModalTitle": "Auto-generate pickup schedule",
+      "autoGenUnnormalizedTitle": "Normalize pickup hotels",
+      "autoGenUnnormalizedMessage": "{count} pickup hotel(s) are not in the system catalog. Select a catalog hotel on each reservation, then auto-generate again. Unregistered hotels are excluded from the schedule.",
       "emailPreviewModalTitle": "Pickup schedule notification email preview",
       "notificationSent": "Pickup schedule notification sent to {count} recipient(s).",
       "notificationSentPartial": " ({failed} failed)",

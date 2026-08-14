@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
-import { X, Clock, ChevronUp, ChevronDown } from 'lucide-react'
+import { X, Clock, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react'
 import { getSunriseSunsetData } from '@/lib/weatherApi'
 import { getEffectivePickupHotelId } from '@/lib/effectivePickupHotel'
+import { isNotDecidedPickupHotel } from '@/lib/reservationImportPickup'
 import type { PickupResolveContext } from '@/lib/pickupGroupPreset'
 import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
 
@@ -26,6 +27,15 @@ interface Reservation {
   adults: number | null
   children?: number | null
   infants?: number | null
+}
+
+function isCatalogPickupHotelId(
+  hotelId: string | null | undefined,
+  pickupHotels: Array<{ id: string }>
+): boolean {
+  const id = (hotelId ?? '').trim()
+  if (!id) return false
+  return pickupHotels.some((h) => h.id === id)
 }
 
 interface PickupScheduleAutoGenerateModalProps {
@@ -78,6 +88,7 @@ export default function PickupScheduleAutoGenerateModal({
   // 일출 시간 대비 마지막 픽업 오프셋 (일출 N시간 M분 전 = 마지막 픽업)
   const [sunriseOffsetHours, setSunriseOffsetHours] = useState<number>(6)
   const [sunriseOffsetMinutes, setSunriseOffsetMinutes] = useState<number>(30)
+  const [showUnnormalizedAlert, setShowUnnormalizedAlert] = useState(false)
 
   // 일출 투어 여부 확인
   const isSunriseTour = productId === 'MDGCSUNRISE'
@@ -266,6 +277,7 @@ export default function PickupScheduleAutoGenerateModal({
     // 호텔별로 예약 그룹화 (대표 픽업 모드면 실제 픽업 호텔 기준)
     const reservationsByHotel = assignedReservations.reduce((acc, reservation) => {
       if (!reservation.pickup_hotel) return acc
+      if (isNotDecidedPickupHotel(reservation.pickup_hotel, pickupHotels)) return acc
       const hotelId =
         getEffectivePickupHotelId(
           reservation.pickup_hotel,
@@ -273,6 +285,7 @@ export default function PickupScheduleAutoGenerateModal({
           pickupResolveContext ?? useRepresentativePickup
         ) ||
         reservation.pickup_hotel
+      if (isNotDecidedPickupHotel(hotelId, pickupHotels)) return acc
       if (!acc[hotelId]) {
         acc[hotelId] = []
       }
@@ -816,6 +829,22 @@ export default function PickupScheduleAutoGenerateModal({
     }
   }, [isOpen, generatePickupSchedule, assignedReservations.length, pickupHotels.length])
 
+  const unnormalizedPickupHotels = useMemo(() => {
+    if (!isOpen || pickupHotels.length === 0) return []
+    return assignedReservations
+      .map((reservation) => {
+        const hotel = (reservation.pickup_hotel ?? '').trim()
+        if (!hotel || isNotDecidedPickupHotel(hotel, pickupHotels)) return null
+        if (isCatalogPickupHotelId(hotel, pickupHotels)) return null
+        return {
+          id: reservation.id,
+          customerName: getCustomerName(reservation.customer_id || '') || 'Unknown',
+          hotel,
+        }
+      })
+      .filter((item): item is { id: string; customerName: string; hotel: string } => item !== null)
+  }, [isOpen, assignedReservations, pickupHotels, getCustomerName])
+
   // 모달이 열릴 때 routeCalculated 및 customLastPickupTime, 일출 오프셋 초기화
   useEffect(() => {
     if (isOpen) {
@@ -824,8 +853,16 @@ export default function PickupScheduleAutoGenerateModal({
       setCustomFirstPickupTime('')
       setSunriseOffsetHours(6)
       setSunriseOffsetMinutes(30)
+    } else {
+      setShowUnnormalizedAlert(false)
     }
   }, [isOpen])
+
+  useEffect(() => {
+    if (isOpen && unnormalizedPickupHotels.length > 0) {
+      setShowUnnormalizedAlert(true)
+    }
+  }, [isOpen, unnormalizedPickupHotels.length])
 
   // 모달이 닫힐 때 마커 정리
   useEffect(() => {
@@ -1365,7 +1402,7 @@ export default function PickupScheduleAutoGenerateModal({
   const startPointDepartureTime = getStartPointDepartureTime()
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
       <div className="bg-white rounded-lg w-[90vw] h-[90vh] max-w-6xl max-h-[90vh] flex flex-col">
         {/* 헤더 */}
         <div className="flex items-center justify-between p-4 border-b">
@@ -1703,6 +1740,47 @@ export default function PickupScheduleAutoGenerateModal({
           </div>
         </div>
       </div>
+      {showUnnormalizedAlert && unnormalizedPickupHotels.length > 0 && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="unnormalized-pickup-hotels-title"
+            className="w-full max-w-md rounded-xl border border-amber-200 bg-white p-5 shadow-lg"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                <AlertTriangle size={20} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h4 id="unnormalized-pickup-hotels-title" className="text-base font-semibold text-gray-900">
+                  {t('autoGenUnnormalizedTitle')}
+                </h4>
+                <p className="mt-1 text-sm text-gray-600">
+                  {t('autoGenUnnormalizedMessage', { count: unnormalizedPickupHotels.length })}
+                </p>
+                <ul className="mt-3 max-h-48 space-y-1.5 overflow-y-auto rounded-lg border border-amber-100 bg-amber-50/60 p-2">
+                  {unnormalizedPickupHotels.map((item) => (
+                    <li key={item.id} className="rounded-md bg-white px-2.5 py-1.5 text-sm">
+                      <div className="truncate font-medium text-gray-900">{item.customerName}</div>
+                      <div className="truncate text-xs text-amber-800">{item.hotel}</div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowUnnormalizedAlert(false)}
+                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
+              >
+                {t('confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
