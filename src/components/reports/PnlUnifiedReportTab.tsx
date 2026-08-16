@@ -1451,8 +1451,8 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
             </strong>{' '}
             탭의 누적 <AccountingTerm termKey="잔액">잔액</AccountingTerm> 계산 시작일과 같습니다.
             DB의 <code className="text-xs bg-white px-1 rounded border">shared_settings</code> 키{' '}
-            <code className="text-xs">fiscal_reporting.ledgerBaseDate</code>에 저장되며, 기본은 <strong>2025-01-01</strong>
-            입니다. 2025년부터 장부를 맞추려면 이 날짜를 그대로 두거나, 실제로 잔액을 맞추기 시작한 날로 조정한 뒤{' '}
+            <code className="text-xs">fiscal_reporting.ledgerBaseDate</code>에 저장되며, 기본은 <strong>2026-01-01</strong>
+            입니다. 2026년부터 장부를 맞추려면 이 날짜를 그대로 두거나, 실제로 잔액을 맞추기 시작한 날로 조정한 뒤{' '}
             <strong>저장</strong>하세요.
           </p>
         </div>
@@ -1483,7 +1483,7 @@ export default function PnlUnifiedReportTab({ dateRange }: PnlUnifiedReportTabPr
         </h3>
         <p className="text-sm text-gray-600">
           현금 리포트 <AccountingTerm termKey="잔액">잔액</AccountingTerm> 등에 쓰이는{' '}
-          <AccountingTerm termKey="원장기준일">원장 기준일</AccountingTerm>입니다. 기본값은 2025-01-01 입니다. (shared_settings ·
+          <AccountingTerm termKey="원장기준일">원장 기준일</AccountingTerm>입니다. 기본값은 2026-01-01 입니다. (shared_settings ·
           fiscal_reporting)
         </p>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">

@@ -1,5 +1,6 @@
 // @ts-nocheck — 레거시 예약 스키마가 현재 DB 타입과 불일치
 import { supabase } from '@/lib/supabase';
+import { hydrateChoiceDisplayNames, isCanyonKey } from '@/lib/canyonChoice';
 
 // 새로운 간결한 타입 정의
 interface ChoiceOption {
@@ -228,12 +229,15 @@ export async function getReservationWithChoices(reservationId: string) {
         option_id,
         quantity,
         total_price,
-        choice:product_choices!inner (
+        option_key,
+        canyon_key,
+        canonical_option_key,
+        choice:product_choices (
           choice_group,
           choice_group_ko,
           choice_type
         ),
-        option:choice_options!inner (
+        option:choice_options (
           option_key,
           option_name,
           option_name_ko,
@@ -249,20 +253,28 @@ export async function getReservationWithChoices(reservationId: string) {
 
     // 초이스를 그룹별로 정리
     const choicesByGroup = (choices || []).reduce((acc: any, choice: any) => {
-      const groupKey = choice.choice.choice_group;
+      const names = hydrateChoiceDisplayNames({
+        canyon_key: choice.canyon_key,
+        canonical_option_key: choice.canonical_option_key,
+        option_key: choice.option?.option_key || choice.option_key,
+        option_name: choice.option?.option_name,
+        option_name_ko: choice.option?.option_name_ko,
+        choice_group_ko: choice.choice?.choice_group_ko,
+      })
+      const groupKey = choice.choice?.choice_group || (isCanyonKey(choice.canyon_key) ? choice.canyon_key : names.choice_group_ko) || 'choice'
       if (!acc[groupKey]) {
         acc[groupKey] = {
-          name: choice.choice.choice_group_ko,
-          type: choice.choice.choice_type,
+          name: names.choice_group_ko || choice.choice?.choice_group_ko,
+          type: choice.choice?.choice_type,
           selections: []
         };
       }
       acc[groupKey].selections.push({
-        option_key: choice.option.option_key,
-        option_name: choice.option.option_name_ko,
+        option_key: names.option_key,
+        option_name: names.option_name_ko,
         quantity: choice.quantity,
         total_price: choice.total_price,
-        capacity: choice.option.capacity
+        capacity: choice.option?.capacity
       });
       return acc;
     }, {});
@@ -363,17 +375,26 @@ export async function getReservationsWithChoicesSummary(limit = 50, offset = 0) 
           .from('reservation_choices')
           .select(`
             quantity,
-            choice:product_choices!inner (
+            canyon_key,
+            canonical_option_key,
+            choice:product_choices (
               choice_group_ko
             ),
-            option:choice_options!inner (
+            option:choice_options (
               option_name_ko
             )
           `)
           .eq('reservation_id', reservation.id);
 
         const choicesText = (choicesSummary || [])
-          .map(choice => `${choice.option.option_name_ko} × ${choice.quantity}`)
+          .map(choice => {
+            const names = hydrateChoiceDisplayNames({
+              canyon_key: choice.canyon_key,
+              canonical_option_key: choice.canonical_option_key,
+              option_name_ko: choice.option?.option_name_ko,
+            })
+            return `${names.option_name_ko || ''} × ${choice.quantity}`
+          })
           .join(', ');
 
         return {

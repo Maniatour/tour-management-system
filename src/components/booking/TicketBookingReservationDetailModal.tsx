@@ -26,7 +26,7 @@ import {
 import TicketBookingActionPanel from '@/components/booking/TicketBookingActionPanel'
 import ScheduleTicketBookingAxisInline from '@/components/booking/ScheduleTicketBookingAxisInline'
 import { TicketBookingTourDisplay } from '@/components/booking/TicketBookingTourDisplay'
-import { History, LayoutGrid, Pencil, Table2, Trash2, X } from 'lucide-react'
+import { History, LayoutGrid, Pencil, Table2, Trash2 } from 'lucide-react'
 import { TicketBookingIconTipButton } from '@/components/booking/TicketBookingCardActionBar'
 
 /** 입장권 부킹 — 예약 상세 정보 모달에 필요한 행 타입 */
@@ -219,7 +219,10 @@ export type TicketBookingReservationDetailModalProps = {
   /** 테이블과 함께 제공 시 상단에서 카드/테이블 전환 (TicketBookingList 전용) */
   renderGroupCardBookings?: (
     groupRows: TicketBookingReservationDetailRow[],
-    ctx: { chromeActions: (booking: TicketBookingReservationDetailRow) => ReactNode }
+    ctx: {
+      chromeActions: (booking: TicketBookingReservationDetailRow) => ReactNode
+      onClose: () => void
+    }
   ) => ReactNode
   /** 명세 대조 아이콘 (내장 요약 테이블용) */
   renderStatementReconCell?: (booking: TicketBookingReservationDetailRow) => ReactNode
@@ -289,12 +292,15 @@ export default function TicketBookingReservationDetailModal({
     })
 
   const renderCardChromeActions = (booking: TicketBookingReservationDetailRow) => {
-    if (readOnly) return null
     const canSoft =
-      Boolean(onRequestSoftDelete) && canSoftDeleteRequest && !booking.deletion_requested_at
+      !readOnly &&
+      Boolean(onRequestSoftDelete) &&
+      canSoftDeleteRequest &&
+      !booking.deletion_requested_at
     const canHardPending =
-      Boolean(onHardDelete) && canHardDeleteBooking && Boolean(booking.deletion_requested_at)
+      !readOnly && Boolean(onHardDelete) && canHardDeleteBooking && Boolean(booking.deletion_requested_at)
     const canPurgeOffset =
+      !readOnly &&
       Boolean(onHardDelete) &&
       canHardDeleteBooking &&
       !booking.deletion_requested_at &&
@@ -305,22 +311,13 @@ export default function TicketBookingReservationDetailModal({
       })
     return (
       <>
-        {onEdit ? (
+        {!readOnly && onEdit ? (
           <TicketBookingIconTipButton
             label={locale === 'en' ? 'Edit' : '편집'}
             className={chromeMuted}
             onClick={() => onEdit(booking)}
           >
             <Pencil className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
-          </TicketBookingIconTipButton>
-        ) : null}
-        {onViewHistory ? (
-          <TicketBookingIconTipButton
-            label={locale === 'en' ? 'History' : '히스토리'}
-            className={chromeMuted}
-            onClick={() => onViewHistory(booking.id)}
-          >
-            <History className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
           </TicketBookingIconTipButton>
         ) : null}
         {canSoft ? (
@@ -388,22 +385,12 @@ export default function TicketBookingReservationDetailModal({
 
   return (
     <div
-      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-[220] flex items-center justify-center bg-black/50 p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="ticket-booking-detail-modal-title"
       onClick={() => onOpenChange(false)}
     >
-      {isCardOnlyLayout ? (
-        <button
-          type="button"
-          onClick={() => onOpenChange(false)}
-          className="absolute right-4 top-4 z-[1] inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-          aria-label={locale === 'en' ? 'Close' : '닫기'}
-        >
-          <X className="h-5 w-5" aria-hidden />
-        </button>
-      ) : null}
       <div
         className={`max-h-[90vh] w-full overflow-y-auto ${
           isCardOnlyLayout
@@ -620,6 +607,7 @@ export default function TicketBookingReservationDetailModal({
                         detailListView === 'card' && renderGroupCardBookings ? (
                           renderGroupCardBookings(groupBookings, {
                             chromeActions: renderCardChromeActions,
+                            onClose: () => onOpenChange(false),
                           })
                         ) : (
                           renderGroupDesktopTable(groupBookings)

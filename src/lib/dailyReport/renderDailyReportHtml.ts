@@ -19,15 +19,20 @@ function statRowHtml(label: string, valueHtml: string): string {
   return `<tr><td style="padding:8px 12px;color:#6b7280;font-size:14px;">${esc(label)}</td><td style="padding:8px 12px;font-weight:600;color:#111827;font-size:14px;text-align:right;">${valueHtml}</td></tr>`
 }
 
+function formatBreakdownCount(count: number, guests: number): string {
+  if (count === 0 && guests === 0) return '-'
+  return `${count} 예약 (${guests}인)`
+}
+
 function breakdownTable(title: string, rows: DailyReportData['reservationSummary']['byProduct']): string {
   if (!rows.length) return ''
   const body = rows
     .map(
       (r) => `<tr>
         <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;">${esc(r.name)}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:center;">${r.newCount}예약 ${r.newGuests}인</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:center;color:#dc2626;">${r.cancelledCount}예약 ${r.cancelledGuests}인</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:center;font-weight:600;">${r.netCount}예약 ${r.netGuests}인</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:center;">${formatBreakdownCount(r.newCount, r.newGuests)}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:center;color:#dc2626;">${formatBreakdownCount(r.cancelledCount, r.cancelledGuests)}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;text-align:center;font-weight:600;">${formatBreakdownCount(r.netCount, r.netGuests)}</td>
       </tr>`
     )
     .join('')

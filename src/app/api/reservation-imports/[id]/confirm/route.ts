@@ -282,6 +282,17 @@ export async function POST(
     (c) => c.choice_id && c.option_id && c.option_id !== '__undecided__'
   )
   if (choicesToInsert.length > 0) {
+    const optionIds = [...new Set(choicesToInsert.map((c) => c.option_id).filter(Boolean))]
+    const keyById = new Map<string, string>()
+    if (optionIds.length > 0) {
+      const { data: optionMeta } = await client
+        .from('choice_options')
+        .select('id, option_key')
+        .in('id', optionIds)
+      for (const o of optionMeta || []) {
+        if (o.id && o.option_key) keyById.set(o.id, o.option_key)
+      }
+    }
     const { error: choicesError } = await client
       .from('reservation_choices')
       .insert(
@@ -289,6 +300,7 @@ export async function POST(
           reservation_id: reservationId,
           choice_id: c.choice_id,
           option_id: c.option_id,
+          option_key: keyById.get(c.option_id) ?? null,
           quantity: c.quantity ?? 1,
           total_price: c.total_price ?? 0,
         }))

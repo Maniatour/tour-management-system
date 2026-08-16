@@ -2,10 +2,12 @@
 
 import { formatTicketBookingTourHeadline } from '@/lib/ticket-booking-tour-display'
 import { getTicketBookingEffectiveQty } from '@/lib/ticketBookingDisplay'
+import { normalizeTicketBookingTourIds } from '@/lib/ticketBookingTourIds'
 import {
   isCanyonTourChoiceKey,
   choiceLabelToTourCountKey,
   tourChoiceCountsDisplayKeys,
+  tourChoiceCountsHasDisplayable,
   aggregateTourChoiceCounts,
   type TourChoiceCounts,
   type TourChoiceCountKey,
@@ -34,11 +36,23 @@ export function ticketBookingCanyonKeyFromBooking(booking: {
   const cat = (booking.category || '').trim()
   const co = (booking.company || '').trim()
   const combined = `${cat} ${co}`.trim()
+  const compact = combined.toLowerCase().replace(/\s+/g, '')
 
-  if (/antelope\s*x/i.test(cat) || /antelope\s*x/i.test(co) || /\bx\s*canyon/i.test(combined)) {
+  if (
+    /antelope\s*x/i.test(cat) ||
+    /antelope\s*x/i.test(co) ||
+    /\bx\s*canyon/i.test(combined) ||
+    compact.includes('antelopex') ||
+    /^x$/i.test(cat)
+  ) {
     return 'X'
   }
-  if (isSeeCanyonSupplier(co) || /lower\s*antelope/i.test(combined) || /\blower\b/i.test(cat)) {
+  if (
+    isSeeCanyonSupplier(co) ||
+    /lower\s*antelope/i.test(combined) ||
+    /\blower\b/i.test(cat) ||
+    /^l$/i.test(cat)
+  ) {
     return 'L'
   }
 
@@ -223,6 +237,11 @@ export function formatCanyonCountsInline(counts: TourChoiceCounts): string {
   const keys = tourChoiceCountsDisplayKeys(counts)
   if (keys.length === 0) return '—'
   return keys.map((k) => `${k}: ${counts[k]}`).join(' · ')
+}
+
+/** Need to Check 대조용 — L/X를 0이어도 항상 표시 */
+export function formatCanyonLxPair(counts: TourChoiceCounts): string {
+  return `L ${counts.L || 0} · X ${counts.X || 0}`
 }
 
 /**
@@ -482,4 +501,255 @@ export function buildTicketDateViewGroups(
       unlinkedTicketCount,
     }
   })
+}
+
+export type LinkedLxMismatchTourSnap = {
+  tourId: string
+  label: string
+  choiceCounts: TourChoiceCounts
+  totalPeople: number
+}
+
+export type LinkedLxMismatchBooking = {
+  id: string
+  tour_id?: string | null
+  tour_ids?: string[] | null
+  check_in_date?: string | null
+  company?: string | null
+  category?: string | null
+  rn_number?: string | null
+  status?: string | null
+  time?: string | null
+  ea?: number | null
+  pending_ea?: number | null
+  booking_status?: string | null
+  change_status?: string | null
+  vendor_status?: string | null
+  payment_status?: string | null
+  refund_status?: string | null
+  operation_status?: string | null
+  tours?: {
+    choice_counts?: TourChoiceCounts
+    tour_date?: string | null
+    total_people?: number | null
+    products?: { name?: string; name_en?: string; name_ko?: string } | null
+  } | null
+  linked_tours?: Array<{
+    tour_id: string
+    choice_counts?: TourChoiceCounts
+    tour_date?: string | null
+    total_people?: number | null
+    products?: { name?: string; name_en?: string; name_ko?: string } | null
+  }> | null
+}
+
+export type LinkedLxMismatchCluster = {
+  key: string
+  tourChoiceTotals: TourChoiceCounts
+  ticketChoiceTotals: TourChoiceCounts
+  tours: LinkedLxMismatchTourSnap[]
+  bookings: LinkedLxMismatchBooking[]
+}
+
+export type LinkedLxMismatchDateGroup = {
+  dateYmd: string
+  tourChoiceTotals: TourChoiceCounts
+  ticketChoiceTotals: TourChoiceCounts
+  clusters: LinkedLxMismatchCluster[]
+  bookings: LinkedLxMismatchBooking[]
+}
+
+function checkInYmdFromBooking(b: LinkedLxMismatchBooking): string {
+  const s = String(b.check_in_date || '').trim()
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/)
+  return m ? m[1] : ''
+}
+
+function isCancelledTicketBooking(b: LinkedLxMismatchBooking): boolean {
+  return String(b.status || '').toLowerCase() === 'cancelled'
+}
+
+function ufFind(parent: Map<string, string>, x: string): string {
+  if (!parent.has(x)) parent.set(x, x)
+  const p = parent.get(x)!
+  if (p !== x) {
+    const r = ufFind(parent, p)
+    parent.set(x, r)
+    return r
+  }
+  return x
+}
+
+function ufUnion(parent: Map<string, string>, a: string, b: string) {
+  const ra = ufFind(parent, a)
+  const rb = ufFind(parent, b)
+  if (ra !== rb) parent.set(ra, rb)
+}
+
+function mergeTourSnap(
+  existing: LinkedLxMismatchTourSnap | undefined,
+  next: LinkedLxMismatchTourSnap
+): LinkedLxMismatchTourSnap {
+  if (!existing) return next
+  const existingHas = tourChoiceCountsHasDisplayable(existing.choiceCounts)
+  const nextHas = tourChoiceCountsHasDisplayable(next.choiceCounts)
+  if (!existingHas && nextHas) return next
+  if (existing.label.length < next.label.length) {
+    return { ...existing, label: next.label, totalPeople: next.totalPeople || existing.totalPeople }
+  }
+  return existing
+}
+
+function tourSnapsFromBooking(
+  b: LinkedLxMismatchBooking,
+  locale: string,
+  tourFallback: string
+): LinkedLxMismatchTourSnap[] {
+  const ids = normalizeTicketBookingTourIds(b.tour_ids, b.tour_id)
+  const byId = new Map<string, LinkedLxMismatchTourSnap>()
+
+  const put = (
+    tourId: string,
+    tours:
+      | {
+          choice_counts?: TourChoiceCounts
+          tour_date?: string | null
+          total_people?: number | null
+          products?: { name?: string; name_en?: string; name_ko?: string } | null
+        }
+      | null
+      | undefined
+  ) => {
+    const headline = tours
+      ? formatTicketBookingTourHeadline(locale, tours, tourFallback, { appendPeople: true })
+      : null
+    const snap: LinkedLxMismatchTourSnap = {
+      tourId,
+      label: headline || tourId,
+      choiceCounts: tours?.choice_counts || {},
+      totalPeople: Number(tours?.total_people) || 0,
+    }
+    byId.set(tourId, mergeTourSnap(byId.get(tourId), snap))
+  }
+
+  for (const lt of b.linked_tours || []) {
+    if (!lt?.tour_id) continue
+    put(lt.tour_id, lt)
+  }
+  if (ids[0] && b.tours) put(ids[0], b.tours)
+  for (const id of ids) {
+    if (!byId.has(id)) put(id, null)
+  }
+  return [...byId.values()]
+}
+
+/**
+ * 투어가 연결된 입장권만 — 같은 날짜에서 투어↔티켓 연결 묶음(1:N, N:1)끼리
+ * L/X 수량을 합산해 비교하고, 불일치 날짜만 반환.
+ */
+export function buildLinkedLxMismatchDateGroups(
+  bookings: LinkedLxMismatchBooking[],
+  locale: string,
+  tourFallback: string
+): LinkedLxMismatchDateGroup[] {
+  const byDate = new Map<string, LinkedLxMismatchBooking[]>()
+  for (const b of bookings) {
+    if (isCancelledTicketBooking(b)) continue
+    const ids = normalizeTicketBookingTourIds(b.tour_ids, b.tour_id)
+    if (ids.length === 0) continue
+    const dateYmd = checkInYmdFromBooking(b)
+    if (!dateYmd) continue
+    if (!byDate.has(dateYmd)) byDate.set(dateYmd, [])
+    byDate.get(dateYmd)!.push(b)
+  }
+
+  const dates = [...byDate.keys()].sort()
+  const out: LinkedLxMismatchDateGroup[] = []
+
+  for (const dateYmd of dates) {
+    const dayBookings = byDate.get(dateYmd) || []
+    const parent = new Map<string, string>()
+    const snapsByTourId = new Map<string, LinkedLxMismatchTourSnap>()
+    const snapsByBookingId = new Map<string, LinkedLxMismatchTourSnap[]>()
+
+    for (const b of dayBookings) {
+      const snaps = tourSnapsFromBooking(b, locale, tourFallback)
+      snapsByBookingId.set(b.id, snaps)
+      const bKey = `b:${b.id}`
+      ufFind(parent, bKey)
+      for (const snap of snaps) {
+        snapsByTourId.set(snap.tourId, mergeTourSnap(snapsByTourId.get(snap.tourId), snap))
+        const tKey = `t:${snap.tourId}`
+        ufUnion(parent, bKey, tKey)
+      }
+    }
+
+    const clusterMap = new Map<
+      string,
+      { bookingIds: Set<string>; tourIds: Set<string> }
+    >()
+    for (const b of dayBookings) {
+      const root = ufFind(parent, `b:${b.id}`)
+      let cluster = clusterMap.get(root)
+      if (!cluster) {
+        cluster = { bookingIds: new Set(), tourIds: new Set() }
+        clusterMap.set(root, cluster)
+      }
+      cluster.bookingIds.add(b.id)
+      for (const snap of snapsByBookingId.get(b.id) || []) {
+        cluster.tourIds.add(snap.tourId)
+      }
+    }
+
+    const bookingById = new Map(dayBookings.map((b) => [b.id, b]))
+    const mismatchClusters: LinkedLxMismatchCluster[] = []
+
+    for (const [root, cluster] of clusterMap) {
+      const clusterBookings = [...cluster.bookingIds]
+        .map((id) => bookingById.get(id))
+        .filter((b): b is LinkedLxMismatchBooking => Boolean(b))
+        .sort((a, b) => {
+          const ta = String(a.time || '')
+          const tb = String(b.time || '')
+          return ta.localeCompare(tb) || String(a.id).localeCompare(String(b.id))
+        })
+      const tours = [...cluster.tourIds]
+        .map((id) => snapsByTourId.get(id))
+        .filter((t): t is LinkedLxMismatchTourSnap => Boolean(t))
+        .sort((a, b) => a.label.localeCompare(b.label, locale))
+      const tourChoiceTotals = mergeTourChoiceCounts(...tours.map((t) => t.choiceCounts))
+      const ticketChoiceTotals = aggregateTicketEaByCanyon(clusterBookings)
+      if (!canyonLxCountsMismatch(tourChoiceTotals, ticketChoiceTotals)) continue
+      mismatchClusters.push({
+        key: `${dateYmd}:${root}`,
+        tourChoiceTotals,
+        ticketChoiceTotals,
+        tours,
+        bookings: clusterBookings,
+      })
+    }
+
+    if (mismatchClusters.length === 0) continue
+
+    const bookingsFlat = mismatchClusters.flatMap((c) => c.bookings)
+    out.push({
+      dateYmd,
+      tourChoiceTotals: mergeTourChoiceCounts(...mismatchClusters.map((c) => c.tourChoiceTotals)),
+      ticketChoiceTotals: mergeTourChoiceCounts(...mismatchClusters.map((c) => c.ticketChoiceTotals)),
+      clusters: mismatchClusters,
+      bookings: bookingsFlat,
+    })
+  }
+
+  return out
+}
+
+export function collectLinkedLxMismatchBookingIds(
+  groups: LinkedLxMismatchDateGroup[]
+): string[] {
+  const ids = new Set<string>()
+  for (const g of groups) {
+    for (const b of g.bookings) ids.add(b.id)
+  }
+  return [...ids]
 }

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { lasVegasDateRangeBounds } from '@/lib/dailyReport/dateUtils'
+import { DEFAULT_LEDGER_BASE } from '@/lib/fiscal-settings'
 import { amountToNumber, roundUsd } from '@/lib/dailyReport/moneyUtils'
 import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
 import {
@@ -18,7 +19,7 @@ import type {
   DailyReportTourFinancial,
 } from '@/lib/dailyReport/types'
 
-const LEDGER_BASE_DATE = '2026-01-01'
+const LEDGER_BASE_DATE = DEFAULT_LEDGER_BASE
 
 const CASH_PAYMENT_STATUSES = [
   'Deposit Received',

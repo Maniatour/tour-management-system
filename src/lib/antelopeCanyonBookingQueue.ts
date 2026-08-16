@@ -67,6 +67,8 @@ export type ReservationLite = {
   product_id?: string | null
   status?: string | null
   total_people?: number | null
+  canyon_choice?: string | null
+  choices?: unknown
 }
 
 export type AntelopeCanyonMismatchTourRow = {

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { stripSpacesFromContactInput } from '@/lib/contactInputUtils';
 import { mapSupabaseProductChoices } from '@/lib/mapSupabaseProductChoices';
+import { hydrateChoiceDisplayNames } from '@/lib/canyonChoice';
 import SimpleChoiceSelector from './SimpleChoiceSelector';
 
 // 새로운 간결한 타입 정의
@@ -190,11 +191,14 @@ export default function SimpleReservationForm({
           option_id,
           quantity,
           total_price,
-          choice:product_choices!inner (
+          option_key,
+          canyon_key,
+          canonical_option_key,
+          choice:product_choices (
             choice_group,
             choice_group_ko
           ),
-          option:choice_options!inner (
+          option:choice_options (
             option_key,
             option_name_ko
           )
@@ -205,15 +209,23 @@ export default function SimpleReservationForm({
 
       // 초이스 데이터를 SelectedChoice 형식으로 변환
       const selectedChoices: SelectedChoice[] = (choicesData || [])
-        .filter((choice) => choice.choice_id && choice.option_id)
-        .map((choice) => ({
-        choice_id: choice.choice_id as string,
-        option_id: choice.option_id as string,
-        option_key: choice.option.option_key,
-        option_name_ko: choice.option.option_name_ko,
-        quantity: choice.quantity ?? 1,
-        total_price: choice.total_price ?? 0
-      }));
+        .filter((choice) => choice.choice_id && (choice.option_id || choice.canyon_key))
+        .map((choice) => {
+          const names = hydrateChoiceDisplayNames({
+            canyon_key: choice.canyon_key,
+            canonical_option_key: choice.canonical_option_key,
+            option_key: choice.option?.option_key || choice.option_key,
+            option_name_ko: choice.option?.option_name_ko ?? null,
+          })
+          return {
+            choice_id: choice.choice_id as string,
+            option_id: (choice.option_id || names.option_key || '') as string,
+            option_key: names.option_key || '',
+            option_name_ko: names.option_name_ko || '',
+            quantity: choice.quantity ?? 1,
+            total_price: choice.total_price ?? 0
+          }
+        });
 
       setFormData({
         customerName: customerRow?.name || '',

@@ -186,6 +186,27 @@ export async function applyTicketBookingIssueFlag(
   )
 }
 
+/** 메모를 저장한 뒤 문제 발생으로 표시 */
+export async function reportTicketBookingIssueWithNote(
+  bookingId: string,
+  axes: TicketBookingAxisSnapshot,
+  note: string,
+  actorEmail?: string | null
+): Promise<ApplyTicketBookingActionResult> {
+  const trimmed = note.trim()
+  if (!trimmed) {
+    return { ok: false, error: 'note_required' }
+  }
+  const { error: noteError } = await supabase
+    .from('ticket_bookings')
+    .update({ note: trimmed })
+    .eq('id', bookingId)
+  if (noteError) {
+    return { ok: false, error: noteError.message }
+  }
+  return applyTicketBookingIssueFlag(bookingId, axes, true, actorEmail)
+}
+
 /** 테이블 워크플로우 전용 RPC 액션 (마이그레이션 `20260609120000_ticket_booking_workflow`) */
 export async function applyTicketBookingWorkflowAction(
   bookingId: string,

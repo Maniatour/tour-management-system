@@ -21,6 +21,8 @@ export type TourNeedCheckRow = {
   tour_guide_id?: string | null
   /** tours.guide_fee (USD 등 숫자; 미기록·0은 0) */
   guide_fee?: number
+  /** 영수증이 필요 없음으로 표시된 투어 */
+  receipt_not_required?: boolean
 }
 
 /** 투어 지출 없음 탭에서 제외할 상품(이름·다국어 필드 부분 일치) */
@@ -172,7 +174,7 @@ async function fetchTourRowsWithMeta(supabase: SupabaseClient): Promise<{
 }> {
   const { data: tourRows, error: toursErr } = await supabase
     .from('tours')
-    .select('id, tour_date, tour_status, product_id, tour_guide_id, guide_fee, reservation_ids')
+    .select('id, tour_date, tour_status, product_id, tour_guide_id, guide_fee, reservation_ids, receipt_not_required')
     .order('tour_date', { ascending: false })
 
   if (toursErr) {
@@ -254,6 +256,7 @@ async function fetchTourRowsWithMeta(supabase: SupabaseClient): Promise<{
       guide_name: guide ?? null,
       tour_guide_id: (t as { tour_guide_id?: string | null }).tour_guide_id ?? null,
       guide_fee: numGuideFee((t as { guide_fee?: unknown }).guide_fee),
+      receipt_not_required: Boolean((t as { receipt_not_required?: boolean | null }).receipt_not_required),
     })
   }
 
@@ -891,7 +894,7 @@ export async function fetchToursNeedCheckData(supabase: SupabaseClient): Promise
       const guideAssigned = String(row.tour_guide_id ?? '').trim().length > 0
       const productId = row.product_id != null ? String(row.product_id).trim() : ''
       const excludedProduct = productId !== '' && productIdsExcludedNoReceipt.has(productId)
-      if (guideAssigned && !excludedProduct) {
+      if (guideAssigned && !excludedProduct && !row.receipt_not_required) {
         noReceipt.push(row)
       }
     }

@@ -697,7 +697,8 @@ function ActivityHistorySection({
 }
 
 function formatBreakdownCount(count: number, guests: number, isKo: boolean): string {
-  return isKo ? `${count}예약 ${guests}인` : `${count} res ${guests} pax`
+  if (count === 0 && guests === 0) return '-'
+  return isKo ? `${count} 예약 (${guests}인)` : `${count} res (${guests} pax)`
 }
 
 function BreakdownTable({

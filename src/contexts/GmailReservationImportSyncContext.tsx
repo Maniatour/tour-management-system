@@ -23,13 +23,33 @@ export type GmailReservationImportSyncDetail = {
   imported?: number
   total?: number
   queryUsed?: string
+  afterDays?: number
+}
+
+const GMAIL_AFTER_DAYS_MAX = 400
+const GMAIL_YEAR_IMPORT_MAX_ROUNDS = 80
+
+/** 로스앤젤레스 기준 올해 1/1부터 오늘까지 일수. 7일보다 오래된 메일을 가져오므로 최소 8, 최대 400. */
+export function gmailLookbackDaysSinceYearStartLA(): number {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const y = Number(parts.find((p) => p.type === 'year')?.value)
+  const m = Number(parts.find((p) => p.type === 'month')?.value)
+  const d = Number(parts.find((p) => p.type === 'day')?.value)
+  if (!y || !m || !d) return 8
+  const days = Math.floor((Date.UTC(y, m - 1, d) - Date.UTC(y, 0, 1)) / 86_400_000)
+  return Math.min(GMAIL_AFTER_DAYS_MAX, Math.max(8, days))
 }
 
 interface GmailReservationImportSyncContextValue {
   phase: SyncPhase
   fullSync: boolean
   isSyncing: boolean
-  startGmailImportSync: (fullSync: boolean) => void
+  startGmailImportSync: (fullSync: boolean, afterDays?: number) => void
   dismissModal: () => void
 }
 
@@ -43,6 +63,7 @@ const MODAL_H = 200
 export function GmailReservationImportSyncProvider({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<SyncPhase>('idle')
   const [fullSync, setFullSync] = useState(false)
+  const [longLookback, setLongLookback] = useState(false)
   const [resultLines, setResultLines] = useState<string[]>([])
   const [mounted, setMounted] = useState(false)
 
@@ -133,46 +154,78 @@ export function GmailReservationImportSyncProvider({ children }: { children: Rea
     }
   }, [])
 
-  const runSync = useCallback(async (full: boolean) => {
+  const runSync = useCallback(async (full: boolean, afterDays?: number) => {
+    const yearImport = typeof afterDays === 'number' && afterDays > 7
     setPhase('syncing')
     setFullSync(full)
+    setLongLookback(yearImport)
     setResultLines([])
     setPos((p) => p ?? initPosition())
 
     try {
-      const res = await fetchApiWithAuth('/api/email/gmail/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fullSync: full }),
-      })
-      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>
+      let totalImported = 0
+      let lastTotal: number | undefined
+      let lastQuery: string | undefined
+      let round = 0
 
-      if (!res.ok) {
-        if (res.status === 401) {
-          window.dispatchEvent(new Event(GMAIL_RESERVATION_SYNC_UNAUTHORIZED))
+      while (round < GMAIL_YEAR_IMPORT_MAX_ROUNDS) {
+        round += 1
+        if (yearImport) {
+          setResultLines([
+            round === 1
+              ? `올해 수신함에서 7일보다 오래된 메일을 검색합니다…`
+              : `가져오는 중… 지금까지 ${totalImported}건 추가 (${round}번째 묶음)`,
+          ])
         }
-        const err = typeof data?.error === 'string' ? data.error : res.statusText
-        setResultLines([`동기화 실패: ${err}`])
-        setPhase('error')
-        return
+
+        const res = await fetchApiWithAuth('/api/email/gmail/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fullSync: full,
+            ...(typeof afterDays === 'number' ? { afterDays } : {}),
+          }),
+        })
+        const data = (await res.json().catch(() => ({}))) as Record<string, unknown>
+
+        if (!res.ok) {
+          if (res.status === 401) {
+            window.dispatchEvent(new Event(GMAIL_RESERVATION_SYNC_UNAUTHORIZED))
+          }
+          const err = typeof data?.error === 'string' ? data.error : res.statusText
+          setResultLines([`동기화 실패: ${err}`])
+          setPhase('error')
+          return
+        }
+
+        const imported = typeof data.imported === 'number' ? data.imported : 0
+        const remaining = typeof data.remaining === 'number' ? data.remaining : 0
+        lastTotal = typeof data.total === 'number' ? data.total : lastTotal
+        lastQuery = typeof data.queryUsed === 'string' ? data.queryUsed : lastQuery
+        totalImported += imported
+
+        if (!yearImport || remaining <= 0) break
+
+        setResultLines([
+          `가져오는 중… 지금까지 ${totalImported}건 추가, 남은 메일 약 ${remaining}건`,
+        ])
       }
 
-      const imported = typeof data.imported === 'number' ? data.imported : 0
-      const total = typeof data.total === 'number' ? data.total : undefined
-      const queryUsed = typeof data.queryUsed === 'string' ? data.queryUsed : undefined
-
-      const msg = full
-        ? `전체 재동기화 완료: ${queryUsed ?? 'after:날짜'} 검색, ${total ?? 0}건 중 새로 추가 ${imported}건.`
-        : `동기화 완료: 새 메일 ${imported}건이 예약 가져오기 목록에 추가되었습니다.`
+      const msg = yearImport
+        ? `올해 메일 가져오기 완료: ${lastQuery ?? 'after:날짜'} 검색, ${lastTotal ?? 0}건 중 새로 추가 ${totalImported}건.`
+        : full
+          ? `전체 재동기화 완료: ${lastQuery ?? 'after:날짜'} 검색, ${lastTotal ?? 0}건 중 새로 추가 ${totalImported}건.`
+          : `동기화 완료: 새 메일 ${totalImported}건이 예약 가져오기 목록에 추가되었습니다.`
 
       setResultLines([msg])
       setPhase('done')
 
       const detail = {
         fullSync: full,
-        imported,
-        ...(typeof total === 'number' ? { total } : {}),
-        ...(typeof queryUsed === 'string' ? { queryUsed } : {}),
+        imported: totalImported,
+        ...(typeof lastTotal === 'number' ? { total: lastTotal } : {}),
+        ...(typeof lastQuery === 'string' ? { queryUsed: lastQuery } : {}),
+        ...(typeof afterDays === 'number' ? { afterDays } : {}),
       } satisfies GmailReservationImportSyncDetail
       window.dispatchEvent(new CustomEvent(GMAIL_RESERVATION_SYNC_COMPLETE, { detail }))
     } catch (e) {
@@ -182,10 +235,10 @@ export function GmailReservationImportSyncProvider({ children }: { children: Rea
   }, [initPosition])
 
   const startGmailImportSync = useCallback(
-    (full: boolean) => {
+    (full: boolean, afterDays?: number) => {
       if (syncInFlightRef.current) return
       syncInFlightRef.current = true
-      void runSync(full).finally(() => {
+      void runSync(full, afterDays).finally(() => {
         syncInFlightRef.current = false
       })
     },
@@ -254,11 +307,18 @@ export function GmailReservationImportSyncProvider({ children }: { children: Rea
               <Loader2 className="w-5 h-5 text-primary animate-spin shrink-0 mt-0.5" aria-hidden />
               <div>
                 <p className="font-medium text-slate-900">
-                  {fullSync ? '전체 재동기화 중…' : '받은편지함 동기화 중…'}
+                  {longLookback
+                    ? '올해 메일 가져오는 중…'
+                    : fullSync
+                      ? '전체 재동기화 중…'
+                      : '받은편지함 동기화 중…'}
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
                   다른 관리자 페이지로 이동해도 동기화는 계속됩니다. 창 제목 줄을 드래그해 위치를 옮길 수 있습니다.
                 </p>
+                {resultLines.length > 0 ? (
+                  <p className="text-xs text-slate-600 mt-1.5">{resultLines[0]}</p>
+                ) : null}
               </div>
             </div>
           )}

@@ -8,16 +8,8 @@ import { fetchTeamDisplayNameByEmail } from '@/utils/paymentRecordNoteDisplay'
 import { Sparkles, Wallet, X } from 'lucide-react'
 import { getStatusColor, getStatusText, getAssignmentStatusColor, getAssignmentStatusText } from '@/utils/tourStatusUtils'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
-import {
-  adjustOptionTotalExcludingLegacyNonResident,
-  computeCustomerPaymentTotalLineFormula,
-  getBalanceAmountForDisplay,
-  inferResidentFeesUsdForBalance,
-  residentFeesUsdFromCustomerRows,
-  withNormalizedBalanceAmountForDisplay,
-  type PartySizeSource,
-  type PaymentRecordLike,
-} from '@/utils/reservationPricingBalance'
+import { computeAssignedReservationDisplayBalance } from '@/lib/assignedReservationBalance'
+import { type PaymentRecordLike } from '@/utils/reservationPricingBalance'
 import { getReservationPartySize } from '@/utils/reservationUtils'
 import type { PickupHotelAssignmentOption } from '@/utils/pickupHotelUtils'
 import AutoAssignModal from './modals/AutoAssignModal'
@@ -220,19 +212,12 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
         paymentsById.set(id, list)
       }
 
-      const optSumById = new Map<string, number>()
-      const optCountById = new Map<string, number>()
       const optRowsById = new Map<
         string,
         Array<{ option_id?: string | null; total_price?: unknown; status?: string | null }>
       >()
       for (const row of optRows || []) {
         const id = String((row as { reservation_id: string }).reservation_id)
-        const st = String((row as { status?: string | null }).status ?? 'active').toLowerCase()
-        if (st === 'cancelled' || st === 'refunded') continue
-        const tp = Number((row as { total_price?: unknown }).total_price) || 0
-        optSumById.set(id, (optSumById.get(id) || 0) + tp)
-        optCountById.set(id, (optCountById.get(id) || 0) + 1)
         const list = optRowsById.get(id) || []
         list.push(row as { option_id?: string | null; total_price?: unknown; status?: string | null })
         optRowsById.set(id, list)
@@ -257,50 +242,12 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
         const res = resById.get(id)
         if (!pricing || !res) continue
 
-        const row = res as Record<string, unknown>
-        const paRaw = pricing.pricing_adults
-        const hasPa =
-          paRaw !== undefined &&
-          paRaw !== null &&
-          paRaw !== '' &&
-          Number.isFinite(Number(paRaw)) &&
-          Math.floor(Number(paRaw)) >= 0
-        const party: PartySizeSource = {
-          adults: hasPa ? Math.floor(Number(paRaw)) : ((row.adults as number | null | undefined) ?? null),
-          children: (row.children ?? row.child ?? null) as number | null,
-          infants: (row.infants ?? row.infant ?? null) as number | null,
-        }
-
-        const nOpts = optCountById.get(id) ?? 0
-        const rawOptionsTotal = nOpts > 0 ? (optSumById.get(id) || 0) : null
-
-        const fromCustomers = residentFeesUsdFromCustomerRows(customersById.get(id) ?? [])
-        const pricingNorm = withNormalizedBalanceAmountForDisplay(pricing)
-        const lineGrossBase = computeCustomerPaymentTotalLineFormula(
-          {
-            ...(pricingNorm as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]),
-            required_option_total: rawOptionsTotal !== null ? 0 : (pricingNorm as { required_option_total?: unknown }).required_option_total,
-            option_total: rawOptionsTotal !== null ? rawOptionsTotal : pricingNorm.option_total,
-          },
-          party
-        )
-        const residentFeeUsd = Math.max(
-          fromCustomers,
-          inferResidentFeesUsdForBalance(pricingNorm, lineGrossBase)
-        )
-        const optionsTotalFromOptions =
-          rawOptionsTotal !== null
-            ? adjustOptionTotalExcludingLegacyNonResident(
-                rawOptionsTotal,
-                residentFeeUsd,
-                optRowsById.get(id)
-              )
-            : null
-
-        const b = getBalanceAmountForDisplay(pricingNorm, optionsTotalFromOptions, party, {
+        const b = computeAssignedReservationDisplayBalance({
+          reservation: res,
+          pricing,
           paymentRecords: paymentsById.get(id) || [],
-          reservationStatus: res.status ?? null,
-          residentFeeUsd,
+          optionRows: optRowsById.get(id) || [],
+          customerRows: customersById.get(id) || [],
         })
         balanceById.set(id, b)
         total += b

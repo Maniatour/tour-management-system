@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { X, Users, User, Car, HelpCircle, ArrowRightCircle } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
+import { isCanyonKey } from '@/lib/canyonChoice'
 import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
 import { canonicalReservationIdKey, normalizeReservationIds } from '@/utils/tourUtils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
@@ -41,6 +42,7 @@ type ReservationRow = {
   infant?: number | null
   status: string | null
   channel_id: string | null
+  canyon_choice?: string | null
 }
 
 type ChannelRow = { id: string; name?: string | null; name_ko?: string | null }
@@ -494,7 +496,7 @@ export default function AutoAssignModal({
           supabase.from('tours').select('id, tour_guide_id, assistant_id, reservation_ids, tour_car_id, tour_status').eq('product_id', productId).eq('tour_date', tourDate),
           supabase.from('team').select('email, languages, name_ko, nick_name'),
           supabase.from('vehicles').select('id, capacity, nick, vehicle_number, vehicle_type, vehicle_category, rental_company, rental_start_date, rental_end_date').eq('operator_id', activeOperatorId),
-          supabase.from('reservations').select('id, customer_id, pickup_hotel, adults, child, infant, status, channel_id').eq('product_id', productId).eq('tour_date', tourDate),
+          supabase.from('reservations').select('id, customer_id, pickup_hotel, adults, child, infant, status, channel_id, canyon_choice').eq('product_id', productId).eq('tour_date', tourDate),
           supabase
             .from('pickup_hotels')
             .select('id, hotel, pick_up_location')
@@ -586,6 +588,11 @@ export default function AutoAssignModal({
         // Reservation choices - 1) 조인 조회 시도, 2) 실패 시 option_id로 choice_options 별도 조회
         const resIds = reservData.map(r => r.id)
         const choiceMap = new Map<string, 'L' | 'X' | '_other'>()
+        for (const r of reservData) {
+          if (isCanyonKey(r.canyon_choice) && (r.canyon_choice === 'L' || r.canyon_choice === 'X')) {
+            choiceMap.set(r.id, r.canyon_choice)
+          }
+        }
         if (resIds.length > 0) {
           const batch = 100
           for (let i = 0; i < resIds.length; i += batch) {
@@ -595,7 +602,9 @@ export default function AutoAssignModal({
               .select(`
                 reservation_id,
                 option_key,
-                choice_options!inner (
+                canyon_key,
+                canonical_option_key,
+                choice_options (
                   option_key,
                   option_name,
                   option_name_ko
@@ -606,12 +615,14 @@ export default function AutoAssignModal({
               rcData.forEach((row) => {
                 const reservationId = row.reservation_id
                 if (!reservationId) return
+                if (choiceMap.get(reservationId) === 'L' || choiceMap.get(reservationId) === 'X') return
                 const raw = row.choice_options
                 const opt = Array.isArray(raw) ? raw[0] : raw
-                const optionKey = (row.option_key ?? opt?.option_key ?? '') || null
+                const canyon = isCanyonKey(row.canyon_key) ? row.canyon_key : null
+                const optionKey = (row.canonical_option_key ?? row.option_key ?? opt?.option_key ?? '') || null
                 const nameKo = opt?.option_name_ko ?? null
                 const nameEn = opt?.option_name ?? null
-                const key = choiceLabelToKey(nameKo, nameEn, optionKey)
+                const key = canyon === 'L' || canyon === 'X' ? canyon : choiceLabelToKey(nameKo, nameEn, optionKey)
                 const existing = choiceMap.get(reservationId)
                 const value = (key === 'L' || key === 'X') ? key : (existing ?? key)
                 if (existing === undefined || key === 'L' || key === 'X') choiceMap.set(reservationId, value)
@@ -621,7 +632,7 @@ export default function AutoAssignModal({
             if (missingIds.length > 0) {
               const { data: rcFallback } = await supabase
                 .from('reservation_choices')
-                .select('reservation_id, option_id, option_key')
+                .select('reservation_id, option_id, option_key, canyon_key, canonical_option_key')
                 .in('reservation_id', missingIds)
               const optionIds = choiceOptionIdsForSupabaseIn(
                 (rcFallback || []).map((r: { option_id?: string | null }) => r.option_id)
@@ -643,9 +654,11 @@ export default function AutoAssignModal({
               ;(rcFallback || []).forEach((row) => {
                 const reservationId = row.reservation_id
                 if (!reservationId) return
+                if (choiceMap.get(reservationId) === 'L' || choiceMap.get(reservationId) === 'X') return
                 const info = row.option_id ? optionInfoById.get(row.option_id) : null
-                const optionKey = row.option_key ?? info?.option_key ?? null
-                const key = choiceLabelToKey(info?.option_name_ko ?? null, info?.option_name ?? null, optionKey)
+                const canyon = isCanyonKey(row.canyon_key) ? row.canyon_key : null
+                const optionKey = row.canonical_option_key ?? row.option_key ?? info?.option_key ?? null
+                const key = canyon === 'L' || canyon === 'X' ? canyon : choiceLabelToKey(info?.option_name_ko ?? null, info?.option_name ?? null, optionKey)
                 const existing = choiceMap.get(reservationId)
                 const value = (key === 'L' || key === 'X') ? key : (existing ?? key)
                 if (existing === undefined || key === 'L' || key === 'X') choiceMap.set(reservationId, value)

@@ -17,6 +17,7 @@ import {
   isZoomZoomTourNewBookingEmailSubject,
   isKlookOrderEmailSubjectForReservation,
 } from '@/lib/emailReservationParser'
+import { isZellePaymentSentEmail } from '@/lib/zellePaymentEmail'
 import {
   formatKlookReservationImportPlatformLabel,
   isKlookKoreanGuideChannelVariant,
@@ -30,6 +31,7 @@ import { ReservationCancellationImportModal } from '@/components/reservation/Res
 import {
   GMAIL_RESERVATION_SYNC_COMPLETE,
   GMAIL_RESERVATION_SYNC_UNAUTHORIZED,
+  gmailLookbackDaysSinceYearStartLA,
   useGmailReservationImportSync,
   type GmailReservationImportSyncDetail,
 } from '@/contexts/GmailReservationImportSyncContext'
@@ -406,12 +408,13 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     isTripComBookingRow(row) ||
     isZoomZoomRow(row)
 
-  const filteredItems =
+  const filteredItems = (
     activeTab === 'booking'
       ? items.filter((row) => isBookingConfirmed(row))
       : activeTab === 'cancellation'
         ? items.filter((row) => isCancellationRequestEmailSubject(row.subject))
         : items
+  ).filter((row) => !isZellePaymentSentEmail(row.subject) && row.platform_key !== 'zelle')
 
   /** 검색 + 플랫폼 필터 적용한 목록 (표시용) */
   const searchedAndFilteredItems = filteredItems.filter((row) => {
@@ -591,9 +594,11 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
       const d = (ev as CustomEvent<GmailReservationImportSyncDetail>).detail
       if (!d) return
       setGmailMessage(
-        d.fullSync
-          ? `전체 재동기화 완료: ${d.queryUsed ?? 'after:날짜'} 검색, ${d.total ?? 0}건 중 새로 추가 ${d.imported ?? 0}건.`
-          : `동기화 완료: 새 메일 ${d.imported ?? 0}건이 예약 가져오기 목록에 추가되었습니다.`
+        d.afterDays && d.afterDays > 7
+          ? `올해 메일 가져오기 완료: ${d.queryUsed ?? 'after:날짜'} 검색, ${d.total ?? 0}건 중 새로 추가 ${d.imported ?? 0}건.`
+          : d.fullSync
+            ? `전체 재동기화 완료: ${d.queryUsed ?? 'after:날짜'} 검색, ${d.total ?? 0}건 중 새로 추가 ${d.imported ?? 0}건.`
+            : `동기화 완료: 새 메일 ${d.imported ?? 0}건이 예약 가져오기 목록에 추가되었습니다.`
       )
       // 새 행이 생겼을 때 날짜 창 밖이면 목록에 안 보일 수 있음 → 한 번은 날짜 없이 최신 1000건으로 갱신
       const added = d.imported ?? 0
@@ -613,9 +618,9 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
 
   const gmailStartAuthUrl = `/api/email/gmail/start?locale=${locale}`
 
-  const handleGmailSync = (fullSync = false) => {
+  const handleGmailSync = (fullSync = false, afterDays?: number) => {
     setGmailMessage(null)
-    startGmailImportSync(fullSync)
+    startGmailImportSync(fullSync, afterDays)
   }
 
   const handlePasteSubmit = async () => {
@@ -711,6 +716,16 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
               >
                 {gmailSyncing ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <RefreshCw className="w-4 h-4 shrink-0" />}
                 전체 재동기화 (최근 7일)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleGmailSync(true, gmailLookbackDaysSinceYearStartLA())}
+                disabled={gmailSyncing}
+                title="올해 1월 1일부터의 수신함 메일을 검색합니다. 최근 7일보다 오래된 누락 메일만 가져옵니다."
+                className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-sky-600 text-white text-sm rounded-lg hover:bg-sky-700 disabled:opacity-50 touch-manipulation"
+              >
+                {gmailSyncing ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <Mail className="w-4 h-4 shrink-0" />}
+                올해 메일 가져오기
               </button>
             </div>
           </div>

@@ -12,18 +12,18 @@ import {
 import { isTicketBookingPendingRequestState } from '@/lib/ticketBookingWorkflow'
 
 export type TicketBookingDisplaySnap = {
-  company?: string | null
-  check_in_date?: string | null
-  time?: string | null
-  ea?: number | null
-  pending_ea?: number | null
-  booking_status?: string | null
-  vendor_status?: string | null
-  change_status?: string | null
-  payment_status?: string | null
-  status?: string | null
-  paid_amount?: number | null
-  expense?: number | null
+  company?: string | null | undefined
+  check_in_date?: string | null | undefined
+  time?: string | null | undefined
+  ea?: number | null | undefined
+  pending_ea?: number | null | undefined
+  booking_status?: string | null | undefined
+  vendor_status?: string | null | undefined
+  change_status?: string | null | undefined
+  payment_status?: string | null | undefined
+  status?: string | null | undefined
+  paid_amount?: number | null | undefined
+  expense?: number | null | undefined
 }
 
 /** 예약이 취소(완료) 상태인지 */
@@ -262,6 +262,31 @@ export function formatTicketBookingUnifiedStatus(
 ): string {
   return resolveTicketBookingUnifiedStatus(b, locale).label
 }
+
+export function ticketBookingUnifiedStatusLabel(
+  key: TicketBookingUnifiedStatusKey,
+  locale = 'ko'
+): string {
+  const L = UNIFIED_LABELS[key]
+  return locale.startsWith('en') ? L.en : L.ko
+}
+
+/** 달력 칩·상태 필터에 쓰는 통합 상태 순서 (`failed`는 취소와 동일 라벨이라 필터에서 합침) */
+export const TICKET_BOOKING_UNIFIED_STATUS_FILTER_KEYS: TicketBookingUnifiedStatusKey[] = [
+  'hold_pending',
+  'hold_rejected',
+  'tentative',
+  'confirmed_vendor_pending',
+  'confirmed',
+  'change_pending',
+  'cancel_requested',
+  'cancel_approved',
+  'vendor_cancelled',
+  'cancelled',
+  'expired',
+  'no_show',
+  'other',
+]
 
 export function getTicketBookingUnifiedStatusBadgeClass(
   key: TicketBookingUnifiedStatusKey | TicketBookingDisplaySnap

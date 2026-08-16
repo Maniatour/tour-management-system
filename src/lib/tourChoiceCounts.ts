@@ -22,18 +22,39 @@ export function choiceLabelToTourCountKey(
 ): TourChoiceCountKey {
   const rawKey = (optionKey || '').trim()
   if (rawKey && !UUID_RE.test(rawKey)) {
-    const k = rawKey.toLowerCase()
-    if (k === 'antelope_x' || k === 'x' || k === 'antelope x') return 'X'
-    if (k === 'lower_antelope' || k === 'l' || k === 'lower antelope') return 'L'
-    if (k === 'upper_antelope' || k === 'u' || k === 'upper antelope') return 'U'
+    const k = rawKey.toLowerCase().replace(/[\s-]+/g, '_')
+    if (k === 'antelope_x' || k === 'antelopex' || k === 'x' || k === 'antelope_x_canyon') return 'X'
+    if (
+      k === 'lower_antelope' ||
+      k === 'lowerantelope' ||
+      k === 'l' ||
+      k === 'lower_antelope_canyon'
+    ) {
+      return 'L'
+    }
+    if (
+      k === 'upper_antelope' ||
+      k === 'upperantelope' ||
+      k === 'u' ||
+      k === 'upper_antelope_canyon'
+    ) {
+      return 'U'
+    }
   }
 
   const label = (nameKo || nameEn || (rawKey && !UUID_RE.test(rawKey) ? rawKey : '') || '')
     .toString()
     .trim()
   const labelLower = label.toLowerCase()
+  const labelCompact = labelLower.replace(/\s+/g, '')
   const labelKo = label
-  if (labelLower.includes('antelope x canyon') || /엑스\s*앤텔롭|엑스\s*앤틸롭|엑스\s*엔텔롭/.test(labelKo)) {
+  if (
+    labelLower.includes('antelope x canyon') ||
+    /\bantelope\s*canyon\s*x\b/i.test(labelLower) ||
+    labelCompact.includes('antelopex') ||
+    /엑스\s*앤텔롭|엑스\s*앤틸롭|엑스\s*엔텔롭/.test(labelKo) ||
+    /앤텔롭\s*x|앤텔로프\s*x|앤틸롭\s*x/i.test(labelKo)
+  ) {
     return 'X'
   }
   if (labelLower.includes('lower antelope canyon') || /로어\s*앤텔롭|로어\s*앤틸롭|로어\s*엔텔롭/.test(labelKo)) {

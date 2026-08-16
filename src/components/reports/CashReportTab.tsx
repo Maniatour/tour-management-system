@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import CashLedgerReportEditModals, { type CashLedgerEditTarget } from '@/components/reports/CashLedgerReportEditModals'
+import UnreceivedAssignedCashBalancePanel from '@/components/reports/UnreceivedAssignedCashBalancePanel'
 
 interface CashReportTabProps {
   dateRange: { start: string; end: string }
@@ -641,6 +642,8 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           </div>
         </div>
       </div>
+
+      <UnreceivedAssignedCashBalancePanel />
 
       {/* 카테고리별 통계 */}
       {stats.byCategory.length > 0 && (

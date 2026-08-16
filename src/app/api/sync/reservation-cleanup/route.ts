@@ -1,11 +1,20 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isCanyonKey } from '@/lib/canyonChoice'
 
-function choiceOptionKey(
-  choiceOptions: { option_key?: string } | { option_key?: string }[] | null | undefined
-): string | undefined {
-  if (Array.isArray(choiceOptions)) return choiceOptions[0]?.option_key
-  return choiceOptions?.option_key
+function choiceCanyonKey(row: {
+  canyon_key?: string | null
+  canonical_option_key?: string | null
+  choice_options?: { option_key?: string; canyon_key?: string | null } | { option_key?: string; canyon_key?: string | null }[] | null
+}): string | undefined {
+  if (isCanyonKey(row.canyon_key)) return row.canyon_key
+  if (row.canonical_option_key === 'lower_antelope') return 'L'
+  if (row.canonical_option_key === 'antelope_x') return 'X'
+  const opt = Array.isArray(row.choice_options) ? row.choice_options[0] : row.choice_options
+  if (isCanyonKey(opt?.canyon_key)) return opt.canyon_key
+  if (opt?.option_key === 'lower_antelope') return 'L'
+  if (opt?.option_key === 'antelope_x') return 'X'
+  return undefined
 }
 
 export async function POST() {
@@ -205,9 +214,12 @@ export async function POST() {
             option_id,
             quantity,
             total_price,
-            choice_options!inner (
+            canyon_key,
+            canonical_option_key,
+            choice_options (
               option_key,
-              option_name_ko
+              option_name_ko,
+              canyon_key
             )
           `)
           .in('reservation_id', batchIds)
@@ -222,12 +234,12 @@ export async function POST() {
           totalReservationChoices += finalReservationChoices.length
           
           // 통계 계산
-          lowerAntelopeCount += finalReservationChoices.filter(rc => 
-            rc.choice_options && choiceOptionKey(rc.choice_options) === 'lower_antelope'
+          lowerAntelopeCount += finalReservationChoices.filter(rc =>
+            choiceCanyonKey(rc) === 'L'
           ).length
 
-          antelopeXCount += finalReservationChoices.filter(rc => 
-            rc.choice_options && choiceOptionKey(rc.choice_options) === 'antelope_x'
+          antelopeXCount += finalReservationChoices.filter(rc =>
+            choiceCanyonKey(rc) === 'X'
           ).length
 
           batchChoicesFrom += batchChoicesPageSize
@@ -313,9 +325,12 @@ export async function GET() {
         choice_id,
         option_id,
         quantity,
-        choice_options!inner (
+        canyon_key,
+        canonical_option_key,
+        choice_options (
           option_key,
-          option_name_ko
+          option_name_ko,
+          canyon_key
         )
       `)
       .in('reservation_id', reservations?.map(r => r.id) || [])
@@ -337,11 +352,11 @@ export async function GET() {
           totalReservations: reservations?.length || 0,
           reservationsWithChoices: reservationChoices?.length || 0,
           productsWithChoices: productChoices?.length || 0,
-          lowerAntelopeCount: reservationChoices?.filter(rc => 
-            rc.choice_options && choiceOptionKey(rc.choice_options) === 'lower_antelope'
+          lowerAntelopeCount: reservationChoices?.filter(rc =>
+            choiceCanyonKey(rc) === 'L'
           ).length || 0,
-          antelopeXCount: reservationChoices?.filter(rc => 
-            rc.choice_options && choiceOptionKey(rc.choice_options) === 'antelope_x'
+          antelopeXCount: reservationChoices?.filter(rc =>
+            choiceCanyonKey(rc) === 'X'
           ).length || 0
         }
       }

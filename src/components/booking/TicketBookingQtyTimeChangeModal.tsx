@@ -37,6 +37,9 @@ function displayTimeLabel(raw: string): string {
   return s || '—'
 }
 
+const COMPARE_GRID_CLASS =
+  'grid grid-cols-[5.5rem_1fr_1.2fr] divide-x divide-border/60'
+
 export type TicketBookingQtyTimeChangeModalProps = {
   open: boolean
   title: string
@@ -193,7 +196,7 @@ export default function TicketBookingQtyTimeChangeModal({
 
   return (
     <div
-      className="fixed inset-0 z-[140] flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-[220] flex items-center justify-center bg-black/50 p-4"
       role="dialog"
       aria-modal="true"
       onClick={() => !saving && onClose()}
@@ -209,7 +212,10 @@ export default function TicketBookingQtyTimeChangeModal({
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-3">
           <div className="overflow-hidden rounded-xl border border-border/60">
-            <div className="grid grid-cols-2 divide-x divide-border/60">
+            <div className={COMPARE_GRID_CLASS}>
+              <div className="bg-muted/40 px-3 py-2 text-center text-xs font-semibold text-muted-foreground">
+                내용
+              </div>
               <div className="bg-muted/40 px-3 py-2 text-center text-xs font-semibold text-muted-foreground">
                 기존
               </div>
@@ -218,22 +224,24 @@ export default function TicketBookingQtyTimeChangeModal({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 divide-x divide-border/60 border-t border-border/60">
-              <div className="px-3 py-3">
-                <p className="text-[10px] font-medium tracking-wide text-muted-foreground">수량</p>
-                <p className="mt-1.5 text-sm font-semibold tabular-nums text-foreground">
+            <div className={`${COMPARE_GRID_CLASS} border-t border-border/60`}>
+              <div className="flex items-center bg-muted/20 px-3 py-3">
+                <p className="text-sm font-medium text-foreground">수량</p>
+              </div>
+              <div className="flex items-center px-3 py-3">
+                <p className="text-sm font-semibold tabular-nums text-foreground">
                   {initialEa}개
                 </p>
               </div>
               <div className="px-3 py-3">
-                <label htmlFor="ticket-qty-time-change-ea" className="text-[10px] font-medium tracking-wide text-muted-foreground">
+                <label htmlFor="ticket-qty-time-change-ea" className="sr-only">
                   {t('quantity')}
                 </label>
                 <input
                   id="ticket-qty-time-change-ea"
                   type="number"
                   min={0}
-                  className={`mt-1.5 h-11 w-full rounded-lg border border-input px-3 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring ${
+                  className={`h-11 w-full rounded-lg border border-input px-3 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring ${
                     qtyChanged ? 'font-semibold text-red-600' : ''
                   }`}
                   value={ea}
@@ -243,20 +251,24 @@ export default function TicketBookingQtyTimeChangeModal({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 divide-x divide-border/60 border-t border-border/60">
-              <div className="px-3 py-3">
-                <p className="text-[10px] font-medium tracking-wide text-muted-foreground">시간</p>
-                <p className="mt-1.5 text-sm font-semibold text-foreground">
+            <div className={`${COMPARE_GRID_CLASS} border-t border-border/60`}>
+              <div className="flex items-center bg-muted/20 px-3 py-3">
+                <p className="text-sm font-medium text-foreground">
+                  시간 <span className="text-red-500">*</span>
+                </p>
+              </div>
+              <div className="flex items-center px-3 py-3">
+                <p className="text-sm font-semibold text-foreground">
                   {displayTimeLabel(initialTime)}
                 </p>
               </div>
               <div className="px-3 py-3">
-                <label htmlFor="ticket-qty-time-change-time" className="text-[10px] font-medium tracking-wide text-muted-foreground">
-                  {t('time')} *
+                <label htmlFor="ticket-qty-time-change-time" className="sr-only">
+                  {t('time')}
                 </label>
                 <select
                   id="ticket-qty-time-change-time"
-                  className={`mt-1.5 h-11 w-full rounded-lg border border-input px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${
+                  className={`h-11 w-full rounded-lg border border-input px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${
                     timeChanged ? 'font-semibold text-red-600' : ''
                   }`}
                   value={time}
@@ -285,25 +297,26 @@ export default function TicketBookingQtyTimeChangeModal({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 divide-x divide-border/60 border-t border-border/60">
-              <div className="px-3 py-3">
-                <p className="text-[10px] font-medium tracking-wide text-muted-foreground">금액</p>
-                <p className="mt-1.5 text-sm font-semibold tabular-nums text-foreground">
+            <div className={`${COMPARE_GRID_CLASS} border-t border-border/60`}>
+              <div className="flex items-center bg-muted/20 px-3 py-3">
+                <p className="text-sm font-medium text-foreground">금액</p>
+              </div>
+              <div className="flex items-center px-3 py-3">
+                <p className="text-sm font-semibold tabular-nums text-foreground">
                   ${formatMoneyUsd(Number.isFinite(initialExpense) ? initialExpense : 0)}
                 </p>
               </div>
-              <div className="px-3 py-3">
-                <p className="text-[10px] font-medium tracking-wide text-muted-foreground">금액</p>
+              <div className="flex items-center px-3 py-3">
                 {projectedExpense != null ? (
                   <p
-                    className={`mt-1.5 text-sm font-semibold tabular-nums ${
+                    className={`text-sm font-semibold tabular-nums ${
                       amountChanged ? 'text-red-600' : 'text-foreground'
                     }`}
                   >
                     ${formatMoneyUsd(projectedExpense)}
                   </p>
                 ) : (
-                  <p className="mt-1.5 text-sm text-muted-foreground">—</p>
+                  <p className="text-sm text-muted-foreground">—</p>
                 )}
               </div>
             </div>

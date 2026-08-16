@@ -73,8 +73,12 @@ export default function PublicChatPage() {
 
   // Service Worker 등록 및 PWA 설치 프롬프트 감지
   useEffect(() => {
+    const isInAppBrowser = /KAKAOTALK|Kakaotalk|Line\/|FBAN|FBAV|Instagram|MicroMessenger|WhatsApp/i.test(
+      navigator.userAgent
+    )
     // next dev에서는 빌드와 다른 정적 해시로 프리캐시 404가 나므로 production에서만 등록
-    if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) {
+    // 카카오/라인 인앱 웹뷰는 SW가 빈 화면·무한 로딩을 유발할 수 있어 등록하지 않음
+    if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator && !isInAppBrowser) {
       navigator.serviceWorker.register('/sw.js', { scope: '/' })
         .then((registration) => {
           console.log('Service Worker registered:', registration)

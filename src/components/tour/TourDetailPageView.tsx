@@ -1493,15 +1493,17 @@ export function TourDetailPageView({
   const handleUnassignAllReservations = async () => {
     if (!tourData.tour) return
     const assigned = tourData.assignedReservations
+    const otherAssigned = tourData.otherToursAssignedReservations
 
     tourData.beginAssignmentIdsMutation([])
     tourData.setTour((prev: TourRow | null) =>
       prev ? { ...prev, reservation_ids: [] } : null
     )
     tourData.setAssignedReservationsForced([])
+    tourData.setOtherToursAssignedReservationsForced([])
     tourData.setPendingReservationsForced((prev: any) => {
       const existing = prev as any[]
-      const toAdd = assigned.filter(
+      const toAdd = [...assigned, ...otherAssigned].filter(
         (r: any) => !existing.some((row: any) => reservationIdsLooselyEqual(row.id, r.id))
       )
       return [...existing, ...toAdd]
@@ -2357,8 +2359,9 @@ export function TourDetailPageView({
   ])
 
   // 인증·투어 데이터 로딩 — 전체 스피너 대신 레이아웃 스켈레톤
-  // 모달: 관리자 페이지에서 이미 로그인된 경우가 많아 auth loading 대기를 건너뛰어 첫 페인트 단축
-  const blockOnAuth = !modalLightLoad || (!authUser && loading)
+  // 전체 페이지: auth loading이 끝날 때까지 대기
+  // 모달: 관리자 페이지에서 이미 로그인된 경우가 많아, 유저가 아직 없고 auth 로딩 중일 때만 대기
+  const blockOnAuth = loading && (!modalLightLoad || !authUser)
   if (blockOnAuth || tourData.pageLoading) {
     return (
       <div className={modalLightLoad ? 'min-h-0 bg-white' : 'min-h-screen app-page-bg'}>

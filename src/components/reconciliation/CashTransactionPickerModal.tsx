@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { addCalendarDaysYmd } from '@/lib/expense-reconciliation-similar-lines'
+import { getDefaultLedgerBaseDate } from '@/lib/fiscal-settings'
 import {
   fetchCashWithdrawalCategories,
   fetchCashWithdrawalsForPicker,
@@ -55,7 +56,7 @@ export default function CashTransactionPickerModal({
   const defaultStart = useMemo(() => {
     const base = ledgerDateYmd?.slice(0, 10)
     if (base && base.length >= 10) return addCalendarDaysYmd(base, -60)
-    return '2025-01-01'
+    return getDefaultLedgerBaseDate()
   }, [ledgerDateYmd])
 
   const defaultEnd = useMemo(() => {

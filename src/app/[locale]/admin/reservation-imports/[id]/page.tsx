@@ -894,6 +894,7 @@ export default function ReservationImportDetailPage() {
         {...(ext?.channel_variant_label ? { initialChannelVariantLabelFromImport: ext.channel_variant_label } : {})}
         {...(importInitialVariantKey ? { initialVariantKeyFromImport: importInitialVariantKey } : {})}
         {...(importInitialAmount ? { initialAmountFromImport: importInitialAmount } : {})}
+        {...(ext?.amount_excluded ? { initialNotIncludedAmountFromImport: ext.amount_excluded } : {})}
         importSubmitDisabled={isImportProcessed}
         useServerCustomerInsert
       />

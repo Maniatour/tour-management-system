@@ -23,6 +23,8 @@ import {
   mapRpcDateNotesToRecord,
   type ScheduleDisplayRpcChoiceRow,
 } from '@/lib/scheduleDisplayRpc'
+import { isCanyonKey } from '@/lib/canyonChoice'
+import { choiceLabelToTourCountKey } from '@/lib/tourChoiceCounts'
 
 const TOURS_PAGE_SIZE = 1000
 
@@ -558,30 +560,19 @@ async function attachAntelopeCheckInDatesIfMissing(
   }))
 }
 
-function isUuid(s: string | null | undefined): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((s || '').trim())
-}
-
-function choiceLabelToKey(
-  nameKo: string | null | undefined,
-  nameEn: string | null | undefined,
-  optionKey: string | null | undefined,
-): string {
-  const label = (nameKo || nameEn || (optionKey && !isUuid(optionKey) ? optionKey : '') || '')
-    .toString()
-    .trim()
-  const labelLower = label.toLowerCase()
-  const labelKo = label
-  if (labelLower.includes('antelope x canyon') || /엑스\s*앤텔롭|엑스\s*앤틸롭|엑스\s*엔텔롭/.test(labelKo))
-    return 'X'
-  if (labelLower.includes('lower antelope canyon') || /로어\s*앤텔롭|로어\s*앤틸롭|로어\s*엔텔롭/.test(labelKo))
-    return 'L'
-  if (labelLower.includes('upper antelope canyon') || /어퍼\s*앤텔롭|어퍼\s*앤틸롭|어퍼\s*엔텔롭/.test(labelKo))
-    return 'U'
-  if (labelLower.includes('antelope x') || labelLower.includes(' x ')) return 'X'
-  if (labelLower.includes('lower')) return 'L'
-  if (labelLower.includes('upper')) return 'U'
-  return '_other'
+function choiceRowToKey(row: {
+  canyon_key?: string | null | undefined
+  option_name_ko?: string | null | undefined
+  option_name?: string | null | undefined
+  option_key?: string | null | undefined
+  canonical_option_key?: string | null | undefined
+}): string {
+  if (isCanyonKey(row.canyon_key)) return row.canyon_key
+  return choiceLabelToTourCountKey(
+    row.option_name_ko ?? null,
+    row.option_name ?? null,
+    row.canonical_option_key ?? row.option_key ?? null
+  )
 }
 
 function safeJsonParse(val: string | object | null | undefined, fallback: unknown = null): unknown {
@@ -596,7 +587,7 @@ function safeJsonParse(val: string | object | null | undefined, fallback: unknow
 
 async function buildReservationChoices(
   supabase: SupabaseClient,
-  reservationsData: Array<{ id: string; choices?: string | null }>,
+  reservationsData: Array<{ id: string; choices?: string | null; canyon_choice?: string | null }>,
   prefetchedRows?: ScheduleDisplayRpcChoiceRow[] | null,
 ): Promise<ScheduleDisplayReservationChoice[]> {
   const reservationIds = reservationsData.map((r) => r.id).filter(Boolean)
@@ -607,11 +598,7 @@ async function buildReservationChoices(
       .filter((row) => Boolean(row.reservation_id))
       .map((row) => ({
         reservation_id: row.reservation_id,
-        choiceKey: choiceLabelToKey(
-          row.option_name_ko ?? null,
-          row.option_name ?? null,
-          row.option_key ?? null,
-        ),
+        choiceKey: choiceRowToKey(row),
         quantity: Number(row.quantity) || 1,
       }))
   } else if (reservationIds.length > 0) {
@@ -620,13 +607,16 @@ async function buildReservationChoices(
       const batchIds = reservationIds.slice(i, i + BATCH)
       const { data: rcData } = await supabase
         .from('reservation_choices')
-        .select('reservation_id, quantity, choice_options!inner(option_key, option_name_ko, option_name)')
+        .select('reservation_id, quantity, option_key, canyon_key, canonical_option_key, choice_options(option_key, option_name_ko, option_name)')
         .in('reservation_id', batchIds)
       if (rcData?.length) {
         choicesFlat = choicesFlat.concat(
           (rcData as Array<{
             reservation_id: string | null
             quantity?: number | null
+            option_key?: string | null
+            canyon_key?: string | null
+            canonical_option_key?: string | null
             choice_options?: {
               option_key?: string | null
               option_name_ko?: string | null
@@ -636,14 +626,15 @@ async function buildReservationChoices(
             .filter((row) => Boolean(row.reservation_id))
             .map((row) => {
               const opt = row.choice_options
-              const choiceKey = choiceLabelToKey(
-                opt?.option_name_ko ?? null,
-                opt?.option_name ?? null,
-                opt?.option_key ?? null,
-              )
               return {
                 reservation_id: row.reservation_id as string,
-                choiceKey,
+                choiceKey: choiceRowToKey({
+                  canyon_key: row.canyon_key,
+                  option_key: row.option_key ?? opt?.option_key,
+                  canonical_option_key: row.canonical_option_key,
+                  option_name_ko: opt?.option_name_ko,
+                  option_name: opt?.option_name,
+                }),
                 quantity: Number(row.quantity) || 1,
               }
             }),
@@ -654,6 +645,10 @@ async function buildReservationChoices(
 
   const hasTableChoices = new Set(choicesFlat.map((c) => c.reservation_id))
   for (const r of reservationsData) {
+    if (isCanyonKey(r.canyon_choice) && !hasTableChoices.has(r.id)) {
+      choicesFlat.push({ reservation_id: r.id, choiceKey: r.canyon_choice, quantity: 1 })
+      hasTableChoices.add(r.id)
+    }
     if (hasTableChoices.has(r.id) || !r.choices) continue
     try {
       const choicesObj = safeJsonParse(r.choices) as Record<string, unknown> | null
@@ -661,16 +656,16 @@ async function buildReservationChoices(
       for (const item of choicesObj.required as Array<Record<string, unknown>>) {
         const qty = Number((item as { quantity?: number }).quantity) || 1
         if (item.option_id && item.choice_id) {
-          const key = choiceLabelToKey(
+          const key = choiceLabelToTourCountKey(
             item.option_name_ko as string | null,
             item.option_name as string | null,
-            item.option_key as string | null,
+            (item.canonical_option_key as string | null) ?? (item.option_key as string | null),
           )
           choicesFlat.push({ reservation_id: r.id, choiceKey: key, quantity: qty })
         } else if (Array.isArray(item.options)) {
           for (const opt of item.options as Array<Record<string, unknown>>) {
             if (opt.selected || opt.is_default) {
-              const key = choiceLabelToKey(
+              const key = choiceLabelToTourCountKey(
                 opt.name_ko as string | null,
                 opt.name as string | null,
                 null,

@@ -974,6 +974,8 @@ export type Database = {
         Row: {
           adult_price: number | null
           capacity: number | null
+          canyon_key: string | null
+          canonical_option_key: string | null
           child_price: number | null
           choice_id: string | null
           content_i18n: Json
@@ -997,6 +999,8 @@ export type Database = {
         Insert: {
           adult_price?: number | null
           capacity?: number | null
+          canyon_key?: string | null
+          canonical_option_key?: string | null
           child_price?: number | null
           choice_id?: string | null
           content_i18n?: Json
@@ -1020,6 +1024,8 @@ export type Database = {
         Update: {
           adult_price?: number | null
           capacity?: number | null
+          canyon_key?: string | null
+          canonical_option_key?: string | null
           child_price?: number | null
           choice_id?: string | null
           content_i18n?: Json
@@ -6598,6 +6604,8 @@ export type Database = {
       }
       reservation_choices: {
         Row: {
+          canyon_key: string | null
+          canonical_option_key: string | null
           choice_group: string | null
           choice_id: string | null
           created_at: string | null
@@ -6609,6 +6617,8 @@ export type Database = {
           total_price: number | null
         }
         Insert: {
+          canyon_key?: string | null
+          canonical_option_key?: string | null
           choice_group?: string | null
           choice_id?: string | null
           created_at?: string | null
@@ -6620,6 +6630,8 @@ export type Database = {
           total_price?: number | null
         }
         Update: {
+          canyon_key?: string | null
+          canonical_option_key?: string | null
           choice_group?: string | null
           choice_id?: string | null
           created_at?: string | null
@@ -7410,6 +7422,7 @@ export type Database = {
           channel_rn: string | null
           child: number | null
           choices: Json | null
+          canyon_choice: string | null
           commerce_offer_id: string | null
           commerce_pricing_source: string | null
           commerce_rate_plan_id: string | null
@@ -7447,6 +7460,7 @@ export type Database = {
           channel_rn?: string | null
           child?: number | null
           choices?: Json | null
+          canyon_choice?: string | null
           commerce_offer_id?: string | null
           commerce_pricing_source?: string | null
           commerce_rate_plan_id?: string | null
@@ -7484,6 +7498,7 @@ export type Database = {
           channel_rn?: string | null
           child?: number | null
           choices?: Json | null
+          canyon_choice?: string | null
           commerce_offer_id?: string | null
           commerce_pricing_source?: string | null
           commerce_rate_plan_id?: string | null
@@ -8635,6 +8650,33 @@ export type Database = {
           room_name?: string
           room_type?: string
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      ticket_booking_date_notes: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          note: string
+          note_date: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note: string
+          note_date: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string
+          note_date?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -10510,6 +10552,9 @@ export type Database = {
           operator_id: string
           photos_extended_access: boolean | null
           product_id: string | null
+          receipt_not_required: boolean
+          receipt_not_required_at: string | null
+          receipt_not_required_by: string | null
           reservation_ids: string[] | null
           team_type: string | null
           tour_car_id: string | null
@@ -10538,6 +10583,9 @@ export type Database = {
           operator_id?: string
           photos_extended_access?: boolean | null
           product_id?: string | null
+          receipt_not_required?: boolean
+          receipt_not_required_at?: string | null
+          receipt_not_required_by?: string | null
           reservation_ids?: string[] | null
           team_type?: string | null
           tour_car_id?: string | null
@@ -10566,6 +10614,9 @@ export type Database = {
           operator_id?: string
           photos_extended_access?: boolean | null
           product_id?: string | null
+          receipt_not_required?: boolean
+          receipt_not_required_at?: string | null
+          receipt_not_required_by?: string | null
           reservation_ids?: string[] | null
           team_type?: string | null
           tour_car_id?: string | null

@@ -486,15 +486,26 @@ export function useTourHandlers() {
     }
   }, [])
 
-  // 모든 예약 배정 해제 함수
-  const handleUnassignAllReservations = useCallback(async (tour: { id: string }) => {
+  // 해당일 같은 상품의 모든 투어에서 예약 배정 해제
+  const handleUnassignAllReservations = useCallback(async (tour: {
+    id: string
+    product_id?: string | null
+    tour_date?: string | null
+  }) => {
     if (!tour) return
 
     try {
-      const { error } = await supabase
+      const productId = String(tour.product_id ?? '').trim()
+      const tourDate = String(tour.tour_date ?? '').trim()
+
+      const query = supabase
         .from('tours')
         .update({ reservation_ids: [] } as Database['public']['Tables']['tours']['Update'])
-        .eq('id', tour.id)
+
+      const { error } =
+        productId && tourDate
+          ? await query.eq('product_id', productId).eq('tour_date', tourDate)
+          : await query.eq('id', tour.id)
 
       if (error) {
         console.error('Error unassigning all reservations:', error)

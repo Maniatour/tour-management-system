@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ButtonHTMLAttributes,
+  type FormEvent,
   type ForwardedRef,
   type MutableRefObject,
   type ReactNode,
@@ -21,6 +22,7 @@ import {
   FileText,
   Landmark,
   Scale,
+  Wallet,
   XCircle,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -28,9 +30,20 @@ import {
   applyTicketBookingAction,
   applyTicketBookingIssueFlag,
   isTicketBookingIssueReported,
+  reportTicketBookingIssueWithNote,
 } from '@/lib/ticketBookingActions'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import {
   showChangeRequestButton,
+  showCreditReceivedButton,
   showPaymentCompleteButton,
   showVendorChangeActions,
   showVendorInitialActions,
@@ -58,6 +71,20 @@ type Booking = {
   payment_status?: string | null
   refund_status?: string | null
   operation_status?: string | null
+  note?: string | null
+  expense?: number | null
+  paid_amount?: number | null
+  credit_amount?: number | null
+}
+
+function defaultCreditAmount(b: Booking): string {
+  const credit = Number(b.credit_amount ?? 0)
+  if (Number.isFinite(credit) && credit > 0) return String(credit)
+  const paid = Number(b.paid_amount ?? 0)
+  if (Number.isFinite(paid) && paid > 0) return String(paid)
+  const expense = Number(b.expense ?? 0)
+  if (Number.isFinite(expense) && expense > 0) return String(expense)
+  return ''
 }
 
 export type TicketBookingCardActionHandlers = {
@@ -204,6 +231,12 @@ export default function TicketBookingCardActionBar({
   const { user } = useAuth()
   const isEn = locale.startsWith('en')
   const [busy, setBusy] = useState<string | null>(null)
+  const [issueModalOpen, setIssueModalOpen] = useState(false)
+  const [issueNote, setIssueNote] = useState('')
+  const [issueError, setIssueError] = useState<string | null>(null)
+  const [creditModalOpen, setCreditModalOpen] = useState(false)
+  const [creditAmount, setCreditAmount] = useState('')
+  const [creditError, setCreditError] = useState<string | null>(null)
   const saving = handlers.savingId === booking.id || Boolean(busy)
   const issueOn = isTicketBookingIssueReported(booking.operation_status)
   const hasInv = handlers.hasInvoiceAttachment?.(booking) === true
@@ -221,13 +254,110 @@ export default function TicketBookingCardActionBar({
     }
   }
 
+  const openIssueModal = () => {
+    setIssueNote(String(booking.note || ''))
+    setIssueError(null)
+    setIssueModalOpen(true)
+  }
+
+  const closeIssueModal = () => {
+    if (busy === 'issue') return
+    setIssueModalOpen(false)
+    setIssueError(null)
+  }
+
+  const openCreditModal = () => {
+    setCreditAmount(defaultCreditAmount(booking))
+    setCreditError(null)
+    setCreditModalOpen(true)
+  }
+
+  const closeCreditModal = () => {
+    if (busy === 'credit') return
+    setCreditModalOpen(false)
+    setCreditError(null)
+  }
+
+  const submitCreditReceived = async (e: FormEvent) => {
+    e.preventDefault()
+    if (saving) return
+    const parsed = Number(creditAmount.trim())
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setCreditError(isEn ? 'Enter a valid credit amount.' : '크레딧 금액을 숫자로 입력해 주세요.')
+      return
+    }
+    setCreditError(null)
+    setBusy('credit')
+    try {
+      const rs = (booking.refund_status ?? 'none').toLowerCase()
+      if (rs === 'none') {
+        const req = await applyTicketBookingAction(
+          booking.id,
+          'request_refund',
+          { amount: parsed },
+          user?.email ?? null
+        )
+        if (!req.ok) {
+          setCreditError(req.error || (isEn ? 'Failed' : '실패했습니다.'))
+          return
+        }
+      }
+      const res = await applyTicketBookingAction(
+        booking.id,
+        'mark_credit_received',
+        { credit_amount: parsed },
+        user?.email ?? null
+      )
+      if (!res.ok) {
+        setCreditError(res.error || (isEn ? 'Failed' : '실패했습니다.'))
+        return
+      }
+      setCreditModalOpen(false)
+      handlers.onApplied()
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const submitIssueReport = async (e: FormEvent) => {
+    e.preventDefault()
+    if (saving) return
+    const trimmed = issueNote.trim()
+    if (!trimmed) {
+      setIssueError(isEn ? 'Please write a memo before reporting the issue.' : '문제 내용을 메모로 작성해 주세요.')
+      return
+    }
+    setIssueError(null)
+    setBusy('issue')
+    try {
+      const res = await reportTicketBookingIssueWithNote(
+        booking.id,
+        booking,
+        trimmed,
+        user?.email ?? null
+      )
+      if (!res.ok) {
+        setIssueError(
+          res.error === 'note_required'
+            ? isEn
+              ? 'Please write a memo before reporting the issue.'
+              : '문제 내용을 메모로 작성해 주세요.'
+            : res.error || (isEn ? 'Failed' : '실패했습니다.')
+        )
+        return
+      }
+      setIssueModalOpen(false)
+      handlers.onApplied()
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const muted = 'border-border/70 bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground'
 
   return (
-    <div
-      className="mt-2 flex flex-nowrap items-center gap-1 overflow-x-auto pb-0.5"
-      onClick={(e) => e.stopPropagation()}
-    >
+    <div className="mt-2 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+      <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1 overflow-x-auto pb-0.5">
       {showChangeRequestButton(booking) ? (
         <TicketBookingIconTipButton
           label={isEn ? 'Qty/time change request' : '수량·시간 변경 요청'}
@@ -312,6 +442,16 @@ export default function TicketBookingCardActionBar({
           <Banknote className="h-3.5 w-3.5" aria-hidden />
         </TicketBookingIconTipButton>
       ) : null}
+      {showCreditReceivedButton(booking) ? (
+        <TicketBookingIconTipButton
+          label={isEn ? 'Credit received' : '크레딧 받음'}
+          className="border-cyan-300 bg-cyan-50 text-cyan-950 hover:bg-cyan-100"
+          disabled={saving}
+          onClick={openCreditModal}
+        >
+          <Wallet className="h-3.5 w-3.5" aria-hidden />
+        </TicketBookingIconTipButton>
+      ) : null}
       <TicketBookingIconTipButton
         label={isEn ? 'Issue occurred' : '문제 발생'}
         role="switch"
@@ -323,21 +463,25 @@ export default function TicketBookingCardActionBar({
             : muted
         }
         disabled={saving}
-        onClick={() =>
-          void run('issue', async () => {
-            const res = await applyTicketBookingIssueFlag(
-              booking.id,
-              booking,
-              !issueOn,
-              user?.email ?? null
-            )
-            if (!res.ok) {
-              alert(res.error || (isEn ? 'Failed' : '실패했습니다.'))
-              return false
-            }
-            return true
-          })
-        }
+        onClick={() => {
+          if (issueOn) {
+            void run('issue', async () => {
+              const res = await applyTicketBookingIssueFlag(
+                booking.id,
+                booking,
+                false,
+                user?.email ?? null
+              )
+              if (!res.ok) {
+                alert(res.error || (isEn ? 'Failed' : '실패했습니다.'))
+                return false
+              }
+              return true
+            })
+            return
+          }
+          openIssueModal()
+        }}
       >
         <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
       </TicketBookingIconTipButton>
@@ -377,12 +521,144 @@ export default function TicketBookingCardActionBar({
       >
         <Scale className="h-3.5 w-3.5" aria-hidden />
       </TicketBookingIconTipButton>
+      </div>
       {extra ? (
-        <>
-          <span className="mx-0.5 h-4 w-px shrink-0 bg-border" aria-hidden />
-          {extra}
-        </>
+        <div className="ml-auto flex shrink-0 items-center justify-end gap-1">{extra}</div>
       ) : null}
+
+      <Dialog
+        open={issueModalOpen}
+        onOpenChange={(open) => {
+          if (!open) closeIssueModal()
+        }}
+      >
+        <DialogContent
+          className="max-w-md text-sm"
+          stackLevel="nested"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <DialogHeader>
+            <DialogTitle>{isEn ? 'Report issue' : '문제 발생'}</DialogTitle>
+            <DialogDescription>
+              {isEn
+                ? 'Write a memo about the problem, then mark this booking as an issue.'
+                : '문제 내용을 메모로 작성한 뒤 문제 발생으로 처리합니다.'}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(e) => void submitIssueReport(e)} className="space-y-3">
+            <div className="space-y-1.5">
+              <label htmlFor={`tb-issue-note-${booking.id}`} className="text-xs font-medium text-gray-800">
+                {isEn ? 'Memo' : '메모'}
+              </label>
+              <textarea
+                id={`tb-issue-note-${booking.id}`}
+                rows={5}
+                value={issueNote}
+                onChange={(e) => {
+                  setIssueNote(e.target.value)
+                  if (issueError) setIssueError(null)
+                }}
+                disabled={busy === 'issue'}
+                autoFocus
+                className="w-full resize-y rounded-lg border border-border/70 bg-white px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:bg-muted/40"
+                placeholder={
+                  isEn ? 'Describe what went wrong…' : '어떤 문제가 있는지 작성해 주세요'
+                }
+              />
+            </div>
+            {issueError ? (
+              <p className="text-xs font-medium text-red-600" role="alert">
+                {issueError}
+              </p>
+            ) : null}
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button type="button" variant="outline" onClick={closeIssueModal} disabled={busy === 'issue'}>
+                {isEn ? 'Cancel' : '취소'}
+              </Button>
+              <Button
+                type="submit"
+                disabled={busy === 'issue'}
+                className="bg-red-700 text-white hover:bg-red-800"
+              >
+                {busy === 'issue'
+                  ? isEn
+                    ? 'Working…'
+                    : '처리 중…'
+                  : isEn
+                    ? 'Mark as issue'
+                    : '문제 발생으로 처리'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={creditModalOpen}
+        onOpenChange={(open) => {
+          if (!open) closeCreditModal()
+        }}
+      >
+        <DialogContent
+          className="max-w-md text-sm"
+          stackLevel="nested"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <DialogHeader>
+            <DialogTitle>{isEn ? 'Credit received' : '크레딧 받음'}</DialogTitle>
+            <DialogDescription>
+              {isEn
+                ? 'Keep the payment as paid. Use this when the vendor issued credit instead of a cash refund.'
+                : '결제는 완료 상태로 유지됩니다. 벤더가 현금 대신 크레딧을 준 경우에만 사용하세요.'}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(e) => void submitCreditReceived(e)} className="space-y-3">
+            <div className="space-y-1.5">
+              <label htmlFor={`tb-credit-amt-${booking.id}`} className="text-xs font-medium text-gray-800">
+                {isEn ? 'Credit amount (USD)' : '크레딧 금액 (USD)'}
+              </label>
+              <input
+                id={`tb-credit-amt-${booking.id}`}
+                type="text"
+                inputMode="decimal"
+                value={creditAmount}
+                onChange={(e) => {
+                  setCreditAmount(e.target.value)
+                  if (creditError) setCreditError(null)
+                }}
+                disabled={busy === 'credit'}
+                autoFocus
+                className="w-full rounded-lg border border-border/70 bg-white px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:bg-muted/40"
+                placeholder="0.00"
+                autoComplete="off"
+              />
+            </div>
+            {creditError ? (
+              <p className="text-xs font-medium text-red-600" role="alert">
+                {creditError}
+              </p>
+            ) : null}
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button type="button" variant="outline" onClick={closeCreditModal} disabled={busy === 'credit'}>
+                {isEn ? 'Cancel' : '취소'}
+              </Button>
+              <Button
+                type="submit"
+                disabled={busy === 'credit'}
+                className="bg-cyan-700 text-white hover:bg-cyan-800"
+              >
+                {busy === 'credit'
+                  ? isEn
+                    ? 'Working…'
+                    : '처리 중…'
+                  : isEn
+                    ? 'Mark credit received'
+                    : '크레딧 받음으로 처리'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

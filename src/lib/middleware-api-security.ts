@@ -197,13 +197,22 @@ export function isCustomerPagePreviewEmbedRequest(req: NextRequest): boolean {
   return req.nextUrl.searchParams.get('preview') === '1'
 }
 
+function isPublicTourChatPath(req?: NextRequest): boolean {
+  const pathname = req?.nextUrl.pathname ?? ''
+  return pathname === '/chat' || pathname.startsWith('/chat/')
+}
+
 export function applySecurityHeaders(
   response: NextResponse,
   req?: NextRequest
 ): NextResponse {
-  const frameOptions =
-    req && isCustomerPagePreviewEmbedRequest(req) ? 'SAMEORIGIN' : 'DENY'
-  response.headers.set('X-Frame-Options', frameOptions)
+  // 공개 투어 채팅은 카카오/라인 인앱 브라우저가 iframe으로 여는 경우가 있어 DENY면 빈 화면이 된다.
+  // 링크만 아는 손님 접속을 막지 않도록 이 경로만 프레임 제한을 두지 않는다.
+  if (!isPublicTourChatPath(req)) {
+    const frameOptions =
+      req && isCustomerPagePreviewEmbedRequest(req) ? 'SAMEORIGIN' : 'DENY'
+    response.headers.set('X-Frame-Options', frameOptions)
+  }
   response.headers.set('X-Content-Type-Options', 'nosniff')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
   // () = 완전 차단 → 위치/마이크/카메라가 OS·브라우저 허용과 무관하게 거부됨

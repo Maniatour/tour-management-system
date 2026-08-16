@@ -4,12 +4,15 @@ import {
   type ProductChoiceLike,
   type ReservationChoiceRowLike,
 } from '@/lib/normalizeReservationChoicesForProduct'
+import { displayNamesFromCanyonKey, isCanyonKey, canonicalOptionKeyFromCanyon } from '@/lib/canyonChoice'
 
 export type ResolvedChoiceRow = {
   choice_id: string
   option_id: string
   quantity: number
   option_key?: string | null
+  canyon_key?: string | null
+  canonical_option_key?: string | null
   choice_options: {
     option_key: string | null
     option_name: string | null
@@ -44,6 +47,8 @@ type JsonChoiceItem = {
   quantity?: unknown
   total_price?: unknown
   option_key?: unknown
+  canyon_key?: unknown
+  canonical_option_key?: unknown
   option_name?: unknown
   option_name_ko?: unknown
   choice_group_ko?: unknown
@@ -109,22 +114,38 @@ function toResolved(
   quantity: number,
   option: ChoiceOptionRow | null | undefined,
   groupKo: string | null | undefined,
-  fallbackNames?: { option_key?: string; option_name?: string; option_name_ko?: string }
+  fallbackNames?: {
+    option_key?: string
+    option_name?: string
+    option_name_ko?: string
+    canyon_key?: string | null
+    canonical_option_key?: string | null
+  }
 ): ResolvedChoiceRow {
+  const canyonKey = isCanyonKey(fallbackNames?.canyon_key) ? fallbackNames.canyon_key : null
+  const labels = displayNamesFromCanyonKey(canyonKey)
+  const optionKey =
+    option?.option_key ??
+    fallbackNames?.canonical_option_key ??
+    fallbackNames?.option_key ??
+    null
   return {
     choice_id: choiceId,
     option_id: optionId,
     quantity,
-    option_key: option?.option_key ?? fallbackNames?.option_key ?? null,
+    option_key: optionKey,
+    canyon_key: canyonKey,
+    canonical_option_key: fallbackNames?.canonical_option_key ?? null,
     choice_options: {
-      option_key: option?.option_key ?? fallbackNames?.option_key ?? null,
-      option_name: option?.option_name ?? fallbackNames?.option_name ?? null,
-      option_name_ko: option?.option_name_ko ?? fallbackNames?.option_name_ko ?? null,
+      option_key: optionKey,
+      option_name: option?.option_name ?? fallbackNames?.option_name ?? labels?.option_name ?? null,
+      option_name_ko:
+        option?.option_name_ko ?? fallbackNames?.option_name_ko ?? labels?.option_name_ko ?? null,
       internal_name: option?.internal_name ?? null,
       badge_icon_url: option?.badge_icon_url ?? null,
     },
     product_choices: {
-      choice_group_ko: groupKo ?? null,
+      choice_group_ko: groupKo ?? labels?.choice_group_ko ?? null,
     },
   }
 }
@@ -400,8 +421,14 @@ function resolveJsonItems(
       option_key?: string
       option_name?: string
       option_name_ko?: string
+      canyon_key?: string | null
+      canonical_option_key?: string | null
     } = {}
     if (typeof item.option_key === 'string') fallbackNames.option_key = item.option_key
+    if (typeof item.canyon_key === 'string') fallbackNames.canyon_key = item.canyon_key
+    if (typeof item.canonical_option_key === 'string') {
+      fallbackNames.canonical_option_key = item.canonical_option_key
+    }
     if (typeof item.option_name === 'string') fallbackNames.option_name = item.option_name
     if (typeof item.option_name_ko === 'string') {
       fallbackNames.option_name_ko = item.option_name_ko
@@ -414,12 +441,14 @@ function resolveJsonItems(
       (typeof item.choice_group_ko === 'string' ? item.choice_group_ko : null) ??
       (typeof item.choice_group === 'string' ? item.choice_group : null)
 
-    // 옵션을 전혀 해석하지 못했고 이름도 없으면 뱃지 불가 → 스킵
+    // 옵션을 전혀 해석하지 못했고 이름/캐년 키도 없으면 뱃지 불가 → 스킵
     if (
       !option &&
       !fallbackNames.option_name_ko &&
       !fallbackNames.option_name &&
-      !fallbackNames.option_key
+      !fallbackNames.option_key &&
+      !isCanyonKey(fallbackNames.canyon_key) &&
+      !fallbackNames.canonical_option_key
     ) {
       continue
     }
@@ -450,6 +479,8 @@ export async function resolveReservationChoices(
       option_id,
       quantity,
       option_key,
+      canyon_key,
+      canonical_option_key,
       choice_options (
         option_key,
         option_name,
@@ -486,19 +517,36 @@ export async function resolveReservationChoices(
   for (const row of (rcData ?? []) as Array<Record<string, unknown>>) {
     const choiceId = typeof row.choice_id === 'string' ? row.choice_id : ''
     const optionId = typeof row.option_id === 'string' ? row.option_id : ''
-    if (!choiceId || isUndecided(optionId)) continue
+    const canyonKey = typeof row.canyon_key === 'string' ? row.canyon_key : null
+    const canonicalKey =
+      typeof row.canonical_option_key === 'string' ? row.canonical_option_key : null
+    if (isUndecided(optionId) && !isCanyonKey(canyonKey)) continue
+    if (!choiceId && !optionId && !isCanyonKey(canyonKey) && !canonicalKey) continue
 
     const co = unwrap(row.choice_options as ChoiceOptionRow | ChoiceOptionRow[] | null)
     const pc = unwrap(
       row.product_choices as { choice_group_ko?: string | null } | { choice_group_ko?: string | null }[] | null
     )
     const quantity = Math.max(1, toNumber(row.quantity, 1))
+    const storedFallback = {
+      ...(typeof row.option_key === 'string' ? { option_key: row.option_key } : {}),
+      canyon_key: canyonKey,
+      canonical_option_key: canonicalKey,
+    }
 
-    if (co && (co.option_name_ko || co.option_name || co.internal_name || co.badge_icon_url)) {
-      const fallback: { option_key?: string } = {}
-      if (typeof row.option_key === 'string') fallback.option_key = row.option_key
+    if (
+      (co && (co.option_name_ko || co.option_name || co.internal_name || co.badge_icon_url)) ||
+      isCanyonKey(canyonKey)
+    ) {
       fromRc.push(
-        toResolved(choiceId, optionId, quantity, co as ChoiceOptionRow, pc?.choice_group_ko ?? null, fallback)
+        toResolved(
+          choiceId || canonicalKey || canyonKey || optionId,
+          optionId || canonicalKey || '',
+          quantity,
+          co as ChoiceOptionRow | null,
+          pc?.choice_group_ko ?? null,
+          storedFallback
+        )
       )
     } else {
       orphanItems.push({
@@ -528,7 +576,7 @@ export async function resolveReservationChoices(
     await Promise.all([
       db
         .from('reservations')
-        .select('choices, adults, child, total_people, product_id')
+        .select('choices, adults, child, total_people, product_id, canyon_choice')
         .eq('id', reservationId)
         .maybeSingle(),
       // reservations.choices 가 비어도 reservation_pricing.choices 에 초이스가 남아있는 경우가 많음
@@ -567,6 +615,22 @@ export async function resolveReservationChoices(
   ]
 
   if (itemsToResolve.length === 0) {
+    const canyonChoice = (reservation as { canyon_choice?: string | null } | null)?.canyon_choice
+    if (fromRc.length === 0 && isCanyonKey(canyonChoice)) {
+      return [
+        toResolved(
+          canyonChoice,
+          canonicalOptionKeyFromCanyon(canyonChoice),
+          1,
+          null,
+          null,
+          {
+            canyon_key: canyonChoice,
+            canonical_option_key: canonicalOptionKeyFromCanyon(canyonChoice),
+          }
+        ),
+      ]
+    }
     return fromRc
   }
 
@@ -651,6 +715,8 @@ export async function resolveReservationChoicesBatch(
       option_id,
       quantity,
       option_key,
+      canyon_key,
+      canonical_option_key,
       choice_options (
         id,
         choice_id,
@@ -685,20 +751,37 @@ export async function resolveReservationChoicesBatch(
 
     const choiceId = typeof raw.choice_id === 'string' ? raw.choice_id : ''
     const optionId = typeof raw.option_id === 'string' ? raw.option_id : ''
-    if (!choiceId || isUndecided(optionId)) continue
+    const canyonKey = typeof raw.canyon_key === 'string' ? raw.canyon_key : null
+    const canonicalKey =
+      typeof raw.canonical_option_key === 'string' ? raw.canonical_option_key : null
+    if (isUndecided(optionId) && !isCanyonKey(canyonKey)) continue
+    if (!choiceId && !optionId && !isCanyonKey(canyonKey) && !canonicalKey) continue
 
     const co = unwrap(raw.choice_options as ChoiceOptionRow | ChoiceOptionRow[] | null)
     const pc = unwrap(
       raw.product_choices as { choice_group_ko?: string | null } | { choice_group_ko?: string | null }[] | null
     )
     const quantity = Math.max(1, toNumber(raw.quantity, 1))
+    const storedFallback = {
+      ...(typeof raw.option_key === 'string' ? { option_key: raw.option_key } : {}),
+      canyon_key: canyonKey,
+      canonical_option_key: canonicalKey,
+    }
 
-    if (co && (co.option_name_ko || co.option_name || co.internal_name || co.badge_icon_url)) {
+    if (
+      (co && (co.option_name_ko || co.option_name || co.internal_name || co.badge_icon_url)) ||
+      isCanyonKey(canyonKey)
+    ) {
       const arr = out.get(rid) ?? []
-      const fallback: { option_key?: string } = {}
-      if (typeof raw.option_key === 'string') fallback.option_key = raw.option_key
       arr.push(
-        toResolved(choiceId, optionId, quantity, co as ChoiceOptionRow, pc?.choice_group_ko ?? null, fallback)
+        toResolved(
+          choiceId || canonicalKey || canyonKey || optionId,
+          optionId || canonicalKey || '',
+          quantity,
+          co as ChoiceOptionRow | null,
+          pc?.choice_group_ko ?? null,
+          storedFallback
+        )
       )
       out.set(rid, arr)
       needJsonIds.delete(rid)
@@ -718,7 +801,7 @@ export async function resolveReservationChoicesBatch(
     await Promise.all([
       db
         .from('reservations')
-        .select('id, choices, adults, child, total_people, product_id')
+        .select('id, choices, adults, child, total_people, product_id, canyon_choice')
         .in('id', jsonIds),
       // reservations.choices 가 비어도 reservation_pricing.choices 에서 초이스 복원
       db.from('reservation_pricing').select('reservation_id, choices').in('reservation_id', jsonIds),
@@ -750,6 +833,7 @@ export async function resolveReservationChoicesBatch(
     child?: number | null
     total_people?: number | null
     product_id?: string | null
+    canyon_choice?: string | null
   }
 
   const allItems: Array<{ reservationId: string; item: JsonChoiceItem }> = []
@@ -796,10 +880,30 @@ export async function resolveReservationChoicesBatch(
 
   for (const rid of jsonIds) {
     const items = byRidItems.get(rid) ?? []
-    out.set(
-      rid,
-      resolveJsonItems(items, byOptionId, byChoiceId, groupByChoiceId, guestByRid.get(rid))
-    )
+    const resolved = resolveJsonItems(items, byOptionId, byChoiceId, groupByChoiceId, guestByRid.get(rid))
+    if (resolved.length > 0) {
+      out.set(rid, resolved)
+      continue
+    }
+    const resRow = (reservations ?? []).find((r) => String((r as ResRow).id ?? '') === rid) as ResRow | undefined
+    const canyonChoice = resRow?.canyon_choice
+    if (isCanyonKey(canyonChoice)) {
+      out.set(rid, [
+        toResolved(
+          canyonChoice,
+          canonicalOptionKeyFromCanyon(canyonChoice),
+          1,
+          null,
+          null,
+          {
+            canyon_key: canyonChoice,
+            canonical_option_key: canonicalOptionKeyFromCanyon(canyonChoice),
+          }
+        ),
+      ])
+    } else {
+      out.set(rid, resolved)
+    }
   }
   }
   }

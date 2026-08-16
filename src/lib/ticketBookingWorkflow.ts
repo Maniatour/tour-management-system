@@ -3,10 +3,11 @@
  */
 
 export type TicketBookingWorkflowSnapshot = {
-  booking_status?: string | null
-  vendor_status?: string | null
-  change_status?: string | null
-  payment_status?: string | null
+  booking_status?: string | null | undefined
+  vendor_status?: string | null | undefined
+  change_status?: string | null | undefined
+  payment_status?: string | null | undefined
+  refund_status?: string | null | undefined
 }
 
 /** 최초 단계: 예매 요청 · 벤더 응답 대기 (나머지 축 UI 숨김) */
@@ -66,6 +67,23 @@ export function showRefundLineManagement(b: TicketBookingWorkflowSnapshot): bool
   return (
     ps === 'paid' && vs === 'confirmed' && (bs === 'confirmed' || bs === 'tentative')
   )
+}
+
+/** 카드·달력 카드뷰: 결제 후 벤더 크레딧 처리 */
+export function showCreditReceivedButton(b: TicketBookingWorkflowSnapshot): boolean {
+  const ps = (b.payment_status ?? '').toLowerCase()
+  const rs = (b.refund_status ?? 'none').toLowerCase()
+  if (ps !== 'paid' && ps !== 'partially_paid') return false
+  return rs === 'none' || rs === 'requested'
+}
+
+export function isTicketBookingCreditReceived(b: {
+  refund_status?: string | null
+  credit_amount?: number | null
+}): boolean {
+  const rs = (b.refund_status ?? '').toLowerCase()
+  if (rs === 'credit_received') return true
+  return Number(b.credit_amount ?? 0) > 0
 }
 
 export function formatHHMM(raw: string | null | undefined): string {

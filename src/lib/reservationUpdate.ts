@@ -264,6 +264,7 @@ export async function updateReservation(
       option_id: string
       quantity: number
       total_price: number
+      option_key?: string | null
     }> = []
 
     if (payload.selectedChoices && Array.isArray(payload.selectedChoices) && payload.selectedChoices.length > 0) {
@@ -293,6 +294,23 @@ export async function updateReservation(
     }
 
     if (choicesToSave.length > 0) {
+      const optionIds = [...new Set(choicesToSave.map((c) => c.option_id).filter(Boolean))]
+      if (optionIds.length > 0) {
+        const { data: optionMeta } = await (supabase as any)
+          .from('choice_options')
+          .select('id, option_key')
+          .in('id', optionIds)
+        const keyById = new Map<string, string>(
+          ((optionMeta || []) as Array<{ id: string; option_key?: string | null }>).map((o) => [
+            o.id,
+            String(o.option_key || ''),
+          ])
+        )
+        choicesToSave = choicesToSave.map((row) => ({
+          ...row,
+          option_key: keyById.get(row.option_id) || null,
+        }))
+      }
       const { error: choicesError } = await (supabase as any)
         .from('reservation_choices')
         .insert(choicesToSave)

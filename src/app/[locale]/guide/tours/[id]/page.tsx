@@ -52,6 +52,7 @@ import {
   normalizeReservationIds,
 } from '@/utils/tourUtils'
 import { fetchReservationOptionLinesBatch } from '@/lib/reservationOptionsForEmail'
+import { resolveReservationChoicesBatch } from '@/lib/resolveReservationChoices'
 import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
 import {
   adjustOptionTotalExcludingLegacyNonResident,
@@ -841,44 +842,27 @@ export default function GuideTourDetailPage() {
           choice_group_ko: string
         }>>()
 
-        for (const reservationId of guideActiveReservationIds) {
+        if (guideActiveReservationIds.length > 0) {
           try {
-            const { data: choicesData, error: choicesError } = await supabase
-              .from('reservation_choices')
-              .select(`
-                choice_id,
-                option_id,
-                quantity,
-                choice_options!inner (
-                  option_key,
-                  option_name,
-                  option_name_ko,
-                  product_choices!inner (
-                    choice_group_ko
-                  )
-                )
-              `)
-              .eq('reservation_id', reservationId)
-
-            if (choicesError) {
-              console.error(`가이드 페이지: 예약 ${reservationId} 초이스 로드 오류:`, choicesError)
-              continue
-            }
-
-            if (choicesData && choicesData.length > 0) {
-              const formattedChoices = choicesData.map((choice: any) => ({
-                choice_id: choice.choice_id,
-                option_id: choice.option_id,
-                quantity: choice.quantity,
-                option_name: choice.choice_options?.option_name || '',
-                option_name_ko: choice.choice_options?.option_name_ko || choice.choice_options?.option_name || '',
-                choice_group_ko: choice.choice_options?.product_choices?.choice_group_ko || ''
-              }))
-              choicesMap.set(reservationId, formattedChoices)
+            const resolved = await resolveReservationChoicesBatch(supabase, guideActiveReservationIds)
+            for (const reservationId of guideActiveReservationIds) {
+              const rows = resolved.get(reservationId) || []
+              if (rows.length === 0) continue
+              choicesMap.set(
+                reservationId,
+                rows.map((choice) => ({
+                  choice_id: choice.choice_id,
+                  option_id: choice.option_id,
+                  quantity: choice.quantity,
+                  option_name: choice.choice_options?.option_name || '',
+                  option_name_ko:
+                    choice.choice_options?.option_name_ko || choice.choice_options?.option_name || '',
+                  choice_group_ko: choice.product_choices?.choice_group_ko || '',
+                }))
+              )
             }
           } catch (err) {
-            console.error(`가이드 페이지: 예약 ${reservationId} 초이스 처리 중 예외:`, err)
-            continue
+            console.error('가이드 페이지: 예약 초이스 일괄 로드 오류:', err)
           }
         }
 

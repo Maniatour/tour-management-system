@@ -4,6 +4,7 @@ import {
   UNDECIDED_OPTION_ID,
   undecidedOptionDisplayNames,
 } from '@/utils/usResidentChoiceSync'
+import { hydrateChoiceDisplayNames } from '@/lib/canyonChoice'
 
 export type RawCustomerReservation = Record<string, unknown> & {
   id: string
@@ -201,7 +202,7 @@ export async function enrichCustomerReservation(
        
        const { data: choicesData, error: choicesError } = await supabase
          .from('reservation_choices')
-         .select('id, choice_id, option_id, quantity, total_price')
+         .select('id, choice_id, option_id, quantity, total_price, option_key, canyon_key, canonical_option_key')
          .eq('reservation_id', reservation.id.toString())
        
        if (choicesError) {
@@ -209,7 +210,7 @@ export async function enrichCustomerReservation(
          // 재시도
          const { data: retryData, error: retryError } = await supabase
            .from('reservation_choices')
-           .select('id, choice_id, option_id, quantity, total_price')
+           .select('id, choice_id, option_id, quantity, total_price, option_key, canyon_key, canonical_option_key')
            .eq('reservation_id', String(reservation.id))
          
          if (retryError) {
@@ -253,25 +254,44 @@ export async function enrichCustomerReservation(
                option_id: string | null
                quantity: number | null
                total_price: number | null
+               option_key?: string | null
+               canyon_key?: string | null
+               canonical_option_key?: string | null
              }) => {
                const choiceInfo = choicesData.find((c: { id: string; choice_group: string; choice_group_ko: string }) => c.id === (choice.choice_id ?? '')) as { id: string; choice_group: string; choice_group_ko: string } | undefined
                const optionInfo = optionsData.find((o: { id: string; option_name: string; option_name_ko: string }) => o.id === (choice.option_id ?? '')) as { id: string; option_name: string; option_name_ko: string } | undefined
+               const names = hydrateChoiceDisplayNames({
+                 canyon_key: choice.canyon_key,
+                 canonical_option_key: choice.canonical_option_key,
+                 option_key: choice.option_key,
+                 option_name: optionInfo?.option_name,
+                 option_name_ko: optionInfo?.option_name_ko,
+                 choice_group_ko: choiceInfo?.choice_group_ko,
+               })
                
               return {
                 ...choice,
                 choice: choiceInfo ? {
                   id: choiceInfo.id,
-                  name_ko: choiceInfo.choice_group_ko,
+                  name_ko: names.choice_group_ko || choiceInfo.choice_group_ko,
                   name_en: choiceInfo.choice_group
+                } : names.choice_group_ko ? {
+                  id: choice.choice_id ?? '',
+                  name_ko: names.choice_group_ko,
+                  name_en: names.choice_group_ko
                 } : null,
                 option: optionInfo ? {
                   id: optionInfo.id,
-                  name_ko: optionInfo.option_name_ko,
-                  name_en: optionInfo.option_name
+                  name_ko: names.option_name_ko || optionInfo.option_name_ko,
+                  name_en: names.option_name || optionInfo.option_name
                 } : (choice.option_id === UNDECIDED_OPTION_ID ? {
                   id: UNDECIDED_OPTION_ID,
                   name_ko: undecidedNames.name_ko,
                   name_en: undecidedNames.name_en
+                } : names.option_name_ko ? {
+                  id: choice.option_id ?? names.option_key ?? '',
+                  name_ko: names.option_name_ko,
+                  name_en: names.option_name
                 } : null)
               }
              })

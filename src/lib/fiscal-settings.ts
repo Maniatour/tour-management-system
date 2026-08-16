@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase'
 
-const DEFAULT_LEDGER_BASE = '2025-01-01'
+export const DEFAULT_LEDGER_BASE = '2026-01-01'
 
 export type FiscalReportingSettings = {
   ledgerBaseDate: string

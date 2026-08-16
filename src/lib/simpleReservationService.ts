@@ -1,5 +1,6 @@
 // @ts-nocheck — 레거시 간결 예약 스키마가 현재 DB 타입과 불일치
 import { supabase } from '@/lib/supabase';
+import { hydrateChoiceDisplayNames } from '@/lib/canyonChoice';
 
 // 새로운 간결한 초이스 시스템 타입 정의
 interface ChoiceOption {
@@ -256,7 +257,10 @@ export class SimplePricingService {
           option_id,
           quantity,
           total_price,
-          choice_options!inner (
+          option_key,
+          canyon_key,
+          canonical_option_key,
+          choice_options (
             option_key,
             option_name_ko
           )
@@ -265,14 +269,22 @@ export class SimplePricingService {
 
       if (error) throw error;
 
-      return (data || []).map(choice => ({
-        choice_id: choice.choice_id,
-        option_id: choice.option_id,
-        option_key: choice.choice_options.option_key,
-        option_name_ko: choice.choice_options.option_name_ko,
-        quantity: choice.quantity,
-        total_price: choice.total_price
-      }));
+      return (data || []).map(choice => {
+        const names = hydrateChoiceDisplayNames({
+          canyon_key: choice.canyon_key,
+          canonical_option_key: choice.canonical_option_key,
+          option_key: choice.choice_options?.option_key || choice.option_key,
+          option_name_ko: choice.choice_options?.option_name_ko,
+        })
+        return {
+          choice_id: choice.choice_id,
+          option_id: choice.option_id,
+          option_key: names.option_key,
+          option_name_ko: names.option_name_ko,
+          quantity: choice.quantity,
+          total_price: choice.total_price
+        }
+      });
     } catch (error) {
       console.error('예약 초이스 로드 오류:', error);
       return [];
@@ -291,7 +303,10 @@ export class SimplePricingService {
             option_id,
             quantity,
             total_price,
-            choice_options!inner (
+            option_key,
+            canyon_key,
+            canonical_option_key,
+            choice_options (
               option_key,
               option_name_ko
             )

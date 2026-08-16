@@ -42,8 +42,11 @@ import {
   buildCashReservationExpenseSearchOr,
 } from '@/lib/cashTransactionSearch'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
+import UnreceivedAssignedCashBalancePanel from '@/components/reports/UnreceivedAssignedCashBalancePanel'
+import { getDefaultLedgerBaseDate } from '@/lib/fiscal-settings'
+import { isCashLedgerRefundPaymentStatus } from '@/utils/reservationPricingBalance'
 
-const DEFAULT_CASH_PERIOD_START = '2025-01-01'
+const DEFAULT_CASH_PERIOD_START = getDefaultLedgerBaseDate()
 
 interface CashTransaction {
   id: string
@@ -443,25 +446,31 @@ export default function CashManagement() {
         allTransactions.push(...converted)
       }
 
-      // payment_records 변환 (입금으로 처리)
+      // payment_records 변환 — 수령은 입금, 환불(우리·파트너)은 출금
       if (paymentRecords) {
-        const converted = paymentRecords.map(pr => ({
-          id: `pr_${pr.id}`,
-          transaction_date: pr.submit_on || new Date().toISOString(),
-          transaction_type: 'deposit' as const,
-          amount: Number(pr.amount),
-          description: pr.note || `예약 결제 (${pr.reservation_id})`,
-          category: '예약 수입',
-          reference_type: 'reservation',
-          reference_id: pr.reservation_id,
-          created_by: pr.submit_by || '',
-          created_by_name: teamDisplayLabel(pr.submit_by || ''),
-          notes: pr.note || null,
-          created_at: pr.submit_on || new Date().toISOString(),
-          updated_at: pr.submit_on || new Date().toISOString(),
-          source: 'payment_records' as const,
-          payment_status: pr.payment_status != null ? String(pr.payment_status) : null,
-        }))
+        const converted = paymentRecords.map((pr) => {
+          const status = pr.payment_status != null ? String(pr.payment_status) : null
+          const isRefund =
+            isCashLedgerRefundPaymentStatus(status) || /현금\s*환불/.test(String(pr.note ?? ''))
+          const amount = Math.abs(Number(pr.amount) || 0)
+          return {
+            id: `pr_${pr.id}`,
+            transaction_date: pr.submit_on || new Date().toISOString(),
+            transaction_type: isRefund ? ('withdrawal' as const) : ('deposit' as const),
+            amount,
+            description: pr.note || `예약 결제 (${pr.reservation_id})`,
+            category: isRefund ? '예약 환불' : '예약 수입',
+            reference_type: 'reservation',
+            reference_id: pr.reservation_id,
+            created_by: pr.submit_by || '',
+            created_by_name: teamDisplayLabel(pr.submit_by || ''),
+            notes: pr.note || null,
+            created_at: pr.submit_on || new Date().toISOString(),
+            updated_at: pr.submit_on || new Date().toISOString(),
+            source: 'payment_records' as const,
+            payment_status: status,
+          }
+        })
         allTransactions.push(...converted)
       }
 
@@ -1290,6 +1299,8 @@ export default function CashManagement() {
           </CardContent>
         </Card>
       </div>
+
+      <UnreceivedAssignedCashBalancePanel />
 
       {/* 필터 및 거래 내역 - 모바일 컴팩트 */}
       <Card className="border rounded-lg">

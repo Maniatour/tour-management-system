@@ -5,7 +5,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useR
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone, UserCheck, History } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone, UserCheck, History, Receipt, Wallet } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
@@ -15,6 +15,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { operatorIdInsert, resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { fetchSchedulePastTourFollowUp } from '@/lib/schedulePastTourFollowUp'
 import {
   isReservationCancelledStatus,
   normalizeReservationIds,
@@ -230,6 +231,16 @@ const GuideScheduleAssignmentHistoryModal = dynamic(
 
 const OffScheduleHistoryModal = dynamic(
   () => import('@/components/schedule/OffScheduleHistoryModal'),
+  { ssr: false, loading: () => null },
+)
+
+const SchedulePastMissingReceiptsModal = dynamic(
+  () => import('@/components/schedule/SchedulePastMissingReceiptsModal'),
+  { ssr: false, loading: () => null },
+)
+
+const SchedulePastBalanceRemainingModal = dynamic(
+  () => import('@/components/schedule/SchedulePastBalanceRemainingModal'),
   { ssr: false, loading: () => null },
 )
 
@@ -1167,6 +1178,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const [showBatchOffModal, setShowBatchOffModal] = useState(false)
   const [showOffScheduleHistoryModal, setShowOffScheduleHistoryModal] = useState(false)
   const [showPriceInventoryModal, setShowPriceInventoryModal] = useState(false)
+  const [showPastMissingReceiptsModal, setShowPastMissingReceiptsModal] = useState(false)
+  const [showPastBalanceRemainingModal, setShowPastBalanceRemainingModal] = useState(false)
+  const [pastMissingReceiptCount, setPastMissingReceiptCount] = useState<number | null>(null)
+  const [pastBalanceRemainingCount, setPastBalanceRemainingCount] = useState<number | null>(null)
   const [showGuideScheduleBulkModal, setShowGuideScheduleBulkModal] = useState(false)
   const [showGuideScheduleAssignmentBulkModal, setShowGuideScheduleAssignmentBulkModal] = useState(false)
   const [guideAssignmentHistoryTourId, setGuideAssignmentHistoryTourId] = useState<string | null>(null)
@@ -2130,6 +2145,24 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+
+  useEffect(() => {
+    if (isDisplayMode || !canManageSharedSchedule) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const data = await fetchSchedulePastTourFollowUp(supabase)
+        if (cancelled) return
+        setPastMissingReceiptCount(data.missingReceipts.length)
+        setPastBalanceRemainingCount(data.balanceRemaining.length)
+      } catch (err) {
+        console.error('schedule past tour follow-up counts', err)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isDisplayMode, canManageSharedSchedule])
 
   useEffect(() => {
     if (isDisplayMode) return
@@ -7077,6 +7110,39 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 <DollarSign className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
 
+              {canManageSharedSchedule ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowPastMissingReceiptsModal(true)}
+                    className="relative flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors"
+                    title={locale === 'ko' ? '오늘 이전 · 영수증 미첨부' : 'Past tours missing receipts'}
+                    aria-label={locale === 'ko' ? '영수증 미첨부 투어' : 'Tours missing receipts'}
+                  >
+                    <Receipt className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden />
+                    {pastMissingReceiptCount != null && pastMissingReceiptCount > 0 ? (
+                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] sm:text-xs rounded-full min-w-4 h-4 sm:min-w-5 sm:h-5 px-0.5 flex items-center justify-center">
+                        {pastMissingReceiptCount > 99 ? '99+' : pastMissingReceiptCount}
+                      </span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPastBalanceRemainingModal(true)}
+                    className="relative flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-teal-700 text-white rounded-lg hover:bg-teal-800 transition-colors"
+                    title={locale === 'ko' ? '오늘 이전 · 잔금 남음' : 'Past tours with remaining balance'}
+                    aria-label={locale === 'ko' ? '잔금 남은 투어' : 'Tours with remaining balance'}
+                  >
+                    <Wallet className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden />
+                    {pastBalanceRemainingCount != null && pastBalanceRemainingCount > 0 ? (
+                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] sm:text-xs rounded-full min-w-4 h-4 sm:min-w-5 sm:h-5 px-0.5 flex items-center justify-center">
+                        {pastBalanceRemainingCount > 99 ? '99+' : pastBalanceRemainingCount}
+                      </span>
+                    ) : null}
+                  </button>
+                </>
+              ) : null}
+
               {/* 가이드 스케줄 부여 SMS 일괄 발송 */}
               <button
                 type="button"
@@ -9791,6 +9857,27 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               initialSelectedDate: priceInventoryInitial.date,
             }
           : {})}
+      />
+
+      <SchedulePastMissingReceiptsModal
+        isOpen={showPastMissingReceiptsModal}
+        onClose={() => setShowPastMissingReceiptsModal(false)}
+        locale={locale}
+        actorEmail={user?.email ?? null}
+        onOpenTour={(tourId, title) => setTourDetailModal({ tourId, title })}
+        onCountsChange={setPastMissingReceiptCount}
+      />
+
+      <SchedulePastBalanceRemainingModal
+        isOpen={showPastBalanceRemainingModal}
+        onClose={() => setShowPastBalanceRemainingModal(false)}
+        locale={locale}
+        onOpenTour={(tourId, title) => setTourDetailModal({ tourId, title })}
+        onOpenReservation={(reservationId) => {
+          setShowPastBalanceRemainingModal(false)
+          setReservationIdForScheduleEdit(reservationId)
+        }}
+        onCountsChange={setPastBalanceRemainingCount}
       />
 
       <GuideScheduleAssignmentBulkModal

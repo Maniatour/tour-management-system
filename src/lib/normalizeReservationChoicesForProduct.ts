@@ -5,6 +5,7 @@
  * 예: MNGC1N(1박2일) 예약에 MDGC1D(당일) "로어 앤텔롭"이 남아
  * 로어 뱃지가 2번 보이던 문제.
  */
+import { matchStoredChoiceToProductOption } from '@/lib/canyonChoice'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -12,6 +13,8 @@ const UUID_RE =
 export type ProductChoiceOptionLike = {
   id: string
   option_key?: string | null
+  canyon_key?: string | null
+  canonical_option_key?: string | null
   option_name?: string | null
   option_name_ko?: string | null
 }
@@ -30,9 +33,13 @@ export type ReservationChoiceRowLike = {
   quantity?: number | undefined
   total_price?: number | undefined
   option_key?: string | undefined
+  canyon_key?: string | null | undefined
+  canonical_option_key?: string | null | undefined
   option_name_ko?: string | undefined
   choice_options?: {
     option_key?: string | null
+    canyon_key?: string | null
+    canonical_option_key?: string | null
     option_name?: string | null
     option_name_ko?: string | null
     product_choices?: {
@@ -77,6 +84,27 @@ function findOptionInProduct(
         choiceId: choice.id,
         option,
         groupKo: choice.choice_group_ko ?? choice.choice_group ?? null,
+      }
+    }
+  }
+
+  const storedMatch = matchStoredChoiceToProductOption(
+    productChoices.flatMap((c) => c.options ?? []),
+    {
+      canyon_key: row.canyon_key ?? row.choice_options?.canyon_key,
+      canonical_option_key: row.canonical_option_key ?? row.choice_options?.canonical_option_key,
+      option_key: row.choice_options?.option_key || row.option_key,
+      option_name: row.choice_options?.option_name,
+      option_name_ko: row.choice_options?.option_name_ko || row.option_name_ko,
+    }
+  )
+  if (storedMatch) {
+    const owner = productChoices.find((c) => c.options?.some((o) => o.id === storedMatch.id))
+    if (owner) {
+      return {
+        choiceId: owner.id,
+        option: storedMatch,
+        groupKo: owner.choice_group_ko ?? owner.choice_group ?? null,
       }
     }
   }
@@ -168,6 +196,16 @@ export function normalizeReservationChoicesForProduct<T extends ReservationChoic
       ...row,
       choice_id: matched.choiceId,
       option_id: matched.option.id,
+      ...(matched.option.canyon_key
+        ? { canyon_key: matched.option.canyon_key }
+        : row.canyon_key
+          ? { canyon_key: row.canyon_key }
+          : {}),
+      ...(matched.option.canonical_option_key
+        ? { canonical_option_key: matched.option.canonical_option_key }
+        : row.canonical_option_key
+          ? { canonical_option_key: row.canonical_option_key }
+          : {}),
       ...(matched.option.option_key
         ? { option_key: matched.option.option_key }
         : row.option_key
@@ -181,6 +219,12 @@ export function normalizeReservationChoicesForProduct<T extends ReservationChoic
       choice_options: {
         ...(row.choice_options || {}),
         option_key: matched.option.option_key ?? row.choice_options?.option_key ?? null,
+        canyon_key: matched.option.canyon_key ?? row.choice_options?.canyon_key ?? row.canyon_key ?? null,
+        canonical_option_key:
+          matched.option.canonical_option_key ??
+          row.choice_options?.canonical_option_key ??
+          row.canonical_option_key ??
+          null,
         option_name: matched.option.option_name ?? row.choice_options?.option_name ?? null,
         option_name_ko:
           matched.option.option_name_ko ?? row.choice_options?.option_name_ko ?? null,

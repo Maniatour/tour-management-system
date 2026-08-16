@@ -7,10 +7,10 @@ import {
   type TicketBookingStatusFilterKey,
 } from '@/lib/ticketBookingStatusFilter'
 import {
-  TICKET_BOOKING_STATUS_VALUES,
-  formatTicketBookingStatusLabel,
-  getTicketBookingStatusBadgeClass,
-} from '@/lib/ticketBookingStatus'
+  TICKET_BOOKING_UNIFIED_STATUS_FILTER_KEYS,
+  getTicketBookingUnifiedStatusBadgeClass,
+  ticketBookingUnifiedStatusLabel,
+} from '@/lib/ticketBookingDisplay'
 
 export type TicketBookingStatusMultiFilterProps = {
   locale: string
@@ -29,7 +29,7 @@ type FilterOption = {
 
 export default function TicketBookingStatusMultiFilter({
   locale,
-  t,
+  t: _t,
   selected,
   onChange,
   disabled = false,
@@ -46,13 +46,13 @@ export default function TicketBookingStatusMultiFilter({
       label: isKo ? '벤더 응답 대기 (요청 중)' : 'Vendor pending (requests)',
       badgeClass: 'bg-red-100 text-red-800',
     }
-    const statusOpts: FilterOption[] = TICKET_BOOKING_STATUS_VALUES.map((sv) => ({
+    const statusOpts: FilterOption[] = TICKET_BOOKING_UNIFIED_STATUS_FILTER_KEYS.map((sv) => ({
       key: sv,
-      label: formatTicketBookingStatusLabel(sv, t, locale),
-      badgeClass: getTicketBookingStatusBadgeClass(sv),
+      label: ticketBookingUnifiedStatusLabel(sv, locale),
+      badgeClass: getTicketBookingUnifiedStatusBadgeClass(sv),
     }))
     return [vendorPending, ...statusOpts]
-  }, [isKo, t, locale])
+  }, [isKo, locale])
 
   useEffect(() => {
     if (!open) return

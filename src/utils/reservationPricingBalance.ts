@@ -190,8 +190,16 @@ export function isRefundedPaymentStatus(paymentStatus: string): boolean {
   if (!raw) return false
   const s = raw.replace(/\s+/g, ' ').trim()
   if (s === '환불됨 (우리)' || s === '환불됨(우리)') return true
+  const noSpace = s.replace(/\s/g, '')
+  if (/^환불됨[\(（]?우리[\)）]?$/.test(noSpace)) return true
   const lower = s.toLowerCase()
   return s.includes('Refunded') || lower === 'refunded'
+}
+
+/** 현금 원장: 우리·파트너 환불 라인은 출금 */
+export function isCashLedgerRefundPaymentStatus(paymentStatus: string | null | undefined): boolean {
+  const raw = String(paymentStatus ?? '')
+  return isRefundedPaymentStatus(raw) || isReturnedPaymentStatus(raw)
 }
 
 /** 파트너 입금 환불 (DB: `환불됨 (파트너)`, 구버전 Returned 등) */
@@ -326,13 +334,24 @@ export function cancelledSettlementReturnedAmount(
 }
 
 /**
- * 취소·비-OTA ④ 총매출 — 입금 순수령(보증금 순액 + 잔금 수령). 전액 환불 후 0.
+ * 취소·비-OTA ④ 총매출 — 입금 순수령.
+ * 보증금 버킷(보증금 수령·파트너 수령 등) + 잔금 수령 − 우리 환불 − 파트너 환불.
+ * `depositTotalNet`은 파트너 환불을 Partner Received에만 상계하므로,
+ * 보증금 수령 후 `환불됨 (파트너)`인 전액 환불 건은 여기서 순액을 0으로 맞춘다.
  */
 export function cancelledNonOtaNetCollectedFromPayments(
   paySm: ReturnType<typeof summarizePaymentRecordsForBalance>
 ): number | null {
   if (!hasPaymentRecordActivity(paySm)) return null
-  return roundUsd2(Math.max(0, paySm.depositTotalNet + paySm.balanceReceivedTotal))
+  const grossIn = roundUsd2(
+    Math.max(0, Number(paySm.depositBucketGross) || 0) +
+      Math.max(0, Number(paySm.balanceReceivedTotal) || 0)
+  )
+  const grossOut = roundUsd2(
+    Math.max(0, Number(paySm.refundedTotal) || 0) +
+      Math.max(0, Number(paySm.returnedTotal) || 0)
+  )
+  return roundUsd2(Math.max(0, grossIn - grossOut))
 }
 
 /**
@@ -348,6 +367,10 @@ export function cancelledNonOtaNetCollectedFromPayments(
  *
  * `refundCreditAgainstDue`: 입금 「환불됨 (우리)」·가격 투어 환불이 보증금 순액에 이미 반영됐을 때,
  * 총 결제 예정(①)에서도 동일 금액을 차감해 이중 차감을 막는다 (진행 중 예약 부분 환불 등).
+ *
+ * ①이 추가할인·투어 환불로 이미 낮아진 상태에서 초과 입금을 환불한 경우에는
+ * `computeRemainingBalanceAfterPaymentRecords`가 초과분만큼 크레딧을 줄여
+ * 잔액이 다시 음수가 되지 않게 한다.
  */
 export function customerRefundCreditAgainstDue(
   paySm: Pick<ReturnType<typeof summarizePaymentRecordsForBalance>, 'refundedTotal'>,
@@ -365,11 +388,19 @@ export function computeRemainingBalanceAfterPaymentRecords(
   refundCreditAgainstDue: number = 0
 ): number {
   const due = Math.max(0, roundUsd2(Number(totalCustomerPayment) || 0))
-  const credit = Math.max(0, roundUsd2(Number(refundCreditAgainstDue) || 0))
-  const adjustedDue = roundUsd2(Math.max(0, due - credit))
+  const creditRaw = Math.max(0, roundUsd2(Number(refundCreditAgainstDue) || 0))
   const paid = roundUsd2(
     Math.max(0, Number(depositTotalNet) || 0) + Math.max(0, Number(balanceReceivedTotal) || 0)
   )
+  /**
+   * 보증금 순액은 이미 Refunded를 뺀 값이다. 환불 크레딧을 ①에서도 빼면
+   * (할인으로 이미 낮아진 총액) − (환불 전 입금)이 되어 잔액이 −환불액이 된다.
+   * ①이 입금 총액보다 낮으면 그 초과분은 이미 총액에 반영된 것으로 보고 크레딧에서 제외한다.
+   */
+  const paidGrossApprox = roundUsd2(paid + creditRaw)
+  const overpayAlreadyInDue = Math.max(0, roundUsd2(paidGrossApprox - due))
+  const credit = Math.max(0, roundUsd2(creditRaw - overpayAlreadyInDue))
+  const adjustedDue = roundUsd2(Math.max(0, due - credit))
   return roundUsd2(adjustedDue - paid)
 }
 

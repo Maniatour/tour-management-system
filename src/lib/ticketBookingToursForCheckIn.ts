@@ -6,12 +6,11 @@ import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { normalizeReservationIds, isReservationCancelledStatus } from '@/utils/tourUtils'
 import {
   aggregateTourChoiceCounts,
-  choiceLabelToTourCountKey,
   formatTourChoiceCountsChipLabel,
   tourChoiceCountsHasDisplayable,
-  type ReservationChoiceRow,
   type TourChoiceCounts,
 } from '@/lib/tourChoiceCounts'
+import { loadCalendarChoiceRows } from '@/lib/fetchCanyonChoiceRows'
 
 /** 멀티데이 투어: 시작일이 체크인보다 이만큼 이전이면 DB 후보에 포함 */
 export const TICKET_FORM_TOUR_LOOKBACK_DAYS = 45
@@ -270,16 +269,21 @@ export async function fetchTicketToursForCheckIn(
     }
   }
   const resIdList = [...allResIds]
-  type ResPeopleRow = { id: string; total_people: number | null; status: string | null }
+  type ResPeopleRow = {
+    id: string
+    total_people: number | null
+    status: string | null
+    choices?: unknown
+    canyon_choice?: string | null
+  }
   const resById = new Map<string, ResPeopleRow>()
-  const choiceRowsByResId = new Map<string, ReservationChoiceRow[]>()
 
   const RES_BATCH = 100
   for (let i = 0; i < resIdList.length; i += RES_BATCH) {
     const chunk = resIdList.slice(i, i + RES_BATCH)
     const { data: resPage, error: resErr } = await supabaseClient
       .from('reservations')
-      .select('id, total_people, status')
+      .select('id, total_people, status, choices, canyon_choice')
       .in('id', chunk)
     if (resErr) {
       console.warn('투어 선택 예약 인원 조회 경고:', resErr)
@@ -290,40 +294,10 @@ export async function fetchTicketToursForCheckIn(
     }
   }
 
-  for (let i = 0; i < resIdList.length; i += RES_BATCH) {
-    const batchIds = resIdList.slice(i, i + RES_BATCH)
-    const { data: rcData, error: rcErr } = await supabaseClient
-      .from('reservation_choices')
-      .select(
-        'reservation_id, quantity, choice_options!inner(option_key, option_name_ko, option_name)'
-      )
-      .in('reservation_id', batchIds)
-    if (rcErr) {
-      console.warn('투어 선택 초이스 조회 경고:', rcErr)
-      break
-    }
-    for (const row of (rcData || []) as Array<{
-      reservation_id: string | null
-      quantity?: number | null
-      choice_options?: {
-        option_key?: string | null
-        option_name_ko?: string | null
-        option_name?: string | null
-      } | null
-    }>) {
-      const rid = row.reservation_id?.trim()
-      if (!rid) continue
-      const opt = row.choice_options
-      const choiceKey = choiceLabelToTourCountKey(
-        opt?.option_name_ko ?? null,
-        opt?.option_name ?? null,
-        opt?.option_key ?? null
-      )
-      const list = choiceRowsByResId.get(rid) || []
-      list.push({ choiceKey, quantity: Number(row.quantity) || 1 })
-      choiceRowsByResId.set(rid, list)
-    }
-  }
+  const choiceRowsByResId = await loadCalendarChoiceRows(
+    supabaseClient,
+    [...resById.values()]
+  )
 
   return typedToursData.map((tour) => {
     const base: TicketTourPickerRow = { ...tour }

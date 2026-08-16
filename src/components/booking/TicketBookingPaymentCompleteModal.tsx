@@ -149,7 +149,7 @@ export default function TicketBookingPaymentCompleteModal({
 
   return (
     <div
-      className="fixed inset-0 z-[140] flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-[220] flex items-center justify-center bg-black/50 p-4"
       role="dialog"
       aria-modal="true"
       onClick={() => !saving && onClose()}

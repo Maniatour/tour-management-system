@@ -904,10 +904,22 @@ async function insertReservationChoicesAndOptions(
   let optionTotal = 0
 
   if (choiceRows.length > 0) {
+    const optionIds = [...new Set(choiceRows.map((row) => row.option_id).filter(Boolean))]
+    const keyById = new Map<string, string>()
+    if (optionIds.length > 0) {
+      const { data: optionMeta } = await admin
+        .from('choice_options')
+        .select('id, option_key')
+        .in('id', optionIds)
+      for (const o of optionMeta || []) {
+        if (o.id && o.option_key) keyById.set(o.id, o.option_key)
+      }
+    }
     const rows = choiceRows.map((row) => ({
       reservation_id: reservationId,
       choice_id: row.choice_id,
       option_id: row.option_id,
+      option_key: keyById.get(row.option_id) ?? null,
       quantity: totalPeople,
       total_price: 0,
     }))

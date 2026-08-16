@@ -11,6 +11,7 @@ import {
   UNDECIDED_OPTION_ID,
   undecidedOptionDisplayNames,
 } from '@/utils/usResidentChoiceSync'
+import { hydrateChoiceDisplayNames } from '@/lib/canyonChoice'
 
 interface Reservation {
   id: string
@@ -271,7 +272,7 @@ export default function CustomerReservations() {
               try {
                 const { data: choicesData, error: choicesError } = await supabase
                   .from('reservation_choices')
-                  .select('id, choice_id, option_id, quantity')
+                  .select('id, choice_id, option_id, quantity, option_key, canyon_key, canonical_option_key')
                   .eq('reservation_id', row.id.toString())
                 
                 if (!choicesError && choicesData && choicesData.length > 0) {
@@ -298,19 +299,31 @@ export default function CustomerReservations() {
                     reservationChoicesInfo = choicesData.map((choice) => {
                       const choiceInfo = choicesData2.find((c: { id: string }) => c.id === choice.choice_id)
                       const optionInfo = optionsData.find((o: { id: string }) => o.id === choice.option_id)
+                      const names = hydrateChoiceDisplayNames({
+                        canyon_key: (choice as { canyon_key?: string | null }).canyon_key,
+                        canonical_option_key: (choice as { canonical_option_key?: string | null }).canonical_option_key,
+                        option_key: (choice as { option_key?: string | null }).option_key,
+                        option_name: (optionInfo as { option_name?: string } | undefined)?.option_name,
+                        option_name_ko: (optionInfo as { option_name_ko?: string } | undefined)?.option_name_ko,
+                        choice_group_ko: (choiceInfo as { choice_group_ko?: string } | undefined)?.choice_group_ko,
+                      })
                       
                       return {
                         ...choice,
                         choice: choiceInfo ? {
                           id: (choiceInfo as any).id,
-                          name_ko: (choiceInfo as any).choice_group_ko,
+                          name_ko: names.choice_group_ko || (choiceInfo as any).choice_group_ko,
                           name_en: (choiceInfo as any).choice_group
+                        } : names.choice_group_ko ? {
+                          id: choice.choice_id,
+                          name_ko: names.choice_group_ko,
+                          name_en: names.choice_group_ko
                         } : null,
                         option: optionInfo
                           ? {
                               id: (optionInfo as any).id,
-                              name_ko: (optionInfo as any).option_name_ko,
-                              name_en: (optionInfo as any).option_name
+                              name_ko: names.option_name_ko || (optionInfo as any).option_name_ko,
+                              name_en: names.option_name || (optionInfo as any).option_name
                             }
                           : choice.option_id === UNDECIDED_OPTION_ID
                             ? {
@@ -318,6 +331,12 @@ export default function CustomerReservations() {
                                 name_ko: undecidedNames.name_ko,
                                 name_en: undecidedNames.name_en
                               }
+                            : names.option_name_ko
+                              ? {
+                                  id: choice.option_id ?? names.option_key,
+                                  name_ko: names.option_name_ko,
+                                  name_en: names.option_name
+                                }
                             : null
                       }
                     })

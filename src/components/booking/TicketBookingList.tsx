@@ -2,6 +2,7 @@
 import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect, useCallback, useRef, Fragment, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { createPortal } from 'react-dom';
 import { useLocale, useTranslations } from 'next-intl';
 import { useAuth } from '@/contexts/AuthContext';
@@ -28,6 +29,20 @@ import { supabase, isAbortLikeError } from '@/lib/supabase';
 import TicketBookingForm from './TicketBookingForm';
 import TicketBookingBulkAddModal from './TicketBookingBulkAddModal';
 import TicketInvoiceUploadModal from './TicketInvoiceUploadModal';
+import TicketBookingZelleDbSyncModal, {
+  TicketBookingZelleDbSyncButton,
+} from './TicketBookingZelleDbSyncModal';
+import { ZelleEmailBodyView } from './ZelleEmailPreview';
+import TicketBookingZelleEmailPicker from './TicketBookingZelleEmailPicker';
+import {
+  bookingHasZelleConnection,
+  isZelleEmailAttachmentUrl,
+  parseZelleEmailImportId,
+} from '@/lib/zelleEmailAttachment';
+import {
+  gmailLookbackDaysSinceYearStartLA,
+  useGmailReservationImportSync,
+} from '@/contexts/GmailReservationImportSyncContext';
 import BookingHistory from './BookingHistory';
 import TicketBookingReservationDetailModal, {
   type TicketBookingReservationDetailRow,
@@ -58,10 +73,13 @@ import { TicketBookingTourDisplay } from '@/components/booking/TicketBookingTour
 import { formatTicketBookingTourHeadline } from '@/lib/ticket-booking-tour-display';
 import { TicketBookingChangeStack } from '@/components/booking/TicketBookingChangeStack';
 import {
+  formatTicketPayableUsd,
   getTicketBookingEffectiveExpenseUsd,
   getTicketBookingExpenseStack,
   getTicketBookingQtyStack,
   getTicketBookingTimeStack,
+  sumTicketBookingsEffectiveExpenseUsd,
+  sumTicketBookingsRemainingPayableUsd,
 } from '@/lib/ticket-booking-change-display';
 import {
   Grid,
@@ -88,7 +106,10 @@ import {
   Check,
   ListChecks,
   Merge,
+  Mail,
+  Loader2,
   X,
+  StickyNote,
 } from 'lucide-react';
 import TicketBookingsNeedCheckModal from './TicketBookingsNeedCheckModal';
 import TicketBookingIssueFollowUpModal from './TicketBookingIssueFollowUpModal';
@@ -98,7 +119,6 @@ import {
   TicketBookingAxesEditorDialog,
   normalizeTicketBookingAxisPatchFromSnapshot,
 } from './TicketBookingAxesEditor';
-import TicketBookingQtyTimeChangeModal from './TicketBookingQtyTimeChangeModal';
 import TicketBookingPaymentCompleteModal from './TicketBookingPaymentCompleteModal';
 import TicketBookingVendorConfirmModal from './TicketBookingVendorConfirmModal';
 import TicketBookingVendorPartialChangeConfirmModal from './TicketBookingVendorPartialChangeConfirmModal';
@@ -124,20 +144,22 @@ import { isTourCancelled } from '@/utils/tourStatusUtils';
 import { resolveAntelopeCheckInDate } from '@/lib/scheduleVehicleOilMaintenance';
 import {
   aggregateTourChoiceCounts,
-  choiceLabelToTourCountKey,
   formatTourChoiceCountsChipLabel,
   tourChoiceCountsHasDisplayable,
-  type ReservationChoiceRow,
   type TourChoiceCounts,
 } from '@/lib/tourChoiceCounts';
+import { loadCalendarChoiceRows } from '@/lib/fetchCanyonChoiceRows';
 import {
   buildTicketDateViewGroups,
+  buildLinkedLxMismatchDateGroups,
+  collectLinkedLxMismatchBookingIds,
   formatCanyonCountsInline,
   aggregateTicketEaByCanyon,
   mergeTourChoiceCounts,
   canyonLxCountsMismatch,
   formatDayTourTicketCanyonCompare,
   buildDayCanyonBookingActionTasks,
+  ticketBookingCanyonKeyFromBooking,
   type DayCanyonBookingActionTask,
   type TicketDateViewBookingRow,
   type TicketDateViewGroup,
@@ -152,6 +174,8 @@ import { TicketBookingDateViewReconPanel } from '@/components/booking/TicketBook
 import { ticketBookingLineTotalUsd } from '@/lib/bookingSettlement';
 import { computeTicketBookingVendorPeriodStats } from '@/lib/ticketBookingVendorPeriodStats';
 import TicketBookingVendorPeriodStatsPanel from '@/components/booking/TicketBookingVendorPeriodStatsPanel';
+import TicketBookingDateNoteModal from '@/components/booking/TicketBookingDateNoteModal';
+import { useTicketBookingDateNotes } from '@/hooks/useTicketBookingDateNotes';
 import { fetchUploadApi } from '@/lib/uploadClient';
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState';
 import type { TicketBookingLike } from '@/utils/ticketInvoiceParse';
@@ -159,11 +183,6 @@ import {
   SCHEDULE_COLOR_PRESETS,
   getScheduleProductDisplayProps,
 } from '@/lib/scheduleProductColorPresets';
-import {
-  TICKET_BOOKING_STATUS_VALUES,
-  formatTicketBookingStatusLabel,
-  getTicketBookingStatusBadgeClass,
-} from '@/lib/ticketBookingStatus';
 import {
   applyTicketBookingIssueFlag,
   applyTicketBookingSetAxes,
@@ -187,6 +206,7 @@ import {
   formatExpenseArrow,
   formatQtyArrow,
   formatTimeArrow,
+  isTicketBookingCreditReceived,
   isTicketBookingPendingRequestState,
   isWorkflowInitialPhase,
   showChangeRequestButton,
@@ -207,9 +227,15 @@ import {
   resolveTicketBookingUnifiedStatus,
   getTicketBookingUnifiedStatusBadgeClass,
   getTicketBookingEffectiveQty,
+  TICKET_BOOKING_UNIFIED_STATUS_FILTER_KEYS,
+  ticketBookingUnifiedStatusLabel,
   type TicketWorkboardFilter,
 } from '@/lib/ticketBookingDisplay';
 import { localDateYmd as ticketLocalDateYmd } from '@/lib/ticketBookingCancelDue';
+
+const TicketBookingQtyTimeChangeModal = dynamic(
+  () => import('./TicketBookingQtyTimeChangeModal')
+);
 
 /** 로컬 달력 YYYY-MM-DD (달력 칸 기준과 투어 기간 교차 판별용) */
 function localYmdFromDate(date: Date): string {
@@ -236,6 +262,36 @@ function localYmdFromTimestamp(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   return localYmdFromDate(d);
+}
+
+function TicketCalendarPayableBadge({
+  amount,
+  due,
+  locale,
+  title,
+}: {
+  amount: number
+  due: boolean
+  locale: string
+  title?: string
+}) {
+  if (!(amount > 0)) return null
+  const isEn = locale.startsWith('en')
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded-full px-1 py-px text-[8px] font-bold tabular-nums leading-none ring-1 sm:px-1.5 sm:text-[10px] ${
+        due
+          ? 'bg-amber-100 text-amber-950 ring-amber-300'
+          : 'bg-emerald-50 text-emerald-800 ring-emerald-200'
+      }`}
+      title={title}
+    >
+      {formatTicketPayableUsd(amount)}
+      <span className="sr-only">
+        {due ? (isEn ? ' still due' : ' 지불 예정') : isEn ? ' paid' : ' 지불 완료'}
+      </span>
+    </span>
+  )
 }
 
 /**
@@ -894,6 +950,21 @@ function isSeeCanyonSupplierCompany(company: string | null | undefined): boolean
   return k === 'see canyon' || k.includes('see canyon');
 }
 
+/** SEE Canyon + 취소 아님 + Zelle 연결(첨부·Conf#) 없음 — 달력 칩 강조 */
+function isSeeCanyonMissingZelleAttachment(
+  booking: TicketBooking,
+  zelleMap: Map<string, string[]>
+): boolean {
+  if (!isSeeCanyonSupplierCompany(booking.company)) return false;
+  if (isTicketBookingCancelledStatus(booking)) return false;
+  return !bookingHasZelleConnection(booking, zelleMap);
+}
+
+const SEE_CANYON_MISSING_ZELLE_CHIP_STYLE = {
+  backgroundColor: '#ffe4e6',
+  color: '#9f1239',
+} as const;
+
 /** 달력 칩용 공급업체 약칭: 🏜️SEE / 🏜️X / 🏜️Dix / 🏜️Ken */
 function ticketBookingCalendarSupplierChipParts(company: string | null | undefined): {
   emoji: string;
@@ -1168,8 +1239,7 @@ function TicketCalendarRnBookingChipTooltip({
       onMouseEnter={show}
       onMouseLeave={hideSoon}
     >
-      <button
-        type="button"
+      <div
         className={`font-inherit text-inherit ${chipClassName}`}
         style={{
           backgroundColor: supplierStyle.backgroundColor,
@@ -1179,7 +1249,7 @@ function TicketCalendarRnBookingChipTooltip({
         onClick={onClick}
       >
         {children}
-      </button>
+      </div>
       {open ? (
         <div
           className="absolute bottom-full left-0 z-[100] mb-1 min-w-[15rem] max-w-[min(94vw,22rem)]"
@@ -1269,6 +1339,49 @@ function TicketCalendarRnBookingChipTooltip({
   );
 }
 
+/** 인라인 Invoice# 저장 직후 fetch 결과가 예전 값으로 덮어쓰지 않게 유지 */
+function mergeOptimisticInvoiceNumber<T extends { id: string; invoice_number?: string | null }>(
+  rows: T[],
+  optimistic: Map<string, string>
+): T[] {
+  if (optimistic.size === 0) return rows;
+  let changed = false;
+  const next = rows.map((row) => {
+    const ov = optimistic.get(row.id);
+    if (ov === undefined) return row;
+    const fetched = String(row.invoice_number ?? '').trim();
+    if (fetched === ov) {
+      optimistic.delete(row.id);
+      return row;
+    }
+    changed = true;
+    return { ...row, invoice_number: ov };
+  });
+  return changed ? next : rows;
+}
+
+type AmountOptimistic = { expense: number; paid_amount: number };
+
+function mergeOptimisticAmounts<
+  T extends { id: string; expense?: number | null; paid_amount?: number | null },
+>(rows: T[], optimistic: Map<string, AmountOptimistic>): T[] {
+  if (optimistic.size === 0) return rows;
+  let changed = false;
+  const next = rows.map((row) => {
+    const ov = optimistic.get(row.id);
+    if (!ov) return row;
+    const expense = Number(row.expense ?? 0);
+    const paid = Number(row.paid_amount ?? 0);
+    if (expense === ov.expense && paid === ov.paid_amount) {
+      optimistic.delete(row.id);
+      return row;
+    }
+    changed = true;
+    return { ...row, expense: ov.expense, paid_amount: ov.paid_amount };
+  });
+  return changed ? next : rows;
+}
+
 /** 테이블 축 드롭다운 저장 후 Ctrl+Z 되돌리기 스택 최대 길이 */
 const TICKET_TABLE_AXES_UNDO_STACK_MAX = 50;
 
@@ -1289,6 +1402,7 @@ export default function TicketBookingList() {
   const tAudit = useTranslations('booking.audit');
   const tTbAxis = useTranslations('booking.calendar.ticketBookingAxis');
   const tTbActUi = useTranslations('booking.calendar.ticketBookingActions');
+  const { isSyncing: gmailYearImportSyncing, startGmailImportSync } = useGmailReservationImportSync();
   /** useMemo 의존성용 — `t` 함수 참조는 렌더마다 바뀌어 무한 effect를 유발할 수 있음 */
   const tourFallbackLabel = locale.startsWith('ko') ? '투어' : 'Tour';
   const [bookings, setBookings] = useState<TicketBooking[]>([]);
@@ -1303,6 +1417,7 @@ export default function TicketBookingList() {
   const [showForm, setShowForm] = useState(false);
   const [deletionReviewOpen, setDeletionReviewOpen] = useState(false);
   const [showBulkAddModal, setShowBulkAddModal] = useState(false);
+  const [showZelleDbSyncModal, setShowZelleDbSyncModal] = useState(false);
   const [editingBooking, setEditingBooking] = useState<TicketBooking | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatusFilters, setSelectedStatusFilters] = useState<
@@ -1389,10 +1504,14 @@ export default function TicketBookingList() {
     null
   );
   const [invoiceQuickBooking, setInvoiceQuickBooking] = useState<TicketBooking | null>(null);
+  /** Invoice 입력 필드를 메일 연결 후 다시 마운트하기 위한 세대 */
+  const [invoiceDraftEpoch, setInvoiceDraftEpoch] = useState(0);
   /** 모달 Invoice# — ref로 두어 타이핑 시 부모(TicketBookingList) 전체 리렌더를 막음 */
   const invoiceQuickDraftRef = useRef('');
   const [invoiceQuickSaving, setInvoiceQuickSaving] = useState(false);
   const [invoiceInlineSavingId, setInvoiceInlineSavingId] = useState<string | null>(null);
+  const invoiceOptimisticRef = useRef(new Map<string, string>());
+  const amountOptimisticRef = useRef(new Map<string, AmountOptimistic>());
   /** company\\0invoice_number → 공개 URL 목록 */
   const [invoiceAttachmentMap, setInvoiceAttachmentMap] = useState<Map<string, string[]>>(
     () => new Map()
@@ -1540,6 +1659,22 @@ export default function TicketBookingList() {
     }
   };
   const [currentDate, setCurrentDate] = useState(new Date());
+  const {
+    dateNotes,
+    modalOpen: dateNoteModalOpen,
+    selectedDateYmd: selectedDateNoteYmd,
+    selectedNote: selectedDateNoteText,
+    saving: dateNoteSaving,
+    deleting: dateNoteDeleting,
+    openDateNoteModal,
+    closeDateNoteModal,
+    saveDateNote,
+    deleteDateNote,
+  } = useTicketBookingDateNotes({
+    enabled: viewMode === 'calendar',
+    monthDate: currentDate,
+    userEmail: user?.email ?? null,
+  });
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedBookings, setSelectedBookings] = useState<TicketBooking[]>([]);
   const [statementReconciledIds, setStatementReconciledIds] = useState<Set<string>>(() => new Set());
@@ -1789,7 +1924,10 @@ export default function TicketBookingList() {
   const fetchBookings = async () => {
     const gen = ++fetchBookingsGenRef.current;
     try {
-      setLoading(true);
+      // 이미 목록이 있으면 전체 화면 로딩으로 모달·스크롤을 깨지 않는다.
+      if (bookingsRef.current.length === 0) {
+        setLoading(true);
+      }
       setEnriching(false);
 
       const submitOnSince = ticketBookingListSubmitOnLowerBoundYmd();
@@ -1880,7 +2018,12 @@ export default function TicketBookingList() {
         if (!force && now - lastFlushAt < FLUSH_INTERVAL_MS) return;
         lastFlushAt = now;
         // 동일 row 참조 유지(배열만 새 슬라이스) → 카드 메모이제이션 살아남음
-        setBookings(accumulated.slice());
+        setBookings(
+          mergeOptimisticAmounts(
+            mergeOptimisticInvoiceNumber(accumulated.slice(), invoiceOptimisticRef.current),
+            amountOptimisticRef.current
+          )
+        );
       };
 
       // 1) 첫 페이지: 즉시 화면에 표시(check_in_date 폴백만 적용)
@@ -2186,7 +2329,13 @@ export default function TicketBookingList() {
           }
         }
         const resIdList = [...allResIds];
-        type ResPeopleRow = { id: string; total_people: number | null; status: string | null };
+        type ResPeopleRow = {
+          id: string;
+          total_people: number | null;
+          status: string | null;
+          choices?: unknown;
+          canyon_choice?: string | null;
+        };
         let reservationsRows: ResPeopleRow[] = [];
         const RES_BATCH = 100;
         const RES_PARALLEL = 5;
@@ -2200,7 +2349,7 @@ export default function TicketBookingList() {
             chunks.map((chunk) =>
               supabase
                 .from('reservations')
-                .select('id, total_people, status')
+                .select('id, total_people, status, choices, canyon_choice')
                 .in('id', chunk)
                 .then(({ data }) => data ?? [])
             )
@@ -2222,43 +2371,10 @@ export default function TicketBookingList() {
           tourTotalPeopleByTourId.set(tour.id, sum);
         }
 
-        const choiceRowsByResId = new Map<string, ReservationChoiceRow[]>();
-        if (resIdList.length > 0) {
-          for (let i = 0; i < resIdList.length; i += RES_BATCH) {
-            const batchIds = resIdList.slice(i, i + RES_BATCH);
-            const { data: rcData, error: rcErr } = await supabase
-              .from('reservation_choices')
-              .select(
-                'reservation_id, quantity, choice_options!inner(option_key, option_name_ko, option_name)'
-              )
-              .in('reservation_id', batchIds);
-            if (rcErr) {
-              console.warn('입장권 투어 초이스 조회:', rcErr);
-              break;
-            }
-            for (const row of (rcData || []) as Array<{
-              reservation_id: string | null;
-              quantity?: number | null;
-              choice_options?: {
-                option_key?: string | null;
-                option_name_ko?: string | null;
-                option_name?: string | null;
-              } | null;
-            }>) {
-              const rid = row.reservation_id?.trim();
-              if (!rid) continue;
-              const opt = row.choice_options;
-              const choiceKey = choiceLabelToTourCountKey(
-                opt?.option_name_ko ?? null,
-                opt?.option_name ?? null,
-                opt?.option_key ?? null
-              );
-              const list = choiceRowsByResId.get(rid) || [];
-              list.push({ choiceKey, quantity: Number(row.quantity) || 1 });
-              choiceRowsByResId.set(rid, list);
-            }
-          }
-        }
+        const choiceRowsByResId = await loadCalendarChoiceRows(
+          supabase,
+          reservationsRows
+        );
         const tourChoiceCountsByTourId = new Map<string, TourChoiceCounts>();
         for (const tour of toursData) {
           const assignedResList: Array<{ id: string; total_people?: number | null }> = [];
@@ -2386,7 +2502,12 @@ export default function TicketBookingList() {
 
       setSupplierProductsMap(supplierMap);
       setRefundLinesByBookingId(merged.refundMap);
-      setBookings(merged.rows);
+      setBookings(
+        mergeOptimisticAmounts(
+          mergeOptimisticInvoiceNumber(merged.rows, invoiceOptimisticRef.current),
+          amountOptimisticRef.current
+        )
+      );
       setEnriching(false);
 
       await refreshInvoiceAttachmentMapForBookings(merged.rows);
@@ -2732,6 +2853,8 @@ export default function TicketBookingList() {
         infant?: number | null;
         total_people?: number | null;
         status?: string | null;
+        choices?: unknown;
+        canyon_choice?: string | null;
       };
 
       const reservationIdSet = new Set<string>();
@@ -2755,7 +2878,7 @@ export default function TicketBookingList() {
           batches.map((batch) =>
             supabase
               .from('reservations')
-              .select('id, adults, child, infant, total_people, status')
+              .select('id, adults, child, infant, total_people, status, choices, canyon_choice')
               .in('id', batch)
               .then(({ data, error }) => {
                 if (error) throw error;
@@ -2770,50 +2893,10 @@ export default function TicketBookingList() {
         }
       }
 
-      const choiceRowsByResId = new Map<string, ReservationChoiceRow[]>();
-      for (let i = 0; i < reservationIdList.length; i += RES_BATCH) {
-        const batchIds = reservationIdList.slice(i, i + RES_BATCH);
-        if (batchIds.length === 0) continue;
-        const { data: rcData, error: rcErr } = await supabase
-          .from('reservation_choices')
-          .select(
-            `
-            reservation_id,
-            quantity,
-            choice_options (
-              option_key,
-              option_name_ko,
-              option_name
-            )
-          `
-          )
-          .in('reservation_id', batchIds);
-        if (rcErr) {
-          console.warn('달력 투어 초이스 조회:', rcErr);
-          break;
-        }
-        for (const row of (rcData || []) as Array<{
-          reservation_id: string | null;
-          quantity?: number | null;
-          choice_options?: {
-            option_key?: string | null;
-            option_name_ko?: string | null;
-            option_name?: string | null;
-          } | null;
-        }>) {
-          const rid = row.reservation_id?.trim();
-          if (!rid) continue;
-          const opt = row.choice_options;
-          const choiceKey = choiceLabelToTourCountKey(
-            opt?.option_name_ko ?? null,
-            opt?.option_name ?? null,
-            opt?.option_key ?? null
-          );
-          const list = choiceRowsByResId.get(rid) || [];
-          list.push({ choiceKey, quantity: Number(row.quantity) || 1 });
-          choiceRowsByResId.set(rid, list);
-        }
-      }
+      const choiceRowsByResId = await loadCalendarChoiceRows(
+        supabase,
+        [...reservationById.values()]
+      );
 
       const tourEventsWithReservations = toursData.map((tour: TourEvent) => {
         const ids = normalizeReservationIds(tour.reservation_ids);
@@ -2897,8 +2980,12 @@ export default function TicketBookingList() {
       setDropdownPosition(null);
     };
 
-    document.addEventListener('click', handleClickOutside);
+    const timer = window.setTimeout(() => {
+      document.addEventListener('click', handleClickOutside);
+    }, 0);
+
     return () => {
+      window.clearTimeout(timer);
       document.removeEventListener('click', handleClickOutside);
     };
   }, [openAxisDropdown]);
@@ -3592,6 +3679,7 @@ export default function TicketBookingList() {
     invoicePhotoLoadGenRef.current += 1;
     setInvoiceQuickBooking(booking);
     invoiceQuickDraftRef.current = booking.invoice_number?.trim() || '';
+    setInvoiceDraftEpoch(0);
     setInvoiceQuickPhotoUrls([]);
     setZelleQuickPhotoUrls([]);
     setInvoiceModalPasteTarget(null);
@@ -3612,6 +3700,7 @@ export default function TicketBookingList() {
       const prev = booking.invoice_number?.trim() || '';
       if (v === prev) return;
 
+      invoiceOptimisticRef.current.set(bookingId, v);
       setInvoiceInlineSavingId(bookingId);
       try {
         const { error } = await supabase
@@ -3630,17 +3719,54 @@ export default function TicketBookingList() {
           prev?.id === bookingId ? { ...prev, invoice_number: v } : prev
         );
       } catch (err) {
+        invoiceOptimisticRef.current.delete(bookingId);
         console.error(err);
         alert(
           locale === 'ko'
             ? 'Invoice 번호 저장에 실패했습니다.'
             : 'Failed to save invoice number.'
         );
+        throw err;
       } finally {
         setInvoiceInlineSavingId(null);
       }
     },
     [locale, refreshInvoiceAttachmentMapForBookings]
+  );
+
+  const saveAmountsInline = useCallback(
+    async (bookingId: string, amounts: { expense: number; paid_amount: number }) => {
+      const booking = bookingsRef.current.find((b) => b.id === bookingId);
+      if (!booking) return;
+      const expense = amounts.expense;
+      const paid_amount = amounts.paid_amount;
+      const prevExpense = Number(booking.expense ?? 0);
+      const prevPaid = Number(booking.paid_amount ?? 0);
+      if (expense === prevExpense && paid_amount === prevPaid) return;
+
+      amountOptimisticRef.current.set(bookingId, { expense, paid_amount });
+      try {
+        const { error } = await supabase
+          .from('ticket_bookings')
+          .update({ expense, paid_amount })
+          .eq('id', bookingId);
+        if (error) throw error;
+        setBookings((prevBookings) =>
+          prevBookings.map((b) => (b.id === bookingId ? { ...b, expense, paid_amount } : b))
+        );
+        setEditingBooking((prev) =>
+          prev?.id === bookingId ? { ...prev, expense, paid_amount } : prev
+        );
+      } catch (err) {
+        amountOptimisticRef.current.delete(bookingId);
+        console.error(err);
+        alert(
+          locale === 'ko' ? '금액 저장에 실패했습니다.' : 'Failed to save amounts.'
+        );
+        throw err;
+      }
+    },
+    [locale]
   );
 
   const saveInvoiceQuick = async () => {
@@ -3652,6 +3778,7 @@ export default function TicketBookingList() {
     const id = invoiceQuickBooking.id;
     setInvoiceQuickSaving(true);
     try {
+      invoiceOptimisticRef.current.set(id, v);
       const { error } = await supabase
         .from('ticket_bookings')
         .update({ invoice_number: v || null })
@@ -3685,6 +3812,7 @@ export default function TicketBookingList() {
       invoicePhotoLoadGenRef.current += 1;
       setInvoiceQuickBooking(null);
     } catch (err) {
+      invoiceOptimisticRef.current.delete(id);
       console.error(err);
       alert('저장에 실패했습니다. Invoice 번호 또는 인보이스 첨부 동기화를 확인해 주세요.');
     } finally {
@@ -4130,9 +4258,7 @@ export default function TicketBookingList() {
     hasZelleAttachment: (b) => {
       const row = resolveCardBooking(b.id);
       if (!row) return false;
-      const inv = row.invoice_number?.trim();
-      if (!inv) return false;
-      return (zelleAttachmentMap.get(makeInvoiceKey(row.company, inv))?.length ?? 0) > 0;
+      return bookingHasZelleConnection(row, zelleAttachmentMap);
     },
     statementMatched: (b) => statementReconciledIds.has(b.id),
     savingId: workflowActionSavingId,
@@ -4255,9 +4381,16 @@ export default function TicketBookingList() {
     return invoiceLightbox.urls.filter(isImageAttachmentUrl);
   }, [invoiceLightbox]);
 
+  const invoiceLightboxZelleEmails = useMemo(() => {
+    if (!invoiceLightbox) return [];
+    return invoiceLightbox.urls
+      .map((u) => parseZelleEmailImportId(u))
+      .filter((id): id is string => Boolean(id));
+  }, [invoiceLightbox]);
+
   const invoiceLightboxOtherUrls = useMemo(() => {
     if (!invoiceLightbox) return [];
-    return invoiceLightbox.urls.filter((u) => !isImageAttachmentUrl(u));
+    return invoiceLightbox.urls.filter((u) => !isImageAttachmentUrl(u) && !isZelleEmailAttachmentUrl(u));
   }, [invoiceLightbox]);
 
   useEffect(() => {
@@ -4373,7 +4506,7 @@ export default function TicketBookingList() {
     const ids = new Set<string>();
     for (const b of bookings) {
       if (String(b.status || '').toLowerCase() === 'cancelled') continue;
-      const noTour = b.tour_id == null || String(b.tour_id).trim() === '';
+      const noTour = normalizeTicketBookingTourIds(b.tour_ids, b.tour_id).length === 0;
       if (noTour) ids.add(b.id);
     }
     for (const b of bookings) {
@@ -4381,8 +4514,14 @@ export default function TicketBookingList() {
       const sp = supplierProductsMap.get(b.id);
       if (isTicketBookingCancelDueStaleBeforeCheckIn(b, sp)) ids.add(b.id);
     }
+    const lxGroups = buildLinkedLxMismatchDateGroups(
+      bookings,
+      locale,
+      locale.startsWith('ko') ? '투어' : 'Tour'
+    );
+    for (const id of collectLinkedLxMismatchBookingIds(lxGroups)) ids.add(id);
     return ids.size;
-  }, [bookings, supplierProductsMap]);
+  }, [bookings, supplierProductsMap, locale]);
 
   const issueFollowUpBookings = useMemo(
     () => bookings.filter((b) => isTicketBookingIssueReported(b.operation_status)),
@@ -4657,10 +4796,14 @@ export default function TicketBookingList() {
       }
     >()
     const dates = new Set(
-      pagedSortedBookings
+      filteredBookings
         .map((b) => String(b.check_in_date || '').slice(0, 10))
         .filter(Boolean)
     )
+    for (const tr of tourEvents) {
+      const d = resolveAntelopeCheckInDate(tr)
+      if (d) dates.add(d)
+    }
     for (const dateString of dates) {
       const dayBookings = filteredBookings.filter(
         (b) => String(b.check_in_date || '').slice(0, 10) === dateString
@@ -4701,7 +4844,7 @@ export default function TicketBookingList() {
       })
     }
     return map
-  }, [pagedSortedBookings, filteredBookings, tourEvents, locale])
+  }, [filteredBookings, tourEvents, locale])
 
   const pagedDateViewGroups = useMemo(() => {
     if (!dateViewGroups) return null;
@@ -5010,6 +5153,35 @@ export default function TicketBookingList() {
       setSortField(field);
       setSortDirection('asc');
     }
+  };
+
+  /** 달력·테이블 상태 뱃지에서 예약/벤더 축 드롭다운을 연다 */
+  const openTicketBookingAxisMenu = (
+    booking: TicketBooking,
+    axis: 'booking' | 'vendor',
+    anchor: HTMLElement
+  ) => {
+    if (typeof window === 'undefined') return;
+    const alreadyOpen =
+      openAxisDropdown?.bookingId === booking.id && openAxisDropdown.axis === axis;
+    if (alreadyOpen) {
+      setOpenAxisDropdown(null);
+      setDropdownPosition(null);
+      return;
+    }
+    const rect = anchor.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const menuW = 256;
+    const menuH = 288;
+    const left = Math.min(Math.max(8, rect.left), Math.max(8, vw - menuW - 8));
+    const spaceBelow = vh - rect.bottom;
+    const top =
+      spaceBelow < Math.min(menuH, vh * 0.4) && rect.top > menuH
+        ? Math.max(8, rect.top - menuH)
+        : rect.bottom + 4;
+    setOpenAxisDropdown({ bookingId: booking.id, axis });
+    setDropdownPosition({ top, left });
   };
 
   /** 예약 축만 수정 — 드롭다운 옵션은 `TICKET_BOOKING_AXIS_SELECT_ORDER.booking` 과 동일 (6축 편집·DB와 통일) */
@@ -6416,7 +6588,7 @@ export default function TicketBookingList() {
   };
 
 
-  if (loading) {
+  if (loading && !showZelleDbSyncModal) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="text-lg">Loading...</div>
@@ -6505,6 +6677,25 @@ export default function TicketBookingList() {
                 {issueFollowUpBookings.length > 99 ? '99+' : issueFollowUpBookings.length}
               </span>
             ) : null}
+          </button>
+          <TicketBookingZelleDbSyncButton
+            locale={locale}
+            onClick={() => setShowZelleDbSyncModal(true)}
+          />
+          <button
+            type="button"
+            onClick={() => startGmailImportSync(true, gmailLookbackDaysSinceYearStartLA())}
+            disabled={gmailYearImportSyncing}
+            className="inline-flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2 bg-sky-50 border border-sky-200 text-sky-950 rounded-lg hover:bg-sky-100 disabled:opacity-50 text-sm font-medium transition-colors flex-shrink-0"
+            title="최근 7일보다 오래된 Gmail 수신함 메일을 가져와 예약 가져오기 목록에 넣습니다. 이미 저장된 메일은 건너뜁니다."
+          >
+            {gmailYearImportSyncing ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Mail size={16} />
+            )}
+            <span className="hidden sm:inline">올해 메일 가져오기</span>
+            <span className="sm:hidden">올해 메일</span>
           </button>
           <button
             type="button"
@@ -7338,6 +7529,8 @@ export default function TicketBookingList() {
                               const isCurrentMonth = date.getMonth() === currentMonth;
                               const isToday = date.toDateString() === now.toDateString();
                               const dayBookings = groupedByDate[dateString] || [];
+                              const dayNote = (dateNotes[dateString]?.note || '').trim();
+                              const hasDateNote = dayNote.length > 0;
 
                               const dayHasCancelDueWarn = dayBookings.some((b) =>
                                 isTicketBookingCancelDueHighlight(
@@ -7396,6 +7589,24 @@ export default function TicketBookingList() {
                                 canyonCompareParts.length > 0 &&
                                 canyonLxCountsMismatch(dayTourChoiceCounts, dayTicketCanyonCounts);
 
+                              const dayPayableDue = sumTicketBookingsRemainingPayableUsd(dayBookings);
+                              const dayPayableTotal = sumTicketBookingsEffectiveExpenseUsd(dayBookings);
+                              const payableDueByCanyon: Partial<Record<'X' | 'L' | 'U', number>> = {};
+                              const payableTotalByCanyon: Partial<Record<'X' | 'L' | 'U', number>> = {};
+                              const canyonHasTickets: Partial<Record<'X' | 'L' | 'U', boolean>> = {};
+                              for (const part of canyonCompareParts) {
+                                const canyonRows = dayBookings.filter(
+                                  (b) => ticketBookingCanyonKeyFromBooking(b) === part.key
+                                );
+                                payableDueByCanyon[part.key] =
+                                  sumTicketBookingsRemainingPayableUsd(canyonRows);
+                                payableTotalByCanyon[part.key] =
+                                  sumTicketBookingsEffectiveExpenseUsd(canyonRows);
+                                canyonHasTickets[part.key] = canyonRows.some(
+                                  (b) => getTicketBookingEffectiveQty(b) > 0
+                                );
+                              }
+
                               let tourBookingHeadcountMismatch = false;
                               if (!spanningContinuationOnly) {
                                 if (toursAntelopeCheckInToday.length > 0) {
@@ -7436,16 +7647,72 @@ export default function TicketBookingList() {
                                 <div
                                   key={`cal-${dateString}-${index}`}
                                   style={{ paddingTop: cellPadTop }}
-                                  className={`relative min-h-[72px] sm:min-h-[100px] lg:min-h-[160px] px-1 pb-1 sm:px-2 sm:pb-2 rounded-sm ${cellOutlineClass} ${cellBgClass} ${
-                                    isToday ? 'ring-2 ring-blue-500 ring-offset-0' : ''}`}
+                                  className={`group relative min-h-[72px] sm:min-h-[100px] lg:min-h-[160px] px-1 pb-1 sm:px-2 sm:pb-2 rounded-sm ${cellOutlineClass} ${cellBgClass} ${
+                                    isToday
+                                      ? 'ring-2 ring-blue-500 ring-offset-0'
+                                      : hasDateNote && !tourBookingHeadcountMismatch && !dayHasCancelDueWarn
+                                        ? 'ring-2 ring-amber-400 ring-offset-0'
+                                        : ''
+                                  }`}
                                 >
-                                  <div
-                                    className={`absolute left-1 top-1 z-[15] text-xs sm:text-sm font-medium leading-none ${
-                                      isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
-                                    } ${isToday ? 'text-primary' : ''}`}
+                                  {hasDateNote ? (
+                                    <span
+                                      className="pointer-events-none absolute right-0 top-0 z-[16] h-0 w-0 border-l-[16px] border-t-[16px] border-l-transparent border-t-amber-500"
+                                      aria-hidden
+                                    />
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openDateNoteModal(dateString);
+                                    }}
+                                    title={
+                                      hasDateNote
+                                        ? t('ticketCalendarDateNoteEdit')
+                                        : t('ticketCalendarDateNoteWrite')
+                                    }
+                                    className={`absolute left-0.5 top-0.5 z-[18] inline-flex max-w-[calc(100%-18px)] items-center gap-0.5 rounded-md px-1 py-0.5 text-left leading-none transition-colors hover:bg-amber-100 ${
+                                      hasDateNote
+                                        ? 'bg-amber-200 text-amber-950 shadow-sm ring-1 ring-amber-500'
+                                        : isToday
+                                          ? 'text-primary'
+                                          : isCurrentMonth
+                                            ? 'text-gray-900'
+                                            : 'text-gray-400'
+                                    }`}
                                   >
-                                    {date.getDate()}
-                                  </div>
+                                    <span className={`text-xs sm:text-sm font-medium ${hasDateNote ? 'font-bold' : ''}`}>
+                                      {date.getDate()}
+                                    </span>
+                                    {hasDateNote ? (
+                                      <StickyNote
+                                        className="h-3 w-3 shrink-0 text-amber-800 sm:h-3.5 sm:w-3.5"
+                                        aria-hidden
+                                      />
+                                    ) : (
+                                      <StickyNote
+                                        className="h-3 w-3 shrink-0 text-gray-400 opacity-0 transition-opacity group-hover:opacity-70 sm:h-3.5 sm:w-3.5"
+                                        aria-hidden
+                                      />
+                                    )}
+                                  </button>
+
+                                  {hasDateNote ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openDateNoteModal(dateString);
+                                      }}
+                                      title={t('ticketCalendarDateNoteEdit')}
+                                      className="relative z-[26] mb-1 w-full rounded-md bg-amber-200 px-1 py-1 text-left shadow-sm ring-1 ring-amber-500 hover:bg-amber-300 sm:px-1.5 sm:py-1.5"
+                                    >
+                                      <span className="line-clamp-3 whitespace-pre-wrap break-words text-[10px] font-extrabold leading-tight text-amber-950 sm:text-xs">
+                                        {dayNote}
+                                      </span>
+                                    </button>
+                                  ) : null}
 
                                   {/* 부킹 정보 라벨 — 투어 칩보다 위, 배경으로 칩 침범을 가림 */}
                                   {dayBookings.length > 0 && (
@@ -7458,16 +7725,32 @@ export default function TicketBookingList() {
                                             : 'text-primary'
                                         }`}
                                       >
-                                        <div className="truncate whitespace-nowrap">
-                                          {t('tourPeopleReservationsSummary', {
-                                            tourPeople: sumTourPeopleAntelopeToday,
-                                            reservations: dayBookingsEaNonCancelled,
-                                          })}
+                                        <div className="flex min-w-0 flex-wrap items-center gap-1">
+                                          <span className="truncate whitespace-nowrap">
+                                            {t('tourPeopleReservationsSummary', {
+                                              tourPeople: sumTourPeopleAntelopeToday,
+                                              reservations: dayBookingsEaNonCancelled,
+                                            })}
+                                          </span>
+                                          {dayBookingsEaNonCancelled > 0 ? (
+                                            <TicketCalendarPayableBadge
+                                              amount={dayPayableTotal}
+                                              due={dayPayableDue > 0}
+                                              locale={locale}
+                                              title={
+                                                locale.startsWith('en')
+                                                  ? `Vendor cost ${formatTicketPayableUsd(dayPayableTotal)}. Still due ${formatTicketPayableUsd(dayPayableDue)}`
+                                                  : `지출 ${formatTicketPayableUsd(dayPayableTotal)} · 지불 예정 ${formatTicketPayableUsd(dayPayableDue)}`
+                                              }
+                                            />
+                                          ) : null}
                                         </div>
                                         {canyonCompareParts.length > 0 ? (
                                           <div className="mt-0.5 flex flex-col items-start gap-0.5 text-[10px] sm:text-xs font-bold tabular-nums">
                                             {canyonCompareParts.map((part) => {
                                               const task = canyonActionByKey.get(part.key);
+                                              const canyonDue = payableDueByCanyon[part.key] ?? 0;
+                                              const canyonTotal = payableTotalByCanyon[part.key] ?? 0;
                                               return (
                                                 <div
                                                   key={part.key}
@@ -7485,6 +7768,18 @@ export default function TicketBookingList() {
                                                   >
                                                     {part.text}
                                                   </span>
+                                                  {canyonHasTickets[part.key] ? (
+                                                    <TicketCalendarPayableBadge
+                                                      amount={canyonTotal}
+                                                      due={canyonDue > 0}
+                                                      locale={locale}
+                                                      title={
+                                                        locale.startsWith('en')
+                                                          ? `${part.key} cost ${formatTicketPayableUsd(canyonTotal)}. Still due ${formatTicketPayableUsd(canyonDue)}`
+                                                          : `${part.key} 지출 ${formatTicketPayableUsd(canyonTotal)} · 지불 예정 ${formatTicketPayableUsd(canyonDue)}`
+                                                      }
+                                                    />
+                                                  ) : null}
                                                   {task ? (
                                                     <span
                                                       className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold leading-tight ring-1 sm:text-[10px] ${
@@ -7552,21 +7847,29 @@ export default function TicketBookingList() {
                                         });
                                         const detailTail =
                                           g.rows.length > 1 ? ` · +${g.rows.length - 1}` : '';
-                                        const titleLine = `${clipTitle} · ${subtitleParts.join(' · ')}${detailTail}`;
+                                        const seeCanyonMissingZelle = g.rows.some((b) =>
+                                          isSeeCanyonMissingZelleAttachment(b, zelleAttachmentMap)
+                                        );
+                                        const titleLine = `${seeCanyonMissingZelle ? `${t('ticketCalendarSeeCanyonMissingZelle')} · ` : ''}${clipTitle} · ${subtitleParts.join(' · ')}${detailTail}`;
 
                                         const timeShort = (firstBooking.time || '').replace(/:\d{2}$/, '');
                                         const companyChip = ticketBookingCalendarSupplierChipParts(
                                           firstBooking.company
                                         );
-                                        const supplierStyle = ticketBookingSupplierColors(firstBooking.company);
+                                        const supplierStyle = seeCanyonMissingZelle
+                                          ? SEE_CANYON_MISSING_ZELLE_CHIP_STYLE
+                                          : ticketBookingSupplierColors(firstBooking.company);
                                         const unifiedStatus = resolveTicketBookingUnifiedStatus(
                                           firstBooking,
                                           locale
                                         );
+                                        const groupHasCredit = g.rows.some((b) =>
+                                          isTicketBookingCreditReceived(b)
+                                        );
 
                                         return (
+                                          <Fragment key={`${dateString}-rn-${g.key}`}>
                                           <TicketCalendarRnBookingChipTooltip
-                                            key={`${dateString}-rn-${g.key}`}
                                             rows={g.rows}
                                             locale={locale}
                                             tAxis={tTbAxis}
@@ -7576,11 +7879,30 @@ export default function TicketBookingList() {
                                             chipClassName={`min-w-0 w-full px-0.5 py-0.5 rounded text-left text-[8px] sm:text-[11px] lg:text-[12px] cursor-pointer hover:opacity-90 overflow-hidden transition-opacity ${
                                               groupChangePending
                                                 ? 'ring-2 ring-red-600 ring-offset-0'
+                                                : seeCanyonMissingZelle
+                                                  ? 'ring-2 ring-rose-600 ring-offset-0 shadow-sm shadow-rose-400/70'
                                                 : 'ring-1 ring-black/15'
                                             }`}
                                             onClick={() => handleBookingClick(g.rows)}
                                           >
                                             <div className="flex min-w-0 items-center gap-0.5 sm:gap-1 whitespace-nowrap">
+                                              {seeCanyonMissingZelle ? (
+                                                <span
+                                                  className="inline-flex shrink-0 items-center gap-0.5 rounded-sm bg-rose-600 px-0.5 text-[7px] font-extrabold uppercase tracking-tight text-white sm:text-[9px]"
+                                                  title={t('ticketCalendarSeeCanyonMissingZelle')}
+                                                >
+                                                  <span
+                                                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-white animate-pulse"
+                                                    aria-hidden
+                                                  />
+                                                  <AlertTriangle
+                                                    className="h-2.5 w-2.5 sm:h-3 sm:w-3"
+                                                    strokeWidth={2.5}
+                                                    aria-hidden
+                                                  />
+                                                  Zelle
+                                                </span>
+                                              ) : null}
                                               {groupChangePending ? (
                                                 <span
                                                   className="shrink-0 rounded-sm bg-red-600 px-0.5 text-[7px] font-extrabold uppercase tracking-tight text-white sm:text-[9px]"
@@ -7627,13 +7949,41 @@ export default function TicketBookingList() {
                                                   />
                                                 )}
                                               </span>
-                                              <span
-                                                className={`inline-flex shrink-0 items-center rounded px-0.5 text-[7px] sm:text-[9px] font-bold leading-none ring-1 ring-black/10 ${getTicketBookingUnifiedStatusBadgeClass(unifiedStatus.key)}`}
-                                                title={unifiedStatus.detail}
-                                                aria-label={unifiedStatus.label}
+                                              <button
+                                                type="button"
+                                                className={`inline-flex shrink-0 items-center rounded px-0.5 text-[7px] sm:text-[9px] font-bold leading-none ring-1 ring-black/10 hover:ring-2 hover:ring-violet-500 ${getTicketBookingUnifiedStatusBadgeClass(unifiedStatus.key)}`}
+                                                title={`${unifiedStatus.detail} · ${t('ticketCalendarChangeStatusTitle')}`}
+                                                aria-label={`${unifiedStatus.label} · ${t('ticketCalendarChangeStatusTitle')}`}
+                                                aria-haspopup="listbox"
+                                                aria-expanded={
+                                                  openAxisDropdown?.bookingId === firstBooking.id &&
+                                                  openAxisDropdown.axis === 'booking'
+                                                }
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  e.preventDefault();
+                                                  openTicketBookingAxisMenu(
+                                                    firstBooking,
+                                                    'booking',
+                                                    e.currentTarget
+                                                  );
+                                                }}
+                                                onMouseDown={(e) => e.stopPropagation()}
                                               >
                                                 {unifiedStatus.shortLabel}
-                                              </span>
+                                              </button>
+                                              {groupHasCredit ? (
+                                                <span
+                                                  className="inline-flex shrink-0 items-center rounded bg-cyan-100 px-0.5 text-[7px] font-bold leading-none text-cyan-950 ring-1 ring-cyan-200 sm:text-[9px]"
+                                                  title={
+                                                    locale.startsWith('en')
+                                                      ? 'Vendor credit received'
+                                                      : '벤더 크레딧 받음'
+                                                  }
+                                                >
+                                                  {locale.startsWith('en') ? 'CR' : '크레딧'}
+                                                </span>
+                                              ) : null}
                                               <span className="shrink-0 font-semibold tabular-nums opacity-95">
                                                 {timeShort}
                                               </span>
@@ -7674,6 +8024,10 @@ export default function TicketBookingList() {
                                               </span>
                                             </div>
                                           </TicketCalendarRnBookingChipTooltip>
+                                          {openAxisDropdown?.bookingId === firstBooking.id
+                                            ? renderTicketBookingAxisDropdownPortal(firstBooking)
+                                            : null}
+                                          </Fragment>
                                         );
                                       })}
                                       </div>
@@ -7835,17 +8189,35 @@ export default function TicketBookingList() {
 
                     {/* 범례 - 모바일 컴팩트 */}
                     <div className="mt-3 sm:mt-4 p-3 bg-gray-50 rounded-lg">
+                      <p className="text-xs text-amber-900 mb-2 leading-relaxed">
+                        {t('ticketCalendarDateNoteHint')}
+                      </p>
                       <p className="text-xs text-gray-600 mb-3 leading-relaxed">{t('ticketCalendarHeadcountMismatchHint')}</p>
+                      <p className="text-xs text-rose-800 mb-3 leading-relaxed">
+                        {t('ticketCalendarSeeCanyonMissingZelleHint')}
+                      </p>
                       <div className="text-xs sm:text-sm font-medium text-gray-700 mb-2">{t('statusLegend')}</div>
+                      <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-2">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-amber-200 px-2 py-1 text-xs font-bold text-amber-950 ring-1 ring-amber-500">
+                          <StickyNote className="h-3.5 w-3.5" aria-hidden />
+                          {t('ticketCalendarDateNoteLegend')}
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-md bg-rose-100 px-2 py-1 text-xs font-extrabold text-rose-900 ring-2 ring-rose-600">
+                          <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+                          {t('ticketCalendarSeeCanyonMissingZelle')}
+                        </span>
+                      </div>
                       <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                        {TICKET_BOOKING_STATUS_VALUES.map((sv) => (
-                          <span
-                            key={sv}
-                            className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getTicketBookingStatusBadgeClass(sv)}`}
-                          >
-                            {formatTicketBookingStatusLabel(sv, t, locale)}
-                          </span>
-                        ))}
+                        {TICKET_BOOKING_UNIFIED_STATUS_FILTER_KEYS.filter((sv) => sv !== 'other').map(
+                          (sv) => (
+                            <span
+                              key={sv}
+                              className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getTicketBookingUnifiedStatusBadgeClass(sv)}`}
+                            >
+                              {ticketBookingUnifiedStatusLabel(sv, locale)}
+                            </span>
+                          )
+                        )}
                       </div>
                       <div className="mt-3">
                         <div className="text-sm font-medium text-gray-700 mb-2">{t('tourEvents')}</div>
@@ -7901,6 +8273,7 @@ export default function TicketBookingList() {
             onSaveNote={persistTicketBookingNote}
             onAddDocuments={persistTicketBookingDocuments}
             onRemoveDocument={removeTicketBookingDocument}
+            onSaveAmounts={saveAmountsInline}
           />
         )}
 
@@ -8034,6 +8407,40 @@ export default function TicketBookingList() {
         )}
       </div>
 
+      <TicketBookingDateNoteModal
+        open={dateNoteModalOpen}
+        dateYmd={selectedDateNoteYmd}
+        initialNote={selectedDateNoteText}
+        locale={locale}
+        saving={dateNoteSaving}
+        deleting={dateNoteDeleting}
+        onClose={closeDateNoteModal}
+        onSave={saveDateNote}
+        onDelete={deleteDateNote}
+      />
+
+      <TicketBookingZelleDbSyncModal
+        open={showZelleDbSyncModal}
+        locale={locale}
+        bookings={bookings}
+        dayTourCompareByDate={cardViewDayTourCompareByDate}
+        tourPeopleReservationsSummary={(tourPeople, reservations) =>
+          t('tourPeopleReservationsSummary', { tourPeople, reservations })
+        }
+        onOpenBooking={(b) => handleEdit(b as TicketBooking)}
+        getCancelDueDate={(b) => getCancelDueDate(b as TicketBooking)}
+        actionHandlers={ticketCardActionHandlers}
+        onSaveNote={persistTicketBookingNote}
+        onAddDocuments={persistTicketBookingDocuments}
+        onRemoveDocument={removeTicketBookingDocument}
+        onSaveInvoiceNumber={saveInvoiceInline}
+        onSaveAmounts={saveAmountsInline}
+        zelleAttachmentMap={zelleAttachmentMap}
+        onClose={() => setShowZelleDbSyncModal(false)}
+        onApplied={() => {
+          void fetchBookings();
+        }}
+      />
       <TicketBookingBulkAddModal
         open={showBulkAddModal}
         onClose={() => setShowBulkAddModal(false)}
@@ -8046,7 +8453,7 @@ export default function TicketBookingList() {
 
       {/* 폼 모달 */}
       {showForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[120] p-4 overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[220] p-4 overflow-y-auto">
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto relative">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center z-10">
               <h3 className="text-xl font-semibold">
@@ -8229,7 +8636,7 @@ export default function TicketBookingList() {
             </div>
           );
         }}
-        renderGroupCardBookings={(groupRows, { chromeActions }) => (
+        renderGroupCardBookings={(groupRows, { chromeActions, onClose }) => (
           <TicketBookingCardView
             bookings={groupRows as TicketBooking[]}
             tourLinkSourceBookings={filteredBookings}
@@ -8239,11 +8646,14 @@ export default function TicketBookingList() {
             getSupplierProduct={(b) => supplierProductsMap.get(b.id) ?? null}
             onOpenBooking={handleEdit}
             flat
+            showCheckInDate
             actionHandlers={ticketCardActionHandlers}
             onSaveNote={persistTicketBookingNote}
             onAddDocuments={persistTicketBookingDocuments}
             onRemoveDocument={removeTicketBookingDocument}
+            onSaveAmounts={saveAmountsInline}
             chromeActions={(booking) => chromeActions(booking as TicketBookingReservationDetailRow)}
+            onClose={onClose}
             emptyMessage={locale.startsWith('en') ? 'No bookings to show' : '표시할 부킹이 없습니다'}
           />
         )}
@@ -8401,14 +8811,14 @@ export default function TicketBookingList() {
 
       {invoiceQuickBooking && (
         <div
-          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-[220] flex items-center justify-center bg-black/50 p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="ticket-invoice-quick-title"
           onClick={() => !attachmentModalBusy && setInvoiceQuickBooking(null)}
         >
           <div
-            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
+            className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 id="ticket-invoice-quick-title" className="text-base font-semibold text-gray-900">
@@ -8422,13 +8832,13 @@ export default function TicketBookingList() {
               파일을 추가·삭제할 수 있습니다. 인보이스·Zelle 영역 중{' '}
               <span className="text-gray-800 font-medium">붙여넣기 박스를 한 번 클릭</span>한 뒤{' '}
               <span className="text-gray-800 font-medium">Ctrl+V</span>로 넣거나, 각 영역 아래 링크로 PC에서 파일을 고를 수
-              있습니다.{' '}
+              있습니다. 이메일로 가져온 Zelle 송금 메일도 아래에서 골라 연결할 수 있습니다.{' '}
               <span className="text-gray-700">저장</span>을 누르면 Invoice 번호가 부킹에 반영되고, 보이는 첨부 URL도 서버에
               함께 맞춥니다. 기존 인보이스·Zelle 첨부는{' '}
               <span className="text-gray-800 font-medium">입력을 잠시 멈춘 뒤</span> 자동으로 불러옵니다.
             </p>
             <TicketInvoiceDraftInput
-              key={invoiceQuickBooking.id}
+              key={`${invoiceQuickBooking.id}-${invoiceDraftEpoch}`}
               initialInvoice={invoiceQuickBooking.invoice_number?.trim() || ''}
               draftRef={invoiceQuickDraftRef}
               company={invoiceQuickBooking.company}
@@ -8561,11 +8971,17 @@ export default function TicketBookingList() {
               {zelleQuickPhotoUrls.length > 0 ? (
                 <ul className="mt-3 space-y-3">
                   {zelleQuickPhotoUrls.map((url) => {
+                    const emailId = parseZelleEmailImportId(url);
                     const isImg = /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url);
                     return (
                       <li key={url} className="flex gap-2 rounded-lg border border-emerald-100 bg-white p-2">
                         <div className="min-w-0 flex-1">
-                          {isImg ? (
+                          {emailId ? (
+                            <p className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-900">
+                              <Mail className="h-4 w-4" aria-hidden />
+                              {locale.startsWith('en') ? 'Linked Zelle email' : '연결된 Zelle 메일'}
+                            </p>
+                          ) : isImg ? (
                             <a href={url} target="_blank" rel="noopener noreferrer" className="block">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img src={url} alt="" className="max-h-36 w-auto max-w-full rounded object-contain" />
@@ -8597,6 +9013,32 @@ export default function TicketBookingList() {
               ) : (
                 <p className="mt-3 text-sm text-gray-400">등록된 Zelle 스크린샷이 없습니다.</p>
               )}
+              <TicketBookingZelleEmailPicker
+                booking={invoiceQuickBooking}
+                locale={locale}
+                disabled={attachmentModalBusy}
+                attachedImportIds={zelleQuickPhotoUrls
+                  .map((u) => parseZelleEmailImportId(u))
+                  .filter((id): id is string => Boolean(id))}
+                onLinked={async () => {
+                  await fetchBookings();
+                  const latest = bookingsRef.current.find((b) => b.id === invoiceQuickBooking.id);
+                  if (!latest) return;
+                  setInvoiceQuickBooking(latest);
+                  const inv =
+                    latest.invoice_number?.trim() ||
+                    invoiceQuickDraftRef.current.trim() ||
+                    String(latest.rn_number ?? '')
+                      .trim()
+                      .replace(/^#+/, '');
+                  if (inv) invoiceQuickDraftRef.current = inv;
+                  setInvoiceDraftEpoch((n) => n + 1);
+                  if (latest.company && inv) {
+                    await loadInvoicePhotosForDraft(latest.company, inv);
+                  }
+                  await refreshInvoiceAttachmentMapForBookings(bookingsRef.current);
+                }}
+              />
             </div>
 
             <div className="mt-5 flex justify-end gap-2 border-t border-gray-100 pt-4">
@@ -8623,7 +9065,7 @@ export default function TicketBookingList() {
 
       {invoiceLightbox && (
         <div
-          className="fixed inset-0 z-[125] flex items-center justify-center bg-black/90 p-3"
+          className="fixed inset-0 z-[220] flex items-center justify-center bg-black/90 p-3"
           role="dialog"
           aria-modal="true"
           aria-label={
@@ -8717,6 +9159,14 @@ export default function TicketBookingList() {
               </div>
             ) : null}
 
+            {invoiceLightboxZelleEmails.length > 0 ? (
+              <div className="mt-12 w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-xl">
+                {invoiceLightboxZelleEmails.map((id) => (
+                  <ZelleEmailBodyView key={id} importId={id} locale={locale} />
+                ))}
+              </div>
+            ) : null}
+
             {invoiceLightboxOtherUrls.length > 0 ? (
               <div
                 className={`w-full max-w-lg rounded-lg border border-white/20 bg-white/95 p-4 text-left shadow-lg ${
@@ -8755,7 +9205,9 @@ export default function TicketBookingList() {
               </div>
             ) : null}
 
-            {invoiceLightboxImageUrls.length === 0 && invoiceLightboxOtherUrls.length === 0 ? (
+            {invoiceLightboxImageUrls.length === 0 &&
+            invoiceLightboxOtherUrls.length === 0 &&
+            invoiceLightboxZelleEmails.length === 0 ? (
               <p className="mt-16 text-center text-white/80">표시할 첨부가 없습니다.</p>
             ) : null}
           </div>

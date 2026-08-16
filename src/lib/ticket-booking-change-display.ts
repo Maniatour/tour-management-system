@@ -105,6 +105,54 @@ export function getTicketBookingExpenseStack(booking: {
   }
 }
 
+export type TicketBookingPayableSnap = {
+  ea?: number | null
+  expense?: number | null
+  unit_price?: number | null
+  change_status?: string | null
+  pending_ea?: number | null
+  payment_status?: string | null
+  paid_amount?: number | null
+  booking_status?: string | null
+  status?: string | null
+}
+
+/** 벤더에 아직 지불해야 할 금액. 취소·결제 완료는 0 */
+export function ticketBookingRemainingPayableUsd(booking: TicketBookingPayableSnap): number {
+  const bs = (booking.booking_status ?? booking.status ?? '').trim().toLowerCase()
+  if (bs === 'cancelled' || bs === 'canceled' || bs === 'failed' || bs === 'expired') return 0
+  const ps = (booking.payment_status ?? '').toLowerCase()
+  if (ps === 'paid' || ps === 'refunded') return 0
+  const expense = getTicketBookingEffectiveExpenseUsd(booking)
+  const paid = Number(booking.paid_amount ?? 0)
+  const remaining = expense - (Number.isFinite(paid) ? paid : 0)
+  return remaining > 0 ? Math.round(remaining * 100) / 100 : 0
+}
+
+export function sumTicketBookingsRemainingPayableUsd(
+  bookings: readonly TicketBookingPayableSnap[]
+): number {
+  const sum = bookings.reduce((s, b) => s + ticketBookingRemainingPayableUsd(b), 0)
+  return Math.round(sum * 100) / 100
+}
+
+export function sumTicketBookingsEffectiveExpenseUsd(
+  bookings: readonly TicketBookingPayableSnap[]
+): number {
+  const sum = bookings.reduce((s, b) => {
+    const bs = (b.booking_status ?? b.status ?? '').trim().toLowerCase()
+    if (bs === 'cancelled' || bs === 'canceled' || bs === 'failed' || bs === 'expired') return s
+    const expense = getTicketBookingEffectiveExpenseUsd(b)
+    return s + (Number.isFinite(expense) ? expense : 0)
+  }, 0)
+  return Math.round(sum * 100) / 100
+}
+
+export function formatTicketPayableUsd(n: number): string {
+  if (!Number.isFinite(n)) return '$0'
+  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+}
+
 /** 명세 합계 대조용 — 변경 요청 중이면 표시·계산에 쓰는 예상 비용 */
 export function getTicketBookingEffectiveExpenseUsd(booking: {
   ea?: number | null

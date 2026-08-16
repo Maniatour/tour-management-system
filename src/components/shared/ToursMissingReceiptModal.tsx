@@ -9,12 +9,8 @@ import { generateTourId } from '@/lib/entityIds'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
 import { dedupeReservationIdsPreservingOrder, normalizeReservationIds } from '@/utils/tourUtils'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
-import {
-  fetchToursNeedCheckData,
-  type TourNeedCheckRow,
-  type DuplicateAssignmentReservationRow,
-  type UnassignedReservationNeedCheckRow,
-} from '@/lib/toursNeedCheckStats'
+import { fetchToursNeedCheckData, type TourNeedCheckRow, type DuplicateAssignmentReservationRow, type UnassignedReservationNeedCheckRow } from '@/lib/toursNeedCheckStats'
+import { markTourReceiptNotRequired } from '@/lib/schedulePastTourFollowUp'
 
 export type { TourNeedCheckRow, DuplicateAssignmentReservationRow, UnassignedReservationNeedCheckRow }
 /** @deprecated Use TourNeedCheckRow */
@@ -115,6 +111,7 @@ export function ToursNeedCheckModal({
   const [previewReservationId, setPreviewReservationId] = useState<string | null>(null)
   const [previewTourId, setPreviewTourId] = useState<string | null>(null)
   const [tourDetailPreviewNonce, setTourDetailPreviewNonce] = useState(0)
+  const [markingNoReceiptId, setMarkingNoReceiptId] = useState<string | null>(null)
 
   const openTourDetailPreview = useCallback((tourId: string) => {
     setPreviewReservationId(null)
@@ -163,6 +160,27 @@ export function ToursNeedCheckModal({
       setLoading(false)
     }
   }, [supabase])
+
+  const handleMarkNoReceipt = useCallback(
+    async (tour: TourNeedCheckRow) => {
+      const confirmMsg = t('needCheckMarkNoReceiptConfirm')
+      if (!window.confirm(confirmMsg)) return
+      setMarkingNoReceiptId(tour.id)
+      try {
+        const { data: sessionData } = await supabase.auth.getSession()
+        const email = sessionData.session?.user?.email ?? null
+        const { error } = await markTourReceiptNotRequired(supabase, tour.id, email)
+        if (error) {
+          alert(isKo ? `저장 실패: ${error}` : `Save failed: ${error}`)
+          return
+        }
+        await load()
+      } finally {
+        setMarkingNoReceiptId(null)
+      }
+    },
+    [supabase, t, isKo, load]
+  )
 
   const handleUnassignPlacement = useCallback(
     async (tourId: string, reservationId: string) => {
@@ -1195,31 +1213,43 @@ export function ToursNeedCheckModal({
                     <th className="py-2 pr-2 whitespace-nowrap w-24">{t('needCheckColGuideFee')}</th>
                   ) : null}
                   <th className="py-2 pr-2">{isKo ? '상태' : 'Status'}</th>
-                  <th className="py-2 pr-2 w-28">{isKo ? '이동' : 'Open'}</th>
+                  <th className="py-2 pr-2 w-40">{isKo ? '이동' : 'Open'}</th>
                 </tr>
               </thead>
               <tbody>
-                {(simpleTourRows || []).map((t) => (
-                  <tr key={t.id} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="py-2 pr-2 whitespace-nowrap">{t.tour_date || '—'}</td>
-                    <td className="py-2 pr-2 truncate max-w-[200px]" title={t.product_name || t.product_id || ''}>
-                      {t.product_name || t.product_id || '—'}
+                {(simpleTourRows || []).map((row) => (
+                  <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="py-2 pr-2 whitespace-nowrap">{row.tour_date || '—'}</td>
+                    <td className="py-2 pr-2 truncate max-w-[200px]" title={row.product_name || row.product_id || ''}>
+                      {row.product_name || row.product_id || '—'}
                     </td>
-                    <td className="py-2 pr-2 truncate max-w-[140px]">{t.guide_name || '—'}</td>
+                    <td className="py-2 pr-2 truncate max-w-[140px]">{row.guide_name || '—'}</td>
                     {showGuideFeeColumn ? (
                       <td className="py-2 pr-2 tabular-nums text-gray-800 whitespace-nowrap">
-                        {formatUsd(Number(t.guide_fee) || 0)}
+                        {formatUsd(Number(row.guide_fee) || 0)}
                       </td>
                     ) : null}
-                    <td className="py-2 pr-2">{(t.tour_status || '—').toString()}</td>
+                    <td className="py-2 pr-2">{(row.tour_status || '—').toString()}</td>
                     <td className="py-2 pr-2">
-                      <button
-                        type="button"
-                        onClick={() => openTourDetailPreview(t.id)}
-                        className="text-xs font-medium text-primary hover:text-primary/80"
-                      >
-                        {isKo ? '상세' : 'Open'}
-                      </button>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => openTourDetailPreview(row.id)}
+                          className="text-xs font-medium text-primary hover:text-primary/80"
+                        >
+                          {isKo ? '상세' : 'Open'}
+                        </button>
+                        {tab === 'noReceipt' ? (
+                          <button
+                            type="button"
+                            disabled={markingNoReceiptId === row.id}
+                            onClick={() => void handleMarkNoReceipt(row)}
+                            className="px-2 py-0.5 rounded border border-rose-200 bg-rose-50 text-rose-900 text-[11px] font-medium hover:bg-rose-100 disabled:opacity-50"
+                          >
+                            {markingNoReceiptId === row.id ? '…' : t('needCheckMarkNoReceipt')}
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -25,11 +25,7 @@ import {
   formatCanyonReconBadges,
   type DayCanyonReconTotals,
 } from '@/lib/ticketBookingDateView'
-import {
-  choiceLabelToTourCountKey,
-  type ReservationChoiceRow,
-  type TourChoiceCountKey,
-} from '@/lib/tourChoiceCounts'
+import { loadCalendarChoiceRows } from '@/lib/fetchCanyonChoiceRows'
 import { filterTicketBookingsExcludedFromMainUi } from '@/lib/ticketBookingSoftDelete'
 import { operatorIdInsert, resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
@@ -821,7 +817,7 @@ export default function PriceInventoryModal({
           .lte('tour_date', end),
         supabase
           .from('reservations')
-          .select('id, tour_date, product_id, total_people, status')
+          .select('id, tour_date, product_id, total_people, status, canyon_choice, choices')
           .eq('product_id', selectedProductId)
           .gte('tour_date', start)
           .lte('tour_date', end)
@@ -922,65 +918,15 @@ export default function PriceInventoryModal({
         product_id?: string | null
         total_people?: number | null
         status?: string | null
+        canyon_choice?: string | null
+        choices?: unknown
       }>
 
       setInternalCapacityByDate(
         buildCapacityTotalsByDate(tourRows, reservationRows, selectedProductId, monthDates)
       )
 
-      const reservationIds = reservationRows.map((row) => row.id).filter(Boolean)
-      const choiceRowsFlat: Array<{
-        reservation_id: string
-        choiceKey: TourChoiceCountKey
-        quantity: number
-      }> = []
-
-      if (reservationIds.length > 0) {
-        const BATCH = 100
-        for (let i = 0; i < reservationIds.length; i += BATCH) {
-          const batchIds = reservationIds.slice(i, i + BATCH)
-          const { data: rcData, error: rcError } = await supabase
-            .from('reservation_choices')
-            .select(
-              'reservation_id, quantity, choice_options!inner(option_key, option_name_ko, option_name)'
-            )
-            .in('reservation_id', batchIds)
-
-          if (rcError) {
-            console.error('Price & Inventory reservation_choices load failed:', rcError)
-            continue
-          }
-
-          for (const row of (rcData || []) as Array<{
-            reservation_id: string | null
-            quantity?: number | null
-            choice_options?: {
-              option_key?: string | null
-              option_name_ko?: string | null
-              option_name?: string | null
-            } | null
-          }>) {
-            if (!row.reservation_id) continue
-            const opt = row.choice_options
-            choiceRowsFlat.push({
-              reservation_id: row.reservation_id,
-              choiceKey: choiceLabelToTourCountKey(
-                opt?.option_name_ko ?? null,
-                opt?.option_name ?? null,
-                opt?.option_key ?? null
-              ),
-              quantity: Number(row.quantity) || 1,
-            })
-          }
-        }
-      }
-
-      const choiceRowsByResId = new Map<string, ReservationChoiceRow[]>()
-      for (const row of choiceRowsFlat) {
-        const list = choiceRowsByResId.get(row.reservation_id) || []
-        list.push({ choiceKey: row.choiceKey, quantity: row.quantity })
-        choiceRowsByResId.set(row.reservation_id, list)
-      }
+      const choiceRowsByResId = await loadCalendarChoiceRows(supabase, reservationRows)
 
       const tourIds = tourRows.map((tour) => tour.id).filter(Boolean)
       const ticketBookingsRaw: Array<{

@@ -8,6 +8,8 @@ export type ScheduleDisplayRpcChoiceRow = {
   reservation_id: string
   quantity?: number | null
   option_key?: string | null
+  canonical_option_key?: string | null
+  canyon_key?: string | null
   option_name_ko?: string | null
   option_name?: string | null
 }

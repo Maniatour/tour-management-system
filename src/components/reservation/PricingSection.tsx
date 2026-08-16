@@ -41,6 +41,7 @@ import {
 import { computePrepaymentTipOperatingDeduction } from '@/utils/storedCompanyRevenue'
 import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
 import {
+  cancelledNonOtaNetCollectedFromPayments,
   computeEffectiveCustomerPaidTowardDue,
   computeRemainingBalanceAfterPaymentRecords,
   customerRefundCreditAgainstDue,
@@ -1912,8 +1913,9 @@ export default function PricingSection({
         returnedAmount > 0.005
 
       if (hasPayments) {
+        const paySm = summarizePaymentRecordsForBalance(paymentRecordsNormalized)
         const netFromPayments = roundUsd2(
-          calculatedDepositTotalNet + calculatedBalanceReceivedTotal
+          cancelledNonOtaNetCollectedFromPayments(paySm) ?? 0
         )
         const linesSelf: LedgerLine[] = [
           {
@@ -2185,6 +2187,7 @@ export default function PricingSection({
     refundAmountForCompanyRevenueBlock,
     calculatedDepositTotalNet,
     calculatedBalanceReceivedTotal,
+    paymentRecordsNormalized,
     refundedAmount,
     returnedAmount,
     reservationOptionsTotalPrice,

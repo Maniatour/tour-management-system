@@ -13,6 +13,11 @@ import {
   getMultiDayTourDays,
   getTourCalendarEndYmd,
 } from '@/lib/scheduleVehicleOilMaintenance'
+import { loadCalendarChoiceRows } from '@/lib/fetchCanyonChoiceRows'
+import {
+  aggregateTourChoiceCounts,
+  tourChoiceCountsHasDisplayable,
+} from '@/lib/tourChoiceCounts'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 
@@ -819,74 +824,28 @@ const TourCalendar = memo(function TourCalendar({
         setChoiceSummaryByTourId({})
         return
       }
-      const isUuid = (s: string | null | undefined) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((s || '').trim())
-      const choiceLabelToKey = (nameKo: string | null | undefined, nameEn: string | null | undefined, optionKey: string | null | undefined): string => {
-        const label = (nameKo || nameEn || (optionKey && !isUuid(optionKey) ? optionKey : '') || '').toString().trim()
-        const labelLower = label.toLowerCase()
-        const labelKo = label
-        if (labelLower.includes('antelope x canyon') || /엑스\s*앤텔롭|엑스\s*앤틸롭|엑스\s*엔텔롭/.test(labelKo)) return 'X'
-        if (labelLower.includes('lower antelope canyon') || /로어\s*앤텔롭|로어\s*앤틸롭|로어\s*엔텔롭/.test(labelKo)) return 'L'
-        if (labelLower.includes('upper antelope canyon') || /어퍼\s*앤텔롭|어퍼\s*앤틸롭|어퍼\s*엔텔롭/.test(labelKo)) return 'U'
-        if (labelLower.includes('antelope x') || labelLower.includes(' x ')) return 'X'
-        if (labelLower.includes('lower')) return 'L'
-        if (labelLower.includes('upper')) return 'U'
-        return '_other'
-      }
       try {
-        const idsArray = Array.from(reservationIds)
-        const BATCH = 100
-        let choicesFlat: Array<{ reservation_id: string; choiceKey: string; quantity: number }> = []
-        for (let i = 0; i < idsArray.length; i += BATCH) {
-          const batchIds = idsArray.slice(i, i + BATCH)
-          const { data: rcData, error } = await supabase
-            .from('reservation_choices')
-            .select('reservation_id, quantity, choice_options!inner(option_key, option_name_ko, option_name)')
-            .in('reservation_id', batchIds)
-          if (error) {
-            console.warn('초이스 합계 로드 실패:', error)
-            setChoiceSummaryByTourId({})
-            return
-          }
-          const rows = (rcData || []) as Array<{
-            reservation_id: string
-            quantity?: number | null
-            choice_options?: { option_key?: string | null; option_name_ko?: string | null; option_name?: string | null } | null
-          }>
-          choicesFlat = choicesFlat.concat(rows.map((row) => {
-            const opt = row.choice_options
-            const choiceKey = choiceLabelToKey(opt?.option_name_ko ?? null, opt?.option_name ?? null, opt?.option_key ?? null)
-            return { reservation_id: row.reservation_id, choiceKey, quantity: Number(row.quantity) || 1 }
+        const assignedReservations = allReservations
+          .filter((r) => reservationIds.has(String(r.id).trim()))
+          .map((r) => ({
+            id: String(r.id),
+            canyon_choice: (r as { canyon_choice?: string | null }).canyon_choice ?? null,
+            choices: (r as { choices?: unknown }).choices,
+            total_people: r.total_people,
           }))
+        const knownIds = new Set(assignedReservations.map((r) => r.id))
+        for (const id of reservationIds) {
+          if (!knownIds.has(id)) assignedReservations.push({ id, canyon_choice: null, choices: null, total_people: 0 })
         }
-        const choiceRowsByResId = new Map<string, Array<{ choiceKey: string; quantity: number }>>()
-        choicesFlat.forEach((c) => {
-          const list = choiceRowsByResId.get(c.reservation_id) || []
-          list.push({ choiceKey: c.choiceKey, quantity: c.quantity })
-          choiceRowsByResId.set(c.reservation_id, list)
-        })
-        const displayOrder = ['X', 'L', 'U', '_other']
+        const choiceRowsByResId = await loadCalendarChoiceRows(supabase, assignedReservations)
         const next: Record<string, Record<string, number>> = {}
         for (const tour of tours || []) {
           const tourIdKey = tour.id != null ? String(tour.id) : ''
           if (!tourIdKey) continue
           const assignedIds = new Set(normalizeReservationIds(tour.reservation_ids as unknown))
           const assignedResList = allReservations.filter((r) => assignedIds.has(String(r.id)))
-          const choiceCounts: Record<string, number> = {}
-          assignedResList.forEach((res) => {
-            const rows = choiceRowsByResId.get(String(res.id)) || []
-            const people = res.total_people || 0
-            if (rows.length === 0) return
-            if (rows.length === 1) {
-              const key = rows[0].choiceKey
-              choiceCounts[key] = (choiceCounts[key] || 0) + people
-            } else {
-              rows.forEach((r) => {
-                choiceCounts[r.choiceKey] = (choiceCounts[r.choiceKey] || 0) + r.quantity
-              })
-            }
-          })
-          const hasAny = displayOrder.some((k) => (choiceCounts[k] || 0) > 0)
-          if (hasAny) {
+          const choiceCounts = aggregateTourChoiceCounts(assignedResList, choiceRowsByResId)
+          if (tourChoiceCountsHasDisplayable(choiceCounts)) {
             next[tourIdKey] = { ...choiceCounts }
           }
         }

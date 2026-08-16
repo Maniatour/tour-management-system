@@ -9,6 +9,7 @@ import {
   isKlookOrderEmailSubjectForReservation,
   isZoomZoomTourNewBookingEmailSubject,
 } from '@/lib/emailReservationParser'
+import { isZellePaymentSentEmail, ZELLE_PAYMENT_PLATFORM_KEY } from '@/lib/zellePaymentEmail'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Json } from '@/lib/database.types'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
@@ -172,12 +173,17 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const { platform_key, extracted_data } = extractReservationFromEmail({
-    subject,
-    text,
-    html,
-    sourceEmail: from,
-  })
+  const { platform_key, extracted_data } = isZellePaymentSentEmail(subject)
+    ? {
+        platform_key: ZELLE_PAYMENT_PLATFORM_KEY,
+        extracted_data: { is_booking_confirmed: false, zelle_processed: false },
+      }
+    : extractReservationFromEmail({
+        subject,
+        text,
+        html,
+        sourceEmail: from,
+      })
 
   const row: ReservationImportInsert = {
     message_id,
@@ -333,6 +339,8 @@ export async function GET(request: NextRequest) {
     query = query.in('status', ['pending', 'confirmed'])
   }
   query = query
+    .or(`platform_key.is.null,platform_key.neq.${ZELLE_PAYMENT_PLATFORM_KEY}`)
+    .not('subject', 'ilike', '%You sent money with Zelle%')
     .order('received_at', { ascending: false, nullsFirst: false })
     .order('id', { ascending: false })
     .limit(1000)

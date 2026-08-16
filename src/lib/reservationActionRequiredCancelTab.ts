@@ -1,6 +1,7 @@
 import type { Reservation } from '@/types/reservation'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
 import {
+  cancelledNonOtaNetCollectedFromPayments,
   pricingFieldToNumber,
   summarizePaymentRecordsForBalance,
   type PaymentRecordLike,
@@ -33,9 +34,9 @@ export function reservationNeedsCancelFinancialCleanup(
 
   const records = paymentRecordsByReservationId.get(r.id) ?? []
   const sm = summarizePaymentRecordsForBalance(records)
+  const netCollected = cancelledNonOtaNetCollectedFromPayments(sm)
   const hasUnrefundedCustomerMoney =
-    records.length > 0 &&
-    (sm.depositTotalNet > 0.01 || sm.balanceReceivedTotal > 0.01)
+    records.length > 0 && netCollected != null && netCollected > 0.01
 
   const p = reservationPricingMap.get(r.id)
   const totalPrice = p ? pricingFieldToNumber(p.total_price) : 0

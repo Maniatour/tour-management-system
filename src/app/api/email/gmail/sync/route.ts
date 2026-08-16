@@ -2,43 +2,32 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { extractReservationFromEmail } from '@/lib/emailReservationParser'
+import { isZellePaymentSentEmail, ZELLE_PAYMENT_PLATFORM_KEY } from '@/lib/zellePaymentEmail'
+import { decodeGmailPayload, extractGmailMessageText, type GmailPart } from '@/lib/gmailMessageBody'
 import type { Json } from '@/lib/database.types'
 
+export const maxDuration = 120
+
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me'
+const GMAIL_FULL_FETCH_PER_REQUEST = 60
+const GMAIL_AFTER_DAYS_MAX = 400
 
 function getHeader(headers: Array<{ name?: string; value?: string }>, name: string): string | null {
   const h = headers?.find((x) => x.name?.toLowerCase() === name.toLowerCase())
   return h?.value ?? null
 }
 
-function decodeBody(payload: { body?: { data?: string }; parts?: Array<{ body?: { data?: string }; mimeType?: string }> }): string {
-  let raw = ''
-  if (payload.body?.data) {
-    raw = Buffer.from(payload.body.data, 'base64url').toString('utf-8')
-  }
-  if (!raw && payload.parts) {
-    const textPart = payload.parts.find((p) => p.mimeType === 'text/plain' || !p.mimeType)
-    if (textPart?.body?.data) {
-      raw = Buffer.from(textPart.body.data, 'base64url').toString('utf-8')
-    }
-    if (!raw) {
-      const htmlPart = payload.parts.find((p) => p.mimeType === 'text/html')
-      if (htmlPart?.body?.data) {
-        raw = Buffer.from(htmlPart.body.data, 'base64url').toString('utf-8')
-      }
-    }
-  }
-  return raw
+function decodeBody(payload: GmailPart): string {
+  return decodeGmailPayload(payload)
 }
 
 type FullMsg = {
   id: string
   internalDate?: string
+  snippet?: string
   labelIds?: string[]
-  payload?: {
+  payload?: GmailPart & {
     headers?: Array<{ name?: string; value?: string }>
-    body?: { data?: string }
-    parts?: Array<{ body?: { data?: string }; mimeType?: string }>
   }
 }
 
@@ -47,10 +36,13 @@ type FullMsg = {
  * 전체 재동기화: body { fullSync: true } → History 생략, after:(오늘-7일) 수신함 목록으로 누락 보정
  * 1) fullSync가 아니고 last_history_id가 있으면 History API로 messageAdded 수집 → 있으면 즉시 반환
  * 2) History에서 추가 ID가 없어도 Gmail 누락이 있을 수 있으므로 항상 이어서 messages.list(수신함)로 보정
- * 3) 목록 쿼리: 일반 동기화 after:3일, fullSync 시 after:7일 (예약 가져오기 UI 기본 날짜 창과 맞춤)
+ * 3) 목록 쿼리: 일반 동기화 after:3일, fullSync 시 after:7일, afterDays로 더 긴 기간 지정 가능
+ *    afterDays > 7이면 History를 건너뛰고, 이미 DB에 있는 message_id는 본문 조회 없이 스킵한 뒤
+ *    요청당 최대 60건만 가져오며 remaining으로 클라이언트가 이어서 호출한다
  */
 export async function POST(request: Request) {
   let forceFullSync = false
+  let afterDays: number | null = null
   try {
     const url = new URL(request.url)
     if (url.searchParams.get('full') === '1') forceFullSync = true
@@ -58,11 +50,16 @@ export async function POST(request: Request) {
     /* ignore */
   }
   try {
-    const body = (await request.json().catch(() => ({}))) as { fullSync?: boolean }
+    const body = (await request.json().catch(() => ({}))) as { fullSync?: boolean; afterDays?: number }
     if (body?.fullSync === true) forceFullSync = true
+    if (typeof body?.afterDays === 'number' && Number.isFinite(body.afterDays)) {
+      afterDays = Math.min(GMAIL_AFTER_DAYS_MAX, Math.max(1, Math.round(body.afterDays)))
+    }
   } catch {
     /* ignore */
   }
+  const lookbackDays = afterDays ?? (forceFullSync ? 7 : 3)
+  const skipHistory = lookbackDays > 7
 
   const client = supabaseAdmin ?? (await import('@/lib/supabase')).supabase
   const { data: conn, error: connError } = await fromUntypedTable(client, 'gmail_connections')
@@ -138,7 +135,7 @@ export async function POST(request: Request) {
   const accessToken = tokenData.access_token
   const connId = connRow.id
   const connEmail = connRow.email
-  const lastHistoryId = forceFullSync ? null : (connRow.last_history_id ?? null)
+  const lastHistoryId = skipHistory || forceFullSync ? null : (connRow.last_history_id ?? null)
 
   const processOneMessage = async (full: FullMsg, skipInboxCheck = false): Promise<boolean> => {
     if (!full.payload) return false
@@ -147,23 +144,38 @@ export async function POST(request: Request) {
 
     const subject = getHeader(full.payload.headers ?? [], 'Subject') ?? ''
     const from = getHeader(full.payload.headers ?? [], 'From')
-    const body = decodeBody(full.payload)
+    const body =
+      (await extractGmailMessageText(full, accessToken, full.id)).trim() || decodeBody(full.payload)
     const messageId = full.id ? `<${full.id}@gmail>` : null
     if (!messageId) return false
 
     const { data: existing } = await client
       .from('reservation_imports')
-      .select('id')
+      .select('id, raw_body_text, raw_body_html, platform_key, subject')
       .eq('message_id', messageId)
       .maybeSingle()
-    if (existing) return false
-
-    const { platform_key, extracted_data } = extractReservationFromEmail({
-      subject,
-      text: body,
-      html: null,
-      sourceEmail: from,
-    })
+    const zelleMail = isZellePaymentSentEmail(subject)
+    if (existing) {
+      const empty =
+        !String(existing.raw_body_text ?? '').trim() && !String(existing.raw_body_html ?? '').trim()
+      const existingZelle =
+        existing.platform_key === ZELLE_PAYMENT_PLATFORM_KEY ||
+        isZellePaymentSentEmail(existing.subject)
+      if (!empty || !body.trim() || !(zelleMail || existingZelle)) return false
+      const { error: updErr } = await client
+        .from('reservation_imports')
+        .update({
+          raw_body_text: body.slice(0, 50000),
+          platform_key: ZELLE_PAYMENT_PLATFORM_KEY,
+          extracted_data: { is_booking_confirmed: false, zelle_processed: false } as Json,
+          status: 'pending',
+        })
+        .eq('id', existing.id)
+      if (updErr) {
+        console.error('[gmail/sync] reservation_imports body backfill:', updErr.message)
+      }
+      return !updErr
+    }
 
     let receivedAt: string
     if (full.internalDate) {
@@ -173,6 +185,18 @@ export async function POST(request: Request) {
     } else {
       receivedAt = new Date().toISOString()
     }
+
+    const { platform_key, extracted_data } = zelleMail
+      ? {
+          platform_key: ZELLE_PAYMENT_PLATFORM_KEY,
+          extracted_data: { is_booking_confirmed: false, zelle_processed: false },
+        }
+      : extractReservationFromEmail({
+          subject,
+          text: body,
+          html: null,
+          sourceEmail: from,
+        })
 
     const { error: insertErr } = await client.from('reservation_imports').insert({
       message_id: messageId,
@@ -264,7 +288,7 @@ export async function POST(request: Request) {
         if (getRes.ok && (await processOneMessage(full))) imported++
       }
       await updateHistoryId(newHistoryId)
-      return NextResponse.json({ imported, total: addedIds.length, mode: 'history' })
+      return NextResponse.json({ imported, total: addedIds.length, remaining: 0, mode: 'history' })
     }
 
     // History에 messageAdded가 없어도 Gmail이 일부 변경을 누락할 수 있음 → 아래 messages.list 로 보정
@@ -286,9 +310,9 @@ export async function POST(request: Request) {
   const profile = (await profileRes.json()) as { historyId?: string }
   const currentHistoryId = profile.historyId
 
-  // after:YYYY/MM/DD — 일반 동기화 3일, 전체 재동기화(forceFullSync)는 예약 가져오기 목록 기본 7일창과 맞춤
+  // after:YYYY/MM/DD — 일반 3일, 전체 재동기화 7일, afterDays로 올해 등 더 긴 기간
   const afterDate = new Date()
-  afterDate.setDate(afterDate.getDate() - (forceFullSync ? 7 : 3))
+  afterDate.setDate(afterDate.getDate() - lookbackDays)
   const afterStr = `${afterDate.getFullYear()}/${String(afterDate.getMonth() + 1).padStart(2, '0')}/${String(afterDate.getDate()).padStart(2, '0')}`
   const listIds: string[] = []
   let listPageToken: string | undefined
@@ -319,11 +343,37 @@ export async function POST(request: Request) {
 
   if (listIds.length === 0) {
     if (currentHistoryId) await updateHistoryId(currentHistoryId)
-    return NextResponse.json({ imported: 0, total: 0, mode: 'full' })
+    return NextResponse.json({ imported: 0, total: 0, remaining: 0, mode: 'full', queryUsed: `after:${afterStr}` })
   }
 
+  const existingIds = new Set<string>()
+  const emptyBodyZelleIds = new Set<string>()
+  for (let i = 0; i < listIds.length; i += 200) {
+    const chunk = listIds.slice(i, i + 200).map((id) => `<${id}@gmail>`)
+    const { data } = await client
+      .from('reservation_imports')
+      .select('message_id, raw_body_text, raw_body_html, platform_key, subject')
+      .in('message_id', chunk)
+    for (const row of data ?? []) {
+      if (!row.message_id) continue
+      existingIds.add(row.message_id)
+      const empty =
+        !String(row.raw_body_text ?? '').trim() && !String(row.raw_body_html ?? '').trim()
+      const zelle =
+        row.platform_key === ZELLE_PAYMENT_PLATFORM_KEY ||
+        isZellePaymentSentEmail(row.subject)
+      if (empty && zelle) emptyBodyZelleIds.add(row.message_id)
+    }
+  }
+  const missingIds = listIds.filter((id) => {
+    const mid = `<${id}@gmail>`
+    return !existingIds.has(mid) || emptyBodyZelleIds.has(mid)
+  })
+  const remainingAfterBatch = Math.max(0, missingIds.length - GMAIL_FULL_FETCH_PER_REQUEST)
+  const toFetch = missingIds.slice(0, GMAIL_FULL_FETCH_PER_REQUEST)
+
   const fullList: FullMsg[] = []
-  for (const id of listIds) {
+  for (const id of toFetch) {
     const getRes = await fetch(`${GMAIL_API_BASE}/messages/${id}?format=full`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
@@ -344,7 +394,8 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     imported,
-    total: fullList.length,
+    total: listIds.length,
+    remaining: remainingAfterBatch,
     mode: 'full',
     queryUsed: `after:${afterStr}`,
   })

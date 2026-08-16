@@ -41,8 +41,35 @@ function patchSync(name) {
   fs[name] = (...args) => withRetrySync(original, args)
 }
 
+function isEmptyRead(content) {
+  if (content == null) return true
+  if (typeof content === 'string') return content.length === 0
+  if (Buffer.isBuffer(content)) return content.length === 0
+  return false
+}
+
+/** Next가 쓰는 매니페스트가 아직 0바이트로 열려 E328(Manifest file is empty)가 나는 경우 */
+function shouldRetryEmptyManifest(filePath) {
+  const p = String(filePath || '')
+  return /manifest/i.test(p)
+}
+
+function patchReadFileSync() {
+  const original = fs.readFileSync.bind(fs)
+  fs.readFileSync = (...args) => {
+    const filePath = args[0]
+    let last
+    for (let attempt = 0; attempt < 40; attempt++) {
+      last = withRetrySync(original, args)
+      if (!shouldRetryEmptyManifest(filePath) || !isEmptyRead(last)) return last
+      sleepSync(80 + 40 * attempt)
+    }
+    return last
+  }
+}
+
 patchSync('openSync')
-patchSync('readFileSync')
+patchReadFileSync()
 patchSync('readSync')
 patchSync('statSync')
 patchSync('accessSync')
@@ -87,6 +114,16 @@ fs.readFile = (...args) => {
       if (err && isRetryable(err) && attempt < 59) {
         attempt += 1
         setTimeout(run, 80 + 60 * attempt)
+        return
+      }
+      if (
+        !err &&
+        shouldRetryEmptyManifest(readArgs[0]) &&
+        isEmptyRead(data) &&
+        attempt < 39
+      ) {
+        attempt += 1
+        setTimeout(run, 80 + 40 * attempt)
         return
       }
       callback(err, data)

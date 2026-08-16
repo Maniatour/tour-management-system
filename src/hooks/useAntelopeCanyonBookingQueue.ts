@@ -17,10 +17,8 @@ import {
   type ReservationLite,
 } from '@/lib/antelopeCanyonBookingQueue'
 import type { SeasonDate } from '@/lib/ticketBookingCancelDue'
-import {
-  choiceLabelToTourCountKey,
-  type ReservationChoiceRow,
-} from '@/lib/tourChoiceCounts'
+import { loadCalendarChoiceRows } from '@/lib/fetchCanyonChoiceRows'
+import type { ReservationChoiceRow } from '@/lib/tourChoiceCounts'
 import { canonicalReservationIdKey, normalizeReservationIds } from '@/utils/tourUtils'
 import { isTourCancelled, isTourDeleted } from '@/utils/tourStatusUtils'
 import { filterTicketBookingsExcludedFromMainUi } from '@/lib/ticketBookingSoftDelete'
@@ -83,51 +81,28 @@ async function fetchToursByIds(tourIds: string[]): Promise<AntelopeCanyonTourLit
 }
 
 async function fetchChoiceRowsByReservationIds(
-  reservationIds: string[]
+  reservationIds: string[],
+  reservations: Array<{ id: string; canyon_choice?: string | null; choices?: unknown }>
 ): Promise<Map<string, ReservationChoiceRow[]>> {
   const unique = [...new Set(reservationIds.map((id) => String(id || '').trim()).filter(Boolean))]
-  const choiceRowsByResId = new Map<string, ReservationChoiceRow[]>()
-  if (!unique.length) return choiceRowsByResId
+  if (!unique.length) return new Map()
 
-  const BATCH_SIZE = 100
-  for (let i = 0; i < unique.length; i += BATCH_SIZE) {
-    const batchIds = unique.slice(i, i + BATCH_SIZE)
-    const { data, error } = await supabase
-      .from('reservation_choices')
-      .select(
-        'reservation_id, quantity, choice_options!inner(option_key, option_name_ko, option_name)'
-      )
-      .in('reservation_id', batchIds)
-    if (error) {
-      console.warn('useAntelopeCanyonBookingQueue reservation_choices', error)
-      break
+  const byId = new Map(reservations.map((r) => [String(r.id).trim(), r]))
+  const forLoad = unique.map((id) => {
+    const row = byId.get(id)
+    return {
+      id,
+      canyon_choice: row?.canyon_choice ?? null,
+      choices: row?.choices,
     }
-    for (const row of (data || []) as Array<{
-      reservation_id: string | null
-      quantity?: number | null
-      choice_options?: {
-        option_key?: string | null
-        option_name_ko?: string | null
-        option_name?: string | null
-      } | null
-    }>) {
-      const rid = row.reservation_id?.trim()
-      if (!rid) continue
-      const optRaw = row.choice_options
-      const opt = Array.isArray(optRaw) ? optRaw[0] : optRaw
-      const choiceKey = choiceLabelToTourCountKey(
-        opt?.option_name_ko ?? null,
-        opt?.option_name ?? null,
-        opt?.option_key ?? null
-      )
-      const entry = { choiceKey, quantity: Number(row.quantity) || 1 }
-      const list = choiceRowsByResId.get(rid) || []
-      list.push(entry)
-      choiceRowsByResId.set(rid, list)
-      const canon = canonicalReservationIdKey(rid)
-      if (canon !== rid && !choiceRowsByResId.has(canon)) {
-        choiceRowsByResId.set(canon, list)
-      }
+  })
+  const choiceRowsByResId = await loadCalendarChoiceRows(supabase, forLoad)
+  for (const id of unique) {
+    const list = choiceRowsByResId.get(id)
+    if (!list) continue
+    const canon = canonicalReservationIdKey(id)
+    if (canon !== id && !choiceRowsByResId.has(canon)) {
+      choiceRowsByResId.set(canon, list)
     }
   }
   return choiceRowsByResId
@@ -207,7 +182,7 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
 
       const { data: reservationsData, error: reservationsErr } = await supabase
         .from('reservations')
-        .select('id, tour_date, product_id, status, total_people')
+        .select('id, tour_date, product_id, status, total_people, canyon_choice, choices')
         .gte('tour_date', reservationDateStart)
         .lte('tour_date', reservationDateEnd)
 
@@ -231,7 +206,7 @@ export function useAntelopeCanyonBookingQueue(enabled = true) {
           if (matched?.id) assignedResIds.push(matched.id)
         }
       }
-      const choiceRowsByResId = await fetchChoiceRowsByReservationIds(assignedResIds)
+      const choiceRowsByResId = await fetchChoiceRowsByReservationIds(assignedResIds, reservations)
       const enrichedTours = enrichAntelopeCanyonToursForTourBadge(
         tours,
         reservations,

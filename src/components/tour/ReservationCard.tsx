@@ -57,6 +57,7 @@ import {
   dedupeAntelopeTourChoiceBadges,
 } from '@/utils/choiceLabels'
 import { normalizeReservationChoicesForProduct } from '@/lib/normalizeReservationChoicesForProduct'
+import { hydrateChoiceDisplayNames } from '@/lib/canyonChoice'
 import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
 import type { PickupHotelAssignmentOption } from '@/utils/pickupHotelUtils'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
@@ -857,6 +858,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       choice_id?: string | null
       option_id?: string | null
       option_key?: string | null
+      canyon_key?: string | null
+      canonical_option_key?: string | null
       choice_options?: ChoiceOptEmbed | ChoiceOptEmbed[] | null
       product_choices?: ProductChoiceEmbed | ProductChoiceEmbed[] | null
     }
@@ -889,6 +892,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           choice_id,
           option_id,
           option_key,
+          canyon_key,
+          canonical_option_key,
           ${choiceOptionsSelect},
           product_choices (
             choice_group,
@@ -908,7 +913,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         if (!isAbortError(error)) console.error('예약 초이스 조회 오류:', error)
         const { data: plain } = await supabase
           .from('reservation_choices')
-          .select('choice_id, option_id, option_key')
+          .select('choice_id, option_id, option_key, canyon_key, canonical_option_key')
           .eq('reservation_id', reservation.id)
         rows = (plain as RcRow[]) || []
       } else {
@@ -935,7 +940,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             (opt?.option_name_ko && String(opt.option_name_ko).trim()) ||
             (opt?.option_name && String(opt.option_name).trim()) ||
             usableKey(opt?.option_key) ||
-            usableKey(item.option_key)
+            usableKey(item.option_key) ||
+            usableKey(item.canonical_option_key) ||
+            item.canyon_key
           )
           return hasDisplayName ? null : item.option_id
         })
@@ -1000,21 +1007,33 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       }
 
       const choices = rows
-        .filter((item) => item.choice_id && item.option_id)
+        .filter((item) => item.choice_id && (item.option_id || item.canyon_key))
         .map((item) => {
           const opt = unwrap(item.choice_options)
           const pc = unwrap(item.product_choices)
           const fallback = item.option_id ? optionInfoById.get(item.option_id) : undefined
-          const option_key =
-            usableKey(opt?.option_key) ||
-            usableKey(fallback?.option_key) ||
-            usableKey(item.option_key)
+          const names = hydrateChoiceDisplayNames({
+            canyon_key: item.canyon_key,
+            canonical_option_key: item.canonical_option_key,
+            option_key:
+              usableKey(opt?.option_key) ||
+              usableKey(fallback?.option_key) ||
+              usableKey(item.option_key) ||
+              usableKey(item.canonical_option_key) ||
+              null,
+            option_name: opt?.option_name || fallback?.option_name,
+            option_name_ko: opt?.option_name_ko || fallback?.option_name_ko,
+            choice_group_ko: pc?.choice_group_ko,
+          })
+          const option_key = names.option_key || undefined
           const choiceItem: {
             choice_id: string
             option_id: string
             option_name?: string
             option_name_ko?: string
             option_key?: string
+            canyon_key?: string
+            canonical_option_key?: string
             internal_name?: string
             badge_icon_url?: string
             choice_group?: string
@@ -1022,15 +1041,17 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             product_id?: string
           } = {
             choice_id: item.choice_id as string,
-            option_id: item.option_id as string,
+            option_id: (item.option_id || item.canonical_option_key || item.canyon_key || '') as string,
           }
-          const option_name = opt?.option_name || fallback?.option_name
-          const option_name_ko = opt?.option_name_ko || fallback?.option_name_ko
+          const option_name = names.option_name || undefined
+          const option_name_ko = names.option_name_ko || undefined
           const internal_name = opt?.internal_name || fallback?.internal_name
           const badge_icon_url = opt?.badge_icon_url || fallback?.badge_icon_url
           if (option_name) choiceItem.option_name = option_name
           if (option_name_ko) choiceItem.option_name_ko = option_name_ko
           if (option_key) choiceItem.option_key = option_key
+          if (item.canyon_key) choiceItem.canyon_key = item.canyon_key
+          if (item.canonical_option_key) choiceItem.canonical_option_key = item.canonical_option_key
           if (internal_name) choiceItem.internal_name = internal_name
           if (badge_icon_url) choiceItem.badge_icon_url = badge_icon_url
           if (pc?.choice_group) choiceItem.choice_group = pc.choice_group
@@ -1053,6 +1074,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             options:choice_options (
               id,
               option_key,
+              canyon_key,
+              canonical_option_key,
               option_name,
               option_name_ko
             )
@@ -1068,9 +1091,13 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                 choice_id: string
                 option_id: string
                 option_key?: string
+                canyon_key?: string | null
+                canonical_option_key?: string | null
                 option_name_ko?: string
                 choice_options: {
                   option_key: string | null
+                  canyon_key?: string | null
+                  canonical_option_key?: string | null
                   option_name: string | null
                   option_name_ko: string | null
                   product_choices: {
@@ -1082,8 +1109,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               } = {
                 choice_id: c.choice_id,
                 option_id: c.option_id,
+                canyon_key: c.canyon_key ?? null,
+                canonical_option_key: c.canonical_option_key ?? null,
                 choice_options: {
                   option_key: c.option_key ?? null,
+                  canyon_key: c.canyon_key ?? null,
+                  canonical_option_key: c.canonical_option_key ?? null,
                   option_name: c.option_name ?? null,
                   option_name_ko: c.option_name_ko ?? null,
                   product_choices: {

@@ -10,6 +10,8 @@ import { mapIdsInConcurrentChunks } from '@/lib/fetchSupabaseInChunks'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
 import ExpenseDetailModal from '@/components/expenses/ExpenseDetailModal'
+import UnreceivedAssignedCashBalancePanel from '@/components/reports/UnreceivedAssignedCashBalancePanel'
+import { DEFAULT_LEDGER_BASE } from '@/lib/fiscal-settings'
 
 interface ComprehensiveReportTabProps {
   dateRange: { start: string; end: string }
@@ -492,8 +494,8 @@ export default function ComprehensiveReportTab({
         profitMargin
       }
 
-      // 현금 통계 (2026년 1월 1일부터) - 병렬 처리
-      const baseDate = '2026-01-01'
+      // 현금 통계 (원장 기준일부터) - 병렬 처리
+      const baseDate = DEFAULT_LEDGER_BASE
       const [
         allCashTransactionsResult,
         allCashPaymentsResult,
@@ -823,12 +825,14 @@ export default function ComprehensiveReportTab({
                 </span>
               </div>
               <p className="text-xs text-gray-500 mt-2">
-                * 잔액은 2026년 1월 1일부터 계산
+                * 잔액은 {DEFAULT_LEDGER_BASE}부터 계산
               </p>
             </div>
           </div>
         )}
       </div>
+
+      {stats.cash ? <UnreceivedAssignedCashBalancePanel /> : null}
 
       {/* 모달들 */}
       <CategoryManagerModal
