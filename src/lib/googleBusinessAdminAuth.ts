@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { requireStaffApiAuth } from '@/lib/api-security'
 import { applyActiveOperatorSession } from '@/lib/operators/applyActiveOperatorSession'
+import { isManagerTeamPosition } from '@/lib/roles'
 import { supabaseAdmin } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
 
@@ -18,10 +19,27 @@ async function isAdminUser(
   return Boolean(data)
 }
 
-async function isOpTeamMember(
+function normalizeTeamPosition(raw: string | null | undefined): string {
+  return String(raw ?? '')
+    .toLowerCase()
+    .trim()
+    .replace(/_/g, ' ')
+}
+
+/** 리뷰 연동 관리(등록·분류·연결) — Super, Office Manager, OP */
+function canManageGoogleReviewsByPosition(rawPosition: string | null | undefined): boolean {
+  const pos = normalizeTeamPosition(rawPosition)
+  if (!pos) return false
+  if (pos === 'op' || pos === 'super' || pos === 'admin') return true
+  return isManagerTeamPosition(rawPosition)
+}
+
+async function canManageGoogleReviews(
   client: SupabaseClient<Database>,
   emailLower: string
 ): Promise<boolean> {
+  if (await isAdminUser(client, emailLower)) return true
+
   const { data, error } = await client
     .from('team')
     .select('position')
@@ -35,11 +53,7 @@ async function isOpTeamMember(
     return false
   }
 
-  const pos = String(data?.position ?? '')
-    .toLowerCase()
-    .trim()
-    .replace(/_/g, ' ')
-  return pos === 'op'
+  return canManageGoogleReviewsByPosition(data?.position)
 }
 
 export type GoogleBusinessAdminAuthResult =
@@ -78,8 +92,8 @@ export async function requireGoogleBusinessAdminAuth(
 
   const emailLower = staff.userEmail.trim().toLowerCase()
   const adminClient = supabaseAdmin ?? staff.staffClient
-  const adminOk = await isAdminUser(adminClient, emailLower)
-  if (!adminOk) {
+  const allowed = await canManageGoogleReviews(adminClient, emailLower)
+  if (!allowed) {
     return {
       ok: false,
       response: NextResponse.json({ error: '관리자 권한이 필요합니다.' }, { status: 403 }),
@@ -89,7 +103,7 @@ export async function requireGoogleBusinessAdminAuth(
   return completeGoogleBusinessAuth(request, staff)
 }
 
-/** 스케줄 디스플레이 리뷰 현황 등 읽기 전용 — Super/Office Manager + OP */
+/** 스케줄 디스플레이 리뷰 현황 등 읽기 전용 — Super / Office Manager / OP */
 export async function requireGoogleReviewStaffStatsReadAuth(
   request: NextRequest
 ): Promise<GoogleBusinessAdminAuthResult> {
@@ -100,8 +114,7 @@ export async function requireGoogleReviewStaffStatsReadAuth(
 
   const emailLower = staff.userEmail.trim().toLowerCase()
   const adminClient = supabaseAdmin ?? staff.staffClient
-  const allowed =
-    (await isAdminUser(adminClient, emailLower)) || (await isOpTeamMember(adminClient, emailLower))
+  const allowed = await canManageGoogleReviews(adminClient, emailLower)
   if (!allowed) {
     return {
       ok: false,

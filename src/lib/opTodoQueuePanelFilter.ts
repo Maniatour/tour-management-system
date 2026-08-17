@@ -19,6 +19,7 @@ const QUEUE_PANEL_TITLE_GROUPS: string[][] = [
   ['예약 대행 관리', 'reservation agency management'],
   ['앤텔롭캐년 부킹 관리', 'antelope canyon booking management'],
   ['도시락 체크', 'bento check'],
+  ['렌트카 픽드랍 안내', 'rental pickup / return notice'],
 ]
 
 function normalizeTodoTitleKey(title: string): string {

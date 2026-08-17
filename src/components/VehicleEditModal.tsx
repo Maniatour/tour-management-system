@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Car, DollarSign, Wrench, Calendar, Upload, Trash2, Image, Images, Settings, FileText, ExternalLink } from 'lucide-react'
+import { X, Car, DollarSign, Wrench, Calendar, Upload, Trash2, Image, Images, Settings, FileText, ExternalLink, Users } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fetchUploadApi } from '@/lib/uploadClient'
 import { rentalImpliedDailyUsd } from '@/lib/rentalVehicleUtils'
 import { VEHICLE_STATUS_SELECT_OPTIONS } from '@/lib/vehicleStatus'
+import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
 import {
   MAINTENANCE_DUTY_PRESET_IDS,
   maintenanceDutyPresetMeta,
@@ -63,6 +64,8 @@ interface Vehicle {
   rental_end_date?: string
   rental_pickup_location?: string
   rental_return_location?: string
+  /** 렌터카 예약자(픽업 담당) — team.email */
+  rental_reserved_by?: string | null
   rental_total_cost?: number
   rental_notes?: string
   /** Rental Agreement # (예약 번호·RN과 별도) */
@@ -337,6 +340,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
     rental_end_date: '',
     rental_pickup_location: '',
     rental_return_location: '',
+    rental_reserved_by: '',
     rental_total_cost: 0,
     status: 'available',
     rental_notes: '',
@@ -361,6 +365,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
   const [primaryPhotoId, setPrimaryPhotoId] = useState<string | null>(null)
   const [vehicleTypes, setVehicleTypes] = useState<any[]>([])
   const [showVehicleTypeManagement, setShowVehicleTypeManagement] = useState(false)
+  const [teamOptions, setTeamOptions] = useState<Array<{ email: string; displayName: string }>>([])
 
   // 차량 사진 가져오기
   const fetchVehiclePhotos = async (vehicleId: string) => {
@@ -575,6 +580,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
         rental_return_location: vehicle.rental_return_location?.trim()
           ? vehicle.rental_return_location
           : vehicle.rental_pickup_location || '',
+        rental_reserved_by: vehicle.rental_reserved_by || '',
         rental_notes: vehicle.rental_notes || '',
         rental_agreement_number: vehicle.rental_agreement_number || '',
         rental_reservation_url: vehicle.rental_reservation_url || '',
@@ -626,6 +632,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
         rental_end_date: '',
         rental_pickup_location: '',
         rental_return_location: '',
+        rental_reserved_by: '',
         rental_total_cost: 0,
         status: 'available',
         rental_notes: '',
@@ -653,6 +660,33 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
       setPendingRentalReceiptFile(null)
     }
   }, [vehicle, prefill])
+
+  useEffect(() => {
+    if (formData.vehicle_category !== 'rental') return
+    let cancelled = false
+    void (async () => {
+      const { data, error } = await supabase
+        .from('team')
+        .select('email, name_ko, name_en, nick_name, display_name, is_active')
+        .eq('is_active', true)
+      if (cancelled || error) return
+      const options = (data || [])
+        .map((member) => {
+          const email = String(member.email || '').trim()
+          if (!email) return null
+          return {
+            email,
+            displayName: teamMemberNameForLocale(member, 'ko') || email,
+          }
+        })
+        .filter((m): m is { email: string; displayName: string } => Boolean(m))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName, 'ko'))
+      setTeamOptions(options)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [formData.vehicle_category])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target
@@ -1492,6 +1526,35 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                           className={fieldClass}
                         />
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
+                        <Users className="h-4 w-4 text-sky-700" aria-hidden />
+                        예약자 (픽업 담당)
+                      </label>
+                      <select
+                        name="rental_reserved_by"
+                        value={formData.rental_reserved_by || ''}
+                        onChange={handleInputChange}
+                        className={fieldClass}
+                      >
+                        <option value="">팀원 선택</option>
+                        {formData.rental_reserved_by &&
+                        !teamOptions.some((m) => m.email === formData.rental_reserved_by) ? (
+                          <option value={formData.rental_reserved_by}>
+                            {formData.rental_reserved_by}
+                          </option>
+                        ) : null}
+                        {teamOptions.map((member) => (
+                          <option key={member.email} value={member.email}>
+                            {member.displayName}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">
+                        오늘 픽업 안내 문자를 받을 팀원입니다.
+                      </p>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">

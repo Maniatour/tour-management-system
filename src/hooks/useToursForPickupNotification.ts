@@ -14,6 +14,7 @@ import {
 import { isTourCancelled, isTourDeleted } from '@/utils/tourStatusUtils'
 import { isWithin48HoursBeforeTourStartLocal } from '@/utils/reservationUtils'
 import type { TourEnvelopePrintListRow } from '@/hooks/useToursForEnvelopePrint'
+import { PICKUP_NOTIFICATION_QUEUE_RELOAD_EVENT } from '@/lib/pickupNotificationTodo'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -25,23 +26,56 @@ export type PickupNotificationTourRow = TourEnvelopePrintListRow & {
   pickup_hotel_count: number
 }
 
+type PickupReservationRow = {
+  id: string
+  status: string | null
+  total_people: number | null
+  adults?: number | null
+  child?: number | null
+  infant?: number | null
+  pickup_hotel: string | null
+  pickup_notification_sent?: boolean | null
+}
+
+function assignedReservationIdSet(tour: { reservation_ids?: unknown }): Set<string> {
+  return new Set(normalizeReservationIds(tour.reservation_ids).map((id) => String(id).trim()))
+}
+
+function isActiveAssignedReservation(
+  idSet: Set<string>,
+  reservation: Pick<PickupReservationRow, 'id' | 'status'>
+): boolean {
+  if (!idSet.has(String(reservation.id ?? '').trim())) return false
+  if (isReservationCancelledStatus(reservation.status)) return false
+  if (isReservationDeletedStatus(reservation.status)) return false
+  return true
+}
+
 function countDistinctPickupHotels(
   tour: { reservation_ids?: unknown },
-  reservations: Array<{ id: string; status: string | null; pickup_hotel: string | null }>
+  reservations: PickupReservationRow[]
 ): number {
-  const ids = normalizeReservationIds(tour.reservation_ids)
-  if (ids.length === 0) return 0
-  const idSet = new Set(ids.map((id) => String(id).trim()))
+  const idSet = assignedReservationIdSet(tour)
+  if (idSet.size === 0) return 0
   const hotels = new Set<string>()
   for (const reservation of reservations) {
-    if (!idSet.has(String(reservation.id ?? '').trim())) continue
-    if (isReservationCancelledStatus(reservation.status)) continue
-    if (isReservationDeletedStatus(reservation.status)) continue
+    if (!isActiveAssignedReservation(idSet, reservation)) continue
     const hotelId = (reservation.pickup_hotel ?? '').trim()
     if (!hotelId) continue
     hotels.add(hotelId)
   }
   return hotels.size
+}
+
+/** 활성 예약이 있고, 그중 아직 픽업 안내가 안 간 예약이 있으면 true */
+function tourNeedsPickupNotification(
+  tour: { reservation_ids?: unknown },
+  reservations: PickupReservationRow[]
+): boolean {
+  const idSet = assignedReservationIdSet(tour)
+  const active = reservations.filter((reservation) => isActiveAssignedReservation(idSet, reservation))
+  if (active.length === 0) return false
+  return active.some((reservation) => reservation.pickup_notification_sent !== true)
 }
 
 type TourRow = {
@@ -156,25 +190,19 @@ export function useToursForPickupNotification(enabled = true) {
       const allReservationIds = [
         ...new Set(activeTours.flatMap((t) => normalizeReservationIds(t.reservation_ids))),
       ]
-      const reservationRows: Array<{
-        id: string
-        status: string | null
-        total_people: number | null
-        adults?: number | null
-        child?: number | null
-        infant?: number | null
-        pickup_hotel: string | null
-      }> = []
+      const reservationRows: PickupReservationRow[] = []
       if (allReservationIds.length > 0) {
         const { data: reservationsData, error: resErr } = await supabase
           .from('reservations')
-          .select('id, status, total_people, adults, child, infant, pickup_hotel')
+          .select('id, status, total_people, adults, child, infant, pickup_hotel, pickup_notification_sent')
           .in('id', allReservationIds)
         if (resErr) throw resErr
-        reservationRows.push(...(reservationsData || []))
+        reservationRows.push(...((reservationsData || []) as PickupReservationRow[]))
       }
 
-      const list = activeTours.map((t) => {
+      const pendingTours = activeTours.filter((t) => tourNeedsPickupNotification(t, reservationRows))
+
+      const list = pendingTours.map((t) => {
         const p = t.products
         const internalName = p?.name?.trim() || p?.name_ko?.trim() || p?.name_en?.trim() || '—'
         return {
@@ -203,6 +231,14 @@ export function useToursForPickupNotification(enabled = true) {
 
   useEffect(() => {
     void reload()
+  }, [reload])
+
+  useEffect(() => {
+    const onReload = () => {
+      void reload()
+    }
+    window.addEventListener(PICKUP_NOTIFICATION_QUEUE_RELOAD_EVENT, onReload)
+    return () => window.removeEventListener(PICKUP_NOTIFICATION_QUEUE_RELOAD_EVENT, onReload)
   }, [reload])
 
   return { rows, loading, error, reload }

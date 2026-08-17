@@ -3,26 +3,37 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   readTodoPanelTourCompletion,
+  readTodoPanelTourCompletionLookback,
   setTodoPanelTourStatus,
   type TodoPanelTourCompletionNamespace,
   type TodoPanelTourItemState,
   type TodoPanelTourState,
 } from '@/lib/todoPanelTourCompletion'
 
-export function useTodoPanelTourCompletion(namespace: TodoPanelTourCompletionNamespace, dateKey: string) {
+export function useTodoPanelTourCompletion(
+  namespace: TodoPanelTourCompletionNamespace,
+  dateKey: string,
+  lookbackDays = 1
+) {
   const [tourState, setTourState] = useState<TodoPanelTourState>(() =>
-    readTodoPanelTourCompletion(namespace, dateKey)
+    lookbackDays > 1
+      ? readTodoPanelTourCompletionLookback(namespace, dateKey, lookbackDays)
+      : readTodoPanelTourCompletion(namespace, dateKey)
   )
 
   useEffect(() => {
-    setTourState(readTodoPanelTourCompletion(namespace, dateKey))
-  }, [namespace, dateKey])
+    setTourState(
+      lookbackDays > 1
+        ? readTodoPanelTourCompletionLookback(namespace, dateKey, lookbackDays)
+        : readTodoPanelTourCompletion(namespace, dateKey)
+    )
+  }, [namespace, dateKey, lookbackDays])
 
   const setTourStatus = useCallback(
     (tourId: string, status: TodoPanelTourItemState) => {
-      setTourState(setTodoPanelTourStatus(namespace, tourId, status, dateKey))
+      setTourState(setTodoPanelTourStatus(namespace, tourId, status, dateKey, lookbackDays))
     },
-    [namespace, dateKey]
+    [namespace, dateKey, lookbackDays]
   )
 
   const toggleTour = useCallback(

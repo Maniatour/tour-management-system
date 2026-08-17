@@ -69,7 +69,11 @@ import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { autoCreateOrUpdateTour, createAdditionalActiveTourForReservations } from '@/lib/tourAutoCreation'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
 import { generateTourId } from '@/lib/entityIds'
-import { upsertReservationCancellationReason, fetchCancellationFollowUpMeta } from '@/lib/reservationCancellationReason'
+import {
+  upsertReservationCancellationReason,
+  fetchCancellationFollowUpMeta,
+  fetchFollowUpContactContents,
+} from '@/lib/reservationCancellationReason'
 import { doesGuideSupportLanguage } from '@/lib/guideLanguageDetection'
 import {
   getAssignmentStatusLabel,
@@ -338,6 +342,7 @@ const SCHEDULE_VEHICLE_EDIT_SELECT = `
   rental_end_date,
   rental_pickup_location,
   rental_return_location,
+  rental_reserved_by,
   rental_total_cost,
   rental_notes,
   rental_agreement_number,
@@ -1268,6 +1273,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     productName: string
   } | null>(null)
   const [productCellCancellationReasons, setProductCellCancellationReasons] = useState<Record<string, string>>({})
+  const [productCellFollowUpContacts, setProductCellFollowUpContacts] = useState<Record<string, string[]>>({})
   const [productCellPickupHotels, setProductCellPickupHotels] = useState<ProductCellPickupHotel[]>([])
   /** 투어 요약 정보 카드: 픽업 호텔 id → group_number */
   const [guideModalPickupHotelGroups, setGuideModalPickupHotelGroups] = useState<
@@ -2657,6 +2663,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   useEffect(() => {
     if (!productCellReservationsModal) {
       setProductCellCancellationReasons({})
+      setProductCellFollowUpContacts({})
       return
     }
     const cancelledIds = productCellReservationList
@@ -2664,18 +2671,26 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       .map((r) => String(r.id))
     if (cancelledIds.length === 0) {
       setProductCellCancellationReasons({})
+      setProductCellFollowUpContacts({})
       return
     }
     let cancelled = false
     void (async () => {
-      const metaMap = await fetchCancellationFollowUpMeta(cancelledIds)
+      const [metaMap, contactMap] = await Promise.all([
+        fetchCancellationFollowUpMeta(cancelledIds),
+        fetchFollowUpContactContents(cancelledIds),
+      ])
       if (cancelled) return
-      const next: Record<string, string> = {}
+      const nextReasons: Record<string, string> = {}
+      const nextContacts: Record<string, string[]> = {}
       for (const id of cancelledIds) {
         const reason = metaMap.get(id)?.reason?.trim() ?? ''
-        if (reason) next[id] = reason
+        if (reason) nextReasons[id] = reason
+        const contacts = contactMap.get(id) ?? []
+        if (contacts.length > 0) nextContacts[id] = contacts
       }
-      setProductCellCancellationReasons(next)
+      setProductCellCancellationReasons(nextReasons)
+      setProductCellFollowUpContacts(nextContacts)
     })()
     return () => {
       cancelled = true
@@ -3113,6 +3128,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         'rental_end_date',
         'rental_pickup_location',
         'rental_return_location',
+        'rental_reserved_by',
         'rental_total_cost',
         'rental_notes',
         'rental_agreement_number',
@@ -9522,6 +9538,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 const cancellationLine = productCellCancellationReasons[String(res.id)]?.trim()
                   ? productCellCancellationReasons[String(res.id)].trim()
                   : tResCard('noCancellationReasonShort')
+                const followUpContactLines = productCellFollowUpContacts[String(res.id)] ?? []
                 const antelopeChoiceKeys = [
                   ...new Set(
                     reservationChoices
@@ -9575,9 +9592,22 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                           {locale === 'ko' ? '명' : ' pax'}
                         </span>
                       </div>
-                      <div className="text-[11px] text-gray-600 truncate min-w-0 leading-snug pl-0.5">
+                      <div className={`text-[11px] text-gray-600 min-w-0 leading-snug pl-0.5 ${isCancelled && followUpContactLines.length > 0 ? '' : 'truncate'}`}>
                         {isCancelled ? (
-                          cancellationLine
+                          <div className="space-y-0.5">
+                            <div className="truncate" title={cancellationLine}>
+                              {cancellationLine}
+                            </div>
+                            {followUpContactLines.map((note, noteIdx) => (
+                              <div
+                                key={`${res.id}-fu-${noteIdx}`}
+                                className="text-gray-500 whitespace-pre-wrap break-words line-clamp-3"
+                                title={note}
+                              >
+                                {tResCard('followUpContentLabel')}: {note}
+                              </div>
+                            ))}
+                          </div>
                         ) : pickupHotelId ? (
                           <>
                             <span className="font-bold text-gray-800">{pickupHotelLabel || (locale === 'ko' ? '픽업 미정' : 'Pickup TBD')}</span>

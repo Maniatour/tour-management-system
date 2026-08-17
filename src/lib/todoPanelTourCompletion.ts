@@ -7,6 +7,7 @@ export type TodoPanelTourCompletionNamespace =
   | 'tour-settlement'
   | 'bento-check'
   | 'antelope-canyon-booking'
+  | 'rental-car-pickup-dropoff'
 
 export type TodoPanelTourItemStatus = 'completed' | 'on_hold'
 export type TodoPanelTourItemState = 'pending' | TodoPanelTourItemStatus
@@ -82,18 +83,61 @@ export function isTodoPanelTourOnHold(tourId: string, state: TodoPanelTourState)
   return state[tourId] === 'on_hold'
 }
 
+export function lookbackDateKeys(dateKey: string, lookbackDays: number): string[] {
+  const days = Math.max(1, Math.floor(lookbackDays))
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey)
+  if (!match) return [dateKey]
+  const start = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  const keys: string[] = []
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start - i * 24 * 60 * 60 * 1000)
+    const y = d.getUTCFullYear()
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(d.getUTCDate()).padStart(2, '0')
+    keys.push(`${y}-${m}-${day}`)
+  }
+  return keys
+}
+
+export function readTodoPanelTourCompletionLookback(
+  namespace: TodoPanelTourCompletionNamespace,
+  dateKey: string,
+  lookbackDays: number
+): TodoPanelTourState {
+  if (lookbackDays <= 1) return readTodoPanelTourCompletion(namespace, dateKey)
+  const keys = lookbackDateKeys(dateKey, lookbackDays)
+  const merged: TodoPanelTourState = {}
+  for (let i = keys.length - 1; i >= 0; i--) {
+    Object.assign(merged, readTodoPanelTourCompletion(namespace, keys[i]))
+  }
+  return merged
+}
+
 export function setTodoPanelTourStatus(
   namespace: TodoPanelTourCompletionNamespace,
   tourId: string,
   status: TodoPanelTourItemState,
-  dateKey: string
+  dateKey: string,
+  lookbackDays = 1
 ): TodoPanelTourState {
+  if (status === 'pending' && lookbackDays > 1) {
+    for (const key of lookbackDateKeys(dateKey, lookbackDays)) {
+      const prev = readTodoPanelTourCompletion(namespace, key)
+      if (!(tourId in prev)) continue
+      const next = { ...prev }
+      delete next[tourId]
+      writeTodoPanelTourCompletion(namespace, key, next)
+    }
+    return readTodoPanelTourCompletionLookback(namespace, dateKey, lookbackDays)
+  }
   const prev = readTodoPanelTourCompletion(namespace, dateKey)
   const next = { ...prev }
   if (status === 'pending') delete next[tourId]
   else next[tourId] = status
   writeTodoPanelTourCompletion(namespace, dateKey, next)
-  return next
+  return lookbackDays > 1
+    ? readTodoPanelTourCompletionLookback(namespace, dateKey, lookbackDays)
+    : next
 }
 
 /** @deprecated use setTodoPanelTourStatus */

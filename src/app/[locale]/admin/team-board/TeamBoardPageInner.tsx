@@ -28,6 +28,7 @@ import { TourSettlementPanel } from '@/components/admin/todo/TourSettlementPanel
 import { ReservationAgencyManagementPanel } from '@/components/admin/todo/ReservationAgencyManagementPanel'
 import { AntelopeCanyonBookingPanel } from '@/components/admin/todo/AntelopeCanyonBookingPanel'
 import { BentoCheckPanel } from '@/components/admin/todo/BentoCheckPanel'
+import { RentalCarPickupDropoffPanel } from '@/components/admin/todo/RentalCarPickupDropoffPanel'
 import { AdminTodoListManualButton } from '@/components/admin/todo/AdminTodoListManualModal'
 import {
   TourQuickPrintHost,
@@ -140,6 +141,13 @@ import {
   bentoCheckCompletionDateKey,
   bentoCheckTodoFormSeed,
 } from '@/lib/bentoCheckTodo'
+import {
+  shouldHideTodoChipForRentalCarPickupDropoffPanel,
+  findRentalCarPickupDropoffLinkedTodo,
+  readRentalCarPickupDropoffLocalCompleted,
+  rentalCarPickupDropoffCompletionDateKey,
+  rentalCarPickupDropoffTodoFormSeed,
+} from '@/lib/rentalCarPickupDropoffTodo'
 import type { OpTodoFormValues } from '@/components/admin/todo/OpTodoFormFields'
 import {
   readTeamBoardPrimaryCache,
@@ -632,6 +640,16 @@ export default function TeamBoardPageInner() {
       return
     }
     setTodoCreateFormSeed(bentoCheckTodoFormSeed(uiLocale))
+    setShowTodoCreateModal(true)
+  }
+
+  const handleEditRentalCarPickupDropoffTodo = () => {
+    const linked = findRentalCarPickupDropoffLinkedTodo(opTodos)
+    if (linked) {
+      setEditTodoId(linked.id)
+      return
+    }
+    setTodoCreateFormSeed(rentalCarPickupDropoffTodoFormSeed(uiLocale))
     setShowTodoCreateModal(true)
   }
 
@@ -1612,6 +1630,7 @@ export default function TeamBoardPageInner() {
               onEditReservationAgencyManagementTodo={handleEditReservationAgencyManagementTodo}
               onEditAntelopeCanyonBookingTodo={handleEditAntelopeCanyonBookingTodo}
               onEditBentoCheckTodo={handleEditBentoCheckTodo}
+              onEditRentalCarPickupDropoffTodo={handleEditRentalCarPickupDropoffTodo}
               onOpenTourDetail={(tourId) => router.push(`/${uiLocale}/admin/tours/${tourId}`)}
               onQuickPrint={(tourId, kind) => setTourQuickPrint({ tourId, kind })}
               onPickupAction={(tourId, kind) => setTourPickupNotification({ tourId, kind })}
@@ -3333,7 +3352,7 @@ function DeferredDailyPanel({
   )
 }
 
-function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAddTodo, onManageNotifications, onEditTodo, onEditEnvelopePrintTodo, onEditPickupNotificationTodo, onEditGuideScheduleConfirmTodo, onEditCustomerInfoReviewTodo, onEditCancelRebookingFollowUpTodo, onEditPendingCustomerManagementTodo, onCancelFollowUpManualChange, onOpenReservation, onEditOtaClosureTodo, onEditTourHotelManagementTodo, onEditTourHotelPriceCheckTodo, onEditTourHotelCcFormTodo, onEditTourSettlementTodo, onEditReservationAgencyManagementTodo, onEditAntelopeCanyonBookingTodo, onEditBentoCheckTodo, onOpenTourDetail, onQuickPrint, onPickupAction, locale, toggleTodoCompletion, openHistoryModal }: { 
+function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAddTodo, onManageNotifications, onEditTodo, onEditEnvelopePrintTodo, onEditPickupNotificationTodo, onEditGuideScheduleConfirmTodo, onEditCustomerInfoReviewTodo, onEditCancelRebookingFollowUpTodo, onEditPendingCustomerManagementTodo, onCancelFollowUpManualChange, onOpenReservation, onEditOtaClosureTodo, onEditTourHotelManagementTodo, onEditTourHotelPriceCheckTodo, onEditTourHotelCcFormTodo, onEditTourSettlementTodo, onEditReservationAgencyManagementTodo, onEditAntelopeCanyonBookingTodo, onEditBentoCheckTodo, onEditRentalCarPickupDropoffTodo, onOpenTourDetail, onQuickPrint, onPickupAction, locale, toggleTodoCompletion, openHistoryModal }: { 
   opTodos: OpTodo[]; 
   selectedDepartment: 'all' | 'office' | 'guide' | 'common';
   onDepartmentChange: (department: 'all' | 'office' | 'guide' | 'common') => void;
@@ -3360,6 +3379,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
   onEditReservationAgencyManagementTodo: () => void;
   onEditAntelopeCanyonBookingTodo: () => void;
   onEditBentoCheckTodo: () => void;
+  onEditRentalCarPickupDropoffTodo: () => void;
   onOpenTourDetail: (tourId: string) => void;
   onQuickPrint: (tourId: string, kind: TourQuickPrintKind) => void;
   onPickupAction: (tourId: string, kind: TourPickupNotificationKind) => void;
@@ -3649,6 +3669,29 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
     }
   }, [linkedBentoCheckTodo?.id, linkedBentoCheckTodo?.completed])
 
+  const rentalCarPickupDropoffDateKey = useMemo(() => rentalCarPickupDropoffCompletionDateKey(), [])
+  const linkedRentalCarPickupDropoffTodo = useMemo(
+    () => findRentalCarPickupDropoffLinkedTodo(opTodos),
+    [opTodos]
+  )
+  const [rentalCarPickupDropoffLocalCompleted, setRentalCarPickupDropoffLocalCompleted] = useState(
+    () => readRentalCarPickupDropoffLocalCompleted(rentalCarPickupDropoffDateKey)
+  )
+  const rentalCarPickupDropoffCompleted =
+    linkedRentalCarPickupDropoffTodo?.completed ?? rentalCarPickupDropoffLocalCompleted
+
+  useEffect(() => {
+    setRentalCarPickupDropoffLocalCompleted(
+      readRentalCarPickupDropoffLocalCompleted(rentalCarPickupDropoffDateKey)
+    )
+  }, [rentalCarPickupDropoffDateKey])
+
+  useEffect(() => {
+    if (linkedRentalCarPickupDropoffTodo) {
+      setRentalCarPickupDropoffLocalCompleted(linkedRentalCarPickupDropoffTodo.completed)
+    }
+  }, [linkedRentalCarPickupDropoffTodo?.id, linkedRentalCarPickupDropoffTodo?.completed])
+
   // useTranslations 훅을 조건부로 사용
   let t: (key: string) => string
   try {
@@ -3688,7 +3731,8 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
         !shouldHideTodoChipForTourSettlementPanel(todo) &&
         !shouldHideTodoChipForReservationAgencyManagementPanel(todo) &&
         !shouldHideTodoChipForAntelopeCanyonBookingPanel(todo) &&
-        !shouldHideTodoChipForBentoCheckPanel(todo)
+        !shouldHideTodoChipForBentoCheckPanel(todo) &&
+        !shouldHideTodoChipForRentalCarPickupDropoffPanel(todo)
     )
   }, [opTodos, selectedDepartment])
 
@@ -4158,6 +4202,32 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
                   onCompletedChange={setBentoCheckLocalCompleted}
                   onEditRequest={onEditBentoCheckTodo}
                   onOpenTourDetail={onOpenTourDetail}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={14} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
+                  rentalCarPickupDropoffCompleted
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <RentalCarPickupDropoffPanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setRentalCarPickupDropoffLocalCompleted}
+                  onEditRequest={onEditRentalCarPickupDropoffTodo}
                 />
               </div>
               )}

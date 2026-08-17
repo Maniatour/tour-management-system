@@ -14,6 +14,7 @@ import {
   normalizeGroupRepresentativeOverrides,
   type PickupGroupPresetWithReps,
 } from '@/lib/pickupGroupPreset'
+import { requestPickupNotificationQueueReload } from '@/lib/pickupNotificationTodo'
 
 const PickupScheduleAutoGenerateModal = dynamic(
   () => import('@/components/tour/modals/PickupScheduleAutoGenerateModal'),
@@ -211,6 +212,7 @@ export function TourPickupNotificationHost({ locale, request, onClose }: TourPic
       if (tourData.refreshReservations) {
         await tourData.refreshReservations()
       }
+      requestPickupNotificationQueueReload()
     } else {
       alert(t('notificationSendFailed'))
     }

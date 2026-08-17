@@ -38,6 +38,7 @@ import { TodoPanelStatusButtons } from '@/components/admin/todo/TodoPanelStatusB
 import {
   AntelopeCanyonBookingPanel,
   BentoCheckPanel,
+  RentalCarPickupDropoffPanel,
   CancelRebookingFollowUpPanel,
   CustomerInfoReviewPanel,
   GuideScheduleConfirmPanel,
@@ -151,6 +152,13 @@ import {
   bentoCheckCompletionDateKey,
   bentoCheckTodoFormSeed,
 } from '@/lib/bentoCheckTodo'
+import {
+  shouldHideTodoChipForRentalCarPickupDropoffPanel,
+  findRentalCarPickupDropoffLinkedTodo,
+  readRentalCarPickupDropoffLocalCompleted,
+  rentalCarPickupDropoffCompletionDateKey,
+  rentalCarPickupDropoffTodoFormSeed,
+} from '@/lib/rentalCarPickupDropoffTodo'
 import { useTeamBoardManualOptional } from '@/contexts/TeamBoardManualContext'
 import { useAdminTodo } from '@/contexts/AdminTodoContext'
 import {
@@ -389,6 +397,10 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     []
   )
   const bentoCheckCompletionKey = useMemo(() => bentoCheckCompletionDateKey(), [])
+  const rentalCarPickupDropoffCompletionKey = useMemo(
+    () => rentalCarPickupDropoffCompletionDateKey(),
+    []
+  )
   const [envelopeCompleted, setEnvelopeCompleted] = useState(() =>
     readTourEnvelopePrintLocalCompleted(envelopeTargetDate)
   )
@@ -431,6 +443,9 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
   )
   const [bentoCheckCompleted, setBentoCheckCompleted] = useState(() =>
     readBentoCheckLocalCompleted(bentoCheckCompletionKey)
+  )
+  const [rentalCarPickupDropoffCompleted, setRentalCarPickupDropoffCompleted] = useState(() =>
+    readRentalCarPickupDropoffLocalCompleted(rentalCarPickupDropoffCompletionKey)
   )
   const [tourHotelDetailModalId, setTourHotelDetailModalId] = useState<string | null>(null)
   const [onHoldFeatureEnabled, setOnHoldFeatureEnabled] = useState(true)
@@ -540,6 +555,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     )
   }, [todos, bentoCheckCompletionKey])
 
+  useEffect(() => {
+    const linked = findRentalCarPickupDropoffLinkedTodo(todos)
+    setRentalCarPickupDropoffCompleted(
+      linked?.completed ?? readRentalCarPickupDropoffLocalCompleted(rentalCarPickupDropoffCompletionKey)
+    )
+  }, [todos, rentalCarPickupDropoffCompletionKey])
+
   const handleEnvelopeToggleLinkedTodo = useCallback(
     async (todo: { id: string; completed: boolean }, completed: boolean) => {
       const full = todos.find((t) => t.id === todo.id)
@@ -638,6 +660,12 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     activeListTab,
     bentoCheckCompleted,
     findBentoCheckLinkedTodo(todos)?.on_hold ?? false
+  )
+
+  const showRentalCarPickupDropoffInList = panelVisibleInTab(
+    activeListTab,
+    rentalCarPickupDropoffCompleted,
+    findRentalCarPickupDropoffLinkedTodo(todos)?.on_hold ?? false
   )
 
   const tourHotelPriceCheckOnHold = findTourHotelPriceCheckLinkedTodo(todos)?.on_hold ?? false
@@ -1258,6 +1286,47 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     setCreateOpen(true)
   }, [todos, openEditTodo, locale])
 
+  const handleRentalCarPickupDropoffToggleLinkedTodo = useCallback(
+    async (todo: { id: string; completed: boolean }, completed: boolean) => {
+      const full = todos.find((t) => t.id === todo.id)
+      if (!full) return
+      setSubmittingId(full.id)
+      try {
+        const { data, error } = await toggleOpTodoCompletion(full, completed)
+        if (error) throw error
+        const patch = {
+          completed: data?.completed ?? completed,
+          completed_at: data?.completed_at ?? (completed ? new Date().toISOString() : null),
+          next_notify_at: data?.next_notify_at ?? full.next_notify_at ?? null,
+          on_hold: data?.on_hold ?? false,
+        }
+        setTodos((prev) => prev.map((t) => (t.id === full.id ? { ...t, ...patch } : t)))
+        adjustPendingCount(full, { completed: patch.completed, on_hold: !!patch.on_hold })
+        dispatchOpTodoRefresh()
+      } catch (e) {
+        console.error(e)
+        alert(isKo ? '완료 처리에 실패했습니다.' : 'Failed to update todo.')
+        throw e
+      } finally {
+        setSubmittingId(null)
+      }
+    },
+    [adjustPendingCount, isKo, todos]
+  )
+
+  const openEditRentalCarPickupDropoffTodo = useCallback(() => {
+    const linked = findRentalCarPickupDropoffLinkedTodo(todos)
+    if (linked) {
+      openEditTodo(linked)
+      return
+    }
+    setNewTodo({
+      ...EMPTY_OP_TODO_FORM,
+      ...rentalCarPickupDropoffTodoFormSeed(locale),
+    })
+    setCreateOpen(true)
+  }, [todos, openEditTodo, locale])
+
   const persona = useMemo(
     () =>
       resolveSiteAccessPersona({
@@ -1647,7 +1716,8 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
           !shouldHideTodoChipForTourSettlementPanel(t) &&
           !shouldHideTodoChipForReservationAgencyManagementPanel(t) &&
           !shouldHideTodoChipForAntelopeCanyonBookingPanel(t) &&
-          !shouldHideTodoChipForBentoCheckPanel(t)
+          !shouldHideTodoChipForBentoCheckPanel(t) &&
+          !shouldHideTodoChipForRentalCarPickupDropoffPanel(t)
       ),
     [todos]
   )
@@ -1749,6 +1819,10 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     [todos]
   )
   const bentoCheckLinkedTodo = useMemo(() => findBentoCheckLinkedTodo(todos), [todos])
+  const rentalCarPickupDropoffLinkedTodo = useMemo(
+    () => findRentalCarPickupDropoffLinkedTodo(todos),
+    [todos]
+  )
 
   const panelHoldProps = useCallback(
     (linked: { id: string; on_hold?: boolean | null } | null | undefined) => {
@@ -2232,7 +2306,8 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
             !showTourSettlementInList &&
             !showReservationAgencyManagementInList &&
             !showAntelopeCanyonBookingInList &&
-            !showBentoCheckInList ? (
+            !showBentoCheckInList &&
+            !showRentalCarPickupDropoffInList ? (
               <li className="list-none py-12 text-center text-sm text-gray-500">
                 {activeListTab === 'pending'
                   ? isKo
@@ -2508,6 +2583,24 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   onEditRequest={openEditBentoCheckTodo}
                   onOpenTourDetail={setTourHotelDetailModalId}
                   {...panelHoldProps(bentoCheckLinkedTodo)}
+                />
+              </li>
+              <li
+                className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
+                  'daily',
+                  rentalCarPickupDropoffCompleted,
+                  rentalCarPickupDropoffLinkedTodo?.on_hold ?? false
+                )} ${showRentalCarPickupDropoffInList ? '' : 'hidden'}`}
+                aria-hidden={!showRentalCarPickupDropoffInList}
+              >
+                <RentalCarPickupDropoffPanel
+                  locale={locale}
+                  variant="list"
+                  linkedTodos={todos as never}
+                  onCompletedChange={setRentalCarPickupDropoffCompleted}
+                  onToggleLinkedTodo={handleRentalCarPickupDropoffToggleLinkedTodo}
+                  onEditRequest={openEditRentalCarPickupDropoffTodo}
+                  {...panelHoldProps(rentalCarPickupDropoffLinkedTodo)}
                 />
               </li>
             {visibleTodos.map((todo) => {

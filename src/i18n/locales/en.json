@@ -3862,6 +3862,7 @@
       "balanceRefundPayTitle": "Pay cash refund (click)",
       "cancellationReasonLabel": "Cancellation reason",
       "noCancellationReasonShort": "(No cancellation reason on file)",
+      "followUpContentLabel": "Notes",
       "registrationDateIconTitle": "Registered on",
       "cancellationDateIconTitle": "Cancelled on",
       "tourCapacityBadgeTitle": "{assigned} assigned / {max} capacity",
@@ -3920,7 +3921,10 @@
       "cancelFollowUpToPhone": "To (phone)",
       "cancelFollowUpSubject": "Subject",
       "cancelFollowUpReservationId": "Reservation ID",
-      "cancelFollowUpPreviewBody": "Preview"
+      "cancelFollowUpPreviewBody": "Preview",
+      "cancelFollowUpOtaEmailBlockedTitle": "Do not email this OTA proxy address",
+      "cancelFollowUpOtaEmailBlockedBody": "This address ends with @reply.getyourguide.com, or the booking is from Viator where the guest email is unknown. Do not send the cancellation notice by email. Use WhatsApp or SMS instead.",
+      "cancelFollowUpPreviewTitleSmsOnly": "Cancellation follow-up SMS preview"
     },
     "customerEditSimilar": {
       "panelTitle": "Similar customer reservations",

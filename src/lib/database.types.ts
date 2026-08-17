@@ -11340,6 +11340,7 @@ export type Database = {
           rental_pickup_location: string | null
           rental_receipt_url: string | null
           rental_reservation_url: string | null
+          rental_reserved_by: string | null
           rental_return_location: string | null
           rental_start_date: string | null
           rental_total_cost: number | null
@@ -11392,6 +11393,7 @@ export type Database = {
           rental_pickup_location?: string | null
           rental_receipt_url?: string | null
           rental_reservation_url?: string | null
+          rental_reserved_by?: string | null
           rental_return_location?: string | null
           rental_start_date?: string | null
           rental_total_cost?: number | null
@@ -11444,6 +11446,7 @@ export type Database = {
           rental_pickup_location?: string | null
           rental_receipt_url?: string | null
           rental_reservation_url?: string | null
+          rental_reserved_by?: string | null
           rental_return_location?: string | null
           rental_start_date?: string | null
           rental_status?: string | null

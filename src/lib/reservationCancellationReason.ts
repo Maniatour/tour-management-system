@@ -25,6 +25,38 @@ export function isRebookingReservationByReasonMap(
   return isRebookingCancellationReason(reason)
 }
 
+/** Follow-up 「내용 추가」(type=contact) — 최신순 */
+export async function fetchFollowUpContactContents(
+  reservationIds: string[],
+  client: SupabaseClient = supabase as SupabaseClient
+): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>()
+  const chunks = chunkStrings(reservationIds)
+  if (chunks.length === 0) return map
+
+  for (const chunk of chunks) {
+    const { data, error } = await fromUntypedTable(client, 'reservation_follow_ups')
+      .select('reservation_id, content, created_at')
+      .in('reservation_id', chunk)
+      .eq('type', 'contact')
+      .order('created_at', { ascending: false })
+    if (error) {
+      console.error('fetchFollowUpContactContents:', error)
+      continue
+    }
+    for (const row of data || []) {
+      const typed = row as unknown as { reservation_id: string; content?: string | null }
+      const content = String(typed.content ?? '').trim()
+      if (!content) continue
+      const rid = String(typed.reservation_id)
+      const list = map.get(rid) || []
+      list.push(content)
+      map.set(rid, list)
+    }
+  }
+  return map
+}
+
 export async function fetchCancellationFollowUpMeta(
   reservationIds: string[],
   client: SupabaseClient = supabase as SupabaseClient

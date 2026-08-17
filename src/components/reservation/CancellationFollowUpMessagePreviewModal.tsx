@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, useCallback, useEffect } from 'react'
-import { X, Eye, Loader2, Copy, Check, Pencil, Mail, MessageSquare } from 'lucide-react'
+import { X, Eye, Loader2, Copy, Check, Pencil, Mail, MessageSquare, TriangleAlert } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
 import {
   extractCancellationFollowUpEmailBodyFromDocument,
@@ -33,6 +33,7 @@ import { supabase } from '@/lib/supabase'
 import EmailPreviewBodyPanel from '@/components/reservation/EmailPreviewBodyPanel'
 import StaffOutreachMessageTemplatePanel from '@/components/reservation/StaffOutreachMessageTemplatePanel'
 import { useStaffOutreachMessageTemplates } from '@/hooks/useStaffOutreachMessageTemplates'
+import { shouldSkipDirectCancellationFollowUpEmail } from '@/lib/otaDirectCustomerEmail'
 
 export interface CancellationFollowUpMessagePreviewModalProps {
   isOpen: boolean
@@ -50,6 +51,7 @@ export interface CancellationFollowUpMessagePreviewModalProps {
   infants?: number
   channelRN: string | null | undefined
   channelName?: string | null
+  channelId?: string | null
   initialMessageKind?: CancellationFollowUpMessageKind
 }
 
@@ -69,6 +71,7 @@ export default function CancellationFollowUpMessagePreviewModal({
   infants = 0,
   channelRN,
   channelName = null,
+  channelId = null,
   initialMessageKind = 'follow_up',
 }: CancellationFollowUpMessagePreviewModalProps) {
   const t = useTranslations('reservations.card')
@@ -88,7 +91,15 @@ export default function CancellationFollowUpMessagePreviewModal({
     [productId, products, emailLocale]
   )
 
-  const [channel, setChannel] = useState<CancellationFollowUpMessageChannel>('email')
+  const skipDirectEmail = shouldSkipDirectCancellationFollowUpEmail({
+    email: customerEmail,
+    channelId,
+    channelName,
+  })
+  const [channel, setChannel] = useState<CancellationFollowUpMessageChannel>(
+    skipDirectEmail ? 'sms' : 'email'
+  )
+  const activeChannel: CancellationFollowUpMessageChannel = skipDirectEmail ? 'sms' : channel
   const [messageKind, setMessageKind] = useState<CancellationFollowUpMessageKind>(initialMessageKind)
   const [editMode, setEditMode] = useState(false)
 
@@ -96,38 +107,42 @@ export default function CancellationFollowUpMessagePreviewModal({
     if (isOpen) setMessageKind(initialMessageKind)
   }, [isOpen, initialMessageKind])
 
+  useEffect(() => {
+    if (skipDirectEmail && channel !== 'sms') setChannel('sms')
+  }, [skipDirectEmail, channel])
+
   const getBuiltin = useCallback(() => {
-    const b = getBuiltinCancellationFollowUpTemplate(emailLocale, channel, messageKind)
+    const b = getBuiltinCancellationFollowUpTemplate(emailLocale, activeChannel, messageKind)
     return {
       name: defaultStaffOutreachTemplateName(emailLocale),
       subject: b.subject,
       body: b.body,
     }
-  }, [emailLocale, channel, messageKind])
+  }, [emailLocale, activeChannel, messageKind])
 
   const prepareBodyForEditor = useCallback(
     (stored: string) =>
-      channel === 'email'
+      activeChannel === 'email'
         ? extractCancellationFollowUpEmailBodyFromDocument(stored, emailLocale, messageKind)
         : stored,
-    [channel, emailLocale, messageKind]
+    [activeChannel, emailLocale, messageKind]
   )
 
   const prepareBodyForSave = useCallback(
     (editor: string) =>
-      channel === 'email'
+      activeChannel === 'email'
         ? mergeCancellationFollowUpEmailDocumentFromBody(emailLocale, editor)
         : editor,
-    [channel, emailLocale]
+    [activeChannel, emailLocale]
   )
 
   const templateManager = useStaffOutreachMessageTemplates({
     scope: 'cancellation_follow_up',
     locale: emailLocale,
-    channel,
+    channel: activeChannel,
     variant: messageKind,
     isOpen,
-    showSubject: channel === 'email',
+    showSubject: activeChannel === 'email',
     getBuiltin,
     prepareBodyForEditor,
     prepareBodyForSave,
@@ -243,11 +258,11 @@ export default function CancellationFollowUpMessagePreviewModal({
   }, [isOpen, messageKind, reservationId, channelName])
 
   const mergedEmailHtmlTpl = useMemo(() => {
-    if (channel !== 'email') return bodyTpl
+    if (activeChannel !== 'email') return bodyTpl
     return mergeCancellationFollowUpEmailDocumentFromBody(emailLocale, bodyTpl)
-  }, [channel, emailLocale, bodyTpl])
+  }, [activeChannel, emailLocale, bodyTpl])
 
-  const bodyForSubstitute = channel === 'email' ? mergedEmailHtmlTpl : bodyTpl
+  const bodyForSubstitute = activeChannel === 'email' ? mergedEmailHtmlTpl : bodyTpl
 
   const rebookingUrl = useMemo(
     () =>
@@ -297,7 +312,7 @@ export default function CancellationFollowUpMessagePreviewModal({
   }, [priceComparison, emailLocale])
 
   const messageContent = useMemo(() => {
-    return substituteCancellationFollowUpMessageTemplate(subjectTpl, bodyForSubstitute, channel, {
+    return substituteCancellationFollowUpMessageTemplate(subjectTpl, bodyForSubstitute, activeChannel, {
       customerName,
       tourDate,
       productName,
@@ -313,7 +328,7 @@ export default function CancellationFollowUpMessagePreviewModal({
   }, [
     subjectTpl,
     bodyForSubstitute,
-    channel,
+    activeChannel,
     customerName,
     tourDate,
     productName,
@@ -328,7 +343,7 @@ export default function CancellationFollowUpMessagePreviewModal({
 
   const handleCopy = useCallback(async () => {
     try {
-      if (channel === 'email') {
+      if (activeChannel === 'email') {
         const html = messageContent.body
         const htmlBlob = new Blob([html], { type: 'text/html' })
         const textBlob = new Blob([messageContent.plainText], { type: 'text/plain' })
@@ -346,7 +361,7 @@ export default function CancellationFollowUpMessagePreviewModal({
     } catch {
       try {
         await navigator.clipboard.writeText(
-          channel === 'email' ? messageContent.plainText : messageContent.body
+          activeChannel === 'email' ? messageContent.plainText : messageContent.body
         )
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
@@ -354,7 +369,7 @@ export default function CancellationFollowUpMessagePreviewModal({
         alert(uiLocale === 'en' ? 'Failed to copy.' : '복사에 실패했습니다.')
       }
     }
-  }, [channel, messageContent, uiLocale])
+  }, [activeChannel, messageContent, uiLocale])
 
   if (!isOpen) return null
 
@@ -374,7 +389,9 @@ export default function CancellationFollowUpMessagePreviewModal({
         <div className="flex items-center justify-between border-b border-gray-200 p-4">
           <div className="flex items-center gap-2">
             <Eye className="h-5 w-5 shrink-0 text-violet-600" />
-            <h2 className="text-lg font-bold text-gray-900">{t('cancelFollowUpPreviewTitle')}</h2>
+            <h2 className="text-lg font-bold text-gray-900">
+              {skipDirectEmail ? t('cancelFollowUpPreviewTitleSmsOnly') : t('cancelFollowUpPreviewTitle')}
+            </h2>
           </div>
           <button
             type="button"
@@ -412,12 +429,18 @@ export default function CancellationFollowUpMessagePreviewModal({
                 {t('cancelFollowUpKindRebooking')}
               </button>
             </div>
+            {skipDirectEmail ? (
+              <div className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-950">
+                <MessageSquare className="h-3 w-3" />
+                {t('cancelFollowUpChannelSms')}
+              </div>
+            ) : (
             <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
               <button
                 type="button"
                 onClick={() => setChannel('email')}
                 className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                  channel === 'email'
+                  activeChannel === 'email'
                     ? 'bg-violet-600 text-white'
                     : 'text-gray-600 hover:bg-gray-50'
                 }`}
@@ -429,7 +452,7 @@ export default function CancellationFollowUpMessagePreviewModal({
                 type="button"
                 onClick={() => setChannel('sms')}
                 className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                  channel === 'sms'
+                  activeChannel === 'sms'
                     ? 'bg-violet-600 text-white'
                     : 'text-gray-600 hover:bg-gray-50'
                 }`}
@@ -438,6 +461,7 @@ export default function CancellationFollowUpMessagePreviewModal({
                 {t('cancelFollowUpChannelSms')}
               </button>
             </div>
+            )}
           </div>
         </div>
 
@@ -451,7 +475,7 @@ export default function CancellationFollowUpMessagePreviewModal({
             {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
             {copied
               ? t('cancelFollowUpCopied')
-              : channel === 'email'
+              : activeChannel === 'email'
                 ? t('cancelFollowUpCopyEmail')
                 : t('cancelFollowUpCopySms')}
           </button>
@@ -473,31 +497,44 @@ export default function CancellationFollowUpMessagePreviewModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
+          {skipDirectEmail ? (
+            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+              <p className="flex items-start gap-2 font-semibold">
+                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                {t('cancelFollowUpOtaEmailBlockedTitle')}
+              </p>
+              <p className="mt-1.5 leading-relaxed">{t('cancelFollowUpOtaEmailBlockedBody')}</p>
+              {customerEmail?.trim() ? (
+                <p className="mt-1.5 break-all text-xs text-amber-900/80">{customerEmail.trim()}</p>
+              ) : null}
+            </div>
+          ) : null}
+
           <StaffOutreachMessageTemplatePanel
-            channel={channel}
+            channel={activeChannel}
             uiLocale={uiLocale}
             editMode={editMode}
-            showSubject={channel === 'email'}
+            showSubject={activeChannel === 'email'}
             placeholderHint={t('cancelFollowUpPlaceholderHint')}
-            {...(channel === 'email' ? { shellNote: t('cancelFollowUpTemplateShellNote') } : {})}
+            {...(activeChannel === 'email' ? { shellNote: t('cancelFollowUpTemplateShellNote') } : {})}
             accentClass="violet"
             templateManager={templateManager}
           />
 
           <div className="mb-4 space-y-1 rounded-lg border border-violet-100 bg-violet-50/80 p-3 text-sm text-gray-800">
-            {channel === 'email' && (
+            {activeChannel === 'email' && (
               <div>
                 <span className="font-semibold text-gray-600">{t('cancelFollowUpToEmail')}:</span>{' '}
                 <span className="break-all">{customerEmail || (uiLocale === 'en' ? '—' : '—')}</span>
               </div>
             )}
-            {channel === 'sms' && (
+            {activeChannel === 'sms' && (
               <div>
                 <span className="font-semibold text-gray-600">{t('cancelFollowUpToPhone')}:</span>{' '}
                 <span className="break-all">{phoneDisplay}</span>
               </div>
             )}
-            {channel === 'email' && (
+            {activeChannel === 'email' && (
               <div>
                 <span className="font-semibold text-gray-600">{t('cancelFollowUpSubject')}:</span>{' '}
                 {previewBlocked ? '…' : messageContent.subject}
@@ -512,7 +549,7 @@ export default function CancellationFollowUpMessagePreviewModal({
             <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-gray-200 py-12">
               <Loader2 className="h-8 w-8 animate-spin text-violet-600" />
             </div>
-          ) : channel === 'email' ? (
+          ) : activeChannel === 'email' ? (
             <EmailPreviewBodyPanel
               html={messageContent.body}
               title={t('cancelFollowUpPreviewBody')}

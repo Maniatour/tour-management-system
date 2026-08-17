@@ -927,6 +927,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                     reservation.channelNameSnapshot ??
                     getChannelName(reservation.channelId, channels || [])
                   }
+                  channelId={reservation.channelId ?? null}
                   {...(onCancelFollowUpManualChange !== undefined
                     ? { onCancelFollowUpManualChange }
                     : {})}

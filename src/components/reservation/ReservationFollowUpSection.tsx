@@ -730,6 +730,7 @@ export default function ReservationFollowUpSection({
           channelName={
             followUpPipelineReservation.channelNameSnapshot ?? null
           }
+          channelId={followUpPipelineReservation.channelId ?? null}
         />
       ) : null}
 

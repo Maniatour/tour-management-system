@@ -89,6 +89,7 @@ interface Vehicle {
   rental_end_date?: string
   rental_pickup_location?: string
   rental_return_location?: string
+  rental_reserved_by?: string | null
   rental_total_cost?: number
   rental_notes?: string
   /** Rental Agreement # */
@@ -149,6 +150,7 @@ function mapDbRowToVehicle(row: VehicleDbRow): Vehicle {
     rental_end_date: row.rental_end_date != null ? String(row.rental_end_date) : undefined,
     rental_pickup_location: row.rental_pickup_location != null ? String(row.rental_pickup_location) : undefined,
     rental_return_location: row.rental_return_location != null ? String(row.rental_return_location) : undefined,
+    rental_reserved_by: row.rental_reserved_by != null ? String(row.rental_reserved_by) : null,
     rental_total_cost: row.rental_total_cost != null ? Number(row.rental_total_cost) : undefined,
     rental_notes: row.rental_notes != null ? String(row.rental_notes) : undefined,
     rental_agreement_number: row.rental_agreement_number != null ? String(row.rental_agreement_number) : null,
@@ -262,6 +264,7 @@ export default function VehiclesPage() {
           rental_end_date,
           rental_pickup_location,
           rental_return_location,
+          rental_reserved_by,
           rental_total_cost,
           rental_notes,
           rental_agreement_number,
@@ -628,6 +631,7 @@ export default function VehiclesPage() {
         'installment_start_date', 'installment_end_date', 'vehicle_image_url',
         'vehicle_category', 'rental_company', 'daily_rate', 'rental_booking_price', 'rental_start_date',
         'rental_end_date',         'rental_pickup_location', 'rental_return_location',
+        'rental_reserved_by',
         'rental_total_cost', 'rental_notes', 'rental_agreement_number',
         'rental_reservation_url', 'rental_agreement_file_url', 'rental_receipt_url', 'nick'
       ]
@@ -940,6 +944,9 @@ export default function VehiclesPage() {
                         </span>
                       </p>
                       <p><span className="font-medium">렌탈 기간:</span> {vehicle.rental_start_date || 'N/A'} ~ {vehicle.rental_end_date || 'N/A'}</p>
+                      {vehicle.rental_reserved_by ? (
+                        <p><span className="font-medium">예약자:</span> {vehicle.rental_reserved_by}</p>
+                      ) : null}
                       <div className="grid grid-cols-2 gap-x-3 gap-y-1">
                         <p>
                           <span className="font-medium">예약 가격:</span>{' '}

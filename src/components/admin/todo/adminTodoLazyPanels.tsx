@@ -76,6 +76,11 @@ export const BentoCheckPanel = dynamic(
   { ssr: false, loading: () => <TodoPanelLoading /> }
 )
 
+export const RentalCarPickupDropoffPanel = dynamic(
+  () => import('./RentalCarPickupDropoffPanel').then((m) => m.RentalCarPickupDropoffPanel),
+  { ssr: false, loading: () => <TodoPanelLoading /> }
+)
+
 export const TourEnvelopePrintPanel = dynamic(
   () => import('./TourEnvelopePrintPanel').then((m) => m.TourEnvelopePrintPanel),
   { ssr: false, loading: () => <TodoPanelLoading /> }

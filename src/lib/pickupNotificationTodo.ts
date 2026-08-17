@@ -67,3 +67,10 @@ export function pickupNotificationTodoFormSeed(locale: string) {
     department: 'common' as const,
   }
 }
+
+export const PICKUP_NOTIFICATION_QUEUE_RELOAD_EVENT = 'pickup-notification-queue-reload'
+
+export function requestPickupNotificationQueueReload() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event(PICKUP_NOTIFICATION_QUEUE_RELOAD_EVENT))
+}

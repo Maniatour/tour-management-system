@@ -35,6 +35,7 @@ export type CancelledSimpleCardFollowUpStripProps = {
   infants?: number
   channelRN?: string | null
   channelName?: string | null
+  channelId?: string | null
   onCancelFollowUpManualChange?: (
     reservationId: string,
     kind: CancelFollowUpManualKind,
@@ -64,6 +65,7 @@ export default function CancelledSimpleCardFollowUpStrip({
   infants = 0,
   channelRN = null,
   channelName = null,
+  channelId = null,
   onCancelFollowUpManualChange,
   onReasonSaved,
   knownCancellationReason,
@@ -405,6 +407,7 @@ export default function CancelledSimpleCardFollowUpStrip({
         infants={infants}
         channelRN={channelRN}
         channelName={channelName}
+        channelId={channelId}
         initialMessageKind={messagePreviewKind}
       />
 

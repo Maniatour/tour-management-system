@@ -96,7 +96,8 @@ export function PickupNotificationPanel({
   const { rows, loading, reload } = useToursForPickupNotification(queryEnabled)
   const { tourState, setTourStatus } = useTodoPanelTourCompletion(
     'pickup-notification',
-    completionDateKey
+    completionDateKey,
+    4
   )
   const linkedTodo = findPickupNotificationLinkedTodo(linkedTodos)
 
@@ -108,9 +109,13 @@ export function PickupNotificationPanel({
   }, [completionDateKey])
 
   const completed = linkedTodo?.completed ?? localCompleted
-  const progress = useMemo(
-    () => countTodoPanelTourProgress(rows.map((r) => r.id), tourState),
+  const visibleRows = useMemo(
+    () => rows.filter((tour) => getTodoPanelTourStatus(tour.id, tourState) !== 'completed'),
     [rows, tourState]
+  )
+  const progress = useMemo(
+    () => countTodoPanelTourProgress(visibleRows.map((r) => r.id), tourState),
+    [visibleRows, tourState]
   )
   const progressLabel =
     progress.onHold > 0
@@ -221,7 +226,7 @@ export function PickupNotificationPanel({
                   {isKo ? '일일' : 'Daily'}
                 </span>
                 ) : null}
-                {rows.length > 0 ? (
+                {visibleRows.length > 0 ? (
                   <span className="shrink-0 text-[10px] font-medium text-sky-700">{progressLabel}</span>
                 ) : null}
               </div>
@@ -243,12 +248,12 @@ export function PickupNotificationPanel({
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             {isKo ? '투어 목록 불러오는 중…' : 'Loading tours…'}
           </div>
-        ) : rows.length === 0 ? (
+        ) : visibleRows.length === 0 ? (
           <p className="rounded-md border border-dashed border-gray-200 bg-white/60 py-3 text-center text-[11px] text-gray-500">
             {isKo ? '48시간 이내 출발 예정 투어가 없습니다.' : 'No tours departing within 48 hours.'}
           </p>
         ) : (
-          rows.map((tour) => {
+          visibleRows.map((tour) => {
             const tourStatus = getTodoPanelTourStatus(tour.id, tourState)
             return (
             <div

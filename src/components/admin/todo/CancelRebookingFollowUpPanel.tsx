@@ -456,6 +456,7 @@ export function CancelRebookingFollowUpPanel({
                     infants={reservation.infant || 0}
                     channelRN={reservation.channelRN ?? null}
                     channelName={channelName}
+                    channelId={reservation.channelId ?? null}
                     onCancelFollowUpManualChange={handleManualChange}
                     onReasonSaved={bumpRefresh}
                     knownCancellationReason={item.cancellationReason}

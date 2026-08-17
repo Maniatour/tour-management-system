@@ -23,6 +23,7 @@ export const TODO_PANEL_AUTO_COMPLETE_MODE = {
   'reservation-agency-management': 'live',
   'antelope-canyon-booking': 'live',
   'bento-check': 'snapshot',
+  'rental-car-pickup-dropoff': 'snapshot',
 } as const satisfies Record<string, TodoPanelAutoCompleteMode>
 
 export type TodoPanelAutoCompleteId = keyof typeof TODO_PANEL_AUTO_COMPLETE_MODE
