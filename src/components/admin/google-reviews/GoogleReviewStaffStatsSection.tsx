@@ -18,6 +18,7 @@ import GoogleReviewStaffStatReviewsModal, {
 } from '@/components/admin/google-reviews/GoogleReviewStaffStatReviewsModal'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import type {
+  GoogleReviewStaffMonthBy,
   GoogleReviewStaffMonthlyCell,
   GoogleReviewStaffMonthlyStat,
   GoogleReviewStaffStat,
@@ -31,7 +32,15 @@ type Props = {
   variant?: 'section' | 'embedded'
 }
 
-type ViewMode = 'overall' | 'monthly'
+type ViewMode = 'overall' | 'monthly_review' | 'monthly_tour'
+
+function isMonthlyView(mode: ViewMode): boolean {
+  return mode === 'monthly_review' || mode === 'monthly_tour'
+}
+
+function monthByFromView(mode: ViewMode): GoogleReviewStaffMonthBy {
+  return mode === 'monthly_review' ? 'review_date' : 'tour_date'
+}
 
 type StaffActiveFilter = 'all' | 'active' | 'inactive'
 
@@ -263,14 +272,25 @@ function StarCountButton({
   )
 }
 
-function formatRateLine(
-  reviews: number,
-  denominator: number,
+function RateLine({
+  reviews,
+  denominator,
+  percent,
+}: {
+  reviews: number
+  denominator: number
   percent: number | null
-): string {
-  if (denominator <= 0) return '—'
-  const pct = percent != null ? `${percent}%` : '—'
-  return `${reviews}/${denominator} ${pct}`
+}) {
+  if (denominator <= 0) return <span>—</span>
+
+  return (
+    <span>
+      {reviews}/{denominator}{' '}
+      <span className="font-bold text-foreground">
+        {percent != null ? `${percent}%` : '—'}
+      </span>
+    </span>
+  )
 }
 
 function aggregateYearlyCell(
@@ -341,6 +361,7 @@ function MonthlyCellContent({
   year,
   onStarClick,
   reviewMonth,
+  monthBy,
 }: {
   cell: GoogleReviewStaffMonthlyCell | null
   isKo: boolean
@@ -350,6 +371,7 @@ function MonthlyCellContent({
   onStarClick: (target: StaffStatReviewModalTarget) => void
   /** undefined: cell.month, null: 연간(월 필터 없음) */
   reviewMonth?: number | null
+  monthBy: GoogleReviewStaffMonthBy
 }) {
   if (
     !cell ||
@@ -365,6 +387,16 @@ function MonthlyCellContent({
 
   return (
     <div className="flex flex-col items-center gap-1 leading-tight text-center min-w-[5.5rem]">
+      {cell.avgRating != null && cell.reviewCount > 0 ? (
+        <span
+          className="inline-flex items-center gap-0.5 text-amber-500 font-semibold tabular-nums text-sm"
+          title={isKo ? '평균 별점' : 'Average rating'}
+        >
+          <Star className="h-3.5 w-3.5 fill-current" aria-hidden />
+          {cell.avgRating.toFixed(2)}
+        </span>
+      ) : null}
+
       {starRows.length > 0 ? (
         <div className="space-y-0.5 w-full">
           {starRows.map((row) => (
@@ -387,6 +419,7 @@ function MonthlyCellContent({
                     staffName,
                     rating: row.rating,
                     year,
+                    monthBy,
                     ...(monthForClick != null ? { month: monthForClick } : {}),
                   })
                 }
@@ -411,11 +444,11 @@ function MonthlyCellContent({
             👥
           </span>
           <span>
-            {formatRateLine(
-              cell.reviewCount,
-              cell.totalTourGuests,
-              cell.guestReviewRatePercent
-            )}
+            <RateLine
+              reviews={cell.reviewCount}
+              denominator={cell.totalTourGuests}
+              percent={cell.guestReviewRatePercent}
+            />
           </span>
         </div>
         <div
@@ -430,11 +463,11 @@ function MonthlyCellContent({
             📋
           </span>
           <span>
-            {formatRateLine(
-              cell.reviewCount,
-              cell.reservationGroupCount,
-              cell.groupReviewRatePercent
-            )}
+            <RateLine
+              reviews={cell.reviewCount}
+              denominator={cell.reservationGroupCount}
+              percent={cell.groupReviewRatePercent}
+            />
           </span>
         </div>
       </div>
@@ -499,7 +532,7 @@ export default function GoogleReviewStaffStatsSection({
   )
 
   const staffFilterCounts = useMemo(() => {
-    const source = viewMode === 'overall' ? stats : monthlyStats
+    const source = isMonthlyView(viewMode) ? monthlyStats : stats
     const active = source.filter((row) => row.staffIsActive).length
     return {
       all: source.length,
@@ -538,8 +571,9 @@ export default function GoogleReviewStaffStatsSection({
           setStats(data.stats ?? [])
         }
       } else {
+        const monthBy = monthByFromView(viewMode)
         const res = await fetchApiWithAuth(
-          `/api/admin/google-business/reviews/staff-stats?view=monthly&year=${year}`
+          `/api/admin/google-business/reviews/staff-stats?view=monthly&year=${year}&monthBy=${monthBy}`
         )
         const data = (await res.json()) as {
           ok?: boolean
@@ -564,6 +598,7 @@ export default function GoogleReviewStaffStatsSection({
 
   const hasOverallData = stats.length > 0
   const hasMonthlyData = monthlyStats.length > 0
+  const monthlyView = isMonthlyView(viewMode)
   const hasRawData = viewMode === 'overall' ? hasOverallData : hasMonthlyData
   const hasFilteredData =
     viewMode === 'overall'
@@ -571,15 +606,20 @@ export default function GoogleReviewStaffStatsSection({
       : filteredMonthlyStats.length > 0
   const isEmpty = !loading && !hasRawData
   const isFilteredEmpty = !loading && hasRawData && !hasFilteredData
+  const activeMonthBy = monthByFromView(viewMode)
 
   const descriptionText =
     viewMode === 'overall'
       ? isKo
         ? '모든 플랫폼(Google·OTA 등) 리뷰 중 투어·직원 연결된 평균 별점입니다. 최초·마지막 리뷰일, 전체 투어 이력 기준 진행 횟수·배정 인원·예약 건수를 표시합니다. 컬럼 헤더를 클릭해 정렬할 수 있습니다.'
         : 'Average ratings from all platform reviews linked to staff. Shows first/last review dates and full tour-history departure count, guest totals, and booking groups. Click column headers to sort.'
-      : isKo
-        ? '월별 리뷰 수, 별점별 개수, 투어 인원·예약 그룹 대비 리뷰율입니다. 대기·승인 등 모든 상태 포함. 별점 숫자를 클릭하면 리뷰를 볼 수 있습니다.'
-        : 'Monthly reviews, star breakdown, and review rates (all import statuses). Click star counts to read reviews.'
+      : viewMode === 'monthly_review'
+        ? isKo
+          ? '고객이 리뷰를 남긴 날(등록일) 기준 월별 집계입니다. 투어 인원·예약 그룹은 해당 달의 투어일 기준입니다. 별점 숫자를 클릭하면 리뷰를 볼 수 있습니다.'
+          : 'Monthly totals by the date the guest posted the review. Guest and booking counts still follow tour dates. Click star counts to read reviews.'
+        : isKo
+          ? '투어 출발일 기준 월별 집계입니다. 리뷰·투어 인원·예약 그룹이 같은 투어월에 맞춰집니다. 별점 숫자를 클릭하면 리뷰를 볼 수 있습니다.'
+          : 'Monthly totals by tour departure date. Reviews, guests, and booking groups share the same tour month. Click star counts to read reviews.'
 
   const content = (
     <>
@@ -597,7 +637,7 @@ export default function GoogleReviewStaffStatsSection({
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          {viewMode === 'monthly' ? (
+          {monthlyView ? (
             <div className="flex items-center rounded-lg border border-border bg-background">
               <button
                 type="button"
@@ -674,14 +714,25 @@ export default function GoogleReviewStaffStatsSection({
             </button>
             <button
               type="button"
-              onClick={() => setViewMode('monthly')}
+              onClick={() => setViewMode('monthly_review')}
               className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                viewMode === 'monthly'
+                viewMode === 'monthly_review'
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              {isKo ? '월별' : 'Monthly'}
+              {isKo ? '월별·등록일' : 'Monthly · posted'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('monthly_tour')}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                viewMode === 'monthly_tour'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {isKo ? '월별·투어일' : 'Monthly · tour'}
             </button>
           </div>
         </div>
@@ -872,7 +923,7 @@ export default function GoogleReviewStaffStatsSection({
                   <th className="sticky left-0 z-10 bg-card py-2 pr-3 text-left font-medium min-w-[7rem]">
                     {isKo ? '직원' : 'Staff'}
                   </th>
-                  <th className="py-2 px-1 text-center font-semibold text-xs min-w-[6rem] bg-muted/40 border-r border-border/50 text-foreground">
+                  <th className="py-2 px-2 text-center font-semibold text-xs min-w-[9rem] w-[9rem] bg-muted/40 border-r border-border/50 text-foreground">
                     {isKo ? `${year}년 총합` : `${year} total`}
                   </th>
                   {monthLabels.map((label) => (
@@ -898,7 +949,7 @@ export default function GoogleReviewStaffStatsSection({
                           isKo={isKo}
                         />
                       </td>
-                      <td className="py-2 px-1 text-center align-middle bg-muted/25 border-r border-border/40">
+                      <td className="py-2 px-2 text-center align-middle bg-muted/25 border-r border-border/40 min-w-[9rem] w-[9rem]">
                         <MonthlyCellContent
                           cell={yearlyCell}
                           isKo={isKo}
@@ -906,6 +957,7 @@ export default function GoogleReviewStaffStatsSection({
                           staffName={row.staffName}
                           year={year}
                           reviewMonth={null}
+                          monthBy={activeMonthBy}
                           onStarClick={setReviewModalTarget}
                         />
                       </td>
@@ -917,6 +969,7 @@ export default function GoogleReviewStaffStatsSection({
                             staffEmail={row.staffEmail}
                             staffName={row.staffName}
                             year={year}
+                            monthBy={activeMonthBy}
                             onStarClick={setReviewModalTarget}
                           />
                         </td>

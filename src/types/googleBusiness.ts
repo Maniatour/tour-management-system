@@ -75,6 +75,9 @@ export type GoogleReviewStaffStat = {
   tourDepartureCount: number
 }
 
+/** 월별 집계 기준: 등록일(고객이 리뷰를 남긴 날) 또는 투어 출발일 */
+export type GoogleReviewStaffMonthBy = 'review_date' | 'tour_date'
+
 export type GoogleReviewStaffMonthlyCell = {
   month: number
   reviewCount: number

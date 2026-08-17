@@ -1,9 +1,16 @@
 import { supabaseAdmin } from '@/lib/supabase'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import type {
+  GoogleReviewStaffMonthBy,
   GoogleReviewStaffMonthlyStat,
   GoogleReviewStaffStatReviewItem,
 } from '@/types/googleBusiness'
+
+export function parseGoogleReviewStaffMonthBy(
+  value: string | null | undefined
+): GoogleReviewStaffMonthBy {
+  return value === 'review_date' ? 'review_date' : 'tour_date'
+}
 
 export type GoogleReviewStaffStatRow = {
   staffEmail: string
@@ -135,11 +142,13 @@ export async function getGoogleReviewStaffStats(
 
 export async function getGoogleReviewStaffMonthlyStats(
   operatorId?: string | null,
-  year?: number | null
+  year?: number | null,
+  monthBy: GoogleReviewStaffMonthBy = 'tour_date'
 ): Promise<GoogleReviewStaffMonthlyStatRow[]> {
   if (!supabaseAdmin) return []
 
   const targetYear = year ?? new Date().getFullYear()
+  const monthByValue = parseGoogleReviewStaffMonthBy(monthBy)
 
   const { data, error } = await (supabaseAdmin as unknown as {
     rpc: (
@@ -167,6 +176,7 @@ export async function getGoogleReviewStaffMonthlyStats(
   }).rpc('admin_google_review_staff_stats_monthly', {
     p_operator_id: resolveOperatorId(operatorId),
     p_year: targetYear,
+    p_month_by: monthByValue,
   })
 
   if (error) {
@@ -175,7 +185,7 @@ export async function getGoogleReviewStaffMonthlyStats(
       error.message.includes('Could not find the function')
     ) {
       throw new Error(
-        'admin_google_review_staff_stats_monthly RPC is missing. Apply migration 20260803350000_google_review_staff_stats_all_platforms.sql.'
+        'admin_google_review_staff_stats_monthly RPC is missing. Apply migration 20260817000057_google_review_staff_stats_monthly_date_basis.sql.'
       )
     }
     throw new Error(error.message)
@@ -207,6 +217,7 @@ export async function getGoogleReviewStaffStatReviews(input: {
   rating: number
   year?: number | null
   month?: number | null
+  monthBy?: GoogleReviewStaffMonthBy | null
 }): Promise<GoogleReviewStaffStatReviewItem[]> {
   if (!supabaseAdmin) return []
 
@@ -234,6 +245,7 @@ export async function getGoogleReviewStaffStatReviews(input: {
     p_rating: input.rating,
     p_year: input.year ?? null,
     p_month: input.month ?? null,
+    p_month_by: parseGoogleReviewStaffMonthBy(input.monthBy),
   })
 
   if (error) {
@@ -242,7 +254,7 @@ export async function getGoogleReviewStaffStatReviews(input: {
       error.message.includes('Could not find the function')
     ) {
       throw new Error(
-        'admin_google_review_staff_stat_reviews RPC is missing. Apply migration 20260803350000_google_review_staff_stats_all_platforms.sql.'
+        'admin_google_review_staff_stat_reviews RPC is missing. Apply migration 20260817000057_google_review_staff_stats_monthly_date_basis.sql.'
       )
     }
     throw new Error(error.message)

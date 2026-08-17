@@ -36,14 +36,14 @@ export default function BiweeklyReviewBonusSection({ summary, loading, formatCur
           <p className="text-sm text-gray-500">후기 포인트를 불러오는 중...</p>
         ) : !summary ? null : !summary.includedInThisPayPeriod ? (
           <p className="text-sm text-gray-600 leading-6">
-            {monthLabel} 후기 보너스(1일~말일, 입력일 기준)는{' '}
+            {monthLabel} 후기 보너스(1일~말일, 고객 후기 등록일 기준)는{' '}
             <span className="font-medium text-gray-900">16일~말일 2주급</span>에 포함됩니다.
             이 기간(1~15일) 지급분에는 넣지 않습니다.
           </p>
         ) : (
           <>
             <p className="text-xs text-gray-500 leading-5">
-              {monthLabel} 1일~말일 · 시스템에 입력된 날짜 기준 · 1포인트 ${REVIEW_BONUS_USD_PER_POINT}
+              {monthLabel} 1일~말일 · 고객이 후기를 남긴 날 기준 · 1포인트 ${REVIEW_BONUS_USD_PER_POINT}
               {' '}(5점 +1 / 4점 0 / 3점 -1 / 2점 -2 / 1점 -3)
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -78,7 +78,7 @@ export default function BiweeklyReviewBonusSection({ summary, loading, formatCur
                 <table className="min-w-full text-xs">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-2 py-1.5 text-left font-medium text-gray-500">입력일</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-gray-500">등록일</th>
                       <th className="px-2 py-1.5 text-left font-medium text-gray-500">작성자</th>
                       <th className="px-2 py-1.5 text-center font-medium text-gray-500">별점</th>
                       <th className="px-2 py-1.5 text-right font-medium text-gray-500">포인트</th>
@@ -88,7 +88,7 @@ export default function BiweeklyReviewBonusSection({ summary, loading, formatCur
                     {summary.reviews.map((review) => (
                       <tr key={review.id}>
                         <td className="px-2 py-1.5 whitespace-nowrap text-gray-700">
-                          {review.importedDateLv}
+                          {review.postedDateLv}
                         </td>
                         <td className="px-2 py-1.5 text-gray-700 max-w-[10rem] truncate">
                           {review.authorName || '—'}

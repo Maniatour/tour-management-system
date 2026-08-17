@@ -12,6 +12,7 @@ import {
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { cn } from '@/lib/utils'
 import type {
+  GoogleReviewStaffMonthBy,
   GoogleReviewStaffMonthlyCell,
   GoogleReviewStaffMonthlyStat,
 } from '@/types/googleBusiness'
@@ -169,6 +170,7 @@ export default function ScheduleDisplayReviewStatusModal({
 
   const [year, setYear] = useState(currentYear)
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
+  const [monthBy, setMonthBy] = useState<GoogleReviewStaffMonthBy>('review_date')
   const [loading, setLoading] = useState(false)
   const [monthlyStats, setMonthlyStats] = useState<GoogleReviewStaffMonthlyStat[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -223,7 +225,7 @@ export default function ScheduleDisplayReviewStatusModal({
     setError(null)
     try {
       const res = await fetchApiWithAuth(
-        `/api/admin/google-business/reviews/staff-stats?view=monthly&year=${year}`
+        `/api/admin/google-business/reviews/staff-stats?view=monthly&year=${year}&monthBy=${monthBy}`
       )
       const data = (await res.json()) as {
         ok?: boolean
@@ -243,7 +245,7 @@ export default function ScheduleDisplayReviewStatusModal({
     } finally {
       setLoading(false)
     }
-  }, [open, year, isKo])
+  }, [open, year, monthBy, isKo])
 
   useEffect(() => {
     if (!open) return
@@ -254,6 +256,7 @@ export default function ScheduleDisplayReviewStatusModal({
     if (!open) return
     setYear(currentYear)
     setSelectedMonth(currentMonth)
+    setMonthBy('review_date')
   }, [open, currentYear, currentMonth])
 
   const rankedRows = useMemo((): RankedRow[] => {
@@ -341,8 +344,12 @@ export default function ScheduleDisplayReviewStatusModal({
               {!isFullscreen ? (
                 <DialogDescription>
                   {isKo
-                    ? '활성 가이드·어시스턴트의 월별 리뷰 점수 순위입니다. 평균 별점이 높은 순으로 표시됩니다.'
-                    : 'Monthly review ranking for active guides and assistants, sorted by average rating.'}
+                    ? `활성 가이드·어시스턴트의 월별 리뷰 점수 순위입니다. ${
+                        monthBy === 'review_date' ? '등록일(고객이 리뷰를 남긴 날)' : '투어 출발일'
+                      } 기준이며, 평균 별점이 높은 순으로 표시됩니다.`
+                    : `Monthly review ranking for active guides and assistants by ${
+                        monthBy === 'review_date' ? 'review date' : 'tour date'
+                      }, sorted by average rating.`}
                 </DialogDescription>
               ) : (
                 <DialogDescription className="text-base text-muted-foreground">
@@ -427,6 +434,34 @@ export default function ScheduleDisplayReviewStatusModal({
                 ? `활성 ${rankedRows.length}명`
                 : `${rankedRows.length} active`}
             </span>
+            <div className="inline-flex rounded-lg border border-border bg-muted/30 p-0.5">
+              <button
+                type="button"
+                onClick={() => setMonthBy('review_date')}
+                className={cn(
+                  'rounded-md font-medium transition-colors',
+                  isFullscreen ? 'px-3 py-2 text-sm' : 'px-3 py-1.5 text-xs',
+                  monthBy === 'review_date'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {isKo ? '월별·등록일' : 'Monthly · posted'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMonthBy('tour_date')}
+                className={cn(
+                  'rounded-md font-medium transition-colors',
+                  isFullscreen ? 'px-3 py-2 text-sm' : 'px-3 py-1.5 text-xs',
+                  monthBy === 'tour_date'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {isKo ? '월별·투어일' : 'Monthly · tour'}
+              </button>
+            </div>
           </div>
 
           <div
@@ -490,8 +525,12 @@ export default function ScheduleDisplayReviewStatusModal({
               {!isFullscreen ? (
                 <div className="mb-3 hidden text-xs text-muted-foreground sm:block">
                   {isKo
-                    ? `${year}년 ${monthLabels[selectedMonth - 1]} · 평균 별점 → 리뷰 수 → 5점 순 · 인원별 = 리뷰÷총인원 · 예약건별 = 리뷰÷예약건수`
-                    : `${monthLabels[selectedMonth - 1]} ${year} · avg rating → reviews → 5★ · by guests = reviews÷guests · by bookings = reviews÷groups`}
+                    ? `${year}년 ${monthLabels[selectedMonth - 1]} · ${
+                        monthBy === 'review_date' ? '등록일' : '투어일'
+                      } 기준 · 평균 별점 → 리뷰 수 → 5점 순 · 인원별 = 리뷰÷총인원 · 예약건별 = 리뷰÷예약건수`
+                    : `${monthLabels[selectedMonth - 1]} ${year} · by ${
+                        monthBy === 'review_date' ? 'review date' : 'tour date'
+                      } · avg rating → reviews → 5★ · by guests = reviews÷guests · by bookings = reviews÷groups`}
                 </div>
               ) : null}
 

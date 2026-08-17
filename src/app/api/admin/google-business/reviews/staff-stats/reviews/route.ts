@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireGoogleBusinessAdminAuth } from '@/lib/googleBusinessAdminAuth'
-import { getGoogleReviewStaffStatReviews } from '@/lib/googleReviewStaffStats'
+import {
+  getGoogleReviewStaffStatReviews,
+  parseGoogleReviewStaffMonthBy,
+} from '@/lib/googleReviewStaffStats'
 
 /**
  * GET /api/admin/google-business/reviews/staff-stats/reviews
- * ?staffEmail=...&rating=5&year=2026&month=8
+ * ?staffEmail=...&rating=5&year=2026&month=8&monthBy=review_date|tour_date
  */
 export async function GET(request: NextRequest) {
   const auth = await requireGoogleBusinessAdminAuth(request)
@@ -14,6 +17,7 @@ export async function GET(request: NextRequest) {
   const rating = Number.parseInt(request.nextUrl.searchParams.get('rating') ?? '', 10)
   const yearParam = request.nextUrl.searchParams.get('year')
   const monthParam = request.nextUrl.searchParams.get('month')
+  const monthBy = parseGoogleReviewStaffMonthBy(request.nextUrl.searchParams.get('monthBy'))
 
   if (!staffEmail || !Number.isFinite(rating) || rating < 1 || rating > 5) {
     return NextResponse.json({ ok: false, error: 'invalid_params' }, { status: 400 })
@@ -29,6 +33,7 @@ export async function GET(request: NextRequest) {
       rating,
       year: year != null && Number.isFinite(year) ? year : null,
       month: month != null && Number.isFinite(month) ? month : null,
+      monthBy,
     })
 
     return NextResponse.json({ ok: true, reviews })

@@ -52,8 +52,8 @@ export type ReviewBonusReviewRow = {
   id: string
   rating: number
   points: number
-  importedAt: string
-  importedDateLv: string
+  postedAt: string
+  postedDateLv: string
   authorName: string | null
   reviewSource: string | null
 }
@@ -126,23 +126,29 @@ type GoogleReviewRow = {
   id: string
   rating: number | null
   imported_at: string
+  review_created_at: string | null
   author_name: string | null
   review_source: string | null
   exclude_staff_rating: boolean | null
 }
 
+function reviewPostedAt(row: Pick<GoogleReviewRow, 'review_created_at' | 'imported_at'>): string {
+  return row.review_created_at || row.imported_at
+}
+
 function toReviewRow(row: GoogleReviewRow): ReviewBonusReviewRow | null {
   if (row.rating == null || row.exclude_staff_rating) return null
-  const importedDateLv = toLasVegasDateKey(row.imported_at)
-  if (!importedDateLv) return null
+  const postedAt = reviewPostedAt(row)
+  const postedDateLv = toLasVegasDateKey(postedAt)
+  if (!postedDateLv) return null
   const rating = Number(row.rating)
   if (!Number.isFinite(rating)) return null
   return {
     id: row.id,
     rating,
     points: ratingToReviewBonusPoints(rating),
-    importedAt: row.imported_at,
-    importedDateLv,
+    postedAt,
+    postedDateLv,
     authorName: row.author_name,
     reviewSource: row.review_source,
   }
@@ -165,7 +171,7 @@ function summarize(
     else if (review.rating >= 2) counts.two += 1
     else counts.one += 1
   }
-  const sorted = [...reviews].sort((a, b) => b.importedDateLv.localeCompare(a.importedDateLv))
+  const sorted = [...reviews].sort((a, b) => b.postedDateLv.localeCompare(a.postedDateLv))
   return {
     year,
     month,
@@ -185,8 +191,8 @@ function summarize(
 }
 
 /**
- * 해당 월(1일~말일, 라스베가스)에 입력된 후기를 가이드 이메일 기준으로 집계.
- * 2주급 시작일이 16일 미만이면 금액은 0 (16~말일 지급분에서만 포함).
+ * 해당 월(1일~말일, 라스베가스)에 고객이 후기를 남긴 건을 가이드 이메일 기준으로 집계.
+ * 등록일이 없으면 시스템 입력일을 사용합니다. 2주급 시작일이 16일 미만이면 금액은 0 (16~말일 지급분에서만 포함).
  */
 export async function fetchGuideReviewBonusForPayPeriod(
   client: SupabaseClient,
@@ -208,21 +214,40 @@ export async function fetchGuideReviewBonusForPayPeriod(
   if (!staffEmail) return emptySummary(month.year, month.month, true)
 
   const { startIso, endIso } = monthUtcRange(month.year, month.month)
-  const { data: reviewRows, error: reviewError } = await fromUntypedTable(client, 'google_reviews')
-    .select('id, rating, imported_at, author_name, review_source, exclude_staff_rating')
-    .eq('operator_id', params.operatorId)
-    .not('rating', 'is', null)
-    .gte('imported_at', startIso)
-    .lte('imported_at', endIso)
+  const reviewSelect =
+    'id, rating, imported_at, review_created_at, author_name, review_source, exclude_staff_rating'
+  const [{ data: postedRows, error: postedError }, { data: importedRows, error: importedError }] =
+    await Promise.all([
+      fromUntypedTable(client, 'google_reviews')
+        .select(reviewSelect)
+        .eq('operator_id', params.operatorId)
+        .not('rating', 'is', null)
+        .not('review_created_at', 'is', null)
+        .gte('review_created_at', startIso)
+        .lte('review_created_at', endIso),
+      fromUntypedTable(client, 'google_reviews')
+        .select(reviewSelect)
+        .eq('operator_id', params.operatorId)
+        .not('rating', 'is', null)
+        .gte('imported_at', startIso)
+        .lte('imported_at', endIso),
+    ])
 
+  const reviewError = postedError || importedError
   if (reviewError) {
     console.error('[reviewBonusPoints] google_reviews:', reviewError.message)
     return emptySummary(month.year, month.month, true)
   }
 
+  const reviewById = new Map<string, GoogleReviewRow>()
+  for (const row of [...(postedRows ?? []), ...(importedRows ?? [])] as GoogleReviewRow[]) {
+    reviewById.set(row.id, row)
+  }
+  const reviewRows = [...reviewById.values()]
+
   const bounds = emptySummary(month.year, month.month, true)
   const monthReviews = ((reviewRows ?? []) as GoogleReviewRow[]).filter((row) => {
-    const lv = toLasVegasDateKey(row.imported_at)
+    const lv = toLasVegasDateKey(reviewPostedAt(row))
     if (!lv) return false
     return lv >= bounds.monthStart && lv <= bounds.monthEnd
   })
@@ -318,7 +343,7 @@ export function reviewBonusSopSectionAlreadyExists(sections: Array<{ title_ko?: 
   })
 }
 
-export const REVIEW_BONUS_SOP_POLICY_KO = `후기는 **시스템에 입력된 날짜(라스베가스 기준)** 로 해당 월(1일~말일)에 받은 건만 집계합니다. 투어 출발일이 아닙니다.
+export const REVIEW_BONUS_SOP_POLICY_KO = `후기는 **고객이 후기를 남긴 날짜(라스베가스 기준)** 로 해당 월(1일~말일)에 받은 건만 집계합니다. 등록일이 없으면 시스템 입력일을 사용합니다. 투어 출발일이 아닙니다.
 
 **지급 시기:** 해당 월 **16일~말일 2주급**에 포함합니다. 1~15일 지급분에는 넣지 않습니다.
 
@@ -335,7 +360,7 @@ export const REVIEW_BONUS_SOP_POLICY_KO = `후기는 **시스템에 입력된 �
 
 **대상:** 후기에 연결된 가이드·어시스턴트. 스태프 평점 제외로 표시된 후기는 집계하지 않습니다.`
 
-export const REVIEW_BONUS_SOP_POLICY_EN = `Reviews count by **the date they were entered in the system (Las Vegas time)** for that calendar month (1st–last day). Not the tour departure date.
+export const REVIEW_BONUS_SOP_POLICY_EN = `Reviews count by **the date the guest posted the review (Las Vegas time)** for that calendar month (1st–last day). If the posted date is missing, the system entry date is used. Not the tour departure date.
 
 **Pay timing:** Included in that month’s **16th–end biweekly payroll**. Not included in the 1st–15th pay.
 
@@ -420,7 +445,7 @@ export const REVIEW_BONUS_GUIDE_NOTICE_KO = `안녕하세요, 가이드 여러�
 이번 달부터 **고객 후기 포인트 제도**를 2주급에 반영합니다.
 
 ■ 산정
-• 매월 1일~말일, **후기가 시스템에 입력된 날짜** 기준입니다. (투어 날짜가 아닙니다)
+• 매월 1일~말일, **고객이 후기를 남긴 날짜** 기준입니다. (투어 날짜가 아닙니다. 등록일이 없으면 시스템 입력일)
 • 별점 → 포인트: 5점 +1 / 4점 0 / 3점 -1 / 2점 -2 / 1점 -3
 • 1포인트 = $5 (합산이 마이너스면 해당 기간 급여에서 차감)
 
@@ -436,7 +461,7 @@ export const REVIEW_BONUS_GUIDE_NOTICE_EN = `Hello team,
 Starting this month, **guest review bonus points** will be included in biweekly pay.
 
 ■ How it is calculated
-• Calendar month (1st–last day), based on the **date the review was entered in our system** (Las Vegas time)—not the tour date.
+• Calendar month (1st–last day), based on the **date the guest posted the review** (Las Vegas time)—not the tour date. If the posted date is missing, the system entry date is used.
 • Stars → points: 5 = +1 / 4 = 0 / 3 = −1 / 2 = −2 / 1 = −3
 • $5 per point. A negative total is deducted from that period’s pay.
 

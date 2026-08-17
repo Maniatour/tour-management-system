@@ -1425,7 +1425,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       personalCarSubtotal: 'Personal Car Subtotal:',
       reviewBonusSubtotal: 'Review Bonus:',
       reviewBonusSection: 'Review Bonus Points',
-      reviewImportedDate: 'Entered',
+      reviewImportedDate: 'Posted',
       reviewAuthor: 'Author',
       reviewRating: 'Stars',
       reviewPoints: 'Points',
@@ -1469,7 +1469,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       personalCarSubtotal: 'Personal Car 소계:',
       reviewBonusSubtotal: '후기 보너스:',
       reviewBonusSection: '후기 보너스 포인트',
-      reviewImportedDate: '입력일',
+      reviewImportedDate: '등록일',
       reviewAuthor: '작성자',
       reviewRating: '별점',
       reviewPoints: '포인트',
@@ -1912,8 +1912,10 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
           ? `${monthLabel} review bonus is paid with the 16th–end payroll, not this period.`
           : `${monthLabel} 후기 보너스는 16일~말일 2주급에 포함되며 이 기간에는 지급하지 않습니다.`
       return `
+            <div class="review-bonus-section" style="margin-top:24px;">
             <div class="section-title">${pr.reviewBonusSection}</div>
             <p style="font-size:12px;color:#4b5563;margin:0 0 16px;">${escapeHtml(note)}</p>
+            </div>
           `
     }
     const monthLabel = formatReviewBonusMonthLabel(
@@ -1927,7 +1929,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
             .map(
               (review) => `
                   <tr>
-                    <td>${escapeHtml(review.importedDateLv)}</td>
+                    <td>${escapeHtml(review.postedDateLv)}</td>
                     <td>${escapeHtml(review.authorName || '—')}</td>
                     <td>${review.rating}</td>
                     <td>${review.points > 0 ? '+' : ''}${review.points}</td>
@@ -1936,6 +1938,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
             .join('')
         : `<tr><td colspan="4">${pr.title === 'Biweekly Pay Calculator' ? 'No linked reviews this month.' : '이 달에 연결된 후기가 없습니다.'}</td></tr>`
     return `
+            <div class="review-bonus-section" style="margin-top:24px;">
             <div class="section-title">${pr.reviewBonusSection} (${escapeHtml(monthLabel)})</div>
             <table class="table">
               <thead>
@@ -1954,6 +1957,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                 </tr>
               </tbody>
             </table>
+            </div>
           `
   }
 

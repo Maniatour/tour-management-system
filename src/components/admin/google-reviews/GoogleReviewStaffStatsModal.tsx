@@ -35,8 +35,8 @@ export default function GoogleReviewStaffStatsModal({
           </DialogTitle>
           <DialogDescription>
             {isKo
-              ? 'Google·OTA 등 모든 플랫폼 리뷰를 직원별로 집계합니다. OVERALL·월별 보기와 활성/비활성 필터를 사용할 수 있습니다.'
-              : 'Staff-level review scores across Google and OTA platforms. Switch between overall and monthly views, and filter by active status.'}
+              ? 'Google·OTA 등 모든 플랫폼 리뷰를 직원별로 집계합니다. OVERALL, 월별·등록일, 월별·투어일 보기와 활성/비활성 필터를 사용할 수 있습니다.'
+              : 'Staff-level review scores across Google and OTA platforms. Switch between overall, monthly by review date, and monthly by tour date, and filter by active status.'}
           </DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">

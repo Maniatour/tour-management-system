@@ -13,7 +13,10 @@ import {
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { formatLasVegasDate } from '@/lib/dailyReport/dateUtils'
 import { getReviewSourceLabel, isReviewSource } from '@/lib/reviewSources'
-import type { GoogleReviewStaffStatReviewItem } from '@/types/googleBusiness'
+import type {
+  GoogleReviewStaffMonthBy,
+  GoogleReviewStaffStatReviewItem,
+} from '@/types/googleBusiness'
 
 export type StaffStatReviewModalTarget = {
   staffEmail: string
@@ -21,6 +24,7 @@ export type StaffStatReviewModalTarget = {
   rating: number
   year?: number | null
   month?: number | null
+  monthBy?: GoogleReviewStaffMonthBy
 }
 
 type Props = {
@@ -58,6 +62,7 @@ export default function GoogleReviewStaffStatReviewsModal({
         })
         if (target.year) params.set('year', String(target.year))
         if (target.month) params.set('month', String(target.month))
+        if (target.monthBy) params.set('monthBy', target.monthBy)
 
         const res = await fetchApiWithAuth(
           `/api/admin/google-business/reviews/staff-stats/reviews?${params.toString()}`,
@@ -86,6 +91,17 @@ export default function GoogleReviewStaffStatReviewsModal({
     return () => controller.abort()
   }, [target])
 
+  const monthByLabel =
+    target?.monthBy === 'review_date'
+      ? isKo
+        ? '등록일 기준'
+        : 'by review date'
+      : target?.monthBy === 'tour_date'
+        ? isKo
+          ? '투어일 기준'
+          : 'by tour date'
+        : null
+
   const periodLabel =
     target?.year && target?.month
       ? isKo
@@ -110,8 +126,8 @@ export default function GoogleReviewStaffStatReviewsModal({
           </DialogTitle>
           <DialogDescription>
             {isKo
-              ? `${periodLabel} · 연결된 리뷰`
-              : `${periodLabel} · linked reviews`}
+              ? `${periodLabel}${monthByLabel ? ` · ${monthByLabel}` : ''} · 연결된 리뷰`
+              : `${periodLabel}${monthByLabel ? ` · ${monthByLabel}` : ''} · linked reviews`}
           </DialogDescription>
         </DialogHeader>
 
