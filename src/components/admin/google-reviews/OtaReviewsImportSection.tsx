@@ -9,6 +9,7 @@ import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import {
   OTA_CSV_TEMPLATE_HINTS,
   isGetYourGuideScrapedText,
+  isKkdayScrapedText,
   isKlookTableText,
   parseOtaReviewCsv,
   parseOtaReviewText,
@@ -82,7 +83,7 @@ export default function OtaReviewsImportSection({
   onMessage,
 }: Props) {
   const isKo = locale === 'ko'
-  const isParseOnlyPaste = source === 'getyourguide'
+  const isParseOnlyPaste = source === 'getyourguide' || source === 'kkday'
   const isBulkTablePaste = source === 'klook'
   const [mode, setMode] = useState<ImportMode>('paste')
   const [csvText, setCsvText] = useState('')
@@ -130,7 +131,8 @@ export default function OtaReviewsImportSection({
   const reservationRef = parsedFromPaste?.reservationNumber?.trim() ?? ''
 
   const singleDraft = useMemo((): ParsedOtaReviewRow | null => {
-    if (!parsedFromPaste?.rating) return null
+    if (!parsedFromPaste) return null
+    if (!parsedFromPaste.rating && source !== 'kkday') return null
 
     return {
       authorName: reservationLookup?.customerName || parsedFromPaste.authorName || null,
@@ -143,7 +145,7 @@ export default function OtaReviewsImportSection({
       productId: reservationLookup?.productId || parsedFromPaste.productId || null,
       tourId: reservationLookup?.tourId || null,
     }
-  }, [parsedFromPaste, reservationLookup])
+  }, [parsedFromPaste, reservationLookup, source])
 
   const singleValidation = useMemo(() => {
     if (!singleDraft) {
@@ -180,7 +182,8 @@ export default function OtaReviewsImportSection({
       return
     }
 
-    const isCompleteRef = /^GYG[A-Z0-9]{6,}$/i.test(reservationRef)
+    const isCompleteRef =
+      /^GYG[A-Z0-9]{6,}$/i.test(reservationRef) || /^\d{2}KK\d{8,}$/i.test(reservationRef)
     const delay = isCompleteRef ? 0 : 200
     const controller = new AbortController()
 
@@ -264,8 +267,12 @@ export default function OtaReviewsImportSection({
     if (singleValidation.valid.length === 0) {
       onMessage(
         isKo
-          ? 'GetYourGuide 리뷰 텍스트를 붙여넣고 RN#·별점·리뷰 내용이 파싱되는지 확인하세요.'
-          : 'Paste GetYourGuide review text and ensure RN#, rating, and review content are parsed.'
+          ? source === 'kkday'
+            ? 'KKday 리뷰 텍스트를 붙여넣고 예약번호·별점·리뷰 내용이 파싱되는지 확인하세요.'
+            : 'GetYourGuide 리뷰 텍스트를 붙여넣고 RN#·별점·리뷰 내용이 파싱되는지 확인하세요.'
+          : source === 'kkday'
+            ? 'Paste KKday review text and ensure booking number, rating, and review content are parsed.'
+            : 'Paste GetYourGuide review text and ensure RN#, rating, and review content are parsed.'
       )
       return
     }
@@ -461,9 +468,13 @@ export default function OtaReviewsImportSection({
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
           {isParseOnlyPaste
-            ? isKo
-              ? 'GetYourGuide 리뷰 페이지 텍스트를 붙여넣으면 RN#·별점·리뷰·고객·상품·투어가 자동으로 처리됩니다.'
-              : 'Paste GetYourGuide review page text — RN#, rating, review, guest, product, and tour are handled automatically.'
+            ? source === 'kkday'
+              ? isKo
+                ? 'KKday 리뷰 화면 텍스트를 붙여넣으면 예약번호·별점·리뷰·고객·상품·투어가 자동으로 처리됩니다.'
+                : 'Paste KKday review page text — booking number, rating, review, guest, product, and tour are handled automatically.'
+              : isKo
+                ? 'GetYourGuide 리뷰 페이지 텍스트를 붙여넣으면 RN#·별점·리뷰·고객·상품·투어가 자동으로 처리됩니다.'
+                : 'Paste GetYourGuide review page text — RN#, rating, review, guest, product, and tour are handled automatically.'
             : isBulkTablePaste
               ? isKo
                 ? 'Klook 리뷰 표(엑셀/시트)를 통째로 붙여넣으면 예약번호로 투어를 연결해 저장합니다.'
@@ -552,24 +563,48 @@ export default function OtaReviewsImportSection({
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="space-y-2">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                {isKo ? 'GetYourGuide 리뷰 텍스트 붙여넣기' : 'Paste GetYourGuide review text'}
+                {source === 'kkday'
+                  ? isKo
+                    ? 'KKday 리뷰 텍스트 붙여넣기'
+                    : 'Paste KKday review text'
+                  : isKo
+                    ? 'GetYourGuide 리뷰 텍스트 붙여넣기'
+                    : 'Paste GetYourGuide review text'}
               </label>
               <textarea
                 value={pasteText}
                 onChange={(e) => setPasteText(e.target.value)}
                 rows={16}
                 placeholder={
-                  isKo
-                    ? 'GetYourGuide 리뷰 관리 페이지에서 복사한 텍스트를 그대로 붙여넣으세요.\n\n별점 · RN# · 리뷰 날짜 · 리뷰 내용 · 투어 날짜가 자동 추출됩니다.'
-                    : 'Paste the full text copied from the GetYourGuide review page.\n\nRating, RN#, review date, text, and travel date are extracted automatically.'
+                  source === 'kkday'
+                    ? isKo
+                      ? 'KKday 리뷰 화면에서 복사한 텍스트를 그대로 붙여넣으세요.\n\n상품명 · 옵션 · 등급점수 · 예약자 · 예약번호 · 리뷰 내용이 자동 추출됩니다.\n등급점수가 비어 있으면 숫자(1~5)를 등급점수 뒤에 붙여 주세요.'
+                      : 'Paste the full text copied from the KKday review page.\n\nProduct, option, rating, booker, booking number, and review text are extracted automatically.\nIf the rating is blank, add a number (1–5) after 등급점수.'
+                    : isKo
+                      ? 'GetYourGuide 리뷰 관리 페이지에서 복사한 텍스트를 그대로 붙여넣으세요.\n\n별점 · RN# · 리뷰 날짜 · 리뷰 내용 · 투어 날짜가 자동 추출됩니다.'
+                      : 'Paste the full text copied from the GetYourGuide review page.\n\nRating, RN#, review date, text, and travel date are extracted automatically.'
                 }
                 className="w-full min-h-[320px] rounded-xl border border-input bg-background px-4 py-3 text-sm leading-relaxed"
               />
-              {pasteText.trim() && !isGetYourGuideScrapedText(pasteText) ? (
+              {pasteText.trim() && source === 'kkday' && !isKkdayScrapedText(pasteText) ? (
+                <p className="text-xs text-warning">
+                  {isKo
+                    ? 'KKday 형식이 아닐 수 있습니다. 상품명·예약자·예약번호(#26KK…)가 포함된 텍스트인지 확인하세요.'
+                    : 'This may not be KKday format. Ensure product name, booker, and booking number (#26KK…) are included.'}
+                </p>
+              ) : null}
+              {pasteText.trim() && source !== 'kkday' && !isGetYourGuideScrapedText(pasteText) ? (
                 <p className="text-xs text-warning">
                   {isKo
                     ? 'GetYourGuide 형식이 아닐 수 있습니다. Booking reference·Travel date가 포함된 텍스트인지 확인하세요.'
                     : 'This may not be GetYourGuide format. Ensure Booking reference and Travel date are included.'}
+                </p>
+              ) : null}
+              {source === 'kkday' && parsedFromPaste && parsedFromPaste.rating === null ? (
+                <p className="text-xs text-warning">
+                  {isKo
+                    ? '등급점수가 복사되지 않았습니다. `등급점수: 5`처럼 1~5 숫자를 붙여 주세요.'
+                    : 'Rating was not copied. Add a 1–5 number after 등급점수, e.g. `등급점수: 5`.'}
                 </p>
               ) : null}
             </div>

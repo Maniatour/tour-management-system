@@ -18,6 +18,30 @@ async function isAdminUser(
   return Boolean(data)
 }
 
+async function isOpTeamMember(
+  client: SupabaseClient<Database>,
+  emailLower: string
+): Promise<boolean> {
+  const { data, error } = await client
+    .from('team')
+    .select('position')
+    .ilike('email', emailLower)
+    .or('is_active.is.null,is_active.eq.true')
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    console.error('[googleBusinessAdminAuth] team position:', error.message)
+    return false
+  }
+
+  const pos = String(data?.position ?? '')
+    .toLowerCase()
+    .trim()
+    .replace(/_/g, ' ')
+  return pos === 'op'
+}
+
 export type GoogleBusinessAdminAuthResult =
   | {
       ok: true
@@ -27,6 +51,22 @@ export type GoogleBusinessAdminAuthResult =
       operatorId: string
     }
   | { ok: false; response: NextResponse }
+
+type StaffAuthOk = Extract<Awaited<ReturnType<typeof requireStaffApiAuth>>, { ok: true }>
+
+async function completeGoogleBusinessAuth(
+  request: NextRequest,
+  staff: StaffAuthOk
+): Promise<GoogleBusinessAdminAuthResult> {
+  const operatorSession = await applyActiveOperatorSession(staff.staffClient, request)
+  return {
+    ok: true,
+    userEmail: staff.userEmail,
+    userId: staff.userId,
+    staffClient: staff.staffClient,
+    operatorId: operatorSession.operatorId,
+  }
+}
 
 export async function requireGoogleBusinessAdminAuth(
   request: NextRequest
@@ -46,13 +86,28 @@ export async function requireGoogleBusinessAdminAuth(
     }
   }
 
-  const operatorSession = await applyActiveOperatorSession(staff.staffClient, request)
+  return completeGoogleBusinessAuth(request, staff)
+}
 
-  return {
-    ok: true,
-    userEmail: staff.userEmail,
-    userId: staff.userId,
-    staffClient: staff.staffClient,
-    operatorId: operatorSession.operatorId,
+/** 스케줄 디스플레이 리뷰 현황 등 읽기 전용 — Super/Office Manager + OP */
+export async function requireGoogleReviewStaffStatsReadAuth(
+  request: NextRequest
+): Promise<GoogleBusinessAdminAuthResult> {
+  const staff = await requireStaffApiAuth(request)
+  if (!staff.ok) {
+    return staff
   }
+
+  const emailLower = staff.userEmail.trim().toLowerCase()
+  const adminClient = supabaseAdmin ?? staff.staffClient
+  const allowed =
+    (await isAdminUser(adminClient, emailLower)) || (await isOpTeamMember(adminClient, emailLower))
+  if (!allowed) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: '권한이 없습니다.' }, { status: 403 }),
+    }
+  }
+
+  return completeGoogleBusinessAuth(request, staff)
 }

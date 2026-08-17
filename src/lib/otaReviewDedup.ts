@@ -8,7 +8,7 @@ import type { ParsedOtaReviewRow } from '@/lib/otaReviewParse'
 /** RN# 비교용 — 공백 제거, 대문자 */
 export function normalizeOtaReservationNumber(rn: string | null | undefined): string | null {
   if (!rn?.trim()) return null
-  return rn.trim().replace(/\s+/g, '').toUpperCase()
+  return rn.trim().replace(/^#+/, '').replace(/\s+/g, '').toUpperCase()
 }
 
 function normalizeOtaComment(comment: string | null | undefined): string {

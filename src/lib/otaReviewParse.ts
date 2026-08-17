@@ -612,6 +612,11 @@ export function parseOtaReviewText(text: string, source?: OtaReviewSource | null
     if (gyg) return [gyg]
   }
 
+  if (source === 'kkday' || isKkdayScrapedText(trimmed)) {
+    const kkdayRows = parseKkdayScrapedReviews(trimmed)
+    if (kkdayRows.length > 0) return kkdayRows
+  }
+
   const delimited = parseDelimitedRows(trimmed)
   if (delimited.length > 0) {
     return delimited
@@ -849,6 +854,193 @@ export function parseGetYourGuideScrapedText(text: string): ParsedOtaReviewRow |
   }
 }
 
+const KKDAY_RN_PATTERN = /\d{2}KK\d{8,}/i
+
+const KKDAY_BODY_PRODUCT_MAP: Array<{ pattern: RegExp; productId: string; productName: string }> = [
+  {
+    pattern: /그랜드\s*캐년\s*일출|일출부터\s*별|밤도깨비|Grand\s*Canyon\s*Sunrise/i,
+    productId: 'MDGCSUNRISE',
+    productName: '밤도깨비 그랜드캐년 일출 투어',
+  },
+  {
+    pattern: /Zion\s*Bryce|자이언\s*브라이스|시온.{0,40}브라이스|그랜드서클\s*1박/i,
+    productId: 'MNGC1N',
+    productName: '그랜드서클 1박 2일 투어',
+  },
+  {
+    pattern: /그랜드서클\s*당일|앤텔로프.{0,80}호스슈|Antelope.{0,80}Horseshoe/i,
+    productId: 'MDGC1D',
+    productName: '그랜드서클 당일 투어',
+  },
+]
+
+const KKDAY_SKIP_COMMENT_LINE =
+  /^(번역\s*보기|번역보기|translate|see translation|view translation|查看翻譯|查看翻译|顯示翻譯|显示翻译)$/i
+
+const KKDAY_LABEL_LINE =
+  /^(상품명|옵션|등급점수|예약자|예약번호|商品名稱|商品名称|方案|選項|选项|評分|评分|預訂者|预订者|訂單編號|订单编号|product\s*name|option|rating|score|booker|booking\s*(?:no|number|id))\s*[：:]/i
+
+function parseKkdayLabelValue(text: string, labels: string[]): string | null {
+  const label = labels.map((item) => item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+  const sameLine = text.match(new RegExp(`(?:${label})\\s*[：:]\\s*([^\\n]+)`, 'i'))
+  const sameValue = sameLine?.[1]?.trim() ?? ''
+  if (sameValue) return sameValue
+
+  const nextLine = text.match(new RegExp(`(?:${label})\\s*[：:]\\s*\\n\\s*([^\\n]+)`, 'i'))
+  const nextValue = nextLine?.[1]?.trim() ?? ''
+  if (nextValue && !KKDAY_LABEL_LINE.test(nextValue) && !KKDAY_SKIP_COMMENT_LINE.test(nextValue)) {
+    return nextValue
+  }
+  return null
+}
+
+function parseKkdayStarRating(value: string): number | null {
+  const stars = value.match(/[★⭐]/g)
+  const emptyStars = value.match(/[☆]/g)
+  if (stars && stars.length >= 1 && stars.length <= 5 && (!emptyStars || stars.length + emptyStars.length <= 5)) {
+    return stars.length
+  }
+  return null
+}
+
+function parseKkdayRatingValue(value: string | null | undefined): number | null {
+  if (!value?.trim()) return null
+  const trimmed = value.trim()
+  const fromStars = parseKkdayStarRating(trimmed)
+  if (fromStars !== null) return fromStars
+
+  const scored = trimmed.match(/^([1-5](?:\.\d+)?)\s*(?:\/\s*5|점|stars?|★|⭐)?$/i)
+  if (scored?.[1]) {
+    const rating = Number.parseFloat(scored[1])
+    if (Number.isFinite(rating) && rating >= 1 && rating <= 5) {
+      return Math.round(rating)
+    }
+  }
+  return null
+}
+
+function parseKkdayReviewDate(text: string): string | null {
+  const match = text.match(
+    /(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2}(?::\d{2})?)\s*(?:\((GMT[+-]\d{1,2}(?::\d{2})?)\))?/i
+  )
+  if (!match) return null
+
+  const date = match[1]
+  const time = match[2].length === 5 ? `${match[2]}:00` : match[2]
+  const tz = match[3]
+  let offset = '-08:00'
+  const tzMatch = tz?.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/i)
+  if (tzMatch) {
+    const hh = tzMatch[2].padStart(2, '0')
+    const mm = (tzMatch[3] ?? '00').padStart(2, '0')
+    offset = `${tzMatch[1]}${hh}:${mm}`
+  }
+  const parsed = Date.parse(`${date}T${time}${offset}`)
+  if (!Number.isFinite(parsed)) return null
+  return new Date(parsed).toISOString()
+}
+
+function extractKkdayReservationNumber(text: string): string | null {
+  const labeled = parseKkdayLabelValue(text, ['예약번호', '訂單編號', '订单编号', 'Booking number', 'Booking no', 'Order number'])
+  const fromLabel = labeled?.match(KKDAY_RN_PATTERN)?.[0]
+  if (fromLabel) return fromLabel.toUpperCase()
+  const fromBody = text.match(KKDAY_RN_PATTERN)?.[0]
+  return fromBody ? fromBody.toUpperCase() : null
+}
+
+function extractKkdayComment(lines: string[]): string | null {
+  const commentLines: string[] = []
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    if (KKDAY_SKIP_COMMENT_LINE.test(trimmed)) continue
+    if (KKDAY_LABEL_LINE.test(trimmed)) continue
+    if (/\d{4}-\d{2}-\d{2}.+(남긴\s*후기|留下)/.test(trimmed)) continue
+    if (KKDAY_RN_PATTERN.test(trimmed) && trimmed.replace(/[#\s]/g, '').length <= 18) continue
+    commentLines.push(trimmed)
+  }
+  const comment = commentLines.join('\n').trim()
+  return comment || null
+}
+
+export function mapKkdayProduct(text: string): {
+  productId: string
+  productName: string
+} | null {
+  const source = text.trim()
+  if (!source) return null
+  for (const entry of KKDAY_BODY_PRODUCT_MAP) {
+    if (entry.pattern.test(source)) {
+      return { productId: entry.productId, productName: entry.productName }
+    }
+  }
+  return mapGetYourGuideProduct(source)
+}
+
+/** KKday 파트너/리뷰 화면에서 복사한 텍스트인지 */
+export function isKkdayScrapedText(text: string): boolean {
+  const sample = text.trim()
+  if (!sample) return false
+  const hasRn = KKDAY_RN_PATTERN.test(sample)
+  const hasLabels = /(상품명|예약자|등급점수|예약번호|商品名稱|評分|訂單編號)\s*[：:]/.test(sample)
+  const hasDate = /\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}/.test(sample) && /남긴\s*후기|留下/.test(sample)
+  return (hasRn && hasLabels) || (hasLabels && hasDate) || (hasRn && hasDate)
+}
+
+function splitKkdayReviewBlocks(text: string): string[] {
+  const trimmed = text.trim()
+  if (!trimmed) return []
+  const parts = trimmed
+    .split(/\n(?=(?:상품명|商品名稱|商品名称|Product\s*name)\s*[：:])/i)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  return parts.length > 0 ? parts : [trimmed]
+}
+
+/** KKday 리뷰 화면에서 복사한 1건 파싱 */
+export function parseKkdayScrapedText(text: string): ParsedOtaReviewRow | null {
+  const trimmed = text.trim()
+  if (!trimmed || !isKkdayScrapedText(trimmed)) return null
+
+  const lines = trimmed.split(/\r?\n/).map((line) => line.trim())
+  const productName = parseKkdayLabelValue(trimmed, ['상품명', '商品名稱', '商品名称', 'Product name'])
+  const optionName = parseKkdayLabelValue(trimmed, ['옵션', '方案', '選項', '选项', 'Option'])
+  const authorName = parseKkdayLabelValue(trimmed, ['예약자', '預訂者', '预订者', 'Booker', 'Customer'])
+  const rating = parseKkdayRatingValue(
+    parseKkdayLabelValue(trimmed, ['등급점수', '評分', '评分', 'Rating', 'Score'])
+  )
+  const reviewCreatedAt = parseKkdayReviewDate(trimmed)
+  const reservationNumber = extractKkdayReservationNumber(trimmed)
+  const comment = extractKkdayComment(lines)
+  const mappedProduct = mapKkdayProduct([productName, optionName].filter(Boolean).join('\n'))
+
+  if (!comment && !authorName && !reservationNumber && rating === null) {
+    return null
+  }
+
+  return {
+    authorName,
+    rating,
+    comment,
+    reviewCreatedAt,
+    productHint: mappedProduct?.productName ?? productName,
+    reservationNumber,
+    productId: mappedProduct?.productId ?? null,
+    tourId: null,
+    lineNumber: 1,
+  }
+}
+
+export function parseKkdayScrapedReviews(text: string): ParsedOtaReviewRow[] {
+  const rows: ParsedOtaReviewRow[] = []
+  for (const [index, block] of splitKkdayReviewBlocks(text).entries()) {
+    const row = parseKkdayScrapedText(block)
+    if (!row) continue
+    rows.push({ ...row, lineNumber: index + 1 })
+  }
+  return rows
+}
+
 export function parseSingleOtaReviewText(
   text: string,
   source?: OtaReviewSource | null
@@ -859,6 +1051,11 @@ export function parseSingleOtaReviewText(
   if (source === 'getyourguide' || isGetYourGuideScrapedText(trimmed)) {
     const gyg = parseGetYourGuideScrapedText(trimmed)
     if (gyg) return gyg
+  }
+
+  if (source === 'kkday' || isKkdayScrapedText(trimmed)) {
+    const kkday = parseKkdayScrapedText(trimmed)
+    if (kkday) return kkday
   }
 
   if (source === 'klook' || isKlookTableText(trimmed)) {
@@ -939,8 +1136,10 @@ export const OTA_CSV_TEMPLATE_HINTS: Record<OtaReviewSource, OtaCsvTemplateHint>
   },
   kkday: {
     source: 'kkday',
-    columnsKo: 'author, rating, comment, date',
-    columnsEn: 'author, rating, comment, date',
+    columnsKo:
+      'KKday 리뷰 화면 텍스트 붙여넣기 (상품명 · 옵션 · 등급점수 · 예약자 · 예약번호) 또는 author, rating, comment, date, reservation_number, product',
+    columnsEn:
+      'Paste KKday review page text (product, option, rating, booker, booking no) or author, rating, comment, date, reservation_number, product',
   },
   tripcom: {
     source: 'tripcom',

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireGoogleBusinessAdminAuth } from '@/lib/googleBusinessAdminAuth'
+import { requireGoogleReviewStaffStatsReadAuth } from '@/lib/googleBusinessAdminAuth'
 import {
   getGoogleReviewStaffStatReviews,
   parseGoogleReviewStaffMonthBy,
@@ -10,7 +10,7 @@ import {
  * ?staffEmail=...&rating=5&year=2026&month=8&monthBy=review_date|tour_date
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireGoogleBusinessAdminAuth(request)
+  const auth = await requireGoogleReviewStaffStatsReadAuth(request)
   if (!auth.ok) return auth.response
 
   const staffEmail = request.nextUrl.searchParams.get('staffEmail')?.trim() ?? ''

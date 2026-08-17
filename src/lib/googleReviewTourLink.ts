@@ -1384,17 +1384,27 @@ async function lookupReservationRowByReference(
     return null
   }
 
-  const { data: exact, error: exactError } = await baseQuery()
-    .eq('channel_rn', reference)
-    .maybeSingle()
-  if (exactError) throw new Error(exactError.message)
-  if (exact) return exact as ReservationLookupRow
+  const candidates = Array.from(
+    new Set([reference, reference.replace(/^#+/, '')].map((value) => value.trim()).filter(Boolean))
+  )
 
-  const { data: fuzzy, error: fuzzyError } = await baseQuery()
-    .ilike('channel_rn', reference)
-    .maybeSingle()
-  if (fuzzyError) throw new Error(fuzzyError.message)
-  return (fuzzy as ReservationLookupRow | null) ?? null
+  for (const candidate of candidates) {
+    const { data: exact, error: exactError } = await baseQuery()
+      .eq('channel_rn', candidate)
+      .maybeSingle()
+    if (exactError) throw new Error(exactError.message)
+    if (exact) return exact as ReservationLookupRow
+  }
+
+  for (const candidate of candidates) {
+    const { data: fuzzy, error: fuzzyError } = await baseQuery()
+      .ilike('channel_rn', candidate)
+      .maybeSingle()
+    if (fuzzyError) throw new Error(fuzzyError.message)
+    if (fuzzy) return fuzzy as ReservationLookupRow
+  }
+
+  return null
 }
 
 async function loadTourCandidatesForReservation(input: {
