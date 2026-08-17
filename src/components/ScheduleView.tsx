@@ -342,6 +342,8 @@ const SCHEDULE_VEHICLE_EDIT_SELECT = `
   rental_end_date,
   rental_pickup_location,
   rental_return_location,
+  rental_pickup_time,
+  rental_return_time,
   rental_reserved_by,
   rental_total_cost,
   rental_notes,
@@ -3128,6 +3130,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         'rental_end_date',
         'rental_pickup_location',
         'rental_return_location',
+        'rental_pickup_time',
+        'rental_return_time',
         'rental_reserved_by',
         'rental_total_cost',
         'rental_notes',
@@ -6275,10 +6279,23 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         engine_oil_change_cycle: v.engine_oil_change_cycle,
         recent_engine_oil_change_mileage: v.recent_engine_oil_change_mileage,
         recent_engine_oil_change_date: v.recent_engine_oil_change_date,
+        vin: v.vin,
+        vehicle_type: v.vehicle_type,
+        rental_reserved_by: v.rental_reserved_by,
+        rental_reserved_by_name: v.rental_reserved_by
+          ? resolveScheduleMemberDisplayForBookingTooltip(v.rental_reserved_by, teamMembers, inactiveTeamMembers)
+          : null,
+        rental_booking_price: v.rental_booking_price,
+        daily_rate: v.daily_rate,
+        rental_reservation_url: v.rental_reservation_url,
+        rental_agreement_file_url: v.rental_agreement_file_url,
+        rental_receipt_url: v.rental_receipt_url,
+        rental_pickup_time: v.rental_pickup_time,
+        rental_return_time: v.rental_return_time,
       }
     })
     return { vehicleIdToColor, vehicleList: list }
-  }, [scheduleVehicles])
+  }, [scheduleVehicles, teamMembers, inactiveTeamMembers])
 
   const toursForOilMaintenance = useMemo(() => {
     const byId = new Map<string, ScheduleTourForOil>()

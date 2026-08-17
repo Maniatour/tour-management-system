@@ -89,6 +89,8 @@ interface Vehicle {
   rental_end_date?: string
   rental_pickup_location?: string
   rental_return_location?: string
+  rental_pickup_time?: string | null
+  rental_return_time?: string | null
   rental_reserved_by?: string | null
   rental_total_cost?: number
   rental_notes?: string
@@ -150,6 +152,8 @@ function mapDbRowToVehicle(row: VehicleDbRow): Vehicle {
     rental_end_date: row.rental_end_date != null ? String(row.rental_end_date) : undefined,
     rental_pickup_location: row.rental_pickup_location != null ? String(row.rental_pickup_location) : undefined,
     rental_return_location: row.rental_return_location != null ? String(row.rental_return_location) : undefined,
+    rental_pickup_time: row.rental_pickup_time != null ? String(row.rental_pickup_time) : null,
+    rental_return_time: row.rental_return_time != null ? String(row.rental_return_time) : null,
     rental_reserved_by: row.rental_reserved_by != null ? String(row.rental_reserved_by) : null,
     rental_total_cost: row.rental_total_cost != null ? Number(row.rental_total_cost) : undefined,
     rental_notes: row.rental_notes != null ? String(row.rental_notes) : undefined,
@@ -264,6 +268,8 @@ export default function VehiclesPage() {
           rental_end_date,
           rental_pickup_location,
           rental_return_location,
+          rental_pickup_time,
+          rental_return_time,
           rental_reserved_by,
           rental_total_cost,
           rental_notes,
@@ -630,7 +636,8 @@ export default function VehiclesPage() {
         'interest_rate', 'monthly_payment', 'additional_payment', 'payment_due_date',
         'installment_start_date', 'installment_end_date', 'vehicle_image_url',
         'vehicle_category', 'rental_company', 'daily_rate', 'rental_booking_price', 'rental_start_date',
-        'rental_end_date',         'rental_pickup_location', 'rental_return_location',
+        'rental_end_date', 'rental_pickup_location', 'rental_return_location',
+        'rental_pickup_time', 'rental_return_time',
         'rental_reserved_by',
         'rental_total_cost', 'rental_notes', 'rental_agreement_number',
         'rental_reservation_url', 'rental_agreement_file_url', 'rental_receipt_url', 'nick'
@@ -643,7 +650,9 @@ export default function VehiclesPage() {
         'insurance_start_date', 
         'insurance_end_date', 
         'rental_start_date', 
-        'rental_end_date'
+        'rental_end_date',
+        'rental_pickup_time',
+        'rental_return_time',
       ]
       
       dateFields.forEach(field => {
@@ -974,9 +983,9 @@ export default function VehiclesPage() {
                           </p>
                         ) : null
                       })()}
-                      {vehicle.rental_notes && (
-                        <p><span className="font-medium">메모:</span> {vehicle.rental_notes}</p>
-                      )}
+                      {vehicle.rental_notes || vehicle.memo ? (
+                        <p><span className="font-medium">메모:</span> {vehicle.rental_notes || vehicle.memo}</p>
+                      ) : null}
                     </>
                   )}
                   

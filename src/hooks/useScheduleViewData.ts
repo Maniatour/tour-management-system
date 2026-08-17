@@ -34,6 +34,16 @@ export type ScheduleViewScheduleVehicle = {
   recent_engine_oil_change_mileage: number | null
   recent_engine_oil_change_date: string | null
   current_mileage: number | null
+  vin?: string | null
+  vehicle_type?: string | null
+  rental_reserved_by?: string | null
+  rental_booking_price?: number | null
+  daily_rate?: number | null
+  rental_reservation_url?: string | null
+  rental_agreement_file_url?: string | null
+  rental_receipt_url?: string | null
+  rental_pickup_time?: string | null
+  rental_return_time?: string | null
 }
 
 type ScheduleVehicleRow = {
@@ -47,6 +57,16 @@ type ScheduleVehicleRow = {
   engine_oil_change_cycle?: number | null
   recent_engine_oil_change_mileage?: number | null
   current_mileage?: number | null
+  vin?: string | null
+  vehicle_type?: string | null
+  rental_reserved_by?: string | null
+  rental_booking_price?: number | null
+  daily_rate?: number | null
+  rental_reservation_url?: string | null
+  rental_agreement_file_url?: string | null
+  rental_receipt_url?: string | null
+  rental_pickup_time?: string | null
+  rental_return_time?: string | null
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,6 +79,37 @@ type Team = any
 type Reservation = any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Customer = any
+
+function mapScheduleViewVehicle(
+  v: ScheduleVehicleRow,
+  oil?: { date: string; mileage: number | null } | null,
+): ScheduleViewScheduleVehicle {
+  const fallbackMileage =
+    v.recent_engine_oil_change_mileage != null && v.recent_engine_oil_change_mileage > 0
+      ? v.recent_engine_oil_change_mileage
+      : null
+  return {
+    id: v.id,
+    label: ((v.nick && v.nick.trim()) || v.vehicle_number || v.id).toString().trim() || v.id,
+    vehicle_category: v.vehicle_category ?? null,
+    rental_start_date: v.rental_start_date ?? null,
+    rental_end_date: v.rental_end_date ?? null,
+    engine_oil_change_cycle: v.engine_oil_change_cycle ?? null,
+    recent_engine_oil_change_mileage: oil?.mileage ?? fallbackMileage,
+    recent_engine_oil_change_date: oil?.date ?? null,
+    current_mileage: v.current_mileage != null && v.current_mileage > 0 ? v.current_mileage : null,
+    vin: v.vin ?? null,
+    vehicle_type: v.vehicle_type ?? null,
+    rental_reserved_by: v.rental_reserved_by ?? null,
+    rental_booking_price: v.rental_booking_price != null ? Number(v.rental_booking_price) : null,
+    daily_rate: v.daily_rate != null ? Number(v.daily_rate) : null,
+    rental_reservation_url: v.rental_reservation_url ?? null,
+    rental_agreement_file_url: v.rental_agreement_file_url ?? null,
+    rental_receipt_url: v.rental_receipt_url ?? null,
+    rental_pickup_time: v.rental_pickup_time ?? null,
+    rental_return_time: v.rental_return_time ?? null,
+  }
+}
 
 type UseScheduleViewDataParams = {
   isDisplayMode: boolean
@@ -162,24 +213,7 @@ export function useScheduleViewData({
   }, [firstDayOfMonth, lastDayOfMonth, activeOperatorId])
 
   const mapVehiclesBasic = useCallback((sortedVehicles: ScheduleVehicleRow[]): ScheduleViewScheduleVehicle[] => {
-    return sortedVehicles.map((v) => {
-      const fallbackMileage =
-        v.recent_engine_oil_change_mileage != null && v.recent_engine_oil_change_mileage > 0
-          ? v.recent_engine_oil_change_mileage
-          : null
-      return {
-        id: v.id,
-        label: ((v.nick && v.nick.trim()) || v.vehicle_number || v.id).toString().trim() || v.id,
-        vehicle_category: v.vehicle_category ?? null,
-        rental_start_date: v.rental_start_date ?? null,
-        rental_end_date: v.rental_end_date ?? null,
-        engine_oil_change_cycle: v.engine_oil_change_cycle ?? null,
-        recent_engine_oil_change_mileage: fallbackMileage,
-        recent_engine_oil_change_date: null,
-        current_mileage:
-          v.current_mileage != null && v.current_mileage > 0 ? v.current_mileage : null,
-      }
-    })
+    return sortedVehicles.map((v) => mapScheduleViewVehicle(v))
   }, [])
 
   /** 오일·비활성 팀·미배정 — 그리드 최초 페인트 이후에만 (초기 스피너 비차단) */
@@ -256,27 +290,7 @@ export function useScheduleViewData({
       setInactiveTeamMembers((inactiveTeamData || []) as Team[])
 
       if (oilChangeByVehicleId.size > 0) {
-        setScheduleVehicles(
-          sortedVehicles.map((v) => {
-            const fromMaintenance = oilChangeByVehicleId.get(v.id)
-            const fallbackMileage =
-              v.recent_engine_oil_change_mileage != null && v.recent_engine_oil_change_mileage > 0
-                ? v.recent_engine_oil_change_mileage
-                : null
-            return {
-              id: v.id,
-              label: ((v.nick && v.nick.trim()) || v.vehicle_number || v.id).toString().trim() || v.id,
-              vehicle_category: v.vehicle_category ?? null,
-              rental_start_date: v.rental_start_date ?? null,
-              rental_end_date: v.rental_end_date ?? null,
-              engine_oil_change_cycle: v.engine_oil_change_cycle ?? null,
-              recent_engine_oil_change_mileage: fromMaintenance?.mileage ?? fallbackMileage,
-              recent_engine_oil_change_date: fromMaintenance?.date ?? null,
-              current_mileage:
-                v.current_mileage != null && v.current_mileage > 0 ? v.current_mileage : null,
-            }
-          }),
-        )
+        setScheduleVehicles(sortedVehicles.map((v) => mapScheduleViewVehicle(v, oilChangeByVehicleId.get(v.id))))
       }
       setVehicleOilCalcTours(oilHistTours)
     },

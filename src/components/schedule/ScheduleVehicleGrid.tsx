@@ -5,6 +5,7 @@ import dayjs from 'dayjs'
 import { ChevronUp, ChevronDown } from 'lucide-react'
 import { buildVehicleOilTooltipLines } from '@/lib/scheduleVehicleOilMaintenance'
 import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
+import ScheduleRentalVehicleHoverContent from '@/components/schedule/ScheduleRentalVehicleHoverContent'
 import type {
   ScheduleVehicleRow,
   ScheduleVehicleScheduleRow,
@@ -99,7 +100,8 @@ export default function ScheduleVehicleGrid(props: ScheduleVehicleGridProps) {
     <div className="mt-1 overflow-visible">
         <table className="w-full" style={{ tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px` }}>
           <tbody className="divide-y divide-gray-200">
-            {orderedVehiclesForScheduleTable.map(({ id, label, colorClass, rental_start_date, rental_end_date, vehicle_category }, index) => {
+            {orderedVehiclesForScheduleTable.map((vehicle, index) => {
+              const { id, label, colorClass, rental_start_date, rental_end_date, vehicle_category } = vehicle
               const canMoveUp = index > 0
               const canMoveDown = index < orderedVehiclesForScheduleTable.length - 1
               const data = vehicleScheduleData[id]
@@ -108,25 +110,32 @@ export default function ScheduleVehicleGrid(props: ScheduleVehicleGridProps) {
                 (vehicle_category || 'company').toString().toLowerCase() !== 'rental'
               const oilSummary = vehicleOilMaintenanceByVehicleId.get(id)
               const allNames = new Set<string>()
-              monthDays.forEach(({ dateString }) => {
-                const dayInfo = data.daily[dateString]
-                if (dayInfo) {
-                  dayInfo.guideNames.forEach(n => allNames.add(n))
-                  dayInfo.assistantNames.forEach(n => allNames.add(n))
-                  dayInfo.driverNames.forEach(n => allNames.add(n))
-                }
-              })
+              if (isCompanyVehicleRow) {
+                monthDays.forEach(({ dateString }) => {
+                  const dayInfo = data.daily[dateString]
+                  if (dayInfo) {
+                    dayInfo.guideNames.forEach(n => allNames.add(n))
+                    dayInfo.assistantNames.forEach(n => allNames.add(n))
+                    dayInfo.driverNames.forEach(n => allNames.add(n))
+                  }
+                })
+              }
               const sortedNames = [...allNames].filter(Boolean).sort()
               const crewTooltipLines =
                 sortedNames.length > 0
                   ? [`${sortedNames.join(', ')}`, `총 ${sortedNames.length}명`]
                   : []
-              const vehicleNameTooltip =
-                isCompanyVehicleRow && oilSummary
+              const editHint = locale === 'ko' ? '클릭하여 차량 정보 수정' : 'Click to edit vehicle'
+              const companyVehicleNameTooltip =
+                oilSummary
                   ? buildVehicleOilTooltipLines(oilSummary, crewTooltipLines)
                   : crewTooltipLines.length > 0
                     ? crewTooltipLines.join('\n')
                     : label
+              const companyNameHover =
+                canEditVehicleFromSchedule
+                  ? `${companyVehicleNameTooltip}\n${editHint}`
+                  : companyVehicleNameTooltip
               /** 렌트 구간 ∩ (표시 중인 달 ~ 그 다음 달 말일) 안의 배정일. 다음 달 배차도 툴팁에 포함 */
               const rentalAssignedDaysCompactList = (() => {
                 const rs = (rental_start_date || '').toString().substring(0, 10)
@@ -233,9 +242,15 @@ export default function ScheduleVehicleGrid(props: ScheduleVehicleGridProps) {
                       </div>
                       <ScheduleHoverTooltip
                         content={
-                          canEditVehicleFromSchedule
-                            ? `${vehicleNameTooltip}\n클릭하여 차량 정보 수정`
-                            : vehicleNameTooltip
+                          isCompanyVehicleRow ? (
+                            companyNameHover
+                          ) : (
+                            <ScheduleRentalVehicleHoverContent
+                              vehicle={vehicle}
+                              locale={locale}
+                              footer={canEditVehicleFromSchedule ? editHint : undefined}
+                            />
+                          )
                         }
                       >
                       <div

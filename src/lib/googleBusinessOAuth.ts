@@ -35,14 +35,74 @@ export function getGoogleBusinessOAuthClientSecret(): string {
   return clientSecret
 }
 
-/** OAuth redirect URI registered in Google Cloud Console. */
-export function getGoogleBusinessRedirectUri(request?: NextRequest): string {
-  const explicit = process.env.GOOGLE_BUSINESS_REDIRECT_URI?.trim()
-  if (explicit) return explicit
-  if (request) {
-    return `${new URL(request.url).origin}/api/admin/google-business/callback`
+export const GOOGLE_BUSINESS_OAUTH_CALLBACK_PATH = '/api/admin/google-business/callback'
+
+function isLocalhostHost(hostOrOrigin: string): boolean {
+  let host = hostOrOrigin.trim().toLowerCase()
+  try {
+    if (host.includes('://')) host = new URL(host).hostname
+  } catch {
+    /* keep as host */
   }
-  return `${getAppOrigin()}/api/admin/google-business/callback`
+  host = host.replace(/:\d+$/, '').replace(/^\[|\]$/g, '')
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+}
+
+function originFromUrlLike(value: string): string | null {
+  try {
+    return new URL(value.includes('://') ? value : `https://${value}`).origin
+  } catch {
+    return null
+  }
+}
+
+/** Public origin of the incoming request (prefers forwarded host on Vercel). */
+export function getPublicRequestOrigin(request: NextRequest): string {
+  const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
+  const host = forwardedHost || request.headers.get('host')?.trim() || ''
+  if (host) {
+    const proto =
+      request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim() ||
+      (isLocalhostHost(host) ? 'http' : 'https')
+    return `${proto}://${host}`
+  }
+  return new URL(request.url).origin
+}
+
+function getCanonicalAppOrigin(): string | null {
+  for (const raw of [process.env.NEXT_PUBLIC_APP_URL, process.env.NEXT_PUBLIC_SITE_URL]) {
+    const value = raw?.trim()
+    if (!value) continue
+    const origin = originFromUrlLike(value)
+    if (origin && !isLocalhostHost(origin)) return origin
+  }
+  return null
+}
+
+/**
+ * OAuth redirect URI that must match Google Cloud Console exactly.
+ * Production never sends localhost, even if GOOGLE_BUSINESS_REDIRECT_URI is set to it.
+ */
+export function getGoogleBusinessRedirectUri(request?: NextRequest): string {
+  const requestOrigin = request ? getPublicRequestOrigin(request) : null
+  const requestIsLocal = requestOrigin ? isLocalhostHost(requestOrigin) : false
+  const explicit = process.env.GOOGLE_BUSINESS_REDIRECT_URI?.trim()
+
+  if (explicit) {
+    const explicitIsLocal = isLocalhostHost(explicit)
+    if (!(explicitIsLocal && request && !requestIsLocal)) {
+      return explicit.replace(/\/$/, '')
+    }
+  }
+
+  if (request && !requestIsLocal) {
+    const canonical = getCanonicalAppOrigin()
+    if (canonical) return `${canonical}${GOOGLE_BUSINESS_OAUTH_CALLBACK_PATH}`
+    return `${requestOrigin}${GOOGLE_BUSINESS_OAUTH_CALLBACK_PATH}`
+  }
+
+  if (requestOrigin) return `${requestOrigin}${GOOGLE_BUSINESS_OAUTH_CALLBACK_PATH}`
+  return `${getAppOrigin()}${GOOGLE_BUSINESS_OAUTH_CALLBACK_PATH}`
 }
 
 export function createGoogleBusinessOAuthState(input: {

@@ -150,6 +150,16 @@ type ScheduleGridVehicleRow = {
   engine_oil_change_cycle?: number | null
   recent_engine_oil_change_mileage?: number | null
   current_mileage?: number | null
+  vin?: string | null
+  vehicle_type?: string | null
+  rental_reserved_by?: string | null
+  rental_booking_price?: number | null
+  daily_rate?: number | null
+  rental_reservation_url?: string | null
+  rental_agreement_file_url?: string | null
+  rental_receipt_url?: string | null
+  rental_pickup_time?: string | null
+  rental_return_time?: string | null
 }
 
 export type ScheduleGridFetchParams = {
@@ -183,7 +193,22 @@ const SCHEDULE_GRID_VEHICLE_SELECT_DISPLAY =
   'id, vehicle_number, nick, vehicle_category, status, rental_start_date, rental_end_date'
 
 const SCHEDULE_GRID_VEHICLE_SELECT_ADMIN =
-  'id, vehicle_number, nick, vehicle_category, status, rental_start_date, rental_end_date, engine_oil_change_cycle, recent_engine_oil_change_mileage, current_mileage'
+  'id, vehicle_number, nick, vehicle_category, status, rental_start_date, rental_end_date, engine_oil_change_cycle, recent_engine_oil_change_mileage, current_mileage, vin, vehicle_type, rental_reserved_by, rental_booking_price, daily_rate, rental_reservation_url, rental_agreement_file_url, rental_receipt_url, rental_pickup_time, rental_return_time'
+
+const SCHEDULE_RENTAL_HOVER_SELECT =
+  'id, vin, vehicle_type, rental_reserved_by, rental_booking_price, daily_rate, rental_reservation_url, rental_agreement_file_url, rental_receipt_url, rental_pickup_time, rental_return_time'
+
+function mergeRentalHoverFields(
+  vehicles: ScheduleGridVehicleRow[],
+  extras: Array<Partial<ScheduleGridVehicleRow> & { id: string }> | null | undefined,
+): ScheduleGridVehicleRow[] {
+  if (!extras?.length) return vehicles
+  const byId = new Map(extras.map((row) => [row.id, row]))
+  return vehicles.map((vehicle) => {
+    const extra = byId.get(vehicle.id)
+    return extra ? { ...vehicle, ...extra } : vehicle
+  })
+}
 
 export function buildScheduleVehiclesForDisplayGrid(
   vehicles: ScheduleGridVehicleRow[],
@@ -274,6 +299,14 @@ export async function fetchScheduleGridCoreData(
     reservationSelect === 'display'
       ? SCHEDULE_GRID_VEHICLE_SELECT_DISPLAY
       : SCHEDULE_GRID_VEHICLE_SELECT_ADMIN
+
+  const rentalHoverPromise =
+    reservationSelect === 'admin'
+      ? fromUntypedTable(supabase, 'vehicles')
+          .select(SCHEDULE_RENTAL_HOVER_SELECT)
+          .eq('operator_id', operatorId)
+          .eq('vehicle_category', 'rental')
+      : null
 
   const rpcPayload = await fetchScheduleDisplayViaRpc(supabase, {
     operatorId,
@@ -377,7 +410,14 @@ export async function fetchScheduleGridCoreData(
     }> | null
   }
 
-  const vehiclesRaw = (allVehiclesData || []) as ScheduleGridVehicleRow[]
+  let vehiclesRaw = (allVehiclesData || []) as ScheduleGridVehicleRow[]
+  if (rentalHoverPromise) {
+    const { data: rentalHoverData } = await rentalHoverPromise
+    vehiclesRaw = mergeRentalHoverFields(
+      vehiclesRaw,
+      (rentalHoverData || []) as Array<Partial<ScheduleGridVehicleRow> & { id: string }>,
+    )
+  }
   const sortedVehiclesForMonth = sortVehiclesForGrid(
     filterVehiclesForMonth(vehiclesRaw, monthStart, monthEnd),
   )

@@ -1,13 +1,27 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Car, DollarSign, Wrench, Calendar, Upload, Trash2, Image, Images, Settings, FileText, ExternalLink, Users } from 'lucide-react'
+import { X, Car, DollarSign, Wrench, Calendar, Upload, Trash2, Image, Images, Settings, FileText, ExternalLink, Users, ClipboardPaste } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fetchUploadApi } from '@/lib/uploadClient'
 import { rentalImpliedDailyUsd } from '@/lib/rentalVehicleUtils'
+import {
+  chooseRentalCompany,
+  coerceRentalConfirmationFields,
+  mergeRentalConfirmationOcr,
+  parseRentalConfirmationOcr,
+  rentalConfirmationOcrIsUsable,
+  rentalTimeInputValue,
+  type RentalConfirmationOcrFields,
+} from '@/lib/rentalConfirmationOcrParse'
+import { runReceiptOcrFromImageBuffer } from '@/lib/receiptOcrBrowser'
 import { VEHICLE_STATUS_SELECT_OPTIONS } from '@/lib/vehicleStatus'
 import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
+import RentalConfirmationPasteField from '@/components/RentalConfirmationPasteField'
+import FieldHoverHint from '@/components/FieldHoverHint'
+import { resolveRentalReservedBy } from '@/lib/rentalReservedByMatch'
+import { matchRentalVehicleType, preferredRentalTransitType } from '@/lib/rentalVehicleTypeMatch'
 import {
   MAINTENANCE_DUTY_PRESET_IDS,
   maintenanceDutyPresetMeta,
@@ -20,7 +34,7 @@ import {
   VEHICLE_FUEL_TYPES,
 } from '@/lib/vehicleMaintenanceApplicability'
 import VehicleTypeManagementModal from './VehicleTypeManagementModal'
-import { isCustomerFacingVehiclePhotoUrl } from '@/lib/resolveCustomerVehiclePhotos'
+import { filterCustomerFacingVehiclePhotos, isCustomerFacingVehiclePhotoUrl } from '@/lib/resolveCustomerVehiclePhotos'
 
 interface Vehicle {
   id?: string
@@ -64,6 +78,8 @@ interface Vehicle {
   rental_end_date?: string
   rental_pickup_location?: string
   rental_return_location?: string
+  rental_pickup_time?: string | null
+  rental_return_time?: string | null
   /** 렌터카 예약자(픽업 담당) — team.email */
   rental_reserved_by?: string | null
   rental_total_cost?: number
@@ -89,21 +105,21 @@ const RENTAL_DOC_ALLOWED_TYPES = RENTAL_DOC_ACCEPT.split(',')
 
 const RENTAL_DOC_META: Record<
   RentalDocKind,
-  { label: string; emptyLabel: string; allowPaste: boolean }
+  { label: string; hint: string; allowPaste: boolean }
 > = {
   reservation: {
     label: 'Rental reservations',
-    emptyLabel: '업로드된 예약 확인이 없습니다.',
+    hint: '확인서 이미지를 올리면 Confirmation # · 픽업 · 반납이 자동 입력됩니다. PDF, Word, 이미지 · 최대 10MB · 클릭 후 Ctrl+V로 스크린샷 붙여넣기',
     allowPaste: true,
   },
   agreement: {
     label: 'Rental Agreement File',
-    emptyLabel: '업로드된 계약서가 없습니다.',
+    hint: '픽업 후 계약서 파일을 업로드합니다. PDF, Word, 이미지 · 최대 10MB',
     allowPaste: false,
   },
   receipt: {
     label: 'Rental Receipt',
-    emptyLabel: '업로드된 영수증이 없습니다.',
+    hint: '영수증 파일을 업로드합니다. PDF, Word, 이미지 · 최대 10MB · 클릭 후 Ctrl+V로 스크린샷 붙여넣기',
     allowPaste: true,
   },
 }
@@ -182,6 +198,8 @@ function RentalDocUploadCard({
 }) {
   const meta = RENTAL_DOC_META[kind]
   const hasFile = Boolean(pendingFile || existingUrl.trim())
+  const pasteZoneRef = useRef<HTMLDivElement>(null)
+  const [pasteHint, setPasteHint] = useState('')
 
   const applyFile = (file: File | null) => {
     if (!file) return
@@ -190,7 +208,14 @@ function RentalDocUploadCard({
       alert(error)
       return
     }
+    setPasteHint('')
     onSelectFile(namedScreenshotFile(file, kind))
+  }
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null
+    e.target.value = ''
+    applyFile(file)
   }
 
   const handlePaste = (e: React.ClipboardEvent) => {
@@ -207,20 +232,52 @@ function RentalDocUploadCard({
     }
   }
 
+  const pasteFromClipboard = async () => {
+    if (!meta.allowPaste) return
+    setPasteHint('')
+    try {
+      if (navigator.clipboard?.read) {
+        const items = await navigator.clipboard.read()
+        for (const item of items) {
+          const type = item.types.find((candidate) => candidate.startsWith('image/'))
+          if (!type) continue
+          const blob = await item.getType(type)
+          const ext =
+            type === 'image/jpeg' ? 'jpg' : type === 'image/webp' ? 'webp' : type === 'image/gif' ? 'gif' : 'png'
+          applyFile(new File([blob], `clipboard.${ext}`, { type }))
+          return
+        }
+        setPasteHint('클립보드에 이미지가 없습니다. 스크린샷을 복사한 뒤 다시 눌러 주세요.')
+        return
+      }
+    } catch {
+      // 권한 거부·미지원 시 박스에 포커스를 두고 키보드 붙여넣기로 안내
+    }
+    pasteZoneRef.current?.focus()
+    setPasteHint('박스를 선택한 뒤 Ctrl+V로 붙여넣으세요.')
+  }
+
+  const emptyActionClass =
+    'flex min-h-[3.25rem] cursor-pointer flex-col items-center justify-center gap-1 px-2 py-2.5 text-xs font-medium text-gray-500 transition-colors hover:bg-white hover:text-gray-800'
+
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700">{meta.label}</label>
+      <label className="inline-flex items-center text-sm font-medium text-gray-700">
+        {meta.label}
+        <FieldHoverHint text={meta.hint} />
+      </label>
       <div
+        ref={pasteZoneRef}
         tabIndex={meta.allowPaste ? 0 : undefined}
         onPaste={meta.allowPaste ? handlePaste : undefined}
-        className={`mt-1.5 rounded-lg border border-gray-200 bg-slate-50/60 p-3 outline-none ${
+        className={`mt-1.5 rounded-xl border border-gray-200 bg-white p-2.5 outline-none transition-colors ${
           meta.allowPaste
             ? 'focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/20'
             : ''
         }`}
       >
         {pendingFile ? (
-          <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
               {pendingFile.type.startsWith('image/') ? (
                 <Image className="h-4 w-4 shrink-0 text-primary" />
@@ -232,14 +289,14 @@ function RentalDocUploadCard({
             <button
               type="button"
               onClick={onClearPending}
-              className="shrink-0 rounded-md p-1 text-red-600 hover:bg-red-50"
+              className="shrink-0 rounded-md p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
               title="선택 취소"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
           </div>
         ) : existingUrl.trim() ? (
-          <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center justify-between gap-2">
             <a
               href={existingUrl}
               target="_blank"
@@ -253,39 +310,55 @@ function RentalDocUploadCard({
             <button
               type="button"
               onClick={onClearExisting}
-              className="shrink-0 rounded-md p-1 text-red-600 hover:bg-red-50"
+              className="shrink-0 rounded-md p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
               title="파일 제거"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
           </div>
+        ) : meta.allowPaste ? (
+          <div className="grid grid-cols-2 divide-x divide-gray-200 overflow-hidden rounded-lg border border-dashed border-gray-200 bg-slate-50/70">
+            <label className={emptyActionClass}>
+              <Upload className="h-3.5 w-3.5" />
+              업로드
+              <input type="file" accept={RENTAL_DOC_ACCEPT} onChange={handleFileInput} className="hidden" />
+            </label>
+            <button
+              type="button"
+              onClick={pasteFromClipboard}
+              className={emptyActionClass}
+              title="스크린샷을 복사한 뒤 클릭하거나 Ctrl+V"
+            >
+              <ClipboardPaste className="h-3.5 w-3.5" />
+              Ctrl+V
+            </button>
+          </div>
         ) : (
-          <p className="text-xs text-gray-500">{meta.emptyLabel}</p>
+          <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-gray-200 bg-slate-50/70 px-2 py-3 text-xs font-medium text-gray-500 transition-colors hover:border-gray-300 hover:bg-slate-50 hover:text-gray-700">
+            <Upload className="h-3.5 w-3.5" />
+            업로드
+            <input type="file" accept={RENTAL_DOC_ACCEPT} onChange={handleFileInput} className="hidden" />
+          </label>
         )}
-        <label className="mt-2 inline-flex cursor-pointer items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50">
-          <Upload className="mr-1 h-3.5 w-3.5" />
-          {hasFile ? '파일 변경' : '파일 업로드'}
-          <input
-            type="file"
-            accept={RENTAL_DOC_ACCEPT}
-            onChange={(e) => {
-              const file = e.target.files?.[0] ?? null
-              e.target.value = ''
-              applyFile(file)
-            }}
-            className="hidden"
-          />
-        </label>
-        <p className="mt-1.5 text-[11px] text-gray-400">
-          PDF, Word, 이미지 · 최대 10MB
-          {meta.allowPaste ? (
-            <>
-              {' '}
-              · 클릭 후 <span className="font-medium text-gray-500">Ctrl+V</span>로 스크린샷
-              붙여넣기
-            </>
-          ) : null}
-        </p>
+        {hasFile ? (
+          <div className="mt-2 flex items-center gap-3">
+            <label className="inline-flex cursor-pointer items-center text-xs font-medium text-gray-500 hover:text-gray-800">
+              파일 변경
+              <input type="file" accept={RENTAL_DOC_ACCEPT} onChange={handleFileInput} className="hidden" />
+            </label>
+            {meta.allowPaste ? (
+              <button
+                type="button"
+                onClick={pasteFromClipboard}
+                className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800"
+              >
+                <ClipboardPaste className="h-3 w-3" />
+                Ctrl+V
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {pasteHint ? <p className="mt-1.5 text-[11px] leading-snug text-gray-500">{pasteHint}</p> : null}
       </div>
     </div>
   )
@@ -340,6 +413,8 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
     rental_end_date: '',
     rental_pickup_location: '',
     rental_return_location: '',
+    rental_pickup_time: '',
+    rental_return_time: '',
     rental_reserved_by: '',
     rental_total_cost: 0,
     status: 'available',
@@ -355,6 +430,10 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
   const [pendingRentalAgreementFile, setPendingRentalAgreementFile] = useState<File | null>(null)
   const [pendingRentalReceiptFile, setPendingRentalReceiptFile] = useState<File | null>(null)
   const [uploadingRentalDocs, setUploadingRentalDocs] = useState(false)
+  const [rentalOcrStatus, setRentalOcrStatus] = useState<'idle' | 'running' | 'ok' | 'fail'>('idle')
+  const [rentalOcrSummary, setRentalOcrSummary] = useState('')
+  const [rentalPasteText, setRentalPasteText] = useState('')
+  const rentalParsedFromTextRef = useRef(false)
 
   const [imageFiles, setImageFiles] = useState<File[]>([])
   const [imagePreviews, setImagePreviews] = useState<string[]>([])
@@ -365,7 +444,15 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
   const [primaryPhotoId, setPrimaryPhotoId] = useState<string | null>(null)
   const [vehicleTypes, setVehicleTypes] = useState<any[]>([])
   const [showVehicleTypeManagement, setShowVehicleTypeManagement] = useState(false)
-  const [teamOptions, setTeamOptions] = useState<Array<{ email: string; displayName: string }>>([])
+  const [teamOptions, setTeamOptions] = useState<
+    Array<{
+      email: string
+      displayName: string
+      nickName: string
+      nameEn: string
+      nameKo: string
+    }>
+  >([])
 
   // 차량 사진 가져오기
   const fetchVehiclePhotos = async (vehicleId: string) => {
@@ -440,48 +527,38 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
         return
       }
 
-      // 차종 사진을 배치로 한 번에 조회 (최적화: N+1 문제 해결)
-      let photosByTypeId = new Map<string, any[]>()
-      
-      // vehicle_type_photos 조회는 현재 500 에러가 발생하여 임시로 비활성화
-      // 데이터베이스 문제 해결 후 아래 코드를 활성화할 수 있음
-      /*
-      try {
-        // 모든 차종의 사진을 한 번에 조회 (배치 조회)
-        const { data: allTypePhotos, error: photosError } = await supabase
-          .from('vehicle_type_photos')
-          .select(`
-            id,
-            vehicle_type_id,
-            photo_url,
-            photo_name,
-            description,
-            is_primary,
-            display_order
-          `)
-          .in('vehicle_type_id', typeIds)
-          .order('vehicle_type_id', { ascending: true })
-          .order('display_order', { ascending: true })
-          .limit(1000)
-
-        if (!photosError && allTypePhotos && allTypePhotos.length > 0) {
-          // vehicle_type_id별로 그룹화
-          allTypePhotos.forEach(photo => {
-            if (!photosByTypeId.has(photo.vehicle_type_id)) {
-              photosByTypeId.set(photo.vehicle_type_id, [])
-            }
-            photosByTypeId.get(photo.vehicle_type_id)!.push(photo)
-          })
-        }
-      } catch (photoError) {
-        // 에러는 조용히 무시
+      const photosByTypeId = new Map<string, any[]>()
+      const typeIds = typesData.map((type) => type.id)
+      const TYPE_PHOTO_BATCH = 40
+      const typeIdChunks: string[][] = []
+      for (let i = 0; i < typeIds.length; i += TYPE_PHOTO_BATCH) {
+        typeIdChunks.push(typeIds.slice(i, i + TYPE_PHOTO_BATCH))
       }
-      */
 
-      // 각 차종에 사진 할당
-      const typesWithPhotos = typesData.map(vehicleType => {
+      try {
+        await Promise.all(
+          typeIdChunks.map(async (batchIds) => {
+            const { data: batchPhotos, error: photosError } = await supabase
+              .from('vehicle_type_photos')
+              .select('id, vehicle_type_id, photo_url, photo_name, description, is_primary, display_order')
+              .in('vehicle_type_id', batchIds)
+              .limit(1000)
+            if (photosError || !batchPhotos?.length) return
+            batchPhotos.forEach((photo) => {
+              if (!photosByTypeId.has(photo.vehicle_type_id)) {
+                photosByTypeId.set(photo.vehicle_type_id, [])
+              }
+              photosByTypeId.get(photo.vehicle_type_id)!.push(photo)
+            })
+          })
+        )
+      } catch {
+        // 차종 사진 조회 실패 시 목록만 표시
+      }
+
+      const typesWithPhotos = typesData.map((vehicleType) => {
         const photos = photosByTypeId.get(vehicleType.id) || []
-        const sortedPhotos = photos.sort((a, b) => {
+        const sortedPhotos = [...photos].sort((a, b) => {
           if (a.is_primary && !b.is_primary) return -1
           if (!a.is_primary && b.is_primary) return 1
           return (a.display_order || 0) - (b.display_order || 0)
@@ -489,7 +566,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
 
         return {
           ...vehicleType,
-          photos: sortedPhotos
+          photos: sortedPhotos,
         }
       })
 
@@ -522,6 +599,30 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
   useEffect(() => {
     fetchVehicleTypes()
   }, [])
+
+  useEffect(() => {
+    if (vehicle) return
+    if (formData.vehicle_category !== 'rental') return
+    const preferred = preferredRentalTransitType(vehicleTypes)
+    if (!preferred) return
+    const current = String(formData.vehicle_type || '').trim()
+    const generic =
+      !current ||
+      /^ford transit 15 passenger(\s*\(\s*12인승\s*\))?$/i.test(current)
+    if (!generic || current === preferred.name) return
+    setFormData((prev) => ({
+      ...prev,
+      vehicle_type: preferred.name,
+      ...(preferred.passenger_capacity != null
+        ? { capacity: preferred.passenger_capacity }
+        : {}),
+    }))
+  }, [vehicle, vehicleTypes, formData.vehicle_category, formData.vehicle_type])
+
+  const selectedTypePhotos = useMemo(() => {
+    const selected = vehicleTypes.find((type) => type.name === formData.vehicle_type)
+    return filterCustomerFacingVehiclePhotos(Array.isArray(selected?.photos) ? selected.photos : [])
+  }, [vehicleTypes, formData.vehicle_type])
 
   // 차량 타입이 변경될 때마다 사진 템플릿 가져오기
   useEffect(() => {
@@ -563,7 +664,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
         vin: vehicle.vin || '',
         vehicle_type: vehicle.vehicle_type || '',
         purchase_date: vehicle.purchase_date || '',
-        memo: vehicle.memo || '',
+        memo: vehicle.memo || vehicle.rental_notes || '',
         front_tire_size: vehicle.front_tire_size || '',
         rear_tire_size: vehicle.rear_tire_size || '',
         windshield_wiper_size: vehicle.windshield_wiper_size || '',
@@ -580,8 +681,10 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
         rental_return_location: vehicle.rental_return_location?.trim()
           ? vehicle.rental_return_location
           : vehicle.rental_pickup_location || '',
+        rental_pickup_time: rentalTimeInputValue(vehicle.rental_pickup_time),
+        rental_return_time: rentalTimeInputValue(vehicle.rental_return_time),
         rental_reserved_by: vehicle.rental_reserved_by || '',
-        rental_notes: vehicle.rental_notes || '',
+        rental_notes: vehicle.rental_notes || vehicle.memo || '',
         rental_agreement_number: vehicle.rental_agreement_number || '',
         rental_reservation_url: vehicle.rental_reservation_url || '',
         rental_agreement_file_url: vehicle.rental_agreement_file_url || '',
@@ -632,6 +735,8 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
         rental_end_date: '',
         rental_pickup_location: '',
         rental_return_location: '',
+        rental_pickup_time: '',
+        rental_return_time: '',
         rental_reserved_by: '',
         rental_total_cost: 0,
         status: 'available',
@@ -649,6 +754,10 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
       setPendingRentalReservationFile(null)
       setPendingRentalAgreementFile(null)
       setPendingRentalReceiptFile(null)
+      setRentalOcrStatus('idle')
+      setRentalOcrSummary('')
+      setRentalPasteText('')
+      rentalParsedFromTextRef.current = false
       setVehiclePhotos([])
       setPrimaryPhotoId(null)
       setImagePreviews([])
@@ -658,6 +767,10 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
       setPendingRentalReservationFile(null)
       setPendingRentalAgreementFile(null)
       setPendingRentalReceiptFile(null)
+      setRentalOcrStatus('idle')
+      setRentalOcrSummary('')
+      setRentalPasteText('')
+      rentalParsedFromTextRef.current = false
     }
   }, [vehicle, prefill])
 
@@ -677,9 +790,22 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
           return {
             email,
             displayName: teamMemberNameForLocale(member, 'ko') || email,
+            nickName: String(member.nick_name || '').trim(),
+            nameEn: String(member.name_en || '').trim(),
+            nameKo: String(member.name_ko || '').trim(),
           }
         })
-        .filter((m): m is { email: string; displayName: string } => Boolean(m))
+        .filter(
+          (
+            m,
+          ): m is {
+            email: string
+            displayName: string
+            nickName: string
+            nameEn: string
+            nameKo: string
+          } => Boolean(m),
+        )
         .sort((a, b) => a.displayName.localeCompare(b.displayName, 'ko'))
       setTeamOptions(options)
     })()
@@ -768,27 +894,6 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
           ...(suggested != null ? { engine_oil_change_cycle: suggested } : {}),
         }
       })
-      
-      // 차종의 모든 이미지 가져오기
-      if (selectedType && selectedType.photos && selectedType.photos.length > 0) {
-        const primaryPhoto = selectedType.photos.find((photo: any) => photo.is_primary)
-        const firstPhoto = selectedType.photos[0]
-        const imageUrl = primaryPhoto?.photo_url || firstPhoto.photo_url
-        
-        if (imageUrl) {
-          setFormData(prev => ({
-            ...prev,
-            vehicle_image_url: imageUrl
-          }))
-        }
-        
-        // 모든 사진을 미리보기에 추가
-        const allPhotoUrls = selectedType.photos.map((photo: any) => photo.photo_url)
-        setImagePreviews(allPhotoUrls)
-        
-        // vehiclePhotos 상태에도 저장
-        setVehiclePhotos(selectedType.photos)
-      }
     } else if (name === 'rental_pickup_location') {
       setFormData((prev) => {
         const prevPickup = prev.rental_pickup_location ?? ''
@@ -808,34 +913,24 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
 
   // 차종 선택 핸들러 (차종 관리 모달에서)
   const handleVehicleTypeSelect = (vehicleType: any) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       vehicle_type: vehicleType.name,
       vehicle_category: vehicleType.vehicle_category,
-      capacity: vehicleType.passenger_capacity
+      capacity: vehicleType.passenger_capacity,
     }))
-    
-    // 차종의 모든 이미지 가져오기
-    if (vehicleType.photos && vehicleType.photos.length > 0) {
-      const primaryPhoto = vehicleType.photos.find((photo: any) => photo.is_primary)
-      const firstPhoto = vehicleType.photos[0]
-      const imageUrl = primaryPhoto?.photo_url || firstPhoto.photo_url
-      
-      if (imageUrl) {
-        setFormData(prev => ({
-          ...prev,
-          vehicle_image_url: imageUrl
-        }))
-      }
-      
-      // 모든 사진을 미리보기에 추가
-      const allPhotoUrls = vehicleType.photos.map((photo: any) => photo.photo_url)
-      setImagePreviews(allPhotoUrls)
-      
-      // vehiclePhotos 상태에도 저장
-      setVehiclePhotos(vehicleType.photos)
+    if (vehicleType?.id) {
+      setVehicleTypes((prev) => {
+        const nextPhotos = Array.isArray(vehicleType.photos) ? vehicleType.photos : []
+        const exists = prev.some((type) => type.id === vehicleType.id)
+        if (exists) {
+          return prev.map((type) =>
+            type.id === vehicleType.id ? { ...type, photos: nextPhotos } : type
+          )
+        }
+        return [...prev, { ...vehicleType, photos: nextPhotos }]
+      })
     }
-    
     setShowVehicleTypeManagement(false)
   }
 
@@ -980,9 +1075,117 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
     }
   }
 
+  const applyRentalConfirmationFields = (fields: RentalConfirmationOcrFields) => {
+    const confirmation = fields.confirmationNumber?.trim() || ''
+    const reserved = resolveRentalReservedBy(fields.driverName, teamOptions)
+    const matchedType = matchRentalVehicleType(fields.vehicleType, vehicleTypes)
+    setFormData((prev) => {
+      const bookingPrice =
+        fields.bookingPrice != null && fields.bookingPrice > 0
+          ? fields.bookingPrice
+          : prev.rental_booking_price
+      const returnLocation = fields.returnLocation || fields.pickupLocation
+      return {
+        ...prev,
+        ...(confirmation ? { vin: confirmation } : {}),
+        rental_company: chooseRentalCompany(fields.rentalCompany, prev.rental_company),
+        ...(matchedType?.name ? { vehicle_type: matchedType.name } : {}),
+        ...(matchedType?.passenger_capacity != null
+          ? { capacity: matchedType.passenger_capacity }
+          : {}),
+        ...(fields.pickupDate ? { rental_start_date: fields.pickupDate } : {}),
+        ...(fields.returnDate ? { rental_end_date: fields.returnDate } : {}),
+        ...(fields.pickupTime ? { rental_pickup_time: fields.pickupTime } : {}),
+        ...(fields.returnTime ? { rental_return_time: fields.returnTime } : {}),
+        ...(fields.pickupLocation ? { rental_pickup_location: fields.pickupLocation } : {}),
+        ...(returnLocation ? { rental_return_location: returnLocation } : {}),
+        ...(bookingPrice !== undefined ? { rental_booking_price: bookingPrice } : {}),
+        ...(reserved?.email ? { rental_reserved_by: reserved.email } : {}),
+      }
+    })
+    const bits = [
+      confirmation ? `Reservation Number ${confirmation}` : '',
+      reserved ? `예약자 ${reserved.label}` : '',
+      fields.pickupDate
+        ? `픽업 ${fields.pickupDate}${fields.pickupTime ? ` ${fields.pickupTime}` : ''}`
+        : '',
+      fields.returnDate
+        ? `반납 ${fields.returnDate}${fields.returnTime ? ` ${fields.returnTime}` : ''}`
+        : '',
+      fields.bookingPrice != null && fields.bookingPrice > 0
+        ? `$${fields.bookingPrice.toFixed(2)}`
+        : '',
+    ].filter(Boolean)
+    setRentalOcrSummary(bits.join(' · '))
+  }
+
+  const parseRentalConfirmationText = (raw: string) => {
+    const fields = parseRentalConfirmationOcr(raw)
+    if (!rentalConfirmationOcrIsUsable(fields)) {
+      rentalParsedFromTextRef.current = false
+      setRentalOcrStatus('fail')
+      setRentalOcrSummary('붙여넣은 내용에서 정보를 읽지 못했습니다. 확인서 전체를 복사해 주세요.')
+      return
+    }
+    applyRentalConfirmationFields(fields)
+    rentalParsedFromTextRef.current = true
+    setRentalOcrStatus('ok')
+  }
+
+  const runRentalConfirmationOcr = async (file: File) => {
+    if (!file.type.startsWith('image/')) return
+    setRentalOcrStatus('running')
+    setRentalOcrSummary('')
+    try {
+      const buffer = await file.arrayBuffer()
+      const tessPromise = runReceiptOcrFromImageBuffer(buffer, file.type)
+      const visionBody = new FormData()
+      visionBody.append('file', file)
+      const visionPromise = fetch('/api/vehicles/rental-confirmation-ocr', {
+        method: 'POST',
+        body: visionBody,
+        credentials: 'include',
+      })
+        .then(async (response) => {
+          if (!response.ok) return null
+          return (await response.json()) as { fields?: Partial<RentalConfirmationOcrFields> }
+        })
+        .catch((visionError) => {
+          console.warn('Rental confirmation vision OCR skipped:', visionError)
+          return null
+        })
+
+      const [{ text }, vision] = await Promise.all([tessPromise, visionPromise])
+      let fields = parseRentalConfirmationOcr(text)
+      if (vision?.fields) {
+        fields = mergeRentalConfirmationOcr(coerceRentalConfirmationFields(vision.fields), fields)
+      }
+
+      if (!rentalConfirmationOcrIsUsable(fields)) {
+        setRentalOcrStatus('fail')
+        setRentalOcrSummary('확인서에서 정보를 읽지 못했습니다. 직접 입력해 주세요.')
+        return
+      }
+      applyRentalConfirmationFields(fields)
+      setRentalOcrStatus('ok')
+    } catch (error) {
+      console.warn('Rental confirmation OCR failed:', error)
+      setRentalOcrStatus('fail')
+      setRentalOcrSummary('확인서 인식에 실패했습니다. 직접 입력해 주세요.')
+    }
+  }
+
   const setPendingRentalDocFile = (kind: RentalDocKind, file: File | null) => {
-    if (kind === 'reservation') setPendingRentalReservationFile(file)
-    else if (kind === 'agreement') setPendingRentalAgreementFile(file)
+    if (kind === 'reservation') {
+      setPendingRentalReservationFile(file)
+      if (file) {
+        if (rentalParsedFromTextRef.current) return
+        void runRentalConfirmationOcr(file)
+      } else if (!rentalParsedFromTextRef.current) {
+        setRentalOcrStatus('idle')
+        setRentalOcrSummary('')
+      }
+    } else if (kind === 'agreement') setPendingRentalAgreementFile(file)
     else setPendingRentalReceiptFile(file)
   }
 
@@ -1025,7 +1228,9 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
         'insurance_start_date', 
         'insurance_end_date', 
         'rental_start_date', 
-        'rental_end_date'
+        'rental_end_date',
+        'rental_pickup_time',
+        'rental_return_time',
       ]
       
       dateFields.forEach(field => {
@@ -1058,6 +1263,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
           cleanedData.rental_end_date as string | null | undefined
         )
         cleanedData.daily_rate = implied ? implied.perDay : 0
+        cleanedData.rental_notes = String(cleanedData.memo || '').trim()
       }
 
       // 차량 데이터 저장 (이미지는 별도로 처리)
@@ -1179,21 +1385,63 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-200 bg-gradient-to-r from-slate-50 via-white to-slate-50/80 px-4 py-3.5 sm:items-center sm:px-5">
             <div className="min-w-0 flex-1">
-              <h3
-                id="vehicle-edit-modal-title"
-                className="flex items-center gap-2.5 text-base font-semibold text-gray-900 sm:text-lg"
-              >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600/10 text-primary ring-1 ring-blue-600/15">
-                  <Car className="h-4 w-4" />
-                </span>
-                <span className="truncate">
-                  {vehicle ? (vehicle.id ? '차량 정보 수정' : '새 차량 추가 (복사)') : '새 차량 추가'}
-                </span>
-              </h3>
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <h3
+                  id="vehicle-edit-modal-title"
+                  className="flex min-w-0 items-center gap-2.5 text-base font-semibold text-gray-900 sm:text-lg"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600/10 text-primary ring-1 ring-blue-600/15">
+                    <Car className="h-4 w-4" />
+                  </span>
+                  <span className="truncate">
+                    {vehicle ? (vehicle.id ? '차량 정보 수정' : '새 차량 추가 (복사)') : '새 차량 추가'}
+                  </span>
+                </h3>
+                <div
+                  role="radiogroup"
+                  aria-label="차량 카테고리"
+                  className="flex shrink-0 rounded-xl border border-gray-200 bg-white p-0.5 shadow-sm"
+                >
+                  <label
+                    className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-medium transition-colors sm:text-sm ${
+                      formData.vehicle_category === 'company'
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="vehicle_category"
+                      value="company"
+                      checked={formData.vehicle_category === 'company'}
+                      onChange={handleInputChange}
+                      className="sr-only"
+                    />
+                    회사 차량
+                  </label>
+                  <label
+                    className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-medium transition-colors sm:text-sm ${
+                      formData.vehicle_category === 'rental'
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="vehicle_category"
+                      value="rental"
+                      checked={formData.vehicle_category === 'rental'}
+                      onChange={handleInputChange}
+                      className="sr-only"
+                    />
+                    렌터카
+                  </label>
+                </div>
+              </div>
               <p className="mt-1.5 text-xs leading-relaxed text-gray-500 sm:text-sm sm:pl-11">
                 {vehicle?.id
                   ? '변경 사항을 저장하면 목록에 반영됩니다.'
-                  : '카테고리·차종을 먼저 정한 뒤 필수 항목을 채워 주세요.'}
+                  : '차종을 먼저 정한 뒤 필수 항목을 채워 주세요.'}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
@@ -1232,130 +1480,142 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                     기본 정보
                   </h4>
                   <div className="space-y-3 sm:space-y-4">
-                  {/* 차량 카테고리 선택 */}
-                  <div>
-                    <span className="mb-2 block text-sm font-medium text-gray-700">차량 카테고리 *</span>
-                    <div className="grid grid-cols-2 gap-2 sm:max-w-md">
-                      <label
-                        className={`flex cursor-pointer items-center justify-center rounded-xl border-2 px-3 py-2.5 text-center text-sm font-medium transition-all ${
-                          formData.vehicle_category === 'company'
-                            ? 'border-primary bg-primary/5/90 text-foreground shadow-sm'
-                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50/80'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="vehicle_category"
-                          value="company"
-                          checked={formData.vehicle_category === 'company'}
-                          onChange={handleInputChange}
-                          className="sr-only"
+                  {formData.vehicle_category === 'rental' ? (
+                    <>
+                      <RentalConfirmationPasteField
+                        value={rentalPasteText}
+                        onChange={setRentalPasteText}
+                        onParse={parseRentalConfirmationText}
+                        status={rentalOcrStatus}
+                        summary={rentalOcrSummary}
+                      />
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
+                        <RentalDocUploadCard
+                          kind="reservation"
+                          pendingFile={pendingRentalReservationFile}
+                          existingUrl={formData.rental_reservation_url ?? ''}
+                          onSelectFile={(file) => setPendingRentalDocFile('reservation', file)}
+                          onClearPending={() => setPendingRentalDocFile('reservation', null)}
+                          onClearExisting={() =>
+                            setFormData((prev) => ({ ...prev, rental_reservation_url: '' }))
+                          }
                         />
-                        회사 차량
-                      </label>
-                      <label
-                        className={`flex cursor-pointer items-center justify-center rounded-xl border-2 px-3 py-2.5 text-center text-sm font-medium transition-all ${
-                          formData.vehicle_category === 'rental'
-                            ? 'border-primary bg-primary/5/90 text-foreground shadow-sm'
-                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50/80'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="vehicle_category"
-                          value="rental"
-                          checked={formData.vehicle_category === 'rental'}
-                          onChange={handleInputChange}
-                          className="sr-only"
+                        <RentalDocUploadCard
+                          kind="agreement"
+                          pendingFile={pendingRentalAgreementFile}
+                          existingUrl={formData.rental_agreement_file_url ?? ''}
+                          onSelectFile={(file) => setPendingRentalDocFile('agreement', file)}
+                          onClearPending={() => setPendingRentalAgreementFile(null)}
+                          onClearExisting={() =>
+                            setFormData((prev) => ({ ...prev, rental_agreement_file_url: '' }))
+                          }
                         />
-                        렌터카
-                      </label>
-                    </div>
-                  </div>
+                        <RentalDocUploadCard
+                          kind="receipt"
+                          pendingFile={pendingRentalReceiptFile}
+                          existingUrl={formData.rental_receipt_url ?? ''}
+                          onSelectFile={(file) => setPendingRentalDocFile('receipt', file)}
+                          onClearPending={() => setPendingRentalReceiptFile(null)}
+                          onClearExisting={() =>
+                            setFormData((prev) => ({ ...prev, rental_receipt_url: '' }))
+                          }
+                        />
+                      </div>
+                    </>
+                  ) : null}
                   
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">차량 번호 *</label>
-                      <input
-                        type="text"
-                        name="vehicle_number"
-                        value={formData.vehicle_number}
+                  <div className="grid grid-cols-3 items-end gap-2">
+                      <div className="min-w-0">
+                        <label className="flex h-9 items-center whitespace-nowrap text-sm font-medium leading-none text-gray-700">
+                          차량 번호 *
+                          {formData.vehicle_category === 'rental' ? (
+                            <FieldHoverHint text="픽업 후 실제 차량 번호를 입력합니다." />
+                          ) : null}
+                        </label>
+                        <input
+                          type="text"
+                          name="vehicle_number"
+                          value={formData.vehicle_number}
+                          onChange={handleInputChange}
+                          required
+                          className={fieldClass}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <label className="flex h-9 items-center whitespace-nowrap text-sm font-medium leading-none text-gray-700">
+                          {formData.vehicle_category === 'rental' ? 'Reservation Number' : 'VIN'}
+                        </label>
+                        <input
+                          type="text"
+                          name="vin"
+                          value={formData.vin}
+                          onChange={handleInputChange}
+                          className={fieldClass}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <label className="flex h-9 items-center whitespace-nowrap text-sm font-medium leading-none text-gray-700">
+                          닉네임
+                          <FieldHoverHint text="달력/일정 뷰에 이 이름으로 표시됩니다. 비우면 차량 번호가 표시됩니다." />
+                        </label>
+                        <input
+                          type="text"
+                          name="nick"
+                          value={formData.nick ?? ''}
+                          onChange={handleInputChange}
+                          placeholder="달력 표시용"
+                          className={fieldClass}
+                        />
+                      </div>
+                    </div>
+
+                  <div className="grid grid-cols-3 items-end gap-2">
+                    <div className="col-span-2 min-w-0">
+                      <div className="flex h-9 items-center justify-between gap-2">
+                        <label className="whitespace-nowrap text-sm font-medium leading-none text-gray-700">차종 *</label>
+                        <button
+                          type="button"
+                          onClick={() => setShowVehicleTypeManagement(true)}
+                          className="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50"
+                        >
+                          <Settings className="w-3 h-3 mr-1" />
+                          차종 관리
+                        </button>
+                      </div>
+                      <select
+                        name="vehicle_type"
+                        value={formData.vehicle_type}
                         onChange={handleInputChange}
                         required
                         className={fieldClass}
-                      />
+                      >
+                        <option value="">차종을 선택하세요</option>
+                        {vehicleTypes.map((type) => (
+                          <option key={type.id} value={type.name}>
+                            {type.name} ({type.passenger_capacity}인승)
+                          </option>
+                        ))}
+                      </select>
+                      {vehicleTypes.length === 0 && (
+                        <p className="mt-1 text-sm text-gray-500">
+                          차종이 없습니다. 위의 &quot;차종 관리&quot; 버튼을 클릭하여 차종을 추가해주세요.
+                        </p>
+                      )}
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        {formData.vehicle_category === 'rental' ? 'RN' : 'VIN'}
+                    <div className="min-w-0">
+                      <label className="flex h-9 items-center whitespace-nowrap text-sm font-medium leading-none text-gray-700">
+                        탑승 인원 *
                       </label>
                       <input
-                        type="text"
-                        name="vin"
-                        value={formData.vin}
+                        type="number"
+                        name="capacity"
+                        value={formData.capacity}
                         onChange={handleInputChange}
+                        required
+                        min="1"
                         className={fieldClass}
                       />
                     </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">닉네임 (달력 표시용)</label>
-                    <input
-                      type="text"
-                      name="nick"
-                      value={formData.nick ?? ''}
-                      onChange={handleInputChange}
-                      placeholder="예: 1번차, 빨간버스"
-                      className={fieldClass}
-                    />
-                    <p className="mt-1 text-xs text-gray-500">입력 시 달력/일정 뷰에 이 이름으로 표시됩니다. 비워두면 차량 번호가 표시됩니다.</p>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <label className="block text-sm font-medium text-gray-700">차종 *</label>
-                      <button
-                        type="button"
-                        onClick={() => setShowVehicleTypeManagement(true)}
-                        className="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50"
-                      >
-                        <Settings className="w-3 h-3 mr-1" />
-                        차종 관리
-                      </button>
-                    </div>
-                    <select
-                      name="vehicle_type"
-                      value={formData.vehicle_type}
-                      onChange={handleInputChange}
-                      required
-                      className={fieldClass}
-                    >
-                      <option value="">차종을 선택하세요</option>
-                      {vehicleTypes.map((type) => (
-                        <option key={type.id} value={type.name}>
-                          {type.name} ({type.passenger_capacity}인승)
-                        </option>
-                      ))}
-                    </select>
-                    {vehicleTypes.length === 0 && (
-                      <p className="mt-1 text-sm text-gray-500">
-                        차종이 없습니다. 위의 &quot;차종 관리&quot; 버튼을 클릭하여 차종을 추가해주세요.
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">탑승 인원 *</label>
-                    <input
-                      type="number"
-                      name="capacity"
-                      value={formData.capacity}
-                      onChange={handleInputChange}
-                      required
-                      min="1"
-                      className={fieldClass}
-                    />
                   </div>
 
                   {/* 회사 차량일 때만 표시되는 필드들 */}
@@ -1436,21 +1696,47 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                     </h4>
                     <div className="space-y-3 sm:space-y-4">
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        Rental Agreement #
-                      </label>
-                      <input
-                        type="text"
-                        name="rental_agreement_number"
-                        value={formData.rental_agreement_number ?? ''}
-                        onChange={handleInputChange}
-                        className={fieldClass}
-                        placeholder="렌터카 계약서 번호"
-                      />
-                      <p className="mt-1 text-xs text-gray-500">
-                        예약 번호(RN 등)와 계약서상 번호가 다를 때 입력합니다.
-                      </p>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
+                      <div>
+                        <label className="inline-flex items-center text-sm font-medium text-gray-700">
+                          Rental Agreement #
+                          <FieldHoverHint text="픽업 후 계약서 번호를 입력합니다. 확인서 붙여넣기·OCR에서는 채우지 않습니다." />
+                        </label>
+                        <input
+                          type="text"
+                          name="rental_agreement_number"
+                          value={formData.rental_agreement_number ?? ''}
+                          onChange={handleInputChange}
+                          className={fieldClass}
+                          placeholder="픽업 후 입력"
+                        />
+                      </div>
+                      <div>
+                        <label className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-700">
+                          <Users className="h-4 w-4 text-sky-700" aria-hidden />
+                          예약자 (픽업 담당)
+                          <FieldHoverHint text="오늘 픽업 안내 문자를 받을 팀원입니다." />
+                        </label>
+                        <select
+                          name="rental_reserved_by"
+                          value={formData.rental_reserved_by || ''}
+                          onChange={handleInputChange}
+                          className={fieldClass}
+                        >
+                          <option value="">팀원 선택</option>
+                          {formData.rental_reserved_by &&
+                          !teamOptions.some((m) => m.email === formData.rental_reserved_by) ? (
+                            <option value={formData.rental_reserved_by}>
+                              {formData.rental_reserved_by}
+                            </option>
+                          ) : null}
+                          {teamOptions.map((member) => (
+                            <option key={member.email} value={member.email}>
+                              {member.displayName}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
@@ -1484,24 +1770,42 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
 
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700">렌탈 시작일</label>
-                        <input
-                          type="date"
-                          name="rental_start_date"
-                          value={formData.rental_start_date}
-                          onChange={handleInputChange}
-                          className={fieldClass}
-                        />
+                        <label className="block text-sm font-medium text-gray-700">렌탈 시작일 · 픽업 시간</label>
+                        <div className="mt-0 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <input
+                            type="date"
+                            name="rental_start_date"
+                            value={formData.rental_start_date}
+                            onChange={handleInputChange}
+                            className={fieldClass}
+                          />
+                          <input
+                            type="time"
+                            name="rental_pickup_time"
+                            value={formData.rental_pickup_time || ''}
+                            onChange={handleInputChange}
+                            className={fieldClass}
+                          />
+                        </div>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700">렌탈 종료일</label>
-                        <input
-                          type="date"
-                          name="rental_end_date"
-                          value={formData.rental_end_date}
-                          onChange={handleInputChange}
-                          className={fieldClass}
-                        />
+                        <label className="block text-sm font-medium text-gray-700">렌탈 종료일 · 반납 시간</label>
+                        <div className="mt-0 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <input
+                            type="date"
+                            name="rental_end_date"
+                            value={formData.rental_end_date}
+                            onChange={handleInputChange}
+                            className={fieldClass}
+                          />
+                          <input
+                            type="time"
+                            name="rental_return_time"
+                            value={formData.rental_return_time || ''}
+                            onChange={handleInputChange}
+                            className={fieldClass}
+                          />
+                        </div>
                       </div>
                     </div>
 
@@ -1528,38 +1832,19 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                       </div>
                     </div>
 
-                    <div>
-                      <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
-                        <Users className="h-4 w-4 text-sky-700" aria-hidden />
-                        예약자 (픽업 담당)
-                      </label>
-                      <select
-                        name="rental_reserved_by"
-                        value={formData.rental_reserved_by || ''}
-                        onChange={handleInputChange}
-                        className={fieldClass}
-                      >
-                        <option value="">팀원 선택</option>
-                        {formData.rental_reserved_by &&
-                        !teamOptions.some((m) => m.email === formData.rental_reserved_by) ? (
-                          <option value={formData.rental_reserved_by}>
-                            {formData.rental_reserved_by}
-                          </option>
-                        ) : null}
-                        {teamOptions.map((member) => (
-                          <option key={member.email} value={member.email}>
-                            {member.displayName}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="mt-1 text-xs text-gray-500">
-                        오늘 픽업 안내 문자를 받을 팀원입니다.
-                      </p>
-                    </div>
-
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700">예약 가격 ($)</label>
+                        <label className="flex flex-wrap items-baseline gap-x-2 text-sm font-medium text-gray-700">
+                          <span>예약 가격 ($)</span>
+                          {rentalBookingImplied ? (
+                            <span className="font-normal text-gray-500">
+                              일일 환산 ${rentalBookingImplied.perDay.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </span>
+                          ) : null}
+                        </label>
                         <input
                           type="number"
                           name="rental_booking_price"
@@ -1570,27 +1855,9 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                           className={fieldClass}
                           placeholder="예약 시 약정 금액"
                         />
-                        <p className="mt-1.5 text-xs leading-relaxed text-gray-500">
-                          {rentalBookingImplied ? (
-                            <>
-                              일일 환산:{' '}
-                              <span className="font-medium text-gray-700">
-                                ${rentalBookingImplied.perDay.toLocaleString(undefined, {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}
-                              </span>
-                              <span className="text-gray-400"> · </span>
-                              렌탈 {rentalBookingImplied.days}일 기준 (시작~종료 포함 일수 − 1일, 최소 1일)
-                            </>
-                          ) : (
-                            <>시작일·종료일과 금액을 입력하면 일일 환산 금액이 표시됩니다.</>
-                          )}
-                        </p>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700">총 비용 ($)</label>
-                        <p className="mb-1.5 text-xs text-gray-500">실제 정산·청구 총액</p>
+                        <label className="block text-sm font-medium text-gray-700">최종 가격 ($)</label>
                         <input
                           type="number"
                           name="rental_total_cost"
@@ -1602,50 +1869,6 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                           placeholder="0.00"
                         />
                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
-                      <RentalDocUploadCard
-                        kind="reservation"
-                        pendingFile={pendingRentalReservationFile}
-                        existingUrl={formData.rental_reservation_url ?? ''}
-                        onSelectFile={(file) => setPendingRentalDocFile('reservation', file)}
-                        onClearPending={() => setPendingRentalReservationFile(null)}
-                        onClearExisting={() =>
-                          setFormData((prev) => ({ ...prev, rental_reservation_url: '' }))
-                        }
-                      />
-                      <RentalDocUploadCard
-                        kind="agreement"
-                        pendingFile={pendingRentalAgreementFile}
-                        existingUrl={formData.rental_agreement_file_url ?? ''}
-                        onSelectFile={(file) => setPendingRentalDocFile('agreement', file)}
-                        onClearPending={() => setPendingRentalAgreementFile(null)}
-                        onClearExisting={() =>
-                          setFormData((prev) => ({ ...prev, rental_agreement_file_url: '' }))
-                        }
-                      />
-                      <RentalDocUploadCard
-                        kind="receipt"
-                        pendingFile={pendingRentalReceiptFile}
-                        existingUrl={formData.rental_receipt_url ?? ''}
-                        onSelectFile={(file) => setPendingRentalDocFile('receipt', file)}
-                        onClearPending={() => setPendingRentalReceiptFile(null)}
-                        onClearExisting={() =>
-                          setFormData((prev) => ({ ...prev, rental_receipt_url: '' }))
-                        }
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">메모</label>
-                      <textarea
-                        name="rental_notes"
-                        value={formData.rental_notes}
-                        onChange={handleInputChange}
-                        rows={2}
-                        className={fieldClass}
-                      />
                     </div>
                     </div>
                   </section>
@@ -1962,7 +2185,7 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
                   <h4 className="flex items-center gap-2 text-sm font-semibold tracking-tight text-gray-900">
                     <Upload className="h-4 w-4 shrink-0 text-sky-600" />
-                    차량 이미지 ({vehiclePhotos.length + imagePreviews.length}장)
+                    차량 이미지 ({vehiclePhotos.length + imagePreviews.length + selectedTypePhotos.length}장)
                   </h4>
                   {formData.vehicle_type && (
                     <div className="flex flex-shrink-0 flex-wrap gap-1.5">
@@ -1987,6 +2210,37 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
                     </div>
                   )}
                 </div>
+
+                {selectedTypePhotos.length > 0 && (
+                  <div className="mb-4 space-y-2">
+                    <h5 className="text-sm font-medium text-gray-700">차종 사진</h5>
+                    <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                      {selectedTypePhotos.map((photo, index) => {
+                        const photoUrl = photo.photo_url ?? ''
+                        const photoId = photo.id
+                        const photoKey =
+                          typeof photoId === 'string' || typeof photoId === 'number'
+                            ? String(photoId)
+                            : photoUrl || `type-photo-${index}`
+                        return (
+                        <div key={photoKey} className="relative">
+                          <img
+                            src={photoUrl}
+                            alt={photo.photo_name || '차종 사진'}
+                            className="h-20 w-full rounded-md object-cover"
+                          />
+                          {photo.is_primary ? (
+                            <div className="absolute top-1 left-1 rounded bg-yellow-500 px-1 py-0.5 text-xs text-white">
+                              기본
+                            </div>
+                          ) : null}
+                        </div>
+                        )
+                      })}
+                    </div>
+                    <p className="text-[11px] text-gray-400">차종 관리에 등록된 사진입니다.</p>
+                  </div>
+                )}
 
                 {/* 기존 사진들 */}
                 {vehiclePhotos.length > 0 && (
@@ -2204,7 +2458,10 @@ export default function VehicleEditModal({ vehicle, prefill = null, onSave, onCl
       {/* 차종 관리 모달 */}
       <VehicleTypeManagementModal
         isOpen={showVehicleTypeManagement}
-        onClose={() => setShowVehicleTypeManagement(false)}
+        onClose={() => {
+          setShowVehicleTypeManagement(false)
+          void fetchVehicleTypes()
+        }}
         onVehicleTypeSelect={handleVehicleTypeSelect}
       />
     </div>
