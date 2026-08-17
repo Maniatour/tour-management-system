@@ -631,7 +631,7 @@ export default function AllTourExpensesManager() {
   }, 0)
 
   return (
-    <div className="space-y-3 sm:space-y-4">
+    <div className="space-y-3 sm:space-y-4 min-w-0 max-w-full overflow-x-hidden">
       {/* 필터 및 액션 바 - 모바일 컴팩트 */}
       <div className="bg-gray-50 rounded-lg p-3 sm:p-4 space-y-3 sm:space-y-4">
         {/* 검색 및 구글 드라이브 버튼 */}

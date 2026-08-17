@@ -125,9 +125,9 @@ export default function ExpensesManagementPage() {
   ]
 
   return (
-    <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-6 max-w-full">
+    <div className="w-full min-w-0 max-w-full overflow-x-hidden px-2 sm:px-4 py-4 sm:py-6">
       {/* 헤더 - 모바일 컴팩트 */}
-      <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
+      <div className="mb-4 sm:mb-6 flex flex-col lg:flex-row lg:items-start lg:justify-between gap-2 sm:gap-3 min-w-0">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 sm:gap-2">
             <Receipt className="w-5 h-5 sm:w-7 sm:h-7 text-primary flex-shrink-0" />
@@ -143,15 +143,15 @@ export default function ExpensesManagementPage() {
             </Link>
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 shrink-0 w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 w-full lg:w-auto min-w-0 max-w-full">
           <button
             type="button"
             onClick={openLedgerDuplicateCheck}
-            className="flex items-center justify-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md text-amber-950 text-xs sm:text-sm font-medium"
+            className="flex items-center justify-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md text-amber-950 text-xs sm:text-sm font-medium min-w-0 max-w-full"
             title="회사·투어·예약·입장권(확정) 지출 전체를 한데 비교합니다. 같은 테이블끼리만이 아니라 출처가 달라도 금액·등록일이 비슷하면 한 그룹으로 묶습니다."
           >
             <AlertTriangle size={14} className="sm:w-4 sm:h-4 shrink-0 text-amber-600" aria-hidden />
-            <span className="hidden sm:inline">회사·투어·예약·입장권 지출 중복 점검</span>
+            <span className="hidden sm:inline truncate">회사·투어·예약·입장권 지출 중복 점검</span>
             <span className="sm:hidden">지출 중복 점검</span>
           </button>
           <button
@@ -176,9 +176,9 @@ export default function ExpensesManagementPage() {
       </div>
 
       {/* 탭 네비게이션 - 모바일 컴팩트 */}
-      <div className="bg-white rounded-lg shadow-sm border mb-4 sm:mb-6">
-        <div className="border-b border-gray-200">
-          <nav className="flex gap-0.5 sm:gap-1 p-1 sm:p-1.5" aria-label="Tabs">
+      <div className="bg-white rounded-lg shadow-sm border mb-4 sm:mb-6 min-w-0">
+        <div className="border-b border-gray-200 overflow-x-auto">
+          <nav className="flex gap-0.5 sm:gap-1 p-1 sm:p-1.5 min-w-0" aria-label="Tabs">
             {tabs.map((tab) => {
               const Icon = tab.icon
               const isActive = activeTab === tab.id
@@ -205,9 +205,9 @@ export default function ExpensesManagementPage() {
       </div>
 
       {/* 탭 컨텐츠 - 통일된 패딩 */}
-      <div className="bg-white rounded-lg shadow-sm border">
+      <div className="bg-white rounded-lg shadow-sm border min-w-0 max-w-full overflow-x-hidden">
         {activeTab === 'payments' && (
-          <div className="p-3 sm:p-4 lg:p-6">
+          <div className="p-3 sm:p-4 lg:p-6 min-w-0">
             <div className="mb-3 sm:mb-4">
               <h2 className="text-base sm:text-xl font-semibold text-gray-900 mb-1 sm:mb-2">{t('sectionPaymentsTitle')}</h2>
               <p className="text-xs sm:text-sm text-gray-600 hidden sm:block">{t('sectionPaymentsDesc')}</p>
@@ -217,7 +217,7 @@ export default function ExpensesManagementPage() {
         )}
 
         {activeTab === 'reservation' && (
-          <div className="p-3 sm:p-4 lg:p-6">
+          <div className="p-3 sm:p-4 lg:p-6 min-w-0">
             <div className="mb-3 sm:mb-4">
               <h2 className="text-base sm:text-xl font-semibold text-gray-900 mb-1 sm:mb-2">{t('sectionReservationTitle')}</h2>
               <p className="text-xs sm:text-sm text-gray-600 hidden sm:block">{t('sectionReservationDesc')}</p>
@@ -227,7 +227,7 @@ export default function ExpensesManagementPage() {
         )}
 
         {activeTab === 'options' && (
-          <div className="p-3 sm:p-4 lg:p-6">
+          <div className="p-3 sm:p-4 lg:p-6 min-w-0">
             <div className="mb-3 sm:mb-4">
               <h2 className="text-base sm:text-xl font-semibold text-gray-900 mb-1 sm:mb-2">{t('sectionOptionsTitle')}</h2>
               <p className="text-xs sm:text-sm text-gray-600 hidden sm:block">{t('sectionOptionsDesc')}</p>
@@ -237,7 +237,7 @@ export default function ExpensesManagementPage() {
         )}
 
         {activeTab === 'company' && (
-          <div className="p-3 sm:p-4 lg:p-6">
+          <div className="p-3 sm:p-4 lg:p-6 min-w-0">
             <div className="mb-3 sm:mb-4">
               <h2 className="text-base sm:text-xl font-semibold text-gray-900 mb-1 sm:mb-2">{t('sectionCompanyTitle')}</h2>
               <p className="text-xs sm:text-sm text-gray-600 hidden sm:block">{t('sectionCompanyDesc')}</p>
@@ -247,7 +247,7 @@ export default function ExpensesManagementPage() {
         )}
 
         {activeTab === 'tour' && (
-          <div className="p-3 sm:p-4 lg:p-6">
+          <div className="p-3 sm:p-4 lg:p-6 min-w-0">
             <div className="mb-3 sm:mb-4">
               <h2 className="text-base sm:text-xl font-semibold text-gray-900 mb-1 sm:mb-2">{t('sectionTourTitle')}</h2>
               <p className="text-xs sm:text-sm text-gray-600 hidden sm:block">{t('sectionTourDesc')}</p>
@@ -257,7 +257,7 @@ export default function ExpensesManagementPage() {
         )}
 
         {activeTab === 'cash' && (
-          <div className="p-3 sm:p-4 lg:p-6">
+          <div className="p-3 sm:p-4 lg:p-6 min-w-0">
             <div className="mb-3 sm:mb-4">
               <h2 className="text-base sm:text-xl font-semibold text-gray-900 mb-1 sm:mb-2">{t('sectionCashTitle')}</h2>
               <p className="text-xs sm:text-sm text-gray-600 hidden sm:block">{t('sectionCashDesc')}</p>

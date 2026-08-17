@@ -27,7 +27,7 @@ export function isReusableExpenseVendor(v: Pick<ExpenseVendorRecord, 'usage_type
   return v.usage_type === 'reusable'
 }
 
-/** company / reservation / tour 지출 paid_to 일괄 치환 */
+/** company / reservation / tour 지출·현금 거래 paid_to 일괄 치환 */
 export async function replacePaidToAcrossExpenseTables(
   client: SupabaseClient,
   fromName: string,
@@ -38,6 +38,7 @@ export async function replacePaidToAcrossExpenseTables(
     client.from('company_expenses').update({ paid_to: toName }).eq('paid_to', fromName),
     client.from('reservation_expenses').update({ paid_to: toName }).eq('paid_to', fromName),
     client.from('tour_expenses').update({ paid_to: toName }).eq('paid_to', fromName),
+    client.from('cash_transactions').update({ paid_to: toName }).eq('paid_to', fromName),
   ])
   for (const r of results) {
     if (r.error) throw r.error

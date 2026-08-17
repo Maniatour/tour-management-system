@@ -1,8 +1,10 @@
 'use client'
 import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
+import { DROPDOWN_Z_INDEX } from '@/lib/dialogZIndex'
 
 export type StringMultiSelectOption = {
   value: string
@@ -32,6 +34,8 @@ export type StringMultiSelectFilterProps = {
   className?: string
   /** 드롭다운 패널 className (min-width 등) */
   panelClassName?: string
+  /** 표 overflow 안에서 잘리지 않게 body로 패널을 띄움 */
+  portal?: boolean
 }
 
 export default function StringMultiSelectFilter({
@@ -51,10 +55,13 @@ export default function StringMultiSelectFilter({
   hideLabel = false,
   className,
   panelClassName,
+  portal = false,
 }: StringMultiSelectFilterProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [panelPos, setPanelPos] = useState({ top: 0, left: 0, width: 0 })
   const rootRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const listId = useId()
   const searchId = `${id ?? listId}-search`
 
@@ -64,7 +71,10 @@ export default function StringMultiSelectFilter({
       return
     }
     const onDoc = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+      const target = e.target as Node
+      if (rootRef.current?.contains(target)) return
+      if (panelRef.current?.contains(target)) return
+      setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
@@ -76,6 +86,29 @@ export default function StringMultiSelectFilter({
       window.removeEventListener('keydown', onKey)
     }
   }, [open])
+
+  useLayoutEffect(() => {
+    if (!open || !portal) return
+    const update = () => {
+      const el = rootRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      const width = Math.max(r.width, 176)
+      const maxLeft = Math.max(8, window.innerWidth - width - 8)
+      setPanelPos({
+        top: r.bottom + 4,
+        left: Math.min(r.left, maxLeft),
+        width,
+      })
+    }
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [open, portal])
 
   const optionByValue = useMemo(() => {
     const m = new Map<string, StringMultiSelectOption>()
@@ -93,13 +126,13 @@ export default function StringMultiSelectFilter({
   }, [options, search])
 
   const summary = useMemo(() => {
-    if (selected.size === 0) return allLabel ?? groupLabel
+    if (selected.size === 0) return hideLabel ? groupLabel : (allLabel ?? groupLabel)
     if (selected.size === 1) {
       const key = [...selected][0]!
       return optionByValue.get(key)?.label ?? key
     }
     return selectedCountLabel ? selectedCountLabel(selected.size) : `${selected.size}`
-  }, [selected, optionByValue, allLabel, groupLabel, selectedCountLabel])
+  }, [selected, optionByValue, allLabel, groupLabel, selectedCountLabel, hideLabel])
 
   const toggleValue = (value: string) => {
     const next = new Set(selected)
@@ -140,7 +173,7 @@ export default function StringMultiSelectFilter({
         aria-label={hideLabel ? groupLabel : undefined}
         title={hideLabel ? groupLabel : undefined}
         onClick={() => !disabled && setOpen((v) => !v)}
-        className={btnCls}
+        className={`${btnCls} ${selected.size > 0 ? 'border-primary/50 bg-primary/5 text-foreground' : ''}`}
       >
         <span className="min-w-0 truncate">{summary}</span>
         <ChevronDown
@@ -148,63 +181,82 @@ export default function StringMultiSelectFilter({
           aria-hidden
         />
       </button>
-      {open && !disabled ? (
-        <div
-          id={listId}
-          role="listbox"
-          aria-multiselectable="true"
-          className={`absolute left-0 z-[80] mt-1 max-h-72 min-w-full w-max max-w-[min(calc(100vw-2rem),32rem)] overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg ring-1 ring-black/5 ${panelClassName ?? ''}`}
-        >
-          <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-2 py-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{groupLabel}</span>
-            <div className="flex gap-2 text-[10px] font-medium">
-              <button type="button" className="text-primary hover:underline" onClick={selectAllVisible}>
-                {allLabel ?? 'All'}
-              </button>
-              <button type="button" className="text-gray-600 hover:underline" onClick={clearAll}>
-                {clearLabel ?? 'Clear'}
-              </button>
-            </div>
-          </div>
-          {searchable ? (
-            <div className="border-b border-gray-100 px-2 py-1.5">
-              <input {...BROWSER_AUTOFILL_OFF_PROPS} id={searchId}
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={searchPlaceholder}
-                className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
-          ) : null}
-          {filteredOptions.length === 0 ? (
-            <p className="px-2 py-2 text-xs text-gray-500">{emptySearchLabel ?? '—'}</p>
-          ) : (
-            filteredOptions.map((opt) => {
-              const checked = selected.has(opt.value)
-              return (
-                <label
-                  key={opt.value}
-                  className={`flex cursor-pointer items-start gap-2 px-2 py-1.5 text-xs hover:bg-gray-50 ${
-                    checked ? 'bg-primary/5/80' : ''
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-gray-300"
-                    checked={checked}
-                    onChange={() => toggleValue(opt.value)}
-                  />
-                  <span className="min-w-0 flex-1 break-words leading-snug text-gray-800" title={opt.label}>
-                    {opt.label}
-                  </span>
-                </label>
-              )
-            })
-          )}
-        </div>
-      ) : null}
+      {open && !disabled
+        ? (() => {
+            const panel = (
+              <div
+                ref={panelRef}
+                id={listId}
+                role="listbox"
+                aria-multiselectable="true"
+                style={
+                  portal
+                    ? {
+                        position: 'fixed',
+                        top: panelPos.top,
+                        left: panelPos.left,
+                        minWidth: panelPos.width,
+                        zIndex: DROPDOWN_Z_INDEX,
+                      }
+                    : undefined
+                }
+                className={`${
+                  portal ? '' : 'absolute left-0 z-[80] mt-1'
+                } max-h-72 min-w-full w-max max-w-[min(calc(100vw-2rem),32rem)] overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg ring-1 ring-black/5 ${panelClassName ?? ''}`}
+              >
+                <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-2 py-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{groupLabel}</span>
+                  <div className="flex gap-2 text-[10px] font-medium">
+                    <button type="button" className="text-primary hover:underline" onClick={selectAllVisible}>
+                      {allLabel ?? 'All'}
+                    </button>
+                    <button type="button" className="text-gray-600 hover:underline" onClick={clearAll}>
+                      {clearLabel ?? 'Clear'}
+                    </button>
+                  </div>
+                </div>
+                {searchable ? (
+                  <div className="border-b border-gray-100 px-2 py-1.5">
+                    <input {...BROWSER_AUTOFILL_OFF_PROPS} id={searchId}
+                      type="search"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder={searchPlaceholder}
+                      className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                ) : null}
+                {filteredOptions.length === 0 ? (
+                  <p className="px-2 py-2 text-xs text-gray-500">{emptySearchLabel ?? '—'}</p>
+                ) : (
+                  filteredOptions.map((opt) => {
+                    const checked = selected.has(opt.value)
+                    return (
+                      <label
+                        key={opt.value}
+                        className={`flex cursor-pointer items-start gap-2 px-2 py-1.5 text-xs hover:bg-gray-50 ${
+                          checked ? 'bg-primary/5/80' : ''
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-gray-300"
+                          checked={checked}
+                          onChange={() => toggleValue(opt.value)}
+                        />
+                        <span className="min-w-0 flex-1 break-words leading-snug text-gray-800" title={opt.label}>
+                          {opt.label}
+                        </span>
+                      </label>
+                    )
+                  })
+                )}
+              </div>
+            )
+            return portal && typeof document !== 'undefined' ? createPortal(panel, document.body) : panel
+          })()
+        : null}
     </div>
   )
 }

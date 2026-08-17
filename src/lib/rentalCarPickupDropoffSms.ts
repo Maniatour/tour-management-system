@@ -1,4 +1,13 @@
+import { guidePreferredAppLocale } from '@/lib/guideLanguageDetection'
+import {
+  formatStaffNamesForSms,
+  staffNameForSms,
+  type RentalCarPickupDropoffCard,
+  type RentalCarStaffMember,
+} from '@/lib/rentalCarPickupDropoffQueue'
+
 export type RentalCarPickupDropoffSmsKind = 'pickup' | 'return' | 'airport_shuttle'
+export type RentalCarPickupDropoffSmsLocale = 'ko' | 'en'
 
 export type RentalCarPickupDropoffSmsParams = {
   recipientName: string
@@ -12,6 +21,26 @@ export type RentalCarPickupDropoffSmsParams = {
   returnCrew?: string | null
   returnVehicleLabel?: string | null
   continuingVehicleLabel?: string | null
+  locale?: RentalCarPickupDropoffSmsLocale | string | null
+}
+
+export function rentalCarStaffSmsLocale(
+  member: {
+    languages?: string[] | string | null
+    email?: string | null
+  },
+  fallback: RentalCarPickupDropoffSmsLocale = 'ko'
+): RentalCarPickupDropoffSmsLocale {
+  const languages = member.languages
+  const hasLanguages =
+    (Array.isArray(languages) && languages.length > 0) ||
+    (typeof languages === 'string' && languages.trim().length > 0)
+  if (!hasLanguages) return fallback
+  return guidePreferredAppLocale({ languages }, member.email || undefined)
+}
+
+function isEn(params: RentalCarPickupDropoffSmsParams): boolean {
+  return String(params.locale || 'ko').toLowerCase().startsWith('en')
 }
 
 function formatShortDate(raw?: string | null): string {
@@ -23,6 +52,20 @@ function formatShortDate(raw?: string | null): string {
 }
 
 export function buildRentalCarPickupSms(params: RentalCarPickupDropoffSmsParams): string {
+  if (isEn(params)) {
+    const lines = [
+      `[Mania Tour] Hi ${params.recipientName}, you are assigned to pick up the rental car today.`,
+      `Vehicle: ${params.vehicleLabel}`,
+    ]
+    if (params.company) lines.push(`Company: ${params.company}`)
+    if (params.location) lines.push(`Pickup location: ${params.location}`)
+    if (params.agreementNumber) lines.push(`Agreement #: ${params.agreementNumber}`)
+    if (params.startDate || params.endDate) {
+      lines.push(`Period: ${formatShortDate(params.startDate)} ~ ${formatShortDate(params.endDate)}`)
+    }
+    return lines.join('\n')
+  }
+
   const lines = [
     `[Mania Tour] ${params.recipientName}님, 오늘 렌터카 픽업 담당입니다.`,
     `차량: ${params.vehicleLabel}`,
@@ -37,6 +80,17 @@ export function buildRentalCarPickupSms(params: RentalCarPickupDropoffSmsParams)
 }
 
 export function buildRentalCarReturnSms(params: RentalCarPickupDropoffSmsParams): string {
+  if (isEn(params)) {
+    const lines = [
+      `[Mania Tour] Hi ${params.recipientName}, please return the rental car today.`,
+      `Vehicle: ${params.vehicleLabel}`,
+    ]
+    if (params.location) lines.push(`Return location: ${params.location}`)
+    if (params.lastUsers) lines.push(`Last users: ${params.lastUsers}`)
+    if (params.company) lines.push(`Company: ${params.company}`)
+    return lines.join('\n')
+  }
+
   const lines = [
     `[Mania Tour] ${params.recipientName}님, 오늘 렌터카 반납 부탁드립니다.`,
     `차량: ${params.vehicleLabel}`,
@@ -48,6 +102,21 @@ export function buildRentalCarReturnSms(params: RentalCarPickupDropoffSmsParams)
 }
 
 export function buildRentalCarAirportShuttleSms(params: RentalCarPickupDropoffSmsParams): string {
+  if (isEn(params)) {
+    const returnCrew = params.returnCrew || 'the return crew'
+    const returnVehicle = params.returnVehicleLabel || params.vehicleLabel
+    const lines = [
+      `[Mania Tour] Hi ${params.recipientName}, please pick up the team at the airport rental car center.`,
+      `${returnCrew} is returning ${returnVehicle}.`,
+    ]
+    if (params.location) lines.push(`Location: ${params.location}`)
+    if (params.continuingVehicleLabel) {
+      lines.push(`Continuing vehicle: ${params.continuingVehicleLabel}`)
+    }
+    lines.push(`After the return, please pick up ${returnCrew} and bring them back.`)
+    return lines.join('\n')
+  }
+
   const returnCrew = params.returnCrew || '반납 팀'
   const returnVehicle = params.returnVehicleLabel || params.vehicleLabel
   const lines = [
@@ -69,4 +138,34 @@ export function buildRentalCarPickupDropoffSms(
   if (kind === 'pickup') return buildRentalCarPickupSms(params)
   if (kind === 'return') return buildRentalCarReturnSms(params)
   return buildRentalCarAirportShuttleSms(params)
+}
+
+export function rentalCarPickupDropoffSmsParamsForRecipient(input: {
+  kind: RentalCarPickupDropoffSmsKind
+  recipient: RentalCarStaffMember
+  card: RentalCarPickupDropoffCard
+  continuingVehicleLabel?: string | null
+  locale?: RentalCarPickupDropoffSmsLocale
+  fallbackLocale?: RentalCarPickupDropoffSmsLocale
+}): RentalCarPickupDropoffSmsParams {
+  const locale =
+    input.locale || rentalCarStaffSmsLocale(input.recipient, input.fallbackLocale)
+  const lastUsers = formatStaffNamesForSms(
+    [input.card.lastTour?.guide, input.card.lastTour?.assistant],
+    locale
+  )
+  return {
+    recipientName: staffNameForSms(input.recipient, locale),
+    vehicleLabel: input.card.vehicleLabel,
+    company: input.card.rentalCompany,
+    location: input.kind === 'pickup' ? input.card.pickupLocation : input.card.returnLocation,
+    agreementNumber: input.card.agreementNumber,
+    startDate: input.card.startDate,
+    endDate: input.card.endDate,
+    lastUsers,
+    returnCrew: lastUsers || (locale === 'en' ? 'the return crew' : '반납 팀'),
+    returnVehicleLabel: input.card.vehicleLabel,
+    continuingVehicleLabel: input.continuingVehicleLabel ?? null,
+    locale,
+  }
 }

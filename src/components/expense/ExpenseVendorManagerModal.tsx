@@ -404,7 +404,7 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
         ? `"${oldName}"을(를) "${newName}"(으)로 바꾸고 재사용 결제처로 설정합니다.`
         : `"${oldName}"을(를) "${newName}"(으)로 바꿉니다.`,
       '',
-      '회사·예약·투어 지출의 결제처(paid_to)도 함께 갱신됩니다.',
+      '회사·예약·투어 지출과 현금 거래의 결제처(paid_to)도 함께 갱신됩니다.',
       oldName.toLowerCase() !== newName.toLowerCase()
         ? '목록에 같은 이름이 있으면 해당 항목으로 합쳐집니다.'
         : '',
@@ -479,7 +479,7 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
       '변경될 항목:',
       ...sourceNames.map((n) => `· ${n} → ${targetName}`),
       '',
-      '회사·예약·투어 지출의 결제처(paid_to)도 함께 갱신됩니다.',
+      '회사·예약·투어 지출과 현금 거래의 결제처(paid_to)도 함께 갱신됩니다.',
       '계속할까요?',
     ].join('\n')
     if (!confirm(msg)) return
@@ -1086,7 +1086,7 @@ export default function ExpenseVendorManagerModal({ open, onOpenChange, onUpdate
           <DialogHeader>
             <DialogTitle>결제처 이름 일괄 변경</DialogTitle>
             <DialogDescription>
-              기존 결제처 이름을 새 이름으로 바꾸면 회사·예약·투어 지출의 결제처(paid_to)도 함께 갱신됩니다.
+              기존 결제처 이름을 새 이름으로 바꾸면 회사·예약·투어 지출과 현금 거래의 결제처(paid_to)도 함께 갱신됩니다.
               재사용으로 설정하면 지출 추가 시 선택 목록에 표시됩니다.
             </DialogDescription>
           </DialogHeader>

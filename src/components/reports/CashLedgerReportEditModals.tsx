@@ -1,7 +1,7 @@
 'use client'
 
 import type { Json } from '@/lib/database.types'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
@@ -14,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { formatDateTimeForDatetimeLocalInput, parseDatetimeLocalInputToISOString } from '@/utils/datetimeLocal'
+import { ExpensePaidToCombobox } from '@/components/expense/ExpensePaidToCombobox'
+import { isReusableExpenseVendor } from '@/lib/expenseVendors'
 
 export type CashLedgerEditSource =
   | 'cash_transactions'
@@ -50,6 +52,7 @@ type CashFormData = {
   transaction_type: 'deposit' | 'withdrawal' | 'bank_deposit'
   amount: string
   description: string
+  paid_to: string
   category: string
   notes: string
 }
@@ -59,6 +62,7 @@ const defaultCashForm = (): CashFormData => ({
   transaction_type: 'deposit',
   amount: '',
   description: '',
+  paid_to: '',
   category: '',
   notes: ''
 })
@@ -77,6 +81,7 @@ export default function CashLedgerReportEditModals({
   const [cashRow, setCashRow] = useState<Record<string, unknown> | null>(null)
   const [cashForm, setCashForm] = useState<CashFormData>(defaultCashForm)
   const [cashSaving, setCashSaving] = useState(false)
+  const [paidToOptions, setPaidToOptions] = useState<string[]>([])
 
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [paymentRow, setPaymentRow] = useState<Record<string, unknown> | null>(null)
@@ -111,6 +116,34 @@ export default function CashLedgerReportEditModals({
     },
     [user?.email]
   )
+
+  const loadPaidToOptions = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('expense_vendors').select('name, usage_type').order('name')
+      if (error) throw error
+      const names = new Set<string>()
+      for (const row of data ?? []) {
+        if (!isReusableExpenseVendor({ usage_type: row.usage_type === 'one_time' ? 'one_time' : 'reusable' })) continue
+        const name = String(row.name ?? '').trim()
+        if (name) names.add(name)
+      }
+      setPaidToOptions([...names])
+    } catch (error) {
+      console.error('결제처 목록 로드 오류:', error)
+    }
+  }, [])
+
+  const cashPaidToComboboxOptions = useMemo(() => {
+    const names = new Set(paidToOptions)
+    const current = cashForm.paid_to.trim()
+    if (current) names.add(current)
+    return [...names]
+  }, [paidToOptions, cashForm.paid_to])
+
+  useEffect(() => {
+    if (!cashOpen) return
+    void loadPaidToOptions()
+  }, [cashOpen, loadPaidToOptions])
 
   useEffect(() => {
     if (!addCashOpen) return
@@ -164,6 +197,7 @@ export default function CashLedgerReportEditModals({
             transaction_type: isBankDeposit ? 'bank_deposit' : (data.transaction_type as 'deposit' | 'withdrawal'),
             amount: String(data.amount ?? ''),
             description: desc,
+            paid_to: String(data.paid_to ?? ''),
             category: (data.category as string) || '',
             notes: (data.notes as string) || ''
           })
@@ -239,12 +273,25 @@ export default function CashLedgerReportEditModals({
       toast.error('금액을 입력해주세요.')
       return
     }
+    const paidToTrim = cashForm.paid_to.trim()
+    if (
+      paidToTrim &&
+      !paidToOptions.some((name) => name.toLowerCase() === paidToTrim.toLowerCase())
+    ) {
+      try {
+        await supabase.from('expense_vendors').insert({ name: paidToTrim, usage_type: 'one_time' })
+        await loadPaidToOptions()
+      } catch (vendorErr) {
+        console.warn('결제처 목록 자동 추가 실패:', vendorErr)
+      }
+    }
     const dbTransactionType = cashForm.transaction_type === 'bank_deposit' ? 'withdrawal' : cashForm.transaction_type
     const newValues = {
       transaction_date: parseDatetimeLocalInputToISOString(cashForm.transaction_date),
       transaction_type: dbTransactionType,
       amount: parseFloat(cashForm.amount),
       description: cashForm.description || null,
+      paid_to: paidToTrim || null,
       category: cashForm.category || null,
       notes: cashForm.notes || null
     }
@@ -262,6 +309,7 @@ export default function CashLedgerReportEditModals({
             transaction_type: newValues.transaction_type,
             amount: newValues.amount,
             description: newValues.description,
+            paid_to: newValues.paid_to,
             category: newValues.category,
             notes: newValues.notes,
             created_by: user?.email || ''
@@ -281,6 +329,7 @@ export default function CashLedgerReportEditModals({
           transaction_type: cashRow.transaction_type,
           amount: cashRow.amount,
           description: cashRow.description,
+          paid_to: cashRow.paid_to,
           category: cashRow.category,
           notes: cashRow.notes
         }
@@ -291,6 +340,7 @@ export default function CashLedgerReportEditModals({
             transaction_type: newValues.transaction_type,
             amount: newValues.amount,
             description: newValues.description,
+            paid_to: newValues.paid_to,
             category: newValues.category,
             notes: newValues.notes,
             updated_at: new Date().toISOString()
@@ -381,6 +431,18 @@ export default function CashLedgerReportEditModals({
                   value={cashForm.amount}
                   onChange={(e) => setCashForm({ ...cashForm, amount: e.target.value })}
                   required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="cr_paid_to">결제처</Label>
+                <ExpensePaidToCombobox
+                  id="cr_paid_to"
+                  value={cashForm.paid_to}
+                  onChange={(paid_to) => setCashForm({ ...cashForm, paid_to })}
+                  options={cashPaidToComboboxOptions}
+                  placeholder="결제처 선택 또는 입력"
+                  parentOpen={cashOpen}
+                  disabled={cashSaving}
                 />
               </div>
               <div className="space-y-2">

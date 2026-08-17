@@ -59,7 +59,7 @@ export function useRentalCarPickupDropoffQueue(enabled = true, locale = 'ko') {
           .gte('rental_end_date', today),
         supabase
           .from('team')
-          .select('email, name_ko, name_en, nick_name, display_name, phone, is_active')
+          .select('email, name_ko, name_en, nick_name, display_name, phone, is_active, languages')
           .eq('is_active', true)
           .order('nick_name', { ascending: true }),
       ])
@@ -125,7 +125,7 @@ export function useRentalCarPickupDropoffQueue(enabled = true, locale = 'ko') {
       if (extraEmails.length) {
         const { data: extraTeam } = await supabase
           .from('team')
-          .select('email, name_ko, name_en, nick_name, display_name, phone, is_active')
+          .select('email, name_ko, name_en, nick_name, display_name, phone, is_active, languages')
           .in('email', extraEmails)
         for (const member of (extraTeam || []) as TeamNameRow[]) {
           const email = String(member.email || '').trim()

@@ -504,6 +504,7 @@ export type Database = {
           id: string
           notes: string | null
           operator_id: string
+          paid_to: string | null
           reference_id: string | null
           reference_type: string | null
           transaction_date: string
@@ -519,6 +520,7 @@ export type Database = {
           id?: string
           notes?: string | null
           operator_id?: string
+          paid_to?: string | null
           reference_id?: string | null
           reference_type?: string | null
           transaction_date?: string
@@ -534,6 +536,7 @@ export type Database = {
           id?: string
           notes?: string | null
           operator_id?: string
+          paid_to?: string | null
           reference_id?: string | null
           reference_type?: string | null
           transaction_date?: string

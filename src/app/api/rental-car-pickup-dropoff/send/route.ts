@@ -5,11 +5,11 @@ import { formatPhoneToE164 } from '@/utils/formatPhoneToE164'
 import { isTourCancelled, isTourDeleted } from '@/utils/tourStatusUtils'
 import {
   buildRentalCarPickupDropoffSms,
+  rentalCarPickupDropoffSmsParamsForRecipient,
   type RentalCarPickupDropoffSmsKind,
 } from '@/lib/rentalCarPickupDropoffSms'
 import {
   buildRentalCarPickupDropoffCards,
-  formatStaffNames,
   rentalCarCardRecipients,
   rentalCarPickupDropoffTodayYmd,
   type RentalCarPickupDropoffCard,
@@ -78,7 +78,7 @@ async function loadCard(vehicleId: string, locale: string): Promise<RentalCarPic
   if (emails.length) {
     const { data: teamData } = await db
       .from('team')
-      .select('email, name_ko, name_en, nick_name, display_name, phone, is_active')
+      .select('email, name_ko, name_en, nick_name, display_name, phone, is_active, languages')
       .in('email', emails)
     for (const member of (teamData || []) as TeamNameRow[]) {
       const email = String(member.email || '').trim()
@@ -136,27 +136,22 @@ export async function POST(request: NextRequest) {
     }
 
     const continuing = card.continuingCrews.find((c) => c.vehicleId === continuingVehicleId) ?? card.continuingCrews[0]
-    const lastUsers = formatStaffNames([card.lastTour?.guide, card.lastTour?.assistant])
-    const returnCrew = lastUsers || '반납 팀'
 
     const results: Array<{ email: string; smsStatus: string; smsError?: string }> = []
 
     for (const recipient of recipients) {
       const smsBody =
         overrideMap.get(recipient.email.toLowerCase()) ||
-        buildRentalCarPickupDropoffSms(kind, {
-          recipientName: recipient.displayName,
-          vehicleLabel: card.vehicleLabel,
-          company: card.rentalCompany,
-          location: kind === 'pickup' ? card.pickupLocation : card.returnLocation,
-          agreementNumber: card.agreementNumber,
-          startDate: card.startDate,
-          endDate: card.endDate,
-          lastUsers,
-          returnCrew,
-          returnVehicleLabel: card.vehicleLabel,
-          continuingVehicleLabel: continuing?.vehicleLabel,
-        })
+        buildRentalCarPickupDropoffSms(
+          kind,
+          rentalCarPickupDropoffSmsParamsForRecipient({
+            kind,
+            recipient,
+            card,
+            continuingVehicleLabel: continuing?.vehicleLabel,
+            fallbackLocale: locale.toLowerCase().startsWith('en') ? 'en' : 'ko',
+          })
+        )
 
       if (!smsBody.trim()) {
         return NextResponse.json({ error: 'SMS 내용이 비어 있습니다.' }, { status: 400 })

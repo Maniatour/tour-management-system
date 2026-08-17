@@ -5,10 +5,12 @@ import { Check, Copy, Loader2, Send, X } from 'lucide-react'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import {
   buildRentalCarPickupDropoffSms,
+  rentalCarPickupDropoffSmsParamsForRecipient,
+  rentalCarStaffSmsLocale,
   type RentalCarPickupDropoffSmsKind,
+  type RentalCarPickupDropoffSmsLocale,
 } from '@/lib/rentalCarPickupDropoffSms'
 import {
-  formatStaffNames,
   rentalCarCardRecipients,
   type RentalCarPickupDropoffCard,
 } from '@/lib/rentalCarPickupDropoffQueue'
@@ -44,6 +46,7 @@ export function RentalCarPickupDropoffSmsModal({
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set())
   const [edits, setEdits] = useState<Record<string, string>>({})
+  const [smsLocales, setSmsLocales] = useState<Record<string, RentalCarPickupDropoffSmsLocale>>({})
 
   const recipients = useMemo(
     () => (card ? rentalCarCardRecipients(card, kind, continuingVehicleId) : []),
@@ -52,35 +55,56 @@ export function RentalCarPickupDropoffSmsModal({
 
   const continuing =
     card?.continuingCrews.find((c) => c.vehicleId === continuingVehicleId) ?? card?.continuingCrews[0]
-  const lastUsers = card ? formatStaffNames([card.lastTour?.guide, card.lastTour?.assistant]) : ''
 
   useEffect(() => {
     if (!isOpen || !card) {
       setEdits({})
+      setSmsLocales({})
       setSelectedEmails(new Set())
       setError(null)
       return
     }
+    const nextLocales: Record<string, RentalCarPickupDropoffSmsLocale> = {}
     const next: Record<string, string> = {}
     for (const recipient of recipients) {
-      next[recipient.email] = buildRentalCarPickupDropoffSms(kind, {
-        recipientName: recipient.displayName,
-        vehicleLabel: card.vehicleLabel,
-        company: card.rentalCompany,
-        location: kind === 'pickup' ? card.pickupLocation : card.returnLocation,
-        agreementNumber: card.agreementNumber,
-        startDate: card.startDate,
-        endDate: card.endDate,
-        lastUsers,
-        returnCrew: lastUsers || (isKo ? '반납 팀' : 'return crew'),
-        returnVehicleLabel: card.vehicleLabel,
-        continuingVehicleLabel: continuing?.vehicleLabel ?? null,
-      })
+      const smsLocale = rentalCarStaffSmsLocale(recipient, isKo ? 'ko' : 'en')
+      nextLocales[recipient.email] = smsLocale
+      next[recipient.email] = buildRentalCarPickupDropoffSms(
+        kind,
+        rentalCarPickupDropoffSmsParamsForRecipient({
+          kind,
+          recipient,
+          card,
+          continuingVehicleLabel: continuing?.vehicleLabel ?? null,
+          locale: smsLocale,
+        })
+      )
     }
+    setSmsLocales(nextLocales)
     setEdits(next)
     setSelectedEmails(new Set(recipients.map((r) => r.email)))
     setError(null)
-  }, [isOpen, card, kind, continuing, lastUsers, recipients, isKo])
+  }, [isOpen, card, kind, continuing, recipients])
+
+  const applySmsLocale = (email: string, smsLocale: RentalCarPickupDropoffSmsLocale) => {
+    if (!card) return
+    const recipient = recipients.find((r) => r.email === email)
+    if (!recipient) return
+    setSmsLocales((prev) => ({ ...prev, [email]: smsLocale }))
+    setEdits((prev) => ({
+      ...prev,
+      [email]: buildRentalCarPickupDropoffSms(
+        kind,
+        rentalCarPickupDropoffSmsParamsForRecipient({
+          kind,
+          recipient,
+          card,
+          continuingVehicleLabel: continuing?.vehicleLabel ?? null,
+          locale: smsLocale,
+        })
+      ),
+    }))
+  }
 
   if (!isOpen || !card) return null
 
@@ -157,7 +181,9 @@ export function RentalCarPickupDropoffSmsModal({
                   : 'No guide or driver to notify.'}
             </p>
           ) : (
-            recipients.map((recipient) => (
+            recipients.map((recipient) => {
+              const smsLocale = smsLocales[recipient.email] || rentalCarStaffSmsLocale(recipient, isKo ? 'ko' : 'en')
+              return (
               <div key={recipient.email} className="rounded-lg border border-border/70 p-3">
                 <label className="flex items-center justify-between gap-2">
                   <span className="flex items-center gap-2 text-sm font-medium text-gray-900">
@@ -187,6 +213,24 @@ export function RentalCarPickupDropoffSmsModal({
                     {copiedEmail === recipient.email ? (isKo ? '복사됨' : 'Copied') : isKo ? '복사' : 'Copy'}
                   </button>
                 </label>
+                <div className="mt-1.5 flex items-center gap-1">
+                  {(['ko', 'en'] as const).map((loc) => (
+                    <button
+                      key={loc}
+                      type="button"
+                      onClick={() => applySmsLocale(recipient.email, loc)}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        smsLocale === loc
+                          ? loc === 'en'
+                            ? 'bg-sky-100 text-sky-800'
+                            : 'bg-gray-800 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {loc === 'en' ? (isKo ? '영어' : 'English') : isKo ? '한국어' : 'Korean'}
+                    </button>
+                  ))}
+                </div>
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   {recipient.phone || (isKo ? '전화번호 없음' : 'No phone')}
                 </p>
@@ -197,7 +241,8 @@ export function RentalCarPickupDropoffSmsModal({
                   className="mt-2 w-full rounded-lg border border-input px-2.5 py-2 text-xs leading-5"
                 />
               </div>
-            ))
+              )
+            })
           )}
           {error ? <p className="text-xs text-destructive">{error}</p> : null}
         </div>

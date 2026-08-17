@@ -47,7 +47,7 @@ export default function ReservationExpenseTabPanel() {
   ]
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-w-0 max-w-full overflow-x-hidden">
       <div className="border-b border-gray-200 -mx-3 sm:-mx-4 lg:-mx-6 px-3 sm:px-4 lg:px-6">
         <nav className="flex flex-wrap gap-1" aria-label="Reservation expense sections">
           {tabs.map((tab) => {

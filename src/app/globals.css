@@ -349,8 +349,11 @@
     position: relative;
     isolation: isolate;
     width: 100%;
+    max-width: 100%;
+    min-width: 0;
     min-height: 100vh;
     box-sizing: border-box;
+    overflow-x: hidden;
   }
 
   .admin-main-shell::before {
@@ -462,7 +465,9 @@ html:has(.admin-shell) main.main-safe-area {
 .admin-shell {
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 /* 모바일: 좌우 풀블리드 + 상단 소폭 여백 / 데스크탑(lg+): 통일 좌우·상단 여백 */

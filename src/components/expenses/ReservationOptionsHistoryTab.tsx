@@ -637,7 +637,7 @@ export default function ReservationOptionsHistoryTab() {
   )
 
   return (
-    <div className="space-y-3 sm:space-y-4">
+    <div className="space-y-3 sm:space-y-4 min-w-0 max-w-full overflow-x-hidden">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <p className="text-xs sm:text-sm text-gray-600">{t('hint')}</p>
         <button

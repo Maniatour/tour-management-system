@@ -42,8 +42,8 @@ export default function UnreceivedAssignedCashBalancePanel() {
 
   return (
     <>
-      <section className="rounded-xl border border-purple-200 bg-purple-50/60 p-4 sm:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <section className="rounded-xl border border-purple-200 bg-purple-50/60 p-4 sm:p-6 min-w-0 max-w-full overflow-x-hidden">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between min-w-0">
           <div className="min-w-0">
             <h3 className="text-base sm:text-lg font-semibold text-gray-900 flex items-center gap-2">
               <Wallet className="h-5 w-5 text-purple-600 shrink-0" aria-hidden />
@@ -77,9 +77,9 @@ export default function UnreceivedAssignedCashBalancePanel() {
                 <button
                   type="button"
                   onClick={() => setSelectedTour(tour)}
-                  className="flex w-full flex-col gap-1 sm:flex-row sm:items-center sm:justify-between px-3 py-3 text-left hover:bg-purple-50/80 transition-colors duration-200 min-h-[44px]"
+                  className="flex w-full min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between px-3 py-3 text-left hover:bg-purple-50/80 transition-colors duration-200 min-h-[44px]"
                 >
-                  <span className="text-sm text-gray-900 min-w-0">
+                  <span className="text-sm text-gray-900 min-w-0 truncate">
                     <span className="font-semibold tabular-nums">{tour.tourDate}</span>
                     <span className="mx-1.5 text-gray-400" aria-hidden>
                       ·

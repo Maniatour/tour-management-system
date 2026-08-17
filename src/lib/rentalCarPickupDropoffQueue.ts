@@ -34,6 +34,9 @@ export type RentalCarStaffMember = {
   email: string
   displayName: string
   phone: string | null
+  languages: string[] | string | null
+  nameKo: string
+  nameEn: string
 }
 
 export type RentalCarAssignedTour = {
@@ -116,6 +119,7 @@ export type TeamNameRow = {
   display_name?: string | null
   phone?: string | null
   is_active?: boolean | null
+  languages?: string[] | string | null
 }
 
 function ymd(value: string | null | undefined): string {
@@ -146,6 +150,9 @@ function toStaff(
     email: member?.email || key,
     displayName: staffDisplayName(member, key, locale),
     phone: member?.phone?.trim() || null,
+    languages: member?.languages ?? null,
+    nameKo: staffDisplayName(member, key, 'ko'),
+    nameEn: staffDisplayName(member, key, 'en'),
   }
 }
 
@@ -341,5 +348,24 @@ export function formatStaffNames(members: Array<RentalCarStaffMember | null | un
   return members
     .filter((m): m is RentalCarStaffMember => Boolean(m?.displayName))
     .map((m) => m.displayName)
+    .join(', ')
+}
+
+export function staffNameForSms(
+  member: RentalCarStaffMember,
+  locale: 'ko' | 'en'
+): string {
+  if (locale === 'en') return member.nameEn || member.displayName
+  return member.nameKo || member.displayName
+}
+
+export function formatStaffNamesForSms(
+  members: Array<RentalCarStaffMember | null | undefined>,
+  locale: 'ko' | 'en'
+): string {
+  return members
+    .filter((m): m is RentalCarStaffMember => Boolean(m))
+    .map((m) => staffNameForSms(m, locale))
+    .filter(Boolean)
     .join(', ')
 }

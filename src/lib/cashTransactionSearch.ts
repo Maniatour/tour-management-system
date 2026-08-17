@@ -3,7 +3,7 @@ import { postgrestIlikeQuoted, postgrestEqQuoted, buildTextColumnSearchParts } f
 export function buildCashTransactionsSearchOr(raw: string): string | null {
   const trimmed = raw.trim()
   if (!trimmed) return null
-  return buildTextColumnSearchParts(['description', 'notes'], trimmed, { idEqMinLen: 12 }).join(',')
+  return buildTextColumnSearchParts(['description', 'notes', 'paid_to'], trimmed, { idEqMinLen: 12 }).join(',')
 }
 
 export function buildPaymentRecordsNoteSearchOr(raw: string): string | null {

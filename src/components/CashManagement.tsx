@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Badge, type BadgeProps } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -41,7 +41,14 @@ import {
   buildCashCompanyExpenseSearchOr,
   buildCashReservationExpenseSearchOr,
 } from '@/lib/cashTransactionSearch'
+import { ExpensePaidToCombobox } from '@/components/expense/ExpensePaidToCombobox'
+import { isReusableExpenseVendor } from '@/lib/expenseVendors'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
+import CashColumnHeader from '@/components/expenses/CashColumnHeader'
+import CashColumnFiltersBar, {
+  type CashColFilterField,
+} from '@/components/expenses/CashColumnFiltersBar'
+import type { StringMultiSelectOption } from '@/components/filters/StringMultiSelectFilter'
 import UnreceivedAssignedCashBalancePanel from '@/components/reports/UnreceivedAssignedCashBalancePanel'
 import { getDefaultLedgerBaseDate } from '@/lib/fiscal-settings'
 import { isCashLedgerRefundPaymentStatus } from '@/utils/reservationPricingBalance'
@@ -65,6 +72,8 @@ interface CashTransaction {
   created_by_name?: string // team 테이블 display_name (없으면 name_ko)
   /** payment_records 출처만 — DB payment_status */
   payment_status?: string | null
+  /** 회사·예약 지출 또는 현금 관리 직접 입력의 결제처(paid_to) */
+  paid_to?: string | null
 }
 
 interface TransactionHistory {
@@ -84,8 +93,21 @@ interface CashTransactionFormData {
   transaction_type: 'deposit' | 'withdrawal' | 'bank_deposit'
   amount: string
   description: string
+  paid_to: string
   category: string
   notes: string
+}
+
+function emptyCashFormData(): CashTransactionFormData {
+  return {
+    transaction_date: formatDateTimeForDatetimeLocalInput(new Date()),
+    transaction_type: 'deposit',
+    amount: '',
+    description: '',
+    paid_to: '',
+    category: '',
+    notes: '',
+  }
 }
 
 const categories = [
@@ -97,6 +119,97 @@ const categories = [
   '예약 지출',
   '기타 지출'
 ]
+
+function cashSourceBadge(source: CashTransaction['source']): {
+  label: string
+  variant: NonNullable<BadgeProps['variant']>
+} {
+  switch (source) {
+    case 'payment_records':
+      return { label: '예약 결제', variant: 'success' }
+    case 'company_expenses':
+      return { label: '회사 지출', variant: 'warning' }
+    case 'reservation_expenses':
+      return { label: '예약 지출', variant: 'booking' }
+    default:
+      return { label: '현금 관리', variant: 'default' }
+  }
+}
+
+type CashSourceValue = NonNullable<CashTransaction['source']>
+
+const CASH_SOURCE_OPTIONS: StringMultiSelectOption[] = [
+  { value: 'cash_transactions', label: cashSourceBadge('cash_transactions').label },
+  { value: 'payment_records', label: cashSourceBadge('payment_records').label },
+  { value: 'company_expenses', label: cashSourceBadge('company_expenses').label },
+  { value: 'reservation_expenses', label: cashSourceBadge('reservation_expenses').label },
+]
+
+const CASH_TYPE_OPTIONS: StringMultiSelectOption[] = [
+  { value: 'deposit', label: '입금' },
+  { value: 'withdrawal', label: '출금' },
+  { value: 'bank_deposit', label: '은행 Deposit' },
+]
+
+const EMPTY_COL_FILTER = '__empty__'
+
+function cashTypeFilterValue(tx: CashTransaction): string {
+  const isBankDeposit = tx.description?.includes('은행 Deposit') || tx.description === '은행 Deposit'
+  if (isBankDeposit) return 'bank_deposit'
+  return tx.transaction_type
+}
+
+function cashPaidToFilterValue(tx: CashTransaction): string {
+  const v = tx.paid_to?.trim()
+  return v || EMPTY_COL_FILTER
+}
+
+function cashCategoryFilterValue(tx: CashTransaction): string {
+  const v = tx.category?.trim()
+  return v || EMPTY_COL_FILTER
+}
+
+function cashAuthorFilterValue(tx: CashTransaction): string {
+  const v = (tx.created_by_name || tx.created_by || '').trim()
+  return v || EMPTY_COL_FILTER
+}
+
+function cashPaymentStatusFilterValue(tx: CashTransaction): string {
+  if (tx.source !== 'payment_records') return EMPTY_COL_FILTER
+  const v = tx.payment_status?.trim()
+  return v || EMPTY_COL_FILTER
+}
+
+function cashSourceFilterValue(tx: CashTransaction): CashSourceValue {
+  if (tx.source === 'payment_records') return 'payment_records'
+  if (tx.source === 'company_expenses') return 'company_expenses'
+  if (tx.source === 'reservation_expenses') return 'reservation_expenses'
+  return 'cash_transactions'
+}
+
+function uniqueColOptions(
+  rows: CashTransaction[],
+  valueFn: (tx: CashTransaction) => string,
+  labelFn: (value: string) => string,
+  locale: string
+): StringMultiSelectOption[] {
+  const map = new Map<string, string>()
+  for (const row of rows) {
+    const value = valueFn(row)
+    if (!map.has(value)) map.set(value, labelFn(value))
+  }
+  return [...map.entries()]
+    .sort((a, b) => a[1].localeCompare(b[1], locale === 'en' ? 'en' : 'ko'))
+    .map(([value, label]) => ({ value, label }))
+}
+
+function matchesColFilter(selected: ReadonlySet<string>, value: string): boolean {
+  return selected.size === 0 || selected.has(value)
+}
+
+function colEmptyLabel(value: string): string {
+  return value === EMPTY_COL_FILTER ? '—' : value
+}
 
 function reconSourceFromCashTransaction(
   tx: CashTransaction
@@ -190,8 +303,12 @@ export default function CashManagement() {
   const [searchTerm, setSearchTerm] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const loadTransactionsGenRef = useRef(0)
-  const [typeFilter, setTypeFilter] = useState<'all' | 'deposit' | 'withdrawal' | 'bank_deposit'>('all')
-  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [typeColFilters, setTypeColFilters] = useState<Set<string>>(() => new Set())
+  const [paidToColFilters, setPaidToColFilters] = useState<Set<string>>(() => new Set())
+  const [categoryColFilters, setCategoryColFilters] = useState<Set<string>>(() => new Set())
+  const [sourceColFilters, setSourceColFilters] = useState<Set<string>>(() => new Set())
+  const [paymentStatusColFilters, setPaymentStatusColFilters] = useState<Set<string>>(() => new Set())
+  const [authorColFilters, setAuthorColFilters] = useState<Set<string>>(() => new Set())
   const [startDate, setStartDate] = useState(DEFAULT_CASH_PERIOD_START)
   const [endDate, setEndDate] = useState('')
   const [teamMembers, setTeamMembers] = useState<Map<string, string>>(new Map()) // email(lower) -> display_name
@@ -211,14 +328,8 @@ export default function CashManagement() {
   const [cashTableSortKey, setCashTableSortKey] = useState<string>('date')
   const [cashTableSortDir, setCashTableSortDir] = useState<SortDir>('desc')
 
-  const [formData, setFormData] = useState<CashTransactionFormData>({
-    transaction_date: formatDateTimeForDatetimeLocalInput(new Date()),
-    transaction_type: 'deposit',
-    amount: '',
-    description: '',
-    category: '',
-    notes: ''
-  })
+  const [formData, setFormData] = useState<CashTransactionFormData>(emptyCashFormData)
+  const [paidToOptions, setPaidToOptions] = useState<string[]>([])
 
   const teamDisplayLabel = useCallback(
     (email: string) => {
@@ -252,6 +363,29 @@ export default function CashManagement() {
       console.error('팀 멤버 로드 오류:', error)
     }
   }, [])
+
+  const loadPaidToOptions = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('expense_vendors').select('name, usage_type').order('name')
+      if (error) throw error
+      const names = new Set<string>()
+      for (const row of data ?? []) {
+        if (!isReusableExpenseVendor({ usage_type: row.usage_type === 'one_time' ? 'one_time' : 'reusable' })) continue
+        const name = String(row.name ?? '').trim()
+        if (name) names.add(name)
+      }
+      setPaidToOptions([...names])
+    } catch (error) {
+      console.error('결제처 목록 로드 오류:', error)
+    }
+  }, [])
+
+  const cashPaidToComboboxOptions = useMemo(() => {
+    const names = new Set(paidToOptions)
+    const current = formData.paid_to.trim()
+    if (current) names.add(current)
+    return [...names]
+  }, [paidToOptions, formData.paid_to])
 
   // 수정 히스토리 로드
   const loadTransactionHistory = useCallback(async (transactionId: string, sourceTable: string) => {
@@ -305,15 +439,6 @@ export default function CashManagement() {
 
       if (searchOrCash) {
         cashTransactionsQuery = cashTransactionsQuery.or(searchOrCash)
-      }
-
-      if (typeFilter !== 'all' && typeFilter !== 'bank_deposit') {
-        // bank_deposit은 클라이언트 측에서 description으로 필터링
-        cashTransactionsQuery = cashTransactionsQuery.eq('transaction_type', typeFilter)
-      }
-
-      if (categoryFilter !== 'all') {
-        cashTransactionsQuery = cashTransactionsQuery.eq('category', categoryFilter)
       }
 
       if (startDate) {
@@ -376,10 +501,6 @@ export default function CashManagement() {
         companyExpensesQuery = companyExpensesQuery.or(searchOrCompany)
       }
 
-      if (categoryFilter !== 'all') {
-        companyExpensesQuery = companyExpensesQuery.eq('paid_for', categoryFilter)
-      }
-
       if (startDate) {
         const start = new Date(startDate)
         start.setHours(0, 0, 0, 0)
@@ -407,10 +528,6 @@ export default function CashManagement() {
 
       if (searchOrReservation) {
         reservationExpensesQuery = reservationExpensesQuery.or(searchOrReservation)
-      }
-
-      if (categoryFilter !== 'all') {
-        reservationExpensesQuery = reservationExpensesQuery.eq('paid_for', categoryFilter)
       }
 
       if (startDate) {
@@ -442,6 +559,7 @@ export default function CashManagement() {
           created_by_name: teamDisplayLabel(t.created_by),
           created_at: t.created_at ?? '',
           updated_at: t.updated_at ?? '',
+          paid_to: t.paid_to || null,
         }))
         allTransactions.push(...converted)
       }
@@ -490,7 +608,8 @@ export default function CashManagement() {
           notes: ce.notes || null,
           created_at: ce.submit_on || new Date().toISOString(),
           updated_at: ce.submit_on || new Date().toISOString(),
-          source: 'company_expenses' as const
+          source: 'company_expenses' as const,
+          paid_to: ce.paid_to || null,
         }))
         allTransactions.push(...converted)
       }
@@ -511,7 +630,8 @@ export default function CashManagement() {
           notes: re.note || null,
           created_at: re.submit_on || new Date().toISOString(),
           updated_at: re.submit_on || new Date().toISOString(),
-          source: 'reservation_expenses' as const
+          source: 'reservation_expenses' as const,
+          paid_to: re.paid_to || null,
         }))
         allTransactions.push(...converted)
       }
@@ -524,21 +644,7 @@ export default function CashManagement() {
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       })
 
-      // 타입 필터 적용
-      let filtered = allTransactions
-      if (typeFilter !== 'all') {
-        if (typeFilter === 'bank_deposit') {
-          // 은행 Deposit 필터: description에 "은행 Deposit"이 포함된 거래만
-          filtered = filtered.filter(t => 
-            t.transaction_type === 'withdrawal' && 
-            (t.description?.includes('은행 Deposit') || t.description === '은행 Deposit')
-          )
-        } else {
-          filtered = filtered.filter(t => t.transaction_type === typeFilter)
-        }
-      }
-
-      setTransactions(filtered)
+      setTransactions(allTransactions)
       
       // 잔액 계산 (모든 거래 포함)
       const calculatedBalance = allTransactions.reduce((sum, transaction) => {
@@ -559,7 +665,7 @@ export default function CashManagement() {
         setLoading(false)
       }
     }
-  }, [searchTerm, typeFilter, categoryFilter, startDate, endDate, teamDisplayLabel, activeOperatorId])
+  }, [searchTerm, startDate, endDate, teamDisplayLabel, activeOperatorId])
 
   const applySearch = useCallback(() => {
     setSearchTerm(searchInput.trim())
@@ -567,7 +673,8 @@ export default function CashManagement() {
 
   useEffect(() => {
     loadTeamMembers()
-  }, [loadTeamMembers])
+    void loadPaidToOptions()
+  }, [loadTeamMembers, loadPaidToOptions])
 
   useEffect(() => {
     loadTransactions()
@@ -609,6 +716,19 @@ export default function CashManagement() {
     try {
       setSaving(true)
 
+      const paidToTrim = formData.paid_to.trim()
+      if (
+        paidToTrim &&
+        !paidToOptions.some((name) => name.toLowerCase() === paidToTrim.toLowerCase())
+      ) {
+        try {
+          await supabase.from('expense_vendors').insert({ name: paidToTrim, usage_type: 'one_time' })
+          await loadPaidToOptions()
+        } catch (vendorErr) {
+          console.warn('결제처 목록 자동 추가 실패:', vendorErr)
+        }
+      }
+
       if (editingTransaction) {
         // 기존 값 저장 (히스토리용)
         const oldValues = {
@@ -616,6 +736,7 @@ export default function CashManagement() {
           transaction_type: editingTransaction.transaction_type,
           amount: editingTransaction.amount,
           description: editingTransaction.description,
+          paid_to: editingTransaction.paid_to,
           category: editingTransaction.category,
           notes: editingTransaction.notes
         }
@@ -627,6 +748,7 @@ export default function CashManagement() {
           transaction_type: dbTransactionType,
           amount: parseFloat(formData.amount),
           description: formData.description || null,
+          paid_to: paidToTrim || null,
           category: formData.category || null,
           notes: formData.notes || null
         }
@@ -641,6 +763,7 @@ export default function CashManagement() {
               transaction_type: newValues.transaction_type,
               amount: newValues.amount,
               description: newValues.description,
+              paid_to: newValues.paid_to,
               category: newValues.category,
               notes: newValues.notes,
               updated_at: new Date().toISOString()
@@ -701,6 +824,7 @@ export default function CashManagement() {
           transaction_type: dbTransactionType,
           amount: parseFloat(formData.amount),
           description: formData.description || null,
+          paid_to: paidToTrim || null,
           category: formData.category || null,
           notes: formData.notes || null
         }
@@ -712,6 +836,7 @@ export default function CashManagement() {
             transaction_type: newValues.transaction_type,
             amount: newValues.amount,
             description: newValues.description,
+            paid_to: newValues.paid_to,
             category: newValues.category,
             notes: newValues.notes,
             created_by: user?.email || '',
@@ -739,14 +864,7 @@ export default function CashManagement() {
       // 모달 닫기 및 상태 초기화 (데이터 로드 완료 후)
       setIsDialogOpen(false)
       setEditingTransaction(null)
-      setFormData({
-        transaction_date: formatDateTimeForDatetimeLocalInput(new Date()),
-        transaction_type: 'deposit',
-        amount: '',
-        description: '',
-        category: '',
-        notes: ''
-      })
+      setFormData(emptyCashFormData())
     } catch (error) {
       console.error('현금 거래 저장 오류:', error)
       toast.error('현금 거래를 저장하는 중 오류가 발생했습니다.')
@@ -814,6 +932,7 @@ export default function CashManagement() {
         transaction_type: isBankDeposit ? 'bank_deposit' : transaction.transaction_type,
         amount: transaction.amount.toString(),
         description: transaction.description || '',
+        paid_to: transaction.paid_to || '',
         category: transaction.category || '',
         notes: transaction.notes || ''
       })
@@ -900,28 +1019,127 @@ export default function CashManagement() {
 
   const handleNewTransaction = () => {
     setEditingTransaction(null)
-    setFormData({
-      transaction_date: formatDateTimeForDatetimeLocalInput(new Date()),
-      transaction_type: 'deposit',
-      amount: '',
-      description: '',
-      category: '',
-      notes: ''
-    })
+    setFormData(emptyCashFormData())
     setIsDialogOpen(true)
   }
 
-  // 전체 통계
-  const totalDeposits = transactions
+  const paidToFilterOptions = useMemo(
+    () => uniqueColOptions(transactions, cashPaidToFilterValue, colEmptyLabel, locale),
+    [transactions, locale]
+  )
+  const categoryFilterOptions = useMemo(
+    () => uniqueColOptions(transactions, cashCategoryFilterValue, colEmptyLabel, locale),
+    [transactions, locale]
+  )
+  const authorFilterOptions = useMemo(
+    () => uniqueColOptions(transactions, cashAuthorFilterValue, colEmptyLabel, locale),
+    [transactions, locale]
+  )
+  const paymentStatusFilterOptions = useMemo(
+    () => uniqueColOptions(transactions, cashPaymentStatusFilterValue, colEmptyLabel, locale),
+    [transactions, locale]
+  )
+
+  const cashColFilterFields = useMemo((): CashColFilterField[] => {
+    return [
+      {
+        key: 'type',
+        label: '유형',
+        options: CASH_TYPE_OPTIONS,
+        selected: typeColFilters,
+        onChange: setTypeColFilters,
+        searchable: false,
+      },
+      {
+        key: 'paid_to',
+        label: '결제처',
+        options: paidToFilterOptions,
+        selected: paidToColFilters,
+        onChange: setPaidToColFilters,
+      },
+      {
+        key: 'category',
+        label: '카테고리',
+        options: categoryFilterOptions,
+        selected: categoryColFilters,
+        onChange: setCategoryColFilters,
+      },
+      {
+        key: 'source',
+        label: '출처',
+        options: CASH_SOURCE_OPTIONS,
+        selected: sourceColFilters,
+        onChange: setSourceColFilters,
+        searchable: false,
+      },
+      {
+        key: 'payment_status',
+        label: '결제 상태',
+        options: paymentStatusFilterOptions,
+        selected: paymentStatusColFilters,
+        onChange: setPaymentStatusColFilters,
+      },
+      {
+        key: 'author',
+        label: '작성자',
+        options: authorFilterOptions,
+        selected: authorColFilters,
+        onChange: setAuthorColFilters,
+      },
+    ]
+  }, [
+    typeColFilters,
+    paidToColFilters,
+    categoryColFilters,
+    sourceColFilters,
+    paymentStatusColFilters,
+    authorColFilters,
+    paidToFilterOptions,
+    categoryFilterOptions,
+    paymentStatusFilterOptions,
+    authorFilterOptions,
+  ])
+
+  const columnFilteredTransactions = useMemo(() => {
+    return transactions.filter((tx) => {
+      return (
+        matchesColFilter(typeColFilters, cashTypeFilterValue(tx)) &&
+        matchesColFilter(paidToColFilters, cashPaidToFilterValue(tx)) &&
+        matchesColFilter(categoryColFilters, cashCategoryFilterValue(tx)) &&
+        matchesColFilter(sourceColFilters, cashSourceFilterValue(tx)) &&
+        matchesColFilter(paymentStatusColFilters, cashPaymentStatusFilterValue(tx)) &&
+        matchesColFilter(authorColFilters, cashAuthorFilterValue(tx))
+      )
+    })
+  }, [
+    transactions,
+    typeColFilters,
+    paidToColFilters,
+    categoryColFilters,
+    sourceColFilters,
+    paymentStatusColFilters,
+    authorColFilters,
+  ])
+
+  const hasActiveColFilters =
+    typeColFilters.size > 0 ||
+    paidToColFilters.size > 0 ||
+    categoryColFilters.size > 0 ||
+    sourceColFilters.size > 0 ||
+    paymentStatusColFilters.size > 0 ||
+    authorColFilters.size > 0
+
+  // 전체 통계 (컬럼 필터 반영, 잔액 카드는 별도)
+  const totalDeposits = columnFilteredTransactions
     .filter(t => t.transaction_type === 'deposit')
     .reduce((sum, t) => sum + t.amount, 0)
   
-  const totalWithdrawals = transactions
+  const totalWithdrawals = columnFilteredTransactions
     .filter(t => t.transaction_type === 'withdrawal')
     .reduce((sum, t) => sum + t.amount, 0)
 
   // 기간별 통계 계산
-  const periodTransactions = transactions.filter(t => {
+  const periodTransactions = columnFilteredTransactions.filter(t => {
     if (!startDate && !endDate) return true
     const transactionDate = new Date(t.transaction_date)
     if (startDate && transactionDate < new Date(startDate)) return false
@@ -971,7 +1189,7 @@ export default function CashManagement() {
   }, [])
 
   const sortedTransactions = useMemo(() => {
-    const rows = [...transactions]
+    const rows = [...columnFilteredTransactions]
     rows.sort((a, b) => {
       let va: unknown
       let vb: unknown
@@ -991,6 +1209,10 @@ export default function CashManagement() {
         case 'description':
           va = a.description
           vb = b.description
+          break
+        case 'paid_to':
+          va = a.paid_to
+          vb = b.paid_to
           break
         case 'category':
           va = a.category
@@ -1020,7 +1242,7 @@ export default function CashManagement() {
     })
     return rows
   }, [
-    transactions,
+    columnFilteredTransactions,
     cashTableSortKey,
     cashTableSortDir,
     cashSortLocale,
@@ -1048,6 +1270,7 @@ export default function CashManagement() {
         amount: Math.abs(Number(tx.amount ?? 0)),
         transaction_type: tx.transaction_type === 'deposit' ? 'deposit' : 'withdrawal',
         description: tx.description ?? '',
+        paid_to: tx.paid_to ?? '',
         category: tx.category,
         linked_payment_record_id:
           tx.reference_type === 'payment_record' ? tx.reference_id : null,
@@ -1066,7 +1289,7 @@ export default function CashManagement() {
         id: r.sourceId,
         submit_on: tx.transaction_date,
         amount: Math.abs(Number(tx.amount ?? 0)),
-        paid_to: tx.description ?? '',
+        paid_to: tx.paid_to?.trim() || tx.description || '',
         paid_for: tx.category ?? '',
         payment_method: null,
         sourceTable: r.sourceTable,
@@ -1154,36 +1377,36 @@ export default function CashManagement() {
   // 필터 변경 시 첫 페이지로 리셋
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm, typeFilter, categoryFilter, startDate, endDate])
+  }, [searchTerm, typeColFilters, paidToColFilters, categoryColFilters, sourceColFilters, paymentStatusColFilters, authorColFilters, startDate, endDate])
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="w-full min-w-0 max-w-full space-y-4 sm:space-y-6">
       {/* 기간 필터 - 모바일 컴팩트 */}
-      <Card className="border rounded-lg">
+      <Card className="border rounded-lg min-w-0 max-w-full">
         <CardHeader className="p-3 sm:p-4 lg:p-6 pb-0">
           <CardTitle className="text-sm sm:text-base">기간 필터</CardTitle>
           <CardDescription className="text-xs hidden sm:block">조회할 기간을 선택하세요</CardDescription>
         </CardHeader>
         <CardContent className="p-3 sm:p-4 lg:p-6 pt-3">
-          <div className="flex flex-wrap gap-2 sm:gap-4 items-end">
-            <div className="space-y-1 sm:space-y-2">
+          <div className="flex flex-wrap gap-2 sm:gap-4 items-end min-w-0">
+            <div className="space-y-1 sm:space-y-2 min-w-0 w-full sm:w-auto">
               <Label htmlFor="start_date" className="text-xs sm:text-sm">시작일</Label>
               <Input
                 id="start_date"
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full min-w-0 sm:w-[200px] h-8 sm:h-10 text-sm"
+                className="w-full min-w-0 max-w-full sm:max-w-[200px] h-8 sm:h-10 text-sm"
               />
             </div>
-            <div className="space-y-1 sm:space-y-2">
+            <div className="space-y-1 sm:space-y-2 min-w-0 w-full sm:w-auto">
               <Label htmlFor="end_date" className="text-xs sm:text-sm">종료일</Label>
               <Input
                 id="end_date"
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="w-full min-w-0 sm:w-[200px] h-8 sm:h-10 text-sm"
+                className="w-full min-w-0 max-w-full sm:max-w-[200px] h-8 sm:h-10 text-sm"
               />
             </div>
             <Button
@@ -1202,8 +1425,8 @@ export default function CashManagement() {
       </Card>
 
       {/* 현금 잔액 카드 - 모바일 컴팩트 */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4">
-        <Card className="border rounded-lg">
+      <div className="grid grid-cols-1 min-w-0 md:grid-cols-3 gap-2 sm:gap-4">
+        <Card className="border rounded-lg min-w-0 max-w-full">
           <CardHeader className="p-3 sm:pb-3 lg:p-6">
             <CardTitle className="text-xs sm:text-sm font-medium text-gray-600">
               {startDate || endDate ? '기간 잔액' : '현재 현금 잔액'}
@@ -1235,7 +1458,7 @@ export default function CashManagement() {
           </CardContent>
         </Card>
 
-        <Card className="border rounded-lg">
+        <Card className="border rounded-lg min-w-0 max-w-full">
           <CardHeader className="p-3 sm:pb-3 lg:p-6">
             <CardTitle className="text-xs sm:text-sm font-medium text-gray-600">
               {startDate || endDate ? '기간 입금' : '총 입금'}
@@ -1267,7 +1490,7 @@ export default function CashManagement() {
           </CardContent>
         </Card>
 
-        <Card className="border rounded-lg">
+        <Card className="border rounded-lg min-w-0 max-w-full">
           <CardHeader className="p-3 sm:pb-3 lg:p-6">
             <CardTitle className="text-xs sm:text-sm font-medium text-gray-600">
               {startDate || endDate ? '기간 출금' : '총 출금'}
@@ -1303,7 +1526,7 @@ export default function CashManagement() {
       <UnreceivedAssignedCashBalancePanel />
 
       {/* 필터 및 거래 내역 - 모바일 컴팩트 */}
-      <Card className="border rounded-lg">
+      <Card className="border rounded-lg min-w-0 max-w-full">
         <CardHeader className="p-3 sm:p-4 lg:p-6 pb-0">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <CardTitle className="text-base sm:text-lg">현금 거래 내역</CardTitle>
@@ -1406,6 +1629,19 @@ export default function CashManagement() {
                   </div>
 
                   <div className="space-y-2">
+                    <Label htmlFor="paid_to">결제처</Label>
+                    <ExpensePaidToCombobox
+                      id="paid_to"
+                      value={formData.paid_to}
+                      onChange={(paid_to) => setFormData({ ...formData, paid_to })}
+                      options={cashPaidToComboboxOptions}
+                      placeholder="결제처 선택 또는 입력"
+                      parentOpen={isDialogOpen}
+                      disabled={saving}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
                     <Label htmlFor="description">설명</Label>
                     <Input
                       id="description"
@@ -1469,8 +1705,8 @@ export default function CashManagement() {
         <CardContent className="p-3 sm:p-4 lg:p-6">
           <div className="space-y-3 sm:space-y-4">
             {/* 필터 - 모바일 컴팩트 */}
-            <div className="flex flex-wrap gap-2 sm:gap-4">
-              <div className="flex flex-1 min-w-0 sm:min-w-[200px] gap-2">
+            <div className="flex flex-wrap gap-2 sm:gap-4 min-w-0">
+              <div className="flex flex-1 min-w-0 gap-2">
                 <div className="relative flex-1 min-w-0">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <Input type="search"
@@ -1495,30 +1731,7 @@ export default function CashManagement() {
                   검색
                 </Button>
               </div>
-              <Select value={typeFilter} onValueChange={(value: 'all' | 'deposit' | 'withdrawal' | 'bank_deposit') => setTypeFilter(value)}>
-                <SelectTrigger className="w-full sm:w-[150px] h-8 sm:h-10 text-sm">
-                  <SelectValue placeholder="거래 유형" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체</SelectItem>
-                  <SelectItem value="deposit">입금</SelectItem>
-                  <SelectItem value="withdrawal">출금</SelectItem>
-                  <SelectItem value="bank_deposit">은행 Deposit</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-full sm:w-[150px] h-8 sm:h-10 text-sm">
-                  <SelectValue placeholder="카테고리" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체</SelectItem>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <CashColumnFiltersBar fields={cashColFilterFields} />
             </div>
 
             {/* 거래 내역 */}
@@ -1530,12 +1743,17 @@ export default function CashManagement() {
               <>
                 {/* 모바일: 카드 리스트 - 라벨/값 구조 */}
                 <div className="md:hidden space-y-3">
-                  {paginatedTransactions.map((transaction) => {
+                  {paginatedTransactions.length === 0 ? (
+                    <div className="text-center py-6 text-gray-500 text-sm">
+                      {hasActiveColFilters ? '선택한 필터에 맞는 거래가 없습니다.' : '거래 내역이 없습니다.'}
+                    </div>
+                  ) : (
+                  paginatedTransactions.map((transaction) => {
                     const isBankDeposit = transaction.description?.includes('은행 Deposit') || transaction.description === '은행 Deposit'
                     const displayType = isBankDeposit ? '은행' : (transaction.transaction_type === 'deposit' ? '입금' : '출금')
                     const date = new Date(transaction.transaction_date)
                     const dateStr = `${date.getFullYear()}. ${String(date.getMonth() + 1).padStart(2, '0')}. ${String(date.getDate()).padStart(2, '0')}.`
-                    const sourceLabel = transaction.source === 'payment_records' ? '예약 결제' : transaction.source === 'company_expenses' ? '회사 지출' : transaction.source === 'reservation_expenses' ? '예약 지출' : '현금 관리'
+                    const sourceBadge = cashSourceBadge(transaction.source)
                     const reconSrc = reconSourceFromCashTransaction(transaction)
                     const rowExempt = isCashRowExempt(transaction, exemptCashRowKeys)
                     const rowMatched = isCashRowStmtMatched(transaction, reconciledCashRowKeys)
@@ -1577,10 +1795,16 @@ export default function CashManagement() {
                         <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs text-gray-600 border-t border-gray-100 pt-3">
                           <span className="text-gray-400">설명</span>
                           <span className="truncate">{transaction.description || '-'}</span>
+                          <span className="text-gray-400">결제처</span>
+                          <span className="truncate">{transaction.paid_to?.trim() || '—'}</span>
                           <span className="text-gray-400">카테고리</span>
                           <span>{transaction.category || '-'}</span>
                           <span className="text-gray-400">출처</span>
-                          <span>{sourceLabel}</span>
+                          <span>
+                            <Badge variant={sourceBadge.variant} className="text-xs whitespace-nowrap">
+                              {sourceBadge.label}
+                            </Badge>
+                          </span>
                           {transaction.source === 'payment_records' ? (
                             <>
                               <span className="text-gray-400">결제 상태</span>
@@ -1617,13 +1841,14 @@ export default function CashManagement() {
                         </div>
                       </div>
                     )
-                  })}
+                  })
+                  )}
                 </div>
                 {/* 데스크톱: 테이블 */}
-                <div className="hidden md:block border rounded-lg overflow-hidden">
+                <div className="hidden md:block border rounded-lg overflow-x-auto max-w-full">
                 <Table>
                   <TableHeader>
-                    <TableRow className="h-10">
+                    <TableRow>
                       <TableHead className="py-2 w-12 text-center" title={tStmt('unmatchedTitle')}>
                         {tStmt('columnHeaderShort')}
                       </TableHead>
@@ -1635,12 +1860,17 @@ export default function CashManagement() {
                           onClick={() => handleCashTableSort('date')}
                         />
                       </TableHead>
-                      <TableHead className="w-32 py-2 align-bottom">
-                        <TableSortHeaderButton
+                      <TableHead className="w-36 min-w-[8.5rem] py-2 align-bottom">
+                        <CashColumnHeader
                           label="유형"
-                          active={cashTableSortKey === 'type'}
-                          dir={cashTableSortDir}
-                          onClick={() => handleCashTableSort('type')}
+                          sortKey="type"
+                          activeSortKey={cashTableSortKey}
+                          sortDir={cashTableSortDir}
+                          onSort={handleCashTableSort}
+                          filterOptions={CASH_TYPE_OPTIONS}
+                          filterSelected={typeColFilters}
+                          onFilterChange={setTypeColFilters}
+                          searchable={false}
                         />
                       </TableHead>
                       <TableHead className="py-2 align-bottom">
@@ -1659,28 +1889,53 @@ export default function CashManagement() {
                           onClick={() => handleCashTableSort('description')}
                         />
                       </TableHead>
-                      <TableHead className="w-40 py-2 align-bottom">
-                        <TableSortHeaderButton
+                      <TableHead className="w-44 min-w-[10rem] py-2 align-bottom">
+                        <CashColumnHeader
+                          label="결제처"
+                          sortKey="paid_to"
+                          activeSortKey={cashTableSortKey}
+                          sortDir={cashTableSortDir}
+                          onSort={handleCashTableSort}
+                          filterOptions={paidToFilterOptions}
+                          filterSelected={paidToColFilters}
+                          onFilterChange={setPaidToColFilters}
+                        />
+                      </TableHead>
+                      <TableHead className="w-44 min-w-[10rem] py-2 align-bottom">
+                        <CashColumnHeader
                           label="카테고리"
-                          active={cashTableSortKey === 'category'}
-                          dir={cashTableSortDir}
-                          onClick={() => handleCashTableSort('category')}
+                          sortKey="category"
+                          activeSortKey={cashTableSortKey}
+                          sortDir={cashTableSortDir}
+                          onSort={handleCashTableSort}
+                          filterOptions={categoryFilterOptions}
+                          filterSelected={categoryColFilters}
+                          onFilterChange={setCategoryColFilters}
                         />
                       </TableHead>
                       <TableHead className="w-44 min-w-[11rem] py-2 align-bottom">
-                        <TableSortHeaderButton
+                        <CashColumnHeader
                           label="출처"
-                          active={cashTableSortKey === 'source'}
-                          dir={cashTableSortDir}
-                          onClick={() => handleCashTableSort('source')}
+                          sortKey="source"
+                          activeSortKey={cashTableSortKey}
+                          sortDir={cashTableSortDir}
+                          onSort={handleCashTableSort}
+                          filterOptions={CASH_SOURCE_OPTIONS}
+                          filterSelected={sourceColFilters}
+                          onFilterChange={setSourceColFilters}
+                          searchable={false}
                         />
                       </TableHead>
-                      <TableHead className="min-w-[7rem] max-w-[10rem] py-2 align-bottom">
-                        <TableSortHeaderButton
+                      <TableHead className="min-w-[9rem] max-w-[12rem] py-2 align-bottom">
+                        <CashColumnHeader
                           label="결제 상태"
-                          active={cashTableSortKey === 'payment_status'}
-                          dir={cashTableSortDir}
-                          onClick={() => handleCashTableSort('payment_status')}
+                          sortKey="payment_status"
+                          activeSortKey={cashTableSortKey}
+                          sortDir={cashTableSortDir}
+                          onSort={handleCashTableSort}
+                          filterOptions={paymentStatusFilterOptions}
+                          filterSelected={paymentStatusColFilters}
+                          onFilterChange={setPaymentStatusColFilters}
                         />
                       </TableHead>
                       <TableHead className="py-2 align-bottom">
@@ -1691,24 +1946,31 @@ export default function CashManagement() {
                           onClick={() => handleCashTableSort('notes')}
                         />
                       </TableHead>
-                      <TableHead className="py-2 align-bottom">
-                        <TableSortHeaderButton
+                      <TableHead className="w-40 min-w-[9rem] py-2 align-bottom">
+                        <CashColumnHeader
                           label="작성자"
-                          active={cashTableSortKey === 'author'}
-                          dir={cashTableSortDir}
-                          onClick={() => handleCashTableSort('author')}
+                          sortKey="author"
+                          activeSortKey={cashTableSortKey}
+                          sortDir={cashTableSortDir}
+                          onSort={handleCashTableSort}
+                          filterOptions={authorFilterOptions}
+                          filterSelected={authorColFilters}
+                          onFilterChange={setAuthorColFilters}
                         />
                       </TableHead>
                       <TableHead className="text-right w-40 py-2">작업</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {paginatedTransactions.map((transaction) => {
-                      const sourceLabel =
-                        transaction.source === 'payment_records' ? '예약 결제' :
-                        transaction.source === 'company_expenses' ? '회사 지출' :
-                        transaction.source === 'reservation_expenses' ? '예약 지출' :
-                        '현금 관리'
+                    {paginatedTransactions.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={12} className="py-8 text-center text-sm text-gray-500">
+                          {hasActiveColFilters ? '선택한 필터에 맞는 거래가 없습니다.' : '거래 내역이 없습니다.'}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                    paginatedTransactions.map((transaction) => {
+                      const sourceBadge = cashSourceBadge(transaction.source)
                       const reconSrc = reconSourceFromCashTransaction(transaction)
                       const rowExempt = isCashRowExempt(transaction, exemptCashRowKeys)
                       const rowMatched = isCashRowStmtMatched(transaction, reconciledCashRowKeys)
@@ -1790,6 +2052,12 @@ export default function CashManagement() {
                               transaction.description || '-'
                             )}
                           </TableCell>
+                          <TableCell
+                            className="w-40 min-w-[8rem] py-1 text-sm truncate"
+                            title={transaction.paid_to?.trim() || ''}
+                          >
+                            {transaction.paid_to?.trim() || '—'}
+                          </TableCell>
                           <TableCell className="w-40 py-1">
                             {transaction.category ? (
                               <Badge variant="outline" className="text-xs">{transaction.category}</Badge>
@@ -1798,8 +2066,8 @@ export default function CashManagement() {
                             )}
                           </TableCell>
                           <TableCell className="w-44 min-w-[11rem] py-1">
-                            <Badge variant="secondary" className="text-xs whitespace-nowrap">
-                              {sourceLabel}
+                            <Badge variant={sourceBadge.variant} className="text-xs whitespace-nowrap">
+                              {sourceBadge.label}
                             </Badge>
                           </TableCell>
                           <TableCell className="min-w-[7rem] max-w-[10rem] py-1 text-xs text-gray-800" title={transaction.payment_status || ''}>
@@ -1854,7 +2122,8 @@ export default function CashManagement() {
                           </TableCell>
                         </TableRow>
                       )
-                    })}
+                    })
+                    )}
                   </TableBody>
                 </Table>
                 </div>
@@ -1862,7 +2131,7 @@ export default function CashManagement() {
             )}
 
             {/* 페이지네이션 - 모바일 컴팩트 */}
-            {transactions.length > 0 && (
+            {sortedTransactions.length > 0 && (
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-3 sm:mt-4 pt-3 sm:pt-4 border-t">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs sm:text-sm text-gray-600">페이지당:</span>
@@ -1884,7 +2153,7 @@ export default function CashManagement() {
                     </SelectContent>
                   </Select>
                   <span className="text-sm text-gray-600">
-                    전체 {transactions.length}개 중 {startIndex + 1}-{Math.min(endIndex, transactions.length)}개 표시
+                    전체 {sortedTransactions.length}개 중 {startIndex + 1}-{Math.min(endIndex, sortedTransactions.length)}개 표시
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1959,6 +2228,7 @@ export default function CashManagement() {
                                   return isBankDeposit ? '은행 Deposit' : (history.old_values.transaction_type === 'deposit' ? '입금' : '출금')
                                 })()}</div>
                                 <div>금액: ${Number(history.old_values.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                                <div>결제처: {history.old_values.paid_to || '-'}</div>
                                 <div>설명: {history.old_values.description || '-'}</div>
                                 <div>카테고리: {history.old_values.category || '-'}</div>
                                 <div>메모: {history.old_values.notes || '-'}</div>
@@ -1973,6 +2243,7 @@ export default function CashManagement() {
                                   return isBankDeposit ? '은행 Deposit' : (history.new_values.transaction_type === 'deposit' ? '입금' : '출금')
                                 })()}</div>
                                 <div>금액: ${Number(history.new_values.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                                <div>결제처: {history.new_values.paid_to || '-'}</div>
                                 <div>설명: {history.new_values.description || '-'}</div>
                                 <div>카테고리: {history.new_values.category || '-'}</div>
                                 <div>메모: {history.new_values.notes || '-'}</div>
@@ -1989,6 +2260,7 @@ export default function CashManagement() {
                             return isBankDeposit ? '은행 Deposit' : (history.new_values.transaction_type === 'deposit' ? '입금' : '출금')
                           })()}</div>
                           <div>금액: ${Number(history.new_values.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                          <div>결제처: {history.new_values.paid_to || '-'}</div>
                           <div>설명: {history.new_values.description || '-'}</div>
                         </div>
                       )}
@@ -2000,6 +2272,7 @@ export default function CashManagement() {
                             return isBankDeposit ? '은행 Deposit' : (history.old_values.transaction_type === 'deposit' ? '입금' : '출금')
                           })()}</div>
                           <div>금액: ${Number(history.old_values.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                          <div>결제처: {history.old_values.paid_to || '-'}</div>
                           <div>설명: {history.old_values.description || '-'}</div>
                         </div>
                       )}

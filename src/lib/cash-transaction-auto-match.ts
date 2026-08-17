@@ -25,6 +25,7 @@ export type CashAutoMatchInputRow = {
   amount: number
   transaction_type: 'deposit' | 'withdrawal'
   description: string
+  paid_to?: string | null
   category: string | null
   /** 입금 — payment_record 연결(reference) 여부 */
   linked_payment_record_id?: string | null
@@ -338,7 +339,7 @@ function buildCandidatesForCashRow(
   const absCash = Math.abs(Number(cash.amount ?? 0))
   if (absCash <= AMOUNT_EQUAL_EPS) return []
   const tol = expenseReconciliationAmountTolerance(absCash)
-  const cashText = `${cash.description} ${cash.category ?? ''}`.trim()
+  const cashText = `${cash.paid_to ?? ''} ${cash.description} ${cash.category ?? ''}`.trim()
   const isDeposit = cash.transaction_type === 'deposit'
   const candidates: CashAutoMatchCandidate[] = []
 

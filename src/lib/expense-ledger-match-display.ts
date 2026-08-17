@@ -315,14 +315,14 @@ async function fetchCashTransactionDetails(
   if (ids.length === 0) return []
   const { data } = await supabase
     .from('cash_transactions')
-    .select('id,amount,transaction_date,transaction_type,description,category,notes')
+    .select('id,amount,transaction_date,transaction_type,description,category,notes,paid_to')
     .in('id', ids)
   return ((data || []) as Record<string, unknown>[]).map((r) => {
     const id = String(r.id)
     const key = `cash_transactions:${id}`
     const type = String(r.transaction_type ?? '').trim()
-    const category = String(r.category ?? '').trim()
     const desc = r.description == null ? null : String(r.description).trim() || null
+    const paidTo = r.paid_to == null ? '' : String(r.paid_to).trim()
     return {
       source_table: 'cash_transactions',
       source_id: id,
@@ -330,7 +330,7 @@ async function fetchCashTransactionDetails(
       ledger_amount: Math.abs(Number(r.amount ?? 0)),
       date_primary_ymd: ymdFromIso(String(r.transaction_date ?? '')),
       date_secondary_ymd: null,
-      paid_to: category || '—',
+      paid_to: paidTo || '—',
       paid_for: type === 'deposit' ? '현금 입금' : type === 'withdrawal' ? '현금 출금' : '현금 거래',
       description: desc ?? (r.notes == null ? null : String(r.notes).trim() || null),
       payment_method: null,

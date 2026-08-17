@@ -2057,7 +2057,7 @@ export default function CompanyExpenseManager({
   )
 
   return (
-    <div className="space-y-3 sm:space-y-4">
+    <div className="space-y-3 sm:space-y-4 min-w-0 max-w-full overflow-x-hidden">
       <div className="bg-gray-50 rounded-lg p-2 sm:p-3 space-y-2">
         <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 sm:items-stretch">
           <div className="flex flex-1 gap-2 min-w-0">
