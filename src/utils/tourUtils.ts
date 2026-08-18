@@ -1,5 +1,7 @@
 // 투어 관련 유틸리티 함수들
 
+import { reservationExcludedFromTourAssignment } from '@/lib/reservationStatus'
+
 /** tours.reservation_ids를 string[]로 정규화 (배열/JSON 문자열/콤마 구분 문자열/단일 UUID 지원, 중복 제거) */
 export function normalizeReservationIds(reservationIds: unknown): string[] {
   let ids: string[] = []
@@ -270,7 +272,7 @@ export function sumPeopleSameProductDate(
     }
     const cancelled = isReservationCancelledStatus(r.status)
     const deleted = isReservationDeletedStatus(r.status)
-    if (mode === 'nonCancelled' && (cancelled || deleted)) return sum
+    if (mode === 'nonCancelled' && (cancelled || deleted || reservationExcludedFromTourAssignment(r.status))) return sum
     if (mode === 'cancelled' && !cancelled) return sum
     const p = r.total_people
     if (typeof p === 'number' && !Number.isNaN(p)) return sum + p
@@ -293,6 +295,7 @@ export const calculateAssignedPeople = (tour: any, reservations: any[]) => {
     if (!idSet.has(String(reservation.id ?? '').trim())) return total
     if (isReservationCancelledStatus(reservation.status)) return total
     if (isReservationDeletedStatus(reservation.status)) return total
+    if (reservationExcludedFromTourAssignment(reservation.status)) return total
     const p = reservation.total_people
     if (typeof p === 'number' && !Number.isNaN(p)) return total + p
     const adults = Number(reservation.adults) || 0
@@ -315,7 +318,8 @@ export const calculateUnassignedPeople = (tour: any, reservations: any[]) => {
     !assignedReservationIds.includes(r.id) && 
     r.product_id === tour.product_id && 
     r.tour_date === tour.tour_date &&
-    !isReservationDeletedStatus(r.status)
+    !isReservationDeletedStatus(r.status) &&
+    !reservationExcludedFromTourAssignment(r.status)
   )
   
   return unassignedReservations.reduce((total, reservation) => {
@@ -332,7 +336,8 @@ export const getPendingReservations = (tour: any, reservations: any[]) => {
     !assignedReservationIds.includes(r.id) && 
     r.product_id === tour.product_id && 
     r.tour_date === tour.tour_date &&
-    !isReservationDeletedStatus(r.status)
+    !isReservationDeletedStatus(r.status) &&
+    !reservationExcludedFromTourAssignment(r.status)
   )
 }
 

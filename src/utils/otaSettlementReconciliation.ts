@@ -376,7 +376,7 @@ export function reconcileOtaAgainstSystem(
   for (const s of systemRows) {
     if (usedSystemIds.has(s.id)) continue
     const st = normalizeStatus(s.status)
-    if (st === 'deleted' || st === 'cancelled' || st === 'canceled') continue
+    if (st === 'deleted' || st === 'cancelled' || st === 'canceled' || st === 'date_changed') continue
     const sysAmtN =
       s.channelSettlementAmount != null && Number.isFinite(Number(s.channelSettlementAmount))
         ? Number(s.channelSettlementAmount)

@@ -2016,8 +2016,12 @@ export function TourDetailPageView({
       channelRN: reservation.channel_rn || '',
       addedBy: reservation.added_by || '',
       addedTime: reservation.created_at || '',
-      tourId: reservation.tour_id || '',
-      status: (reservation.status as 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
+      tourId: reservation.tour_id || reservation.tourId || '',
+      status: reservation.status || 'pending',
+      dateChangeLiveReservationId:
+        reservation.dateChangeLiveReservationId || reservation.date_change_live_reservation_id || null,
+      dateChangePlaceholderReservationId:
+        reservation.dateChangePlaceholderReservationId || reservation.date_change_placeholder_reservation_id || null,
       selectedOptions: (typeof reservation.selected_options === 'string'
         ? (() => { try { return JSON.parse(reservation.selected_options) } catch { return {} } })()
         : (reservation.selected_options as { [optionId: string]: string[] }) || {}),
@@ -3038,6 +3042,13 @@ export function TourDetailPageView({
               />
             </div>
           }
+          onOpenReservation={(id: string) => {
+            void handleOpenReservationById(id)
+          }}
+          onAfterDateChange={async (liveId: string) => {
+            await tourData.refreshReservations()
+            await handleOpenReservationById(liveId)
+          }}
           onSubmit={async (reservationData: any) => {
             try {
               const fullPayload = toReservationUpdatePayload(reservationData)

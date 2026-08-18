@@ -4,6 +4,8 @@
 
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { normalizeReservationIds, isReservationCancelledStatus } from '@/utils/tourUtils'
+import { reservationExcludedFromTourAssignment } from '@/lib/reservationStatus'
+import { applyDateChangedPlaceholderChoicesToTourCounts } from '@/lib/dateChangedPlaceholderLx'
 import {
   aggregateTourChoiceCounts,
   formatTourChoiceCountsChipLabel,
@@ -268,6 +270,32 @@ export async function fetchTicketToursForCheckIn(
       allResIds.add(rid)
     }
   }
+
+  const tourIds = typedToursData.map((tour) => String(tour.id || '').trim()).filter(Boolean)
+  const ticketSnaps: Array<{
+    reservation_id?: string | null
+    tour_id?: string | null
+    tour_ids?: unknown
+    status?: string | null
+  }> = []
+  const TB_BATCH = 80
+  for (let i = 0; i < tourIds.length; i += TB_BATCH) {
+    const chunk = tourIds.slice(i, i + TB_BATCH)
+    const { data: tbRows, error: tbErr } = await supabaseClient
+      .from('ticket_bookings')
+      .select('reservation_id, tour_id, status')
+      .in('tour_id', chunk)
+    if (tbErr) {
+      console.warn('투어 선택 티켓 조회 경고:', tbErr)
+      break
+    }
+    for (const tb of tbRows || []) {
+      ticketSnaps.push(tb)
+      const rid = typeof tb.reservation_id === 'string' ? tb.reservation_id.trim() : ''
+      if (rid) allResIds.add(rid)
+    }
+  }
+
   const resIdList = [...allResIds]
   type ResPeopleRow = {
     id: string
@@ -299,6 +327,30 @@ export async function fetchTicketToursForCheckIn(
     [...resById.values()]
   )
 
+  const tourChoiceCountsByTourId = new Map<string, TourChoiceCounts>()
+  const peopleByTourId = new Map<string, number>()
+  for (const tour of typedToursData) {
+    let peopleSum = 0
+    const assignedResList: Array<{ id: string; total_people?: number | null }> = []
+    for (const rid of normalizeReservationIds(tour.reservation_ids)) {
+      const r = resById.get(rid)
+      if (!r || isReservationCancelledStatus(r.status) || reservationExcludedFromTourAssignment(r.status)) continue
+      peopleSum += Number(r.total_people) || 0
+      assignedResList.push(r)
+    }
+    peopleByTourId.set(tour.id, peopleSum)
+    const counts = aggregateTourChoiceCounts(assignedResList, choiceRowsByResId)
+    if (tourChoiceCountsHasDisplayable(counts)) {
+      tourChoiceCountsByTourId.set(tour.id, counts)
+    }
+  }
+  applyDateChangedPlaceholderChoicesToTourCounts({
+    tourChoiceCountsByTourId,
+    bookings: ticketSnaps,
+    placeholders: [...resById.values()],
+    choiceRowsByResId,
+  })
+
   return typedToursData.map((tour) => {
     const base: TicketTourPickerRow = { ...tour }
     if (tour.product_id && productsMap.has(tour.product_id)) {
@@ -307,18 +359,9 @@ export async function fetchTicketToursForCheckIn(
     }
     base.guide_display = staffFieldToDisplay(tour.tour_guide_id, teamMap)
     base.assistant_display = staffFieldToDisplay(tour.assistant_id, teamMap)
-
-    let peopleSum = 0
-    const assignedResList: Array<{ id: string; total_people?: number | null }> = []
-    for (const rid of normalizeReservationIds(tour.reservation_ids)) {
-      const r = resById.get(rid)
-      if (!r || isReservationCancelledStatus(r.status)) continue
-      peopleSum += Number(r.total_people) || 0
-      assignedResList.push(r)
-    }
-    base.total_people = peopleSum
-    const counts = aggregateTourChoiceCounts(assignedResList, choiceRowsByResId)
-    if (tourChoiceCountsHasDisplayable(counts)) {
+    base.total_people = peopleByTourId.get(tour.id) ?? 0
+    const counts = tourChoiceCountsByTourId.get(tour.id)
+    if (counts && tourChoiceCountsHasDisplayable(counts)) {
       base.choice_counts = counts
     }
     return base

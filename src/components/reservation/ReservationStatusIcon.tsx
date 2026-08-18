@@ -32,6 +32,9 @@ export function ReservationStatusIcon({ status, className = 'h-3.5 w-3.5 shrink-
   if (x === 'no_show') {
     return <XCircle className={`${className} text-orange-600`} {...aria} />
   }
+  if (x === 'date_changed') {
+    return <Circle className={`${className} text-violet-600`} {...aria} />
+  }
   if (x === 'pending') {
     return <AlertCircle className={`${className} text-amber-600`} {...aria} />
   }

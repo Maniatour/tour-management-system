@@ -48,7 +48,7 @@ export type FollowUpPipelineStepKey = 'confirmation' | 'resident' | 'departure' 
 
 export function reservationExcludedFromFollowUpPipeline(status: string | null | undefined): boolean {
   const s = String(status ?? '').toLowerCase()
-  return s === 'cancelled' || s === 'canceled' || s === 'deleted' || s === 'no_show'
+  return s === 'cancelled' || s === 'canceled' || s === 'deleted' || s === 'no_show' || s === 'date_changed'
 }
 
 /** 문의만(inquiry) 단계 — 결제 전 등. 컨펌·거주·출발·픽업 Follow-up 집계에서 제외 */

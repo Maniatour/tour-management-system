@@ -119,6 +119,24 @@ function packNotIncluded(base: number, resident: number): NotIncludedCalcResult 
   const r = roundUsd2(resident)
   return { baseTotal: b, residentFees: r, total: roundUsd2(b + r) }
 }
+
+function PriceCalcHint({
+  stored,
+  calculated,
+  isKorean,
+}: {
+  stored: number
+  calculated?: number | null | undefined
+  isKorean: boolean
+}) {
+  if (calculated == null || !Number.isFinite(calculated)) return null
+  if (Math.abs(Number(calculated) - Number(stored || 0)) < 0.02) return null
+  return (
+    <span className="text-[10px] font-medium text-amber-700 tabular-nums whitespace-nowrap">
+      {isKorean ? '계산' : 'calc'} ${Number(calculated).toFixed(2)}
+    </span>
+  )
+}
 interface ProductOption {
   id: string
   name: string
@@ -275,6 +293,14 @@ interface PricingSectionProps {
     company_total_revenue: number | null
     operating_profit: number | null
   } | null
+  /** 현재 채널·날짜·초이스 기준 dynamic_pricing 계산값 — DB와 다를 때만 입력칸 옆에 표시 */
+  dynamicPriceFormula?: {
+    adultPrice: number
+    childPrice: number
+    infantPrice: number
+    commissionPercent: number
+    notIncludedPrice: number
+  } | null
   /** 가격 계산 안내 모달 — 예약 수정 모달 위에 표시 */
   helpModalOverlayZIndex?: number
 }
@@ -304,6 +330,7 @@ export default function PricingSection({
   channels = [],
   products = [],
   pricingDbSnapshot = null,
+  dynamicPriceFormula = null,
   helpModalOverlayZIndex,
   t
 }: PricingSectionProps) {
@@ -887,15 +914,12 @@ export default function PricingSection({
     (formData as { status?: string }).status,
   ])
 
-  /** 표시·포커스: DB/OTA가 0으로 남아 있어도 계산 잔액이 크면 계산값을 보여 줌 */
+  /** 표시·포커스: DB에 잔액이 있으면 저장된 값을 유지하고, 계산값은 옆에만 표시 */
   const displayedOnSiteBalance = useCallback(() => {
     const defaultBalance = computeOnSiteBalanceAmount()
     const stored = formData.onSiteBalanceAmount
     if (stored === undefined || stored === null) return defaultBalance
     if (pricingFieldsFromDb.onSiteBalanceAmount) {
-      if (Math.abs(defaultBalance - Number(stored)) > 0.01) {
-        return defaultBalance
-      }
       return roundUsd2(Number(stored))
     }
     if (stored === 0 && defaultBalance > 0.01) return defaultBalance
@@ -1072,6 +1096,9 @@ export default function PricingSection({
     if (productSalePriceFocusDepthRef.current > 0) {
       return
     }
+    if (isExistingPricingLoaded && pricingFieldsFromDb.onSiteBalanceAmount === true) {
+      return
+    }
     const totalCustomerPayment = effectiveTotalCustomerPayment()
     const calculatedBalance = computeOnSiteBalanceAmount()
     const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
@@ -1136,22 +1163,6 @@ export default function PricingSection({
         onSiteBalanceAmount: calculatedBalance,
         balanceAmount: calculatedBalance,
       }))
-      // DB에 남아 있는 구버전 잔액(비거주자 비용 누락 등)을 가격 탭과 동일 값으로 맞춤
-      if (
-        reservationId &&
-        balanceDifference > 0.01 &&
-        Number.isFinite(calculatedBalance)
-      ) {
-        void supabase
-          .from('reservation_pricing')
-          .update({ balance_amount: calculatedBalance })
-          .eq('reservation_id', reservationId)
-          .then(({ error }) => {
-            if (error) {
-              console.warn('PricingSection: balance_amount 동기화 실패', error)
-            }
-          })
-      }
     }
     prevBalanceDepsRef.current = currentDeps
   }, [
@@ -1174,6 +1185,7 @@ export default function PricingSection({
     setFormData,
     productSalePriceCommitTick,
     pricingFieldsFromDb.onSiteBalanceAmount,
+    isExistingPricingLoaded,
     markPricingEdited,
     reservationId,
   ])
@@ -1182,6 +1194,14 @@ export default function PricingSection({
   // OTA 채널의 경우 OTA 판매가를 depositAmount로 설정하고, 채널 결제 금액과 수수료도 함께 업데이트
   useEffect(() => {
     if (productSalePriceFocusDepthRef.current > 0) {
+      return
+    }
+    if (
+      isExistingPricingLoaded &&
+      pricingFieldsFromDb.depositAmount === true &&
+      (pricingFieldsFromDb.onlinePaymentAmount === true ||
+        pricingFieldsFromDb.commission_base_price === true)
+    ) {
       return
     }
     // OTA 채널 여부 확인
@@ -1349,7 +1369,7 @@ export default function PricingSection({
         }
       }
     }
-  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.status, formData.not_included_price, formData.pricingAdults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, formData.refundAmount, formData.totalPrice, channels, returnedAmount, effectiveTotalCustomerPayment, calculatedBalanceReceivedTotal, isExistingPricingLoaded, channelPaymentLoadedFromDb, channelPaymentPricingTouched, setFormData, notIncludedBreakdown.totalUsd, productSalePriceCommitTick])
+  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.status, formData.not_included_price, formData.pricingAdults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, formData.refundAmount, formData.totalPrice, channels, returnedAmount, effectiveTotalCustomerPayment, calculatedBalanceReceivedTotal, isExistingPricingLoaded, channelPaymentLoadedFromDb, channelPaymentPricingTouched, pricingFieldsFromDb.depositAmount, pricingFieldsFromDb.onlinePaymentAmount, pricingFieldsFromDb.commission_base_price, setFormData, notIncludedBreakdown.totalUsd, productSalePriceCommitTick])
 
   // 선택된 채널 정보 가져오기
   const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
@@ -3165,6 +3185,13 @@ export default function PricingSection({
                       step="0.01"
                       placeholder="0"
                     />
+                    {isExistingPricingLoaded && (
+                      <PriceCalcHint
+                        stored={formData.adultProductPrice || 0}
+                        calculated={dynamicPriceFormula?.adultPrice}
+                        isKorean={isKorean}
+                      />
+                    )}
                   </div>
                   {/* 불포함 가격 */}
                   <div className="flex items-center space-x-1 flex-wrap gap-x-1">
@@ -3203,6 +3230,13 @@ export default function PricingSection({
                       step="0.01"
                       placeholder="0"
                     />
+                    {isExistingPricingLoaded && (
+                      <PriceCalcHint
+                        stored={formData.not_included_price || 0}
+                        calculated={dynamicPriceFormula?.notIncludedPrice}
+                        isKorean={isKorean}
+                      />
+                    )}
                   </div>
                   {/* 합계 */}
                   <div className="flex items-center space-x-1">
@@ -3274,6 +3308,13 @@ export default function PricingSection({
                         step="0.01"
                         placeholder="0"
                       />
+                      {isExistingPricingLoaded && (
+                        <PriceCalcHint
+                          stored={formData.childProductPrice || 0}
+                          calculated={dynamicPriceFormula?.childPrice}
+                          isKorean={isKorean}
+                        />
+                      )}
                       <span className="text-gray-500">x{formData.child}</span>
                       <span className="font-medium">${((formData.childProductPrice || 0) * formData.child).toFixed(2)}</span>
                     </div>
@@ -3312,6 +3353,13 @@ export default function PricingSection({
                         step="0.01"
                         placeholder="0"
                       />
+                      {isExistingPricingLoaded && (
+                        <PriceCalcHint
+                          stored={formData.infantProductPrice || 0}
+                          calculated={dynamicPriceFormula?.infantPrice}
+                          isKorean={isKorean}
+                        />
+                      )}
                       <span className="text-gray-500">x{formData.infant}</span>
                       <span className="font-medium">${((formData.infantProductPrice || 0) * formData.infant).toFixed(2)}</span>
                     </div>
@@ -3955,9 +4003,22 @@ export default function PricingSection({
                     </span>
                   </div>
                 ) : (
-                  <span className={`text-sm font-bold ${priceTextClass('totalPrice')}`}>
-                    ${effectiveTotalCustomerPayment().toFixed(2)}
-                  </span>
+                  <div className="flex flex-col items-end gap-0.5">
+                    <span className={`text-sm font-bold ${priceTextClass('totalPrice')}`}>
+                      $
+                      {(isExistingPricingLoaded && pricingFieldsFromDb.totalPrice
+                        ? roundUsd2(Number(formData.totalPrice) || 0)
+                        : effectiveTotalCustomerPayment()
+                      ).toFixed(2)}
+                    </span>
+                    {isExistingPricingLoaded && pricingFieldsFromDb.totalPrice && (
+                      <PriceCalcHint
+                        stored={Number(formData.totalPrice) || 0}
+                        calculated={effectiveTotalCustomerPayment()}
+                        isKorean={isKorean}
+                      />
+                    )}
+                  </div>
                 )}
               </div>
               {isExistingPricingLoaded && reservationPricingId && pricingDbSnapshot != null && (
@@ -4015,7 +4076,11 @@ export default function PricingSection({
                   {isKorean ? '총 결제 예정 금액' : 'Total Payment Due'}
                 </span>
                 <span className={`text-xs font-bold text-primary ${priceTextClass('totalPrice')}`}>
-                  ${effectiveTotalCustomerPayment().toFixed(2)}
+                  $
+                  {(isExistingPricingLoaded && pricingFieldsFromDb.totalPrice
+                    ? roundUsd2(Number(formData.totalPrice) || 0)
+                    : effectiveTotalCustomerPayment()
+                  ).toFixed(2)}
                 </span>
               </div>
               
@@ -4169,6 +4234,15 @@ export default function PricingSection({
                   />
                 </div>
               </div>
+              {isExistingPricingLoaded && pricingFieldsFromDb.onSiteBalanceAmount && (
+                <div className="flex justify-end mb-1.5">
+                  <PriceCalcHint
+                    stored={displayedOnSiteBalance()}
+                    calculated={computeOnSiteBalanceAmount()}
+                    isKorean={isKorean}
+                  />
+                </div>
+              )}
             </div>
 
             {/* 3️⃣ 채널 정산 기준 (Channel / OTA View) */}

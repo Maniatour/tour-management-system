@@ -3533,6 +3533,7 @@
       "completed": "완료",
       "cancelled": "취소",
       "no_show": "노쇼",
+      "date_changed": "날짜변경",
       "recruiting": "모집중",
       "deleted": "삭제됨",
       "paymentRequested": "입금요청"
@@ -4067,6 +4068,7 @@
       "cancelled": "취소됨",
       "cancelled_rebooking": "취소됨 - 재예약",
       "no_show": "노쇼",
+      "date_changed": "날짜변경",
       "deleted": "삭제됨"
     },
     "reservationOptions": {
@@ -4551,7 +4553,10 @@
       "ticketNeedCheckEmptyLxMismatchSub": "이 구간에 해당하는 L/X 수량 불일치가 없습니다.",
       "ticketNeedCheckLxTour": "투어",
       "ticketNeedCheckLxTicket": "티켓",
-      "ticketNeedCheckLxToursThisDay": "연결된 투어",
+      "ticketNeedCheckLxToursThisDay": "관련 투어",
+      "ticketNeedCheckLxTourKindLinked": "연결됨",
+      "ticketNeedCheckLxTourKindSameProduct": "같은 상품",
+      "ticketNeedCheckLxTourKindOvernightCheckIn": "숙박 앤텔롭 체크인",
       "ticketNeedCheckLxMismatchBadge": "L/X 불일치",
       "ticketNeedCheckLxCluster": "연결 묶음",
       "ticketNeedCheckColCheckIn": "체크인",

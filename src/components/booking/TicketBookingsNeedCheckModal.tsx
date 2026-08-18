@@ -14,13 +14,18 @@ import TicketBookingAxisSummary from '@/components/booking/TicketBookingAxisSumm
 import TicketBookingCardView, {
   type TicketBookingCardViewRow,
 } from '@/components/booking/TicketBookingCardView';
+import type { TicketBookingCardActionHandlers } from '@/components/booking/TicketBookingCardActionBar';
 import { normalizeTicketBookingTourIds } from '@/lib/ticketBookingTourIds';
 import {
   buildLinkedLxMismatchDateGroups,
+  collectNeedCheckRelatedTours,
   formatCanyonLxPair,
   ticketBookingCanyonKeyFromBooking,
   type LinkedLxMismatchBooking,
   type LinkedLxMismatchDateGroup,
+  type NeedCheckRelatedTourKind,
+  type NeedCheckRelatedTourRow,
+  type NeedCheckTourCatalogRow,
 } from '@/lib/ticketBookingDateView';
 
 type SeasonSlice = { season_dates: SeasonDate[] | null };
@@ -33,6 +38,16 @@ type Props = {
   bookings: TicketBookingNeedCheckRow[];
   supplierProductsMap: Map<string, SeasonSlice>;
   onEdit: (booking: TicketBookingNeedCheckRow) => void;
+  actionHandlers?: TicketBookingCardActionHandlers;
+  onSaveNote?: (booking: TicketBookingNeedCheckRow, note: string) => void | Promise<void>;
+  onAddDocuments?: (booking: TicketBookingNeedCheckRow, files: File[]) => void | Promise<void>;
+  onRemoveDocument?: (booking: TicketBookingNeedCheckRow, index: number) => void | Promise<void>;
+  onSaveAmounts?: (
+    bookingId: string,
+    amounts: { expense: number; paid_amount: number }
+  ) => void | Promise<void>;
+  onOpenLinkedTour?: (tourId: string) => void;
+  relatedToursCatalog?: NeedCheckTourCatalogRow[];
 };
 
 type NeedCheckTab = 'no_tour' | 'cancel_due' | 'lx_mismatch';
@@ -118,6 +133,13 @@ export default function TicketBookingsNeedCheckModal({
   bookings,
   supplierProductsMap,
   onEdit,
+  actionHandlers,
+  onSaveNote,
+  onAddDocuments,
+  onRemoveDocument,
+  onSaveAmounts,
+  onOpenLinkedTour,
+  relatedToursCatalog,
 }: Props) {
   const t = useTranslations('booking.calendar');
   const locale = useLocale();
@@ -377,6 +399,14 @@ export default function TicketBookingsNeedCheckModal({
                   onEdit(b);
                   onClose();
                 }}
+                actionHandlers={actionHandlers}
+                onSaveNote={onSaveNote}
+                onAddDocuments={onAddDocuments}
+                onRemoveDocument={onRemoveDocument}
+                onSaveAmounts={onSaveAmounts}
+                onOpenLinkedTour={onOpenLinkedTour}
+                relatedToursCatalog={relatedToursCatalog}
+                tourFallback={tourFallback}
               />
             )
           ) : displayRows.length === 0 ? (
@@ -393,6 +423,12 @@ export default function TicketBookingsNeedCheckModal({
                   onEdit(b);
                   onClose();
                 }}
+                actionHandlers={actionHandlers}
+                onSaveNote={onSaveNote}
+                onAddDocuments={onAddDocuments}
+                onRemoveDocument={onRemoveDocument}
+                onSaveAmounts={onSaveAmounts}
+                onOpenLinkedTour={onOpenLinkedTour}
               />
             </div>
           ) : (
@@ -499,6 +535,12 @@ function NeedCheckBookingCards({
   onOpen,
   density = 'default',
   flat = false,
+  actionHandlers,
+  onSaveNote,
+  onAddDocuments,
+  onRemoveDocument,
+  onSaveAmounts,
+  onOpenLinkedTour,
 }: {
   rows: TicketBookingNeedCheckRow[];
   allBookings: TicketBookingNeedCheckRow[];
@@ -506,8 +548,19 @@ function NeedCheckBookingCards({
   dateSort: CheckInSort;
   supplierProductsMap: Map<string, SeasonSlice>;
   onOpen: (booking: TicketBookingNeedCheckRow) => void;
-  density?: 'default' | 'compact';
-  flat?: boolean;
+  density?: 'default' | 'compact' | undefined;
+  flat?: boolean | undefined;
+  actionHandlers?: TicketBookingCardActionHandlers | undefined;
+  onSaveNote?: ((booking: TicketBookingNeedCheckRow, note: string) => void | Promise<void>) | undefined;
+  onAddDocuments?: ((booking: TicketBookingNeedCheckRow, files: File[]) => void | Promise<void>) | undefined;
+  onRemoveDocument?: ((booking: TicketBookingNeedCheckRow, index: number) => void | Promise<void>) | undefined;
+  onSaveAmounts?: (
+    (
+      bookingId: string,
+      amounts: { expense: number; paid_amount: number }
+    ) => void | Promise<void>
+  ) | undefined;
+  onOpenLinkedTour?: ((tourId: string) => void) | undefined;
 }) {
   return (
     <TicketBookingCardView
@@ -523,7 +576,103 @@ function NeedCheckBookingCards({
       getCancelDueDate={(b) => getCancelDueDateForTicketBooking(b, supplierProductsMap.get(b.id))}
       getSupplierProduct={(b) => supplierProductsMap.get(b.id) ?? null}
       onOpenBooking={onOpen}
+      actionHandlers={actionHandlers}
+      onSaveNote={onSaveNote}
+      onAddDocuments={onAddDocuments}
+      onRemoveDocument={onRemoveDocument}
+      onSaveAmounts={onSaveAmounts}
+      onOpenLinkedTour={onOpenLinkedTour}
     />
+  );
+}
+
+function relatedTourKindLabel(kind: NeedCheckRelatedTourKind, t: (key: string) => string): string {
+  if (kind === 'linked') return t('ticketNeedCheckLxTourKindLinked');
+  if (kind === 'same_product') return t('ticketNeedCheckLxTourKindSameProduct');
+  return t('ticketNeedCheckLxTourKindOvernightCheckIn');
+}
+
+function RelatedTourKindBadges({
+  kinds,
+  t,
+}: {
+  kinds: NeedCheckRelatedTourKind[];
+  t: (key: string) => string;
+}) {
+  const order: NeedCheckRelatedTourKind[] = ['linked', 'same_product', 'overnight_checkin'];
+  const shown = order.filter((k) => kinds.includes(k));
+  return (
+    <span className="mr-1 inline-flex flex-wrap items-center gap-0.5">
+      {shown.map((kind) => (
+        <span
+          key={kind}
+          className={`inline-flex items-center rounded-full px-1.5 py-px text-[9px] font-semibold leading-tight ring-1 ${
+            kind === 'linked'
+              ? 'bg-indigo-50 text-indigo-900 ring-indigo-200'
+              : kind === 'overnight_checkin'
+                ? 'bg-amber-50 text-amber-950 ring-amber-200'
+                : 'bg-sky-50 text-sky-900 ring-sky-200'
+          }`}
+        >
+          {relatedTourKindLabel(kind, t)}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function NeedCheckRelatedToursPanel({
+  tours,
+  locale,
+  t,
+  onOpenLinkedTour,
+}: {
+  tours: NeedCheckRelatedTourRow[];
+  locale: string;
+  t: (key: string) => string;
+  onOpenLinkedTour?: ((tourId: string) => void) | undefined;
+}) {
+  if (tours.length === 0) return null;
+  return (
+    <div className="mb-2 rounded-md border border-slate-200/90 bg-white/80 px-2 py-1.5">
+      <div className="mb-0.5 text-[10px] font-semibold text-slate-600">
+        {t('ticketNeedCheckLxToursThisDay')}
+      </div>
+      <ul className="space-y-0.5 text-[11px] text-slate-800">
+        {tours.map((tr) => {
+          const acHint =
+            tr.kinds.includes('overnight_checkin') && tr.antelopeCheckInYmd
+              ? ` · AC ${tr.antelopeCheckInYmd.slice(5).replace('-', '/')}`
+              : '';
+          const tourLabel = (
+            <>
+              <RelatedTourKindBadges kinds={tr.kinds} t={t} />
+              <span className="font-medium">{tr.label}</span>
+              <span className="ml-1 tabular-nums text-slate-600">
+                — {formatCanyonLxPair(tr.choiceCounts)}
+                {acHint}
+              </span>
+            </>
+          );
+          return (
+            <li key={tr.tourId} className="leading-snug">
+              {onOpenLinkedTour ? (
+                <button
+                  type="button"
+                  className="w-full rounded-md px-1 py-0.5 text-left hover:bg-indigo-50 hover:text-indigo-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  title={locale.startsWith('en') ? 'View tour details' : '투어 상세 보기'}
+                  onClick={() => onOpenLinkedTour(tr.tourId)}
+                >
+                  {tourLabel}
+                </button>
+              ) : (
+                tourLabel
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
@@ -536,6 +685,14 @@ function LxMismatchDateList({
   bookingById,
   supplierProductsMap,
   onEdit,
+  actionHandlers,
+  onSaveNote,
+  onAddDocuments,
+  onRemoveDocument,
+  onSaveAmounts,
+  onOpenLinkedTour,
+  relatedToursCatalog,
+  tourFallback,
 }: {
   groups: LinkedLxMismatchDateGroup[];
   locale: string;
@@ -545,10 +702,41 @@ function LxMismatchDateList({
   bookingById: Map<string, TicketBookingNeedCheckRow>;
   supplierProductsMap: Map<string, SeasonSlice>;
   onEdit: (booking: TicketBookingNeedCheckRow) => void;
+  actionHandlers?: TicketBookingCardActionHandlers | undefined;
+  onSaveNote?: ((booking: TicketBookingNeedCheckRow, note: string) => void | Promise<void>) | undefined;
+  onAddDocuments?: ((booking: TicketBookingNeedCheckRow, files: File[]) => void | Promise<void>) | undefined;
+  onRemoveDocument?: ((booking: TicketBookingNeedCheckRow, index: number) => void | Promise<void>) | undefined;
+  onSaveAmounts?: (
+    (
+      bookingId: string,
+      amounts: { expense: number; paid_amount: number }
+    ) => void | Promise<void>
+  ) | undefined;
+  onOpenLinkedTour?: ((tourId: string) => void) | undefined;
+  relatedToursCatalog?: NeedCheckTourCatalogRow[] | undefined;
+  tourFallback: string;
 }) {
+  const catalog = relatedToursCatalog ?? [];
   return (
     <div className="divide-y divide-amber-100">
-      {groups.map((g) => (
+      {groups.map((g) => {
+        const linkedForDate = (() => {
+          const byId = new Map<string, (typeof g.clusters)[0]['tours'][0]>();
+          for (const cluster of g.clusters) {
+            for (const tr of cluster.tours) {
+              if (!byId.has(tr.tourId)) byId.set(tr.tourId, tr);
+            }
+          }
+          return [...byId.values()];
+        })();
+        const relatedTours = collectNeedCheckRelatedTours({
+          dateYmd: g.dateYmd,
+          linkedTours: linkedForDate,
+          catalog,
+          locale,
+          tourFallback,
+        });
+        return (
         <section key={g.dateYmd} className="px-4 py-3 sm:px-5">
           <header className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
             <h3 className="text-sm font-semibold tabular-nums text-gray-900">{g.dateYmd}</h3>
@@ -571,6 +759,13 @@ function LxMismatchDateList({
             )}
           </header>
 
+          <NeedCheckRelatedToursPanel
+            tours={relatedTours}
+            locale={locale}
+            t={t}
+            onOpenLinkedTour={onOpenLinkedTour}
+          />
+
           {g.clusters.map((cluster, idx) => (
             <div
               key={cluster.key}
@@ -585,22 +780,6 @@ function LxMismatchDateList({
                 </p>
               ) : null}
 
-              <div className="mb-2 rounded-md border border-slate-200/90 bg-white/80 px-2 py-1.5">
-                <div className="mb-0.5 text-[10px] font-semibold text-slate-600">
-                  {t('ticketNeedCheckLxToursThisDay')}
-                </div>
-                <ul className="space-y-0.5 text-[11px] text-slate-800">
-                  {cluster.tours.map((tr) => (
-                    <li key={tr.tourId} className="leading-snug">
-                      <span className="font-medium">{tr.label}</span>
-                      <span className="ml-1 tabular-nums text-slate-600">
-                        — {formatCanyonLxPair(tr.choiceCounts)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
               {viewMode === 'card' ? (
                 <NeedCheckBookingCards
                   rows={cluster.bookings.map((b) => resolveNeedCheckCardRow(b, bookingById))}
@@ -609,8 +788,14 @@ function LxMismatchDateList({
                   dateSort="asc"
                   supplierProductsMap={supplierProductsMap}
                   onOpen={onEdit}
-                  density="compact"
+                  density="default"
                   flat
+                  actionHandlers={actionHandlers}
+                  onSaveNote={onSaveNote}
+                  onAddDocuments={onAddDocuments}
+                  onRemoveDocument={onRemoveDocument}
+                  onSaveAmounts={onSaveAmounts}
+                  onOpenLinkedTour={onOpenLinkedTour}
                 />
               ) : (
                 <div className="overflow-x-auto">
@@ -666,7 +851,8 @@ function LxMismatchDateList({
             </div>
           ))}
         </section>
-      ))}
+        );
+      })}
     </div>
   );
 }

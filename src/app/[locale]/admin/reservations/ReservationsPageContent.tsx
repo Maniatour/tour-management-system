@@ -5380,6 +5380,7 @@ export default function AdminReservations() {
           },
           body: JSON.stringify({
             reservationId: emailPreviewData.reservationId,
+            email: emailPreviewData.customerEmail,
             locale,
             sentBy: user?.email || null,
           }),
@@ -6753,6 +6754,28 @@ export default function AdminReservations() {
           allowPastDateEdit={isSuper}
           useServerCustomerInsert
           followUpPipelineSnapshotRefreshToken={followUpFormPipelineRefresh}
+          onOpenReservation={(id) => handleEditClick(id)}
+          onAfterDateChange={async (liveId) => {
+            setEditingReservation(null)
+            await refreshReservations()
+            const { data } = await supabase
+              .from('reservations')
+              .select(RESERVATION_LIST_SELECT)
+              .eq('id', liveId)
+              .maybeSingle()
+            if (data) {
+              const mapped = mapDbReservationRowsToReservations(
+                [data as unknown as Record<string, unknown>],
+                new Map(),
+                new Map()
+              )
+              setShowAddForm(false)
+              setNewReservationId(null)
+              setEditingReservation(mapped[0] ?? null)
+              return
+            }
+            handleEditClick(liveId)
+          }}
           titleAction={
             editingReservation ? (
               <div className="flex flex-wrap items-center gap-1 sm:gap-2">

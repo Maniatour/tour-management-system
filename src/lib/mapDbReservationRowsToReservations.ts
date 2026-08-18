@@ -64,6 +64,8 @@ export function mapDbReservationRowsToReservations(
           : (item.selected_option_prices as { [k: string]: number }) || {},
       hasExistingTour,
       customerCommunicationChannel: (item.customer_communication_channel as string | null) ?? null,
+      dateChangeLiveReservationId: (item.date_change_live_reservation_id as string | null) ?? null,
+      dateChangePlaceholderReservationId: (item.date_change_placeholder_reservation_id as string | null) ?? null,
     }
     if (item.choices != null && typeof item.choices === 'object') {
       return { ...base, choices: item.choices as Record<string, unknown> }

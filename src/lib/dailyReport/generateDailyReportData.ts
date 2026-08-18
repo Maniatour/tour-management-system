@@ -117,6 +117,7 @@ function isCancelledStatus(status: string | null | undefined): boolean {
     s === 'canceled' ||
     s === 'deleted' ||
     s === 'no_show' ||
+    s === 'date_changed' ||
     s.includes('cancel')
   )
 }

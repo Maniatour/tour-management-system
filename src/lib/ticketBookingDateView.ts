@@ -15,6 +15,10 @@ import {
 } from '@/lib/tourChoiceCounts'
 import { canonicalReservationIdKey, normalizeReservationIds } from '@/utils/tourUtils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
+import {
+  getMultiDayTourDays,
+  resolveAntelopeCheckInDate,
+} from '@/lib/scheduleVehicleOilMaintenance'
 
 export type { TourChoiceCounts, ReservationChoiceRow }
 
@@ -752,4 +756,148 @@ export function collectLinkedLxMismatchBookingIds(
     for (const b of g.bookings) ids.add(b.id)
   }
   return [...ids]
+}
+
+/** Need to Check L/X — 연결 투어와 같은 날 관련 투어 후보 */
+export type NeedCheckTourCatalogRow = {
+  id: string
+  tour_date: string
+  product_id?: string | null
+  antelope_check_in_date?: string | null
+  tour_status?: string | null
+  total_people?: number | null
+  choice_counts?: TourChoiceCounts
+  products?: { name?: string; name_en?: string; name_ko?: string } | null
+}
+
+export type NeedCheckRelatedTourKind = 'linked' | 'same_product' | 'overnight_checkin'
+
+export type NeedCheckRelatedTourRow = LinkedLxMismatchTourSnap & {
+  kinds: NeedCheckRelatedTourKind[]
+  tourDate?: string | undefined
+  antelopeCheckInYmd?: string | undefined
+}
+
+function catalogTourYmd(raw: string | null | undefined): string {
+  const m = String(raw || '').trim().match(/^(\d{4}-\d{2}-\d{2})/)
+  return m ? m[1]! : ''
+}
+
+function needCheckRelatedTourLabel(
+  tour: NeedCheckTourCatalogRow,
+  locale: string,
+  tourFallback: string
+): string {
+  return (
+    formatTicketBookingTourHeadline(
+      locale,
+      {
+        tour_date: tour.tour_date,
+        total_people: tour.total_people,
+        products: tour.products,
+        choice_counts: tour.choice_counts,
+      },
+      tourFallback,
+      { appendPeople: true }
+    ) || tour.id
+  )
+}
+
+/**
+ * L/X 불일치 날짜에 보여줄 투어:
+ * 연결됨 + 같은 상품(해당일 출발) + 숙박투어 앤텔롭 체크인일이 같은 투어.
+ */
+export function collectNeedCheckRelatedTours(opts: {
+  dateYmd: string
+  linkedTours: LinkedLxMismatchTourSnap[]
+  catalog: NeedCheckTourCatalogRow[]
+  locale: string
+  tourFallback: string
+}): NeedCheckRelatedTourRow[] {
+  const dateYmd = catalogTourYmd(opts.dateYmd)
+  const catalogById = new Map<string, NeedCheckTourCatalogRow>()
+  for (const tour of opts.catalog) {
+    if (!tour?.id || isTourCancelled(tour.tour_status)) continue
+    catalogById.set(tour.id, tour)
+  }
+
+  const rows = new Map<string, NeedCheckRelatedTourRow>()
+
+  const upsert = (
+    tourId: string,
+    kind: NeedCheckRelatedTourKind,
+    snap: Omit<NeedCheckRelatedTourRow, 'kinds'>
+  ) => {
+    const existing = rows.get(tourId)
+    if (existing) {
+      if (!existing.kinds.includes(kind)) existing.kinds.push(kind)
+      if (!existing.label && snap.label) existing.label = snap.label
+      if (
+        !tourChoiceCountsHasDisplayable(existing.choiceCounts) &&
+        tourChoiceCountsHasDisplayable(snap.choiceCounts)
+      ) {
+        existing.choiceCounts = snap.choiceCounts
+      }
+      if (!existing.totalPeople && snap.totalPeople) existing.totalPeople = snap.totalPeople
+      if (!existing.tourDate && snap.tourDate) existing.tourDate = snap.tourDate
+      if (!existing.antelopeCheckInYmd && snap.antelopeCheckInYmd) {
+        existing.antelopeCheckInYmd = snap.antelopeCheckInYmd
+      }
+      return
+    }
+    rows.set(tourId, { ...snap, tourId, kinds: [kind] })
+  }
+
+  const snapFromCatalog = (tour: NeedCheckTourCatalogRow): Omit<NeedCheckRelatedTourRow, 'kinds'> => ({
+    tourId: tour.id,
+    label: needCheckRelatedTourLabel(tour, opts.locale, opts.tourFallback),
+    choiceCounts: tour.choice_counts || {},
+    totalPeople: Number(tour.total_people) || 0,
+    tourDate: catalogTourYmd(tour.tour_date),
+    antelopeCheckInYmd: resolveAntelopeCheckInDate(tour) || undefined,
+  })
+
+  for (const linked of opts.linkedTours) {
+    const cat = catalogById.get(linked.tourId)
+    upsert(linked.tourId, 'linked', {
+      tourId: linked.tourId,
+      label: linked.label || (cat ? needCheckRelatedTourLabel(cat, opts.locale, opts.tourFallback) : linked.tourId),
+      choiceCounts:
+        tourChoiceCountsHasDisplayable(linked.choiceCounts) && linked.choiceCounts
+          ? linked.choiceCounts
+          : cat?.choice_counts || {},
+      totalPeople: linked.totalPeople || Number(cat?.total_people) || 0,
+      tourDate: cat ? catalogTourYmd(cat.tour_date) : undefined,
+      antelopeCheckInYmd: cat ? resolveAntelopeCheckInDate(cat) || undefined : undefined,
+    })
+  }
+
+  const productIds = new Set<string>()
+  for (const linked of opts.linkedTours) {
+    const pid = catalogById.get(linked.tourId)?.product_id?.trim()
+    if (pid) productIds.add(pid)
+  }
+
+  for (const tour of catalogById.values()) {
+    const pid = (tour.product_id || '').trim()
+    const tourDate = catalogTourYmd(tour.tour_date)
+    const acYmd = resolveAntelopeCheckInDate(tour)
+    const overnight = getMultiDayTourDays(pid) > 1
+    if (productIds.has(pid) && tourDate === dateYmd) {
+      upsert(tour.id, 'same_product', snapFromCatalog(tour))
+    }
+    if (overnight && acYmd === dateYmd) {
+      upsert(tour.id, 'overnight_checkin', snapFromCatalog(tour))
+    }
+  }
+
+  const kindRank = (kinds: NeedCheckRelatedTourKind[]) => {
+    if (kinds.includes('linked')) return 0
+    if (kinds.includes('overnight_checkin')) return 1
+    return 2
+  }
+
+  return [...rows.values()].sort(
+    (a, b) => kindRank(a.kinds) - kindRank(b.kinds) || a.label.localeCompare(b.label, opts.locale)
+  )
 }

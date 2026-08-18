@@ -4,6 +4,7 @@ import { generateTourId } from './entityIds'
 import { canonicalReservationIdKey, normalizeReservationIds, resolveTeamTypeForTourCreate } from '@/utils/tourUtils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { KOVEgAS_OPERATOR_ID } from '@/lib/operatorConstants'
+import { reservationExcludedFromTourAssignment } from '@/lib/reservationStatus'
 
 export interface TourAutoCreationResult {
   success: boolean
@@ -54,6 +55,18 @@ export async function autoCreateOrUpdateTour(
       return {
         success: true,
         message: '해당 상품은 자동 투어 생성 대상이 아닙니다.'
+      }
+    }
+
+    const { data: reservationRow } = await supabase
+      .from('reservations')
+      .select('status')
+      .eq('id', reservationId)
+      .maybeSingle()
+    if (reservationExcludedFromTourAssignment((reservationRow as { status?: string | null } | null)?.status)) {
+      return {
+        success: true,
+        message: '날짜변경 자리표시 예약은 투어에 배정하지 않습니다.',
       }
     }
 

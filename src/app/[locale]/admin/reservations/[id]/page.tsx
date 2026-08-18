@@ -418,6 +418,16 @@ export default function ReservationDetailsPage() {
           onViewCustomer={() => setShowReservationDetailModal(true)}
           allowPastDateEdit={isSuper || !!reservation}
           followUpPipelineSnapshotRefreshToken={followUpFormPipelineRefresh}
+          onOpenReservation={(id) => {
+            router.push(`/${params?.locale || 'ko'}/admin/reservations/${id}`)
+          }}
+          onAfterDateChange={async (liveId) => {
+            if (liveId && liveId !== reservation.id) {
+              router.push(`/${params?.locale || 'ko'}/admin/reservations/${liveId}`)
+              return
+            }
+            window.location.reload()
+          }}
           titleAction={
             <div className="flex flex-wrap items-center gap-1 sm:gap-2">
               <button

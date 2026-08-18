@@ -213,6 +213,7 @@ export default function ReservationFollowUpSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           reservationId: pipelineEmailPreview.reservationId,
+          email: pipelineEmailPreview.customerEmail,
           locale: sendLocale,
           sentBy: userEmail || null,
         }),

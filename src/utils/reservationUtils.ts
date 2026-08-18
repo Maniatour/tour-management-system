@@ -328,6 +328,7 @@ export const getStatusColor = (status: string) => {
     case 'Canceled': return 'bg-red-100 text-red-800'
     case 'no_show': return 'bg-orange-100 text-orange-800'
     case 'No Show': return 'bg-orange-100 text-orange-800'
+    case 'date_changed': return 'bg-violet-100 text-violet-800'
     case 'recruiting': return 'bg-purple-100 text-purple-800'
     case 'Recruiting': return 'bg-purple-100 text-purple-800'
     case 'Payment Requested': return 'bg-orange-100 text-orange-800'

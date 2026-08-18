@@ -3,14 +3,14 @@
 import type { TourChoiceCounts } from '@/lib/tourChoiceCounts'
 
 export type TicketBookingTourEnrichment = {
-  tour_date?: string | null
-  total_people?: number | null
-  products?: { name?: string; name_en?: string; name_ko?: string } | null
-  guide_display_name?: string | null
-  assistant_display_name?: string | null
-  vehicle_display_name?: string | null
+  tour_date?: string | null | undefined
+  total_people?: number | null | undefined
+  products?: { name?: string; name_en?: string; name_ko?: string } | null | undefined
+  guide_display_name?: string | null | undefined
+  assistant_display_name?: string | null | undefined
+  vehicle_display_name?: string | null | undefined
   /** 연결 투어 예약 초이스 합계 (X / L / U) */
-  choice_counts?: TourChoiceCounts
+  choice_counts?: TourChoiceCounts | undefined
 }
 
 export function formatTourDateYmd(raw: string | null | undefined): string {

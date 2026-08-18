@@ -98,7 +98,11 @@ export interface Reservation {
   addedBy: string
   addedTime: string
   tourId: string
-  status: 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show' | 'deleted'
+  status: 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show' | 'date_changed' | 'deleted'
+  /** date_changed 자리표시 → 실예약 */
+  dateChangeLiveReservationId?: string | null
+  /** 실예약 → 구날짜 자리표시 */
+  dateChangePlaceholderReservationId?: string | null
   /** DB updated_at (상태 변경 순 정렬 등에 사용) */
   updated_at?: string | null
   /** reservations.amount_audited — 채널 정산·예약 처리 필요 등에서 금액 더블체크 완료 여부 */

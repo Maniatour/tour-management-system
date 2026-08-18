@@ -17,6 +17,7 @@ import {
   type TourChoiceCounts,
 } from '@/lib/tourChoiceCounts'
 import { tourProductRequiresTicketBookingCount } from '@/lib/ticketBookingCountTourProducts'
+import { reservationExcludedFromTourAssignment } from '@/lib/reservationStatus'
 import {
   canonicalReservationIdKey,
   isReservationCancelledStatus,
@@ -28,6 +29,7 @@ import { ANTELOPE_CANCEL_DUE_CHECKIN_OFFSET_DAYS } from '@/lib/antelopeCanyonBoo
 export type AntelopeCanyonTicketLite = {
   id: string
   tour_id: string | null
+  reservation_id?: string | null
   check_in_date: string
   company: string
   category: string
@@ -162,6 +164,7 @@ export function computeTourAssignedPeople(
     const rd = r.tour_date ? String(r.tour_date).trim().slice(0, 10) : ''
     if (rd !== tourDate) return sum
     if (isReservationCancelledStatus(r.status)) return sum
+    if (reservationExcludedFromTourAssignment(r.status)) return sum
     if (!assignedCanon.has(canonicalReservationIdKey(String(r.id)))) return sum
     return sum + (Number(r.total_people) || 0)
   }, 0)
@@ -189,7 +192,7 @@ export function enrichAntelopeCanyonToursForTourBadge(
     let peopleSum = 0
     for (const rid of normalizeReservationIds(tour.reservation_ids)) {
       const r = resById.get(rid) || resById.get(canonicalReservationIdKey(rid))
-      if (!r || isReservationCancelledStatus(r.status)) continue
+      if (!r || isReservationCancelledStatus(r.status) || reservationExcludedFromTourAssignment(r.status)) continue
       peopleSum += Number(r.total_people) || 0
       const lookupId = choiceRowsByResId.has(r.id)
         ? r.id

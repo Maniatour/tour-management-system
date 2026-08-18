@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { Calendar, User, Phone, Mail, MapPin, Clock, Users, CheckCircle, AlertCircle, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { isDateChangedReservationStatus } from '@/lib/reservationStatus'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -214,9 +215,15 @@ export default function CustomerDashboard() {
           })
           setReservations([])
         } else if (reservationsData && reservationsData.length > 0) {
+          const visibleReservations = reservationsData.filter(
+            (row) => !isDateChangedReservationStatus((row as { status?: string | null }).status)
+          )
+          if (visibleReservations.length === 0) {
+            setReservations([])
+          } else {
           // 각 예약에 대해 상품 정보를 별도로 조회
           const reservationsWithProducts = await Promise.all(
-            reservationsData.map(async (reservation) => {
+            visibleReservations.map(async (reservation) => {
               try {
                 const { data: productData } = await supabase
                   .from('products')
@@ -238,6 +245,7 @@ export default function CustomerDashboard() {
             })
           )
           setReservations(reservationsWithProducts as Reservation[])
+          }
         } else {
           setReservations([])
         }
@@ -347,6 +355,9 @@ export default function CustomerDashboard() {
       }
 
       // 상품 정보 추가
+      reservationsData = reservationsData.filter(
+        (row) => !isDateChangedReservationStatus((row as { status?: string | null }).status)
+      )
       if (reservationsData.length > 0) {
         const reservationsWithProducts = await Promise.all(
           reservationsData.map(async (reservation) => {

@@ -212,17 +212,17 @@ type Props<T extends TicketBookingCardViewRow> = {
   tourLinkSourceBookings?: T[]
   emptyMessage?: string
   /** 업무 TODO 위젯 등 — 날짜·업체·카드 타이포/여백 축소 */
-  density?: 'default' | 'compact'
+  density?: 'default' | 'compact' | undefined
   /** compact 기본 true — 금액 줄 숨김 */
   hideAmounts?: boolean
   /** 시간 앞에 체크인 날짜 표시 (Zelle 연동 등 송금일과 체크인이 다를 때) */
   showCheckInDate?: boolean
   /** 날짜·업체 헤더 없이 카드만 */
-  flat?: boolean
+  flat?: boolean | undefined
   /** 날짜 그룹 정렬 (기본 오래된 순) */
   dateSort?: 'asc' | 'desc'
   /** flat이어도 카드 클릭으로 편집 열기 */
-  allowOpenWhenFlat?: boolean
+  allowOpenWhenFlat?: boolean | undefined
   /** 카드 하단 워크플로 액션 줄 */
   actionHandlers?: TicketBookingCardActionHandlers | undefined
   onSaveNote?: ((booking: T, note: string) => void | Promise<void>) | undefined
@@ -241,6 +241,8 @@ type Props<T extends TicketBookingCardViewRow> = {
   chromeActions?: (booking: T) => ReactNode
   /** 상세 모달 — 우상단 닫기 */
   onClose?: () => void
+  /** 연결 투어 뱃지 클릭 — 투어 상세 모달 */
+  onOpenLinkedTour?: ((tourId: string) => void) | undefined
 }
 
 function collectLinkedToursForBooking(
@@ -354,12 +356,16 @@ function TourLinkBadgeChip({
   locale,
   isEn,
   tours,
+  tourId,
   compact = false,
+  onOpen,
 }: {
   locale: string
   isEn: boolean
   tours: TicketBookingTourEnrichment
+  tourId: string
   compact?: boolean
+  onOpen?: ((tourId: string) => void) | undefined
 }) {
   const tourProductName = getTicketBookingProductName(
     locale,
@@ -376,22 +382,21 @@ function TourLinkBadgeChip({
   const badgeClass = compact
     ? 'inline-flex max-w-full shrink-0 flex-wrap items-center gap-0.5 rounded-full px-1 py-0.5 text-[9px] font-semibold leading-tight'
     : tourBadgeBase
+  const title = [
+    tourProductName,
+    tourPeople != null
+      ? isEn
+        ? `Total ${tourPeople}`
+        : `총인원 ${tourPeople}명`
+      : '',
+    tourChoiceKeys.map((k) => `🏜️${k} ${tours.choice_counts?.[k] ?? 0}`).join(' '),
+    onOpen ? (isEn ? 'View tour details' : '투어 상세 보기') : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 
-  return (
-    <span
-      className={`${badgeClass} max-w-full gap-1 bg-indigo-50 text-indigo-950 ring-1 ring-indigo-200/80`}
-      title={[
-        tourProductName,
-        tourPeople != null
-          ? isEn
-            ? `Total ${tourPeople}`
-            : `총인원 ${tourPeople}명`
-          : '',
-        tourChoiceKeys.map((k) => `🏜️${k} ${tours.choice_counts?.[k] ?? 0}`).join(' '),
-      ]
-        .filter(Boolean)
-        .join(' ')}
-    >
+  const inner = (
+    <>
       {tourProductName ? (
         <span className={`truncate ${compact ? 'max-w-[4.5rem]' : 'max-w-[5.5rem]'}`}>
           {tourProductName}
@@ -411,6 +416,30 @@ function TourLinkBadgeChip({
           🏜️{k} {tours.choice_counts?.[k] ?? 0}
         </span>
       ))}
+    </>
+  )
+
+  const surfaceClass = `${badgeClass} max-w-full gap-1 bg-indigo-50 text-indigo-950 ring-1 ring-indigo-200/80`
+
+  if (onOpen) {
+    return (
+      <button
+        type="button"
+        className={`${surfaceClass} cursor-pointer text-left hover:bg-indigo-100 hover:ring-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+        title={title}
+        onClick={(e) => {
+          e.stopPropagation()
+          onOpen(tourId)
+        }}
+      >
+        {inner}
+      </button>
+    )
+  }
+
+  return (
+    <span className={surfaceClass} title={title}>
+      {inner}
     </span>
   )
 }
@@ -538,6 +567,7 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
   onSaveAmounts,
   chromeActions,
   onClose,
+  onOpenLinkedTour,
 }: Props<T>) {
   const isEn = locale.startsWith('en')
   const compact = density === 'compact'
@@ -1120,7 +1150,9 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                                             locale={locale}
                                             isEn={isEn}
                                             tours={lt.tours}
+                                            tourId={lt.tourId}
                                             compact={compact}
+                                            onOpen={onOpenLinkedTour}
                                           />
                                         ))
                                       : null}

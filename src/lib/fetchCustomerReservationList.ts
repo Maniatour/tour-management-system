@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { isDateChangedReservationStatus } from '@/lib/reservationStatus'
 import {
   enrichCustomerReservations,
   type RawCustomerReservation,
@@ -53,7 +54,9 @@ async function fetchRawReservationsByCustomerId(customerId: string): Promise<Raw
     .order('tour_date', { ascending: false })
 
   if (error || !data) return []
-  return data as RawCustomerReservation[]
+  return (data as RawCustomerReservation[]).filter(
+    (row) => !isDateChangedReservationStatus(typeof row.status === 'string' ? row.status : null)
+  )
 }
 
 async function fetchRawReservationsByEmail(email: string): Promise<RawCustomerReservation[]> {
@@ -63,7 +66,9 @@ async function fetchRawReservationsByEmail(email: string): Promise<RawCustomerRe
     .order('tour_date', { ascending: false })
 
   if (error || !data) return []
-  return data as RawCustomerReservation[]
+  return (data as RawCustomerReservation[]).filter(
+    (row) => !isDateChangedReservationStatus(typeof row.status === 'string' ? row.status : null)
+  )
 }
 
 async function enrichIfNeeded(

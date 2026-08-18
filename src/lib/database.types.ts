@@ -7454,6 +7454,8 @@ export type Database = {
           tour_time: string | null
           updated_at: string | null
           variant_key: string
+          date_change_live_reservation_id: string | null
+          date_change_placeholder_reservation_id: string | null
         }
         Insert: {
           added_by?: string | null
@@ -7492,6 +7494,8 @@ export type Database = {
           tour_time?: string | null
           updated_at?: string | null
           variant_key?: string
+          date_change_live_reservation_id?: string | null
+          date_change_placeholder_reservation_id?: string | null
         }
         Update: {
           added_by?: string | null
@@ -7530,6 +7534,8 @@ export type Database = {
           tour_time?: string | null
           updated_at?: string | null
           variant_key?: string
+          date_change_live_reservation_id?: string | null
+          date_change_placeholder_reservation_id?: string | null
         }
         Relationships: [
           {

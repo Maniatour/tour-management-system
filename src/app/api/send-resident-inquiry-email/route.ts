@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { requireStaffApiAuth } from '@/lib/api-security'
 import { getBuiltinResidentInquiryEmailTemplate, substituteResidentInquiryEmailTemplate } from '@/lib/residentInquiryEmailHtml'
 import { fetchResidentInquiryEmailTemplateFromDb } from '@/lib/residentInquiryEmailTemplateDb'
 import {
@@ -11,10 +12,13 @@ import { mintResidentCheckTokenForReservation } from '@/lib/mintResidentCheckTok
 import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
 /**
  * POST /api/send-resident-inquiry-email
- * Body: { reservationId: string, locale?: 'ko' | 'en', sentBy?: string | null }
- * 수신 주소는 DB 고객 이메일만 사용합니다.
+ * Body: { reservationId: string, locale?: 'ko' | 'en', sentBy?: string | null, email?: string | null }
+ * 수신 주소는 미리보기에서 넘긴 이메일, 없으면 DB 고객 이메일을 사용합니다.
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireStaffApiAuth(request)
+  if (!auth.ok) return auth.response
+
   try {
     const body = await request.json()
     const { reservationId, locale: localeParam, sentBy, email: emailOverride } = body as {
@@ -28,7 +32,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '예약 ID가 필요합니다.' }, { status: 400 })
     }
 
-    const { data: reservation, error: reservationError } = await supabase
+    // customers RLS는 authenticated만 SELECT 가능. 익명 클라이언트로 조회하면
+    // 예약은 보여도 고객 행이 비어 "고객을 찾을 수 없습니다"가 난다.
+    const db = supabaseAdmin ?? auth.staffClient ?? supabase
+
+    const { data: reservation, error: reservationError } = await db
       .from('reservations')
       .select('id, customer_id, product_id, tour_date, channel_rn')
       .eq('id', reservationId.trim())
@@ -49,13 +57,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '고객 정보가 없습니다.' }, { status: 400 })
     }
 
-    const { data: customer, error: customerError } = await supabase
+    const { data: customer, error: customerError } = await db
       .from('customers')
       .select('id, name, email, language')
       .eq('id', row.customer_id)
       .maybeSingle()
 
     if (customerError || !customer) {
+      console.error('send-resident-inquiry-email customer lookup', {
+        reservationId: reservationId.trim(),
+        customerId: row.customer_id,
+        error: customerError,
+      })
       return NextResponse.json({ error: '고객을 찾을 수 없습니다.' }, { status: 404 })
     }
 
@@ -73,7 +86,7 @@ export async function POST(request: NextRequest) {
     let productName = ''
     let emailTourKind: ResidentInquiryEmailTourKind = 'day_tour'
     if (row.product_id) {
-      const { data: product } = await supabase
+      const { data: product } = await db
         .from('products')
         .select('name, name_ko, name_en, customer_name_ko, customer_name_en, product_code, tags')
         .eq('id', row.product_id)

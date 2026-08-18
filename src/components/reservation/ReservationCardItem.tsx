@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Plus, Users, DollarSign, Eye, Clock, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal, CalendarPlus, CalendarX, Send } from 'lucide-react'
+import { Plus, Users, DollarSign, Eye, Clock, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal, CalendarPlus, CalendarX, CalendarClock, Send } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - react-country-flag may lack types
@@ -88,6 +88,7 @@ function reservationStatusIcon(statusRaw: string, className = 'h-4 w-4'): React.
     return <XCircle className={`${className} text-red-700`} aria-hidden />
   }
   if (s === 'no_show' || s === 'noshow') return <UserX className={`${className} text-orange-700`} aria-hidden />
+  if (s === 'date_changed') return <CalendarClock className={`${className} text-violet-700`} aria-hidden />
   return <HelpCircle className={`${className} text-gray-500`} aria-hidden />
 }
 
@@ -566,6 +567,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     { value: 'cancelled', labelKey: 'status.cancelled' },
     { value: 'cancelled_rebooking', labelKey: 'status.cancelled_rebooking' },
     { value: 'no_show', labelKey: 'status.no_show' },
+    { value: 'date_changed', labelKey: 'status.date_changed' },
   ] as const
 
   const handleStatusSelect = async (newStatus: string) => {
@@ -582,6 +584,11 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
         return
       }
     } else if (newStatus === currentStatus) {
+      setStatusDropdownOpen(false)
+      setStatusModalOpen(false)
+      return
+    }
+    if (newStatus === 'date_changed' && currentStatus !== 'date_changed') {
       setStatusDropdownOpen(false)
       setStatusModalOpen(false)
       return
@@ -666,6 +673,30 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   {reservationStatusIcon(String(reservation.status), 'h-4 w-4')}
                 </span>
               )}
+              {reservation.dateChangeLiveReservationId ? (
+                <button
+                  type="button"
+                  className="shrink-0 rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-800 hover:bg-violet-100"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onEditClick(reservation.dateChangeLiveReservationId!)
+                  }}
+                >
+                  {locale.startsWith('en') ? 'Live' : '실예약'}
+                </button>
+              ) : null}
+              {reservation.dateChangePlaceholderReservationId ? (
+                <button
+                  type="button"
+                  className="shrink-0 rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-800 hover:bg-violet-100"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onEditClick(reservation.dateChangePlaceholderReservationId!)
+                  }}
+                >
+                  {locale.startsWith('en') ? 'Placeholder' : '자리표시'}
+                </button>
+              ) : null}
               {(() => {
                 const customer = customers.find((c) => c.id === reservation.customerId)
                 if (!customer?.language) return null

@@ -149,6 +149,8 @@ import {
   type TourChoiceCounts,
 } from '@/lib/tourChoiceCounts';
 import { loadCalendarChoiceRows } from '@/lib/fetchCanyonChoiceRows';
+import { applyDateChangedPlaceholderChoicesToTourCounts } from '@/lib/dateChangedPlaceholderLx';
+import { reservationExcludedFromTourAssignment } from '@/lib/reservationStatus';
 import {
   buildTicketDateViewGroups,
   buildLinkedLxMismatchDateGroups,
@@ -2328,6 +2330,10 @@ export default function TicketBookingList() {
             allResIds.add(rid);
           }
         }
+        for (const booking of list) {
+          const rid = typeof booking.reservation_id === 'string' ? booking.reservation_id.trim() : '';
+          if (rid) allResIds.add(rid);
+        }
         const resIdList = [...allResIds];
         type ResPeopleRow = {
           id: string;
@@ -2365,7 +2371,7 @@ export default function TicketBookingList() {
           let sum = 0;
           for (const rid of normalizeReservationIds((tour as { reservation_ids?: unknown }).reservation_ids)) {
             const r = resById.get(rid);
-            if (!r || isReservationCancelledStatus(r.status)) continue;
+            if (!r || isReservationCancelledStatus(r.status) || reservationExcludedFromTourAssignment(r.status)) continue;
             sum += Number(r.total_people) || 0;
           }
           tourTotalPeopleByTourId.set(tour.id, sum);
@@ -2380,7 +2386,7 @@ export default function TicketBookingList() {
           const assignedResList: Array<{ id: string; total_people?: number | null }> = [];
           for (const rid of normalizeReservationIds((tour as { reservation_ids?: unknown }).reservation_ids)) {
             const r = resById.get(rid);
-            if (!r || isReservationCancelledStatus(r.status)) continue;
+            if (!r || isReservationCancelledStatus(r.status) || reservationExcludedFromTourAssignment(r.status)) continue;
             assignedResList.push(r);
           }
           const counts = aggregateTourChoiceCounts(assignedResList, choiceRowsByResId);
@@ -2388,6 +2394,12 @@ export default function TicketBookingList() {
             tourChoiceCountsByTourId.set(tour.id, counts);
           }
         }
+        applyDateChangedPlaceholderChoicesToTourCounts({
+          tourChoiceCountsByTourId,
+          bookings: list,
+          placeholders: reservationsRows,
+          choiceRowsByResId,
+        });
         const rows = list.map((booking) => {
           const baseBooking = attachReservationName({
             ...booking,
@@ -2863,6 +2875,26 @@ export default function TicketBookingList() {
           if (rid) reservationIdSet.add(rid);
         }
       }
+      const calendarTourIds = toursData.map((t) => t.id).filter(Boolean);
+      const calendarTicketSnaps: Array<{
+        reservation_id?: string | null
+        tour_id?: string | null
+        tour_ids?: unknown
+        status?: string | null
+      }> = [];
+      const TB_BATCH = 80;
+      for (let i = 0; i < calendarTourIds.length; i += TB_BATCH) {
+        const chunk = calendarTourIds.slice(i, i + TB_BATCH);
+        const { data: tbRows } = await supabase
+          .from('ticket_bookings')
+          .select('tour_id, reservation_id, status')
+          .in('tour_id', chunk);
+        for (const tb of tbRows || []) {
+          calendarTicketSnaps.push(tb);
+          const rid = typeof tb.reservation_id === 'string' ? tb.reservation_id.trim() : '';
+          if (rid) reservationIdSet.add(rid);
+        }
+      }
       const reservationIdList = [...reservationIdSet];
       const RES_BATCH = 250;
       const RES_PARALLEL = 5;
@@ -2898,7 +2930,8 @@ export default function TicketBookingList() {
         [...reservationById.values()]
       );
 
-      const tourEventsWithReservations = toursData.map((tour: TourEvent) => {
+      const calChoiceByTour = new Map<string, TourChoiceCounts>();
+      const tourEventsBase = toursData.map((tour: TourEvent) => {
         const ids = normalizeReservationIds(tour.reservation_ids);
         if (ids.length === 0) {
           return {
@@ -2916,7 +2949,7 @@ export default function TicketBookingList() {
           .map((id) => reservationById.get(id))
           .filter((r): r is CalResRow => r != null);
         const activeReservations = rows.filter(
-          (r) => !isReservationCancelledStatus(r.status)
+          (r) => !isReservationCancelledStatus(r.status) && !reservationExcludedFromTourAssignment(r.status)
         );
 
         const totalPeople = activeReservations.reduce(
@@ -2937,6 +2970,9 @@ export default function TicketBookingList() {
         );
 
         const choiceCounts = aggregateTourChoiceCounts(activeReservations, choiceRowsByResId);
+        if (tourChoiceCountsHasDisplayable(choiceCounts)) {
+          calChoiceByTour.set(tour.id, choiceCounts);
+        }
 
         return {
           ...tour,
@@ -2946,10 +2982,22 @@ export default function TicketBookingList() {
           adults: totalAdults,
           child: totalChild,
           infant: totalInfant,
-          ...(tourChoiceCountsHasDisplayable(choiceCounts)
-            ? { choice_counts: choiceCounts }
-            : {}),
         };
+      });
+
+      applyDateChangedPlaceholderChoicesToTourCounts({
+        tourChoiceCountsByTourId: calChoiceByTour,
+        bookings: calendarTicketSnaps,
+        placeholders: [...reservationById.values()],
+        choiceRowsByResId,
+      });
+
+      const tourEventsWithReservations = tourEventsBase.map((tour) => {
+        const counts = calChoiceByTour.get(tour.id)
+        return {
+          ...tour,
+          ...(counts && tourChoiceCountsHasDisplayable(counts) ? { choice_counts: counts } : {}),
+        }
       });
 
       const tourEventsWithStaff = tourEventsWithReservations.map((ev) => ({
@@ -8274,6 +8322,7 @@ export default function TicketBookingList() {
             onAddDocuments={persistTicketBookingDocuments}
             onRemoveDocument={removeTicketBookingDocument}
             onSaveAmounts={saveAmountsInline}
+            onOpenLinkedTour={handleTourClick}
           />
         )}
 
@@ -8582,6 +8631,13 @@ export default function TicketBookingList() {
         bookings={bookings}
         supplierProductsMap={supplierProductsMap}
         onEdit={(b) => handleEdit(b as TicketBooking)}
+        actionHandlers={ticketCardActionHandlers}
+        onSaveNote={persistTicketBookingNote}
+        onAddDocuments={persistTicketBookingDocuments}
+        onRemoveDocument={removeTicketBookingDocument}
+        onSaveAmounts={saveAmountsInline}
+        onOpenLinkedTour={handleTourClick}
+        relatedToursCatalog={tourEvents}
       />
 
       <TicketBookingIssueFollowUpModal
@@ -8654,6 +8710,7 @@ export default function TicketBookingList() {
             onSaveAmounts={saveAmountsInline}
             chromeActions={(booking) => chromeActions(booking as TicketBookingReservationDetailRow)}
             onClose={onClose}
+            onOpenLinkedTour={handleTourClick}
             emptyMessage={locale.startsWith('en') ? 'No bookings to show' : '표시할 부킹이 없습니다'}
           />
         )}

@@ -12,6 +12,7 @@ export function reservationCountsTowardDepartureThreshold(
   if (s.includes('cancel')) return false
   if (s === 'inquiry') return false
   if (s === 'no_show' || s === 'noshow') return false
+  if (s === 'date_changed') return false
   return true
 }
 

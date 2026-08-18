@@ -3,7 +3,7 @@
 
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { Trash2, Eye, AlertTriangle, X, Mail, Phone, ChevronDown, Globe, Store, History } from 'lucide-react'
+import { Trash2, Eye, AlertTriangle, X, Mail, Phone, ChevronDown, Globe, Store, History, CalendarClock } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations, useLocale } from 'next-intl'
 import { stripSpacesFromContactInput } from '@/lib/contactInputUtils'
@@ -135,10 +135,18 @@ import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
 import {
-  RESERVATION_STATUS_I18N_OPTIONS,
+  isDateChangedReservationStatus,
   isNoShowReservationStatus,
+  reservationStatusSelectOptions,
   type ReservationStatusCode,
 } from '@/lib/reservationStatus'
+import NoShowDateChangeModal from '@/components/reservation/NoShowDateChangeModal'
+import AdminPageHubManualButton from '@/components/admin/AdminPageHubManualButton'
+import {
+  NO_SHOW_DATE_CHANGE_MANUAL_SLUG,
+  noShowDateChangeManualDocument,
+  noShowDateChangeManualTitles,
+} from '@/lib/noShowDateChangeManual'
 import { findSimilarCustomersInList } from '@/lib/customerSimilarity'
 import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
 import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
@@ -418,6 +426,10 @@ interface ReservationFormProps {
   modalRectStorageKey?: string
   modalDefaultWidth?: number
   modalDefaultHeight?: number
+  /** 노쇼 날짜 변경 후 실예약 폼을 다시 열 때 */
+  onAfterDateChange?: (liveReservationId: string) => void
+  /** 자리표시 ↔ 실예약 상대 건 열기 */
+  onOpenReservation?: (reservationId: string) => void
 }
 
 /** 이메일에서 파싱한 금액 문자열 → 숫자 (Price $ 319.41 등) */
@@ -507,6 +519,8 @@ export default function ReservationForm({
   modalRectStorageKey,
   modalDefaultWidth,
   modalDefaultHeight,
+  onAfterDateChange,
+  onOpenReservation,
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
@@ -558,6 +572,7 @@ export default function ReservationForm({
   } | null>(null)
   const [linkedTourDetailRefreshNonce, setLinkedTourDetailRefreshNonce] = useState(0)
   const [showEditHistoryModal, setShowEditHistoryModal] = useState(false)
+  const [noShowDateChangeOpen, setNoShowDateChangeOpen] = useState(false)
   const resolvedCustomerIdRef = useRef<string | null>(null)
   /** 이메일 가져오기: 상위 reservation.channel_id는 비동기로 채워지며, 이후 effect가 사용자가 모달에서 고른 채널을 덮어쓰면 안 됨 */
   const emailImportChannelParentSyncedRef = useRef(false)
@@ -680,7 +695,7 @@ export default function ReservationForm({
     addedBy: string
     addedTime: string
     tourId: string
-    status: 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show'
+    status: ReservationStatusCode
     selectedOptions: { [optionId: string]: string[] }
     selectedOptionPrices: { [key: string]: number }
     // 새로운 간결한 초이스 시스템
@@ -931,7 +946,7 @@ export default function ReservationForm({
     addedBy: reservation?.addedBy || rez.added_by || '',
     addedTime: reservation?.addedTime || rez.created_at || new Date().toISOString().slice(0, 16).replace('T', ' '),
     tourId: reservation?.tourId || rez.tour_id || '',
-    status: (reservation?.status as 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show') || 'pending',
+    status: (reservation?.status as ReservationStatusCode) || 'pending',
     selectedOptions: reservation?.selectedOptions || rez.selected_options || {},
     selectedOptionPrices: reservation?.selectedOptionPrices || rez.selected_option_prices || {},
     // 초이스 정보 초기값
@@ -1196,6 +1211,8 @@ export default function ReservationForm({
   const prevPricingParams = useRef<{productId: string, tourDate: string, channelId: string, variantKey: string, selectedChoicesKey: string, productChoicesCount: number, channelOtaReady: boolean} | null>(null)
   /** loadPricingInfo 중첩 호출 시 마지막 로드만 완료 처리 */
   const pricingLoadGenerationRef = useRef(0)
+  /** DB 가격을 폼에 반영한 예약 id — 이후 재조회는 입력칸을 덮지 않고 계산식만 갱신 */
+  const dbPricingAppliedReservationIdRef = useRef<string | null>(null)
   const prevCouponParams = useRef<{productId: string, tourDate: string, channelId: string} | null>(null)
   /** 이메일 금액 기준 쿠폰 자동 적용이 이미 이 입력 조합에 대해 끝났는지 (중복 setFormData 방지) */
   const emailCouponApplyRef = useRef<string>('')
@@ -3042,14 +3059,24 @@ export default function ReservationForm({
       console.log('필수 정보가 부족합니다:', { productId, tourDate, tourDateNormalized, channelId })
       return
     }
-    const loadGen = ++pricingLoadGenerationRef.current
-    setPricingLoadComplete(false)
     // 이메일 가져오기 등: reservation id가 import- 로 시작하면 아직 DB 예약이 없음 → reservation_pricing 조회 생략 후 dynamic_pricing만 사용
     const pricingReservationId =
       reservationId && !String(reservationId).startsWith('import-') ? String(reservationId) : undefined
-    setPricingFieldsFromDb({})
-    setDynamicPriceFormula(null)
+    const alreadyShowingDbPricing =
+      Boolean(pricingReservationId) &&
+      dbPricingAppliedReservationIdRef.current === pricingReservationId
+    const overlappingSameReservationLoad =
+      Boolean(pricingReservationId) &&
+      pricingLoadReservationKeyRef.current === pricingReservationId &&
+      !alreadyShowingDbPricing
+    const loadGen = ++pricingLoadGenerationRef.current
+    if (!alreadyShowingDbPricing && !overlappingSameReservationLoad) {
+      setPricingLoadComplete(false)
+      setPricingFieldsFromDb({})
+      setDynamicPriceFormula(null)
+    }
 
+    let skipDelayedOverlay = alreadyShowingDbPricing
     try {
       // reservation_pricing에 행이 있을 때 dynamic_pricing으로 채운 뒤에도 불포함 가격은 DB 컬럼 값 유지
       let notIncludedPriceFromReservationPricing: number | null = null
@@ -3070,9 +3097,11 @@ export default function ReservationForm({
       if (!pricingReservationId) {
         setReservationPricingId(null)
         pricingLoadReservationKeyRef.current = undefined
+        dbPricingAppliedReservationIdRef.current = null
       } else if (pricingReservationId !== pricingLoadReservationKeyRef.current) {
         setReservationPricingId(null)
         pricingLoadReservationKeyRef.current = pricingReservationId
+        dbPricingAppliedReservationIdRef.current = null
       }
       console.log('가격 정보 조회 시작:', { productId, tourDate, tourDateNormalized, channelId, reservationId: pricingReservationId, selectedChoices: currentSelectedChoices, pricingSelectedChoices })
 
@@ -3914,6 +3943,19 @@ export default function ReservationForm({
           })
           console.log('기존 가격 정보 사용:', existingPricing)
 
+          if (alreadyShowingDbPricing) {
+            skipDelayedOverlay = true
+            try {
+              const formula = await loadDynamicPricingFromDb()
+              if (loadGen === pricingLoadGenerationRef.current) {
+                setDynamicPriceFormula(formula)
+              }
+            } catch (e) {
+              console.warn('동적 가격 계산식 스냅샷 실패:', e)
+            }
+            return
+          }
+
           // reservation_pricing 저장 % 우선 → 채널 마스터 % → 없을 때만 $ 역산
           const commissionAmount = (existingPricing as any).commission_amount != null && (existingPricing as any).commission_amount !== ''
             ? Number((existingPricing as any).commission_amount)
@@ -4038,7 +4080,8 @@ export default function ReservationForm({
           })
           const residentFeesFromChoices = sumResidentFeeAmountsUsd(residentAmountsFromChoices)
           const onSiteBalanceAmount = balanceAmount
-          
+
+          if (loadGen !== pricingLoadGenerationRef.current) return
           setFormData(prev => {
             const { channelSettlementAmount: _stripChSettle, ...prevWithoutChSettle } = prev
             void _stripChSettle
@@ -4120,7 +4163,7 @@ export default function ReservationForm({
             }
             
             // 가격 계산 수행 (단일 가격 모드 적용 후 재계산)
-            const newProductPriceTotal = computeProductPriceTotal({
+            const computedProductPriceTotal = computeProductPriceTotal({
               isSinglePrice,
               adultProductPrice: updated.adultProductPrice,
               childProductPrice: updated.childProductPrice,
@@ -4130,6 +4173,12 @@ export default function ReservationForm({
               child: updated.child,
               infant: updated.infant,
             })
+            const dbPptRaw = (existingPricing as any).product_price_total
+            const hasDbPpt =
+              dbPptRaw != null && dbPptRaw !== '' && Number.isFinite(Number(dbPptRaw))
+            const newProductPriceTotal = hasDbPpt
+              ? Math.round(Number(dbPptRaw) * 100) / 100
+              : computedProductPriceTotal
             
             // requiredOptionTotal 계산
             let requiredOptionTotal = 0
@@ -4167,15 +4216,12 @@ export default function ReservationForm({
               (updated.isPrivateTour ? updated.privateTourAdditionalCost : 0) +
               reservationOptionsTotalPrice
             const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional - refundAmount)
-            const loadStatus = String(reservation?.status || '').toLowerCase().trim()
-            const loadIsCancelled = loadStatus === 'cancelled' || loadStatus === 'canceled'
             const dbTotalRaw = (existingPricing as any).total_price
             const hasDbTotal =
               dbTotalRaw != null && dbTotalRaw !== '' && Number.isFinite(Number(dbTotalRaw))
-            const totalPriceForForm =
-              loadIsCancelled && hasDbTotal
-                ? Math.max(0, Math.round(Number(dbTotalRaw) * 100) / 100)
-                : newTotalPrice
+            const totalPriceForForm = hasDbTotal
+              ? Math.max(0, Math.round(Number(dbTotalRaw) * 100) / 100)
+              : newTotalPrice
             const newBalance = Math.max(0, totalPriceForForm - updated.depositAmount)
             // 라인 총액(비거주자 미포함) + 초이스 거주비, 또는 DB total_price 기준 잔액 중 큰 쪽
             const lineBalanceWithResident = Math.max(
@@ -4190,19 +4236,14 @@ export default function ReservationForm({
               : 0
             const balanceWithResident = Math.max(lineBalanceWithResident, dbTotalBalance, newBalance)
             
-            // DB 잔액이 비거주자 비용 누락 등으로 더 작으면 보정값 사용 (190→390 깜빡임 방지)
             const rawBalRow = (existingPricing as any).balance_amount
             const hasStoredBalance =
               rawBalRow !== null && rawBalRow !== undefined && rawBalRow !== ''
             const storedBalance = hasStoredBalance ? Number(rawBalRow) || 0 : null
             const finalBalanceAmount =
-              storedBalance != null &&
-              Math.abs(storedBalance - balanceWithResident) > 0.01 &&
-              balanceWithResident > storedBalance + 0.01
-                ? balanceWithResident
-                : storedBalance != null
-                  ? storedBalance
-                  : balanceWithResident
+              storedBalance != null
+                ? storedBalance
+                : balanceWithResident
             
             // commission_amount가 데이터베이스에서 불러온 값이면 절대 덮어쓰지 않음
             const finalCommissionAmount = loadedCommissionAmount.current !== null && loadedCommissionAmount.current > 0
@@ -4291,18 +4332,35 @@ export default function ReservationForm({
               (existingPricing as any).infant_product_price !== '',
           })
 
-          // 상품 단가·불포함이 모두 0이면 dynamic_pricing에서 채우기 위해 아래로 진행 (불포함은 DB 컬럼 값 유지)
-          const hasAnySavedPrice = hasSavedProductPrices || (Number((existingPricing as any).not_included_price) || 0) > 0
+          const hasDbTotalPrice =
+            (existingPricing as any).total_price != null && (existingPricing as any).total_price !== ''
+          const hasDbPptSaved =
+            (existingPricing as any).product_price_total != null &&
+            (existingPricing as any).product_price_total !== ''
+          const hasAnySavedPrice =
+            hasSavedProductPrices ||
+            (Number((existingPricing as any).not_included_price) || 0) > 0 ||
+            hasDbTotalPrice ||
+            hasDbPptSaved
           if (hasAnySavedPrice) {
+            if (pricingReservationId) {
+              dbPricingAppliedReservationIdRef.current = pricingReservationId
+            }
+            skipDelayedOverlay = true
+            setIsExistingPricingLoaded(true)
+            setPricingLoadComplete(true)
+            setPriceAutoFillMessage('기존 가격 정보가 로드되었습니다!')
             try {
               const formula = await loadDynamicPricingFromDb()
-              setDynamicPriceFormula(formula)
+              if (loadGen === pricingLoadGenerationRef.current) {
+                setDynamicPriceFormula(formula)
+              }
             } catch (e) {
               console.warn('동적 가격 계산식 스냅샷 실패:', e)
-              setDynamicPriceFormula(null)
+              if (loadGen === pricingLoadGenerationRef.current) {
+                setDynamicPriceFormula(null)
+              }
             }
-            setIsExistingPricingLoaded(true)
-            setPriceAutoFillMessage('기존 가격 정보가 로드되었습니다!')
             return
           }
           notIncludedPriceFromReservationPricing = Number((existingPricing as any).not_included_price) || 0
@@ -4426,16 +4484,22 @@ export default function ReservationForm({
       console.error('Dynamic pricing 조회 중 오류:', error)
     } finally {
       const settleGen = loadGen
-      // 연쇄 setFormData / PricingSection useEffect 반영 후 한 번에 보이도록 완료 플래그 지연
-      requestAnimationFrame(() => {
+      if (skipDelayedOverlay) {
+        if (settleGen === pricingLoadGenerationRef.current) {
+          setPricingLoadComplete(true)
+        }
+      } else {
+        // 새 예약/가져오기: 연쇄 setFormData 반영 후 한 번에 보이도록 완료 플래그 지연
         requestAnimationFrame(() => {
-          window.setTimeout(() => {
-            if (settleGen === pricingLoadGenerationRef.current) {
-              setPricingLoadComplete(true)
-            }
-          }, 320)
+          requestAnimationFrame(() => {
+            window.setTimeout(() => {
+              if (settleGen === pricingLoadGenerationRef.current) {
+                setPricingLoadComplete(true)
+              }
+            }, 320)
+          })
         })
-      })
+      }
     }
       }, [channels, reservationOptionsTotalPrice, loadProductChoices, formData.selectedChoices, formData.variantKey, formData.productChoices, reservation?.id, reservation?.status, (reservation as any)?.channel_id, isImportMode, initialVariantKeyFromImport, initialChannelVariantLabelFromImport, initialAmountFromImport, initialNotIncludedAmountFromImport])
 
@@ -5087,6 +5151,15 @@ export default function ReservationForm({
         prevPricingParams.current.selectedChoicesKey !== currentParams.selectedChoicesKey ||
         prevPricingParams.current.productChoicesCount !== currentParams.productChoicesCount ||
         prevPricingParams.current.channelOtaReady !== currentParams.channelOtaReady) {
+      const prev = prevPricingParams.current
+      if (
+        prev &&
+        (prev.productId !== currentParams.productId ||
+          prev.tourDate !== currentParams.tourDate ||
+          prev.channelId !== currentParams.channelId)
+      ) {
+        dbPricingAppliedReservationIdRef.current = null
+      }
       console.log('가격 자동 조회 트리거:', currentParams)
       prevPricingParams.current = currentParams
       const isRealReservationId = reservation?.id && !String(reservation.id).startsWith('import-')
@@ -6622,13 +6695,32 @@ export default function ReservationForm({
               <select
                 id="reservation-status-mobile"
                 value={formData.status}
+                disabled={isDateChangedReservationStatus(formData.status)}
                 onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as ReservationStatusCode }))}
-                className="min-w-[6.5rem] px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white"
+                className="min-w-[6.5rem] px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white disabled:bg-gray-50 disabled:text-gray-500"
               >
-                {RESERVATION_STATUS_I18N_OPTIONS.map((opt) => (
+                {reservationStatusSelectOptions(formData.status).map((opt) => (
                   <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>
                 ))}
               </select>
+              {!isNewReservation && reservation?.id && !isImportMode && !isDateChangedReservationStatus(formData.status) && (
+                <button
+                  type="button"
+                  onClick={() => setNoShowDateChangeOpen(true)}
+                  className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  <CalendarClock className="h-3.5 w-3.5" />
+                  {locale === 'en' ? 'No-show date change' : '노쇼 날짜 변경'}
+                </button>
+              )}
+              {!isNewReservation && reservation?.id && !isImportMode && (
+                <AdminPageHubManualButton
+                  slug={NO_SHOW_DATE_CHANGE_MANUAL_SLUG}
+                  fallbackDoc={noShowDateChangeManualDocument}
+                  fallbackTitle={noShowDateChangeManualTitles}
+                  storageKey="no-show-date-change-manual"
+                />
+              )}
               <button
                 type="button"
                 onClick={handleCancelWithDraftAbandon}
@@ -6646,22 +6738,42 @@ export default function ReservationForm({
               <select
                 id="reservation-status-desktop"
                 value={formData.status}
+                disabled={isDateChangedReservationStatus(formData.status)}
                 onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as ReservationStatusCode }))}
-                className="w-full min-w-[6.5rem] sm:w-auto px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs"
+                className="w-full min-w-[6.5rem] sm:w-auto px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs disabled:bg-gray-50 disabled:text-gray-500"
               >
-                {RESERVATION_STATUS_I18N_OPTIONS.map((opt) => (
+                {reservationStatusSelectOptions(formData.status).map((opt) => (
                   <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>
                 ))}
               </select>
+              {!isNewReservation && reservation?.id && !isImportMode && !isDateChangedReservationStatus(formData.status) && (
+                <button
+                  type="button"
+                  onClick={() => setNoShowDateChangeOpen(true)}
+                  className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-[11px] sm:text-xs font-medium text-gray-700 hover:bg-gray-50"
+                  title={locale === 'en' ? 'Move a wrong-date no-show to the next day' : '날짜 착각 노쇼를 다음날로 옮깁니다'}
+                >
+                  <CalendarClock className="h-3.5 w-3.5" />
+                  {locale === 'en' ? 'No-show date change' : '노쇼 날짜 변경'}
+                </button>
+              )}
+              {!isNewReservation && reservation?.id && !isImportMode && (
+                <AdminPageHubManualButton
+                  slug={NO_SHOW_DATE_CHANGE_MANUAL_SLUG}
+                  fallbackDoc={noShowDateChangeManualDocument}
+                  fallbackTitle={noShowDateChangeManualTitles}
+                  storageKey="no-show-date-change-manual"
+                />
+              )}
             </div>
             {onViewCustomer && (
               <button
                 type="button"
                 onClick={onViewCustomer}
-                className="px-3 py-2 text-sm bg-purple-50 text-purple-600 rounded-md hover:bg-purple-100 transition-colors flex items-center space-x-2 border border-purple-200"
+                className="inline-flex items-center justify-center gap-1 rounded-lg border border-purple-200 bg-purple-50 px-2 py-1.5 text-[11px] sm:text-xs font-medium text-purple-700 hover:bg-purple-100"
                 title="고객 보기"
               >
-                <Eye className="w-4 h-4" />
+                <Eye className="w-3.5 h-3.5" />
                 <span>고객 보기</span>
               </button>
             )}
@@ -6676,14 +6788,14 @@ export default function ReservationForm({
                     ? '가격 정보 로딩 중입니다. 잠시 후 저장해 주세요.'
                     : undefined
               }
-              className="px-3 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center justify-center gap-1 rounded-lg border border-primary bg-primary px-2 py-1.5 text-[11px] sm:text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none"
             >
               {!isNewReservation && reservation?.id && !pricingLoadComplete ? '가격 로딩 중...' : isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('save') : tCommon('add'))}
             </button>
             <button
               type="button"
               onClick={handleCancelWithDraftAbandon}
-              className="px-3 py-2 text-sm bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
+              className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-[11px] sm:text-xs font-medium text-gray-700 hover:bg-gray-50"
             >
               {tCommon('cancel')}
             </button>
@@ -6696,9 +6808,9 @@ export default function ReservationForm({
                     onCancel();
                   }
                 }}
-                className="px-3 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 flex items-center gap-1.5"
+                className="inline-flex items-center justify-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] sm:text-xs font-medium text-red-700 hover:bg-red-100"
               >
-                <Trash2 size={16} />
+                <Trash2 className="h-3.5 w-3.5" />
                 {tCommon('delete')}
               </button>
             )}
@@ -6726,6 +6838,41 @@ export default function ReservationForm({
           className="flex-1 min-h-0 flex flex-col overflow-hidden"
         >
           <div className={`flex-1 min-h-0 overflow-x-hidden p-3 sm:p-0 sm:space-y-6 ${isModal ? 'overflow-y-auto' : 'lg:overflow-hidden lg:flex lg:flex-col lg:min-h-0'} ${isModal ? '' : 'lg:pb-0'} pb-2`}>
+          {(isDateChangedReservationStatus(formData.status) || reservation?.dateChangeLiveReservationId || reservation?.dateChangePlaceholderReservationId) && (
+            <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-950 flex flex-wrap items-center gap-2">
+              {isDateChangedReservationStatus(formData.status) ? (
+                <span>
+                  {locale === 'en'
+                    ? 'Date-change placeholder ($0). Not assigned to a tour. Used only to match Antelope tickets.'
+                    : '날짜변경 자리표시 ($0). 투어에 배정되지 않으며, 앤텔롭 티켓 대조 전용입니다.'}
+                </span>
+              ) : (
+                <span>
+                  {locale === 'en'
+                    ? 'This booking was moved with No-show date change. Channel RN and GYG payout stay here.'
+                    : '노쇼 날짜 변경으로 이동된 실예약입니다. 채널 RN·GYG 정산은 이 예약에 남습니다.'}
+                </span>
+              )}
+              {reservation?.dateChangeLiveReservationId && onOpenReservation && (
+                <button
+                  type="button"
+                  className="inline-flex items-center rounded-lg border border-violet-300 bg-white px-2 py-1 font-medium text-violet-800 hover:bg-violet-100"
+                  onClick={() => onOpenReservation(reservation.dateChangeLiveReservationId!)}
+                >
+                  {locale === 'en' ? 'Open live booking' : '실예약 열기'}
+                </button>
+              )}
+              {reservation?.dateChangePlaceholderReservationId && onOpenReservation && (
+                <button
+                  type="button"
+                  className="inline-flex items-center rounded-lg border border-violet-300 bg-white px-2 py-1 font-medium text-violet-800 hover:bg-violet-100"
+                  onClick={() => onOpenReservation(reservation.dateChangePlaceholderReservationId!)}
+                >
+                  {locale === 'en' ? 'Open placeholder' : '구날짜 자리표시 열기'}
+                </button>
+              )}
+            </div>
+          )}
           <div className={`grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-4 lg:grid-rows-1 lg:min-h-0 ${isModal ? 'lg:h-auto' : 'lg:flex-1 lg:h-[calc(100vh-var(--header-height,4rem)-6rem)] lg:max-h-[calc(100vh-var(--header-height,4rem)-6rem)]'}`}>
             {/* 1열: 고객 정보 + Follow up */}
             <div className="lg:col-span-1 lg:flex lg:flex-col lg:gap-4 lg:min-h-0 lg:h-full lg:overflow-y-auto max-lg:contents">
@@ -6949,14 +7096,14 @@ export default function ReservationForm({
                         ? '가격 정보 로딩 중입니다. 잠시 후 저장해 주세요.'
                         : undefined
                   }
-                  className="flex-1 min-w-0 bg-primary text-primary-foreground py-2.5 px-3 rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                  className="flex-1 min-w-0 inline-flex items-center justify-center gap-1 rounded-lg border border-primary bg-primary px-2 py-1.5 text-[11px] sm:text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none"
                 >
                   {!isNewReservation && reservation?.id && !pricingLoadComplete ? '가격 로딩 중...' : isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('save') : tCommon('add'))}
                 </button>
                 <button
                   type="button"
                   onClick={handleCancelWithDraftAbandon}
-                  className="flex-1 min-w-0 bg-gray-300 text-gray-700 py-2.5 px-3 rounded-lg hover:bg-gray-400 text-sm font-medium"
+                  className="flex-1 min-w-0 inline-flex items-center justify-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-[11px] sm:text-xs font-medium text-gray-700 hover:bg-gray-50"
                 >
                   {tCommon('cancel')}
                 </button>
@@ -6969,9 +7116,9 @@ export default function ReservationForm({
                         onCancel();
                       }
                     }}
-                    className="shrink-0 px-3 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+                    className="shrink-0 inline-flex items-center justify-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] sm:text-xs font-medium text-red-700 hover:bg-red-100"
                   >
-                    <Trash2 size={16} className="inline mr-1" />
+                    <Trash2 className="h-3.5 w-3.5" />
                     {tCommon('delete')}
                   </button>
                 )}
@@ -7008,7 +7155,7 @@ export default function ReservationForm({
                         onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as ReservationStatusCode }))}
                         className="min-w-[6.5rem] px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-ring focus:border-transparent"
                       >
-                        {RESERVATION_STATUS_I18N_OPTIONS.map((opt) => (
+                        {reservationStatusSelectOptions(formData.status).map((opt) => (
                           <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>
                         ))}
                       </select>
@@ -7349,8 +7496,7 @@ export default function ReservationForm({
                 onRequestPricingAuditModification={handleRequestPricingAuditModification}
                 priceCalculationPending={
                   Boolean(formData.productId && formData.tourDate && formData.channelId) &&
-                  !pricingLoadComplete &&
-                  !(needsEditChoicesHydration && !editPricingChoicesReady)
+                  !pricingLoadComplete
                 }
                 {...(effectiveReservationId ? { reservationId: effectiveReservationId } : {})}
                 reservationPricingId={reservationPricingId}
@@ -7358,6 +7504,7 @@ export default function ReservationForm({
                 channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) })) as any}
                 products={products}
                 pricingDbSnapshot={pricingDbSnapshot}
+                dynamicPriceFormula={dynamicPriceFormula}
               />
             </div>
           </div>
@@ -7681,6 +7828,24 @@ export default function ReservationForm({
           isOpen={showEditHistoryModal}
           onClose={() => setShowEditHistoryModal(false)}
           reservationId={reservation.id}
+        />
+      ) : null}
+
+      {reservation?.id && !isNewReservation ? (
+        <NoShowDateChangeModal
+          open={noShowDateChangeOpen}
+          onOpenChange={setNoShowDateChangeOpen}
+          reservationId={reservation.id}
+          currentTourDate={formData.tourDate || reservation.tourDate || ''}
+          reservationStatus={formData.status}
+          alreadyChanged={Boolean(reservation.dateChangePlaceholderReservationId)}
+          onCompleted={async (liveId) => {
+            if (onAfterDateChange) {
+              await onAfterDateChange(liveId)
+              return
+            }
+            window.location.reload()
+          }}
         />
       ) : null}
 

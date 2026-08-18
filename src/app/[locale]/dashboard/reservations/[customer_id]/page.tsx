@@ -6,6 +6,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Calendar, Clock, MapPin, Users, ArrowLeft, Filter, ExternalLink, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { isDateChangedReservationStatus } from '@/lib/reservationStatus'
 import {
   choiceOptionIdsForSupabaseIn,
   UNDECIDED_OPTION_ID,
@@ -231,10 +232,14 @@ export default function CustomerReservations() {
         return
       }
 
-      if (reservationsData && reservationsData.length > 0) {
+      const visibleReservations = (reservationsData || []).filter(
+        (row) => !isDateChangedReservationStatus((row as { status?: string | null }).status)
+      )
+
+      if (visibleReservations.length > 0) {
         // 각 예약에 대해 기본 정보만 조회 (간단한 카드뷰용)
         const reservationsWithBasicInfo = await Promise.all(
-          reservationsData.map(async (reservation) => {
+          visibleReservations.map(async (reservation) => {
             const row = reservation as SupabaseReservation
             try {
               if (!row.product_id) {

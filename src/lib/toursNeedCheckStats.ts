@@ -9,6 +9,7 @@ import {
   countReservationOccurrencesAcrossTours,
 } from '@/utils/tourUtils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
+import { reservationExcludedFromTourAssignment } from '@/lib/reservationStatus'
 
 export type TourNeedCheckRow = {
   id: string
@@ -346,6 +347,7 @@ async function fetchUnassignedReservationsForNeedCheck(
       const pid = r.product_id != null ? String(r.product_id).trim() : ''
       if (!pid) continue
       if (!isUnassignedTabAssignableStatus(r.status)) continue
+      if (reservationExcludedFromTourAssignment(r.status)) continue
       const td = (r.tour_date ?? '').toString()
       const dk = ymdKey(td)
       if (dk < startD || dk > endD) continue

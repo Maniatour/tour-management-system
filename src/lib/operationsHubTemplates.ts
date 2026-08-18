@@ -10,6 +10,7 @@ import {
 } from '@/types/sopStructure'
 import type { Json } from '@/lib/database.types'
 import { reservationAdminManualDocument } from '@/lib/reservationAdminManualDocument'
+import { noShowDateChangeManualDocument } from '@/lib/noShowDateChangeManual'
 import { productsHomeSectionsManualDocument } from '@/lib/productsHomeSectionsManualDocument'
 import {
   REVIEW_BONUS_GUIDE_NOTICE_EN,
@@ -723,6 +724,19 @@ export function defaultKnowledgeArticleSeeds(): ArticleSeed[] {
       ['op', 'office manager', 'office'],
       0,
       reservationAdminManualDocument
+    ),
+
+    seed(
+      'system-admin-no-show-date-change',
+      '노쇼 날짜 변경',
+      'No-show date change',
+      'OTA 날짜 착각 노쇼를 다음날로 옮기고 구날짜 티켓만 자리표시로 맞춥니다',
+      'Move an OTA wrong-date no-show to the next day and keep old-date tickets on a placeholder',
+      'system',
+      'system_guide',
+      ['op', 'office manager', 'office'],
+      1,
+      noShowDateChangeManualDocument
     ),
 
     seed(
