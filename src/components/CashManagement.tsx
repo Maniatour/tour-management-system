@@ -1145,6 +1145,9 @@ export default function CashManagement() {
     }
     try {
       setOffsetSavingId(transaction.id)
+      setTransactions((prev) =>
+        prev.map((tx) => (tx.id === transaction.id ? { ...tx, ...fields } : tx))
+      )
       const { error } = await supabase
         .from('cash_transactions')
         .update({
@@ -1155,10 +1158,12 @@ export default function CashManagement() {
         .eq('id', transaction.id)
       if (error) throw error
       await saveHistory(transaction.id, 'cash_transactions', 'updated', oldValues, fields)
-      await loadTransactions()
       toast.success(excluded ? '50/50에서 제외했습니다.' : '50/50에 다시 포함했습니다.')
     } catch (error) {
       console.error('상계 저장 오류:', error)
+      setTransactions((prev) =>
+        prev.map((tx) => (tx.id === transaction.id ? transaction : tx))
+      )
       toast.error('상계를 저장하는 중 오류가 발생했습니다.')
     } finally {
       setOffsetSavingId(null)
