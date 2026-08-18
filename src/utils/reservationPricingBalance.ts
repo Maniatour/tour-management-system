@@ -24,6 +24,25 @@ export function pricingFieldToNumber(v: unknown): number {
   return Number(v) || 0
 }
 
+/**
+ * 투어 당일 잔액 저장값.
+ * 이메일 가져오기 등에서 총액 로드 전에 보증금만 채워지면 `0 − 보증금`이 음수로 남는 문제를 막는다.
+ */
+export function resolveOnSiteBalanceAmountForSave(opts: {
+  formBalance: unknown
+  totalPrice: number
+  depositAmount: number
+}): number {
+  const computed = roundUsd2(
+    Math.max(0, (Number(opts.totalPrice) || 0) - (Number(opts.depositAmount) || 0))
+  )
+  const form = Number(opts.formBalance)
+  if (!Number.isFinite(form) || form < -0.005) {
+    return computed
+  }
+  return roundUsd2(form)
+}
+
 /** DB·폼에 ± 혼재 — PricingSection·엔진은 양수 할인액으로 차감 */
 export function pricingDiscountAmountMagnitude(v: unknown): number {
   return Math.abs(pricingFieldToNumber(v))

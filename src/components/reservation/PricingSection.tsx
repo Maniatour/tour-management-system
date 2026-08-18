@@ -124,16 +124,26 @@ function PriceCalcHint({
   stored,
   calculated,
   isKorean,
+  asBadge = false,
 }: {
   stored: number
   calculated?: number | null | undefined
   isKorean: boolean
+  asBadge?: boolean
 }) {
   if (calculated == null || !Number.isFinite(calculated)) return null
   if (Math.abs(Number(calculated) - Number(stored || 0)) < 0.02) return null
+  const text = `${isKorean ? '계산' : 'calc'} $${Number(calculated).toFixed(2)}`
+  if (asBadge) {
+    return (
+      <span className="inline-flex shrink-0 items-center rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 tabular-nums">
+        {text}
+      </span>
+    )
+  }
   return (
     <span className="text-[10px] font-medium text-amber-700 tabular-nums whitespace-nowrap">
-      {isKorean ? '계산' : 'calc'} ${Number(calculated).toFixed(2)}
+      {text}
     </span>
   )
 }
@@ -882,11 +892,16 @@ export default function PricingSection({
         { refundedTotal: refundedAmount },
         manualRef
       )
-      return computeRemainingBalanceAfterPaymentRecords(
-        totalCustomerPayment,
-        depositNetForBalanceSettlement(calculatedDepositTotalNet, prepTip),
-        calculatedBalanceReceivedTotal,
-        refundCredit
+      return roundUsd2(
+        Math.max(
+          0,
+          computeRemainingBalanceAfterPaymentRecords(
+            totalCustomerPayment,
+            depositNetForBalanceSettlement(calculatedDepositTotalNet, prepTip),
+            calculatedBalanceReceivedTotal,
+            refundCredit
+          )
+        )
       )
     }
     const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
@@ -901,7 +916,7 @@ export default function PricingSection({
       refundedAmount,
       manualRef
     )
-    return roundUsd2(totalCustomerPayment - totalPaid)
+    return roundUsd2(Math.max(0, totalCustomerPayment - totalPaid))
   }, [
     effectiveTotalCustomerPayment,
     calculatedDepositTotalNet,
@@ -1313,7 +1328,10 @@ export default function PricingSection({
               calculatedCommission
             )
             const commissionToSet = nextCommissionAmount
-            const otaRemainingBalance = roundUsd2(totalCustomerPayment - depositPortion - calculatedBalanceReceivedTotal)
+            const otaRemainingBalance = Math.max(
+              0,
+              roundUsd2(totalCustomerPayment - depositPortion - calculatedBalanceReceivedTotal)
+            )
             const same =
               Math.abs((formData.depositAmount ?? 0) - depositPortion) < 0.01 &&
               Math.abs((formData.onlinePaymentAmount ?? 0) - salePriceTimesPax) < 0.01 &&
@@ -4107,7 +4125,9 @@ export default function PricingSection({
                         markPricingEdited('depositAmount', 'onSiteBalanceAmount', 'balanceAmount')
                         const newDepositAmount = Number(e.target.value) || 0
                         const totalCustomerPayment = effectiveTotalCustomerPayment()
-                        const calculatedBalance = hasPaymentRecordsRef.current
+                        const calculatedBalance = Math.max(
+                          0,
+                          hasPaymentRecordsRef.current
                           ? computeRemainingBalanceAfterPaymentRecords(
                               totalCustomerPayment,
                               calculatedDepositTotalNet,
@@ -4132,6 +4152,7 @@ export default function PricingSection({
                               )
                               return roundUsd2(totalCustomerPayment - totalPaid)
                             })()
+                        )
                         setFormData((prev: typeof formData) => ({
                           ...prev,
                           depositAmount: newDepositAmount,
@@ -4195,18 +4216,28 @@ export default function PricingSection({
               )}
               
               {/* 잔액: ① − 입금 순효과(보증금 버킷 − Refunded·Returned 반영) − 잔금 수령 */}
-              <div className="flex justify-between items-center mb-1.5">
-                <span
-                  className="text-xs text-gray-700 cursor-help"
-                  title={
-                    isKorean
-                      ? '총 결제(①)에서 입금 순효과(Refunded·Returned 반영된 보증금 기여)와 잔금 수령을 반영한 잔액입니다. 위 보증금 칸은 파트너 수령 등 총액입니다.'
-                      : 'Remaining after ① minus the net deposit effect (after Refunded/Returned) and balance received. The deposit field above is the gross bucket total.'
-                  }
-                >
-                  {isKorean ? '잔액 (투어 당일 지불)' : 'Remaining Balance (On-site)'}
+              <div className="flex justify-between items-center mb-1.5 gap-2">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span
+                    className="text-xs text-gray-700 cursor-help"
+                    title={
+                      isKorean
+                        ? '총 결제(①)에서 입금 순효과(Refunded·Returned 반영된 보증금 기여)와 잔금 수령을 반영한 잔액입니다. 위 보증금 칸은 파트너 수령 등 총액입니다.'
+                        : 'Remaining after ① minus the net deposit effect (after Refunded/Returned) and balance received. The deposit field above is the gross bucket total.'
+                    }
+                  >
+                    {isKorean ? '잔액 (투어 당일 지불)' : 'Remaining Balance (On-site)'}
+                  </span>
+                  {isExistingPricingLoaded && pricingFieldsFromDb.onSiteBalanceAmount && (
+                    <PriceCalcHint
+                      stored={displayedOnSiteBalance()}
+                      calculated={Math.max(0, computeOnSiteBalanceAmount())}
+                      isKorean={isKorean}
+                      asBadge
+                    />
+                  )}
                 </span>
-                <div className="relative">
+                <div className="relative shrink-0">
                   <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
                   <input
                     type="number"
@@ -4234,15 +4265,6 @@ export default function PricingSection({
                   />
                 </div>
               </div>
-              {isExistingPricingLoaded && pricingFieldsFromDb.onSiteBalanceAmount && (
-                <div className="flex justify-end mb-1.5">
-                  <PriceCalcHint
-                    stored={displayedOnSiteBalance()}
-                    calculated={computeOnSiteBalanceAmount()}
-                    isKorean={isKorean}
-                  />
-                </div>
-              )}
             </div>
 
             {/* 3️⃣ 채널 정산 기준 (Channel / OTA View) */}

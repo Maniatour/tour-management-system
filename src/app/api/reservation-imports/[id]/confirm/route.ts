@@ -21,6 +21,7 @@ import {
   sumReservationPeople,
   type DepartureBatchModalReason,
 } from '@/lib/tourDepartureThreshold'
+import { resolveOnSiteBalanceAmountForSave } from '@/utils/reservationPricingBalance'
 
 /** 입금 자동 기록: Wix Website (payment_methods.id) */
 const PAYMENT_METHOD_WIX_WEBSITE = 'PAYM030'
@@ -360,7 +361,11 @@ export async function POST(
       tax: Number(pricingInfo.tax) || 0,
       cardFee: Number(pricingInfo.cardFee) || 0,
       prepaymentTip: Number(pricingInfo.prepaymentTip) || 0,
-      onSiteBalanceAmount: Number(pricingInfo.balanceAmount) || 0,
+      onSiteBalanceAmount: resolveOnSiteBalanceAmountForSave({
+        formBalance: pricingInfo.balanceAmount,
+        totalPrice: Number(pricingInfo.totalPrice) || 0,
+        depositAmount: depAmt,
+      }),
       returnedAmount: 0,
       partnerReceivedAmount: 0,
       commissionAmount: Number(pricingInfo.commission_amount) || 0,
@@ -429,7 +434,11 @@ export async function POST(
       option_total: optTot,
       total_price: totalPriceStored,
       deposit_amount: depAmt,
-      balance_amount: Number(pricingInfo.balanceAmount) || 0,
+      balance_amount: resolveOnSiteBalanceAmountForSave({
+        formBalance: pricingInfo.balanceAmount,
+        totalPrice: totalPriceStored,
+        depositAmount: depAmt,
+      }),
       private_tour_additional_cost: Number(pricingInfo.privateTourAdditionalCost) || 0,
       commission_percent: Number(pricingInfo.commission_percent) || 0,
       commission_amount: Number(pricingInfo.commission_amount) || 0,

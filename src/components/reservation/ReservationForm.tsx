@@ -183,6 +183,7 @@ import {
   isReturnedPaymentStatus,
   summarizePaymentRecordsForBalance,
   computeCustomerPaymentNetForCompanyRevenueBase,
+  resolveOnSiteBalanceAmountForSave,
   type PaymentRecordLike,
 } from '@/utils/reservationPricingBalance'
 import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
@@ -4463,7 +4464,9 @@ export default function ReservationForm({
           requiredOptionTotal: requiredOptionTotal,
           subtotal: newSubtotal,
           totalPrice: newTotalPrice,
-          balanceAmount: updated.onSiteBalanceAmount !== 0 ? updated.onSiteBalanceAmount : newBalance
+          onSiteBalanceAmount:
+            (updated.onSiteBalanceAmount ?? 0) > 0.005 ? updated.onSiteBalanceAmount : newBalance,
+          balanceAmount: (updated.onSiteBalanceAmount ?? 0) > 0.005 ? updated.onSiteBalanceAmount : newBalance
         }
       })
 
@@ -4591,13 +4594,15 @@ export default function ReservationForm({
         reservationOptionsTotalPrice
       const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional - refundAmount)
       const newBalance = Math.max(0, newTotalPrice - updated.depositAmount)
+      const keepOnSite = (updated.onSiteBalanceAmount ?? 0) > 0.005
       return {
         ...updated,
         productPriceTotal: newProductPriceTotal,
         requiredOptionTotal,
         subtotal: newSubtotal,
         totalPrice: newTotalPrice,
-        balanceAmount: updated.onSiteBalanceAmount !== 0 ? updated.onSiteBalanceAmount : newBalance,
+        onSiteBalanceAmount: keepOnSite ? updated.onSiteBalanceAmount : newBalance,
+        balanceAmount: keepOnSite ? updated.onSiteBalanceAmount : newBalance,
       }
     })
   }, [channels, dynamicPriceFormula, formData.channelId, reservationPricingId, reservationOptionsTotalPrice, setFormData])
@@ -5355,17 +5360,19 @@ export default function ReservationForm({
     const newTotalPrice = calculateTotalPrice()
     setFormData((prev) => {
       const newBalance = Math.max(0, newTotalPrice - (Number(prev.depositAmount) || 0))
+      const keepOnSite = (Number(prev.onSiteBalanceAmount) || 0) > 0.005
       if (
         Math.abs((prev.totalPrice || 0) - newTotalPrice) < 0.005 &&
-        (prev.onSiteBalanceAmount !== 0 ||
-          Math.abs((prev.balanceAmount || 0) - newBalance) < 0.005)
+        (keepOnSite || Math.abs((prev.balanceAmount || 0) - newBalance) < 0.005) &&
+        Math.abs((Number(prev.onSiteBalanceAmount) || 0) - (keepOnSite ? Number(prev.onSiteBalanceAmount) : newBalance)) < 0.005
       ) {
         return prev
       }
       return {
         ...prev,
         totalPrice: newTotalPrice,
-        balanceAmount: prev.onSiteBalanceAmount !== 0 ? prev.onSiteBalanceAmount : newBalance,
+        onSiteBalanceAmount: keepOnSite ? prev.onSiteBalanceAmount : newBalance,
+        balanceAmount: keepOnSite ? prev.onSiteBalanceAmount : newBalance,
       }
     })
   }, [reservation?.id, calculateTotalPrice, reservationOptionsTotalPrice])
@@ -5863,7 +5870,11 @@ export default function ReservationForm({
         tax: Number(fd.tax) || 0,
         cardFee: Number(fd.cardFee) || 0,
         prepaymentTip: Number(fd.prepaymentTip) || 0,
-        onSiteBalanceAmount: Number(fd.onSiteBalanceAmount ?? fd.balanceAmount) || 0,
+        onSiteBalanceAmount: resolveOnSiteBalanceAmountForSave({
+          formBalance: fd.onSiteBalanceAmount ?? fd.balanceAmount,
+          totalPrice: newTotal,
+          depositAmount: depAmt,
+        }),
         returnedAmount,
         partnerReceivedAmount,
         commissionAmount: Number(fd.commission_amount) || 0,
@@ -6051,7 +6062,13 @@ export default function ReservationForm({
         deposit_amount: overrides?.depositAmount ?? (Number(fd.depositAmount) || 0),
         balance_amount:
           overrides?.balanceAmount ??
-          (Number(fd.onSiteBalanceAmount ?? fd.balanceAmount) || 0),
+          resolveOnSiteBalanceAmountForSave({
+            formBalance: fd.onSiteBalanceAmount ?? fd.balanceAmount,
+            totalPrice: cancelledSave
+              ? Math.round(newTotal * 100) / 100
+              : keep(newTotal, (existing as any)?.total_price),
+            depositAmount: overrides?.depositAmount ?? (Number(fd.depositAmount) || 0),
+          }),
         private_tour_additional_cost: Number(fd.privateTourAdditionalCost) || 0,
         commission_percent: Number(fd.commission_percent) || 0,
         commission_amount: keep(Number(fd.commission_amount) || 0, (existing as any)?.commission_amount),
@@ -6437,7 +6454,11 @@ export default function ReservationForm({
           residentStatusAmounts: fd.residentStatusAmounts,
           // DB deposit_amount = 입금 보증 버킷 합(파트너 수령 등, Refunded·Returned 별도). 잔금 수령은 payment_records·balanceReceivedTotal, 잔액은 balance_amount
           depositAmount: toNum(fd.depositAmount),
-          balanceAmount: toNum(fd.onSiteBalanceAmount ?? fd.balanceAmount ?? 0),
+          balanceAmount: resolveOnSiteBalanceAmountForSave({
+            formBalance: fd.onSiteBalanceAmount ?? fd.balanceAmount,
+            totalPrice: toNum(fd.totalPrice),
+            depositAmount: toNum(fd.depositAmount),
+          }),
           isPrivateTour: fd.isPrivateTour,
           privateTourAdditionalCost: toNum(fd.privateTourAdditionalCost),
           commission_percent: toNum(fd.commission_percent),

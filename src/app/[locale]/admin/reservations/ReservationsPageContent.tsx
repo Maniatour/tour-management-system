@@ -12,7 +12,7 @@ import { generateReservationId } from '@/lib/entityIds'
 import { toReservationUpdatePayload, updateReservation, type ReservationUpdatePayload } from '@/lib/reservationUpdate'
 import type { Database } from '@/lib/supabase'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
-import { computeCustomerPaymentTotalLineFormula } from '@/utils/reservationPricingBalance'
+import { computeCustomerPaymentTotalLineFormula, resolveOnSiteBalanceAmountForSave } from '@/utils/reservationPricingBalance'
 import { mapDbReservationRowsToReservations } from '@/lib/mapDbReservationRowsToReservations'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
@@ -5023,7 +5023,11 @@ export default function AdminReservations() {
             option_total: pricingInfo.optionTotal || 0,
             total_price: (pricingInfo.totalPrice || 0) + notIncludedTotal,
             deposit_amount: pricingInfo.depositAmount || 0,
-            balance_amount: pricingInfo.balanceAmount || 0,
+            balance_amount: resolveOnSiteBalanceAmountForSave({
+              formBalance: pricingInfo.balanceAmount,
+              totalPrice: (pricingInfo.totalPrice || 0) + notIncludedTotal,
+              depositAmount: pricingInfo.depositAmount || 0,
+            }),
             private_tour_additional_cost: pricingInfo.privateTourAdditionalCost || 0,
             commission_percent: pricingInfo.commission_percent || 0,
             commission_amount: pricingInfo.commission_amount || 0,
