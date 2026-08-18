@@ -660,6 +660,11 @@ const GYG_BODY_PRODUCT_MAP: Array<{ pattern: RegExp; productId: string; productN
     productId: 'MDGC1D',
     productName: '그랜드서클 당일 투어',
   },
+  {
+    pattern: /Night\s*City\s*Tour|Las\s*Vegas\s*[:>]\s*Night\s*City/i,
+    productId: 'MDLVN',
+    productName: '라스베가스 야경투어',
+  },
 ]
 
 export function mapGetYourGuideProduct(text: string): {
@@ -711,13 +716,13 @@ function extractGyGProductLine(text: string): string | null {
 
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
   for (const line of lines) {
-    if (/^las\s+vegas\s*[:>]/i.test(line) && /grand\s+canyon/i.test(line)) {
+    if (/^las\s+vegas\s*[:>]/i.test(line) && /grand\s+canyon|night\s+city\s+tour/i.test(line)) {
       return line.replace(/\s*(hide\s+details|option)$/i, '').trim()
     }
   }
 
   const inline = text.match(
-    /(Las\s+Vegas\s*[:>]\s*Grand\s+Canyon[^\n]*(?:Antelope|Horseshoe)[^\n]*)/i
+    /(Las\s+Vegas\s*[:>]\s*(?:Grand\s+Canyon[^\n]*(?:Antelope|Horseshoe)|Night\s+City\s+Tour)[^\n]*)/i
   )
   return inline?.[1]?.trim() || null
 }

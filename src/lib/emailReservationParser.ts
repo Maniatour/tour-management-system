@@ -827,6 +827,14 @@ function extractCommonPatterns(text: string): Partial<ExtractedReservationData> 
   return out
 }
 
+/** GetYourGuide product_id → 내부 상품명 */
+const GYG_PRODUCT_ID_TO_NAME: Record<string, string> = {
+  MNGC1N: '그랜드서클 1박 2일 투어',
+  MDGCSUNRISE: '밤도깨비 그랜드캐년 일출 투어',
+  MDGC1D: '그랜드서클 당일 투어',
+  MDLVN: '라스베가스 야경투어',
+}
+
 /** GetYourGuide 본문 상품명 → 우리 product_id (S382661은 vendor code이므로 제목이 아닌 본문 상품명으로 매칭). Zion Bryce(그랜드서클)를 먼저 검사해 밤도깨비로 오매칭 방지. */
 const GYG_BODY_PRODUCT_MAP: Array<{ pattern: RegExp | string; product_id: string }> = [
   { pattern: /Zion\s*Bryce\s*Grand\s*Canyon|Las\s*Vegas\s*>\s*Zion\s*Bryce|Zion\s*Bryce\s*&?\s*Antelope/i, product_id: 'MNGC1N' },
@@ -838,7 +846,45 @@ const GYG_BODY_PRODUCT_MAP: Array<{ pattern: RegExp | string; product_id: string
       /Grand\s*Canyon[\s\S]{0,300}?Antelope[\s\S]{0,300}?Horseshoe[\s\S]{0,300}?Lake\s*Powell/i,
     product_id: 'MDGC1D',
   },
+  /** "Las Vegas: Night City Tour with Hotel Pickup" → 라스베가스 야경투어 */
+  { pattern: /Night\s*City\s*Tour|Las\s*Vegas\s*[:>]\s*Night\s*City/i, product_id: 'MDLVN' },
 ]
+
+function applyGygMappedProduct(
+  out: Partial<ExtractedReservationData>,
+  productId: string,
+  extras?: { tourTime?: string }
+) {
+  out.product_id = productId
+  const name = GYG_PRODUCT_ID_TO_NAME[productId]
+  if (name) out.product_name = name
+  if (extras?.tourTime) out.tour_time = extras.tourTime
+}
+
+/**
+ * GYG 본문 픽업 추출.
+ * toPlainText 가 한 줄로 붙이면 상품명 "… with Hotel Pickup" 이 실제 Pickup 라벨보다 먼저 매칭되므로
+ * "Hotel Pickup" 은 건너뛰고, "Pickup Hotel Apache, Fremont … Open in Google Maps" 만 잡는다.
+ */
+function extractGygPickupHotelFromText(text: string): string | undefined {
+  if (!text) return undefined
+  const m = text.match(
+    /(?<!hotel\s)\b(?:pick-?up)\b\s*:?\s*(.+?)(?=\s*(?:open\s*in\s*google(?:\s*maps)?|\bprice\b|$))/i
+  )
+  if (!m?.[1]) return undefined
+  let raw = m[1].replace(/\s+/g, ' ').trim()
+  raw = raw.replace(/\s*open\s*in\s*google(?:\s*maps)?.*$/i, '').trim()
+  raw = raw
+    .split(
+      /\s+(?:Reference\s*number|Number\s*of\s*participants|Main\s*customer|Tour\s*language|Customer\s*language|Date)\s*:?\s+/i
+    )[0]
+    .trim()
+  if (!raw) return undefined
+  if (/^(reference|number\s*of|main\s*customer|date|tour\s*language)/i.test(raw)) return undefined
+  const hotelNamePart = raw.split(',')[0].trim()
+  const value = hotelNamePart || raw
+  return value.length >= 3 ? value : undefined
+}
 
 /** GetYourGuide 예약 메일 전용 추출 (라벨 기반) */
 function extractGetYourGuide(
@@ -923,9 +969,9 @@ function extractGetYourGuide(
   const effectiveRaw = customerLanguageRaw ?? tourLanguageRaw
   if (effectiveRaw) out.language = normalizeLanguageToCode(effectiveRaw)
 
-  // Pickup: Harrah's Las Vegas Hotel & Casino, ...
-  const pickup = text.match(/(?:pickup\s*|pick-up\s*)\s*:?\s*([^\n]+?)(?:\s*open\s*in\s*google|price|date|\n\n|$)/im)
-  if (pickup) out.pickup_hotel = pickup[1].trim()
+  // Pickup: Hotel Apache, Fremont Street Experience, Las Vegas, NV, USA (상품명 Hotel Pickup 과 구분)
+  const gygPickup = extractGygPickupHotelFromText(text)
+  if (gygPickup) out.pickup_hotel = gygPickup
 
   // Price: $ 698.88 / "Price" 와 금액이 줄바꿈·표로 떨어진 경우 (HTML→텍스트 후에도 공백으로 이어짐)
   const setAmountFromMatch = (m: RegExpMatchArray | null) => {
@@ -956,14 +1002,17 @@ function extractGetYourGuide(
     )
     if (loose) out.product_name = loose[1].trim()
   }
+  if (!out.product_name) {
+    const nightCity = text.match(
+      /(Las\s+Vegas\s*[:>]\s*Night\s+City\s+Tour[^.\n]*)/i
+    )
+    if (nightCity) out.product_name = nightCity[1].trim()
+  }
   const mapGyGProductId = (source: string) => {
     for (const { pattern, product_id } of GYG_BODY_PRODUCT_MAP) {
       const match = typeof pattern === 'string' ? source.includes(pattern) : pattern.test(source)
       if (match) {
-        out.product_id = product_id
-        if (product_id === 'MNGC1N') out.product_name = '그랜드서클 1박 2일 투어'
-        if (product_id === 'MDGCSUNRISE') out.product_name = '밤도깨비 그랜드캐년 일출 투어'
-        if (product_id === 'MDGC1D') out.product_name = '그랜드서클 당일 투어'
+        applyGygMappedProduct(out, product_id)
         return
       }
     }
@@ -2114,13 +2163,11 @@ function extractTripCom(
       for (const { pattern, product_id } of GYG_BODY_PRODUCT_MAP) {
         const match = typeof pattern === 'string' ? src.includes(pattern) : pattern.test(src)
         if (match) {
-          out.product_id = product_id
-          if (product_id === 'MNGC1N') out.product_name = '그랜드서클 1박 2일 투어'
-          if (product_id === 'MDGCSUNRISE') {
-            out.product_name = '밤도깨비 그랜드캐년 일출 투어'
-            out.tour_time = '00:00'
-          }
-          if (product_id === 'MDGC1D') out.product_name = '그랜드서클 당일 투어'
+          applyGygMappedProduct(
+            out,
+            product_id,
+            product_id === 'MDGCSUNRISE' ? { tourTime: '00:00' } : undefined
+          )
           return true
         }
       }
