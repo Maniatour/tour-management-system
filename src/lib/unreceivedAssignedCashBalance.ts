@@ -3,7 +3,11 @@ import { todayInLasVegas } from '@/lib/dailyReport/dateUtils'
 import { mapIdsInConcurrentChunks } from '@/lib/fetchSupabaseInChunks'
 import { getDefaultLedgerBaseDate } from '@/lib/fiscal-settings'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
-import { normalizeReservationIds } from '@/utils/tourUtils'
+import {
+  isReservationCancelledStatus,
+  isReservationDeletedStatus,
+  normalizeReservationIds,
+} from '@/utils/tourUtils'
 import { resolveProductInternalName } from '@/utils/reservationUtils'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import {
@@ -239,6 +243,13 @@ export async function fetchUnreceivedAssignedCashBalances(
     for (const reservationId of reservationIds) {
       const reservation = reservationById.get(reservationId)
       if (!reservation) continue
+      // 배정 관리 목록과 동일: 취소·삭제 예약은 잔금 합산에서 제외
+      if (
+        isReservationCancelledStatus(reservation.status) ||
+        isReservationDeletedStatus(reservation.status)
+      ) {
+        continue
+      }
       const amount = computeAssignedReservationDisplayBalance({
         reservation,
         pricing: pricingById.get(reservationId),

@@ -1,8 +1,11 @@
 'use client'
 
+import { useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import ExpenseReconciliationBulkExemptActions from '@/components/reconciliation/ExpenseReconciliationBulkExemptActions'
+import { MoveExpenseTableButton } from '@/components/expenses/MoveExpenseTableDialog'
+import { isMovableExpenseTable, type MoveExpenseItem } from '@/lib/moveExpenseTable'
 import type { ExpenseReconSourceTable } from '@/lib/expense-reconciliation-similar-lines'
 
 export default function ExpenseListReconBulkToolbar({
@@ -12,6 +15,7 @@ export default function ExpenseListReconBulkToolbar({
   onToggleSelectAllPage,
   onClearSelection,
   onExemptApplied,
+  onMoved,
   disabled,
 }: {
   sourceTable: ExpenseReconSourceTable
@@ -20,10 +24,15 @@ export default function ExpenseListReconBulkToolbar({
   onToggleSelectAllPage: () => void
   onClearSelection: () => void
   onExemptApplied?: () => void
+  onMoved?: () => void
   disabled?: boolean
 }) {
   const tBatch = useTranslations('expenses.statementRecon.reconExempt.bulk')
   const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id))
+  const moveItems = useMemo<MoveExpenseItem[]>(() => {
+    if (!isMovableExpenseTable(sourceTable)) return []
+    return [...selectedIds].filter(Boolean).map((id) => ({ table: sourceTable, id }))
+  }, [sourceTable, selectedIds])
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-gray-200/80 bg-gray-50/50 p-2 sm:p-3 sm:flex-row sm:flex-wrap sm:items-center">
@@ -48,6 +57,16 @@ export default function ExpenseListReconBulkToolbar({
       >
         {tBatch('clearSelection')}
       </Button>
+      {isMovableExpenseTable(sourceTable) ? (
+        <MoveExpenseTableButton
+          items={moveItems}
+          {...(disabled !== undefined ? { disabled } : {})}
+          onMoved={() => {
+            onClearSelection()
+            onMoved?.()
+          }}
+        />
+      ) : null}
       <ExpenseReconciliationBulkExemptActions
         sourceTable={sourceTable}
         selectedIds={selectedIds}

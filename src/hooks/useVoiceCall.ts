@@ -328,6 +328,8 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView: _isPublic
         return false
       }
 
+      setCallError(null)
+
       // 먼저 마이크 권한 요청 및 스트림 가져오기
       let stream: MediaStream
       try {
@@ -500,6 +502,7 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView: _isPublic
         }
       })
     }
+    setCallError(null)
     setCallStatus('idle')
   }, [userId])
 
@@ -536,8 +539,8 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView: _isPublic
     }
     stopCallTimer()
 
-    // 종료 신호 전송
-    if (channelRef.current && callStatus !== 'idle') {
+    // 종료 신호 전송 (로컬 마이크 오류 등 실제 통화가 시작되지 않은 경우는 제외)
+    if (channelRef.current && callStatus !== 'idle' && callStatus !== 'error') {
       channelRef.current.send({
         type: 'broadcast',
         event: 'call-end',
@@ -547,6 +550,7 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView: _isPublic
       })
     }
 
+    setCallError(null)
     setCallStatus('idle')
   }, [userId, remoteAudio, callStatus, stopCallTimer])
 

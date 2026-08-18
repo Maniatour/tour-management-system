@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslations, useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -13,10 +14,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge, type BadgeProps } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Plus, Search, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, DollarSign, TrendingUp, TrendingDown, History, ChevronLeft, ChevronRight, Wand2 } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Search, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, DollarSign, TrendingUp, TrendingDown, History, ChevronLeft, ChevronRight, Wand2, Landmark } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDateTimeForDatetimeLocalInput, parseDatetimeLocalInputToISOString } from '@/utils/datetimeLocal'
 import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
@@ -34,6 +36,7 @@ import CashTransactionBulkAutoMatchModal, {
 import type { CashAutoMatchInputRow } from '@/lib/cash-transaction-auto-match'
 import type { ExpenseAutoMatchInputRow } from '@/lib/expense-statement-auto-match'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
+import { DROPDOWN_Z_INDEX } from '@/lib/dialogZIndex'
 import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
 import {
   buildCashTransactionsSearchOr,
@@ -48,10 +51,51 @@ import CashColumnHeader from '@/components/expenses/CashColumnHeader'
 import CashColumnFiltersBar, {
   type CashColFilterField,
 } from '@/components/expenses/CashColumnFiltersBar'
+import CashLedgerReviewControls from '@/components/expenses/CashLedgerReviewControls'
+import ProfitShareOffsetQuickButtons from '@/components/expenses/ProfitShareOffsetQuickButtons'
+import ProfitShareExcludeFields from '@/components/expenses/ProfitShareOffsetFields'
+import ProfitShareSplitFields, { ProfitSharePaidToPresets } from '@/components/expenses/ProfitShareSplitFields'
+import { MoveExpenseTableButton } from '@/components/expenses/MoveExpenseTableDialog'
+import { isMovableExpenseTable, type MoveExpenseItem } from '@/lib/moveExpenseTable'
 import type { StringMultiSelectOption } from '@/components/filters/StringMultiSelectFilter'
 import UnreceivedAssignedCashBalancePanel from '@/components/reports/UnreceivedAssignedCashBalancePanel'
 import { getDefaultLedgerBaseDate } from '@/lib/fiscal-settings'
-import { isCashLedgerRefundPaymentStatus } from '@/utils/reservationPricingBalance'
+import { isCashLedgerRefundPaymentRecord } from '@/utils/reservationPricingBalance'
+import {
+  applyProfitSharePaidToChange,
+  applyProfitShareSplitHalves,
+  cashDirectEntryDescription,
+  cashDirectEntryTitle,
+  canToggleProfitShareExcluded,
+  classifyProfitSharePartner,
+  emptyProfitShareExcludeForm,
+  excludeFormFromTransaction,
+  ensureBankDepositDescription,
+  formatProfitShareExcludeLabel,
+  formatProfitShareSplitLabel,
+  isBankDepositDescription,
+  isLikelyProfitShareCashOut,
+  isProfitShareExcluded,
+  presetCashDirectEntry,
+  resolveProfitShareSplitPayload,
+  splitFormFromTransaction,
+  summarizeProfitShareRows,
+  emptyProfitShareSplitForm,
+  type CashDirectEntryKind,
+  type ProfitShareExcludeFormFields,
+  type ProfitShareSplitFormFields,
+} from '@/lib/cashTransactionPurpose'
+import {
+  CASH_LEDGER_REVIEW_CHANGED_EVENT,
+  CASH_LEDGER_REVIEW_OPTIONS,
+  cashLedgerRefFromRow,
+  cashLedgerReviewKey,
+  cashLedgerReviewStatusOf,
+  fetchCashLedgerReviewMap,
+  upsertCashLedgerReview,
+  bulkUpsertCashLedgerReviews,
+  type CashLedgerReviewStatus,
+} from '@/lib/cashLedgerReview'
 
 const DEFAULT_CASH_PERIOD_START = getDefaultLedgerBaseDate()
 
@@ -74,6 +118,12 @@ interface CashTransaction {
   payment_status?: string | null
   /** 회사·예약 지출 또는 현금 관리 직접 입력의 결제처(paid_to) */
   paid_to?: string | null
+  offset_paid_to?: string | null
+  offset_amount?: number | null
+  offset_method?: string | null
+  share_chad_amount?: number | null
+  share_joey_amount?: number | null
+  profit_share_excluded?: boolean | null
 }
 
 interface TransactionHistory {
@@ -88,37 +138,26 @@ interface TransactionHistory {
   modified_by_name?: string
 }
 
-interface CashTransactionFormData {
+interface CashTransactionFormData extends ProfitShareExcludeFormFields, ProfitShareSplitFormFields {
   transaction_date: string
   transaction_type: 'deposit' | 'withdrawal' | 'bank_deposit'
   amount: string
   description: string
   paid_to: string
-  category: string
-  notes: string
 }
 
-function emptyCashFormData(): CashTransactionFormData {
+function emptyCashFormData(kind: CashDirectEntryKind = 'deposit'): CashTransactionFormData {
+  const preset = presetCashDirectEntry(kind)
   return {
     transaction_date: formatDateTimeForDatetimeLocalInput(new Date()),
-    transaction_type: 'deposit',
+    transaction_type: preset.transaction_type,
     amount: '',
-    description: '',
+    description: preset.description,
     paid_to: '',
-    category: '',
-    notes: '',
+    ...emptyProfitShareExcludeForm(),
+    ...emptyProfitShareSplitForm(),
   }
 }
-
-const categories = [
-  '투어 수입',
-  '예약 수입',
-  '기타 수입',
-  '투어 지출',
-  '회사 지출',
-  '예약 지출',
-  '기타 지출'
-]
 
 function cashSourceBadge(source: CashTransaction['source']): {
   label: string
@@ -151,10 +190,84 @@ const CASH_TYPE_OPTIONS: StringMultiSelectOption[] = [
   { value: 'bank_deposit', label: '은행 Deposit' },
 ]
 
+const CASH_REVIEW_OPTIONS: StringMultiSelectOption[] = CASH_LEDGER_REVIEW_OPTIONS.map((o) => ({
+  value: o.value,
+  label: o.label,
+}))
+
 const EMPTY_COL_FILTER = '__empty__'
 
+function HoverDetailText({
+  text,
+  empty = '—',
+  className,
+}: {
+  text: string | null | undefined
+  empty?: string
+  className?: string
+}) {
+  const trimmed = (text ?? '').trim()
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState({ top: 0, left: 0, maxWidth: 360 })
+  const ref = useRef<HTMLSpanElement>(null)
+
+  const show = () => {
+    if (!trimmed) return
+    const el = ref.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const maxWidth = Math.min(384, Math.max(160, window.innerWidth - 24))
+    let left = r.left
+    if (left + maxWidth > window.innerWidth - 8) {
+      left = Math.max(8, window.innerWidth - maxWidth - 8)
+    }
+    setPos({ top: r.bottom + 6, left, maxWidth })
+    setOpen(true)
+  }
+
+  const hide = () => setOpen(false)
+
+  if (!trimmed) {
+    return <span className={className}>{empty}</span>
+  }
+
+  return (
+    <>
+      <span
+        ref={ref}
+        tabIndex={0}
+        className={`block min-w-0 truncate cursor-default outline-none ${className ?? ''}`}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+      >
+        {trimmed}
+      </span>
+      {open
+        ? createPortal(
+            <div
+              role="tooltip"
+              style={{
+                position: 'fixed',
+                top: pos.top,
+                left: pos.left,
+                maxWidth: pos.maxWidth,
+                zIndex: DROPDOWN_Z_INDEX,
+              }}
+              className="pointer-events-none whitespace-pre-wrap break-words rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs leading-5 text-gray-800 shadow-md"
+            >
+              {trimmed}
+            </div>,
+            document.body
+          )
+        : null}
+    </>
+  )
+}
+
 function cashTypeFilterValue(tx: CashTransaction): string {
-  const isBankDeposit = tx.description?.includes('은행 Deposit') || tx.description === '은행 Deposit'
+  const isBankDeposit = isBankDepositDescription(tx.description)
   if (isBankDeposit) return 'bank_deposit'
   return tx.transaction_type
 }
@@ -229,6 +342,13 @@ function reconSourceFromCashTransaction(
   return null
 }
 
+function cashMoveExpenseItem(tx: CashTransaction): MoveExpenseItem | null {
+  const recon = reconSourceFromCashTransaction(tx)
+  if (!recon || !isMovableExpenseTable(recon.sourceTable)) return null
+  if (recon.sourceTable === 'cash_transactions' && tx.transaction_type !== 'withdrawal') return null
+  return { table: recon.sourceTable, id: recon.sourceId }
+}
+
 function cashTransactionDateYmd(tx: CashTransaction): string {
   const d = new Date(tx.transaction_date)
   if (Number.isNaN(d.getTime())) return ''
@@ -298,6 +418,7 @@ export default function CashManagement() {
   const [balance, setBalance] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [offsetSavingId, setOffsetSavingId] = useState<string | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState<CashTransaction | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
@@ -309,6 +430,11 @@ export default function CashManagement() {
   const [sourceColFilters, setSourceColFilters] = useState<Set<string>>(() => new Set())
   const [paymentStatusColFilters, setPaymentStatusColFilters] = useState<Set<string>>(() => new Set())
   const [authorColFilters, setAuthorColFilters] = useState<Set<string>>(() => new Set())
+  const [reviewColFilters, setReviewColFilters] = useState<Set<string>>(() => new Set())
+  const [reviewByKey, setReviewByKey] = useState<Map<string, CashLedgerReviewStatus>>(() => new Map())
+  const [reviewSavingKey, setReviewSavingKey] = useState<string | null>(null)
+  const [reviewSelectedIds, setReviewSelectedIds] = useState<Set<string>>(() => new Set())
+  const [reviewBulkSaving, setReviewBulkSaving] = useState(false)
   const [startDate, setStartDate] = useState(DEFAULT_CASH_PERIOD_START)
   const [endDate, setEndDate] = useState('')
   const [teamMembers, setTeamMembers] = useState<Map<string, string>>(new Map()) // email(lower) -> display_name
@@ -560,6 +686,12 @@ export default function CashManagement() {
           created_at: t.created_at ?? '',
           updated_at: t.updated_at ?? '',
           paid_to: t.paid_to || null,
+          offset_paid_to: t.offset_paid_to || null,
+          offset_amount: t.offset_amount != null ? Number(t.offset_amount) : null,
+          offset_method: t.offset_method || null,
+          share_chad_amount: t.share_chad_amount != null ? Number(t.share_chad_amount) : null,
+          share_joey_amount: t.share_joey_amount != null ? Number(t.share_joey_amount) : null,
+          profit_share_excluded: Boolean(t.profit_share_excluded) || Boolean(t.offset_paid_to),
         }))
         allTransactions.push(...converted)
       }
@@ -568,8 +700,7 @@ export default function CashManagement() {
       if (paymentRecords) {
         const converted = paymentRecords.map((pr) => {
           const status = pr.payment_status != null ? String(pr.payment_status) : null
-          const isRefund =
-            isCashLedgerRefundPaymentStatus(status) || /현금\s*환불/.test(String(pr.note ?? ''))
+          const isRefund = isCashLedgerRefundPaymentRecord(status, pr.note)
           const amount = Math.abs(Number(pr.amount) || 0)
           return {
             id: `pr_${pr.id}`,
@@ -599,7 +730,7 @@ export default function CashManagement() {
           transaction_date: ce.submit_on || new Date().toISOString(),
           transaction_type: 'withdrawal' as const,
           amount: Number(ce.amount),
-          description: ce.description || `${ce.paid_to} - ${ce.paid_for}`,
+          description: ce.description || ce.notes || `${ce.paid_to} - ${ce.paid_for}`,
           category: ce.paid_for || '회사 지출',
           reference_type: 'company_expense',
           reference_id: ce.id,
@@ -645,6 +776,11 @@ export default function CashManagement() {
       })
 
       setTransactions(allTransactions)
+
+      const reviewRefs = allTransactions
+        .map((tx) => cashLedgerRefFromRow(tx))
+        .filter((ref): ref is NonNullable<typeof ref> => Boolean(ref))
+      setReviewByKey(await fetchCashLedgerReviewMap(reviewRefs))
       
       // 잔액 계산 (모든 거래 포함)
       const calculatedBalance = allTransactions.reduce((sum, transaction) => {
@@ -680,6 +816,17 @@ export default function CashManagement() {
     loadTransactions()
   }, [loadTransactions])
 
+  useEffect(() => {
+    const onChanged = () => {
+      const refs = transactions
+        .map((tx) => cashLedgerRefFromRow(tx))
+        .filter((ref): ref is NonNullable<typeof ref> => Boolean(ref))
+      void fetchCashLedgerReviewMap(refs).then(setReviewByKey)
+    }
+    window.addEventListener(CASH_LEDGER_REVIEW_CHANGED_EVENT, onChanged)
+    return () => window.removeEventListener(CASH_LEDGER_REVIEW_CHANGED_EVENT, onChanged)
+  }, [transactions])
+
   // 수정 히스토리 저장
   const saveHistory = async (
     transactionId: string,
@@ -705,6 +852,46 @@ export default function CashManagement() {
     }
   }
 
+  const handleSetReview = useCallback(
+    async (transaction: CashTransaction, status: CashLedgerReviewStatus) => {
+      const ref = cashLedgerRefFromRow(transaction)
+      if (!ref) return
+      const key = cashLedgerReviewKey(ref.source, ref.sourceId)
+      const previous = cashLedgerReviewStatusOf(transaction, reviewByKey)
+      setReviewSavingKey(key)
+      setReviewByKey((prev) => {
+        const next = new Map(prev)
+        next.set(key, status)
+        return next
+      })
+      const ok = await upsertCashLedgerReview({
+        source: ref.source,
+        sourceId: ref.sourceId,
+        status,
+        reviewedBy: user?.email || '',
+      })
+      if (!ok) {
+        setReviewByKey((prev) => {
+          const next = new Map(prev)
+          next.set(key, previous)
+          return next
+        })
+        toast.error('검토 상태를 저장하지 못했습니다.')
+      }
+      setReviewSavingKey(null)
+    },
+    [reviewByKey, user?.email]
+  )
+
+  const toggleReviewSelect = useCallback((id: string, checked: boolean) => {
+    setReviewSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }, [])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -717,6 +904,34 @@ export default function CashManagement() {
       setSaving(true)
 
       const paidToTrim = formData.paid_to.trim()
+      if (formData.transaction_type === 'withdrawal' && !paidToTrim) {
+        toast.error('Profit Share 수령인을 입력해주세요. (Chad / Joey)')
+        setSaving(false)
+        return
+      }
+
+      const cashAmount = parseFloat(formData.amount)
+      const isSplitPaidTo = classifyProfitSharePartner(paidToTrim) === 'split'
+      const excludeFields = {
+        profit_share_excluded:
+          formData.transaction_type === 'withdrawal' && formData.profit_share_excluded,
+        offset_paid_to: null as string | null,
+        offset_amount: null as number | null,
+        offset_method: null as string | null,
+      }
+      const splitResult = resolveProfitShareSplitPayload({
+        isSplit: formData.transaction_type === 'withdrawal' && isSplitPaidTo,
+        cashAmount,
+        shareChad: formData.share_chad_amount,
+        shareJoey: formData.share_joey_amount,
+      })
+      if (!splitResult.ok) {
+        toast.error(splitResult.error)
+        setSaving(false)
+        return
+      }
+      const splitFields = splitResult.fields
+
       if (
         paidToTrim &&
         !paidToOptions.some((name) => name.toLowerCase() === paidToTrim.toLowerCase())
@@ -737,20 +952,36 @@ export default function CashManagement() {
           amount: editingTransaction.amount,
           description: editingTransaction.description,
           paid_to: editingTransaction.paid_to,
+          offset_paid_to: editingTransaction.offset_paid_to,
+          offset_amount: editingTransaction.offset_amount,
+          offset_method: editingTransaction.offset_method,
+          share_chad_amount: editingTransaction.share_chad_amount,
+          share_joey_amount: editingTransaction.share_joey_amount,
           category: editingTransaction.category,
-          notes: editingTransaction.notes
         }
 
         // 새 값 (bank_deposit은 withdrawal로 변환)
         const dbTransactionType = formData.transaction_type === 'bank_deposit' ? 'withdrawal' : formData.transaction_type
+        const description = ensureBankDepositDescription(
+          formData.transaction_type,
+          formData.description
+        ) || null
+        const category =
+          formData.transaction_type === 'withdrawal'
+            ? 'Profit Share'
+            : formData.transaction_type === 'bank_deposit'
+              ? null
+              : editingTransaction.category
         const newValues = {
           transaction_date: parseDatetimeLocalInputToISOString(formData.transaction_date),
           transaction_type: dbTransactionType,
           amount: parseFloat(formData.amount),
-          description: formData.description || null,
+          description,
           paid_to: paidToTrim || null,
-          category: formData.category || null,
-          notes: formData.notes || null
+          category,
+          notes: null as string | null,
+          ...excludeFields,
+          ...splitFields,
         }
 
         // 출처별로 수정
@@ -766,6 +997,12 @@ export default function CashManagement() {
               paid_to: newValues.paid_to,
               category: newValues.category,
               notes: newValues.notes,
+              offset_paid_to: newValues.offset_paid_to,
+              offset_amount: newValues.offset_amount,
+              offset_method: newValues.offset_method,
+              share_chad_amount: newValues.share_chad_amount,
+              share_joey_amount: newValues.share_joey_amount,
+              profit_share_excluded: newValues.profit_share_excluded,
               updated_at: new Date().toISOString()
             })
             .eq('operator_id', activeOperatorId)
@@ -788,7 +1025,7 @@ export default function CashManagement() {
             .update({
               submit_on: newValues.transaction_date,
               amount: newValues.amount,
-              note: newValues.description || newValues.notes || null
+              note: newValues.description || null
             })
             .eq('id', originalId)
 
@@ -804,7 +1041,7 @@ export default function CashManagement() {
               submit_on: newValues.transaction_date,
               amount: newValues.amount,
               description: newValues.description,
-              notes: newValues.notes,
+              notes: editingTransaction.notes,
               paid_for: newValues.category
             })
             .eq('id', originalId)
@@ -819,14 +1056,26 @@ export default function CashManagement() {
       } else {
         // 추가 (bank_deposit은 withdrawal로 변환)
         const dbTransactionType = formData.transaction_type === 'bank_deposit' ? 'withdrawal' : formData.transaction_type
+        const description = ensureBankDepositDescription(
+          formData.transaction_type,
+          formData.description
+        ) || null
+        const category =
+          formData.transaction_type === 'withdrawal'
+            ? 'Profit Share'
+            : formData.transaction_type === 'bank_deposit'
+              ? null
+              : null
         const newValues = {
           transaction_date: parseDatetimeLocalInputToISOString(formData.transaction_date),
           transaction_type: dbTransactionType,
           amount: parseFloat(formData.amount),
-          description: formData.description || null,
+          description,
           paid_to: paidToTrim || null,
-          category: formData.category || null,
-          notes: formData.notes || null
+          category,
+          notes: null as string | null,
+          ...excludeFields,
+          ...splitFields,
         }
 
         const { data, error } = await supabase
@@ -839,6 +1088,12 @@ export default function CashManagement() {
             paid_to: newValues.paid_to,
             category: newValues.category,
             notes: newValues.notes,
+            offset_paid_to: newValues.offset_paid_to,
+            offset_amount: newValues.offset_amount,
+            offset_method: newValues.offset_method,
+            share_chad_amount: newValues.share_chad_amount,
+            share_joey_amount: newValues.share_joey_amount,
+            profit_share_excluded: newValues.profit_share_excluded,
             created_by: user?.email || '',
             operator_id: activeOperatorId,
           })
@@ -870,6 +1125,43 @@ export default function CashManagement() {
       toast.error('현금 거래를 저장하는 중 오류가 발생했습니다.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleToggleProfitShareExcluded = async (
+    transaction: CashTransaction,
+    excluded: boolean
+  ) => {
+    if (transaction.source !== 'cash_transactions') return
+    const fields = {
+      profit_share_excluded: excluded,
+      offset_paid_to: null as string | null,
+      offset_amount: null as number | null,
+      offset_method: null as string | null,
+    }
+    const oldValues = {
+      profit_share_excluded: transaction.profit_share_excluded,
+      offset_paid_to: transaction.offset_paid_to,
+    }
+    try {
+      setOffsetSavingId(transaction.id)
+      const { error } = await supabase
+        .from('cash_transactions')
+        .update({
+          ...fields,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('operator_id', activeOperatorId)
+        .eq('id', transaction.id)
+      if (error) throw error
+      await saveHistory(transaction.id, 'cash_transactions', 'updated', oldValues, fields)
+      await loadTransactions()
+      toast.success(excluded ? '50/50에서 제외했습니다.' : '50/50에 다시 포함했습니다.')
+    } catch (error) {
+      console.error('상계 저장 오류:', error)
+      toast.error('상계를 저장하는 중 오류가 발생했습니다.')
+    } finally {
+      setOffsetSavingId(null)
     }
   }
 
@@ -926,15 +1218,15 @@ export default function CashManagement() {
       // cash_transactions는 기존 모달 사용
       setEditingTransaction(transaction)
       // description이 "은행 Deposit"인 경우 bank_deposit으로 설정
-      const isBankDeposit = transaction.description?.includes('은행 Deposit') || transaction.description === '은행 Deposit'
+      const isBankDeposit = isBankDepositDescription(transaction.description)
       setFormData({
         transaction_date: formatDateTimeForDatetimeLocalInput(transaction.transaction_date),
         transaction_type: isBankDeposit ? 'bank_deposit' : transaction.transaction_type,
         amount: transaction.amount.toString(),
         description: transaction.description || '',
         paid_to: transaction.paid_to || '',
-        category: transaction.category || '',
-        notes: transaction.notes || ''
+        ...excludeFormFromTransaction(transaction),
+        ...splitFormFromTransaction(transaction),
       })
       setIsDialogOpen(true)
     }
@@ -1017,9 +1309,9 @@ export default function CashManagement() {
     await loadTransactionHistory(originalId, sourceTable)
   }
 
-  const handleNewTransaction = () => {
+  const handleNewTransaction = (kind: CashDirectEntryKind) => {
     setEditingTransaction(null)
-    setFormData(emptyCashFormData())
+    setFormData(emptyCashFormData(kind))
     setIsDialogOpen(true)
   }
 
@@ -1086,6 +1378,14 @@ export default function CashManagement() {
         selected: authorColFilters,
         onChange: setAuthorColFilters,
       },
+      {
+        key: 'review',
+        label: '검토',
+        options: CASH_REVIEW_OPTIONS,
+        selected: reviewColFilters,
+        onChange: setReviewColFilters,
+        searchable: false,
+      },
     ]
   }, [
     typeColFilters,
@@ -1094,6 +1394,7 @@ export default function CashManagement() {
     sourceColFilters,
     paymentStatusColFilters,
     authorColFilters,
+    reviewColFilters,
     paidToFilterOptions,
     categoryFilterOptions,
     paymentStatusFilterOptions,
@@ -1108,7 +1409,8 @@ export default function CashManagement() {
         matchesColFilter(categoryColFilters, cashCategoryFilterValue(tx)) &&
         matchesColFilter(sourceColFilters, cashSourceFilterValue(tx)) &&
         matchesColFilter(paymentStatusColFilters, cashPaymentStatusFilterValue(tx)) &&
-        matchesColFilter(authorColFilters, cashAuthorFilterValue(tx))
+        matchesColFilter(authorColFilters, cashAuthorFilterValue(tx)) &&
+        matchesColFilter(reviewColFilters, cashLedgerReviewStatusOf(tx, reviewByKey))
       )
     })
   }, [
@@ -1119,6 +1421,8 @@ export default function CashManagement() {
     sourceColFilters,
     paymentStatusColFilters,
     authorColFilters,
+    reviewColFilters,
+    reviewByKey,
   ])
 
   const hasActiveColFilters =
@@ -1127,7 +1431,8 @@ export default function CashManagement() {
     categoryColFilters.size > 0 ||
     sourceColFilters.size > 0 ||
     paymentStatusColFilters.size > 0 ||
-    authorColFilters.size > 0
+    authorColFilters.size > 0 ||
+    reviewColFilters.size > 0
 
   // 전체 통계 (컬럼 필터 반영, 잔액 카드는 별도)
   const totalDeposits = columnFilteredTransactions
@@ -1161,6 +1466,11 @@ export default function CashManagement() {
   
   const periodBalance = periodDeposits - periodWithdrawals
 
+  const profitShareSummary = useMemo(() => {
+    const rows = periodTransactions.filter((tx) => isLikelyProfitShareCashOut(tx))
+    return summarizeProfitShareRows(rows)
+  }, [periodTransactions])
+
   const handleCashTableSort = useCallback(
     (key: string) => {
       if (cashTableSortKey === key) {
@@ -1176,7 +1486,7 @@ export default function CashManagement() {
   const cashSortLocale = locale === 'en' ? 'en' : 'ko'
 
   const cashTypeSortValue = useCallback((tx: CashTransaction) => {
-    const isBankDeposit = tx.description?.includes('은행 Deposit') || tx.description === '은행 Deposit'
+    const isBankDeposit = isBankDepositDescription(tx.description)
     if (isBankDeposit) return 'bank_deposit'
     return tx.transaction_type
   }, [])
@@ -1234,6 +1544,10 @@ export default function CashManagement() {
           va = a.created_by_name || a.created_by
           vb = b.created_by_name || b.created_by
           break
+        case 'review':
+          va = cashLedgerReviewStatusOf(a, reviewByKey)
+          vb = cashLedgerReviewStatusOf(b, reviewByKey)
+          break
         default:
           va = a.transaction_date
           vb = b.transaction_date
@@ -1248,6 +1562,7 @@ export default function CashManagement() {
     cashSortLocale,
     cashTypeSortValue,
     cashSourceSortValue,
+    reviewByKey,
   ])
 
   // 페이지네이션 계산
@@ -1255,6 +1570,57 @@ export default function CashManagement() {
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
   const paginatedTransactions = sortedTransactions.slice(startIndex, endIndex)
+  const reviewPageIds = useMemo(
+    () => paginatedTransactions.map((tx) => tx.id),
+    [paginatedTransactions]
+  )
+  const reviewAllPageSelected =
+    reviewPageIds.length > 0 && reviewPageIds.every((id) => reviewSelectedIds.has(id))
+  const reviewSomePageSelected = reviewPageIds.some((id) => reviewSelectedIds.has(id))
+
+  const handleBulkSetReview = useCallback(
+    async (status: CashLedgerReviewStatus) => {
+      const selected = sortedTransactions.filter((tx) => reviewSelectedIds.has(tx.id))
+      const refs = selected
+        .map((tx) => cashLedgerRefFromRow(tx))
+        .filter((ref): ref is NonNullable<typeof ref> => Boolean(ref))
+      if (refs.length === 0) {
+        toast.error('검토할 거래를 선택하세요.')
+        return
+      }
+      const previous = new Map(reviewByKey)
+      setReviewBulkSaving(true)
+      setReviewByKey((prev) => {
+        const next = new Map(prev)
+        for (const ref of refs) {
+          next.set(cashLedgerReviewKey(ref.source, ref.sourceId), status)
+        }
+        return next
+      })
+      const result = await bulkUpsertCashLedgerReviews({
+        refs,
+        status,
+        reviewedBy: user?.email || '',
+      })
+      if (result.failed > 0) {
+        setReviewByKey(previous)
+        toast.error(
+          result.updated > 0
+            ? `${result.updated}건 저장, ${result.failed}건 실패`
+            : '일괄 검토를 저장하지 못했습니다.'
+        )
+      } else {
+        toast.success(
+          `${result.updated}건을 ${
+            status === 'approved' ? '승인' : status === 'flagged' ? '플래그' : '비승인'
+          } 처리했습니다.`
+        )
+        setReviewSelectedIds(new Set())
+      }
+      setReviewBulkSaving(false)
+    },
+    [sortedTransactions, reviewSelectedIds, reviewByKey, user?.email]
+  )
 
   const autoMatchCashTargets = useMemo((): CashAutoMatchInputRow[] => {
     const out: CashAutoMatchInputRow[] = []
@@ -1377,7 +1743,7 @@ export default function CashManagement() {
   // 필터 변경 시 첫 페이지로 리셋
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm, typeColFilters, paidToColFilters, categoryColFilters, sourceColFilters, paymentStatusColFilters, authorColFilters, startDate, endDate])
+  }, [searchTerm, typeColFilters, paidToColFilters, categoryColFilters, sourceColFilters, paymentStatusColFilters, authorColFilters, reviewColFilters, startDate, endDate])
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-4 sm:space-y-6">
@@ -1525,6 +1891,66 @@ export default function CashManagement() {
 
       <UnreceivedAssignedCashBalancePanel />
 
+      {profitShareSummary.pairTotal > 0.005 || profitShareSummary.split > 0.005 ? (
+        <Card className="border rounded-lg min-w-0 max-w-full">
+          <CardHeader className="p-3 sm:p-4 lg:p-6 pb-2">
+            <CardTitle className="text-sm sm:text-base">Profit Share 분배</CardTitle>
+            <CardDescription className="text-xs">
+              현금 직접 지출 중 Chad / Joey 수령분입니다. 상계로 표시한 건은 현금 잔액에는 남고 여기 비율에서는 빠집니다. 회사·투어 운영비와 은행 Deposit은 제외합니다. 기준은 50% / 50%입니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-3 sm:p-4 lg:p-6 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-lg border border-gray-200 bg-gray-50/70 p-3">
+                <div className="text-xs text-gray-500">Chad</div>
+                <div className="text-lg font-semibold tabular-nums">
+                  ${profitShareSummary.chad.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <div className="text-xs text-gray-500 tabular-nums">
+                  {profitShareSummary.pairTotal > 0.005 ? `${profitShareSummary.chadPct.toFixed(1)}%` : '—'}
+                </div>
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-gray-50/70 p-3">
+                <div className="text-xs text-gray-500">Joey</div>
+                <div className="text-lg font-semibold tabular-nums">
+                  ${profitShareSummary.joey.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <div className="text-xs text-gray-500 tabular-nums">
+                  {profitShareSummary.pairTotal > 0.005 ? `${profitShareSummary.joeyPct.toFixed(1)}%` : '—'}
+                </div>
+              </div>
+              <div
+                className={`rounded-lg border p-3 ${
+                  profitShareSummary.unbalanced
+                    ? 'border-amber-300 bg-amber-50'
+                    : 'border-emerald-200 bg-emerald-50/70'
+                }`}
+              >
+                <div className="text-xs text-gray-500">차이 (50/50)</div>
+                <div className="text-lg font-semibold tabular-nums">
+                  ${profitShareSummary.gap.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <div className="text-xs text-gray-600">
+                  {profitShareSummary.unbalanced
+                    ? '5%p 이상 벌어져 있습니다. 수령인·금액을 확인하세요.'
+                    : '균형 범위 안입니다.'}
+                </div>
+              </div>
+            </div>
+            {profitShareSummary.split > 0.005 ? (
+              <p className="text-xs text-gray-500 mt-2">
+                합산 기재 ${profitShareSummary.split.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}는 Chad / Joey 개인 몫으로 나눠 비율에 포함했습니다. 기본은 반반이며, 건을 열어 금액을 바꿀 수 있습니다.
+              </p>
+            ) : null}
+            {profitShareSummary.excluded > 0.005 ? (
+              <p className="text-xs text-gray-500 mt-2">
+                상계 ${profitShareSummary.excluded.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}는 50/50에서 제외했습니다.
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
       {/* 필터 및 거래 내역 - 모바일 컴팩트 */}
       <Card className="border rounded-lg min-w-0 max-w-full">
         <CardHeader className="p-3 sm:p-4 lg:p-6 pb-0">
@@ -1543,20 +1969,51 @@ export default function CashManagement() {
                 <span className="hidden sm:inline">{tBulkAutoMatch('button')}</span>
                 <span className="sm:hidden">{tBulkAutoMatch('buttonShort')}</span>
               </Button>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button onClick={handleNewTransaction} size="sm" className="w-full sm:w-auto text-sm bg-primary hover:bg-primary/90 text-white border-0">
-                  <Plus className="w-4 h-4 mr-1.5 sm:mr-2" />
-                  거래 추가
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full sm:w-auto text-sm border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                onClick={() => handleNewTransaction('deposit')}
+              >
+                <ArrowUpCircle className="w-4 h-4 mr-1.5 sm:mr-2" />
+                입금 추가
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full sm:w-auto text-sm border-rose-300 text-rose-800 hover:bg-rose-50"
+                onClick={() => handleNewTransaction('withdrawal')}
+              >
+                <ArrowDownCircle className="w-4 h-4 mr-1.5 sm:mr-2" />
+                지출 추가
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full sm:w-auto text-sm border-violet-300 text-violet-800 hover:bg-violet-50"
+                onClick={() => handleNewTransaction('bank_deposit')}
+              >
+                <Landmark className="w-4 h-4 mr-1.5 sm:mr-2" />
+                은행 Deposit 추가
+              </Button>
+            </div>
+            <Dialog
+              open={isDialogOpen}
+              onOpenChange={(open) => {
+                setIsDialogOpen(open)
+                if (!open) setEditingTransaction(null)
+              }}
+            >
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>
-                    {editingTransaction ? '현금 거래 수정' : '현금 거래 추가'}
+                    {cashDirectEntryTitle(formData.transaction_type, Boolean(editingTransaction))}
                   </DialogTitle>
                   <DialogDescription>
-                    현금 입금 또는 출금 내역을 기록합니다.
+                    {cashDirectEntryDescription(formData.transaction_type)}
                   </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
@@ -1574,43 +2031,14 @@ export default function CashManagement() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="transaction_type">거래 유형 *</Label>
-                      <Select
-                        value={formData.transaction_type}
-                        onValueChange={(value: 'deposit' | 'withdrawal' | 'bank_deposit') => {
-                          // 은행 Deposit 선택 시 description에 "은행 Deposit"이 포함되도록 보장
-                          let newDescription = formData.description
-                          if (value === 'bank_deposit') {
-                            // description에 "은행 Deposit"이 없으면 추가
-                            if (!formData.description || !formData.description.includes('은행 Deposit')) {
-                              newDescription = formData.description 
-                                ? `은행 Deposit - ${formData.description}` 
-                                : '은행 Deposit'
-                            }
-                          } else {
-                            // 다른 유형 선택 시 description에서 "은행 Deposit - " 제거
-                            if (formData.description && formData.description.startsWith('은행 Deposit - ')) {
-                              newDescription = formData.description.replace('은행 Deposit - ', '')
-                            } else if (formData.description === '은행 Deposit') {
-                              newDescription = ''
-                            }
-                          }
-                          setFormData({ 
-                            ...formData, 
-                            transaction_type: value,
-                            description: newDescription
-                          })
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="deposit">입금</SelectItem>
-                          <SelectItem value="withdrawal">출금</SelectItem>
-                          <SelectItem value="bank_deposit">은행 Deposit</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Label>거래 유형</Label>
+                      <div className="flex h-10 items-center rounded-md border border-input bg-muted/40 px-3 text-sm">
+                        {formData.transaction_type === 'bank_deposit'
+                          ? '은행 Deposit'
+                          : formData.transaction_type === 'withdrawal'
+                            ? '지출 (Profit Share)'
+                            : '입금'}
+                      </div>
                     </div>
                   </div>
 
@@ -1622,24 +2050,61 @@ export default function CashManagement() {
                       step="0.01"
                       min="0"
                       value={formData.amount}
-                      onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                      onChange={(e) =>
+                        setFormData(
+                          formData.transaction_type === 'withdrawal' &&
+                            classifyProfitSharePartner(formData.paid_to) === 'split'
+                            ? applyProfitShareSplitHalves(formData, e.target.value)
+                            : { ...formData, amount: e.target.value }
+                        )
+                      }
                       placeholder="0.00"
                       required
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="paid_to">결제처</Label>
+                    <Label htmlFor="paid_to">
+                      {formData.transaction_type === 'withdrawal' ? '수령인 *' : '결제처'}
+                    </Label>
                     <ExpensePaidToCombobox
                       id="paid_to"
                       value={formData.paid_to}
-                      onChange={(paid_to) => setFormData({ ...formData, paid_to })}
+                      onChange={(paid_to) => setFormData(applyProfitSharePaidToChange(formData, paid_to))}
                       options={cashPaidToComboboxOptions}
-                      placeholder="결제처 선택 또는 입력"
+                      placeholder={
+                        formData.transaction_type === 'withdrawal'
+                          ? 'Chad, Joey 또는 둘 다'
+                          : '결제처 선택 또는 입력'
+                      }
                       parentOpen={isDialogOpen}
                       disabled={saving}
                     />
+                    {formData.transaction_type === 'withdrawal' ? (
+                      <ProfitSharePaidToPresets
+                        value={formData.paid_to}
+                        disabled={saving}
+                        onChange={(paid_to) => setFormData(applyProfitSharePaidToChange(formData, paid_to))}
+                      />
+                    ) : null}
                   </div>
+
+                  {formData.transaction_type === 'withdrawal' &&
+                  classifyProfitSharePartner(formData.paid_to) === 'split' ? (
+                    <ProfitShareSplitFields
+                      form={formData}
+                      disabled={saving}
+                      onChange={setFormData}
+                    />
+                  ) : null}
+
+                  {formData.transaction_type === 'withdrawal' ? (
+                    <ProfitShareExcludeFields
+                      excluded={formData.profit_share_excluded}
+                      disabled={saving}
+                      onChange={(profit_share_excluded) => setFormData({ ...formData, profit_share_excluded })}
+                    />
+                  ) : null}
 
                   <div className="space-y-2">
                     <Label htmlFor="description">설명</Label>
@@ -1647,37 +2112,13 @@ export default function CashManagement() {
                       id="description"
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      placeholder="거래 설명을 입력하세요"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="category">카테고리</Label>
-                    <Select
-                      value={formData.category}
-                      onValueChange={(value) => setFormData({ ...formData, category: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="카테고리 선택" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.map((cat) => (
-                          <SelectItem key={cat} value={cat}>
-                            {cat}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="notes">메모</Label>
-                    <Textarea
-                      id="notes"
-                      value={formData.notes}
-                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                      placeholder="추가 메모를 입력하세요"
-                      rows={3}
+                      placeholder={
+                        formData.transaction_type === 'withdrawal'
+                          ? 'Profit Share'
+                          : formData.transaction_type === 'bank_deposit'
+                            ? '은행 Deposit'
+                            : '거래 설명을 입력하세요'
+                      }
                     />
                   </div>
 
@@ -1699,7 +2140,6 @@ export default function CashManagement() {
                 </form>
               </DialogContent>
             </Dialog>
-            </div>
           </div>
         </CardHeader>
         <CardContent className="p-3 sm:p-4 lg:p-6">
@@ -1741,6 +2181,57 @@ export default function CashManagement() {
               <div className="text-center py-6 sm:py-8 text-gray-500 text-sm">거래 내역이 없습니다.</div>
             ) : (
               <>
+                <div className="flex flex-col gap-2 rounded-lg border border-gray-200/80 bg-gray-50/50 p-2 sm:p-3 sm:flex-row sm:flex-wrap sm:items-center mb-3">
+                  <span className="text-xs text-muted-foreground">
+                    {reviewSelectedIds.size}건 선택
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={reviewBulkSaving || reviewPageIds.length === 0}
+                    onClick={() => {
+                      setReviewSelectedIds((prev) => {
+                        const next = new Set(prev)
+                        if (reviewAllPageSelected) {
+                          for (const id of reviewPageIds) next.delete(id)
+                        } else {
+                          for (const id of reviewPageIds) next.add(id)
+                        }
+                        return next
+                      })
+                    }}
+                  >
+                    {reviewAllPageSelected ? '이 페이지 해제' : '이 페이지 선택'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={reviewBulkSaving || sortedTransactions.length === 0}
+                    onClick={() => setReviewSelectedIds(new Set(sortedTransactions.map((tx) => tx.id)))}
+                  >
+                    현재 목록 전체
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={reviewBulkSaving || reviewSelectedIds.size === 0}
+                    onClick={() => setReviewSelectedIds(new Set())}
+                  >
+                    선택 해제
+                  </Button>
+                  <div className="flex items-center gap-2 sm:ml-auto">
+                    <span className="text-xs text-muted-foreground">일괄 검토</span>
+                    <CashLedgerReviewControls
+                      status={null}
+                      showLabel
+                      disabled={reviewBulkSaving || reviewSelectedIds.size === 0}
+                      onChange={(next) => void handleBulkSetReview(next)}
+                    />
+                  </div>
+                </div>
                 {/* 모바일: 카드 리스트 - 라벨/값 구조 */}
                 <div className="md:hidden space-y-3">
                   {paginatedTransactions.length === 0 ? (
@@ -1760,7 +2251,15 @@ export default function CashManagement() {
                     return (
                       <div key={transaction.id} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:bg-gray-50/80 active:bg-gray-100 transition-colors">
                         <div className="flex items-start justify-between gap-3 mb-3">
-                          <div className="flex items-start gap-1">
+                          <div className="flex items-start gap-2">
+                            <Checkbox
+                              className="mt-1"
+                              checked={reviewSelectedIds.has(transaction.id)}
+                              onCheckedChange={(c) => toggleReviewSelect(transaction.id, c === true)}
+                              aria-label="검토 선택"
+                              disabled={reviewBulkSaving}
+                            />
+                            <div className="flex items-start gap-1">
                             <ExpenseStatementReconIcon
                               matched={rowMatched}
                               exempt={rowExempt}
@@ -1786,6 +2285,7 @@ export default function CashManagement() {
                                 {displayType}
                               </Badge>
                             </div>
+                            </div>
                           </div>
                           <p className={`text-lg font-bold ${transaction.transaction_type === 'deposit' ? 'text-primary' : 'text-red-600'}`}>
                             {transaction.transaction_type === 'deposit' ? '+' : '-'}
@@ -1797,6 +2297,18 @@ export default function CashManagement() {
                           <span className="truncate">{transaction.description || '-'}</span>
                           <span className="text-gray-400">결제처</span>
                           <span className="truncate">{transaction.paid_to?.trim() || '—'}</span>
+                          {formatProfitShareExcludeLabel(transaction) ? (
+                            <>
+                              <span className="text-gray-400">상계</span>
+                              <span className="truncate">{formatProfitShareExcludeLabel(transaction)}</span>
+                            </>
+                          ) : null}
+                          {formatProfitShareSplitLabel(transaction) ? (
+                            <>
+                              <span className="text-gray-400">분배</span>
+                              <span className="truncate">{formatProfitShareSplitLabel(transaction)}</span>
+                            </>
+                          ) : null}
                           <span className="text-gray-400">카테고리</span>
                           <span>{transaction.category || '-'}</span>
                           <span className="text-gray-400">출처</span>
@@ -1814,10 +2326,38 @@ export default function CashManagement() {
                             </>
                           ) : null}
                         </div>
-                        <div className="flex items-center justify-end gap-1 mt-3 pt-3 border-t border-gray-100">
+                        <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-gray-100">
+                          {(() => {
+                            const ref = cashLedgerRefFromRow(transaction)
+                            const key = ref ? cashLedgerReviewKey(ref.source, ref.sourceId) : ''
+                            return (
+                              <CashLedgerReviewControls
+                                status={cashLedgerReviewStatusOf(transaction, reviewByKey)}
+                                disabled={!ref || reviewSavingKey === key || reviewBulkSaving}
+                                showLabel
+                                onChange={(next) => void handleSetReview(transaction, next)}
+                              />
+                            )
+                          })()}
+                          <div className="flex items-center justify-end gap-1 flex-wrap">
+                          {canToggleProfitShareExcluded(transaction) ? (
+                            <ProfitShareOffsetQuickButtons
+                              excluded={isProfitShareExcluded(transaction)}
+                              disabled={offsetSavingId === transaction.id || saving}
+                              onChange={(excluded) => void handleToggleProfitShareExcluded(transaction, excluded)}
+                            />
+                          ) : null}
                           <Button variant="ghost" size="sm" className="h-10 w-10 p-0 min-h-[44px]" onClick={() => handleViewHistory(transaction)} title="히스토리">
                             <History className="w-4 h-4" />
                           </Button>
+                          {cashMoveExpenseItem(transaction) ? (
+                            <MoveExpenseTableButton
+                              iconOnly
+                              variant="ghost"
+                              items={[cashMoveExpenseItem(transaction)!]}
+                              onMoved={() => void loadTransactions()}
+                            />
+                          ) : null}
                           <Button variant="ghost" size="sm" className="h-10 w-10 p-0 min-h-[44px]" onClick={() => handleEdit(transaction)} title="수정">
                             <Edit className="w-4 h-4" />
                           </Button>
@@ -1838,6 +2378,7 @@ export default function CashManagement() {
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
+                          </div>
                         </div>
                       </div>
                     )
@@ -1849,10 +2390,34 @@ export default function CashManagement() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="py-2 w-10 text-center">
+                        <Checkbox
+                          checked={
+                            reviewAllPageSelected
+                              ? true
+                              : reviewSomePageSelected
+                                ? 'indeterminate'
+                                : false
+                          }
+                          onCheckedChange={() => {
+                            setReviewSelectedIds((prev) => {
+                              const next = new Set(prev)
+                              if (reviewAllPageSelected) {
+                                for (const id of reviewPageIds) next.delete(id)
+                              } else {
+                                for (const id of reviewPageIds) next.add(id)
+                              }
+                              return next
+                            })
+                          }}
+                          aria-label="이 페이지 전체 선택"
+                          disabled={reviewBulkSaving || reviewPageIds.length === 0}
+                        />
+                      </TableHead>
                       <TableHead className="py-2 w-12 text-center" title={tStmt('unmatchedTitle')}>
                         {tStmt('columnHeaderShort')}
                       </TableHead>
-                      <TableHead className="py-2 w-52 align-bottom">
+                      <TableHead className="py-2 w-[7.25rem] min-w-[7.25rem] max-w-[7.25rem] pr-2 align-bottom">
                         <TableSortHeaderButton
                           label="날짜"
                           active={cashTableSortKey === 'date'}
@@ -1860,7 +2425,7 @@ export default function CashManagement() {
                           onClick={() => handleCashTableSort('date')}
                         />
                       </TableHead>
-                      <TableHead className="w-36 min-w-[8.5rem] py-2 align-bottom">
+                      <TableHead className="w-32 min-w-[8rem] max-w-[8.5rem] pl-2 py-2 align-bottom">
                         <CashColumnHeader
                           label="유형"
                           sortKey="type"
@@ -1938,15 +2503,7 @@ export default function CashManagement() {
                           onFilterChange={setPaymentStatusColFilters}
                         />
                       </TableHead>
-                      <TableHead className="py-2 align-bottom">
-                        <TableSortHeaderButton
-                          label="메모"
-                          active={cashTableSortKey === 'notes'}
-                          dir={cashTableSortDir}
-                          onClick={() => handleCashTableSort('notes')}
-                        />
-                      </TableHead>
-                      <TableHead className="w-40 min-w-[9rem] py-2 align-bottom">
+                      <TableHead className="w-[5.25rem] min-w-[5.25rem] max-w-[5.25rem] py-2 align-bottom">
                         <CashColumnHeader
                           label="작성자"
                           sortKey="author"
@@ -1958,13 +2515,26 @@ export default function CashManagement() {
                           onFilterChange={setAuthorColFilters}
                         />
                       </TableHead>
-                      <TableHead className="text-right w-40 py-2">작업</TableHead>
+                      <TableHead className="w-[6.75rem] min-w-[6.75rem] py-2 align-bottom">
+                        <CashColumnHeader
+                          label="검토"
+                          sortKey="review"
+                          activeSortKey={cashTableSortKey}
+                          sortDir={cashTableSortDir}
+                          onSort={handleCashTableSort}
+                          filterOptions={CASH_REVIEW_OPTIONS}
+                          filterSelected={reviewColFilters}
+                          onFilterChange={setReviewColFilters}
+                          searchable={false}
+                        />
+                      </TableHead>
+                      <TableHead className="text-right w-64 min-w-[16rem] py-2">작업</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {paginatedTransactions.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={12} className="py-8 text-center text-sm text-gray-500">
+                        <TableCell colSpan={14} className="py-8 text-center text-sm text-gray-500">
                           {hasActiveColFilters ? '선택한 필터에 맞는 거래가 없습니다.' : '거래 내역이 없습니다.'}
                         </TableCell>
                       </TableRow>
@@ -1977,6 +2547,14 @@ export default function CashManagement() {
                       
                       return (
                         <TableRow key={transaction.id} className="h-10">
+                          <TableCell className="py-1 w-10 text-center align-middle">
+                            <Checkbox
+                              checked={reviewSelectedIds.has(transaction.id)}
+                              onCheckedChange={(c) => toggleReviewSelect(transaction.id, c === true)}
+                              aria-label="검토 선택"
+                              disabled={reviewBulkSaving}
+                            />
+                          </TableCell>
                           <TableCell className="py-1 w-12 text-center align-middle">
                             <div className="inline-flex items-center gap-0.5">
                               <ExpenseStatementReconIcon
@@ -2000,7 +2578,7 @@ export default function CashManagement() {
                               ) : null}
                             </div>
                           </TableCell>
-                          <TableCell className="py-1 w-52 whitespace-nowrap">
+                          <TableCell className="py-1 w-[7.25rem] max-w-[7.25rem] pr-2 whitespace-nowrap">
                             {(() => {
                               // ISO 형식의 날짜를 로컬 시간대로 변환하여 날짜만 표시
                               const date = new Date(transaction.transaction_date)
@@ -2011,7 +2589,7 @@ export default function CashManagement() {
                               return `${year}. ${month}. ${day}.`
                             })()}
                           </TableCell>
-                          <TableCell className="w-32 py-1">
+                          <TableCell className="w-32 max-w-[8.5rem] pl-2 py-1">
                             {(() => {
                               const isBankDeposit = transaction.description?.includes('은행 Deposit') || transaction.description === '은행 Deposit'
                               const displayType = isBankDeposit ? '은행 Deposit' : (transaction.transaction_type === 'deposit' ? '입금' : '출금')
@@ -2053,10 +2631,28 @@ export default function CashManagement() {
                             )}
                           </TableCell>
                           <TableCell
-                            className="w-40 min-w-[8rem] py-1 text-sm truncate"
-                            title={transaction.paid_to?.trim() || ''}
+                            className="w-40 min-w-[8rem] py-1 text-sm"
+                            title={
+                              [
+                                transaction.paid_to?.trim() || '',
+                                formatProfitShareExcludeLabel(transaction) || '',
+                                formatProfitShareSplitLabel(transaction) || '',
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')
+                            }
                           >
-                            {transaction.paid_to?.trim() || '—'}
+                            <div className="truncate">{transaction.paid_to?.trim() || '—'}</div>
+                            {formatProfitShareExcludeLabel(transaction) ? (
+                              <div className="text-[11px] text-muted-foreground truncate">
+                                {formatProfitShareExcludeLabel(transaction)}
+                              </div>
+                            ) : null}
+                            {formatProfitShareSplitLabel(transaction) ? (
+                              <div className="text-[11px] text-muted-foreground truncate">
+                                {formatProfitShareSplitLabel(transaction)}
+                              </div>
+                            ) : null}
                           </TableCell>
                           <TableCell className="w-40 py-1">
                             {transaction.category ? (
@@ -2075,12 +2671,31 @@ export default function CashManagement() {
                               ? transaction.payment_status?.trim() || '—'
                               : '—'}
                           </TableCell>
-                          <TableCell className="max-w-xs truncate py-1 text-sm">{transaction.notes || '-'}</TableCell>
-                          <TableCell className="text-sm text-gray-500 py-1 whitespace-nowrap">
-                            {transaction.created_by_name || '—'}
+                          <TableCell className="w-[5.25rem] max-w-[5.25rem] text-sm text-gray-500 py-1">
+                            <HoverDetailText text={transaction.created_by_name} />
                           </TableCell>
-                          <TableCell className="text-right w-40 py-1">
-                            <div className="flex justify-end gap-1">
+                          <TableCell className="w-[6.75rem] py-1">
+                            {(() => {
+                              const ref = cashLedgerRefFromRow(transaction)
+                              const key = ref ? cashLedgerReviewKey(ref.source, ref.sourceId) : ''
+                              return (
+                                <CashLedgerReviewControls
+                                  status={cashLedgerReviewStatusOf(transaction, reviewByKey)}
+                                  disabled={!ref || reviewSavingKey === key || reviewBulkSaving}
+                                  onChange={(next) => void handleSetReview(transaction, next)}
+                                />
+                              )
+                            })()}
+                          </TableCell>
+                          <TableCell className="text-right w-64 min-w-[16rem] py-1">
+                            <div className="flex justify-end gap-1 flex-wrap items-center">
+                              {canToggleProfitShareExcluded(transaction) ? (
+                                <ProfitShareOffsetQuickButtons
+                                  excluded={isProfitShareExcluded(transaction)}
+                                  disabled={offsetSavingId === transaction.id || saving}
+                                  onChange={(excluded) => void handleToggleProfitShareExcluded(transaction, excluded)}
+                                />
+                              ) : null}
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -2089,6 +2704,15 @@ export default function CashManagement() {
                               >
                                 <History className="w-4 h-4" />
                               </Button>
+                              {cashMoveExpenseItem(transaction) ? (
+                                <MoveExpenseTableButton
+                                  iconOnly
+                                  variant="ghost"
+                                  size="sm"
+                                  items={[cashMoveExpenseItem(transaction)!]}
+                                  onMoved={() => void loadTransactions()}
+                                />
+                              ) : null}
                               <Button
                                 variant="ghost"
                                 size="sm"

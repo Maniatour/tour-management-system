@@ -818,6 +818,9 @@ export default function AllTourExpensesManager() {
               refreshTourReconFlags()
               setListSelectedIds(new Set())
             }}
+            onMoved={() => {
+              void loadExpenses()
+            }}
           />
           {/* 모바일: 카드 리스트 - 라벨/값 구조 */}
           <div className="md:hidden space-y-3">

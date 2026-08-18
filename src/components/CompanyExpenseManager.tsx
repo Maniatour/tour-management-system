@@ -47,6 +47,7 @@ import {
 } from 'lucide-react'
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
 import ExpenseVendorManagerModal from '@/components/expense/ExpenseVendorManagerModal'
+import { MoveExpenseTableButton } from '@/components/expenses/MoveExpenseTableDialog'
 import type { ExpenseVendorRecord } from '@/lib/expenseVendors'
 import { isReusableExpenseVendor } from '@/lib/expenseVendors'
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
@@ -3063,6 +3064,14 @@ export default function CompanyExpenseManager({
                 <Trash2 className="h-4 w-4 mr-1.5 shrink-0" aria-hidden />
                 {listBatchDeleting ? t('listBatchDelete.deleting') : t('listBatchDelete.deleteButton')}
               </Button>
+              <MoveExpenseTableButton
+                items={[...listSelectedIds].map((id) => ({ table: 'company_expenses' as const, id }))}
+                disabled={listBatchApplying || listBatchDeleting}
+                onMoved={() => {
+                  setListSelectedIds(new Set())
+                  void loadExpenses()
+                }}
+              />
               <ExpenseReconciliationBulkExemptActions
                 sourceTable="company_expenses"
                 selectedIds={listSelectedIds}

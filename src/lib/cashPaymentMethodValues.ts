@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 /**
  * 현금 관리·현금 리포트에서 공통으로 쓰는 결제수단 DB 값.
@@ -6,6 +7,41 @@ import { supabase } from '@/lib/supabase'
  * 리터럴 `Cash`/`cash`만 조회하면 누락된다.
  */
 export const CASH_PAYMENT_METHOD_DB_VALUES = ['PAYM032', 'PAYM001', 'cash', 'Cash'] as const
+
+/** 마스터에서 삭제된 예전 현금 ID — 표시·저장 시 현재 Cash(PAYM001)로 바꿉니다. */
+export const ORPHAN_CASH_PAYMENT_METHOD_IDS = ['PAYM032'] as const
+
+export function needsResolvedCashPaymentMethodId(
+  value: string | null | undefined,
+  fromCashLedger: boolean
+): boolean {
+  if (fromCashLedger) return true
+  const v = (value ?? '').trim()
+  if (!v) return false
+  if ((ORPHAN_CASH_PAYMENT_METHOD_IDS as readonly string[]).includes(v)) return true
+  return v.toLowerCase() === 'cash'
+}
+
+export async function lookupActiveCashPaymentMethodId(sb: Pick<SupabaseClient, 'from'>): Promise<string> {
+  const { data, error } = await sb
+    .from('payment_methods')
+    .select('id, method, method_type, status')
+    .or('method_type.eq.cash,method.ilike.cash')
+
+  if (error) {
+    console.warn('현금 결제수단 조회 실패:', error)
+    return 'PAYM001'
+  }
+
+  const rows = (data ?? []).filter((row) => row.id?.trim())
+  const active = rows.filter((row) => (row.status ?? 'active') === 'active')
+  const pool = active.length > 0 ? active : rows
+  const namedCash = pool.find((row) => (row.method ?? '').trim().toLowerCase() === 'cash')
+  if (namedCash?.id) return namedCash.id
+  const paym001 = pool.find((row) => row.id === 'PAYM001')
+  if (paym001?.id) return paym001.id
+  return pool[0]?.id || 'PAYM001'
+}
 
 let cachedCashFilterValues: string[] | null = null
 

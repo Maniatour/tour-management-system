@@ -75,6 +75,8 @@ import {
   bulkSetExpenseReconciliationExempt,
   expenseReconExemptSourceSupported,
 } from '@/lib/expense-reconciliation-exemptions'
+import { MoveExpenseTableButton } from '@/components/expenses/MoveExpenseTableDialog'
+import { isMovableExpenseTable, type MoveExpenseItem } from '@/lib/moveExpenseTable'
 import ExpenseStatementBulkAutoMatchModal from '@/components/reconciliation/ExpenseStatementBulkAutoMatchModal'
 import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
 import { ReservationResizableDialog } from '@/components/reservation/ReservationResizableDialog'
@@ -859,12 +861,14 @@ export default function PnlUnifiedExpenseDetailDialog({
   const [bulkAutoMatchOpen, setBulkAutoMatchOpen] = useState(false)
   const [tourDetailModalId, setTourDetailModalId] = useState<string | null>(null)
   const [reservationDetailModalId, setReservationDetailModalId] = useState<string | null>(null)
+  const [moveTableOpen, setMoveTableOpen] = useState(false)
 
   const nestedOverlayOpen =
     tourDetailModalId != null ||
     reservationDetailModalId != null ||
     stmtReconOpen ||
-    bulkAutoMatchOpen
+    bulkAutoMatchOpen ||
+    moveTableOpen
 
   useEffect(() => {
     if (!tourDetailModalId && !reservationDetailModalId) return
@@ -1004,6 +1008,13 @@ export default function PnlUnifiedExpenseDetailDialog({
     () =>
       selectedLines.filter(
         (l) => expenseReconExemptSourceSupported(l.source) && l.statementReconExempt !== true
+      ),
+    [selectedLines]
+  )
+  const selectedMoveItems = useMemo<MoveExpenseItem[]>(
+    () =>
+      selectedLines.flatMap((l) =>
+        isMovableExpenseTable(l.source) ? [{ table: l.source, id: l.id }] : []
       ),
     [selectedLines]
   )
@@ -1742,6 +1753,15 @@ export default function PnlUnifiedExpenseDetailDialog({
                       <Archive className="h-3.5 w-3.5" aria-hidden />
                       삭제 보관함으로
                     </Button>
+                    <MoveExpenseTableButton
+                      items={selectedMoveItems}
+                      disabled={deleting || dismissing || markingExempt}
+                      onOpenChange={setMoveTableOpen}
+                      onMoved={() => {
+                        setSelectedKeys(new Set())
+                        void onSaved()
+                      }}
+                    />
                   </>
                 ) : null}
               </div>
@@ -2201,6 +2221,15 @@ export default function PnlUnifiedExpenseDetailDialog({
                   >
                     삭제 보관함으로
                   </Button>
+                  <MoveExpenseTableButton
+                    items={selectedMoveItems}
+                    disabled={deleting || dismissing || markingExempt}
+                    onOpenChange={setMoveTableOpen}
+                    onMoved={() => {
+                      setSelectedKeys(new Set())
+                      void onSaved()
+                    }}
+                  />
                 </>
               )}
             </div>

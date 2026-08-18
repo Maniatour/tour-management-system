@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Plus, Users, DollarSign, Eye, Clock, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal, CalendarPlus, CalendarX, CalendarClock, Send } from 'lucide-react'
+import { Plus, Users, DollarSign, Eye, Clock, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal, CalendarPlus, CalendarX, CalendarClock, Send, Wallet } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - react-country-flag may lack types
@@ -37,6 +37,11 @@ import type { ReservationSmsLogSummary } from '@/lib/reservationSmsLogSummaries'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import { ADMIN_FLOATING_PORTAL_Z_INDEX } from '@/lib/adminFloatingFabLayout'
 import { QuickPaymentRequestModal } from '@/components/customer/QuickPaymentRequestForm'
+import {
+  getBalanceAmountForDisplay,
+  residentFeesUsdFromCustomerRows,
+  withNormalizedBalanceAmountForDisplay,
+} from '@/utils/reservationPricingBalance'
 
 function getLanguageFlagCountryCode(language: string | undefined | null): string {
   if (!language) return 'US'
@@ -126,6 +131,15 @@ function formatCardTimestampMmDdYyyyHm(raw: string | null | undefined, locale: s
     minute: '2-digit',
   })
   return `${mm}/${dd}/${d.getFullYear()} ${time}`
+}
+
+function formatCardBalanceBadge(amount: number): string {
+  if (!Number.isFinite(amount) || Math.abs(amount) < 0.005) return '$0.00'
+  const formatted = Math.abs(amount).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+  return amount < 0 ? `-$${formatted}` : `$${formatted}`
 }
 
 function formatRegistrationDateForCard(
@@ -318,7 +332,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   productOptions: _productOptions,
   optionChoices: _optionChoices,
   tourInfoMap,
-  reservationPricingMap: _reservationPricingMap,
+  reservationPricingMap,
   locale,
   onPricingInfoClick,
   onCreateTour,
@@ -434,6 +448,53 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     })
     return badges.sort((a, b) => a.sortKey.localeCompare(b.sortKey))
   }, [hideAssignedTourUi, reservation.productId, reservation.tourDate, tourInfoMap])
+
+  const customerBalanceDue = useMemo(() => {
+    const pricing = reservationPricingMap.get(reservation.id)
+    if (!pricing) return 0
+    return getBalanceAmountForDisplay(
+      withNormalizedBalanceAmountForDisplay(pricing),
+      null,
+      {
+        adults: reservation.adults,
+        children: reservation.child,
+        infants: reservation.infant,
+      },
+      {
+        reservationStatus: reservation.status,
+        residentFeeUsd: residentFeesUsdFromCustomerRows(prefetchedResidentCustomerRows ?? []),
+      }
+    )
+  }, [
+    reservationPricingMap,
+    reservation.id,
+    reservation.adults,
+    reservation.child,
+    reservation.infant,
+    reservation.status,
+    prefetchedResidentCustomerRows,
+  ])
+  const showCustomerBalanceBadge = Math.abs(customerBalanceDue) >= 0.005
+  const customerBalanceBadgeLabel = formatCardBalanceBadge(customerBalanceDue)
+  const customerBalanceBadge = showCustomerBalanceBadge ? (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onPricingInfoClick(reservation)
+      }}
+      className={`inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-semibold tabular-nums ring-1 ${
+        customerBalanceDue < -0.005
+          ? 'bg-rose-100 text-rose-800 ring-rose-200/80 hover:bg-rose-200/80'
+          : 'bg-purple-100 text-purple-800 ring-purple-200/80 hover:bg-purple-200/80'
+      }`}
+      title={t('card.balanceDueBadgeTitle')}
+      aria-label={`${t('card.balanceDueBadgeTitle')}: ${customerBalanceBadgeLabel}`}
+    >
+      <Wallet className="h-2.5 w-2.5 shrink-0" aria-hidden />
+      {customerBalanceBadgeLabel}
+    </button>
+  ) : null
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false)
   const [statusModalOpen, setStatusModalOpen] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
@@ -798,8 +859,9 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 />
               </span>
             </div>
-            {sameDayProductTourBadges.length > 0 ? (
+            {sameDayProductTourBadges.length > 0 || customerBalanceBadge ? (
               <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1">
+                {customerBalanceBadge}
                 {sameDayProductTourBadges.map((badge) => (
                   <button
                     key={badge.tourId}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { DollarSign, TrendingUp, TrendingDown, Wallet, Calendar, Plus } from 'lucide-react'
+import { DollarSign, TrendingUp, TrendingDown, Wallet, Calendar, ArrowDownCircle, ArrowUpCircle, Landmark } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
@@ -12,6 +12,11 @@ import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import CashLedgerReportEditModals, { type CashLedgerEditTarget } from '@/components/reports/CashLedgerReportEditModals'
 import UnreceivedAssignedCashBalancePanel from '@/components/reports/UnreceivedAssignedCashBalancePanel'
+import {
+  isCashLedgerRefundPaymentRecord,
+  isPaymentRequestedStatus,
+} from '@/utils/reservationPricingBalance'
+import type { CashDirectEntryKind } from '@/lib/cashTransactionPurpose'
 
 interface CashReportTabProps {
   dateRange: { start: string; end: string }
@@ -43,6 +48,43 @@ const CASH_PAYMENT_STATUSES = [
   "Customer's CC Charged",
   'Commission Received !'
 ] as const
+
+type CashPaymentRecordRow = {
+  id: string
+  amount: unknown
+  submit_on: string
+  payment_status?: string | null
+  reservation_id?: string | null
+  payment_method?: string | null
+  note?: string | null
+  submit_by?: string | null
+}
+
+/** 입금-지출 현금 관리와 동일: 환불은 출금, 요청 상태는 제외, 수령만 입금 */
+function classifyCashReportPaymentRecord(
+  pr: Pick<CashPaymentRecordRow, 'payment_status' | 'note'>
+): 'deposit' | 'withdrawal' | null {
+  const status = pr.payment_status != null ? String(pr.payment_status) : null
+  if (isCashLedgerRefundPaymentRecord(status, pr.note)) return 'withdrawal'
+  if (isPaymentRequestedStatus(status)) return null
+  const s = (status ?? '').trim()
+  if ((CASH_PAYMENT_STATUSES as readonly string[]).includes(s)) return 'deposit'
+  return null
+}
+
+function splitCashReportPaymentRecords(rows: CashPaymentRecordRow[] | null | undefined): {
+  deposits: CashPaymentRecordRow[]
+  refunds: CashPaymentRecordRow[]
+} {
+  const deposits: CashPaymentRecordRow[] = []
+  const refunds: CashPaymentRecordRow[] = []
+  for (const row of rows || []) {
+    const kind = classifyCashReportPaymentRecord(row)
+    if (kind === 'deposit') deposits.push(row)
+    else if (kind === 'withdrawal') refunds.push(row)
+  }
+  return { deposits, refunds }
+}
 
 /** CashLedgerReportEditModals와 동일: DB에는 withdrawal + 설명으로 은행 Deposit 구분 */
 function isBankDepositCashRow(description: string | null | undefined): boolean {
@@ -131,6 +173,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
   const [loading, setLoading] = useState(true)
   const [editTarget, setEditTarget] = useState<CashLedgerEditTarget | null>(null)
   const [addCashOpen, setAddCashOpen] = useState(false)
+  const [addCashKind, setAddCashKind] = useState<CashDirectEntryKind>('deposit')
   const [ledgerBaseDate, setLedgerBaseDate] = useState<string>(getDefaultLedgerBaseDate())
   const [categoryModalCategory, setCategoryModalCategory] = useState<string | null>(null)
 
@@ -201,22 +244,20 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           .eq('operator_id', activeOperatorId)
           .gte('transaction_date', baseDate + 'T00:00:00')
           .order('transaction_date', { ascending: true }),
-        // payment_records에서 현금 입금 조회 (PAYM032/PAYM001 + payment_method cash)
+        // payment_records에서 현금 입금·환불 조회 (PAYM032/PAYM001 + payment_method cash)
         supabase
           .from('payment_records')
           .select('id, amount, submit_on, payment_status, reservation_id, payment_method, note, submit_by')
           .eq('operator_id', activeOperatorId)
           .in('payment_method', cashPaymentMethods)
-          .in('payment_status', [...CASH_PAYMENT_STATUSES])
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
-        // 원장 기준일부터의 현금 입금 (잔액 계산용)
+        // 원장 기준일부터의 현금 입금·환불 (잔액 계산용)
         supabase
           .from('payment_records')
-          .select('id, amount, submit_on')
+          .select('id, amount, submit_on, payment_status, reservation_id, payment_method, note, submit_by')
           .eq('operator_id', activeOperatorId)
           .in('payment_method', cashPaymentMethods)
-          .in('payment_status', [...CASH_PAYMENT_STATUSES])
           .gte('submit_on', baseDate + 'T00:00:00')
           .order('submit_on', { ascending: true }),
         // 기간 내 company_expenses 현금 지출
@@ -261,8 +302,16 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
 
       const periodTransactions = periodTransactionsResult.data
       const allTransactions = allTransactionsResult.data
-      const cashPayments = cashPaymentsResult.data
-      const allCashPayments = allCashPaymentsResult.data
+      const periodPaymentSplit = splitCashReportPaymentRecords(
+        cashPaymentsResult.data as CashPaymentRecordRow[] | null
+      )
+      const allPaymentSplit = splitCashReportPaymentRecords(
+        allCashPaymentsResult.data as CashPaymentRecordRow[] | null
+      )
+      const cashPayments = periodPaymentSplit.deposits
+      const cashPaymentRefunds = periodPaymentSplit.refunds
+      const allCashPayments = allPaymentSplit.deposits
+      const allCashPaymentRefunds = allPaymentSplit.refunds
       const periodCompanyExpenses = periodCompanyExpensesResult.data
       const allCompanyExpenses = allCompanyExpensesResult.data
       const periodReservationExpenses = periodReservationExpensesResult.data
@@ -284,11 +333,21 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         .reduce((sum, t) => sum + toNumber((t as any).amount), 0)
       const periodCompanyWithdrawals = (periodCompanyExpenses || []).reduce((sum, p) => sum + toNumber((p as any).amount), 0)
       const periodReservationWithdrawals = (periodReservationExpenses || []).reduce((sum, p) => sum + toNumber((p as any).amount), 0)
-      const periodWithdrawals = periodWithdrawalsFromCash + periodCompanyWithdrawals + periodReservationWithdrawals
+      const periodPaymentRefundTotal = cashPaymentRefunds.reduce(
+        (sum, p) => sum + Math.abs(toNumber(p.amount)),
+        0
+      )
+      const periodWithdrawals =
+        periodWithdrawalsFromCash +
+        periodCompanyWithdrawals +
+        periodReservationWithdrawals +
+        periodPaymentRefundTotal
 
       // payment_records에서의 현금 입금도 포함
-      const cashPaymentsTotal = (cashPayments || [])
-        .reduce((sum, p) => sum + toNumber((p as any).amount), 0)
+      const cashPaymentsTotal = cashPayments.reduce(
+        (sum, p) => sum + Math.abs(toNumber(p.amount)),
+        0
+      )
 
       const totalDeposits = periodDeposits + cashPaymentsTotal
       const netCashFlow = totalDeposits - periodWithdrawals
@@ -302,14 +361,25 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         }
       }, 0)
 
-      // payment_records에서 원장 기준일부터의 현금 입금도 포함 (이미 병렬 쿼리로 조회됨)
-      const allCashPaymentsTotal = (allCashPayments || [])
-        .reduce((sum, p) => sum + toNumber((p as any).amount), 0)
+      // payment_records에서 원장 기준일부터의 현금 입금·환불도 포함 (이미 병렬 쿼리로 조회됨)
+      const allCashPaymentsTotal = allCashPayments.reduce(
+        (sum, p) => sum + Math.abs(toNumber(p.amount)),
+        0
+      )
+      const allCashPaymentRefundTotal = allCashPaymentRefunds.reduce(
+        (sum, p) => sum + Math.abs(toNumber(p.amount)),
+        0
+      )
       // company_expenses, reservation_expenses 현금 지출은 잔액에서 차감
       const allCompanyExpensesTotal = (allCompanyExpenses || []).reduce((sum, p) => sum + toNumber((p as any).amount), 0)
       const allReservationExpensesTotal = (allReservationExpenses || []).reduce((sum, p) => sum + toNumber((p as any).amount), 0)
 
-      const finalBalance = totalBalance + allCashPaymentsTotal - allCompanyExpensesTotal - allReservationExpensesTotal
+      const finalBalance =
+        totalBalance +
+        allCashPaymentsTotal -
+        allCompanyExpensesTotal -
+        allReservationExpensesTotal -
+        allCashPaymentRefundTotal
 
       const sourceOrder: Record<string, number> = {
         cash_transactions: 0,
@@ -334,12 +404,19 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           transaction_type: t.transaction_type as 'deposit' | 'withdrawal',
           amount: toNumber(t.amount)
         })),
-        ...(allCashPayments || []).map((p: any) => ({
+        ...(allCashPayments || []).map((p) => ({
           source: 'payment_records' as const,
           sourceId: String(p.id),
           occurred_at: p.submit_on,
           transaction_type: 'deposit' as const,
-          amount: toNumber(p.amount)
+          amount: Math.abs(toNumber(p.amount))
+        })),
+        ...(allCashPaymentRefunds || []).map((p) => ({
+          source: 'payment_records' as const,
+          sourceId: String(p.id),
+          occurred_at: p.submit_on,
+          transaction_type: 'withdrawal' as const,
+          amount: Math.abs(toNumber(p.amount))
         })),
         ...(allCompanyExpenses || []).map((p: any) => ({
           source: 'company_expenses' as const,
@@ -392,10 +469,15 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           cat.withdrawals += toNumber((t as any).amount)
         }
       })
-      ;(cashPayments || []).forEach((p: any) => {
+      ;(cashPayments || []).forEach((p) => {
         const category = '예약 현금 입금'
         if (!categoryMap.has(category)) categoryMap.set(category, { deposits: 0, withdrawals: 0 })
-        categoryMap.get(category)!.deposits += toNumber(p.amount)
+        categoryMap.get(category)!.deposits += Math.abs(toNumber(p.amount))
+      })
+      ;(cashPaymentRefunds || []).forEach((p) => {
+        const category = '예약 환불'
+        if (!categoryMap.has(category)) categoryMap.set(category, { deposits: 0, withdrawals: 0 })
+        categoryMap.get(category)!.withdrawals += Math.abs(toNumber(p.amount))
       })
       ;(periodCompanyExpenses || []).forEach((p: any) => {
         const category = p.paid_for || '회사 지출'
@@ -427,13 +509,27 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           balance: balanceAfterByKey.get(`cash_transactions:${t.id}`) ?? Number.NaN,
           last_modified_by_display: null as string | null
         })),
-        ...(cashPayments || []).map((p: any) => ({
+        ...(cashPayments || []).map((p) => ({
           source: 'payment_records' as const,
           rowId: String(p.id),
           occurred_at: p.submit_on,
           transaction_type: 'deposit' as const,
-          amount: toNumber(p.amount),
+          amount: Math.abs(toNumber(p.amount)),
           category: '예약 현금 입금',
+          description: p.note || '',
+          payment_status: p.payment_status || null,
+          reservation_id: p.reservation_id || null,
+          payment_method: p.payment_method || null,
+          balance: balanceAfterByKey.get(`payment_records:${p.id}`) ?? Number.NaN,
+          last_modified_by_display: null as string | null
+        })),
+        ...(cashPaymentRefunds || []).map((p) => ({
+          source: 'payment_records' as const,
+          rowId: String(p.id),
+          occurred_at: p.submit_on,
+          transaction_type: 'withdrawal' as const,
+          amount: Math.abs(toNumber(p.amount)),
+          category: '예약 환불',
           description: p.note || '',
           payment_status: p.payment_status || null,
           reservation_id: p.reservation_id || null,
@@ -478,9 +574,9 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
       }
 
       const paymentSubmitById = new Map<string, string>()
-      for (const p of cashPayments || []) {
-        const sb = (p as { submit_by?: string | null }).submit_by
-        if (sb) paymentSubmitById.set(String((p as { id: string }).id), String(sb))
+      for (const p of [...cashPayments, ...cashPaymentRefunds]) {
+        const sb = p.submit_by
+        if (sb) paymentSubmitById.set(String(p.id), String(sb))
       }
 
       const companySubmitById = new Map<string, string>()
@@ -705,20 +801,50 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
       <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2">
           <h3 className="text-base sm:text-lg font-semibold text-gray-900">상세 거래 내역</h3>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="shrink-0 gap-1.5 w-full sm:w-fit min-h-[44px] sm:min-h-0"
-            onClick={() => {
-              setEditTarget(null)
-              setAddCashOpen(true)
-            }}
-            title="현금 거래 추가"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            <span>현금 거래 추가</span>
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="shrink-0 gap-1.5 w-full sm:w-fit min-h-[44px] sm:min-h-0 border-emerald-300 text-emerald-800"
+              onClick={() => {
+                setEditTarget(null)
+                setAddCashKind('deposit')
+                setAddCashOpen(true)
+              }}
+            >
+              <ArrowUpCircle className="h-4 w-4" aria-hidden />
+              입금 추가
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="shrink-0 gap-1.5 w-full sm:w-fit min-h-[44px] sm:min-h-0 border-rose-300 text-rose-800"
+              onClick={() => {
+                setEditTarget(null)
+                setAddCashKind('withdrawal')
+                setAddCashOpen(true)
+              }}
+            >
+              <ArrowDownCircle className="h-4 w-4" aria-hidden />
+              지출 추가
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="shrink-0 gap-1.5 w-full sm:w-fit min-h-[44px] sm:min-h-0 border-violet-300 text-violet-800"
+              onClick={() => {
+                setEditTarget(null)
+                setAddCashKind('bank_deposit')
+                setAddCashOpen(true)
+              }}
+            >
+              <Landmark className="h-4 w-4" aria-hidden />
+              은행 Deposit 추가
+            </Button>
+          </div>
         </div>
         <p className="text-xs sm:text-sm text-gray-500 mb-4 leading-relaxed">
           선택한 기간 내 현금 거래(cash_transactions), 현금 <AccountingTerm termKey="입금">입금</AccountingTerm>(payment_records), 회사 지출(company_expenses), 예약 지출(reservation_expenses)의 현금 내역을 함께 표시합니다.{' '}
@@ -942,6 +1068,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         onDismiss={dismissEdit}
         onSaved={() => loadCashStats({ soft: true })}
         addCashOpen={addCashOpen}
+        addCashKind={addCashKind}
         onAddCashDismiss={() => setAddCashOpen(false)}
       />
     </div>

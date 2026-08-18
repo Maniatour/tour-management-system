@@ -504,9 +504,15 @@ export type Database = {
           id: string
           notes: string | null
           operator_id: string
+          offset_amount: number | null
+          offset_method: string | null
+          offset_paid_to: string | null
           paid_to: string | null
           reference_id: string | null
           reference_type: string | null
+          share_chad_amount: number | null
+          share_joey_amount: number | null
+          profit_share_excluded: boolean
           transaction_date: string
           transaction_type: string
           updated_at: string | null
@@ -520,9 +526,15 @@ export type Database = {
           id?: string
           notes?: string | null
           operator_id?: string
+          offset_amount?: number | null
+          offset_method?: string | null
+          offset_paid_to?: string | null
           paid_to?: string | null
           reference_id?: string | null
           reference_type?: string | null
+          share_chad_amount?: number | null
+          share_joey_amount?: number | null
+          profit_share_excluded?: boolean
           transaction_date?: string
           transaction_type: string
           updated_at?: string | null
@@ -536,9 +548,15 @@ export type Database = {
           id?: string
           notes?: string | null
           operator_id?: string
+          offset_amount?: number | null
+          offset_method?: string | null
+          offset_paid_to?: string | null
           paid_to?: string | null
           reference_id?: string | null
           reference_type?: string | null
+          share_chad_amount?: number | null
+          share_joey_amount?: number | null
+          profit_share_excluded?: boolean
           transaction_date?: string
           transaction_type?: string
           updated_at?: string | null

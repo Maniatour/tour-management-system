@@ -64,8 +64,14 @@ export default function VoiceCallModal({
   const t = texts[language]
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full mx-4">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50"
+      {...(callStatus === 'error' ? { onClick: onEnd } : {})}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* 상태 표시 */}
         <div className="text-center mb-6">
           <div className={`w-20 h-20 mx-auto mb-4 rounded-full flex items-center justify-center ${
@@ -73,11 +79,21 @@ export default function VoiceCallModal({
               ? 'bg-green-100 animate-pulse' 
               : callStatus === 'ringing'
               ? 'bg-primary/10 animate-pulse'
+              : callStatus === 'error'
+              ? 'bg-red-100'
               : 'bg-gray-100'
           }`}>
             <Phone 
               size={40} 
-              className={callStatus === 'connected' ? 'text-green-600' : callStatus === 'ringing' ? 'text-primary' : 'text-gray-600'}
+              className={
+                callStatus === 'connected'
+                  ? 'text-green-600'
+                  : callStatus === 'ringing'
+                  ? 'text-primary'
+                  : callStatus === 'error'
+                  ? 'text-red-600'
+                  : 'text-gray-600'
+              }
             />
           </div>
           
@@ -153,6 +169,16 @@ export default function VoiceCallModal({
                 <PhoneOff size={24} />
               </button>
             </>
+          )}
+
+          {callStatus === 'error' && (
+            <button
+              type="button"
+              onClick={onEnd}
+              className="min-h-12 px-6 py-3 bg-gray-900 hover:bg-gray-800 rounded-xl text-white font-medium shadow-lg transition-colors"
+            >
+              {t.close}
+            </button>
           )}
         </div>
       </div>

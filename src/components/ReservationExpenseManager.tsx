@@ -1986,6 +1986,9 @@ export default function ReservationExpenseManager({
                 refreshReservationReconFlags()
                 setListSelectedIds(new Set())
               }}
+              onMoved={() => {
+                void loadExpenses()
+              }}
             />
             <div className="md:hidden space-y-3">
               {expensesForList.map((expense) => (

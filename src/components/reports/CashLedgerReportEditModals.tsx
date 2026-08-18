@@ -16,6 +16,26 @@ import { toast } from 'sonner'
 import { formatDateTimeForDatetimeLocalInput, parseDatetimeLocalInputToISOString } from '@/utils/datetimeLocal'
 import { ExpensePaidToCombobox } from '@/components/expense/ExpensePaidToCombobox'
 import { isReusableExpenseVendor } from '@/lib/expenseVendors'
+import {
+  applyProfitSharePaidToChange,
+  applyProfitShareSplitHalves,
+  cashDirectEntryDescription,
+  cashDirectEntryTitle,
+  classifyProfitSharePartner,
+  emptyProfitShareExcludeForm,
+  emptyProfitShareSplitForm,
+  ensureBankDepositDescription,
+  excludeFormFromTransaction,
+  isBankDepositDescription,
+  presetCashDirectEntry,
+  resolveProfitShareSplitPayload,
+  splitFormFromTransaction,
+  type CashDirectEntryKind,
+  type ProfitShareExcludeFormFields,
+  type ProfitShareSplitFormFields,
+} from '@/lib/cashTransactionPurpose'
+import ProfitShareExcludeFields from '@/components/expenses/ProfitShareOffsetFields'
+import ProfitShareSplitFields, { ProfitSharePaidToPresets } from '@/components/expenses/ProfitShareSplitFields'
 
 export type CashLedgerEditSource =
   | 'cash_transactions'
@@ -34,44 +54,37 @@ interface CashLedgerReportEditModalsProps {
   onSaved: () => void | Promise<void>
   /** true이면 현금 거래(cash_transactions) 추가 폼을 연다 */
   addCashOpen?: boolean
+  addCashKind?: CashDirectEntryKind
   onAddCashDismiss?: () => void
 }
 
-const categories = [
-  '투어 수입',
-  '예약 수입',
-  '기타 수입',
-  '투어 지출',
-  '회사 지출',
-  '예약 지출',
-  '기타 지출'
-]
-
-type CashFormData = {
+type CashFormData = ProfitShareExcludeFormFields & ProfitShareSplitFormFields & {
   transaction_date: string
   transaction_type: 'deposit' | 'withdrawal' | 'bank_deposit'
   amount: string
   description: string
   paid_to: string
-  category: string
-  notes: string
 }
 
-const defaultCashForm = (): CashFormData => ({
-  transaction_date: formatDateTimeForDatetimeLocalInput(new Date()),
-  transaction_type: 'deposit',
-  amount: '',
-  description: '',
-  paid_to: '',
-  category: '',
-  notes: ''
-})
+const defaultCashForm = (kind: CashDirectEntryKind = 'deposit'): CashFormData => {
+  const preset = presetCashDirectEntry(kind)
+  return {
+    transaction_date: formatDateTimeForDatetimeLocalInput(new Date()),
+    transaction_type: preset.transaction_type,
+    amount: '',
+    description: preset.description,
+    paid_to: '',
+    ...emptyProfitShareExcludeForm(),
+    ...emptyProfitShareSplitForm(),
+  }
+}
 
 export default function CashLedgerReportEditModals({
   target,
   onDismiss,
   onSaved,
   addCashOpen = false,
+  addCashKind = 'deposit',
   onAddCashDismiss
 }: CashLedgerReportEditModalsProps) {
   const { user } = useAuth()
@@ -147,10 +160,10 @@ export default function CashLedgerReportEditModals({
 
   useEffect(() => {
     if (!addCashOpen) return
-    setCashForm(defaultCashForm())
+    setCashForm(defaultCashForm(addCashKind))
     setCashRow(null)
     setCashOpen(true)
-  }, [addCashOpen])
+  }, [addCashOpen, addCashKind])
 
   useEffect(() => {
     if (!target) {
@@ -190,7 +203,7 @@ export default function CashLedgerReportEditModals({
             return
           }
           const desc = (data.description as string) || ''
-          const isBankDeposit = desc.includes('은행 Deposit') || desc === '은행 Deposit'
+          const isBankDeposit = isBankDepositDescription(desc)
           setCashRow(data as Record<string, unknown>)
           setCashForm({
             transaction_date: formatDateTimeForDatetimeLocalInput(data.transaction_date as string),
@@ -198,8 +211,15 @@ export default function CashLedgerReportEditModals({
             amount: String(data.amount ?? ''),
             description: desc,
             paid_to: String(data.paid_to ?? ''),
-            category: (data.category as string) || '',
-            notes: (data.notes as string) || ''
+            ...excludeFormFromTransaction({
+              profit_share_excluded: Boolean(data.profit_share_excluded),
+              offset_paid_to: (data.offset_paid_to as string | null) ?? null,
+            }),
+            ...splitFormFromTransaction({
+              amount: Number(data.amount) || 0,
+              share_chad_amount: data.share_chad_amount == null ? null : Number(data.share_chad_amount),
+              share_joey_amount: data.share_joey_amount == null ? null : Number(data.share_joey_amount),
+            }),
           })
           setCashOpen(true)
           return
@@ -274,6 +294,30 @@ export default function CashLedgerReportEditModals({
       return
     }
     const paidToTrim = cashForm.paid_to.trim()
+    if (cashForm.transaction_type === 'withdrawal' && !paidToTrim) {
+      toast.error('Profit Share 수령인을 입력해주세요. (Chad / Joey)')
+      return
+    }
+    const cashAmount = parseFloat(cashForm.amount)
+    const isSplitPaidTo = classifyProfitSharePartner(paidToTrim) === 'split'
+    const excludeFields = {
+      profit_share_excluded:
+        cashForm.transaction_type === 'withdrawal' && cashForm.profit_share_excluded,
+      offset_paid_to: null as string | null,
+      offset_amount: null as number | null,
+      offset_method: null as string | null,
+    }
+    const splitResult = resolveProfitShareSplitPayload({
+      isSplit: cashForm.transaction_type === 'withdrawal' && isSplitPaidTo,
+      cashAmount,
+      shareChad: cashForm.share_chad_amount,
+      shareJoey: cashForm.share_joey_amount,
+    })
+    if (!splitResult.ok) {
+      toast.error(splitResult.error)
+      return
+    }
+    const splitFields = splitResult.fields
     if (
       paidToTrim &&
       !paidToOptions.some((name) => name.toLowerCase() === paidToTrim.toLowerCase())
@@ -286,14 +330,21 @@ export default function CashLedgerReportEditModals({
       }
     }
     const dbTransactionType = cashForm.transaction_type === 'bank_deposit' ? 'withdrawal' : cashForm.transaction_type
+    const description = ensureBankDepositDescription(cashForm.transaction_type, cashForm.description) || null
+    const category =
+      cashForm.transaction_type === 'withdrawal'
+        ? 'Profit Share'
+        : null
     const newValues = {
       transaction_date: parseDatetimeLocalInputToISOString(cashForm.transaction_date),
       transaction_type: dbTransactionType,
       amount: parseFloat(cashForm.amount),
-      description: cashForm.description || null,
+      description,
       paid_to: paidToTrim || null,
-      category: cashForm.category || null,
-      notes: cashForm.notes || null
+      category,
+      notes: null as string | null,
+      ...excludeFields,
+      ...splitFields,
     }
 
     const isCreate = addCashOpen && !cashRow
@@ -312,6 +363,12 @@ export default function CashLedgerReportEditModals({
             paid_to: newValues.paid_to,
             category: newValues.category,
             notes: newValues.notes,
+            offset_paid_to: newValues.offset_paid_to,
+            offset_amount: newValues.offset_amount,
+            offset_method: newValues.offset_method,
+            share_chad_amount: newValues.share_chad_amount,
+            share_joey_amount: newValues.share_joey_amount,
+            profit_share_excluded: newValues.profit_share_excluded,
             created_by: user?.email || ''
           })
           .select()
@@ -331,7 +388,12 @@ export default function CashLedgerReportEditModals({
           description: cashRow.description,
           paid_to: cashRow.paid_to,
           category: cashRow.category,
-          notes: cashRow.notes
+          notes: cashRow.notes,
+          offset_paid_to: cashRow.offset_paid_to,
+          offset_amount: cashRow.offset_amount,
+          offset_method: cashRow.offset_method,
+          share_chad_amount: cashRow.share_chad_amount,
+          share_joey_amount: cashRow.share_joey_amount,
         }
         const { error } = await supabase
           .from('cash_transactions')
@@ -343,6 +405,12 @@ export default function CashLedgerReportEditModals({
             paid_to: newValues.paid_to,
             category: newValues.category,
             notes: newValues.notes,
+            offset_paid_to: newValues.offset_paid_to,
+            offset_amount: newValues.offset_amount,
+            offset_method: newValues.offset_method,
+            share_chad_amount: newValues.share_chad_amount,
+            share_joey_amount: newValues.share_joey_amount,
+            profit_share_excluded: newValues.profit_share_excluded,
             updated_at: new Date().toISOString()
           })
           .eq('operator_id', activeOperatorId)
@@ -364,13 +432,13 @@ export default function CashLedgerReportEditModals({
   return (
     <>
       <Dialog open={cashOpen} onOpenChange={handleCashOpenChange}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{addCashOpen && !cashRow ? '현금 거래 추가' : '현금 거래 수정'}</DialogTitle>
+            <DialogTitle>
+              {cashDirectEntryTitle(cashForm.transaction_type, !(addCashOpen && !cashRow))}
+            </DialogTitle>
             <DialogDescription>
-              {addCashOpen && !cashRow
-                ? '현금 입금 또는 출금 내역을 새로 기록합니다.'
-                : '현금 입금 또는 출금 내역을 수정합니다.'}
+              {cashDirectEntryDescription(cashForm.transaction_type)}
             </DialogDescription>
           </DialogHeader>
           {(cashRow || addCashOpen) && (
@@ -389,36 +457,14 @@ export default function CashLedgerReportEditModals({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="cr_transaction_type">거래 유형 *</Label>
-                  <Select
-                    value={cashForm.transaction_type}
-                    onValueChange={(value: 'deposit' | 'withdrawal' | 'bank_deposit') => {
-                      let newDescription = cashForm.description
-                      if (value === 'bank_deposit') {
-                        if (!cashForm.description || !cashForm.description.includes('은행 Deposit')) {
-                          newDescription = cashForm.description
-                            ? `은행 Deposit - ${cashForm.description}`
-                            : '은행 Deposit'
-                        }
-                      } else {
-                        if (cashForm.description?.startsWith('은행 Deposit - ')) {
-                          newDescription = cashForm.description.replace('은행 Deposit - ', '')
-                        } else if (cashForm.description === '은행 Deposit') {
-                          newDescription = ''
-                        }
-                      }
-                      setCashForm({ ...cashForm, transaction_type: value, description: newDescription })
-                    }}
-                  >
-                    <SelectTrigger id="cr_transaction_type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="deposit">입금</SelectItem>
-                      <SelectItem value="withdrawal">출금</SelectItem>
-                      <SelectItem value="bank_deposit">은행 Deposit</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label>거래 유형</Label>
+                  <div className="flex h-10 items-center rounded-md border border-input bg-muted/40 px-3 text-sm">
+                    {cashForm.transaction_type === 'bank_deposit'
+                      ? '은행 Deposit'
+                      : cashForm.transaction_type === 'withdrawal'
+                        ? '지출 (Profit Share)'
+                        : '입금'}
+                  </div>
                 </div>
               </div>
               <div className="space-y-2">
@@ -429,55 +475,59 @@ export default function CashLedgerReportEditModals({
                   step="0.01"
                   min="0"
                   value={cashForm.amount}
-                  onChange={(e) => setCashForm({ ...cashForm, amount: e.target.value })}
+                  onChange={(e) =>
+                    setCashForm(
+                      cashForm.transaction_type === 'withdrawal' &&
+                        classifyProfitSharePartner(cashForm.paid_to) === 'split'
+                        ? applyProfitShareSplitHalves(cashForm, e.target.value)
+                        : { ...cashForm, amount: e.target.value }
+                    )
+                  }
                   required
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="cr_paid_to">결제처</Label>
+                <Label htmlFor="cr_paid_to">
+                  {cashForm.transaction_type === 'withdrawal' ? '수령인 *' : '결제처'}
+                </Label>
                 <ExpensePaidToCombobox
                   id="cr_paid_to"
                   value={cashForm.paid_to}
-                  onChange={(paid_to) => setCashForm({ ...cashForm, paid_to })}
+                  onChange={(paid_to) => setCashForm(applyProfitSharePaidToChange(cashForm, paid_to))}
                   options={cashPaidToComboboxOptions}
-                  placeholder="결제처 선택 또는 입력"
+                  placeholder={
+                    cashForm.transaction_type === 'withdrawal'
+                      ? 'Chad, Joey 또는 둘 다'
+                      : '결제처 선택 또는 입력'
+                  }
                   parentOpen={cashOpen}
                   disabled={cashSaving}
                 />
+                {cashForm.transaction_type === 'withdrawal' ? (
+                  <ProfitSharePaidToPresets
+                    value={cashForm.paid_to}
+                    disabled={cashSaving}
+                    onChange={(paid_to) => setCashForm(applyProfitSharePaidToChange(cashForm, paid_to))}
+                  />
+                ) : null}
               </div>
+              {cashForm.transaction_type === 'withdrawal' &&
+              classifyProfitSharePartner(cashForm.paid_to) === 'split' ? (
+                <ProfitShareSplitFields form={cashForm} disabled={cashSaving} onChange={setCashForm} />
+              ) : null}
+              {cashForm.transaction_type === 'withdrawal' ? (
+                <ProfitShareExcludeFields
+                  excluded={cashForm.profit_share_excluded}
+                  disabled={cashSaving}
+                  onChange={(profit_share_excluded) => setCashForm({ ...cashForm, profit_share_excluded })}
+                />
+              ) : null}
               <div className="space-y-2">
                 <Label htmlFor="cr_description">설명</Label>
                 <Input
                   id="cr_description"
                   value={cashForm.description}
                   onChange={(e) => setCashForm({ ...cashForm, description: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="cr_category">카테고리</Label>
-                <Select
-                  {...(cashForm.category ? { value: cashForm.category } : {})}
-                  onValueChange={(value) => setCashForm({ ...cashForm, category: value })}
-                >
-                  <SelectTrigger id="cr_category">
-                    <SelectValue placeholder="카테고리 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat} value={cat}>
-                        {cat}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="cr_notes">메모</Label>
-                <Textarea
-                  id="cr_notes"
-                  value={cashForm.notes}
-                  onChange={(e) => setCashForm({ ...cashForm, notes: e.target.value })}
-                  rows={3}
                 />
               </div>
               <div className="flex justify-end gap-2">

@@ -221,6 +221,14 @@ export function isCashLedgerRefundPaymentStatus(paymentStatus: string | null | u
   return isRefundedPaymentStatus(raw) || isReturnedPaymentStatus(raw)
 }
 
+/** 현금 원장: 환불 상태이거나 비고에 '현금 환불'이 있으면 출금 */
+export function isCashLedgerRefundPaymentRecord(
+  paymentStatus: string | null | undefined,
+  note?: string | null
+): boolean {
+  return isCashLedgerRefundPaymentStatus(paymentStatus) || /현금\s*환불/.test(String(note ?? ''))
+}
+
 /** 파트너 입금 환불 (DB: `환불됨 (파트너)`, 구버전 Returned 등) */
 export function isReturnedPaymentStatus(paymentStatus: string): boolean {
   const raw = (paymentStatus || '').trim()
