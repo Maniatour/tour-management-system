@@ -193,6 +193,7 @@ import {
 import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
 import { sumReservationOptionCancelledRefundTotals } from '@/utils/reservationOptionsShared'
 import { computePricingTotalsForDbSave } from '@/utils/reservationPricingSaveTotals'
+import { couponMatchesReservationChannel } from '@/utils/homepageBookingChannel'
 import {
   computeRefundAmountForCompanyRevenueBlock,
   computeStoredCompanyRevenueFields,
@@ -447,11 +448,13 @@ function parseMoneyFromImportString(raw?: string | null): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
-/** channel_id 없음 = 채널 공통 쿠폰으로 간주 */
-function couponMatchesChannel(coupon: { channel_id?: string | null }, channelId: string | null | undefined): boolean {
-  if (!channelId) return false
-  if (coupon.channel_id == null || coupon.channel_id === '') return true
-  return coupon.channel_id === channelId
+/** channel_id 없음 = 채널 공통. 카카오톡 등 직판은 홈페이지 쿠폰도 사용 가능 */
+function couponMatchesChannel(
+  coupon: { channel_id?: string | null },
+  channelId: string | null | undefined,
+  channels: Array<{ id: string; name?: string | null; type?: string | null; category?: string | null }>
+): boolean {
+  return couponMatchesReservationChannel(coupon, channelId, channels)
 }
 
 /** Viator 자동 9%: DB·UI에 따라 discount_type 대소문자, percentage_value 형식 차이 허용 */
@@ -4798,7 +4801,7 @@ export default function ReservationForm({
     const tourDate = new Date(formData.tourDate)
     const matchingCoupons = coupons.filter(coupon => {
       if (coupon.status !== 'active') return false
-      if (!couponMatchesChannel(coupon, formData.channelId)) return false
+      if (!couponMatchesChannel(coupon, formData.channelId, channels)) return false
       if (coupon.product_id && coupon.product_id !== formData.productId) return false
       if (coupon.start_date) {
         const startDate = new Date(coupon.start_date)
@@ -4850,6 +4853,7 @@ export default function ReservationForm({
     formData.tourDate,
     formData.channelId,
     coupons,
+    channels,
     getCouponDiscountSubtotal,
     calculateCouponDiscount,
     setFormData,
@@ -4894,7 +4898,7 @@ export default function ReservationForm({
       const tourDate = new Date(fd.tourDate)
       const matchingCoupons = coupons.filter(coupon => {
         if (coupon.status !== 'active') return false
-        if (!couponMatchesChannel(coupon, fd.channelId)) return false
+        if (!couponMatchesChannel(coupon, fd.channelId, channels)) return false
         if (coupon.product_id && coupon.product_id !== fd.productId) return false
         if (coupon.start_date) {
           const startDate = new Date(coupon.start_date)
@@ -4959,7 +4963,7 @@ export default function ReservationForm({
         if (!nineCoupon) {
           nineCoupon = coupons.find(c => {
             if (c.status !== 'active') return false
-            if (!couponMatchesChannel(c, fd.channelId)) return false
+            if (!couponMatchesChannel(c, fd.channelId, channels)) return false
             if (c.start_date) {
               const startDate = new Date(c.start_date)
               if (tourDate < startDate) return false

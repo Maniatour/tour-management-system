@@ -39,7 +39,10 @@ import {
   otaPricingFormExtrasForCompanyRevenue,
 } from '@/utils/channelSettlement'
 import { computePrepaymentTipOperatingDeduction } from '@/utils/storedCompanyRevenue'
-import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
+import {
+  couponMatchesReservationChannel,
+  isHomepageBookingChannel,
+} from '@/utils/homepageBookingChannel'
 import {
   cancelledNonOtaNetCollectedFromPayments,
   computeEffectiveCustomerPaidTowardDue,
@@ -1392,47 +1395,21 @@ export default function PricingSection({
   // 선택된 채널 정보 가져오기
   const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
   const isOTAChannel = channelIsOtaForPricingSection(selectedChannel)
-  // Homepage 채널 (채널 type이 ota가 아닐 때 쿠폰 선택에 함께 사용). id M00001 또는 이름에 Homepage/홈페이지 포함
-  const homepageChannel = Array.isArray(channels) ? channels.find(ch =>
-    ch.id === 'M00001' ||
-    (ch.name && (String(ch.name).toLowerCase().includes('homepage') || String(ch.name).includes('홈페이지')))
-  ) : null
-  const homepageChannelId = homepageChannel?.id ?? null
   const isHomepageBooking = isHomepageBookingChannel(formData.channelId, channels)
 
   const hasDbReservationPricingRow = Boolean(reservationPricingId)
 
   /** 채널·홈페이지 쿠폰 규칙으로 목록 구성 + 현재 선택 코드는 항상 포함(DB에만 있는 코드는 맨 위 placeholder) */
   const couponsForSelectOptions = useMemo(() => {
-    const chName = (id: string | null | undefined) => {
-      if (!id || !Array.isArray(channels)) return ''
-      const row = channels.find((c) => c.id === id)
-      return String(row?.name || '').toLowerCase()
-    }
-    const selectedName = chName(formData.channelId)
-    const isGetYourGuideFamily = (n: string) =>
-      n.includes('getyourguide') || n.includes('get your guide')
-    const showAllGyCoupons = isGetYourGuideFamily(selectedName)
-
+    const channelRows = Array.isArray(channels) ? channels : []
     const filtered = coupons.filter((coupon) => {
       const isCurrentCoupon =
         formData.couponCode &&
         coupon.coupon_code &&
         String(coupon.coupon_code).trim().toLowerCase() === String(formData.couponCode).trim().toLowerCase()
       if (isCurrentCoupon) return true
-      if (
-        showAllGyCoupons &&
-        coupon.channel_id &&
-        isGetYourGuideFamily(chName(coupon.channel_id))
-      ) {
-        return true
-      }
-      return (
-        !formData.channelId ||
-        !coupon.channel_id ||
-        coupon.channel_id === formData.channelId ||
-        (!isOTAChannel && homepageChannelId && coupon.channel_id === homepageChannelId)
-      )
+      if (!formData.channelId) return true
+      return couponMatchesReservationChannel(coupon, formData.channelId, channelRows)
     })
     const code = String(formData.couponCode || '').trim()
     if (!code) return filtered
@@ -1451,7 +1428,7 @@ export default function PricingSection({
       },
       ...filtered,
     ]
-  }, [channels, coupons, formData.couponCode, formData.channelId, isOTAChannel, homepageChannelId])
+  }, [channels, coupons, formData.couponCode, formData.channelId])
 
   // 채널의 commission_percent 가져오기 (여러 필드명 지원)
   // channels 테이블에는 commission 컬럼이 있음 (commission_percent는 없을 수 있음)
@@ -2802,17 +2779,22 @@ export default function PricingSection({
         c.coupon_code.trim().toLowerCase() === formData.couponCode.trim().toLowerCase()
       )
       if (!selectedCoupon || !selectedCoupon.channel_id) return
-      const isHomepageCoupon = homepageChannelId && selectedCoupon.channel_id === homepageChannelId
-      // 채널과 일치하거나, (ota가 아니고 Homepage 쿠폰이면) 유지. 그 외에만 초기화
-      if (selectedCoupon.channel_id === formData.channelId) return
-      if (!isOTAChannel && isHomepageCoupon) return
+      if (
+        couponMatchesReservationChannel(
+          selectedCoupon,
+          formData.channelId,
+          Array.isArray(channels) ? channels : []
+        )
+      ) {
+        return
+      }
       setFormData((prev: typeof formData) => ({
         ...prev,
         couponCode: '',
         couponDiscount: 0
       }))
     }
-  }, [formData.channelId, formData.couponCode, coupons, homepageChannelId, isOTAChannel, hasDbReservationPricingRow, setFormData])
+  }, [formData.channelId, formData.couponCode, coupons, channels, hasDbReservationPricingRow, setFormData])
 
   // 인원 변경 시 쿠폰 할인 재계산 (percentage 타입 쿠폰만)
   useEffect(() => {
@@ -3524,29 +3506,14 @@ export default function PricingSection({
                       if (!t) {
                         return { ...prev, couponCode: '', couponDiscount: 0 }
                       }
-                      const chNameOn = (id: string | null | undefined) => {
-                        if (!id || !Array.isArray(channels)) return ''
-                        const row = channels.find((c) => c.id === id)
-                        return String(row?.name || '').toLowerCase()
-                      }
-                      const gyFam = (n: string) =>
-                        n.includes('getyourguide') || n.includes('get your guide')
-                      const showAllGyCouponsOn = gyFam(chNameOn(prev.channelId))
-                      const filteredCoupons = coupons.filter((coupon) => {
-                        if (
-                          showAllGyCouponsOn &&
-                          coupon.channel_id &&
-                          gyFam(chNameOn(coupon.channel_id))
-                        ) {
-                          return true
-                        }
-                        return (
-                          !prev.channelId ||
-                          !coupon.channel_id ||
-                          coupon.channel_id === prev.channelId ||
-                          (!isOTAChannel && homepageChannelId && coupon.channel_id === homepageChannelId)
-                        )
-                      })
+                    const filteredCoupons = coupons.filter((coupon) => {
+                      if (!prev.channelId) return true
+                      return couponMatchesReservationChannel(
+                        coupon,
+                        prev.channelId,
+                        Array.isArray(channels) ? channels : []
+                      )
+                    })
                       const selectedCoupon = filteredCoupons.find(coupon => 
                         coupon.coupon_code && 
                         coupon.coupon_code.trim().toLowerCase() === selectedCouponCode.trim().toLowerCase()

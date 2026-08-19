@@ -25,7 +25,7 @@ import {
   deriveCommissionGrossForSettlement,
   shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
 } from '@/utils/channelSettlement'
-import { isHomepageBookingChannel } from '@/utils/homepageBookingChannel'
+import { isHomepageBookingChannel, couponMatchesReservationChannel } from '@/utils/homepageBookingChannel'
 import { summarizePaymentRecordsForBalance, cancelledNonOtaNetCollectedFromPayments, type PaymentRecordLike } from '@/utils/reservationPricingBalance'
 import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
 import { useAuth } from '@/contexts/AuthContext'
@@ -708,18 +708,21 @@ export default function PricingInfoModal({
         return
       }
 
-      // 채널별 쿠폰 필터링: 해당 채널의 쿠폰 또는 채널이 지정되지 않은 쿠폰
-      const { data, error } = await supabase
-        .from('coupons')
-        .select('*')
-        .eq('status', 'active')
-        .or(`channel_id.eq.${reservation.channelId},channel_id.is.null`)
-        .order('coupon_code')
+      const [{ data, error }, { data: channelRow }] = await Promise.all([
+        supabase.from('coupons').select('*').eq('status', 'active').order('coupon_code'),
+        supabase
+          .from('channels')
+          .select('id, name, type, category')
+          .eq('id', reservation.channelId)
+          .maybeSingle(),
+      ])
 
       if (error) throw error
+      const channelRows = channelRow ? [channelRow] : []
       setCoupons(
         (data || [])
           .filter((c): c is typeof c & { coupon_code: string } => c.coupon_code != null && c.coupon_code !== '')
+          .filter((c) => couponMatchesReservationChannel(c, reservation.channelId, channelRows))
           .map((c) => ({
             id: c.id,
             coupon_code: c.coupon_code,

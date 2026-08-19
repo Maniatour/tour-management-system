@@ -25,6 +25,7 @@ import { useChoiceManagement } from '@/hooks/useChoiceManagement';
 import { usePricingData } from '@/hooks/usePricingData';
 import { usePriceCalculation } from '@/hooks/usePriceCalculation';
 import { findHomepageChoiceData } from '@/utils/homepagePriceCalculator';
+import { couponMatchesReservationChannel } from '@/utils/homepageBookingChannel';
 import { getOtaSalePriceWithFallback } from '@/utils/choicePricingMatcher';
 import {
   type ChoicePricingMode,
@@ -474,7 +475,7 @@ export default function DynamicPricingManager({
     };
   }, [productId, selectedChannel, variantsByChannel]);
 
-  // 해당 채널 쿠폰 목록 로드 (캘린더 상단 쿠폰 선택기)
+  // 해당 채널 쿠폰 목록 로드 (캘린더 상단 쿠폰 선택기). 카카오톡 등 직판은 홈페이지 쿠폰 포함
   useEffect(() => {
     if (!selectedChannel) {
       setChannelCoupons([]);
@@ -484,16 +485,26 @@ export default function DynamicPricingManager({
     (async () => {
       const { data, error } = await supabase
         .from('coupons')
-        .select('id, coupon_code, percentage_value, fixed_value, discount_type')
-        .eq('status', 'active')
-        .or(`channel_id.is.null,channel_id.eq.${selectedChannel}`);
+        .select('id, coupon_code, percentage_value, fixed_value, discount_type, channel_id')
+        .eq('status', 'active');
       if (cancelled) return;
       if (error) {
         console.warn('채널 쿠폰 로드 실패:', error);
         setChannelCoupons([]);
         return;
       }
-      setChannelCoupons((data || []).map((r: any) => ({
+      const channelRows = channelGroups.flatMap((group) =>
+        (group.channels || []).map((ch) => ({
+          id: ch.id,
+          name: ch.name,
+          type: ch.type,
+          category: ch.category,
+        }))
+      );
+      const eligible = (data || []).filter((r) =>
+        couponMatchesReservationChannel(r, selectedChannel, channelRows)
+      );
+      setChannelCoupons(eligible.map((r: any) => ({
         id: r.id,
         coupon_code: r.coupon_code ?? '',
         percentage_value: r.percentage_value,
@@ -502,7 +513,7 @@ export default function DynamicPricingManager({
       })));
     })();
     return () => { cancelled = true; };
-  }, [selectedChannel]);
+  }, [selectedChannel, channelGroups]);
 
   // 채널별 포함/불포함 내역 불러오기
   useEffect(() => {
