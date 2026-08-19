@@ -138,6 +138,19 @@ export type TicketBookingAxisPatch = {
   operation_status: string
 }
 
+/** 날씨 취소 + 결제 후면 환불 축을 크레딧 대기로 올림 */
+export function withWeatherCancelCreditFollowUpPatch(
+  patch: TicketBookingAxisPatch
+): TicketBookingAxisPatch {
+  if (patch.booking_status.trim().toLowerCase() !== 'weather_cancelled') return patch
+  const ps = patch.payment_status.trim().toLowerCase()
+  const rs = patch.refund_status.trim().toLowerCase()
+  if ((ps === 'paid' || ps === 'partially_paid') && (rs === 'none' || rs === '')) {
+    return { ...patch, refund_status: 'requested' }
+  }
+  return patch
+}
+
 /**
  * 6축 일괄 설정 → 레거시 status 파생 — DB RPC `apply_ticket_booking_action`(p_action = `set_axes`)
  */
@@ -146,10 +159,11 @@ export async function applyTicketBookingSetAxes(
   patch: TicketBookingAxisPatch,
   actorEmail?: string | null
 ): Promise<ApplyTicketBookingActionResult> {
+  const payload = withWeatherCancelCreditFollowUpPatch(patch)
   const { data, error } = await supabase.rpc('apply_ticket_booking_action', {
     p_booking_id: bookingId,
     p_action: 'set_axes',
-    p_payload: patch as unknown as Json,
+    p_payload: payload as unknown as Json,
     p_actor: actorEmail ?? null,
   })
 

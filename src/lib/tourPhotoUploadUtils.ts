@@ -1,27 +1,81 @@
 /**
- * 투어 사진 업로드: 중복 키·동시 실행 제한·재시도 유틸
+ * 투어 사진·영상 업로드: 중복 키·동시 실행 제한·재시도 유틸
  */
 
+export const TOUR_PHOTO_MAX_IMAGE_BYTES = 50 * 1024 * 1024
+export const TOUR_PHOTO_MAX_VIDEO_BYTES = 500 * 1024 * 1024
+export const TOUR_PHOTO_STORAGE_LIST_PAGE = 1000
+
+/** file input accept — 사진 + 일반/슬로모션 영상(iOS MOV 포함) */
+export const TOUR_PHOTO_FILE_ACCEPT =
+  'image/*,video/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tif,.tiff,.avif,.mp4,.mov,.m4v,.webm,.3gp,.3gpp'
+
 /** 갤러리·카메라 파일명 기준(모바일에서 MIME이 비는 경우 대비) */
-export const TOUR_PHOTO_FILENAME_EXT_REGEX =
+export const TOUR_PHOTO_IMAGE_EXT_REGEX =
   /\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?|avif)$/i
+
+export const TOUR_PHOTO_VIDEO_EXT_REGEX =
+  /\.(mp4|m4v|mov|qt|webm|3gp|3gpp|avi|mpeg|mpg)$/i
+
+export const TOUR_PHOTO_FILENAME_EXT_REGEX =
+  /\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?|avif|mp4|m4v|mov|qt|webm|3gp|3gpp|avi|mpeg|mpg)$/i
+
+export function isTourStorageMediaFileName(fileName: string): boolean {
+  return (
+    !fileName.includes('.folder_info.json') &&
+    !fileName.includes('folder.info') &&
+    !fileName.includes('.info') &&
+    !fileName.includes('.README') &&
+    !fileName.startsWith('.') &&
+    !fileName.includes('_thumb') &&
+    TOUR_PHOTO_FILENAME_EXT_REGEX.test(fileName)
+  )
+}
+
+export function tourMediaFileStem(fileName: string): string {
+  const withoutExt = fileName.replace(/\.[^.]+$/, '')
+  return withoutExt.replace(/_thumb$/i, '')
+}
+
+export function isTourMediaVideo(fileName: string, mimeType?: string | null): boolean {
+  const mime = (mimeType || '').trim().toLowerCase()
+  if (mime.startsWith('video/')) return true
+  return TOUR_PHOTO_VIDEO_EXT_REGEX.test(fileName)
+}
+
+function fileTypeToken(file: File): string {
+  return (file.type || '').trim().toLowerCase()
+}
 
 /**
  * iOS/안드로이드에서 `File.type`이 빈 문자열인 경우가 많아 `image/`만 보면 실패함.
  */
 export function isLikelyTourPhotoFile(file: File): boolean {
-  const t = (file.type || '').trim().toLowerCase()
-  if (t.startsWith('image/')) return true
+  return isLikelyTourMediaFile(file)
+}
+
+export function isLikelyTourVideoFile(file: File): boolean {
+  const t = fileTypeToken(file)
+  if (t.startsWith('video/')) return true
+  if (t === '' || t === 'application/octet-stream') {
+    return TOUR_PHOTO_VIDEO_EXT_REGEX.test(file.name)
+  }
+  return TOUR_PHOTO_VIDEO_EXT_REGEX.test(file.name)
+}
+
+export function isLikelyTourMediaFile(file: File): boolean {
+  const t = fileTypeToken(file)
+  if (t.startsWith('image/') || t.startsWith('video/')) return true
   if (t === '' || t === 'application/octet-stream') {
     return TOUR_PHOTO_FILENAME_EXT_REGEX.test(file.name)
   }
-  return false
+  return TOUR_PHOTO_FILENAME_EXT_REGEX.test(file.name)
 }
 
 /** Storage·DB에 넣을 MIME (빈 type이면 확장자로 추정) */
 export function inferTourPhotoMimeType(file: File): string {
   const t = file.type?.trim()
-  if (t && t.startsWith('image/')) return t
+  if (t && (t.startsWith('image/') || t.startsWith('video/'))) return t
   const m = file.name.toLowerCase().match(/\.([a-z0-9]+)$/)
   const ext = m?.[1]?.toLowerCase()
   switch (ext) {
@@ -44,8 +98,24 @@ export function inferTourPhotoMimeType(file: File): string {
       return 'image/tiff'
     case 'avif':
       return 'image/avif'
+    case 'mp4':
+    case 'm4v':
+      return 'video/mp4'
+    case 'mov':
+    case 'qt':
+      return 'video/quicktime'
+    case 'webm':
+      return 'video/webm'
+    case '3gp':
+    case '3gpp':
+      return 'video/3gpp'
+    case 'avi':
+      return 'video/x-msvideo'
+    case 'mpeg':
+    case 'mpg':
+      return 'video/mpeg'
     default:
-      return 'image/jpeg'
+      return isLikelyTourVideoFile(file) ? 'video/mp4' : 'image/jpeg'
   }
 }
 
@@ -59,7 +129,21 @@ export function tourPhotoStorageExtension(file: File): string {
   if (mime === 'image/bmp') return 'bmp'
   if (mime === 'image/tiff') return 'tiff'
   if (mime === 'image/avif') return 'avif'
+  if (mime === 'video/quicktime') return 'mov'
+  if (mime === 'video/webm') return 'webm'
+  if (mime === 'video/3gpp' || mime === 'video/3gpp2') return '3gp'
+  if (mime === 'video/x-msvideo') return 'avi'
+  if (mime === 'video/mpeg') return 'mpg'
+  if (mime.startsWith('video/')) return 'mp4'
+  if (TOUR_PHOTO_VIDEO_EXT_REGEX.test(file.name)) {
+    const ext = file.name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1]
+    return ext === 'mov' || ext === 'm4v' || ext === 'webm' || ext === '3gp' ? ext : 'mp4'
+  }
   return 'jpg'
+}
+
+export function tourPhotoMaxBytesForFile(file: File): number {
+  return isLikelyTourVideoFile(file) ? TOUR_PHOTO_MAX_VIDEO_BYTES : TOUR_PHOTO_MAX_IMAGE_BYTES
 }
 
 function bufferToHex(buf: ArrayBuffer): string {

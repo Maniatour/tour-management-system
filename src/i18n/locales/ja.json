@@ -1808,6 +1808,8 @@
       "ticketCalendarHeadcountMismatchHint": "赤い枠線: この日に開始されるツアーの参加者数の合計 ≠ この日にチェックインするチケットの枚数 (キャンセルを除く) の合計。前日から複数日にわたるツアーのみが続く日は比較されません。",
       "ticketCalendarSeeCanyonMissingZelle": "SEE · Zelle未添付",
       "ticketCalendarSeeCanyonMissingZelleHint": "ピンク強調・Zelleバッジ: SEE Canyon予約でZelle確認添付がありません。",
+      "ticketCalendarSeeCanyonLinkedZelle": "SEE · Zelle接続済",
+      "ticketCalendarSeeCanyonLinkedZelleHint": "RN#の後ろの緑チェック: SEE Canyon予約のZelle確認（添付またはConf#）が接続されています。",
       "ticketCalendarChangeStatusTitle": "クリックしてステータスを変更",
       "tourNotConnected": "ツアーが接続されていません",
       "seeCanyonConnected": "L (シーキャニオン) - ツアー接続",
@@ -1880,6 +1882,7 @@
           "confirmed": "確認済み",
           "cancel_requested": "キャンセルが要求されました",
           "cancelled": "キャンセル",
+          "weather_cancelled": "天候キャンセル",
           "no_show": "ノーショー",
           "failed": "全量キャンセル",
           "expired": "保留/リクエストの有効期限が切れました"

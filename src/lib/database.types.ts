@@ -513,6 +513,7 @@ export type Database = {
           share_chad_amount: number | null
           share_joey_amount: number | null
           profit_share_excluded: boolean
+          atm_receipt_import_id: string | null
           transaction_date: string
           transaction_type: string
           updated_at: string | null
@@ -535,6 +536,7 @@ export type Database = {
           share_chad_amount?: number | null
           share_joey_amount?: number | null
           profit_share_excluded?: boolean
+          atm_receipt_import_id?: string | null
           transaction_date?: string
           transaction_type: string
           updated_at?: string | null
@@ -557,6 +559,7 @@ export type Database = {
           share_chad_amount?: number | null
           share_joey_amount?: number | null
           profit_share_excluded?: boolean
+          atm_receipt_import_id?: string | null
           transaction_date?: string
           transaction_type?: string
           updated_at?: string | null
@@ -8748,6 +8751,7 @@ export type Database = {
           submit_on: string | null
           submitted_by: string
           time: string | null
+          tour_expense_id: string | null
           tour_id: string | null
           updated_at: string | null
           uploaded_file_urls: string[] | null
@@ -8795,6 +8799,7 @@ export type Database = {
           submit_on?: string | null
           submitted_by: string
           time?: string | null
+          tour_expense_id?: string | null
           tour_id?: string | null
           updated_at?: string | null
           uploaded_file_urls?: string[] | null
@@ -8842,6 +8847,7 @@ export type Database = {
           submit_on?: string | null
           submitted_by?: string
           time?: string | null
+          tour_expense_id?: string | null
           tour_id?: string | null
           updated_at?: string | null
           uploaded_file_urls?: string[] | null
@@ -8850,6 +8856,13 @@ export type Database = {
           zelle_confirmation_number?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "ticket_bookings_tour_expense_id_fkey"
+            columns: ["tour_expense_id"]
+            isOneToOne: true
+            referencedRelation: "tour_expenses"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "ticket_bookings_reservation_id_fkey"
             columns: ["reservation_id"]

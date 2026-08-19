@@ -82,6 +82,113 @@ export async function createThumbnail(
 }
 
 /**
+ * 영상 첫 프레임을 JPEG 썸네일로 추출 (슬로모션 MOV 포함)
+ */
+export async function createVideoThumbnail(
+  file: File,
+  maxWidth: number = 400,
+  maxHeight: number = 400,
+  quality: number = 0.8
+): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video')
+    video.muted = true
+    video.playsInline = true
+    video.preload = 'auto'
+    const url = URL.createObjectURL(file)
+    let settled = false
+    let timeoutId = 0
+
+    const cleanup = () => {
+      window.clearTimeout(timeoutId)
+      URL.revokeObjectURL(url)
+      video.removeAttribute('src')
+      video.load()
+    }
+
+    const fail = (err: Error) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(err)
+    }
+
+    const succeed = (blob: Blob) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(blob)
+    }
+
+    timeoutId = window.setTimeout(() => fail(new Error('Video thumbnail timeout')), 20000)
+
+    const capture = () => {
+      const srcW = video.videoWidth || 0
+      const srcH = video.videoHeight || 0
+      if (!srcW || !srcH) {
+        fail(new Error('Video has no dimensions'))
+        return
+      }
+
+      let width = srcW
+      let height = srcH
+      if (width > height) {
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width
+          width = maxWidth
+        }
+      } else if (height > maxHeight) {
+        width = (width * maxHeight) / height
+        height = maxHeight
+      }
+
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(width))
+      canvas.height = Math.max(1, Math.round(height))
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        fail(new Error('Canvas context not available'))
+        return
+      }
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+      canvas.toBlob(
+        (blob) => {
+          if (blob) succeed(blob)
+          else fail(new Error('Failed to create video thumbnail blob'))
+        },
+        'image/jpeg',
+        quality
+      )
+    }
+
+    video.addEventListener('seeked', capture, { once: true })
+    video.addEventListener(
+      'loadeddata',
+      () => {
+        const duration = Number.isFinite(video.duration) ? video.duration : 0
+        const seekTo = duration > 0 ? Math.min(0.25, duration * 0.05) : 0.1
+        try {
+          video.currentTime = seekTo
+        } catch {
+          capture()
+        }
+      },
+      { once: true }
+    )
+    video.addEventListener('error', () => fail(new Error('Failed to load video')), { once: true })
+    video.src = url
+    void video.play()?.then(() => video.pause()).catch(() => {})
+  })
+}
+
+/** 영상 썸네일은 항상 JPEG */
+export function getJpegThumbnailFileName(originalFileName: string): string {
+  const lastDotIndex = originalFileName.lastIndexOf('.')
+  const nameWithoutExt = lastDotIndex === -1 ? originalFileName : originalFileName.substring(0, lastDotIndex)
+  return `${nameWithoutExt}_thumb.jpg`
+}
+
+/**
  * 썸네일 파일명 생성
  * @param originalFileName 원본 파일명
  * @returns 썸네일 파일명 (예: "photo.jpg" -> "photo_thumb.jpg")

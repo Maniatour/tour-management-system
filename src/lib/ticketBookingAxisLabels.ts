@@ -20,6 +20,7 @@ const AXIS_VALUE_SETS: Record<TicketBookingAxisKind, ReadonlySet<string>> = {
     'confirmed',
     'cancel_requested',
     'cancelled',
+    'weather_cancelled',
     'no_show',
     'failed',
     'expired',
@@ -54,6 +55,7 @@ export const TICKET_BOOKING_AXIS_SELECT_ORDER: Record<TicketBookingAxisKind, rea
     'confirmed',
     'cancel_requested',
     'cancelled',
+    'weather_cancelled',
     'no_show',
     'failed',
     'expired',
@@ -96,6 +98,8 @@ export function getBookingAxisStatusBadgeClass(bookingStatus: string | null | un
       return 'bg-orange-100 text-orange-900 ring-1 ring-orange-200/80'
     case 'cancelled':
       return 'bg-red-100 text-red-800 ring-1 ring-red-200/80'
+    case 'weather_cancelled':
+      return 'bg-cyan-100 text-cyan-900 ring-1 ring-cyan-200/80'
     case 'failed':
       return 'bg-rose-100 text-rose-900 ring-1 ring-rose-200/80'
     case 'expired':

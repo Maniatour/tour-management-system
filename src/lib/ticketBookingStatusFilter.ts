@@ -34,8 +34,8 @@ const LEGACY_STATUS_FILTER_TO_UNIFIED: Record<string, TicketBookingUnifiedStatus
   cancellation_requested: ['cancel_requested'],
   guest_change_requested: ['change_pending'],
   time_change_requested: ['change_pending'],
-  cancelled: ['cancelled', 'cancel_approved', 'vendor_cancelled'],
-  canceled: ['cancelled', 'cancel_approved', 'vendor_cancelled'],
+  cancelled: ['cancelled', 'cancel_approved', 'vendor_cancelled', 'weather_cancelled'],
+  canceled: ['cancelled', 'cancel_approved', 'vendor_cancelled', 'weather_cancelled'],
   payment_requested: ['other'],
   credit: ['other'],
 }

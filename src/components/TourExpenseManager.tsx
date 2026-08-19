@@ -41,6 +41,8 @@ import {
 import { ensureFreshAuthSessionForUpload } from '@/lib/uploadClient'
 import { ensureImageFitsMaxBytes, RECEIPT_COMPRESS_FAILED } from '@/lib/imageUtils'
 import { TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR } from '@/lib/tourExpenseConstants'
+import AntelopeOnSiteToTicketBookingModal from '@/components/expense/AntelopeOnSiteToTicketBookingModal'
+import { isAntelopeOnSiteTourExpense } from '@/lib/antelopeOnSiteReceipt'
 import { runReceiptOcrFromImageBuffer } from '@/lib/receiptOcrBrowser'
 import type { ReceiptOcrRotationDegrees } from '@/lib/receiptOcrPreprocess'
 import { buildReceiptOcrCandidates, type ReceiptOcrCandidates as ReceiptOcrParseCandidates } from '@/lib/receiptOcrParse'
@@ -237,6 +239,8 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
   /** 카메라·갤러리 확인 직후 합성 click이 배경으로 전달되며 모달이 닫히는 것을 막음 (특히 iOS). */
   const expenseModalBackdropSuppressedUntilRef = useRef(0)
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; expenseId: string; paidFor: string } | null>(null)
+  const [antelopeOnSiteTransferExpense, setAntelopeOnSiteTransferExpense] = useState<TourExpense | null>(null)
+  const [linkedTicketByExpenseId, setLinkedTicketByExpenseId] = useState<Record<string, string>>({})
   const [receiptViewerZoom, setReceiptViewerZoom] = useState(1)
   const [receiptViewerRotation, setReceiptViewerRotation] = useState<ReceiptOcrRotationDegrees>(0)
   const embedEditOpenedRef = useRef(false)
@@ -888,6 +892,36 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
       setLoading(false)
     }
   }, [tourId, activeOperatorId])
+
+  useEffect(() => {
+    const antelopeIds = expenses.filter(isAntelopeOnSiteTourExpense).map((e) => e.id)
+    if (antelopeIds.length === 0) {
+      setLinkedTicketByExpenseId({})
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const { data, error } = await supabase
+        .from('ticket_bookings')
+        .select('id, tour_expense_id')
+        .in('tour_expense_id', antelopeIds)
+      if (cancelled) return
+      if (error) {
+        console.error('Error loading antelope on-site ticket links:', error)
+        return
+      }
+      const next: Record<string, string> = {}
+      for (const row of data || []) {
+        const expenseId = String(row.tour_expense_id || '').trim()
+        const bookingId = String(row.id || '').trim()
+        if (expenseId && bookingId) next[expenseId] = bookingId
+      }
+      setLinkedTicketByExpenseId(next)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [expenses])
 
   // 카테고리 목록 로드
   const loadCategories = async () => {
@@ -2780,6 +2814,26 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                       <Receipt size={14} />
                     </span>
                   )}
+                  {isAntelopeOnSiteTourExpense(expense) ? (
+                    linkedTicketByExpenseId[expense.id] ? (
+                      <span
+                        className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 ring-1 ring-emerald-200"
+                        title={t('antelopeOnSiteTransferred')}
+                      >
+                        {t('antelopeOnSiteTransferred')}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setAntelopeOnSiteTransferExpense(expense)}
+                        className="inline-flex h-7 items-center gap-0.5 rounded px-1.5 text-[10px] font-semibold text-teal-700 hover:bg-teal-50"
+                        title={t('antelopeOnSiteToBooking')}
+                      >
+                        <Ticket size={14} />
+                        {t('antelopeOnSiteToBooking')}
+                      </button>
+                    )
+                  ) : null}
                 </div>
               </div>
               
@@ -4508,6 +4562,22 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
         </div>,
           document.body
         )}
+
+      <AntelopeOnSiteToTicketBookingModal
+        open={antelopeOnSiteTransferExpense != null}
+        onClose={() => setAntelopeOnSiteTransferExpense(null)}
+        expense={antelopeOnSiteTransferExpense}
+        tourId={tourId}
+        tourDate={tourDate}
+        productId={productId ?? null}
+        locale={locale}
+        onTransferred={() => {
+          const expenseId = antelopeOnSiteTransferExpense?.id
+          if (expenseId) {
+            setLinkedTicketByExpenseId((prev) => ({ ...prev, [expenseId]: expenseId }))
+          }
+        }}
+      />
 
       {/* 선택지 관리 모달 */}
       <OptionManagementModal

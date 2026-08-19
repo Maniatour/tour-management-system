@@ -1,4 +1,9 @@
-import type { AuthError, Session, SupabaseClient } from '@supabase/supabase-js'
+import {
+  isAuthRefreshDiscardedError as isSdkAuthRefreshDiscardedError,
+  type AuthError,
+  type Session,
+  type SupabaseClient,
+} from '@supabase/supabase-js'
 import { clearStoredAuthTokens, persistSupabaseSessionToStorage } from './authStorage'
 
 const DEFAULT_COOLDOWN_MS = 90_000
@@ -9,6 +14,19 @@ let rateLimitedUntilMs = 0
 let lastProactiveRefreshAtMs = 0
 let refreshInFlight: Promise<{ session: Session | null; error: AuthError | null }> | null = null
 let refreshFetchInFlight: Promise<Response> | null = null
+
+export function isAuthRefreshInFlight(): boolean {
+  return refreshInFlight != null || refreshFetchInFlight != null
+}
+
+/** 갱신 중 signOut/setSession이 세션을 바꿔 SDK가 결과를 버린 경우 — 재시도·로그아웃 처리하지 않음 */
+export function isAuthRefreshDiscardedError(error: unknown): boolean {
+  if (isSdkAuthRefreshDiscardedError(error)) return true
+  if (!error || typeof error !== 'object') return false
+  const e = error as { name?: string; message?: string }
+  if (e.name === 'AuthRefreshDiscardedError') return true
+  return String(e.message ?? '').includes('Refresh result discarded')
+}
 
 export function isAuthRefreshRateLimited(): boolean {
   return Date.now() < rateLimitedUntilMs
@@ -50,6 +68,7 @@ export function isAuthRateLimitError(error: unknown): boolean {
 
 /** refresh_token 재사용·만료·폐기 — 재시도해도 400만 반복되며 SIGNED_OUT 연쇄를 유발 */
 export function isAuthInvalidRefreshError(error: unknown): boolean {
+  if (isAuthRefreshDiscardedError(error)) return false
   if (!error || typeof error !== 'object') return false
   const e = error as { status?: number; message?: string; code?: string }
   if (e.status === 400 || e.status === 401) return true
@@ -103,29 +122,40 @@ export function fetchAuthRefreshTokenSingleFlight(doFetch: () => Promise<Respons
     )
   }
 
-  if (refreshFetchInFlight) {
-    return refreshFetchInFlight
+  if (!refreshFetchInFlight) {
+    refreshFetchInFlight = (async () => {
+      try {
+        const response = await doFetch()
+        if (response.status === 429) {
+          markAuthRefreshRateLimited(parseRetryAfterSeconds(response))
+        }
+        return response
+      } finally {
+        refreshFetchInFlight = null
+      }
+    })()
   }
 
-  refreshFetchInFlight = (async () => {
-    try {
-      const response = await doFetch()
-      if (response.status === 429) {
-        markAuthRefreshRateLimited(parseRetryAfterSeconds(response))
-      }
-      return response
-    } finally {
-      refreshFetchInFlight = null
-    }
-  })()
+  // 동일 Response body는 한 번만 읽을 수 있음 — 대기 호출자는 clone을 받는다
+  return refreshFetchInFlight.then((response) => response.clone())
+}
 
-  return refreshFetchInFlight
+async function readCurrentAuthSession(client: SupabaseClient): Promise<Session | null> {
+  try {
+    const { data, error } = await client.auth.getSession()
+    if (isAuthRefreshDiscardedError(error)) return data.session ?? null
+    if (error || !data.session) return null
+    return data.session
+  } catch (e) {
+    if (isAuthRefreshDiscardedError(e)) return null
+    return null
+  }
 }
 
 /** refreshSession 호출부 통합 — fetch 단일 비행과 함께 쓰면 중복 완화 */
 export async function coordinatedRefreshSession(
   client: SupabaseClient,
-  params: { refresh_token: string }
+  params?: { refresh_token?: string }
 ): Promise<{ session: Session | null; error: AuthError | null }> {
   if (isAuthRefreshRateLimited()) {
     return {
@@ -140,7 +170,18 @@ export async function coordinatedRefreshSession(
 
   refreshInFlight = (async () => {
     try {
-      const { data, error } = await client.auth.refreshSession(params)
+      const refreshArgs = params?.refresh_token
+        ? { refresh_token: params.refresh_token }
+        : undefined
+      const { data, error } = await client.auth.refreshSession(refreshArgs)
+
+      if (isAuthRefreshDiscardedError(error)) {
+        // 다른 탭/setSession/signOut이 먼저 세션을 바꿈. 새 세션이 있으면 그걸 쓰고, 없으면 로그아웃으로 처리하지 않음.
+        const current = await readCurrentAuthSession(client)
+        if (current) persistSupabaseSessionToStorage(current)
+        return { session: current, error: null }
+      }
+
       if (error && isAuthRateLimitError(error)) {
         markAuthRefreshRateLimited()
       }
@@ -151,6 +192,11 @@ export async function coordinatedRefreshSession(
       }
       return { session: data.session ?? null, error: error ?? null }
     } catch (e) {
+      if (isAuthRefreshDiscardedError(e)) {
+        const current = await readCurrentAuthSession(client)
+        if (current) persistSupabaseSessionToStorage(current)
+        return { session: current, error: null }
+      }
       if (isAuthRateLimitError(e)) {
         markAuthRefreshRateLimited()
       }

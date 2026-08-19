@@ -10,6 +10,7 @@ import { summarizePaymentRecordsForBalance } from '@/utils/reservationPricingBal
 import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
 import { splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
 import { loadResidentStatusAmountsForReservation } from '@/lib/saveResidentStatusWithPricing'
+import { printHtmlDocument } from '@/lib/printHtmlDocument'
 import {
   buildResidentFeeDisplayLines,
   countResidentLinesFromCustomers,
@@ -911,16 +912,6 @@ export default function CustomerReceiptModal({
       })
     }
 
-    const iframe = document.createElement('iframe')
-    iframe.title = 'Receipt Print'
-    iframe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;border:none;overflow:hidden;'
-    document.body.appendChild(iframe)
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
-    if (!iframeDoc) {
-      document.body.removeChild(iframe)
-      return
-    }
-
     const printStyles = useHalfLayout
       ? `
       *, *::before, *::after { box-sizing: border-box; }
@@ -973,41 +964,16 @@ export default function CustomerReceiptModal({
     `
     const links = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'))
       .map((l) => l.href)
-      .filter(Boolean)
-    iframeDoc.open()
+      .filter((href) => href && !/fonts\.googleapis|fonts\.gstatic/.test(href))
     const bodyContent = printRoot.outerHTML
     const bodyAttrs = useHalfLayout ? ' class="receipt-half-body" style="margin:0;padding:0;background:#fff;width:279mm;max-width:279mm;box-sizing:border-box"' : ''
-    iframeDoc.write(`
-      <!DOCTYPE html><html><head><meta charset="utf-8"><title>${modalLabels.modalTitle}</title>
+    printHtmlDocument(
+      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${modalLabels.modalTitle}</title>
       ${links.map((href) => `<link rel="stylesheet" href="${href}">`).join('')}
       <style>${printStyles}</style>
-      </head><body${bodyAttrs}>${bodyContent}</body></html>`)
-    iframeDoc.close()
-
-    const printWin = iframe.contentWindow
-    if (printWin) {
-      let printed = false
-      const doPrint = () => {
-        if (printed) return
-        printed = true
-        try {
-          printWin.focus()
-          printWin.print()
-        } catch {
-          /* ignore */
-        }
-        document.body.removeChild(iframe)
-      }
-      const delayMs = useHalfLayout ? 480 : 150
-      const schedule = () => window.setTimeout(doPrint, delayMs)
-      if (printWin.document.readyState === 'complete') {
-        requestAnimationFrame(() => requestAnimationFrame(schedule))
-      } else {
-        printWin.addEventListener('load', schedule, { once: true })
-      }
-    } else {
-      document.body.removeChild(iframe)
-    }
+      </head><body${bodyAttrs}>${bodyContent}</body></html>`,
+      modalLabels.modalTitle
+    )
   }
 
   if (!isOpen) return null

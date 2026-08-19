@@ -14,6 +14,7 @@ import {
   isProductDetailEmailEditableField,
   type ProductDetailEmailEditableField,
 } from '@/lib/fetchProductDetailsForEmail'
+import { printHtmlDocument } from '@/lib/printHtmlDocument'
 
 type ProductDetailEditPayload = {
   context: {
@@ -180,26 +181,15 @@ export default function EmailPreviewModal({
 
   const handlePrint = () => {
     if (!emailContent) return
-    const w = window.open('', '_blank')
-    if (!w) {
-      alert('팝업이 차단되었습니다. 팝업을 허용한 뒤 다시 시도해 주세요.')
-      return
-    }
     const subject = (emailContent.subject || 'Email').replace(/</g, '&lt;')
     const printHtml = stripAdminPreviewMarkupFromEmailHtml(emailContent.html)
-    w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>${subject}</title>
+    printHtmlDocument(
+      `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>${subject}</title>
 <style>body{font-family:system-ui,sans-serif;padding:16px;max-width:600px;margin:0 auto;} @media print { body { padding: 8px; } }</style></head><body>
 ${printHtml}
-</body></html>`)
-    w.document.close()
-    setTimeout(() => {
-      try {
-        w.focus()
-        w.print()
-      } finally {
-        w.close()
-      }
-    }, 250)
+</body></html>`,
+      subject
+    )
   }
 
   const loadEmailPreview = useCallback(async () => {

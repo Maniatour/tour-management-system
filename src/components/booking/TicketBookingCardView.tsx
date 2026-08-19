@@ -21,6 +21,7 @@ import {
   formatHHMM,
   isTicketBookingCreditReceived,
   isTicketBookingPendingRequestState,
+  getWeatherCancelCreditFollowUpState,
   ticketBookingPendingQtyDiffers,
 } from '@/lib/ticketBookingWorkflow'
 import { getTicketBookingEffectiveExpenseUsd } from '@/lib/ticket-booking-change-display'
@@ -36,6 +37,8 @@ import TicketBookingCardActionBar, {
   type TicketBookingCardActionHandlers,
 } from './TicketBookingCardActionBar'
 import TicketBookingStatusQuickMenu from './TicketBookingStatusQuickMenu'
+import WeatherCancelCreditFollowUpChip from './WeatherCancelCreditFollowUpChip'
+import { TicketCalendarOnSiteBadge } from './TicketCalendarOnSiteBadge'
 import { TicketBookingRelatedDocuments } from './TicketBookingRelatedDocuments'
 import {
   formatZelleConfirmationDisplay,
@@ -140,6 +143,7 @@ export type DayTourCompareSummary = {
   canyonParts: Array<{ key: string; text: string; mismatch: boolean }>
   actionTasks?: CanyonActionTask[]
   mismatch: boolean
+  onSiteByCanyon?: Partial<Record<'X' | 'L' | 'U', number>>
 }
 
 /** 지급처에 해당하는 캐년 키(X/L) 업무 뱃지만 표시 */
@@ -787,24 +791,49 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                         <span className="whitespace-nowrap">{summaryText}</span>
                         {compare && compare.canyonParts.length > 0 ? (
                           <span
-                            className={`flex flex-nowrap items-center gap-x-1.5 font-bold tabular-nums ${
+                            className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 font-bold tabular-nums ${
                               compact ? 'text-[10px]' : 'text-xs sm:text-sm'
                             }`}
                           >
-                            {compare.canyonParts.map((part) => (
-                              <span
-                                key={part.key}
-                                className={`whitespace-nowrap ${part.mismatch ? 'text-red-600' : 'text-inherit'}`}
-                                title={
-                                  isEn
-                                    ? `Tour ${part.key} / Ticket EA ${part.key}`
-                                    : `투어 ${part.key} / 입장권 ${part.key}`
-                                }
-                              >
-                                {part.text}
-                              </span>
-                            ))}
+                            {compare.canyonParts.map((part) => {
+                              const canyonOnSite =
+                                part.key === 'X' || part.key === 'L' || part.key === 'U'
+                                  ? compare.onSiteByCanyon?.[part.key] ?? 0
+                                  : 0
+                              return (
+                                <span
+                                  key={part.key}
+                                  className="inline-flex flex-wrap items-center gap-1"
+                                >
+                                  <span
+                                    className={`whitespace-nowrap ${part.mismatch ? 'text-red-600' : 'text-inherit'}`}
+                                    title={
+                                      isEn
+                                        ? `Tour ${part.key} / Ticket EA ${part.key}`
+                                        : `투어 ${part.key} / 입장권 ${part.key}`
+                                    }
+                                  >
+                                    {part.text}
+                                  </span>
+                                  <TicketCalendarOnSiteBadge
+                                    amount={canyonOnSite}
+                                    locale={locale}
+                                    compact={compact}
+                                  />
+                                </span>
+                              )
+                            })}
                           </span>
+                        ) : compare && (compare.onSiteByCanyon?.L || compare.onSiteByCanyon?.X) ? (
+                          <TicketCalendarOnSiteBadge
+                            amount={
+                              (compare.onSiteByCanyon?.L ?? 0) +
+                              (compare.onSiteByCanyon?.X ?? 0) +
+                              (compare.onSiteByCanyon?.U ?? 0)
+                            }
+                            locale={locale}
+                            compact={compact}
+                          />
                         ) : null}
                       </div>
                     ) : null}
@@ -893,6 +922,7 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                         const zelleConf = formatZelleConfirmationDisplay(booking.zelle_confirmation_number)
                         const showZelleConf =
                           Boolean(zelleConf) || isSeeCanyonZelleRecipient(booking.company)
+                        const weatherFollowUp = getWeatherCancelCreditFollowUpState(booking)
                         const timeLabel = formatHHMM(booking.time) || '—'
                         const dateLabel = showCheckInDate
                           ? formatCheckInDateShort(booking.check_in_date, isEn)
@@ -903,6 +933,7 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                         const linkedTours = collectLinkedToursForBooking(booking, toursByRn)
                         const hasLinkedTour = linkedTours.length > 0
                         const qtyTimelineLabel = isEn ? 'Quantity timeline' : '수량 타임라인'
+                        const noteText = String(booking.note || '').trim()
 
                         return (
                           <li
@@ -935,7 +966,7 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                                   : 'border-border/60'
                               }`}
                             >
-                              {/* 1줄: 상태 칩 + 공급업체 (왼쪽) · 타임라인/메모/문서/닫기 (오른쪽 끝) */}
+                              {/* 1줄: 상태 칩 + 공급업체 + 투어 (왼쪽) · 타임라인/메모/문서/닫기 (오른쪽 끝) */}
                               <div className="flex items-start justify-between gap-2">
                                 <div className="flex min-w-0 flex-wrap items-center gap-1">
                                   <TicketBookingStatusQuickMenu
@@ -963,6 +994,19 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                                       {booking.company}
                                     </span>
                                   ) : null}
+                                  {hasLinkedTour
+                                    ? linkedTours.map((lt) => (
+                                        <TourLinkBadgeChip
+                                          key={lt.tourId}
+                                          locale={locale}
+                                          isEn={isEn}
+                                          tours={lt.tours}
+                                          tourId={lt.tourId}
+                                          compact={compact}
+                                          onOpen={onOpenLinkedTour}
+                                        />
+                                      ))
+                                    : null}
                                   {awaitingVendor ? (
                                     <span
                                       className={`inline-flex border border-orange-200 bg-orange-50 font-medium text-orange-800 ${
@@ -974,7 +1018,13 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                                       {isEn ? 'Awaiting vendor' : '벤더 응답 대기'}
                                     </span>
                                   ) : null}
-                                  {isTicketBookingCreditReceived(booking) ? (
+                                  {weatherFollowUp ? (
+                                    <WeatherCancelCreditFollowUpChip
+                                      state={weatherFollowUp}
+                                      locale={locale}
+                                      compact={compact}
+                                    />
+                                  ) : isTicketBookingCreditReceived(booking) ? (
                                     <span
                                       className={`inline-flex border border-cyan-200 bg-cyan-50 font-medium text-cyan-900 ${
                                         compact
@@ -1135,28 +1185,49 @@ export default function TicketBookingCardView<T extends TicketBookingCardViewRow
                                 </p>
                               </div>
 
-                              {/* 3줄: 투어 뱃지 (왼쪽) · 금액 (오른쪽 끝) */}
-                              {(hasLinkedTour || showAmounts) ? (
+                              {/* 3줄: 메모 (왼쪽) · 금액 (오른쪽 끝) */}
+                              {(noteText || showAmounts) ? (
                                 <div
                                   className={`flex w-full items-end justify-between gap-2 leading-snug ${
                                     compact ? 'mt-1 text-[10px]' : 'mt-2 text-sm'
                                   }`}
                                 >
-                                  <div className="flex min-w-0 flex-wrap gap-1">
-                                    {hasLinkedTour
-                                      ? linkedTours.map((lt) => (
-                                          <TourLinkBadgeChip
-                                            key={lt.tourId}
-                                            locale={locale}
-                                            isEn={isEn}
-                                            tours={lt.tours}
-                                            tourId={lt.tourId}
-                                            compact={compact}
-                                            onOpen={onOpenLinkedTour}
-                                          />
-                                        ))
-                                      : null}
-                                  </div>
+                                  {noteText ? (
+                                    <button
+                                      type="button"
+                                      className={`min-w-0 flex-1 rounded-md text-left hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                                        compact ? 'px-0.5 py-0.5' : 'px-1 py-0.5'
+                                      } ${
+                                        cardPopover?.kind === 'note' &&
+                                        cardPopover.booking.id === booking.id
+                                          ? 'ring-1 ring-amber-300'
+                                          : ''
+                                      }`}
+                                      title={noteText}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        openCardPopover('note', booking, e.currentTarget)
+                                      }}
+                                    >
+                                      <span className="flex min-w-0 items-start gap-1">
+                                        <StickyNote
+                                          className={`mt-0.5 shrink-0 text-amber-700 ${
+                                            compact ? 'h-2.5 w-2.5' : 'h-3.5 w-3.5'
+                                          }`}
+                                          aria-hidden
+                                        />
+                                        <span
+                                          className={`min-w-0 flex-1 whitespace-pre-wrap break-words font-medium text-foreground ${
+                                            compact ? 'line-clamp-2 text-[10px]' : 'line-clamp-2 text-xs'
+                                          }`}
+                                        >
+                                          {noteText}
+                                        </span>
+                                      </span>
+                                    </button>
+                                  ) : (
+                                    <div className="min-w-0 flex-1" />
+                                  )}
                                   {showAmounts ? (
                                     onSaveAmounts ? (
                                       <button

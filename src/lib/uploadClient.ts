@@ -4,6 +4,7 @@ import {
   canAttemptProactiveRefresh,
   coordinatedRefreshSession,
   getStoredAccessTokenIfValid,
+  isAuthRefreshDiscardedError,
   isAuthRefreshRateLimited,
   markProactiveRefreshAttempted,
   supabase,
@@ -22,6 +23,14 @@ export async function ensureFreshAuthSessionForUpload(): Promise<void> {
     data: { session },
     error: sessionError,
   } = await supabase.auth.getSession();
+
+  if (isAuthRefreshDiscardedError(sessionError)) {
+    const stored = getStoredAccessTokenIfValid(UPLOAD_SESSION_REFRESH_SKEW_SEC)
+    if (stored) {
+      updateSupabaseToken(stored)
+      return
+    }
+  }
 
   if (sessionError || !session?.refresh_token) {
     throw new Error(

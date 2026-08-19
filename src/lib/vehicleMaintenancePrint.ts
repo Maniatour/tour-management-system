@@ -1,4 +1,5 @@
 import { CATALOG_GROUP_ORDER } from '@/lib/vehicleMaintenanceCatalog'
+import { removePrintIframe, runPrintAndKeepAlive } from '@/lib/printHtmlDocument'
 import enMessages from '@/i18n/locales/en.json'
 
 const enVm = enMessages.vehicleMaintenance
@@ -714,20 +715,7 @@ function openPrintDocument(html: string, title: string): void {
     }
     printWin.focus()
     setTimeout(() => {
-      try {
-        printWin.print()
-      } catch {
-        /* ignore */
-      }
-      const cleanup = () => {
-        try {
-          if (iframe.parentNode) document.body.removeChild(iframe)
-        } catch {
-          /* ignore */
-        }
-      }
-      printWin.addEventListener('afterprint', cleanup, { once: true })
-      setTimeout(cleanup, 3000)
+      runPrintAndKeepAlive(printWin, () => removePrintIframe(iframe))
     }, 200)
   }
 

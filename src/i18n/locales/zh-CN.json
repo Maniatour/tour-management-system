@@ -1810,6 +1810,8 @@
       "ticketCalendarHeadcountMismatchHint": "红色框：当日出发团数总和≠当日签到门票数量（不含取消）总和。不比较仅继续前一天的多日游的日期。",
       "ticketCalendarSeeCanyonMissingZelle": "SEE · 未附 Zelle",
       "ticketCalendarSeeCanyonMissingZelleHint": "粉色高亮与 Zelle 标记：SEE Canyon 预订尚未附上 Zelle 确认文件。",
+      "ticketCalendarSeeCanyonLinkedZelle": "SEE · 已连 Zelle",
+      "ticketCalendarSeeCanyonLinkedZelleHint": "RN# 后的绿色勾选：SEE Canyon 预订已连接 Zelle 确认（附件或确认号）。",
       "ticketCalendarChangeStatusTitle": "点击更改状态",
       "tourNotConnected": "游览未连接",
       "seeCanyonConnected": "L (SEE CANYON) - 已连接旅游",
@@ -1882,6 +1884,7 @@
           "confirmed": "确认的",
           "cancel_requested": "已请求取消",
           "cancelled": "取消",
+          "weather_cancelled": "天气取消",
           "no_show": "缺席",
           "failed": "全部取消",
           "expired": "保留/请求已过期"

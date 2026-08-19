@@ -10,8 +10,8 @@ import React, {
   useState,
 } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
-import { supabase } from '@/lib/supabase'
 import { fetchApiWithAuth, resolveAccessTokenForApi } from '@/lib/api-client-bearer'
+import { coordinatedRefreshSession, supabase } from '@/lib/supabase'
 import {
   KOVEgAS_OPERATOR_ID,
   KOVEgAS_OPERATOR_SLUG,
@@ -141,7 +141,7 @@ export function OperatorProvider({ children }: { children: React.ReactNode }) {
           skipped?: boolean
         }
         if (res.ok && json.lockEnabled && !json.skipped) {
-          await supabase.auth.refreshSession()
+          await coordinatedRefreshSession(supabase)
         }
         lastAppliedOperatorIdRef.current = operatorId
       } catch {

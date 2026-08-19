@@ -40,6 +40,7 @@ const INSERTABLE_TICKET_BOOKING_COLUMNS = new Set([
   'booking_status_before_change',
   'unit_price',
   'zelle_confirmation_number',
+  'tour_expense_id',
 ])
 
 function normalizeOptionalId(value: unknown): string | null {
@@ -65,6 +66,7 @@ function buildTicketBookingInsertPayload(
   payload.tour_id = links.tour_id
   payload.reservation_id = normalizeOptionalId(payload.reservation_id)
   payload.statement_line_id = normalizeOptionalId(payload.statement_line_id)
+  payload.tour_expense_id = normalizeOptionalId(payload.tour_expense_id)
 
   return payload
 }

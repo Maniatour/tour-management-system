@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
 import { useAuth } from '@/contexts/AuthContext'
 import Link from 'next/link'
+import { printHtmlDocument } from '@/lib/printHtmlDocument'
 
 interface BonusCalculatorModalProps {
   isOpen: boolean
@@ -1613,23 +1614,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
   }
 
   const handlePrint = () => {
-    const iframe = document.createElement('iframe')
-    iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;overflow:hidden;')
-    document.body.appendChild(iframe)
-    const doc = iframe.contentWindow?.document
-    if (!doc) {
-      document.body.removeChild(iframe)
-      return
-    }
-    doc.open()
-    doc.write(buildPrintHTML())
-    doc.close()
-    try {
-      iframe.contentWindow?.focus()
-      iframe.contentWindow?.print()
-    } finally {
-      setTimeout(() => document.body.removeChild(iframe), 100)
-    }
+    printHtmlDocument(buildPrintHTML(), '보너스 계산기')
   }
 
   if (!isOpen) return null

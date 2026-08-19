@@ -11,6 +11,7 @@ import { workCalendarDateYmd } from '@/lib/employeeHourlyRates'
 import { useTranslations, useLocale } from 'next-intl'
 import { getStatusColor, getStatusText } from '@/utils/tourStatusUtils'
 import { calculateAssignedPeople, dedupeReservationIdsPreservingOrder } from '@/utils/tourUtils'
+import { printDomClone } from '@/lib/printHtmlDocument'
 
 const TIER_LIMITS = { low: 480, mid: 960 } as const
 
@@ -645,7 +646,35 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
   }
 
   const handlePrint = () => {
-    window.print()
+    const root = document.getElementById('office-tips-modal-root')
+    if (!root) return
+    printDomClone(root, {
+      title: t('officeTips'),
+      copyParentStylesheets: true,
+      extraCss: `
+        @page { size: letter; margin: 12mm; }
+        body { margin: 0; background: #fff; }
+        #office-tips-modal-root {
+          position: static !important;
+          inset: auto !important;
+          width: auto !important;
+          min-height: 0 !important;
+          height: auto !important;
+          padding: 0 !important;
+          background: white !important;
+          display: block !important;
+        }
+        #office-tips-modal-root > div {
+          max-height: none !important;
+          box-shadow: none !important;
+          border-radius: 0 !important;
+          overflow: visible !important;
+        }
+      `,
+      prepareClone: (clone) => {
+        clone.querySelectorAll('.print\\:hidden').forEach((el) => el.remove())
+      },
+    })
   }
 
   const handleClose = () => {
@@ -662,14 +691,6 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
   if (!isOpen) return null
 
   return (
-    <>
-      <style dangerouslySetInnerHTML={{ __html: `
-        @media print {
-          body * { visibility: hidden; }
-          #office-tips-modal-root, #office-tips-modal-root * { visibility: visible; }
-          #office-tips-modal-root { position: absolute; left: 0; top: 0; width: 100%; min-height: 100%; background: white; }
-        }
-      `}} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 print:bg-white print:p-0 print:block" id="office-tips-modal-root">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-[min(95vw,88rem)] max-h-[90vh] overflow-hidden flex flex-col print:max-h-none print:shadow-none print:rounded-none">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 print:justify-start">
@@ -1022,6 +1043,5 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         </div>
       </div>
     </div>
-    </>
   )
 }

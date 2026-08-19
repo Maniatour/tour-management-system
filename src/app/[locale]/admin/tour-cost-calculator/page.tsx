@@ -5,12 +5,42 @@ import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import dynamic from 'next/dynamic'
 import { useLocale, useTranslations } from 'next-intl'
 import { useSearchParams } from 'next/navigation'
-import { Calculator, Settings, Plus, X, Route, Clock, Search, GripVertical, ArrowUp, ArrowDown, Save, RefreshCw, FileText, Receipt, ExternalLink, Trash2, MapPin } from 'lucide-react'
+import { Calculator, Settings, Plus, X, Route, Clock, Search, GripVertical, ArrowUp, ArrowDown, Save, RefreshCw, FileText, Receipt, ExternalLink, Trash2, MapPin, Zap, ListTree } from 'lucide-react'
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
 import CourseTreeItem from '@/components/tour-cost-calculator/CourseTreeItem'
+import QuickDestinationPicker from '@/components/tour-cost-calculator/QuickDestinationPicker'
 import type { VehicleRentalSetting } from '@/components/tour-cost-calculator/VehicleSettingsModal'
+import {
+  QUICK_HOTEL_GUIDE_ROOMS,
+  QUICK_STAY_NIGHTS,
+  calcQuickHotelCost,
+  calcQuickHotelRooms,
+  getCourseMapCoords,
+  getQuickArriveId,
+  getQuickDepartId,
+  getQuickQuoteWaypoint,
+  isQuickQuoteOneWay,
+  orderQuickQuoteStops,
+  parseQuickArriveCity,
+  parseQuickDepartCity,
+  quickStayTourDays,
+  suggestedCustomerRooms,
+  type QuickHotelSeason,
+  type QuickQuoteCity,
+} from '@/lib/quickQuoteWaypoints'
+import {
+  QUICK_ADDON_DEFAULT_RATES,
+  QUICK_ADDON_FOLLOWS_PARTICIPANTS,
+  QUICK_ADDON_I18N_KEYS,
+  QUICK_ADDON_IDS,
+  calcQuickAddonLine,
+  defaultAddonQty,
+  loadQuickAddonRates,
+  persistQuickAddonRates,
+  type QuickAddonId,
+} from '@/lib/quickQuoteAddons'
 
 const TourCourseEditModal = dynamic(() => import('@/components/TourCourseEditModal'), { ssr: false, loading: () => null })
 const EstimateModal = dynamic(() => import('@/components/tour-cost-calculator/EstimateModal'), { ssr: false, loading: () => null })
@@ -60,7 +90,7 @@ export default function TourCostCalculatorPage() {
   const searchParams = useSearchParams()
   
   // 기본 상태
-  const [tourType, setTourType] = useState<'product' | 'custom' | 'charter_guide'>('product')
+  const [tourType, setTourType] = useState<'product' | 'custom' | 'charter_guide'>('custom')
   const [selectedProductId, setSelectedProductId] = useState<string>('')
   const [products, setProducts] = useState<Product[]>([])
   const [tourCourses, setTourCourses] = useState<TourCourse[]>([])
@@ -82,6 +112,21 @@ export default function TourCostCalculatorPage() {
   const [showCourseEditModal, setShowCourseEditModal] = useState(false)
   const [editingCourse, setEditingCourse] = useState<TourCourse | null>(null)
   const [courseSearchTerm, setCourseSearchTerm] = useState<string>('')
+  const [courseSelectTab, setCourseSelectTab] = useState<'quick' | 'detailed'>('quick')
+  const [quickDeparture, setQuickDeparture] = useState<QuickQuoteCity | null>(null)
+  const [quickArrival, setQuickArrival] = useState<QuickQuoteCity | null>(null)
+  const [quickHotelSeason, setQuickHotelSeason] = useState<QuickHotelSeason | null>(null)
+  const [quickHotelCustomerRooms, setQuickHotelCustomerRooms] = useState(1)
+  const [quickStayNights, setQuickStayNights] = useState(0)
+  const [quickSelectedAddons, setQuickSelectedAddons] = useState<Set<QuickAddonId>>(new Set())
+  const [quickAddonQty, setQuickAddonQty] = useState<Record<QuickAddonId, number>>({
+    nonResident: 1,
+    passPurchase: 1,
+    gcHelicopter: 1,
+    gcAircraft: 1,
+    mvJeep: 1,
+  })
+  const [quickAddonRates, setQuickAddonRates] = useState<Record<QuickAddonId, number>>(QUICK_ADDON_DEFAULT_RATES)
   const [expandedCourseNodes, setExpandedCourseNodes] = useState<Set<string>>(new Set())
   type CourseScheduleItem = {
     id: string
@@ -313,90 +358,143 @@ export default function TourCostCalculatorPage() {
     }
   }, [participantCount])
 
+  useEffect(() => {
+    setQuickHotelCustomerRooms(suggestedCustomerRooms(participantCount))
+  }, [participantCount])
+
+  useEffect(() => {
+    setQuickAddonRates(loadQuickAddonRates())
+  }, [])
+
+  useEffect(() => {
+    setQuickAddonQty((prev) => {
+      const next = { ...prev }
+      for (const id of QUICK_ADDON_IDS) {
+        if (QUICK_ADDON_FOLLOWS_PARTICIPANTS[id] && !quickSelectedAddons.has(id)) {
+          next[id] = defaultAddonQty(id, participantCount)
+        }
+      }
+      return next
+    })
+  }, [participantCount, quickSelectedAddons])
+
+  const findScheduleCourse = (id: string) => {
+    const existing = tourCourses.find((c) => c.id === id)
+    if (existing) return existing
+    return getQuickQuoteWaypoint(id)
+  }
+
   // 선택된 코스 순서 동기화 (가장 하위 포인트만 표시)
   useEffect(() => {
     // 설정 복원 중이면 동기화하지 않음
     if (pendingConfigRestore) return
     
     const selectedArray = Array.from(selectedCourses)
-    
-    if (selectedArray.length === 0) {
-      setSelectedCoursesOrder([])
-      return
-    }
 
-    // 선택된 코스의 자식 중 선택된 것이 있는지 확인
     const hasSelectedChild = (courseId: string): boolean => {
       const course = tourCourses.find(c => c.id === courseId)
       if (!course) return false
       
-      // 직접 자식 확인
       const directChildren = tourCourses.filter(c => c.parent_id === courseId)
       const hasDirectSelectedChild = directChildren.some(child => selectedCourses.has(child.id))
       if (hasDirectSelectedChild) return true
       
-      // 간접 자식 확인 (재귀)
       return directChildren.some(child => hasSelectedChild(child.id))
     }
 
-    // 가장 하위 포인트만 필터링 (자식이 선택되어 있지 않은 항목만)
-    const leafCourses = selectedArray.filter(courseId => {
-      return !hasSelectedChild(courseId)
+    const leafCourses = selectedArray.filter(courseId => !hasSelectedChild(courseId))
+    const destinationLeaves = leafCourses.filter((courseId) => {
+      const course = tourCourses.find((c) => c.id === courseId)
+      return !isHotelAccommodation(course)
     })
 
-    // 부모-자식 관계를 고려하여 정렬
-    const sortedCourses = leafCourses.sort((a, b) => {
-      const courseA = tourCourses.find(c => c.id === a)
-      const courseB = tourCourses.find(c => c.id === b)
-      
-      if (!courseA || !courseB) return 0
-      
-      // 같은 부모를 가진 경우 기존 순서 유지
-      if (courseA.parent_id === courseB.parent_id) {
-        return 0
+    const departId = quickDeparture ? getQuickDepartId(quickDeparture) : null
+    const arriveId = quickArrival && quickArrival !== quickDeparture ? getQuickArriveId(quickArrival) : null
+
+    if (destinationLeaves.length === 0 && leafCourses.length === 0 && !departId && !arriveId) {
+      setSelectedCoursesOrder([])
+      return
+    }
+
+    const makeItem = (
+      id: string,
+      prevById: Map<string, CourseScheduleItem>
+    ): CourseScheduleItem => {
+      const existing = prevById.get(id)
+      if (existing) return existing
+      const course = tourCourses.find((c) => c.id === id) || getQuickQuoteWaypoint(id)
+      return {
+        id,
+        duration: course?.duration_hours || 0,
+        day: '',
+        time: '',
       }
-      
-      return 0
-    })
+    }
 
-    // 기존 순서에서 유지할 수 있는 것들은 유지하고, 새로 추가된 것들은 뒤에 추가
-    setSelectedCoursesOrder(prev => {
-      // 혹시라도 prev에 문자열이 섞여있을 경우를 대비해 정규화
+    if (courseSelectTab === 'quick') {
+      const orderedIds = orderQuickQuoteStops({
+        departure: quickDeparture,
+        arrival: quickArrival,
+        destinationIds: destinationLeaves,
+        getCoords: (id) => {
+          const waypoint = getQuickQuoteWaypoint(id)
+          if (waypoint) {
+            return { lat: waypoint.start_latitude, lng: waypoint.start_longitude }
+          }
+          return getCourseMapCoords(tourCourses.find((c) => c.id === id), tourCourses)
+        },
+      })
+
+      setSelectedCoursesOrder((prev) => {
+        const prevById = new Map(prev.map((item) => [item.id, item]))
+        const next = orderedIds.map((id) => makeItem(id, prevById))
+        if (next.length === prev.length && next.every((item, index) => item.id === prev[index].id)) {
+          return prev
+        }
+        if (next.length === 0 && directionsRenderer) {
+          directionsRenderer.setDirections({ routes: [] } as any)
+        }
+        return next
+      })
+      return
+    }
+
+    const allowed = new Set(leafCourses)
+    if (departId) allowed.add(departId)
+    if (arriveId) allowed.add(arriveId)
+
+    setSelectedCoursesOrder((prev) => {
       const normalizedPrev = prev.map((item: any) => {
         if (typeof item === 'string') {
-          const course = tourCourses.find(c => c.id === item)
+          const course = tourCourses.find((c) => c.id === item)
           return {
             id: item,
-            duration: course?.duration_hours || 0, // 분 단위
+            duration: course?.duration_hours || 0,
             day: '',
-            time: ''
+            time: '',
           }
         }
         return item
       })
+      const prevById = new Map(normalizedPrev.map((item) => [item.id, item]))
+      let next = normalizedPrev.filter((item) => allowed.has(item.id))
 
-      const newOrder = normalizedPrev.filter(item => leafCourses.includes(item.id))
-      const newItems = sortedCourses
-        .filter(id => !normalizedPrev.some(item => item.id === id))
-        .map(id => {
-          const course = tourCourses.find(c => c.id === id)
-          return {
-            id,
-            duration: course?.duration_hours || 0, // 분 단위
-            day: '',
-            time: ''
-          }
-        })
-      const finalOrder = [...newOrder, ...newItems]
-      
-      // 선택된 코드가 없으면 지도 경로 초기화
-      if (finalOrder.length === 0 && directionsRenderer) {
+      const missingDest = leafCourses.filter((id) => !next.some((item) => item.id === id))
+      next = [...next, ...missingDest.map((id) => makeItem(id, prevById))]
+
+      if (departId && !next.some((item) => item.id === departId)) {
+        next = [makeItem(departId, prevById), ...next]
+      }
+      if (arriveId && !next.some((item) => item.id === arriveId)) {
+        next = [...next, makeItem(arriveId, prevById)]
+      }
+
+      if (next.length === 0 && directionsRenderer) {
         directionsRenderer.setDirections({ routes: [] } as any)
       }
-      
-      return finalOrder
+      return next
     })
-  }, [selectedCourses, tourCourses, directionsRenderer, pendingConfigRestore])
+  }, [selectedCourses, tourCourses, directionsRenderer, pendingConfigRestore, courseSelectTab, quickDeparture, quickArrival])
 
   // 모든 상위 부모를 찾는 함수
   const getAllParentIds = (courseId: string, visited = new Set<string>()): string[] => {
@@ -423,6 +521,77 @@ export default function TourCostCalculatorPage() {
     }
     findChildren(courseId)
     return children
+  }
+
+  const selectCourseWithParents = (courseId: string) => {
+    const newSet = new Set(selectedCourses)
+    newSet.add(courseId)
+    getAllParentIds(courseId).forEach((parentId) => newSet.add(parentId))
+    setSelectedCourses(newSet)
+  }
+
+  const deselectCourseWithChildren = (courseId: string, pruneEmptyParents = false) => {
+    const newSet = new Set(selectedCourses)
+    newSet.delete(courseId)
+    getAllChildIds(courseId).forEach((childId) => newSet.delete(childId))
+
+    if (pruneEmptyParents) {
+      getAllParentIds(courseId).forEach((parentId) => {
+        const hasSelectedDescendant = getAllChildIds(parentId).some((id) => newSet.has(id))
+        if (!hasSelectedDescendant) newSet.delete(parentId)
+      })
+    }
+
+    setSelectedCourses(newSet)
+  }
+
+  const toggleQuickAddon = (id: QuickAddonId) => {
+    setQuickSelectedAddons((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else {
+        next.add(id)
+        setQuickAddonQty((qty) => ({ ...qty, [id]: defaultAddonQty(id, participantCount) }))
+      }
+      return next
+    })
+  }
+
+  const saveQuickAddonRate = (id: QuickAddonId, rate: number | null) => {
+    setQuickAddonRates((prev) => {
+      const next = { ...prev, [id]: rate == null ? QUICK_ADDON_DEFAULT_RATES[id] : rate }
+      persistQuickAddonRates(next)
+      return next
+    })
+  }
+
+  const saveQuickEntranceFee = async (courseId: string, priceAdult: number | null) => {
+    const previous = tourCourses.find((course) => course.id === courseId)
+    setTourCourses((prev) =>
+      prev.map((course) =>
+        course.id === courseId
+          ? { ...course, price_adult: priceAdult, price_type: 'per_person' }
+          : course
+      )
+    )
+
+    const { error } = await supabase
+      .from('tour_courses')
+      .update({
+        price_adult: priceAdult,
+        price_type: 'per_person',
+      })
+      .eq('id', courseId)
+
+    if (error) {
+      if (previous) {
+        setTourCourses((prev) =>
+          prev.map((course) => (course.id === courseId ? previous : course))
+        )
+      }
+      console.error('입장료 저장 오류:', error)
+      alert(t('alertErrorSavingFee'))
+    }
   }
 
   // 일정 항목 정보 업데이트 함수
@@ -709,8 +878,8 @@ export default function TourCostCalculatorPage() {
     setExpandedCourseNodes(newExpanded)
   }
 
-  // 일정 일수 계산
-  const numberOfDays = useMemo(() => {
+  // 일정 일수 계산 (상세 선택의 스케줄 일차)
+  const scheduleNumberOfDays = useMemo(() => {
     if (selectedCoursesOrder.length === 0) return 1
     const days = selectedCoursesOrder
       .map(item => {
@@ -721,6 +890,39 @@ export default function TourCostCalculatorPage() {
       .filter(day => day > 0)
     return days.length > 0 ? Math.max(...days) : 1
   }, [selectedCoursesOrder])
+
+  const numberOfDays = courseSelectTab === 'quick'
+    ? quickStayTourDays(quickStayNights)
+    : scheduleNumberOfDays
+
+  const quickHotelNights = courseSelectTab === 'quick'
+    ? quickStayNights
+    : (scheduleNumberOfDays > 1 ? scheduleNumberOfDays - 1 : 1)
+
+  const hotelDetailsForModal = useMemo(() => {
+    const details = [...hotelAccommodationDetails]
+    if (!quickHotelSeason) return details
+    const rooms = calcQuickHotelRooms(quickHotelCustomerRooms)
+    const unitPrice = quickHotelSeason === 'high' ? 150 : 100
+    details.push({
+      courseName: t(quickHotelSeason === 'high' ? 'quickHotelHighDetail' : 'quickHotelLowDetail'),
+      priceType: t('quickHotelPriceType', {
+        customer: quickHotelCustomerRooms,
+        guide: 1,
+        nights: quickHotelNights,
+      }),
+      unitPrice,
+      quantity: rooms * quickHotelNights,
+      total: calcQuickHotelCost(quickHotelSeason, quickHotelCustomerRooms, quickHotelNights),
+    })
+    return details
+  }, [
+    hotelAccommodationDetails,
+    quickHotelSeason,
+    quickHotelCustomerRooms,
+    quickHotelNights,
+    t,
+  ])
 
   // 호텔 숙박비 계산 (호텔 숙박 + 가이드 숙박비)
   const hotelAccommodationCost = useMemo(() => {
@@ -745,13 +947,14 @@ export default function TourCostCalculatorPage() {
       }
     })
 
-    // 가이드 숙박비 추가 (1박당 $100)
-    // 1박2일 = 1박, 2박3일 = 2박
-    const guideAccommodationCost = numberOfDays > 1 ? (numberOfDays - 1) * 100 : 0
-    total += guideAccommodationCost
+    if (quickHotelSeason) {
+      total += calcQuickHotelCost(quickHotelSeason, quickHotelCustomerRooms, quickHotelNights)
+    } else if (courseSelectTab !== 'quick') {
+      total += numberOfDays > 1 ? (numberOfDays - 1) * 100 : 0
+    }
 
     return total
-  }, [selectedCourses, tourCourses, vehicleType, participantCount, numberOfDays])
+  }, [selectedCourses, tourCourses, vehicleType, participantCount, numberOfDays, quickHotelSeason, quickHotelCustomerRooms, quickHotelNights, courseSelectTab])
 
   // 입장료 계산 (호텔 숙박 제외)
   const entranceFees = useMemo(() => {
@@ -780,6 +983,20 @@ export default function TourCostCalculatorPage() {
 
     return total
   }, [selectedCourses, tourCourses, vehicleType, participantCount])
+
+  const quickAddonLines = useMemo(() => {
+    return QUICK_ADDON_IDS.filter((id) => quickSelectedAddons.has(id)).map((id) => ({
+      id,
+      qty: quickAddonQty[id] || 1,
+      rate: quickAddonRates[id],
+      total: calcQuickAddonLine(quickAddonQty[id] || 1, quickAddonRates[id]),
+    }))
+  }, [quickSelectedAddons, quickAddonQty, quickAddonRates])
+
+  const quickAddonCost = useMemo(
+    () => quickAddonLines.reduce((sum, line) => sum + line.total, 0),
+    [quickAddonLines]
+  )
 
   // 차량 렌트비 (일수에 따라 계산)
   const vehicleRentalCost = useMemo(() => {
@@ -813,8 +1030,8 @@ export default function TourCostCalculatorPage() {
 
   // 총 실비 (기타 금액 제외)
   const totalCost = useMemo(() => {
-    return entranceFees + hotelAccommodationCost + vehicleRentalCost + effectiveFuelCost + calculatedGuideFee
-  }, [entranceFees, hotelAccommodationCost, vehicleRentalCost, effectiveFuelCost, calculatedGuideFee])
+    return entranceFees + hotelAccommodationCost + vehicleRentalCost + effectiveFuelCost + calculatedGuideFee + quickAddonCost
+  }, [entranceFees, hotelAccommodationCost, vehicleRentalCost, effectiveFuelCost, calculatedGuideFee, quickAddonCost])
 
   // 마진율
   const marginRate = useMemo(() => {
@@ -1337,14 +1554,20 @@ export default function TourCostCalculatorPage() {
     try {
       // 선택된 순서대로 코스 가져오기
       const selected = selectedCoursesOrder
-        .map(item => tourCourses.find(c => c.id === item.id))
-        .filter(Boolean) as TourCourse[]
+        .map(item => findScheduleCourse(item.id))
+        .filter(Boolean) as NonNullable<ReturnType<typeof findScheduleCourse>>[]
       
-      const coursesWithLocation = selected.filter(course => 
-        (course.start_latitude && course.start_longitude)
-      )
+      const waypoints = selected
+        .map((course) => {
+          const waypoint = getQuickQuoteWaypoint(course.id)
+          if (waypoint) {
+            return { lat: waypoint.start_latitude, lng: waypoint.start_longitude }
+          }
+          return getCourseMapCoords(course, tourCourses)
+        })
+        .filter((point): point is { lat: number; lng: number } => Boolean(point))
 
-      if (coursesWithLocation.length < 2) {
+      if (waypoints.length < 2) {
         alert(t('alertNeedTwoCourses'))
         setIsCalculatingRoute(false)
         return
@@ -1357,28 +1580,11 @@ export default function TourCostCalculatorPage() {
         return
       }
 
-      const waypoints = coursesWithLocation.map(course => {
-        if (course.start_latitude && course.start_longitude) {
-          return {
-            lat: course.start_latitude,
-            lng: course.start_longitude
-          }
-        }
-        return null
-      }).filter(Boolean) as { lat: number; lng: number }[]
-
-      if (waypoints.length < 2) {
-        alert(t('alertInsufficientLocation'))
-        setIsCalculatingRoute(false)
-        return
-      }
-
       const service = new (window.google.maps as any).DirectionsService()
-      
-      // 순환 경로: 첫 번째 지점에서 시작해서 마지막 지점까지 가고, 다시 첫 번째 지점으로 돌아옴
+      const oneWay = isQuickQuoteOneWay(quickDeparture, quickArrival)
       const origin = waypoints[0]
-      const destination = waypoints[0] // 첫 번째 지점으로 돌아옴
-      const intermediateWaypoints = waypoints.slice(1).map(wp => ({ location: wp }))
+      const destination = oneWay ? waypoints[waypoints.length - 1] : waypoints[0]
+      const intermediateWaypoints = (oneWay ? waypoints.slice(1, -1) : waypoints.slice(1)).map((wp) => ({ location: wp }))
 
       const request: any = {
         origin: origin,
@@ -1713,11 +1919,17 @@ export default function TourCostCalculatorPage() {
 
     // 좌표가 있는 유효한 코스들만 필터링
     const selected = selectedCoursesOrder
-      .map(item => tourCourses.find(c => c.id === item.id))
-      .filter((c): c is TourCourse => 
-        !!c && c.start_latitude !== null && c.start_latitude !== undefined &&
-        c.start_longitude !== null && c.start_longitude !== undefined
-      )
+      .map((item) => {
+        const course = findScheduleCourse(item.id)
+        if (!course) return null
+        const waypoint = getQuickQuoteWaypoint(course.id)
+        const coords = waypoint
+          ? { lat: waypoint.start_latitude, lng: waypoint.start_longitude }
+          : getCourseMapCoords(course, tourCourses)
+        if (!coords) return null
+        return { course, coords }
+      })
+      .filter((row): row is { course: NonNullable<ReturnType<typeof findScheduleCourse>>; coords: { lat: number; lng: number } } => Boolean(row))
 
     if (selected.length === 0) {
       if (selectedCoursesOrder.length === 0) {
@@ -1729,13 +1941,8 @@ export default function TourCostCalculatorPage() {
 
     const bounds = new (window.google.maps as any).LatLngBounds()
 
-    selected.forEach((course, index) => {
-      const lat = typeof course.start_latitude === 'string' ? parseFloat(course.start_latitude) : Number(course.start_latitude)
-      const lng = typeof course.start_longitude === 'string' ? parseFloat(course.start_longitude) : Number(course.start_longitude)
-      
-      if (isNaN(lat) || isNaN(lng)) return
-
-      const position = { lat, lng }
+    selected.forEach((row, index) => {
+      const position = row.coords
       const marker = new (window.google.maps as any).Marker({
         position,
         map,
@@ -1745,7 +1952,7 @@ export default function TourCostCalculatorPage() {
           fontWeight: 'bold',
           fontSize: '14px'
         },
-        title: course.name_ko || course.name_en || '',
+        title: row.course.name_ko || row.course.name_en || '',
         zIndex: 9999, // 경로 선보다 위에 표시
         optimized: false // 렌더링 보장
       })
@@ -1768,7 +1975,7 @@ export default function TourCostCalculatorPage() {
   // Estimate 모달을 위한 코스 데이터 준비
   const estimateCourses = useMemo(() => {
     return selectedCoursesOrder.map(item => {
-      const course = tourCourses.find(c => c.id === item.id)
+      const course = findScheduleCourse(item.id)
       return {
         courseId: item.id,
         courseName: course ? (course.name_ko || course.name_en || '') : '',
@@ -1777,7 +1984,7 @@ export default function TourCostCalculatorPage() {
         duration: item.duration !== undefined ? item.duration : null
       }
     })
-  }, [selectedCoursesOrder, tourCourses])
+  }, [selectedCoursesOrder, tourCourses, quickDeparture, quickArrival])
 
   // Estimate 모달을 위한 코스 데이터 (사진 포함)
   const tourCoursesWithPhotos = useMemo(() => {
@@ -1909,17 +2116,127 @@ export default function TourCostCalculatorPage() {
                 </button>
               </div>
             </div>
+            <div className="mb-3 flex p-1 bg-gray-100 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setCourseSelectTab('quick')}
+                aria-pressed={courseSelectTab === 'quick'}
+                className={`flex-1 min-h-11 inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-sm font-medium transition-colors duration-200 ${
+                  courseSelectTab === 'quick'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <Zap className="w-4 h-4 flex-shrink-0" />
+                {t('courseSelectTabQuick')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setCourseSelectTab('detailed')}
+                aria-pressed={courseSelectTab === 'detailed'}
+                className={`flex-1 min-h-11 inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-sm font-medium transition-colors duration-200 ${
+                  courseSelectTab === 'detailed'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <ListTree className="w-4 h-4 flex-shrink-0" />
+                {t('courseSelectTabDetailed')}
+              </button>
+            </div>
+            {courseSelectTab === 'quick' ? (
+              <p className="mb-3 text-xs sm:text-sm text-muted-foreground">{t('courseSelectQuickHint')}</p>
+            ) : null}
             <div className="mb-4">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
                 <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
-                  placeholder={t('searchCoursePlaceholder')}
+                  placeholder={courseSelectTab === 'quick' ? t('searchDestinationPlaceholder') : t('searchCoursePlaceholder')}
                   value={courseSearchTerm}
                   onChange={(e) => setCourseSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-3 py-2.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring text-base sm:text-sm"
                 />
               </div>
             </div>
+            {courseSelectTab === 'quick' ? (
+              <QuickDestinationPicker
+                courses={tourCourses}
+                selectedCourses={selectedCourses}
+                searchTerm={courseSearchTerm}
+                locale={locale}
+                standaloneGroupLabel={t('courseSelectStandaloneGroup')}
+                emptyLabel={
+                  tourType === 'product' && !selectedProductId
+                    ? t('selectProductFirst')
+                    : courseSearchTerm
+                    ? t('noSearchResults')
+                    : t('noCourses')
+                }
+                departure={quickDeparture}
+                arrival={quickArrival}
+                hotelSeason={quickHotelSeason}
+                hotelCustomerRooms={quickHotelCustomerRooms}
+                hotelNights={quickHotelNights}
+                stayNights={quickStayNights}
+                stayOptions={QUICK_STAY_NIGHTS.map((nights) => ({
+                  nights,
+                  label: nights === 0
+                    ? t('quickStayDayTrip')
+                    : t('quickStayOvernight', { nights, days: nights + 1 }),
+                }))}
+                labels={{
+                  originGroup: t('quickOriginGroup'),
+                  stayGroup: t('quickStayGroup'),
+                  hotelGroup: t('quickHotelGroup'),
+                  lvDepart: t('quickLvDepart'),
+                  lvArrive: t('quickLvArrive'),
+                  laDepart: t('quickLaDepart'),
+                  laArrive: t('quickLaArrive'),
+                  hotelHigh: t('quickHotelHigh'),
+                  hotelLow: t('quickHotelLow'),
+                  customerRooms: t('quickHotelCustomerRooms'),
+                  guideRoomIncluded: t('quickHotelGuideIncluded', { guide: QUICK_HOTEL_GUIDE_ROOMS }),
+                  totalRooms: t('quickHotelTotal', {
+                    rooms: calcQuickHotelRooms(quickHotelCustomerRooms),
+                    nights: quickHotelNights,
+                    amount: (quickHotelSeason
+                      ? calcQuickHotelCost(quickHotelSeason, quickHotelCustomerRooms, quickHotelNights)
+                      : 0
+                    ).toFixed(0),
+                  }),
+                  feeTitle: t('quickFeeTitle'),
+                  feePerPerson: t('quickFeePerPerson'),
+                  feeSave: t('quickFeeSave'),
+                  feeCancel: t('quickFeeCancel'),
+                  feeClear: t('quickFeeClear'),
+                  feeContextHint: t('quickFeeContextHint'),
+                  addonGroup: t('quickAddonGroup'),
+                  addonQty: t('quickAddonQtyPeople'),
+                  addonFeeContextHint: t('quickAddonFeeContextHint'),
+                }}
+                addons={QUICK_ADDON_IDS.map((id) => ({
+                  id,
+                  label: t(QUICK_ADDON_I18N_KEYS[id]),
+                  rate: quickAddonRates[id],
+                  selected: quickSelectedAddons.has(id),
+                  qty: quickAddonQty[id] || 1,
+                  qtyLabel: QUICK_ADDON_FOLLOWS_PARTICIPANTS[id]
+                    ? t('quickAddonQtyPeople')
+                    : t('quickAddonQtyPass'),
+                }))}
+                onSelect={selectCourseWithParents}
+                onDeselect={(courseId) => deselectCourseWithChildren(courseId, true)}
+                onToggleDeparture={(city) => setQuickDeparture((prev) => (prev === city ? null : city))}
+                onToggleArrival={(city) => setQuickArrival((prev) => (prev === city ? null : city))}
+                onToggleHotel={(season) => setQuickHotelSeason((prev) => (prev === season ? null : season))}
+                onHotelRoomsChange={(rooms) => setQuickHotelCustomerRooms(Math.max(1, rooms))}
+                onStayNightsChange={setQuickStayNights}
+                onToggleAddon={toggleQuickAddon}
+                onAddonQtyChange={(id, qty) => setQuickAddonQty((prev) => ({ ...prev, [id]: Math.max(1, qty) }))}
+                onSaveAddonRate={saveQuickAddonRate}
+                onSaveEntranceFee={saveQuickEntranceFee}
+              />
+            ) : (
             <div className="max-h-64 sm:max-h-80 md:max-h-96 overflow-y-auto space-y-2 -mx-1 px-1">
               {hierarchicalCourses.length > 0 ? (
                 hierarchicalCourses.map((course) => (
@@ -1931,30 +2248,8 @@ export default function TourCostCalculatorPage() {
                     selectedCourses={selectedCourses}
                     onToggle={toggleCourseNode}
                     locale={locale}
-                    onSelect={(course) => {
-                      const newSet = new Set(selectedCourses)
-                      newSet.add(course.id)
-                      
-                      // 하위 포인트를 선택하면 모든 상위 부모도 자동 선택
-                      const parentIds = getAllParentIds(course.id)
-                      parentIds.forEach(parentId => {
-                        newSet.add(parentId)
-                      })
-                      
-                      setSelectedCourses(newSet)
-                    }}
-                    onDeselect={(courseId) => {
-                      const newSet = new Set(selectedCourses)
-                      newSet.delete(courseId)
-                      
-                      // 상위 카테고리를 해제하면 하위 자식들도 모두 해제
-                      const childIds = getAllChildIds(courseId)
-                      childIds.forEach(childId => {
-                        newSet.delete(childId)
-                      })
-                      
-                      setSelectedCourses(newSet)
-                    }}
+                    onSelect={(course) => selectCourseWithParents(course.id)}
+                    onDeselect={(courseId) => deselectCourseWithChildren(courseId)}
                     onEdit={(course) => {
                       setEditingCourse(course as any)
                       setShowCourseEditModal(true)
@@ -1971,6 +2266,7 @@ export default function TourCostCalculatorPage() {
                 </div>
               )}
             </div>
+            )}
             </div>
           ) : (
             <div className="bg-white rounded-lg shadow-sm border p-6">
@@ -1982,7 +2278,7 @@ export default function TourCostCalculatorPage() {
           )}
 
           {/* 선택된 투어 코스 순서 */}
-          {((tourType === 'product' && selectedProductId) || tourType === 'custom' || tourType === 'charter_guide') && selectedCourses.size > 0 && selectedCoursesOrder.length > 0 && (
+          {((tourType === 'product' && selectedProductId) || tourType === 'custom' || tourType === 'charter_guide') && selectedCoursesOrder.length > 0 && (
             <div className="bg-white rounded-lg shadow-sm border p-3 sm:p-4">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
                 <div className="min-w-0">
@@ -2022,7 +2318,7 @@ export default function TourCostCalculatorPage() {
                     >
                       {selectedCoursesOrder.map((item, index) => {
                         const courseId = item.id
-                        const course = tourCourses.find(c => c.id === courseId)
+                        const course = findScheduleCourse(courseId)
                         if (!course) return null
 
                         // 부모 경로를 찾는 함수
@@ -2160,6 +2456,16 @@ export default function TourCostCalculatorPage() {
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation()
+                                      const departCity = parseQuickDepartCity(courseId)
+                                      const arriveCity = parseQuickArriveCity(courseId)
+                                      if (departCity) {
+                                        setQuickDeparture(null)
+                                        return
+                                      }
+                                      if (arriveCity) {
+                                        setQuickArrival(null)
+                                        return
+                                      }
                                       const newSet = new Set(selectedCourses)
                                       newSet.delete(courseId)
                                       setSelectedCourses(newSet)
@@ -2208,7 +2514,7 @@ export default function TourCostCalculatorPage() {
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
               <button
                 onClick={calculateRoute}
-                disabled={selectedCourses.size < 2 || isCalculatingRoute || selectedCoursesOrder.length < 2}
+                disabled={isCalculatingRoute || selectedCoursesOrder.length < 2}
                 className="flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm whitespace-nowrap"
               >
                 {isCalculatingRoute ? (
@@ -2710,18 +3016,32 @@ export default function TourCostCalculatorPage() {
                 </div>
                 {hotelAccommodationCost > 0 && (
                   <div className="flex justify-between mb-2">
-                    <span className="text-gray-600">{t('hotelAccommodation')}</span>
+                    <span className="text-gray-600">
+                      {t('hotelAccommodation')}
+                      {quickHotelNights > 0 ? ` (${t('hotelNightsCount', { nights: quickHotelNights })})` : ''}
+                    </span>
                     <span className="font-medium">${hotelAccommodationCost.toFixed(2)}</span>
                   </div>
                 )}
                 <div className="flex justify-between mb-2">
-                  <span className="text-gray-600">{t('vehicleRental')} {numberOfDays > 1 && `(${numberOfDays})`}</span>
+                  <span className="text-gray-600">
+                    {t('vehicleRental')} ({t('vehicleRentalDays', { days: numberOfDays })})
+                  </span>
                   <span className="font-medium">${vehicleRentalCost.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between mb-2">
                   <span className="text-gray-600">{t('fuelCost')}</span>
                   <span className="font-medium">${effectiveFuelCost.toFixed(2)}</span>
                 </div>
+                {quickAddonLines.map((line) => (
+                  <div key={line.id} className="flex justify-between mb-2">
+                    <span className="text-gray-600">
+                      {t(QUICK_ADDON_I18N_KEYS[line.id])}
+                      {` (${line.qty} × $${line.rate})`}
+                    </span>
+                    <span className="font-medium">${line.total.toFixed(2)}</span>
+                  </div>
+                ))}
                 <div className="flex justify-between mb-2">
                   <span className="text-gray-600">{t('guideFee')}</span>
                   <span className="font-medium">${calculatedGuideFee.toFixed(2)}</span>
@@ -3175,7 +3495,7 @@ export default function TourCostCalculatorPage() {
       <EntranceFeeDetailModal
         isOpen={showEntranceFeeDetailModal}
         entranceFeeDetails={entranceFeeDetails}
-        hotelAccommodationDetails={hotelAccommodationDetails}
+        hotelAccommodationDetails={hotelDetailsForModal}
         entranceFees={entranceFees}
         hotelAccommodationCost={hotelAccommodationCost}
         numberOfDays={numberOfDays}

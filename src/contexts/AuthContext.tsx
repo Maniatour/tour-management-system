@@ -11,6 +11,7 @@ import {
   getStoredAccessTokenIfValid,
   isAuthInvalidRefreshError,
   isAuthRateLimitError,
+  isAuthRefreshDiscardedError,
   isAuthRefreshRateLimited,
   markProactiveRefreshAttempted,
   resetSupabaseTokenSyncCache,
@@ -512,12 +513,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             localStorage.setItem('sb-expires-at', newExpiry.toString())
             updateSupabaseToken(session.access_token, {
               refreshToken: session.refresh_token,
-              forceSetSession: true,
             })
             return true
           } else {
             if (isAuthRateLimitError(error)) {
               console.warn('AuthContext: Token refresh rate limited, keeping current session')
+              return true
+            }
+            if (isAuthRefreshDiscardedError(error)) {
               return true
             }
             console.warn('AuthContext: Token refresh failed:', error)
@@ -528,7 +531,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       return true
     } catch (error) {
-      if (isAuthRateLimitError(error)) {
+      if (isAuthRateLimitError(error) || isAuthRefreshDiscardedError(error)) {
         return true
       }
       console.warn('AuthContext: Token refresh error:', error)
@@ -1261,11 +1264,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                           localStorage.setItem('sb-expires-at', newExpiry.toString())
                           updateSupabaseToken(session.access_token, {
                             refreshToken: session.refresh_token,
-                            forceSetSession: true,
                           })
                         }
                       } catch (e) {
-                        if (!isAuthRateLimitError(e)) {
+                        if (!isAuthRateLimitError(e) && !isAuthRefreshDiscardedError(e)) {
                           console.warn('AuthContext: background refreshSession error:', e)
                         }
                       }
@@ -1560,7 +1562,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   persistSupabaseSessionToStorage(refreshed)
                   updateSupabaseToken(refreshed.access_token, {
                     refreshToken: refreshed.refresh_token,
-                    forceSetSession: true,
                   })
                   return
                 }
@@ -1573,7 +1574,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 keepUserDespiteSignedOut = true
               }
             } catch (e) {
-              if (!isAuthRateLimitError(e)) {
+              if (!isAuthRateLimitError(e) && !isAuthRefreshDiscardedError(e)) {
                 console.warn('AuthContext: SIGNED_OUT verification failed:', e)
               }
             } finally {
@@ -1848,7 +1849,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         persistSupabaseSessionToStorage(activeSession)
         updateSupabaseToken(activeSession.access_token, {
           refreshToken: activeSession.refresh_token,
-          forceSetSession: true,
         })
 
         const resumedEmail = activeSession.user.email

@@ -1810,6 +1810,8 @@
       "ticketCalendarHeadcountMismatchHint": "Contorno rojo: suma de participantes en tours que comienzan este día ≠ suma de la cantidad de boletos (excl. cancelados) para check-ins este día. No se comparan los días que sólo continúan un recorrido de varios días de un día anterior.",
       "ticketCalendarSeeCanyonMissingZelle": "SEE · Zelle faltante",
       "ticketCalendarSeeCanyonMissingZelleHint": "Resalte rosa y distintivo Zelle: reserva SEE Canyon sin adjunto de confirmación Zelle.",
+      "ticketCalendarSeeCanyonLinkedZelle": "SEE · Zelle vinculado",
+      "ticketCalendarSeeCanyonLinkedZelleHint": "Check verde después de RN#: la reserva SEE Canyon tiene confirmación Zelle (adjunto o Conf#).",
       "ticketCalendarChangeStatusTitle": "Clic para cambiar el estado",
       "tourNotConnected": "Tour no conectado",
       "seeCanyonConnected": "L (VER CAÑÓN) - Tour Conectado",
@@ -1882,6 +1884,7 @@
           "confirmed": "Confirmado",
           "cancel_requested": "Cancelación solicitada",
           "cancelled": "Cancelado",
+          "weather_cancelled": "Cancelación por clima",
           "no_show": "No presentarse",
           "failed": "Cancelación total",
           "expired": "Retención/solicitud vencida"

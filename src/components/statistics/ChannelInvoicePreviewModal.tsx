@@ -4,6 +4,7 @@ import { useRef } from 'react'
 import { X, Printer, Download } from 'lucide-react'
 import type { ChannelInvoiceItem } from '@/utils/pdfExport'
 import { generateChannelInvoicePDF } from '@/utils/pdfExport'
+import { printHtmlDocument } from '@/lib/printHtmlDocument'
 
 /** 영수증 모달(`CustomerReceiptModal`) 레터헤드와 동일 */
 const COMPANY = {
@@ -93,12 +94,8 @@ export default function ChannelInvoicePreviewModal({
     if (!printRef.current) return
     const content = printRef.current.innerHTML
     const safeTitle = `${channelName} Invoice`.replace(/</g, '')
-    const win = window.open('', '_blank')
-    if (!win) return
-
-    const doc = win.document
-    doc.open()
-    doc.write(`
+    printHtmlDocument(
+      `
       <!DOCTYPE html>
       <html>
         <head>
@@ -112,31 +109,9 @@ export default function ChannelInvoicePreviewModal({
           <div class="invoice-print-root">${content}</div>
         </body>
       </html>
-    `)
-    doc.close()
-
-    const runPrint = () => {
-      try {
-        win.focus()
-        win.print()
-      } catch {
-        /* Chromium: 인쇄 직후 창을 닫으면 "callback is no longer runnable" 등 */
-      }
-      const closeWhenDone = () => {
-        try {
-          if (!win.closed) win.close()
-        } catch {
-          /* ignore */
-        }
-      }
-      win.addEventListener('afterprint', closeWhenDone, { once: true })
-    }
-
-    if (doc.readyState === 'complete') {
-      requestAnimationFrame(() => requestAnimationFrame(runPrint))
-    } else {
-      win.addEventListener('load', runPrint, { once: true })
-    }
+    `,
+      safeTitle
+    )
   }
 
   const handleDownloadPDF = () => {

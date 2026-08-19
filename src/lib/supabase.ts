@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js'
 import type { Database } from './database.types'
 import {
   fetchAuthRefreshTokenSingleFlight,
+  isAuthRefreshDiscardedError,
+  isAuthRefreshInFlight,
   isAuthRefreshRateLimited,
   isAuthRefreshTokenRequestUrl,
 } from './authRefreshCoordinator'
@@ -12,6 +14,8 @@ export {
   coordinatedRefreshSession,
   getAuthRefreshCooldownRemainingMs,
   isAuthInvalidRefreshError,
+  isAuthRefreshDiscardedError,
+  isAuthRefreshInFlight,
   isAuthRefreshRateLimited,
   isAuthRateLimitError,
   markProactiveRefreshAttempted,
@@ -542,14 +546,17 @@ export const updateSupabaseToken = (
   syncAuthSessionCookie(accessToken, cookieExp)
 
   const nowSec = Math.floor(Date.now() / 1000)
-  const stillValid = expSec != null && expSec > nowSec + 120
 
   lastAppliedAccessToken = accessToken
 
   // 429 쿨다운 중 setSession은 refresh_token을 다시 치므로 생략. REST는 localStorage JWT로 계속 가능.
   if (isAuthRefreshRateLimited()) return
+  // 갱신 중 setSession은 AuthRefreshDiscardedError(세션이 mid-flight에 바뀜)를 유발
+  if (isAuthRefreshInFlight()) return
 
-  if (!options?.forceSetSession && stillValid) {
+  // 만료 임박 구간(0~120초)에서 setSession을 치면 INITIAL_SESSION 갱신과 레이스난다
+  const accessStillUnexpired = expSec != null && expSec > nowSec
+  if (!options?.forceSetSession && accessStillUnexpired) {
     return
   }
 
@@ -568,7 +575,16 @@ export const updateSupabaseToken = (
       access_token: accessToken,
       refresh_token: refreshToken,
     })
+    .then(({ error }) => {
+      if (!error) return
+      if (isAuthRefreshDiscardedError(error)) return
+      const msg = error.message ?? String(error)
+      if (msg.includes('AbortError') || msg.includes('aborted') || msg.includes('signal is aborted')) return
+      if (msg.toLowerCase().includes('too many requests') || msg.includes('429')) return
+      console.error('Failed to update Supabase token:', error)
+    })
     .catch((error) => {
+      if (isAuthRefreshDiscardedError(error)) return
       const msg = error?.message ?? String(error)
       if (msg.includes('AbortError') || msg.includes('aborted') || msg.includes('signal is aborted')) return
       if (msg.toLowerCase().includes('too many requests') || msg.includes('429')) return

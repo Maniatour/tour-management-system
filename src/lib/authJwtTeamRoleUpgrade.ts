@@ -47,7 +47,6 @@ export async function upgradeSessionForTeamRoleClaims(): Promise<boolean> {
     persistSupabaseSessionToStorage(upgraded)
     updateSupabaseToken(upgraded.access_token, {
       refreshToken: upgraded.refresh_token,
-      forceSetSession: true,
     })
     syncAuthSessionCookieFromStorage()
 

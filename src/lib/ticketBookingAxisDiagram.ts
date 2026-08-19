@@ -15,7 +15,7 @@ export const TICKET_BOOKING_AXIS_DIAGRAM_ROWS: readonly TicketBookingAxisDiagram
   {
     axis: 'booking',
     primary: ['requested', 'on_hold', 'tentative', 'confirmed'],
-    alternate: ['cancel_requested', 'cancelled', 'no_show', 'failed', 'expired'],
+    alternate: ['cancel_requested', 'cancelled', 'weather_cancelled', 'no_show', 'failed', 'expired'],
   },
   {
     axis: 'vendor',

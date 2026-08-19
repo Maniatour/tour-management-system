@@ -10,7 +10,6 @@ export function persistSupabaseSessionAndSync(session: Session) {
   persistSupabaseSessionToStorage(session)
   updateSupabaseToken(session.access_token, {
     refreshToken: session.refresh_token,
-    forceSetSession: true,
   })
 }
 

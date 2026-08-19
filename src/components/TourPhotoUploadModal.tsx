@@ -8,6 +8,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { X, Camera, Upload, Calendar, MapPin, Users, User, Car, CheckCircle, AlertCircle } from 'lucide-react'
 import { runTourPhotoUploadQueue } from '@/lib/runTourPhotoUploadQueue'
 import { endTourPhotoUploadSession, startTourPhotoPrepare } from '@/lib/tourPhotoUploadSession'
+import { TOUR_PHOTO_FILE_ACCEPT } from '@/lib/tourPhotoUploadUtils'
+import { useTranslations } from 'next-intl'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Tour & {
@@ -28,6 +30,7 @@ interface TourPhotoUploadModalProps {
 export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPhotoUploadModalProps) {
   const supabase = createClientSupabase()
   const { user, userRole: _userRole, simulatedUser, isSimulating } = useAuth()
+  const t = useTranslations('tours.tourPhoto')
   
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
@@ -186,8 +189,6 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
     }
 
     const tourId = selectedTour.id
-    const imageOnlyErrorLabel =
-      locale === 'en' ? 'Only image files can be uploaded' : '이미지 파일만 업로드할 수 있습니다'
 
     startTourPhotoPrepare(tourId, selectedFiles.length)
     setUploading(true)
@@ -200,7 +201,14 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
           files: selectedFiles,
           tourId,
           uploadedBy: currentUserEmail,
-          imageOnlyErrorLabel,
+          labels: {
+            noFiles: t('noFilesSelected'),
+            mediaOnlyError: t('mediaOnlyError'),
+            fileTooLarge: t('fileTooLarge'),
+            duplicateInSelection: t('skippedDuplicateInSelection'),
+            alreadyUploaded: t('skippedAlreadyUploaded'),
+            nothingToUpload: t('nothingToUpload'),
+          },
         })
 
         if (result.userMessages?.length) {
@@ -210,15 +218,19 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
         }
 
         const skipMsg =
-          (result.skippedDuplicateContent > 0 ? `\n동일 이미지 ${result.skippedDuplicateContent}장 생략` : '') +
+          (result.skippedDuplicateContent > 0
+            ? `\n${t('skippedDuplicateInSelection', { count: result.skippedDuplicateContent })}`
+            : '') +
           (result.skippedAlreadyUploaded > 0
-            ? `\n이미 업로드됨(이름·크기 동일) ${result.skippedAlreadyUploaded}장 생략`
+            ? `\n${t('skippedAlreadyUploaded', { count: result.skippedAlreadyUploaded })}`
             : '')
 
         if (result.totalSuccessful > 0) {
           setUploadStatus('success')
           alert(
-            `업로드 완료: ${result.totalSuccessful}장 성공${result.totalFailed > 0 ? `, ${result.totalFailed}장 실패` : ''}${skipMsg}`
+            (result.totalFailed > 0
+              ? t('uploadCompletePartial', { success: result.totalSuccessful, failed: result.totalFailed })
+              : t('uploadCompleteSuccess', { count: result.totalSuccessful })) + skipMsg
           )
           setTimeout(() => {
             setSelectedTour(null)
@@ -229,12 +241,12 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
           }, 1500)
         } else {
           setUploadStatus('error')
-          alert(`업로드에 실패했습니다. (${result.totalFailed}장)${skipMsg}`)
+          alert(`${t('uploadAllFailed', { count: result.totalFailed })}${skipMsg}`)
         }
       } catch (error) {
         console.error('Error uploading photos:', error)
         setUploadStatus('error')
-        alert(error instanceof Error ? error.message : '업로드 중 오류가 발생했습니다.')
+        alert(error instanceof Error ? error.message : t('uploadError'))
       } finally {
         endTourPhotoUploadSession()
         setUploading(false)
@@ -391,7 +403,7 @@ export default function TourPhotoUploadModal({ isOpen, onClose, locale }: TourPh
                 <input
                   type="file"
                   multiple
-                  accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp,.gif"
+                  accept={TOUR_PHOTO_FILE_ACCEPT}
                   onChange={handleFileSelect}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                 />

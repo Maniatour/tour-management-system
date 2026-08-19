@@ -1810,6 +1810,8 @@
       "ticketCalendarHeadcountMismatchHint": "Rote Umrandung: Summe der Teilnehmer an Touren, die an diesem Tag beginnen ≠ Summe der Ticketmenge (ohne Stornierung) für Check-ins an diesem Tag. Tage, an denen eine Mehrtagestour lediglich von einem Vortag fortgesetzt wird, werden nicht verglichen.",
       "ticketCalendarSeeCanyonMissingZelle": "SEE · Zelle fehlt",
       "ticketCalendarSeeCanyonMissingZelleHint": "Rosa Hervorhebung und Zelle-Badge: SEE-Canyon-Buchung ohne Zelle-Bestätigungsanhang.",
+      "ticketCalendarSeeCanyonLinkedZelle": "SEE · Zelle verknüpft",
+      "ticketCalendarSeeCanyonLinkedZelleHint": "Grünes Häkchen hinter RN#: SEE-Canyon-Buchung hat eine Zelle-Bestätigung (Anhang oder Conf#).",
       "ticketCalendarChangeStatusTitle": "Klicken, um den Status zu ändern",
       "tourNotConnected": "Tour nicht verbunden",
       "seeCanyonConnected": "L (SIEHE CANYON) – Tour verbunden",
@@ -1882,6 +1884,7 @@
           "confirmed": "Bestätigt",
           "cancel_requested": "Stornierung beantragt",
           "cancelled": "Abgesagt",
+          "weather_cancelled": "Wetterstornierung",
           "no_show": "No-Show",
           "failed": "Vollständig storniert",
           "expired": "Sperre/Anfrage abgelaufen"

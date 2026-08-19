@@ -3,6 +3,11 @@ import { supabaseAdmin } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { extractReservationFromEmail } from '@/lib/emailReservationParser'
 import { isZellePaymentSentEmail, ZELLE_PAYMENT_PLATFORM_KEY } from '@/lib/zellePaymentEmail'
+import {
+  isWellsFargoAtmReceiptEmail,
+  parseWellsFargoAtmReceipt,
+  WELLS_FARGO_ATM_PLATFORM_KEY,
+} from '@/lib/wellsFargoAtmReceipt'
 import { decodeGmailPayload, extractGmailMessageText, type GmailPart } from '@/lib/gmailMessageBody'
 import type { Json } from '@/lib/database.types'
 
@@ -155,24 +160,44 @@ export async function POST(request: Request) {
       .eq('message_id', messageId)
       .maybeSingle()
     const zelleMail = isZellePaymentSentEmail(subject)
+    const atmMail = isWellsFargoAtmReceiptEmail({ subject, from, body })
     if (existing) {
       const empty =
         !String(existing.raw_body_text ?? '').trim() && !String(existing.raw_body_html ?? '').trim()
       const existingZelle =
         existing.platform_key === ZELLE_PAYMENT_PLATFORM_KEY ||
         isZellePaymentSentEmail(existing.subject)
-      if (!empty || !body.trim() || !(zelleMail || existingZelle)) return false
+      const existingAtm =
+        existing.platform_key === WELLS_FARGO_ATM_PLATFORM_KEY ||
+        isWellsFargoAtmReceiptEmail({ subject: existing.subject, platformKey: existing.platform_key })
+      if (!empty || !body.trim() || !(zelleMail || existingZelle || atmMail || existingAtm)) return false
+      if (zelleMail || existingZelle) {
+        const { error: updErr } = await client
+          .from('reservation_imports')
+          .update({
+            raw_body_text: body.slice(0, 50000),
+            platform_key: ZELLE_PAYMENT_PLATFORM_KEY,
+            extracted_data: { is_booking_confirmed: false, zelle_processed: false } as Json,
+            status: 'pending',
+          })
+          .eq('id', existing.id)
+        if (updErr) {
+          console.error('[gmail/sync] reservation_imports body backfill:', updErr.message)
+        }
+        return !updErr
+      }
+      const parsedAtm = parseWellsFargoAtmReceipt(body)
       const { error: updErr } = await client
         .from('reservation_imports')
         .update({
           raw_body_text: body.slice(0, 50000),
-          platform_key: ZELLE_PAYMENT_PLATFORM_KEY,
-          extracted_data: { is_booking_confirmed: false, zelle_processed: false } as Json,
+          platform_key: WELLS_FARGO_ATM_PLATFORM_KEY,
+          extracted_data: { is_booking_confirmed: false, atm: parsedAtm } as Json,
           status: 'pending',
         })
         .eq('id', existing.id)
       if (updErr) {
-        console.error('[gmail/sync] reservation_imports body backfill:', updErr.message)
+        console.error('[gmail/sync] reservation_imports ATM backfill:', updErr.message)
       }
       return !updErr
     }
@@ -191,7 +216,12 @@ export async function POST(request: Request) {
           platform_key: ZELLE_PAYMENT_PLATFORM_KEY,
           extracted_data: { is_booking_confirmed: false, zelle_processed: false },
         }
-      : extractReservationFromEmail({
+      : atmMail
+        ? {
+            platform_key: WELLS_FARGO_ATM_PLATFORM_KEY,
+            extracted_data: { is_booking_confirmed: false, atm: parseWellsFargoAtmReceipt(body) },
+          }
+        : extractReservationFromEmail({
           subject,
           text: body,
           html: null,
@@ -362,7 +392,10 @@ export async function POST(request: Request) {
       const zelle =
         row.platform_key === ZELLE_PAYMENT_PLATFORM_KEY ||
         isZellePaymentSentEmail(row.subject)
-      if (empty && zelle) emptyBodyZelleIds.add(row.message_id)
+      const atm =
+        row.platform_key === WELLS_FARGO_ATM_PLATFORM_KEY ||
+        isWellsFargoAtmReceiptEmail({ subject: row.subject, platformKey: row.platform_key })
+      if (empty && (zelle || atm)) emptyBodyZelleIds.add(row.message_id)
     }
   }
   const missingIds = listIds.filter((id) => {

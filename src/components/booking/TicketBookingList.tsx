@@ -48,7 +48,9 @@ import TicketBookingReservationDetailModal, {
   type TicketBookingReservationDetailRow,
 } from './TicketBookingReservationDetailModal';
 import TicketBookingActionPanel from './TicketBookingActionPanel';
-import TicketBookingQtyTimeline from './TicketBookingQtyTimeline';
+import TicketBookingQtyTimeline, {
+  TicketBookingHoverQtyAmountLines,
+} from './TicketBookingQtyTimeline';
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal';
 import { fetchReconciledSourceIdsBatched } from '@/lib/reconciliation-match-queries';
 import {
@@ -79,6 +81,7 @@ import {
   getTicketBookingQtyStack,
   getTicketBookingTimeStack,
   sumTicketBookingsEffectiveExpenseUsd,
+  sumTicketBookingsPaidUsd,
   sumTicketBookingsRemainingPayableUsd,
 } from '@/lib/ticket-booking-change-display';
 import {
@@ -104,6 +107,7 @@ import {
   PencilLine,
   History,
   Check,
+  BadgeCheck,
   ListChecks,
   Merge,
   Mail,
@@ -174,6 +178,13 @@ import {
 } from '@/lib/ticketBookingDateViewRecon';
 import { TicketBookingDateViewReconPanel } from '@/components/booking/TicketBookingDateViewReconPanel';
 import { ticketBookingLineTotalUsd } from '@/lib/bookingSettlement';
+import {
+  groupAntelopeOnSiteAmountByDateAndCanyon,
+  isAntelopeOnSiteTourExpense,
+  isOnSiteTransferredTicketBooking,
+  type AntelopeOnSiteReceiptRow,
+} from '@/lib/antelopeOnSiteReceipt';
+import { TicketCalendarOnSiteBadge } from '@/components/booking/TicketCalendarOnSiteBadge';
 import { computeTicketBookingVendorPeriodStats } from '@/lib/ticketBookingVendorPeriodStats';
 import TicketBookingVendorPeriodStatsPanel from '@/components/booking/TicketBookingVendorPeriodStatsPanel';
 import TicketBookingDateNoteModal from '@/components/booking/TicketBookingDateNoteModal';
@@ -209,7 +220,9 @@ import {
   formatQtyArrow,
   formatTimeArrow,
   isTicketBookingCreditReceived,
+  isTicketBookingWeatherCancelled,
   isTicketBookingPendingRequestState,
+  getWeatherCancelCreditFollowUpState,
   isWorkflowInitialPhase,
   showChangeRequestButton,
   showPaymentCompleteButton,
@@ -271,20 +284,26 @@ function TicketCalendarPayableBadge({
   due,
   locale,
   title,
+  filled = false,
 }: {
   amount: number
   due: boolean
   locale: string
   title?: string
+  filled?: boolean
 }) {
   if (!(amount > 0)) return null
   const isEn = locale.startsWith('en')
+  const dueClass = filled
+    ? 'bg-amber-500 text-white ring-amber-700'
+    : 'bg-amber-100 text-amber-950 ring-amber-300'
+  const paidClass = filled
+    ? 'bg-emerald-600 text-white ring-emerald-800'
+    : 'bg-emerald-50 text-emerald-800 ring-emerald-200'
   return (
     <span
       className={`inline-flex shrink-0 items-center rounded-full px-1 py-px text-[8px] font-bold tabular-nums leading-none ring-1 sm:px-1.5 sm:text-[10px] ${
-        due
-          ? 'bg-amber-100 text-amber-950 ring-amber-300'
-          : 'bg-emerald-50 text-emerald-800 ring-emerald-200'
+        due ? dueClass : paidClass
       }`}
       title={title}
     >
@@ -416,6 +435,8 @@ interface TicketBooking {
   tour_id?: string;
   /** 연결된 투어 다중 (대표는 tour_id) */
   tour_ids?: string[] | null;
+  /** 현장 결제 투어 영수증에서 넘긴 경우 */
+  tour_expense_id?: string | null;
   /** `reservations.id` — 예약자명은 별도 조회해 `reservation_name`에 채움 */
   reservation_id?: string | null;
   submit_on: string;
@@ -962,6 +983,16 @@ function isSeeCanyonMissingZelleAttachment(
   return !bookingHasZelleConnection(booking, zelleMap);
 }
 
+/** SEE Canyon + 취소 아님 + Zelle 첨부 또는 Conf# 있음 */
+function isSeeCanyonLinkedZelleAttachment(
+  booking: TicketBooking,
+  zelleMap: Map<string, string[]>
+): boolean {
+  if (!isSeeCanyonSupplierCompany(booking.company)) return false;
+  if (isTicketBookingCancelledStatus(booking)) return false;
+  return bookingHasZelleConnection(booking, zelleMap);
+}
+
 const SEE_CANYON_MISSING_ZELLE_CHIP_STYLE = {
   backgroundColor: '#ffe4e6',
   color: '#9f1239',
@@ -1297,12 +1328,11 @@ function TicketCalendarRnBookingChipTooltip({
                           </span>{' '}
                           <span className="tabular-nums">{formatTimeArrow(b)}</span>
                         </div>
-                        <div className="text-[10px] font-medium text-gray-900">
-                          <span className="text-red-700">
-                            {locale.startsWith('en') ? 'Quantity' : '수량'}
-                          </span>{' '}
-                          <span className="tabular-nums">{formatQtyArrow(b)}</span>
-                        </div>
+                        <TicketBookingHoverQtyAmountLines
+                          booking={b}
+                          locale={locale}
+                          active={open}
+                        />
                       </div>
                     ) : (
                       <div className="space-y-0.5 text-[10px] font-medium text-gray-900">
@@ -1312,12 +1342,11 @@ function TicketCalendarRnBookingChipTooltip({
                           </span>{' '}
                           <span className="tabular-nums">{formatTimeArrow(b)}</span>
                         </div>
-                        <div>
-                          <span className="text-gray-500">
-                            {locale.startsWith('en') ? 'Quantity' : '수량'}
-                          </span>{' '}
-                          <span className="tabular-nums">{formatQtyArrow(b)}</span>
-                        </div>
+                        <TicketBookingHoverQtyAmountLines
+                          booking={b}
+                          locale={locale}
+                          active={open}
+                        />
                       </div>
                     )}
                     <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-gray-600">
@@ -1693,6 +1722,74 @@ export default function TicketBookingList() {
   const [showIssueFollowUpModal, setShowIssueFollowUpModal] = useState(false);
   const [issueClearingId, setIssueClearingId] = useState<string | null>(null);
   const [tourEvents, setTourEvents] = useState<TourEvent[]>([]);
+  const [antelopeOnSiteReceipts, setAntelopeOnSiteReceipts] = useState<AntelopeOnSiteReceiptRow[]>([]);
+
+  const calendarTourIdsKey = useMemo(
+    () =>
+      [...new Set(tourEvents.map((t) => t.id).filter(Boolean))]
+        .sort()
+        .join('|'),
+    [tourEvents]
+  );
+
+  useEffect(() => {
+    const ids = calendarTourIdsKey.split('|').filter(Boolean);
+    if (ids.length === 0) {
+      setAntelopeOnSiteReceipts([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const rows: AntelopeOnSiteReceiptRow[] = [];
+      const BATCH = 80;
+      for (let i = 0; i < ids.length; i += BATCH) {
+        const chunk = ids.slice(i, i + BATCH);
+        const { data, error } = await supabase
+          .from('tour_expenses')
+          .select('id, tour_id, amount, tour_date, paid_for, paid_to, image_url, payment_method')
+          .in('tour_id', chunk);
+        if (error) {
+          console.error('[antelope on-site receipts]', error);
+          continue;
+        }
+        for (const row of data || []) {
+          if (!isAntelopeOnSiteTourExpense(row)) continue;
+          rows.push({
+            id: String(row.id),
+            tour_id: String(row.tour_id || ''),
+            amount: Number(row.amount) || 0,
+            tour_date: row.tour_date ? String(row.tour_date).slice(0, 10) : null,
+            paid_for: row.paid_for ?? null,
+            paid_to: row.paid_to ?? null,
+            image_url: row.image_url ?? null,
+            payment_method: row.payment_method ?? null,
+          });
+        }
+      }
+      if (!cancelled) setAntelopeOnSiteReceipts(rows);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [calendarTourIdsKey]);
+
+  const antelopeOnSiteByDate = useMemo(() => {
+    const bookingByExpenseId = new Map<string, TicketBooking>();
+    for (const b of bookings) {
+      const eid = String(b.tour_expense_id || '').trim();
+      if (eid) bookingByExpenseId.set(eid, b);
+    }
+    const receipts = antelopeOnSiteReceipts.map((r) => {
+      const linked = bookingByExpenseId.get(r.id);
+      return {
+        ...r,
+        linked_booking_id: linked?.id ?? null,
+        linked_canyon: linked ? ticketBookingCanyonKeyFromBooking(linked) : null,
+      };
+    });
+    const tourById = new Map(tourEvents.map((t) => [t.id, t]));
+    return groupAntelopeOnSiteAmountByDateAndCanyon(receipts, tourById);
+  }, [antelopeOnSiteReceipts, bookings, tourEvents]);
 
   /** 상세 모달이 열린 채로 목록이 갱신되면(축 변경 등) 선택 행을 최신 `bookings`와 맞춤 */
   useEffect(() => {
@@ -1942,6 +2039,7 @@ export default function TicketBookingList() {
         'id',
         'tour_id',
         'tour_ids',
+        'tour_expense_id',
         'reservation_id',
         'submit_on',
         'check_in_date',
@@ -4545,6 +4643,11 @@ export default function TicketBookingList() {
     [bookings]
   );
 
+  const weatherCreditPendingCount = useMemo(
+    () => bookings.filter((b) => getWeatherCancelCreditFollowUpState(b) === 'pending').length,
+    [bookings]
+  );
+
   const auditedCount = useMemo(
     () => bookings.filter((b) => Boolean(b.audited)).length,
     [bookings]
@@ -4841,6 +4944,7 @@ export default function TicketBookingList() {
         canyonParts: Array<{ key: string; text: string; mismatch: boolean }>
         actionTasks: DayCanyonBookingActionTask[]
         mismatch: boolean
+        onSiteByCanyon?: Partial<Record<'X' | 'L' | 'U', number>>
       }
     >()
     const dates = new Set(
@@ -4852,6 +4956,7 @@ export default function TicketBookingList() {
       const d = resolveAntelopeCheckInDate(tr)
       if (d) dates.add(d)
     }
+    for (const dateString of antelopeOnSiteByDate.keys()) dates.add(dateString)
     for (const dateString of dates) {
       const dayBookings = filteredBookings.filter(
         (b) => String(b.check_in_date || '').slice(0, 10) === dateString
@@ -4883,16 +4988,18 @@ export default function TicketBookingList() {
       const canyonMismatch =
         canyonParts.length > 0 &&
         canyonLxCountsMismatch(dayTourChoiceCounts, dayTicketCanyonCounts)
+      const onSiteByCanyon = antelopeOnSiteByDate.get(dateString)?.byCanyon
       map.set(dateString, {
         tourPeople,
         ticketEa,
         canyonParts,
         actionTasks,
         mismatch: tourPeople !== ticketEa || canyonMismatch,
+        ...(onSiteByCanyon ? { onSiteByCanyon } : {}),
       })
     }
     return map
-  }, [filteredBookings, tourEvents, locale])
+  }, [filteredBookings, tourEvents, locale, antelopeOnSiteByDate])
 
   const pagedDateViewGroups = useMemo(() => {
     if (!dateViewGroups) return null;
@@ -7068,6 +7175,22 @@ export default function TicketBookingList() {
                   },
                 },
                 {
+                  key: 'weather_credit',
+                  active: workboardFilter === 'weather_credit',
+                  label: `${locale === 'ko' ? '날씨 크레딧' : 'Weather credit'}${weatherCreditPendingCount > 0 ? ` ${weatherCreditPendingCount}` : ''}`,
+                  title:
+                    locale === 'ko'
+                      ? '날씨 취소 후 결제된 건의 벤더 크레딧 대기'
+                      : 'Weather cancel — paid, waiting for vendor credit',
+                  activeClass: 'bg-cyan-700 text-white border-cyan-700',
+                  onClick: () => {
+                    setWorkboardFilter((f) => (f === 'weather_credit' ? 'none' : 'weather_credit'));
+                    setPendingRequestOnlyFilter(false);
+                    setSortField('date');
+                    setSortDirection('asc');
+                  },
+                },
+                {
                   key: 'tour_day',
                   active: workboardFilter === 'tour_day',
                   label: locale === 'ko' ? '투어 당일' : 'Tour day',
@@ -7655,6 +7778,12 @@ export default function TicketBookingList() {
                                 );
                               }
 
+                              const dayOnSite = antelopeOnSiteByDate.get(dateString);
+                              const showDayTicketSummary =
+                                dayBookings.length > 0 ||
+                                canyonCompareParts.length > 0 ||
+                                (dayOnSite?.total ?? 0) > 0;
+
                               let tourBookingHeadcountMismatch = false;
                               if (!spanningContinuationOnly) {
                                 if (toursAntelopeCheckInToday.length > 0) {
@@ -7763,7 +7892,7 @@ export default function TicketBookingList() {
                                   ) : null}
 
                                   {/* 부킹 정보 라벨 — 투어 칩보다 위, 배경으로 칩 침범을 가림 */}
-                                  {dayBookings.length > 0 && (
+                                  {showDayTicketSummary && (
                                     <div className={`relative z-[25] -mx-1 px-1 sm:-mx-2 sm:px-2 ${cellBgClass}`}>
                                       <div
                                         className={`text-[11px] sm:text-sm font-semibold leading-tight ${
@@ -7792,6 +7921,13 @@ export default function TicketBookingList() {
                                               }
                                             />
                                           ) : null}
+                                          {canyonCompareParts.length === 0 && (dayOnSite?.total ?? 0) > 0 ? (
+                                            <TicketCalendarOnSiteBadge
+                                              amount={dayOnSite?.total ?? 0}
+                                              locale={locale}
+                                              compact
+                                            />
+                                          ) : null}
                                         </div>
                                         {canyonCompareParts.length > 0 ? (
                                           <div className="mt-0.5 flex flex-col items-start gap-0.5 text-[10px] sm:text-xs font-bold tabular-nums">
@@ -7799,6 +7935,10 @@ export default function TicketBookingList() {
                                               const task = canyonActionByKey.get(part.key);
                                               const canyonDue = payableDueByCanyon[part.key] ?? 0;
                                               const canyonTotal = payableTotalByCanyon[part.key] ?? 0;
+                                              const canyonOnSite =
+                                                part.key === 'X' || part.key === 'L' || part.key === 'U'
+                                                  ? dayOnSite?.byCanyon[part.key] ?? 0
+                                                  : 0;
                                               return (
                                                 <div
                                                   key={part.key}
@@ -7828,6 +7968,11 @@ export default function TicketBookingList() {
                                                       }
                                                     />
                                                   ) : null}
+                                                  <TicketCalendarOnSiteBadge
+                                                    amount={canyonOnSite}
+                                                    locale={locale}
+                                                    compact
+                                                  />
                                                   {task ? (
                                                     <span
                                                       className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold leading-tight ring-1 sm:text-[10px] ${
@@ -7845,6 +7990,7 @@ export default function TicketBookingList() {
                                           </div>
                                         ) : null}
                                       </div>
+                                      {dayBookings.length > 0 ? (
                                       <div
                                         className="space-y-0.5"
                                         style={{ marginTop: TICKET_CAL_SUMMARY_TO_CHIP_GAP_PX }}
@@ -7898,7 +8044,17 @@ export default function TicketBookingList() {
                                         const seeCanyonMissingZelle = g.rows.some((b) =>
                                           isSeeCanyonMissingZelleAttachment(b, zelleAttachmentMap)
                                         );
-                                        const titleLine = `${seeCanyonMissingZelle ? `${t('ticketCalendarSeeCanyonMissingZelle')} · ` : ''}${clipTitle} · ${subtitleParts.join(' · ')}${detailTail}`;
+                                        const seeCanyonLinkedZelle =
+                                          !seeCanyonMissingZelle &&
+                                          g.rows.some((b) =>
+                                            isSeeCanyonLinkedZelleAttachment(b, zelleAttachmentMap)
+                                          );
+                                        const zelleTitlePrefix = seeCanyonMissingZelle
+                                          ? `${t('ticketCalendarSeeCanyonMissingZelle')} · `
+                                          : seeCanyonLinkedZelle
+                                            ? `${t('ticketCalendarSeeCanyonLinkedZelle')} · `
+                                            : '';
+                                        const titleLine = `${zelleTitlePrefix}${clipTitle} · ${subtitleParts.join(' · ')}${detailTail}`;
 
                                         const timeShort = (firstBooking.time || '').replace(/:\d{2}$/, '');
                                         const companyChip = ticketBookingCalendarSupplierChipParts(
@@ -7914,6 +8070,12 @@ export default function TicketBookingList() {
                                         const groupHasCredit = g.rows.some((b) =>
                                           isTicketBookingCreditReceived(b)
                                         );
+                                        const groupIsOnSite = g.rows.some(isOnSiteTransferredTicketBooking);
+                                        const groupIsWeatherCancelled = g.rows.some(
+                                          isTicketBookingWeatherCancelled
+                                        );
+                                        const groupDueUsd = sumTicketBookingsRemainingPayableUsd(g.rows);
+                                        const groupPaidUsd = sumTicketBookingsPaidUsd(g.rows);
 
                                         return (
                                           <Fragment key={`${dateString}-rn-${g.key}`}>
@@ -7922,13 +8084,23 @@ export default function TicketBookingList() {
                                             locale={locale}
                                             tAxis={tTbAxis}
                                             tAct={tTbActUi}
-                                            titleLine={titleLine}
+                                            titleLine={
+                                              groupIsWeatherCancelled
+                                                ? `${locale.startsWith('en') ? 'Weather cancel' : '날씨 취소'} · ${titleLine}`
+                                                : groupIsOnSite
+                                                  ? `${locale.startsWith('en') ? 'On-site payment' : '현장 결제'} · ${titleLine}`
+                                                : titleLine
+                                            }
                                             supplierStyle={supplierStyle}
                                             chipClassName={`min-w-0 w-full px-0.5 py-0.5 rounded text-left text-[8px] sm:text-[11px] lg:text-[12px] cursor-pointer hover:opacity-90 overflow-hidden transition-opacity ${
                                               groupChangePending
                                                 ? 'ring-2 ring-red-600 ring-offset-0'
                                                 : seeCanyonMissingZelle
                                                   ? 'ring-2 ring-rose-600 ring-offset-0 shadow-sm shadow-rose-400/70'
+                                                : groupIsWeatherCancelled
+                                                  ? 'ring-2 ring-sky-600 ring-offset-0 shadow-sm shadow-sky-400/80'
+                                                : groupIsOnSite
+                                                  ? 'ring-2 ring-teal-600 ring-offset-0 shadow-sm shadow-teal-400/80'
                                                 : 'ring-1 ring-black/15'
                                             }`}
                                             onClick={() => handleBookingClick(g.rows)}
@@ -7999,7 +8171,11 @@ export default function TicketBookingList() {
                                               </span>
                                               <button
                                                 type="button"
-                                                className={`inline-flex shrink-0 items-center rounded px-0.5 text-[7px] sm:text-[9px] font-bold leading-none ring-1 ring-black/10 hover:ring-2 hover:ring-violet-500 ${getTicketBookingUnifiedStatusBadgeClass(unifiedStatus.key)}`}
+                                                className={`inline-flex shrink-0 items-center rounded px-0.5 text-[7px] sm:text-[9px] font-bold leading-none hover:ring-2 hover:ring-violet-500 ${
+                                                  unifiedStatus.key === 'weather_cancelled'
+                                                    ? ''
+                                                    : 'ring-1 ring-black/10'
+                                                } ${getTicketBookingUnifiedStatusBadgeClass(unifiedStatus.key)}`}
                                                 title={`${unifiedStatus.detail} · ${t('ticketCalendarChangeStatusTitle')}`}
                                                 aria-label={`${unifiedStatus.label} · ${t('ticketCalendarChangeStatusTitle')}`}
                                                 aria-haspopup="listbox"
@@ -8067,9 +8243,63 @@ export default function TicketBookingList() {
                                               >
                                                 {qtyChipText}
                                               </span>
-                                              <span className="inline-flex shrink-0 items-center rounded-full bg-indigo-100 px-1 py-px text-[7px] sm:text-[10px] font-bold text-indigo-900 ring-1 ring-indigo-200/90">
-                                                {g.label === 'RN# 없음' ? '—' : g.label}
+                                              <TicketCalendarPayableBadge
+                                                amount={groupDueUsd}
+                                                due
+                                                filled
+                                                locale={locale}
+                                                title={
+                                                  locale.startsWith('en')
+                                                    ? `Still due ${formatTicketPayableUsd(groupDueUsd)}`
+                                                    : `결제할 금액 ${formatTicketPayableUsd(groupDueUsd)}`
+                                                }
+                                              />
+                                              <TicketCalendarPayableBadge
+                                                amount={groupPaidUsd}
+                                                due={false}
+                                                filled
+                                                locale={locale}
+                                                title={
+                                                  locale.startsWith('en')
+                                                    ? `Paid ${formatTicketPayableUsd(groupPaidUsd)}`
+                                                    : `결제된 금액 ${formatTicketPayableUsd(groupPaidUsd)}`
+                                                }
+                                              />
+                                              <span
+                                                className={`inline-flex shrink-0 items-center rounded-full px-1 py-px text-[7px] sm:text-[10px] font-bold ring-1 ${
+                                                  groupIsOnSite
+                                                    ? 'bg-teal-600 text-white ring-teal-800'
+                                                    : 'bg-indigo-100 text-indigo-900 ring-indigo-200/90'
+                                                }`}
+                                                title={
+                                                  groupIsOnSite
+                                                    ? locale.startsWith('en')
+                                                      ? 'On-site payment (tour receipt)'
+                                                      : '현장 결제 (투어 영수증)'
+                                                    : undefined
+                                                }
+                                              >
+                                                {groupIsOnSite
+                                                  ? locale.startsWith('en')
+                                                    ? 'On-site'
+                                                    : '현장결제'
+                                                  : g.label === 'RN# 없음'
+                                                    ? '—'
+                                                    : g.label}
                                               </span>
+                                              {seeCanyonLinkedZelle ? (
+                                                <span
+                                                  className="inline-flex shrink-0 items-center text-emerald-700"
+                                                  title={t('ticketCalendarSeeCanyonLinkedZelle')}
+                                                  aria-label={t('ticketCalendarSeeCanyonLinkedZelle')}
+                                                >
+                                                  <BadgeCheck
+                                                    className="h-3 w-3 sm:h-3.5 sm:w-3.5"
+                                                    strokeWidth={2.4}
+                                                    aria-hidden
+                                                  />
+                                                </span>
+                                              ) : null}
                                             </div>
                                           </TicketCalendarRnBookingChipTooltip>
                                           {openAxisDropdown?.bookingId === firstBooking.id
@@ -8079,6 +8309,7 @@ export default function TicketBookingList() {
                                         );
                                       })}
                                       </div>
+                                      ) : null}
                                     </div>
                                   )}
                                 </div>
@@ -8244,6 +8475,9 @@ export default function TicketBookingList() {
                       <p className="text-xs text-rose-800 mb-3 leading-relaxed">
                         {t('ticketCalendarSeeCanyonMissingZelleHint')}
                       </p>
+                      <p className="text-xs text-emerald-800 mb-3 leading-relaxed">
+                        {t('ticketCalendarSeeCanyonLinkedZelleHint')}
+                      </p>
                       <div className="text-xs sm:text-sm font-medium text-gray-700 mb-2">{t('statusLegend')}</div>
                       <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-2">
                         <span className="inline-flex items-center gap-1 rounded-md bg-amber-200 px-2 py-1 text-xs font-bold text-amber-950 ring-1 ring-amber-500">
@@ -8253,6 +8487,10 @@ export default function TicketBookingList() {
                         <span className="inline-flex items-center gap-1 rounded-md bg-rose-100 px-2 py-1 text-xs font-extrabold text-rose-900 ring-2 ring-rose-600">
                           <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
                           {t('ticketCalendarSeeCanyonMissingZelle')}
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-800 ring-1 ring-emerald-300">
+                          <BadgeCheck className="h-3.5 w-3.5" aria-hidden />
+                          {t('ticketCalendarSeeCanyonLinkedZelle')}
                         </span>
                       </div>
                       <div className="flex flex-wrap gap-1.5 sm:gap-2">

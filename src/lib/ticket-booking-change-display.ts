@@ -120,7 +120,7 @@ export type TicketBookingPayableSnap = {
 /** 벤더에 아직 지불해야 할 금액. 취소·결제 완료는 0 */
 export function ticketBookingRemainingPayableUsd(booking: TicketBookingPayableSnap): number {
   const bs = (booking.booking_status ?? booking.status ?? '').trim().toLowerCase()
-  if (bs === 'cancelled' || bs === 'canceled' || bs === 'failed' || bs === 'expired') return 0
+  if (bs === 'cancelled' || bs === 'canceled' || bs === 'failed' || bs === 'expired' || bs === 'weather_cancelled') return 0
   const ps = (booking.payment_status ?? '').toLowerCase()
   if (ps === 'paid' || ps === 'refunded') return 0
   const expense = getTicketBookingEffectiveExpenseUsd(booking)
@@ -136,12 +136,34 @@ export function sumTicketBookingsRemainingPayableUsd(
   return Math.round(sum * 100) / 100
 }
 
+/** 벤더에 이미 지불한 금액. 환불 완료는 0. 결제 완료인데 paid_amount가 비면 expense로 본다. */
+export function ticketBookingPaidUsd(booking: TicketBookingPayableSnap): number {
+  const bs = (booking.booking_status ?? booking.status ?? '').trim().toLowerCase()
+  if (bs === 'cancelled' || bs === 'canceled' || bs === 'failed' || bs === 'expired') return 0
+  const ps = (booking.payment_status ?? '').toLowerCase()
+  if (ps === 'refunded') return 0
+  const paid = Number(booking.paid_amount ?? 0)
+  if (Number.isFinite(paid) && paid > 0) return Math.round(paid * 100) / 100
+  if (ps === 'paid') {
+    const expense = getTicketBookingEffectiveExpenseUsd(booking)
+    return Number.isFinite(expense) && expense > 0 ? Math.round(expense * 100) / 100 : 0
+  }
+  return 0
+}
+
+export function sumTicketBookingsPaidUsd(
+  bookings: readonly TicketBookingPayableSnap[]
+): number {
+  const sum = bookings.reduce((s, b) => s + ticketBookingPaidUsd(b), 0)
+  return Math.round(sum * 100) / 100
+}
+
 export function sumTicketBookingsEffectiveExpenseUsd(
   bookings: readonly TicketBookingPayableSnap[]
 ): number {
   const sum = bookings.reduce((s, b) => {
     const bs = (b.booking_status ?? b.status ?? '').trim().toLowerCase()
-    if (bs === 'cancelled' || bs === 'canceled' || bs === 'failed' || bs === 'expired') return s
+    if (bs === 'cancelled' || bs === 'canceled' || bs === 'failed' || bs === 'expired' || bs === 'weather_cancelled') return s
     const expense = getTicketBookingEffectiveExpenseUsd(b)
     return s + (Number.isFinite(expense) ? expense : 0)
   }, 0)

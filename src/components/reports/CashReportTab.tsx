@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
+import { fetchAllSupabasePages } from '@/lib/supabasePaginatedFetch'
+import { compareCashLedgerChronology } from '@/lib/cashLedgerChronology'
 import { getDefaultLedgerBaseDate, getFiscalReportingSettings } from '@/lib/fiscal-settings'
 import { Button } from '@/components/ui/button'
 import { AccountingTerm } from '@/components/ui/AccountingTerm'
@@ -218,7 +220,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
       const endISO = endDate.toISOString()
       const cashPaymentMethods = await getCashPaymentMethodFilterValues()
 
-      // 모든 쿼리를 병렬로 실행
+      // 모든 쿼리를 병렬로 실행 (Supabase 기본 1000건 제한을 넘어 잔액이 끊기지 않도록 전 페이지 수집)
       const [
         periodTransactionsResult,
         allTransactionsResult,
@@ -229,75 +231,100 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         periodReservationExpensesResult,
         allReservationExpensesResult
       ] = await Promise.all([
-        // 기간 내 현금 거래 조회
-        supabase
-          .from('cash_transactions')
-          .select('id, transaction_type, amount, transaction_date, category, description, created_by')
-          .eq('operator_id', activeOperatorId)
-          .gte('transaction_date', startISO)
-          .lte('transaction_date', endISO)
-          .order('transaction_date', { ascending: false }),
-        // 원장 기준일부터의 모든 거래 조회 (잔액 계산용)
-        supabase
-          .from('cash_transactions')
-          .select('id, transaction_type, amount, transaction_date')
-          .eq('operator_id', activeOperatorId)
-          .gte('transaction_date', baseDate + 'T00:00:00')
-          .order('transaction_date', { ascending: true }),
-        // payment_records에서 현금 입금·환불 조회 (PAYM032/PAYM001 + payment_method cash)
-        supabase
-          .from('payment_records')
-          .select('id, amount, submit_on, payment_status, reservation_id, payment_method, note, submit_by')
-          .eq('operator_id', activeOperatorId)
-          .in('payment_method', cashPaymentMethods)
-          .gte('submit_on', startISO)
-          .lte('submit_on', endISO),
-        // 원장 기준일부터의 현금 입금·환불 (잔액 계산용)
-        supabase
-          .from('payment_records')
-          .select('id, amount, submit_on, payment_status, reservation_id, payment_method, note, submit_by')
-          .eq('operator_id', activeOperatorId)
-          .in('payment_method', cashPaymentMethods)
-          .gte('submit_on', baseDate + 'T00:00:00')
-          .order('submit_on', { ascending: true }),
-        // 기간 내 company_expenses 현금 지출
-        supabase
-          .from('company_expenses')
-          .select('id, amount, submit_on, description, notes, paid_for, paid_to, submit_by')
-          .eq('operator_id', activeOperatorId)
-          .in('payment_method', cashPaymentMethods)
-          .is('deleted_at', null)
-          .gte('submit_on', startISO)
-          .lte('submit_on', endISO)
-          .order('submit_on', { ascending: false }),
-        // 원장 기준일부터 company_expenses 현금 지출 (잔액 계산용)
-        supabase
-          .from('company_expenses')
-          .select('id, amount, submit_on')
-          .eq('operator_id', activeOperatorId)
-          .in('payment_method', cashPaymentMethods)
-          .is('deleted_at', null)
-          .gte('submit_on', baseDate + 'T00:00:00')
-          .order('submit_on', { ascending: true }),
-        // 기간 내 reservation_expenses 현금 지출
-        supabase
-          .from('reservation_expenses')
-          .select('id, amount, submit_on, note, paid_for, paid_to, reservation_id, submitted_by')
-          .eq('operator_id', activeOperatorId)
-          .in('payment_method', cashPaymentMethods)
-          .is('deleted_at', null)
-          .gte('submit_on', startISO)
-          .lte('submit_on', endISO)
-          .order('submit_on', { ascending: false }),
-        // 원장 기준일부터 reservation_expenses 현금 지출 (잔액 계산용)
-        supabase
-          .from('reservation_expenses')
-          .select('id, amount, submit_on')
-          .eq('operator_id', activeOperatorId)
-          .in('payment_method', cashPaymentMethods)
-          .is('deleted_at', null)
-          .gte('submit_on', baseDate + 'T00:00:00')
-          .order('submit_on', { ascending: true })
+        fetchAllSupabasePages((from, to) =>
+          supabase
+            .from('cash_transactions')
+            .select('id, transaction_type, amount, transaction_date, category, description, created_by')
+            .eq('operator_id', activeOperatorId)
+            .gte('transaction_date', startISO)
+            .lte('transaction_date', endISO)
+            .order('transaction_date', { ascending: false })
+            .order('id', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllSupabasePages((from, to) =>
+          supabase
+            .from('cash_transactions')
+            .select('id, transaction_type, amount, transaction_date')
+            .eq('operator_id', activeOperatorId)
+            .gte('transaction_date', baseDate + 'T00:00:00')
+            .order('transaction_date', { ascending: true })
+            .order('id', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllSupabasePages((from, to) =>
+          supabase
+            .from('payment_records')
+            .select('id, amount, submit_on, payment_status, reservation_id, payment_method, note, submit_by')
+            .eq('operator_id', activeOperatorId)
+            .in('payment_method', cashPaymentMethods)
+            .gte('submit_on', startISO)
+            .lte('submit_on', endISO)
+            .order('submit_on', { ascending: true })
+            .order('id', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllSupabasePages((from, to) =>
+          supabase
+            .from('payment_records')
+            .select('id, amount, submit_on, payment_status, reservation_id, payment_method, note, submit_by')
+            .eq('operator_id', activeOperatorId)
+            .in('payment_method', cashPaymentMethods)
+            .gte('submit_on', baseDate + 'T00:00:00')
+            .order('submit_on', { ascending: true })
+            .order('id', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllSupabasePages((from, to) =>
+          supabase
+            .from('company_expenses')
+            .select('id, amount, submit_on, description, notes, paid_for, paid_to, submit_by')
+            .eq('operator_id', activeOperatorId)
+            .in('payment_method', cashPaymentMethods)
+            .is('deleted_at', null)
+            .gte('submit_on', startISO)
+            .lte('submit_on', endISO)
+            .order('submit_on', { ascending: false })
+            .order('id', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllSupabasePages((from, to) =>
+          supabase
+            .from('company_expenses')
+            .select('id, amount, submit_on')
+            .eq('operator_id', activeOperatorId)
+            .in('payment_method', cashPaymentMethods)
+            .is('deleted_at', null)
+            .gte('submit_on', baseDate + 'T00:00:00')
+            .order('submit_on', { ascending: true })
+            .order('id', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllSupabasePages((from, to) =>
+          supabase
+            .from('reservation_expenses')
+            .select('id, amount, submit_on, note, paid_for, paid_to, reservation_id, submitted_by')
+            .eq('operator_id', activeOperatorId)
+            .in('payment_method', cashPaymentMethods)
+            .is('deleted_at', null)
+            .gte('submit_on', startISO)
+            .lte('submit_on', endISO)
+            .order('submit_on', { ascending: false })
+            .order('id', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllSupabasePages((from, to) =>
+          supabase
+            .from('reservation_expenses')
+            .select('id, amount, submit_on')
+            .eq('operator_id', activeOperatorId)
+            .in('payment_method', cashPaymentMethods)
+            .is('deleted_at', null)
+            .gte('submit_on', baseDate + 'T00:00:00')
+            .order('submit_on', { ascending: true })
+            .order('id', { ascending: true })
+            .range(from, to)
+        )
       ])
 
       const periodTransactions = periodTransactionsResult.data
@@ -381,13 +408,6 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         allReservationExpensesTotal -
         allCashPaymentRefundTotal
 
-      const sourceOrder: Record<string, number> = {
-        cash_transactions: 0,
-        payment_records: 1,
-        company_expenses: 2,
-        reservation_expenses: 3
-      }
-
       type LedgerLine = {
         source: CashDetailRow['source']
         sourceId: string
@@ -434,14 +454,12 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         }))
       ]
 
-      ledgerLines.sort((a, b) => {
-        const cmp = String(a.occurred_at).localeCompare(String(b.occurred_at))
-        if (cmp !== 0) return cmp
-        const oa = sourceOrder[a.source] ?? 99
-        const ob = sourceOrder[b.source] ?? 99
-        if (oa !== ob) return oa - ob
-        return a.sourceId.localeCompare(b.sourceId)
-      })
+      ledgerLines.sort((a, b) =>
+        compareCashLedgerChronology(
+          { occurredAt: String(a.occurred_at), source: a.source, id: a.sourceId },
+          { occurredAt: String(b.occurred_at), source: b.source, id: b.sourceId }
+        )
+      )
 
       const balanceAfterByKey = new Map<string, number>()
       let runningLedger = 0
@@ -565,7 +583,13 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           balance: balanceAfterByKey.get(`reservation_expenses:${p.id}`) ?? Number.NaN,
           last_modified_by_display: null as string | null
         }))
-      ].sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at)))
+      ].sort(
+        (a, b) =>
+          compareCashLedgerChronology(
+            { occurredAt: a.occurred_at, source: a.source, id: a.rowId },
+            { occurredAt: b.occurred_at, source: b.source, id: b.rowId }
+          ) * -1
+      )
 
       const cashCreatedByById = new Map<string, string>()
       for (const t of periodTransactions || []) {

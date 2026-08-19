@@ -3,6 +3,11 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { X, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import {
+  createOffscreenPrintIframe,
+  removePrintIframe,
+  runPrintAndKeepAlive,
+} from '@/lib/printHtmlDocument'
 import { fetchReservationOptionLinesBatch, type ReservationOptionLineBilingual } from '@/lib/reservationOptionsForEmail'
 import {
   adjustOptionTotalExcludingLegacyNonResident,
@@ -660,13 +665,10 @@ export default function TourEnvelopeModal({
       if (src) img.setAttribute('src', resolveEnvelopeImageUrl(src))
     })
 
-    const iframe = document.createElement('iframe')
-    iframe.title = 'Envelope Print'
-    iframe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;border:none;overflow:hidden;'
-    document.body.appendChild(iframe)
+    const iframe = createOffscreenPrintIframe('Envelope Print')
     const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
     if (!iframeDoc) {
-      document.body.removeChild(iframe)
+      removePrintIframe(iframe)
       return
     }
 
@@ -680,18 +682,15 @@ export default function TourEnvelopeModal({
 
     const printWin = iframe.contentWindow
     if (!printWin) {
-      document.body.removeChild(iframe)
+      removePrintIframe(iframe)
       return
     }
 
     try {
       await waitForDocumentImages(iframeDoc)
-      printWin.focus()
-      printWin.print()
-    } finally {
-      window.setTimeout(() => {
-        if (iframe.parentNode) document.body.removeChild(iframe)
-      }, 500)
+      runPrintAndKeepAlive(printWin, () => removePrintIframe(iframe))
+    } catch {
+      removePrintIframe(iframe)
     }
   }
 

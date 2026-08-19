@@ -1928,6 +1928,7 @@
           "confirmed": "Confirmed",
           "cancel_requested": "Cancellation requested",
           "cancelled": "Cancelled",
+          "weather_cancelled": "Weather cancel",
           "no_show": "No-show",
           "failed": "Fully cancelled",
           "expired": "Hold / request expired"

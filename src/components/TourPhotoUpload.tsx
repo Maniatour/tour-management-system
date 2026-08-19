@@ -1,21 +1,26 @@
 'use client'
 
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import Image from 'next/image'
 import { Upload, Camera, Image as ImageIcon, Share2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
-import { createTourPhotosBucket, checkTourPhotosBucket, checkTourFolderExists, createTourFolderMarker } from '@/lib/tourPhotoBucket'
+import { createTourPhotosBucket, checkTourPhotosBucket, checkTourFolderExists, createTourFolderMarker, listAllTourStorageFiles } from '@/lib/tourPhotoBucket'
 import { useTourPhotoFolder } from '@/hooks/useTourPhotoFolder'
 import { useAuth } from '@/contexts/AuthContext'
-import { createThumbnail, getThumbnailFileName } from '@/lib/imageUtils'
+import { createThumbnail, createVideoThumbnail, getJpegThumbnailFileName, getThumbnailFileName } from '@/lib/imageUtils'
 import { runTourPhotoUploadQueue } from '@/lib/runTourPhotoUploadQueue'
 import {
   endTourPhotoUploadSession,
   startTourPhotoPrepare,
 } from '@/lib/tourPhotoUploadSession'
-import { TOUR_PHOTO_FILENAME_EXT_REGEX } from '@/lib/tourPhotoUploadUtils'
+import {
+  isTourMediaVideo,
+  isTourStorageMediaFileName,
+  TOUR_PHOTO_FILE_ACCEPT,
+  tourMediaFileStem,
+} from '@/lib/tourPhotoUploadUtils'
 import { useTourDetailSectionChrome } from '@/components/tour/TourDetailModalChromeContext'
+import { TourPhotoMediaThumb, TourPhotoMediaViewer } from '@/components/tour/TourPhotoMedia'
 
 interface TourPhoto {
   id: string
@@ -102,17 +107,14 @@ export default function TourPhotoUpload({
         })
       }
 
-      // Storage에서 투어별 폴더의 파일 목록 조회
-      const { data: files, error } = await supabase.storage
-        .from('tour-photos')
-        .list(tourId, {
-          sort: { column: 'created_at', order: 'desc' },
-        } as never)
-
-      if (error) {
+      // Storage에서 투어별 폴더의 파일 목록 조회 (기본 100개 한도 없이 전체)
+      let files: Awaited<ReturnType<typeof listAllTourStorageFiles>> = []
+      try {
+        files = await listAllTourStorageFiles(tourId)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
         console.error('Error loading photos from storage:', error)
-        // 폴더가 없는 경우 생성 후 빈 배열로 설정
-        if (error.message.includes('not found') || error.message.includes('not exist')) {
+        if (message.includes('not found') || message.includes('not exist')) {
           console.warn(`Storage folder for tour ${tourId} not found, creating folder...`)
           try {
             await checkTourFolderExists(tourId)
@@ -126,18 +128,10 @@ export default function TourPhotoUpload({
         return
       }
       
-      // 실제 사진 파일만 필터링 (마커 파일 제외, 썸네일 제외)
+      // 실제 사진·영상 파일만 필터링 (마커 파일 제외, 썸네일 제외)
       // 관리자가 아닌 경우 숨김된 사진 제외
-      const photoFiles = files?.filter((file: { name: string }) => {
-        const isPhotoFile = !file.name.includes('.folder_info.json') && 
-          !file.name.includes('folder.info') &&
-          !file.name.includes('.info') &&
-          !file.name.includes('.README') &&
-          !file.name.startsWith('.') &&
-          !file.name.includes('_thumb') &&
-          TOUR_PHOTO_FILENAME_EXT_REGEX.test(file.name)
-        
-        if (!isPhotoFile) return false
+      const photoFiles = files.filter((file) => {
+        if (!isTourStorageMediaFileName(file.name)) return false
         
         // 관리자가 아니면 숨김된 사진 제외
         if (!isAdmin) {
@@ -146,19 +140,17 @@ export default function TourPhotoUpload({
         }
         
         return true
-      }) || []
+      })
 
       // 썸네일 파일 찾기
-      const thumbnailFiles = files?.filter((file: { name: string }) => 
-        file.name.includes('_thumb') &&
-        TOUR_PHOTO_FILENAME_EXT_REGEX.test(file.name)
-      ) || []
+      const thumbnailFiles = files.filter((file) => 
+        file.name.includes('_thumb')
+      )
 
-      // 썸네일 매핑 생성 (Storage 기반)
+      // 썸네일 매핑 생성 (Storage 기반 — 확장자가 달라도 stem으로 연결)
       const thumbnailMap = new Map<string, string>()
-      thumbnailFiles.forEach((thumbFile: { name: string }) => {
-        const originalName = thumbFile.name.replace('_thumb', '')
-        thumbnailMap.set(originalName, `${tourId}/${thumbFile.name}`)
+      thumbnailFiles.forEach((thumbFile) => {
+        thumbnailMap.set(tourMediaFileStem(thumbFile.name), `${tourId}/${thumbFile.name}`)
       })
 
       // 데이터베이스 행 매핑: file_name -> { id, uploaded_by, share_token, thumbnail_path, created_at }
@@ -233,7 +225,7 @@ export default function TourPhotoUpload({
         // 데이터베이스에서 썸네일 경로를 찾거나, Storage에서 찾기
         let thumbnailPath = (dbRow?.thumbnail_path
           ? (dbRow.thumbnail_path.includes('/') ? dbRow.thumbnail_path : `${tourId}/${dbRow.thumbnail_path}`)
-          : null) || thumbnailMap.get(file.name) || null
+          : null) || thumbnailMap.get(tourMediaFileStem(file.name)) || thumbnailMap.get(file.name) || null
         if (thumbnailPath && !thumbnailPath.includes('/')) {
           thumbnailPath = `${tourId}/${thumbnailPath}`
         }
@@ -469,7 +461,7 @@ export default function TourPhotoUpload({
     if (!files || !files.length || files.length === 0) {
       console.warn('No files selected or files array is empty')
       console.warn('Files object:', files)
-      alert('파일이 선택되지 않았습니다. 다시 시도해주세요.')
+      alert(t('noFilesSelected'))
       return
     }
 
@@ -487,12 +479,12 @@ export default function TourPhotoUpload({
     // 파일이 실제로 없는 경우 체크
     if (fileArray.length === 0) {
       console.warn('FileArray is empty after conversion')
-      alert('파일이 선택되지 않았습니다. 다시 시도해주세요.')
+      alert(t('noFilesSelected'))
       return
     }
     
     if (fileArray.length > 500) {
-      alert('한번에 최대 500개의 파일만 업로드할 수 있습니다.')
+      alert(t('maxFilesExceeded'))
       return
     }
 
@@ -509,7 +501,14 @@ export default function TourPhotoUpload({
           files: fileArray,
           tourId,
           uploadedBy: (uploadedBy && uploadedBy.trim()) || user?.email || '',
-          imageOnlyErrorLabel: t('imageOnlyError'),
+          labels: {
+            noFiles: t('noFilesSelected'),
+            mediaOnlyError: t('mediaOnlyError'),
+            fileTooLarge: t('fileTooLarge'),
+            duplicateInSelection: t('skippedDuplicateInSelection'),
+            alreadyUploaded: t('skippedAlreadyUploaded'),
+            nothingToUpload: t('nothingToUpload'),
+          },
         })
 
         if (result.userMessages?.length) {
@@ -519,30 +518,36 @@ export default function TourPhotoUpload({
 
         const skipNote: string[] = []
         if (result.skippedDuplicateContent > 0) {
-          skipNote.push(`선택 목록에서 동일 이미지 ${result.skippedDuplicateContent}장 생략`)
+          skipNote.push(t('skippedDuplicateInSelection', { count: result.skippedDuplicateContent }))
         }
         if (result.skippedAlreadyUploaded > 0) {
-          skipNote.push(`이미 업로드된 파일(이름·크기 동일) ${result.skippedAlreadyUploaded}장 생략`)
+          skipNote.push(t('skippedAlreadyUploaded', { count: result.skippedAlreadyUploaded }))
         }
         const skipSuffix = skipNote.length > 0 ? `\n\n${skipNote.join('\n')}` : ''
 
         if (result.totalSuccessful > 0) {
           console.log(`전체 업로드 완료: ${result.totalSuccessful}개 성공, ${result.totalFailed}개 실패`)
           if (result.totalFailed > 0) {
+            const failedPreview = result.failedFiles.slice(0, 5).join('\n')
+            const moreFailed =
+              result.failedFiles.length > 5 ? `\n${t('andMore', { count: result.failedFiles.length - 5 })}` : ''
             alert(
-              `업로드 완료: ${result.totalSuccessful}장 성공, ${result.totalFailed}장 실패${skipSuffix}\n\n실패한 파일:\n${result.failedFiles.slice(0, 5).join('\n')}${result.failedFiles.length > 5 ? `\n... 외 ${result.failedFiles.length - 5}개` : ''}`
+              `${t('uploadCompletePartial', { success: result.totalSuccessful, failed: result.totalFailed })}${skipSuffix}\n\n${t('failedFilesHeader')}\n${failedPreview}${moreFailed}`
             )
           } else {
-            alert(`성공적으로 ${result.totalSuccessful}장을 업로드했습니다.${skipSuffix}`)
+            alert(`${t('uploadCompleteSuccess', { count: result.totalSuccessful })}${skipSuffix}`)
           }
         } else {
+          const failedPreview = result.failedFiles.slice(0, 10).join('\n')
+          const moreFailed =
+            result.failedFiles.length > 10 ? `\n${t('andMore', { count: result.failedFiles.length - 10 })}` : ''
           alert(
-            `모든 파일 업로드에 실패했습니다. (${result.totalFailed}장)${skipSuffix}\n\n실패 원인:\n${result.failedFiles.slice(0, 10).join('\n')}${result.failedFiles.length > 10 ? `\n... 외 ${result.failedFiles.length - 10}개` : ''}`
+            `${t('uploadAllFailed', { count: result.totalFailed })}${skipSuffix}\n\n${t('failedFilesHeader')}\n${failedPreview}${moreFailed}`
           )
         }
       } catch (error) {
         console.error('Error uploading photos:', error)
-        alert(`업로드 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`)
+        alert(t('uploadErrorGeneric', { error: error instanceof Error ? error.message : String(error) }))
       } finally {
         endTourPhotoUploadSession()
         setUploading(false)
@@ -557,43 +562,20 @@ export default function TourPhotoUpload({
       setThumbnailProgress({ current: 0, total: 0 })
 
       // Storage에서 모든 파일 목록 가져오기
-      const { data: files, error } = await supabase.storage
-        .from('tour-photos')
-        .list(tourId, {
-          sort: { column: 'created_at', order: 'desc' },
-        } as never)
+      const files = await listAllTourStorageFiles(tourId)
 
-      if (error) {
-        throw error
-      }
+      const originalPhotos = files.filter((file) => isTourStorageMediaFileName(file.name))
 
-      // 원본 사진 파일만 필터링 (썸네일 제외)
-      const originalPhotos = files?.filter((file: { name: string }) => 
-        !file.name.includes('.folder_info.json') && 
-        !file.name.includes('folder.info') &&
-        !file.name.includes('.info') &&
-        !file.name.includes('.README') &&
-        !file.name.startsWith('.') &&
-        !file.name.includes('_thumb') && // 썸네일 제외
-        TOUR_PHOTO_FILENAME_EXT_REGEX.test(file.name)
-      ) || []
+      const thumbnailFiles = files.filter((file) => file.name.includes('_thumb'))
 
-      // 썸네일이 있는지 확인
-      const thumbnailFiles = files?.filter((file: { name: string }) => 
-        file.name.includes('_thumb')
-      ) || []
+      const thumbnailMap = new Set(thumbnailFiles.map((f) => tourMediaFileStem(f.name)))
 
-      const thumbnailMap = new Set(thumbnailFiles.map((f: { name: string }) => 
-        f.name.replace('_thumb', '')
-      ))
-
-      // 썸네일이 없는 사진들만 필터링
-      const photosWithoutThumbnails = originalPhotos.filter((file: { name: string }) => 
-        !thumbnailMap.has(file.name)
+      const photosWithoutThumbnails = originalPhotos.filter((file) => 
+        !thumbnailMap.has(tourMediaFileStem(file.name))
       )
 
       if (photosWithoutThumbnails.length === 0) {
-        alert('모든 사진에 썸네일이 이미 생성되어 있습니다.')
+        alert(t('allThumbnailsExist'))
         return
       }
 
@@ -624,9 +606,13 @@ export default function TourPhotoUpload({
             type: file.metadata?.mimetype || 'image/jpeg' 
           })
 
-          // 썸네일 생성
-          const thumbnailBlob = await createThumbnail(fileBlob, 400, 400, 0.8)
-          const thumbnailFileName = getThumbnailFileName(file.name)
+          const video = isTourMediaVideo(file.name, file.metadata?.mimetype)
+          const thumbnailBlob = video
+            ? await createVideoThumbnail(fileBlob, 400, 400, 0.8)
+            : await createThumbnail(fileBlob, 400, 400, 0.8)
+          const thumbnailFileName = video
+            ? getJpegThumbnailFileName(file.name)
+            : getThumbnailFileName(file.name)
           const thumbnailPath = `${tourId}/${thumbnailFileName}`
           
           const thumbnailFile = new File([thumbnailBlob], thumbnailFileName, { type: 'image/jpeg' })
@@ -671,13 +657,13 @@ export default function TourPhotoUpload({
       onPhotosUpdated?.()
 
       if (successCount > 0) {
-        alert(`✅ 썸네일 생성 완료: ${successCount}개 성공${failCount > 0 ? `, ${failCount}개 실패` : ''}`)
+        alert(t('thumbnailGenerateDone', { success: successCount, failed: failCount }))
       } else {
-        alert(`❌ 썸네일 생성에 실패했습니다. (${failCount}개 파일)`)
+        alert(t('thumbnailGenerateFailed', { count: failCount }))
       }
     } catch (error) {
       console.error('Error generating thumbnails:', error)
-      alert(`❌ 썸네일 생성 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`)
+      alert(t('thumbnailGenerateError', { error: error instanceof Error ? error.message : String(error) }))
     } finally {
       setGeneratingThumbnails(false)
       setThumbnailProgress({ current: 0, total: 0 })
@@ -909,7 +895,7 @@ export default function TourPhotoUpload({
                 // 로케일 없는 경로 사용
                 const shareUrl = `${baseUrl}/photos/${tourId}`
                 navigator.clipboard.writeText(shareUrl)
-                alert('투어 전체 사진 공유 링크가 클립보드에 복사되었습니다.')
+                alert(t('shareLinkCopied'))
               }}
               className={`flex items-center justify-center ${chrome.compact ? 'px-2 h-8 text-xs' : 'px-3 h-10 text-sm'} bg-purple-600 text-white rounded-lg hover:bg-purple-700`}
               title="투어 전체 사진 공유 링크 복사"
@@ -989,7 +975,7 @@ export default function TourPhotoUpload({
           ref={fileInputRef}
           type="file"
           multiple
-          accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp,.gif"
+          accept={TOUR_PHOTO_FILE_ACCEPT}
           onChange={(e) => {
             const target = e.target as HTMLInputElement
             const list = target.files
@@ -1009,7 +995,7 @@ export default function TourPhotoUpload({
         <input
           ref={cameraInputRef}
           type="file"
-          accept="image/*,image/heic,image/heif,.heic,.heif"
+          accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp,.gif"
           capture={typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'environment' : undefined}
           onChange={(e) => {
             const target = e.target as HTMLInputElement
@@ -1052,27 +1038,13 @@ export default function TourPhotoUpload({
                 onClick={() => openPhotoModal(photo)}
               >
                 <div className="absolute inset-0 overflow-hidden rounded-lg">
-                  <Image
-                    src={(() => {
-                      const imagePath = photo.thumbnail_path || photo.file_path
-                      const imageUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${imagePath}`
-                      if (photos.indexOf(photo) === 0) {
-                        console.log('[TourPhotoUpload] Photo thumbnail check:', {
-                          fileName: photo.file_name,
-                          thumbnailPath: photo.thumbnail_path,
-                          filePath: photo.file_path,
-                          usingThumbnail: !!photo.thumbnail_path,
-                          imagePath,
-                          imageUrl
-                        })
-                      }
-                      return imageUrl
-                    })()}
+                  <TourPhotoMediaThumb
+                    filePath={photo.file_path}
+                    fileName={photo.file_name}
+                    thumbnailPath={photo.thumbnail_path ?? null}
+                    mimeType={photo.mime_type || photo.file_type || null}
                     alt={photo.file_name}
-                    width={200}
-                    height={200}
                     className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
-                    style={{ width: 'auto', height: 'auto' }}
                   />
                 </div>
 
@@ -1220,13 +1192,11 @@ export default function TourPhotoUpload({
 
             {/* 메인 이미지 */}
             <div className="flex items-center justify-center w-full h-full">
-              <Image
-                src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${selectedPhoto.file_path}`}
+              <TourPhotoMediaViewer
+                filePath={selectedPhoto.file_path}
+                fileName={selectedPhoto.file_name}
+                mimeType={selectedPhoto.mime_type || selectedPhoto.file_type || null}
                 alt={selectedPhoto.file_name}
-                width={1200}
-                height={800}
-                className="max-w-full max-h-full object-contain"
-                style={{ width: 'auto', height: 'auto' }}
               />
             </div>
 
@@ -1279,13 +1249,15 @@ export default function TourPhotoUpload({
                         photo.id === selectedPhoto.id ? 'ring-2 ring-blue-500' : ''
                       }`}
                     >
-                      <Image
-                        src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${photo.file_path}`}
+                      <TourPhotoMediaThumb
+                        filePath={photo.file_path}
+                        fileName={photo.file_name}
+                        thumbnailPath={photo.thumbnail_path ?? null}
+                        mimeType={photo.mime_type || photo.file_type || null}
                         alt={photo.file_name}
                         width={48}
                         height={48}
                         className="w-full h-full object-cover"
-                        style={{ width: 'auto', height: 'auto' }}
                       />
                     </button>
                   ))}
@@ -1345,8 +1317,11 @@ VALUES (
   'tour-photos',
   'tour-photos',
   true,
-  52428800, -- 50MB
-  ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+  524288000, -- 500MB
+  ARRAY[
+    'image/jpeg','image/jpg','image/png','image/webp','image/gif','image/heic','image/heif','image/bmp','image/tiff','image/avif',
+    'video/mp4','video/quicktime','video/x-m4v','video/webm','video/3gpp','video/3gpp2','video/mpeg','video/x-msvideo','video/hevc','video/H264'
+  ]
 );
 
 -- Step 3: Create essential policies only

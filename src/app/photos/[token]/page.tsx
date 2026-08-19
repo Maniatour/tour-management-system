@@ -1,12 +1,21 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Download, Share2, Calendar, User, Image as ImageIcon, Upload, X, Info, EyeOff, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Download, Share2, Calendar, User, Image as ImageIcon, Upload, X, Info, EyeOff, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import type { ChatAnnouncement } from '@/types/chat'
 import ReactCountryFlag from 'react-country-flag'
-
+import { listAllTourStorageFiles } from '@/lib/tourPhotoBucket'
+import {
+  inferTourPhotoMimeType,
+  isLikelyTourMediaFile,
+  isTourMediaVideo,
+  isTourStorageMediaFileName,
+  TOUR_PHOTO_FILE_ACCEPT,
+  tourMediaFileStem,
+  tourPhotoMaxBytesForFile,
+} from '@/lib/tourPhotoUploadUtils'
 // 동적 라우트 설정 (Next.js 15/16)
 // 클라이언트 컴포넌트에서는 revalidate를 export할 수 없음
 // dynamic 설정만 사용하여 모든 경로를 동적으로 처리
@@ -286,72 +295,31 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
       }
 
       // 데이터베이스에서 조회한 경우에도 썸네일이 없으면 Storage에서 찾아서 매핑
-      if (photosData.length > 0 && tourIdToUse) {
-        // Storage에서 모든 썸네일 파일 목록 가져오기 (페이지네이션 처리)
-        let allStorageFiles: any[] = []
-        let hasMore = true
-        let offset = 0
-        const limit = 1000
-
-        while (hasMore) {
-          const { data: storageFiles, error: storageError } = await supabase.storage
-            .from('tour-photos')
-            .list(tourIdToUse, {
-              limit: limit,
-              offset: offset
-            })
-
-          if (storageError || !storageFiles) {
-            break
-          }
-
-          allStorageFiles = [...allStorageFiles, ...storageFiles]
-
-          if (storageFiles.length < limit) {
-            hasMore = false
-          } else {
-            offset += limit
-          }
-        }
+        if (photosData.length > 0 && tourIdToUse) {
+        const allStorageFiles = await listAllTourStorageFiles(tourIdToUse).catch(() => [])
 
         if (allStorageFiles.length > 0) {
-          // 썸네일 파일 매핑 생성
-          const thumbnailFiles = allStorageFiles.filter((file: { name: string }) => 
-            file.name.includes('_thumb') &&
-            file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-          )
+          const thumbnailFiles = allStorageFiles.filter((file) => file.name.includes('_thumb'))
 
           const thumbnailMap = new Map<string, string>()
-          thumbnailFiles.forEach((thumbFile: { name: string }) => {
-            const originalName = thumbFile.name.replace('_thumb', '')
-            thumbnailMap.set(originalName, `${tourIdToUse}/${thumbFile.name}`)
+          thumbnailFiles.forEach((thumbFile) => {
+            thumbnailMap.set(tourMediaFileStem(thumbFile.name), `${tourIdToUse}/${thumbFile.name}`)
           })
 
-          // 썸네일이 없는 사진에 대해 썸네일 경로 추가
           photosData = photosData.map((photo: TourPhoto) => {
-            // thumbnail_path가 이미 있으면 그대로 사용
             if (photo.thumbnail_path) {
-              // 전체 경로가 아니면 추가
               if (!photo.thumbnail_path.includes('/')) {
                 return { ...photo, thumbnail_path: `${tourIdToUse}/${photo.thumbnail_path}` }
               }
               return photo
             }
 
-            // file_path에서 파일명 추출
             const fileName = photo.file_path.split('/').pop() || photo.file_name
-            const thumbnailPath = thumbnailMap.get(fileName)
+            const thumbnailPath = thumbnailMap.get(tourMediaFileStem(fileName))
             if (thumbnailPath) {
               return { ...photo, thumbnail_path: thumbnailPath }
             }
             return photo
-          })
-
-          // 디버깅: 썸네일 매핑 결과 확인
-          console.log('[PhotoDownloadPage] Thumbnail mapping:', {
-            totalPhotos: photosData.length,
-            withThumbnails: photosData.filter(p => p.thumbnail_path).length,
-            thumbnailFilesFound: thumbnailFiles.length
           })
         }
       }
@@ -360,38 +328,10 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
       if (photosData.length === 0) {
         console.log('No photos found in database, checking Storage...')
         
-        // Storage에서 투어별 폴더의 모든 파일 목록 조회 (페이지네이션 처리)
-        let allFiles: any[] = []
-        let hasMore = true
-        let offset = 0
-        const limit = 1000
-
-        while (hasMore) {
-          const { data: files, error: storageError } = await supabase.storage
-            .from('tour-photos')
-            .list(tourIdToUse, {
-              limit: limit,
-              offset: offset,
-            } as { limit?: number; offset?: number })
-
-          if (storageError) {
-            console.error('Error loading photos from storage:', storageError)
-            break
-          }
-
-          if (!files || files.length === 0) {
-            hasMore = false
-            break
-          }
-
-          allFiles = [...allFiles, ...files]
-
-          if (files.length < limit) {
-            hasMore = false
-          } else {
-            offset += limit
-          }
-        }
+        const allFiles = await listAllTourStorageFiles(tourIdToUse).catch((storageError) => {
+          console.error('Error loading photos from storage:', storageError)
+          return []
+        })
 
         // 투어 정보 조회
         if (allFiles.length === 0) {
@@ -426,36 +366,20 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
         if (allFiles.length > 0) {
           const files = allFiles
           // 실제 사진 파일만 필터링 (썸네일 제외)
-          const photoFiles = files.filter((file: { name: string }) => 
-            !file.name.includes('.folder_info.json') && 
-            !file.name.includes('folder.info') &&
-            !file.name.includes('.info') &&
-            !file.name.includes('.README') &&
-            !file.name.startsWith('.') &&
-            !file.name.includes('_thumb') && // 썸네일 파일 제외
-            file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-          )
+          const photoFiles = files.filter((file) => isTourStorageMediaFileName(file.name))
 
-          // 썸네일 파일 찾기
-          const thumbnailFiles = files.filter((file: { name: string }) => 
-            file.name.includes('_thumb') &&
-            file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-          )
+          const thumbnailFiles = files.filter((file) => file.name.includes('_thumb'))
 
-          // 썸네일 매핑 생성
           const thumbnailMap = new Map<string, string>()
-          thumbnailFiles.forEach((thumbFile: { name: string }) => {
-            // 원본 파일명 추출 (예: "123_thumb.jpg" -> "123.jpg")
-            const originalName = thumbFile.name.replace('_thumb', '')
-            thumbnailMap.set(originalName, `${tourIdToUse}/${thumbFile.name}`)
+          thumbnailFiles.forEach((thumbFile) => {
+            thumbnailMap.set(tourMediaFileStem(thumbFile.name), `${tourIdToUse}/${thumbFile.name}`)
           })
 
-          // Storage 파일을 TourPhoto 형식으로 변환
-          photosData = photoFiles.map((file: any) => ({
+          photosData = photoFiles.map((file) => ({
             id: file.id || file.name,
             file_name: file.name,
             file_path: `${tourIdToUse}/${file.name}`,
-            thumbnail_path: thumbnailMap.get(file.name) || null,
+            thumbnail_path: thumbnailMap.get(tourMediaFileStem(file.name)) || null,
             file_size: file.metadata?.size || 0,
             mime_type: file.metadata?.mimetype || 'image/jpeg',
             created_at: file.created_at || file.updated_at || new Date().toISOString(),
@@ -911,27 +835,28 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
         
         try {
           // 파일 크기 체크 (50MB)
-          if (file.size > 50 * 1024 * 1024) {
-            throw new Error(`파일 크기가 너무 큽니다: ${file.name} (최대 50MB)`)
+          if (file.size > tourPhotoMaxBytesForFile(file)) {
+            const maxMb = Math.round(tourPhotoMaxBytesForFile(file) / (1024 * 1024))
+            throw new Error(`${file.name} is too large (max ${maxMb}MB)`)
           }
 
-          // 이미지 파일만 허용
-          if (!file.type.startsWith('image/')) {
-            throw new Error(`이미지 파일만 업로드 가능합니다: ${file.name}`)
+          if (!isLikelyTourMediaFile(file)) {
+            throw new Error(`Only photo and video files can be uploaded: ${file.name}`)
           }
 
           // 고유한 파일명 생성
+          const resolvedMime = inferTourPhotoMimeType(file)
           const fileExt = file.name.split('.').pop()
           const timestamp = Date.now() + Math.random().toString(36).substring(2)
           const fileName = `${timestamp}.${fileExt}`
           const filePath = `${tourId}/${fileName}`
 
-          // Supabase Storage에 업로드
           const { data: uploadData, error: uploadError } = await supabase.storage
             .from('tour-photos')
             .upload(filePath, file, {
               cacheControl: '3600',
-              upsert: false
+              upsert: false,
+              contentType: resolvedMime,
             })
 
           if (uploadError) {
@@ -946,7 +871,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
               file_path: uploadData.path,
               file_name: file.name,
               file_size: file.size,
-              mime_type: file.type,
+              mime_type: resolvedMime.slice(0, 100),
               uploaded_by: user?.id || 'anonymous',
               share_token: shareToken,
               is_public: true
@@ -1292,7 +1217,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
                     ref={fileInputRef}
                     type="file"
                     multiple
-                    accept="image/*"
+                    accept={TOUR_PHOTO_FILE_ACCEPT}
                     onChange={handleFileSelect}
                     className="hidden"
                     id="photo-upload"
@@ -1485,22 +1410,20 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
                       WebkitTouchCallout: 'none'
                     }}
                   >
+                    {isTourMediaVideo(photo.file_name, photo.mime_type) && !photo.thumbnail_path ? (
+                      <video
+                        src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${photo.file_path}`}
+                        className="w-full h-full object-cover"
+                        muted
+                        playsInline
+                        preload="metadata"
+                        draggable={false}
+                      />
+                    ) : (
                     <img
                       src={(() => {
-                        // 썸네일 경로가 있으면 썸네일 사용, 없으면 원본 사용
                         const imagePath = photo.thumbnail_path || photo.file_path
-                        const imageUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${imagePath}`
-                        // 디버깅: 썸네일 사용 여부 확인
-                        if (process.env.NODE_ENV === 'development' && index === 0) {
-                          console.log('Photo image URL:', {
-                            fileName: photo.file_name,
-                            thumbnailPath: photo.thumbnail_path,
-                            filePath: photo.file_path,
-                            usingThumbnail: !!photo.thumbnail_path,
-                            imageUrl
-                          })
-                        }
-                        return imageUrl
+                        return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${imagePath}`
                       })()}
                       alt={photo.file_name}
                       className="w-full h-full object-cover"
@@ -1516,6 +1439,14 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
                         touchAction: 'none'
                       }}
                     />
+                    )}
+                    {isTourMediaVideo(photo.file_name, photo.mime_type) && (
+                      <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                        <span className="rounded-full bg-black/60 p-2 text-white">
+                          <Play className="h-5 w-5 fill-white" />
+                        </span>
+                      </span>
+                    )}
                   </div>
                 </div>
                 
@@ -1728,11 +1659,21 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
               className="flex-1 flex items-center justify-center max-w-full min-h-0"
               onClick={(e) => e.stopPropagation()}
             >
+              {isTourMediaVideo(photos[selectedPhotoIndex].file_name, photos[selectedPhotoIndex].mime_type) ? (
+                <video
+                  src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${photos[selectedPhotoIndex].file_path}`}
+                  className="max-w-full max-h-[65vh] sm:max-h-[70vh] object-contain"
+                  controls
+                  playsInline
+                  preload="metadata"
+                />
+              ) : (
               <img
                 src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${photos[selectedPhotoIndex].file_path}`}
                 alt={photos[selectedPhotoIndex].file_name}
                 className="max-w-full max-h-[65vh] sm:max-h-[70vh] object-contain"
               />
+              )}
             </div>
             
             {/* 사진 정보 및 다운로드 버튼 - 사진 아래 */}

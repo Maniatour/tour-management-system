@@ -8,6 +8,8 @@ export type TicketBookingWorkflowSnapshot = {
   change_status?: string | null | undefined
   payment_status?: string | null | undefined
   refund_status?: string | null | undefined
+  paid_amount?: number | null | undefined
+  credit_amount?: number | null | undefined
 }
 
 /** 최초 단계: 예매 요청 · 벤더 응답 대기 (나머지 축 UI 숨김) */
@@ -49,7 +51,7 @@ export function showPaymentCompleteButton(b: TicketBookingWorkflowSnapshot): boo
   const bs = (b.booking_status ?? '').toLowerCase()
   const vs = (b.vendor_status ?? '').toLowerCase()
   const ps = (b.payment_status ?? 'not_due').toLowerCase()
-  if (bs === 'failed' || bs === 'cancelled') return false
+  if (bs === 'failed' || bs === 'cancelled' || bs === 'weather_cancelled') return false
   if (!showPostVendorConfirmedBooking(bs, vs)) return false
   return ps !== 'paid'
 }
@@ -69,8 +71,33 @@ export function showRefundLineManagement(b: TicketBookingWorkflowSnapshot): bool
   )
 }
 
-/** 카드·달력 카드뷰: 결제 후 벤더 크레딧 처리 */
+export function isTicketBookingWeatherCancelled(b: TicketBookingWorkflowSnapshot): boolean {
+  return (b.booking_status ?? '').trim().toLowerCase() === 'weather_cancelled'
+}
+
+export function isTicketBookingVendorPaid(b: TicketBookingWorkflowSnapshot): boolean {
+  const ps = (b.payment_status ?? '').toLowerCase()
+  if (ps === 'paid' || ps === 'partially_paid') return true
+  return Number(b.paid_amount ?? 0) > 0
+}
+
+export type WeatherCancelCreditFollowUpState = 'not_needed' | 'pending' | 'received'
+
+/** 날씨 취소: 결제 전이면 크레딧 불필요, 결제 후면 벤더 크레딧 팔로업 */
+export function getWeatherCancelCreditFollowUpState(
+  b: TicketBookingWorkflowSnapshot
+): WeatherCancelCreditFollowUpState | null {
+  if (!isTicketBookingWeatherCancelled(b)) return null
+  if (isTicketBookingCreditReceived(b)) return 'received'
+  if (isTicketBookingVendorPaid(b)) return 'pending'
+  return 'not_needed'
+}
+
+/** 카드·달력 카드뷰: 결제 후 벤더 크레딧 처리. 날씨 취소는 결제 후에만 표시 */
 export function showCreditReceivedButton(b: TicketBookingWorkflowSnapshot): boolean {
+  const weather = getWeatherCancelCreditFollowUpState(b)
+  if (weather === 'pending') return true
+  if (weather === 'not_needed' || weather === 'received') return false
   const ps = (b.payment_status ?? '').toLowerCase()
   const rs = (b.refund_status ?? 'none').toLowerCase()
   if (ps !== 'paid' && ps !== 'partially_paid') return false
@@ -78,8 +105,8 @@ export function showCreditReceivedButton(b: TicketBookingWorkflowSnapshot): bool
 }
 
 export function isTicketBookingCreditReceived(b: {
-  refund_status?: string | null
-  credit_amount?: number | null
+  refund_status?: string | null | undefined
+  credit_amount?: number | null | undefined
 }): boolean {
   const rs = (b.refund_status ?? '').toLowerCase()
   if (rs === 'credit_received') return true
@@ -184,15 +211,21 @@ export function ticketBookingPendingExpenseDiffers(booking: {
 }
 
 export function formatQtyArrow(booking: {
-  ea: number | null | undefined
-  change_status?: string | null
-  pending_ea?: number | null
-  booking_status?: string | null
-  status?: string | null
+  ea?: number | null | undefined
+  change_status?: string | null | undefined
+  pending_ea?: number | null | undefined
+  booking_status?: string | null | undefined
+  status?: string | null | undefined
 }): string {
   const cur = booking.ea ?? 0
   const bs = (booking.booking_status ?? booking.status ?? '').toLowerCase()
-  if (bs === 'cancelled' || bs === 'canceled' || bs === 'failed' || bs === 'expired') {
+  if (
+    bs === 'cancelled' ||
+    bs === 'canceled' ||
+    bs === 'failed' ||
+    bs === 'expired' ||
+    bs === 'weather_cancelled'
+  ) {
     return `원래 ${cur}개 / 유효 0개`
   }
   const cs = (booking.change_status ?? 'none').toLowerCase()
@@ -225,11 +258,11 @@ export function formatTimeArrow(booking: {
  * 변경 요청 중 비용 열: 수량 변경으로 추정 총액이 달라질 때만 `기존 > 신규`, 아니면 단일 표시.
  */
 export function formatExpenseArrow(booking: {
-  ea?: number | null
-  expense?: number | null
-  unit_price?: number | null
-  change_status?: string | null
-  pending_ea?: number | null
+  ea?: number | null | undefined
+  expense?: number | null | undefined
+  unit_price?: number | null | undefined
+  change_status?: string | null | undefined
+  pending_ea?: number | null | undefined
 }): string {
   const cs = (booking.change_status ?? 'none').toLowerCase()
   const curEa = booking.ea ?? 0

@@ -18,7 +18,7 @@ function isTextPart(mime: string): boolean {
   return mime.includes('text/html') || mime.includes('text/plain') || mime === ''
 }
 
-export function decodeGmailPayload(payload: GmailPart | undefined): string {
+export function decodeGmailInlineHtmlAndText(payload: GmailPart | undefined): { text: string; html: string } {
   const texts: string[] = []
   const htmls: string[] = []
   const walk = (part: GmailPart | undefined) => {
@@ -36,7 +36,12 @@ export function decodeGmailPayload(payload: GmailPart | undefined): string {
     for (const child of part.parts ?? []) walk(child)
   }
   walk(payload)
-  return texts.join('\n\n') || htmls.join('\n\n')
+  return { text: texts.join('\n\n').trim(), html: htmls.join('\n\n').trim() }
+}
+
+export function decodeGmailPayload(payload: GmailPart | undefined): string {
+  const { text, html } = decodeGmailInlineHtmlAndText(payload)
+  return text || html
 }
 
 function collectTextAttachmentIds(
@@ -218,4 +223,45 @@ export async function fetchGmailMessageBodyDetailed(
   const full = (await getRes.json()) as { payload?: GmailPart; snippet?: string }
   const text = await extractGmailMessageText(full, accessToken, gmailId)
   return { text, httpStatus: getRes.status }
+}
+
+/** ATM Receipt 미리보기용 — format=full 본문만. RAW·첨부 대량 다운로드는 하지 않습니다. */
+export async function fetchGmailMessageHtmlAndText(
+  accessToken: string,
+  gmailId: string
+): Promise<{ text: string; html: string | null; httpStatus: number }> {
+  const getRes = await fetch(`${GMAIL_API_BASE}/messages/${encodeURIComponent(gmailId)}?format=full`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(12000),
+  })
+  if (!getRes.ok) {
+    return { text: '', html: null, httpStatus: getRes.status }
+  }
+
+  const full = (await getRes.json()) as { payload?: GmailPart; snippet?: string }
+  const inline = decodeGmailInlineHtmlAndText(full.payload)
+  if (inline.html || inline.text) {
+    return { text: inline.text, html: inline.html || null, httpStatus: getRes.status }
+  }
+
+  const htmlParts = collectTextAttachmentIds(full.payload)
+    .filter(
+      (part) =>
+        part.mime.includes('text/html') ||
+        part.mime.includes('text/plain') ||
+        /\.html?$/i.test(part.filename ?? '')
+    )
+    .slice(0, 2)
+  const texts: string[] = []
+  const htmls: string[] = []
+  for (const part of htmlParts) {
+    const decoded = await fetchGmailAttachment(accessToken, gmailId, part.attachmentId)
+    if (!decoded.trim()) continue
+    if (part.mime.includes('text/html') || /\.html?$/i.test(part.filename ?? '')) htmls.push(decoded)
+    else texts.push(decoded)
+  }
+
+  const html = htmls.join('\n\n').trim()
+  const text = texts.join('\n\n').trim() || String(full.snippet ?? '').trim()
+  return { text, html: html || null, httpStatus: getRes.status }
 }

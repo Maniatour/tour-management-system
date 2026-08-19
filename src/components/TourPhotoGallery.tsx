@@ -2,8 +2,17 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Image from 'next/image'
-import { X, ChevronLeft, ChevronRight, Download, Calendar, ImageIcon, Grid3X3, List, Check, Plus, EyeOff, User } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Download, Calendar, ImageIcon, Grid3X3, List, Check, Plus, EyeOff, User, Play } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { listAllTourStorageFiles } from '@/lib/tourPhotoBucket'
+import {
+  isLikelyTourMediaFile,
+  isTourMediaVideo,
+  isTourStorageMediaFileName,
+  TOUR_PHOTO_FILE_ACCEPT,
+  tourMediaFileStem,
+  tourPhotoMaxBytesForFile,
+} from '@/lib/tourPhotoUploadUtils'
 
 interface TourPhoto {
   id: string
@@ -151,54 +160,11 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       const folderPath = tourId
       console.log('폴더 경로:', folderPath)
       
-      // Storage에서 파일 목록 가져오기 (페이지네이션으로 모든 파일 가져오기)
-      let allFiles: Array<{ id?: string | null; name: string; updated_at?: string | null; created_at?: string | null }> = []
-      let hasMore = true
-      let offset = 0
-      const limit = 1000 // 한 번에 가져올 최대 파일 수
-      
-      while (hasMore) {
-        const { data: files, error } = await supabase.storage
-          .from('tour-photos')
-          .list(folderPath, {
-            limit: limit,
-            offset: offset,
-            sort: { column: 'created_at', order: 'desc' },
-          } as never)
-        
-        console.log(`Storage 응답 (offset: ${offset}):`, { files, error })
+      const allFiles = (await listAllTourStorageFiles(tourId)).filter((file) =>
+        isTourStorageMediaFileName(file.name) || file.name.includes('_thumb')
+      )
 
-        if (error) {
-          console.error('Storage listing error:', error)
-          break
-        }
-
-        if (!files || files.length === 0) {
-          hasMore = false
-          break
-        }
-
-        // 실제 사진 파일만 필터링
-        const photoFiles = files.filter((file) => 
-          !file.name.includes('.folder_info.json') && 
-          !file.name.includes('folder.info') &&
-          !file.name.includes('.info') &&
-          !file.name.includes('.README') &&
-          !file.name.startsWith('.') &&
-          file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-        )
-
-        allFiles = [...allFiles, ...photoFiles]
-
-        // 더 가져올 파일이 있는지 확인
-        if (files.length < limit) {
-          hasMore = false
-        } else {
-          offset += limit
-        }
-      }
-
-      console.log(`총 ${allFiles.length}개의 사진 파일 발견`)
+      console.log(`총 ${allFiles.filter((file) => isTourStorageMediaFileName(file.name)).length}개의 사진 파일 발견`)
 
       if (allFiles.length === 0) {
         setPhotos([])
@@ -235,17 +201,16 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       // 썸네일 매핑 생성
       const thumbnailMap = new Map<string, string>()
       thumbnailFiles.forEach((thumbFile) => {
-        const originalName = thumbFile.name.replace('_thumb', '')
         const thumbPath = `${tourId}/${thumbFile.name}`
         const { data: { publicUrl } } = supabase.storage
           .from('tour-photos')
           .getPublicUrl(thumbPath)
-        thumbnailMap.set(originalName, publicUrl)
+        thumbnailMap.set(tourMediaFileStem(thumbFile.name), publicUrl)
       })
       
       // 원본 파일만 필터링 (썸네일 제외)
-      const originalFiles = allFiles.filter((file) => 
-        !file.name.includes('_thumb') && !hiddenFileNames.has(file.name)
+      const originalFiles = allFiles.filter((file) =>
+        isTourStorageMediaFileName(file.name) && !hiddenFileNames.has(file.name)
       )
       
       const photosWithUrls: TourPhoto[] = originalFiles
@@ -256,14 +221,14 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
             .getPublicUrl(filePath)
           
           // 썸네일 URL (있으면 사용, 없으면 원본 사용)
-          const thumbnailUrl = thumbnailMap.get(file.name) || publicUrl
+          const thumbnailUrl = thumbnailMap.get(tourMediaFileStem(file.name)) || publicUrl
           
           return {
             id: file.id || file.name,
-            file_url: publicUrl, // 원본 URL (모달, 다운로드용)
-            thumbnail_url: thumbnailUrl, // 썸네일 URL
+            file_url: publicUrl,
+            thumbnail_url: thumbnailUrl,
             file_name: file.name,
-            uploaded_at: file.updated_at || file.created_at || new Date().toISOString(),
+            uploaded_at: file.created_at || new Date().toISOString(),
             uploaded_by: 'Unknown',
             is_hidden: false
           }
@@ -606,13 +571,12 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
           batch.map(async (file) => {
             try {
               // 파일 크기 체크 (50MB)
-              if (file.size > 50 * 1024 * 1024) {
-                throw new Error(`File too large: ${file.name} (max 50MB)`)
+              if (file.size > tourPhotoMaxBytesForFile(file)) {
+                throw new Error(`File too large: ${file.name}`)
               }
 
-              // 이미지 파일만 허용
-              if (!file.type.startsWith('image/')) {
-                throw new Error(`Not an image: ${file.name}`)
+              if (!isLikelyTourMediaFile(file)) {
+                throw new Error(`Unsupported file: ${file.name}`)
               }
 
               // 고유한 파일명 생성
@@ -696,7 +660,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*"
+                      accept={TOUR_PHOTO_FILE_ACCEPT}
                       multiple
                       onChange={(e) => handleFileUpload(e.target.files)}
                       className="hidden"
@@ -885,18 +849,36 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
 
                     {viewMode === 'grid' ? (
                       <>
-                        {/* 썸네일: 작은 크기로 표시 */}
-                        <Image
-                          src={photo.thumbnail_url || photo.file_url}
-                          alt={photo.file_name}
-                          width={200}
-                          height={128}
-                          className="w-full h-24 sm:h-28 md:h-32 object-cover rounded-lg hover:opacity-90 transition-opacity"
-                          style={{ width: 'auto', height: 'auto' }}
-                          loading="lazy"
-                          quality={75}
-                          unoptimized
-                        />
+                        <div className="relative w-full h-24 sm:h-28 md:h-32 overflow-hidden rounded-lg">
+                          {isTourMediaVideo(photo.file_name) && isTourMediaVideo(photo.thumbnail_url || photo.file_url) ? (
+                            <video
+                              src={photo.thumbnail_url || photo.file_url}
+                              className="w-full h-full object-cover"
+                              muted
+                              playsInline
+                              preload="metadata"
+                            />
+                          ) : (
+                            <Image
+                              src={photo.thumbnail_url || photo.file_url}
+                              alt={photo.file_name}
+                              width={200}
+                              height={128}
+                              className="w-full h-full object-cover hover:opacity-90 transition-opacity"
+                              style={{ width: 'auto', height: 'auto' }}
+                              loading="lazy"
+                              quality={75}
+                              unoptimized
+                            />
+                          )}
+                          {isTourMediaVideo(photo.file_name) && (
+                            <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                              <span className="rounded-full bg-black/60 p-2 text-white">
+                                <Play className="h-4 w-4 fill-white sm:h-5 sm:w-5" />
+                              </span>
+                            </span>
+                          )}
+                        </div>
                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
                           <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white bg-opacity-20 rounded-full p-2">
                             <ImageIcon className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
@@ -985,17 +967,27 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
             )}
 
             {/* 메인 이미지 - 원본 사용 */}
-            <Image
-              src={selectedPhoto.file_url}
-              alt={selectedPhoto.file_name}
-              width={1200}
-              height={800}
-              className="max-w-full max-h-full object-contain"
-              style={{ width: 'auto', height: 'auto' }}
-              quality={100}
-              priority
-              unoptimized
-            />
+            {selectedPhoto && isTourMediaVideo(selectedPhoto.file_name) ? (
+              <video
+                src={selectedPhoto.file_url}
+                className="max-w-full max-h-full object-contain"
+                controls
+                playsInline
+                preload="metadata"
+              />
+            ) : selectedPhoto ? (
+              <Image
+                src={selectedPhoto.file_url}
+                alt={selectedPhoto.file_name}
+                width={1200}
+                height={800}
+                className="max-w-full max-h-full object-contain"
+                style={{ width: 'auto', height: 'auto' }}
+                quality={100}
+                priority
+                unoptimized
+              />
+            ) : null}
 
             {/* 사진 정보 */}
             <div className="absolute bottom-2 sm:bottom-4 left-2 sm:left-4 right-2 sm:right-4 bg-black bg-opacity-70 text-white p-2 sm:p-4 rounded-lg">

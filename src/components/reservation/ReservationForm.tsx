@@ -3,7 +3,7 @@
 
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { Trash2, Eye, AlertTriangle, X, Mail, Phone, ChevronDown, Globe, Store, History, CalendarClock } from 'lucide-react'
+import { Trash2, Eye, AlertTriangle, X, Mail, Phone, ChevronDown, Globe, Store, History, CalendarClock, CreditCard } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations, useLocale } from 'next-intl'
 import { stripSpacesFromContactInput } from '@/lib/contactInputUtils'
@@ -32,6 +32,10 @@ import type { Database } from '@/lib/supabase'
 import { DIALOG_Z_INDEX, childModalZIndex, type DialogStackLevel } from '@/lib/dialogZIndex'
 import { ResizableModalFrame } from '@/components/ui/ResizableModalFrame'
 import { ReservationFormModalStackProvider } from '@/components/reservation/ReservationFormModalStackContext'
+import {
+  QuickPaymentRequestModal,
+  type QuickPaymentFormInitials,
+} from '@/components/customer/QuickPaymentRequestForm'
 import {
   RESERVATION_EDIT_MODAL_DEFAULT_SIZE,
   RESERVATION_EDIT_MODAL_RECT_KEY,
@@ -573,6 +577,8 @@ export default function ReservationForm({
   } | null>(null)
   const [linkedTourDetailRefreshNonce, setLinkedTourDetailRefreshNonce] = useState(0)
   const [showEditHistoryModal, setShowEditHistoryModal] = useState(false)
+  const [quickPaymentOpen, setQuickPaymentOpen] = useState(false)
+  const [quickPaymentInitials, setQuickPaymentInitials] = useState<QuickPaymentFormInitials | undefined>()
   const [noShowDateChangeOpen, setNoShowDateChangeOpen] = useState(false)
   const resolvedCustomerIdRef = useRef<string | null>(null)
   /** 이메일 가져오기: 상위 reservation.channel_id는 비동기로 채워지며, 이후 effect가 사용자가 모달에서 고른 채널을 덮어쓰면 안 됨 */
@@ -6664,6 +6670,40 @@ export default function ReservationForm({
   const handleOpenLinkedTourDetail = useCallback((tourId: string, title: string) => {
     setLinkedTourDetailModal({ tourId, title })
   }, [])
+  const openQuickPayment = useCallback(() => {
+    if (!reservation?.id || isNewReservation || isImportMode) return
+    const product = products.find((p: { id: string }) => p.id === formData.productId) as
+      | { name_ko?: string | null; name?: string | null }
+      | undefined
+    const productName =
+      (locale === 'en' ? product?.name : product?.name_ko) || product?.name || product?.name_ko || ''
+    const tourDate = formData.tourDate || reservation.tourDate || ''
+    const rn = formData.channelRN || reservation.channelRN || reservation.id
+    const description = [productName, tourDate, rn ? `RN ${rn}` : ''].filter(Boolean).join(' · ')
+    const balance = Number(formData.onSiteBalanceAmount ?? formData.balanceAmount) || 0
+    const next: QuickPaymentFormInitials = {
+      email: (formData.customerEmail || '').trim(),
+      recipientName: (formData.customerName || '').trim(),
+      description,
+      reservationId: reservation.id,
+    }
+    if (balance > 0.005) next.amountUsd = Math.round(balance * 100) / 100
+    setQuickPaymentInitials(next)
+    setQuickPaymentOpen(true)
+  }, [
+    formData.balanceAmount,
+    formData.channelRN,
+    formData.customerEmail,
+    formData.customerName,
+    formData.onSiteBalanceAmount,
+    formData.productId,
+    formData.tourDate,
+    isImportMode,
+    isNewReservation,
+    locale,
+    products,
+    reservation,
+  ])
   /** 예약목록 커스텀 오버레이(≈100) 위: 1100. 스케줄뷰 Dialog(10050) 위: nested 10200+ */
   const resolvedModalZIndex =
     modalZIndex ??
@@ -6706,6 +6746,18 @@ export default function ReservationForm({
                 >
                   <History className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">{locale === 'en' ? 'Edit history' : '수정 이력'}</span>
+                </button>
+              )}
+              {reservation?.id && !isNewReservation && !isImportMode && (
+                <button
+                  type="button"
+                  onClick={openQuickPayment}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors flex-shrink-0"
+                  title={locale === 'en' ? 'Quick Payment' : '빠른 금액 청구'}
+                  aria-label={locale === 'en' ? 'Quick Payment' : '빠른 금액 청구'}
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{locale === 'en' ? 'Quick Payment' : '빠른 금액 청구'}</span>
                 </button>
               )}
             </div>
@@ -7849,6 +7901,16 @@ export default function ReservationForm({
           isOpen={showEditHistoryModal}
           onClose={() => setShowEditHistoryModal(false)}
           reservationId={reservation.id}
+        />
+      ) : null}
+
+      {reservation?.id && !isNewReservation && !isImportMode ? (
+        <QuickPaymentRequestModal
+          open={quickPaymentOpen}
+          onClose={() => setQuickPaymentOpen(false)}
+          locale={locale === 'en' ? 'en' : 'ko'}
+          initials={quickPaymentInitials}
+          overlayZIndex={childOverlayZIndex}
         />
       ) : null}
 

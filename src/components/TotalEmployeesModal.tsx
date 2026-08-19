@@ -15,6 +15,7 @@ import {
 } from '@/lib/employeeHourlyRates'
 import { adjustedWorkHoursForPay, sortAttendanceRecordsForMealPolicy } from '@/lib/attendanceMealPolicy'
 import { calculateEmployeePrepaidTips } from '@/lib/prepaid-tips'
+import { printHtmlDocument } from '@/lib/printHtmlDocument'
 
 interface TotalEmployeesModalProps {
   isOpen: boolean
@@ -783,9 +784,6 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
 
   // 개별 직원 프린트 함수
   const handlePrintEmployee = (employee: EmployeeData) => {
-    const printWindow = window.open('', '_blank', 'width=800,height=600')
-    
-    if (printWindow) {
       // 프린트용 헬퍼 함수들
       const formatTourDateForPrint = (dateString: string) => {
         // 날짜 문자열을 직접 파싱하여 시간대 변환 방지
@@ -1008,14 +1006,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
         </html>
       `
       
-      printWindow.document.write(printContent)
-      printWindow.document.close()
-      
-      // 프린트 창이 로드된 후 프린트 실행
-      printWindow.onload = () => {
-        printWindow.print()
-      }
-    }
+      printHtmlDocument(printContent, `${employee.name_en} Payroll Details`)
   }
 
   // 투어명을 직원의 언어에 맞게 표시하는 함수 (배열 처리)
@@ -1177,8 +1168,6 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
 
   /** 현재 화면(필터 반영)과 동일한 요약 테이블 프린트 */
   const handlePrintSummary = () => {
-    const printWindow = window.open('', '_blank', 'width=900,height=700')
-    if (!printWindow) return
 
     const formatCurrencyForPrint = (n: number) =>
       n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -1293,11 +1282,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
       </html>
     `
 
-    printWindow.document.write(printContent)
-    printWindow.document.close()
-    printWindow.onload = () => {
-      printWindow.print()
-    }
+    printHtmlDocument(printContent, 'Total Employees Summary')
   }
 
   useEffect(() => {

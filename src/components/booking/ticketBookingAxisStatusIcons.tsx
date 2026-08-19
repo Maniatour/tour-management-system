@@ -6,6 +6,7 @@ import {
   ArrowRightLeft,
   CalendarX2,
   Check,
+  CloudOff,
   Ellipsis,
   Flag,
   Hourglass,
@@ -36,6 +37,8 @@ function bookingTileMeta(sNorm: string): { Icon: LucideIcon; bg: string } {
       return { Icon: Flag, bg: 'bg-orange-500' }
     case 'cancelled':
       return { Icon: X, bg: 'bg-red-600' }
+    case 'weather_cancelled':
+      return { Icon: CloudOff, bg: 'bg-cyan-600' }
     case 'no_show':
       return { Icon: LogOut, bg: 'bg-slate-700' }
     case 'failed':
@@ -61,6 +64,8 @@ function bookingLineIcon(sNorm: string): LucideIcon {
       return Flag
     case 'cancelled':
       return X
+    case 'weather_cancelled':
+      return CloudOff
     case 'no_show':
       return LogOut
     case 'failed':

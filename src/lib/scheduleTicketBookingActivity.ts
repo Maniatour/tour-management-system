@@ -7,6 +7,7 @@ const CANCELLED_BOOKING_AXIS = new Set([
   'cancelled',
   'canceled',
   'cancel_requested',
+  'weather_cancelled',
   'failed',
   'expired',
 ])

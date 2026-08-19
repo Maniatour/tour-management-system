@@ -1,8 +1,10 @@
 /** fetch/Supabase 요청 취소(언마운트, Fast Refresh 등) — 실패로 취급하지 않음 */
 export function isAbortLikeError(err: unknown): boolean {
   if (err == null) return false
-  if (typeof err === 'object' && 'name' in err && (err as Error).name === 'AbortError')
-    return true
+  if (typeof err === 'object' && 'name' in err) {
+    const name = (err as Error).name
+    if (name === 'AbortError' || name === 'AuthRefreshDiscardedError') return true
+  }
   const msg =
     err instanceof Error
       ? err.message
@@ -23,6 +25,8 @@ export function isAbortLikeError(err: unknown): boolean {
   return (
     s.includes('AbortError') ||
     s.includes('aborted') ||
-    s.includes('signal is aborted')
+    s.includes('signal is aborted') ||
+    s.includes('Refresh result discarded') ||
+    s.includes('AuthRefreshDiscardedError')
   )
 }

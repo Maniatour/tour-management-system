@@ -16,6 +16,7 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { useReservationFormChildOverlayZIndex } from '@/components/reservation/ReservationFormModalStackContext'
 
 export type QuickPaymentFormInitials = {
   email?: string
@@ -40,7 +41,7 @@ type QuickPaymentResult = {
 
 type QuickPaymentRequestFormProps = {
   locale?: 'ko' | 'en'
-  initials?: QuickPaymentFormInitials
+  initials?: QuickPaymentFormInitials | undefined
   /** page: 독립 페이지 / modal: 모달 본문 */
   variant?: 'page' | 'modal'
   onClose?: () => void
@@ -532,7 +533,9 @@ type QuickPaymentRequestModalProps = {
   open: boolean
   onClose: () => void
   locale?: 'ko' | 'en'
-  initials?: QuickPaymentFormInitials
+  initials?: QuickPaymentFormInitials | undefined
+  /** 예약 수정 모달 등 상위 오버레이 위에 띄울 때 */
+  overlayZIndex?: number
 }
 
 type HistoryItem = {
@@ -769,7 +772,10 @@ export function QuickPaymentRequestModal({
   onClose,
   locale = 'ko',
   initials,
+  overlayZIndex,
 }: QuickPaymentRequestModalProps) {
+  const stackedZIndex = useReservationFormChildOverlayZIndex(80)
+  const resolvedOverlayZIndex = overlayZIndex ?? stackedZIndex
   const [view, setView] = useState<'form' | 'history'>('form')
   const [formInitials, setFormInitials] = useState<QuickPaymentFormInitials | undefined>(initials)
   const [formKey, setFormKey] = useState(0)
@@ -793,17 +799,21 @@ export function QuickPaymentRequestModal({
   useEffect(() => {
     if (!open) return
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation()
+      onClose()
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [open, onClose])
 
   if (!open || !mounted) return null
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 flex items-center justify-center bg-black/50 p-4"
+      style={{ zIndex: resolvedOverlayZIndex }}
       onClick={(e) => {
         e.preventDefault()
         e.stopPropagation()

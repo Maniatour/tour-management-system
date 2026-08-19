@@ -1,6 +1,7 @@
 'use client'
 
 import { loadHtml2Canvas, loadJsPDF } from '@/lib/lazyPdfLibs'
+import { printHtmlDocument } from '@/lib/printHtmlDocument'
 import {
   duplicateExtraKeysToSelect,
   findPnlDetailDuplicateGroups,
@@ -501,37 +502,7 @@ export function buildPnlTaxReportHtml(data: PnlTaxReportExportData): string {
 }
 
 export function printPnlTaxReport(data: PnlTaxReportExportData): void {
-  const html = buildPnlTaxReportHtml(data)
-  const win = window.open('', '_blank')
-  if (!win) return
-
-  const doc = win.document
-  doc.open()
-  doc.write(html)
-  doc.close()
-
-  const runPrint = () => {
-    try {
-      win.focus()
-      win.print()
-    } catch {
-      /* ignore */
-    }
-    const closeWhenDone = () => {
-      try {
-        if (!win.closed) win.close()
-      } catch {
-        /* ignore */
-      }
-    }
-    win.addEventListener('afterprint', closeWhenDone, { once: true })
-  }
-
-  if (doc.readyState === 'complete') {
-    requestAnimationFrame(() => requestAnimationFrame(runPrint))
-  } else {
-    win.addEventListener('load', runPrint, { once: true })
-  }
+  printHtmlDocument(buildPnlTaxReportHtml(data), 'PNL Tax Report')
 }
 
 export async function downloadPnlTaxReportPdf(data: PnlTaxReportExportData): Promise<void> {

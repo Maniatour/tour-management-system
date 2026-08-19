@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
   getTicketBookingOriginalQty,
@@ -8,11 +8,18 @@ import {
   type TicketBookingDisplaySnap,
 } from '@/lib/ticketBookingDisplay'
 import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
+import {
+  deriveTicketBookingUnitPriceUsd,
+  formatExpenseArrow,
+  formatQtyArrow,
+  formatUsdExpenseChunk,
+} from '@/lib/ticketBookingWorkflow'
 
 export type TicketBookingQtyTimelineBooking = TicketBookingDisplaySnap & {
   id: string
   created_at?: string | null
   submitted_by?: string | null
+  unit_price?: number | null
 }
 
 type HistoryRow = {
@@ -289,6 +296,156 @@ export function buildTicketBookingQtyTimeline(
   return mergeSameMomentQtyTimelineItems(items)
 }
 
+const qtyHistoryCache = new Map<string, HistoryRow[]>()
+const qtyHistoryInflight = new Map<string, Promise<HistoryRow[]>>()
+
+export async function loadTicketBookingQtyHistory(bookingId: string): Promise<HistoryRow[]> {
+  const cached = qtyHistoryCache.get(bookingId)
+  if (cached) return cached
+  const existing = qtyHistoryInflight.get(bookingId)
+  if (existing) return existing
+
+  const p = (async () => {
+    const { data, error } = await supabase
+      .from('booking_history')
+      .select('id, action, changed_at, changed_by, reason, old_values, new_values')
+      .eq('booking_type', 'ticket')
+      .eq('booking_id', bookingId)
+      .order('changed_at', { ascending: true })
+    if (error) {
+      console.warn('qty timeline history', error)
+      return [] as HistoryRow[]
+    }
+    const rows: HistoryRow[] = (data || []).map((row) => ({
+      id: String(row.id),
+      action: String(row.action ?? ''),
+      changed_at: row.changed_at ?? null,
+      changed_by: row.changed_by ? String(row.changed_by) : null,
+      reason: row.reason ?? null,
+      old_values: asRecord(row.old_values),
+      new_values: asRecord(row.new_values),
+    }))
+    qtyHistoryCache.set(bookingId, rows)
+    return rows
+  })()
+
+  qtyHistoryInflight.set(bookingId, p)
+  try {
+    return await p
+  } finally {
+    qtyHistoryInflight.delete(bookingId)
+  }
+}
+
+export function qtyAfterSequence(items: QtyTimelineItem[]): number[] {
+  const qtys: number[] = []
+  for (const it of items) {
+    if (it.afterQty == null || !Number.isFinite(it.afterQty)) continue
+    if (qtys.length === 0 || qtys[qtys.length - 1] !== it.afterQty) {
+      qtys.push(it.afterQty)
+    }
+  }
+  return qtys
+}
+
+export function formatQtyAfterChain(items: QtyTimelineItem[]): string {
+  return qtyAfterSequence(items).join(' > ')
+}
+
+export function formatExpenseAfterChain(
+  qtys: number[],
+  booking: {
+    ea?: number | null | undefined
+    expense?: number | null | undefined
+    unit_price?: number | null | undefined
+    change_status?: string | null | undefined
+    pending_ea?: number | null | undefined
+  }
+): string {
+  const unit = deriveTicketBookingUnitPriceUsd(
+    booking.ea ?? 0,
+    Number(booking.expense ?? 0),
+    booking.unit_price ?? null
+  )
+  if (!(unit > 0) || qtys.length === 0) return formatExpenseArrow(booking)
+  const amounts: number[] = []
+  for (const q of qtys) {
+    const amount = Math.round(unit * q * 100) / 100
+    if (amounts.length === 0 || Math.abs(amounts[amounts.length - 1] - amount) >= 0.005) {
+      amounts.push(amount)
+    }
+  }
+  if (amounts.length <= 1) return formatExpenseArrow(booking)
+  return amounts.map(formatUsdExpenseChunk).join(' > ')
+}
+
+/** 달력 칩 호버: 수량 변경 기록(8 > 7 > 5) + 금액 */
+export function TicketBookingHoverQtyAmountLines({
+  booking,
+  locale,
+  active,
+}: {
+  booking: TicketBookingQtyTimelineBooking
+  locale: string
+  active: boolean
+}) {
+  const isEn = locale.startsWith('en')
+  const fallbackQty = formatQtyArrow(booking)
+  const fallbackAmount = formatExpenseArrow(booking)
+  const [qtyText, setQtyText] = useState(fallbackQty)
+  const [amountText, setAmountText] = useState(fallbackAmount)
+  const [pendingLast, setPendingLast] = useState(false)
+
+  useEffect(() => {
+    if (!active) return
+    let cancelled = false
+    void loadTicketBookingQtyHistory(booking.id).then((history) => {
+      if (cancelled) return
+      const items = buildTicketBookingQtyTimeline(booking, history, locale)
+      const qtys = qtyAfterSequence(items)
+      const chain = qtys.join(' > ')
+      setQtyText(chain || fallbackQty)
+      setAmountText(formatExpenseAfterChain(qtys, booking))
+      const lastWithQty = [...items].reverse().find((it) => it.afterQty != null)
+      setPendingLast(lastWithQty?.tone === 'pending' && qtys.length > 1)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [active, booking, locale, fallbackQty])
+
+  const qtyParts = qtyText.split(' > ').filter(Boolean)
+  const showQtyParts = qtyParts.length > 1 && qtyParts.every((p) => /^-?\d+(\.\d+)?$/.test(p.trim()))
+
+  return (
+    <>
+      <div className="text-[10px] font-medium text-gray-900">
+        <span className="text-gray-500">{isEn ? 'Quantity' : '수량'}</span>{' '}
+        <span className="tabular-nums">
+          {showQtyParts
+            ? qtyParts.map((part, i) => (
+                <Fragment key={`${part}-${i}`}>
+                  {i > 0 ? <span className="text-gray-400"> {'>'} </span> : null}
+                  <span
+                    className={
+                      pendingLast && i === qtyParts.length - 1 ? 'font-semibold text-orange-700' : undefined
+                    }
+                  >
+                    {part.trim()}
+                  </span>
+                </Fragment>
+              ))
+            : qtyText}
+        </span>
+      </div>
+      <div className="text-[10px] font-medium text-gray-900">
+        <span className="text-gray-500">{isEn ? 'Amount' : '금액'}</span>{' '}
+        <span className="tabular-nums">{amountText}</span>
+      </div>
+    </>
+  )
+}
+
 type Props = {
   booking: TicketBookingQtyTimelineBooking
   locale?: string
@@ -323,29 +480,8 @@ export default function TicketBookingQtyTimeline({
     let cancelled = false
     const load = async () => {
       setLoading(true)
-      const { data, error } = await supabase
-        .from('booking_history')
-        .select('id, action, changed_at, changed_by, reason, old_values, new_values')
-        .eq('booking_type', 'ticket')
-        .eq('booking_id', booking.id)
-        .order('changed_at', { ascending: true })
+      const rows = await loadTicketBookingQtyHistory(booking.id)
       if (cancelled) return
-      if (error) {
-        console.warn('qty timeline history', error)
-        setHistory([])
-        setNameByEmail(new Map())
-        setLoading(false)
-        return
-      }
-      const rows: HistoryRow[] = (data || []).map((row) => ({
-        id: String(row.id),
-        action: String(row.action ?? ''),
-        changed_at: row.changed_at ?? null,
-        changed_by: row.changed_by ? String(row.changed_by) : null,
-        reason: row.reason ?? null,
-        old_values: asRecord(row.old_values),
-        new_values: asRecord(row.new_values),
-      }))
       setHistory(rows)
 
       const emails = [

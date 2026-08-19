@@ -10,6 +10,7 @@ import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
 import TipsShareModal from '@/components/TipsShareModal'
 import { loadHtml2Canvas, loadJsPDF } from '@/lib/lazyPdfLibs'
+import { printHtmlDocument } from '@/lib/printHtmlDocument'
 import {
   fetchEmployeeHourlyRatePeriods,
   getHourlyRateForEmployeeOnDate,
@@ -1502,10 +1503,6 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
   // 프린트 함수
   const handlePrint = () => {
-    // 프린트용 새 창 열기
-    const printWindow = window.open('', '_blank', 'width=800,height=600')
-    
-    if (printWindow) {
       // 직원 포지션 확인
       const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
       const isGuideOrDriver = isGuideOrDriverPosition(selectedMember?.position)
@@ -1797,15 +1794,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         </html>
       `
       
-      printWindow.document.write(printContent)
-      printWindow.document.close()
-      
-      // 프린트 대화상자 열기
-      printWindow.onload = () => {
-        printWindow.print()
-        printWindow.close()
-      }
-    }
+    printHtmlDocument(printContent, '2주급 계산기')
   }
 
   // 시간 포맷팅 함수

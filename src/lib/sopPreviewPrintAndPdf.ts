@@ -1,6 +1,7 @@
 'use client'
 
 import { loadHtml2Canvas, loadJsPDF } from '@/lib/lazyPdfLibs'
+import { printHtmlDocument } from '@/lib/printHtmlDocument'
 
 export type PrintPageFormat = 'a4' | 'letter'
 
@@ -46,80 +47,20 @@ function printDomCloneWithStylesSync(
   const page = PAGE_MM[format]
   const safeTitle = escapeHtmlTitle(documentTitle || 'Print')
 
-  const iframe = document.createElement('iframe')
-  iframe.setAttribute('title', safeTitle)
-  iframe.setAttribute('aria-hidden', 'true')
-  iframe.style.cssText =
-    'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none;'
-  document.body.appendChild(iframe)
-
-  const doc = iframe.contentDocument || iframe.contentWindow?.document
-  if (!doc) {
-    document.body.removeChild(iframe)
-    return
-  }
-
-  const styleLinks = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+  const styleLinks = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'))
+    .filter((link) => {
+      const href = link.href || ''
+      return href && !/fonts\.googleapis|fonts\.gstatic/.test(href)
+    })
     .map((link) => link.outerHTML)
     .join('')
 
-  doc.open()
-  doc.write('<!DOCTYPE html><html><head><meta charset="utf-8">')
-  doc.write(`<title>${safeTitle}</title>`)
-  doc.write(styleLinks)
-  doc.write(
-    `<style>@page { size: ${page.cssSize}; margin: 12mm; } body { margin: 0; background: #fff; } @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }</style>`
+  printHtmlDocument(
+    `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${safeTitle}</title>${styleLinks}` +
+      `<style>@page { size: ${page.cssSize}; margin: 12mm; } body { margin: 0; background: #fff; } @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }</style>` +
+      `</head><body>${root.outerHTML}</body></html>`,
+    documentTitle || 'Print'
   )
-  doc.write('</head><body>')
-  doc.write(root.outerHTML)
-  doc.write('</body></html>')
-  doc.close()
-
-  const cleanup = () => {
-    try {
-      if (iframe.parentNode) iframe.parentNode.removeChild(iframe)
-    } catch {
-      /* ignore */
-    }
-  }
-
-  const run = () => {
-    const win = iframe.contentWindow
-    if (!win) {
-      cleanup()
-      return
-    }
-
-    win.addEventListener('afterprint', cleanup, { once: true })
-    window.setTimeout(cleanup, 60_000)
-
-    const doPrint = () => {
-      try {
-        win.focus()
-      } catch {
-        /* ignore */
-      }
-      try {
-        const ret = win.print() as void | Promise<void>
-        if (ret != null && typeof (ret as Promise<void>).then === 'function') {
-          void (ret as Promise<void>).catch(() => {
-            /* Chromium: print preview invalidated — ignore */
-          })
-        }
-      } catch {
-        cleanup()
-      }
-    }
-
-    // document.write 직후 바로 print() 하면 Chromium에서 콜백이 무효화될 수 있음
-    window.setTimeout(doPrint, 200)
-  }
-
-  if (doc.readyState === 'complete') {
-    window.setTimeout(run, 0)
-  } else {
-    iframe.addEventListener('load', run, { once: true })
-  }
 }
 
 async function captureDomToPdf(root: HTMLElement, format: PrintPageFormat) {

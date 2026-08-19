@@ -3,13 +3,12 @@
  * (DB/워크플로 로직은 변경하지 않음)
  */
 
-import { formatHHMM } from '@/lib/ticketBookingWorkflow'
+import { formatHHMM, getWeatherCancelCreditFollowUpState, isTicketBookingPendingRequestState } from '@/lib/ticketBookingWorkflow'
 import {
   getCancelDueDateForTicketBooking,
   localDateYmd,
   type SeasonDate,
 } from '@/lib/ticketBookingCancelDue'
-import { isTicketBookingPendingRequestState } from '@/lib/ticketBookingWorkflow'
 
 export type TicketBookingDisplaySnap = {
   company?: string | null | undefined
@@ -21,15 +20,23 @@ export type TicketBookingDisplaySnap = {
   vendor_status?: string | null | undefined
   change_status?: string | null | undefined
   payment_status?: string | null | undefined
+  refund_status?: string | null | undefined
   status?: string | null | undefined
   paid_amount?: number | null | undefined
+  credit_amount?: number | null | undefined
   expense?: number | null | undefined
 }
 
 /** 예약이 취소(완료) 상태인지 */
 export function isTicketBookingCancelledStatus(b: TicketBookingDisplaySnap): boolean {
   const bs = (b.booking_status ?? b.status ?? '').trim().toLowerCase()
-  return bs === 'cancelled' || bs === 'canceled' || bs === 'failed' || bs === 'expired'
+  return (
+    bs === 'cancelled' ||
+    bs === 'canceled' ||
+    bs === 'failed' ||
+    bs === 'expired' ||
+    bs === 'weather_cancelled'
+  )
 }
 
 /**
@@ -116,6 +123,7 @@ export type TicketBookingUnifiedStatusKey =
   | 'cancel_approved'
   | 'vendor_cancelled'
   | 'cancelled'
+  | 'weather_cancelled'
   | 'failed'
   | 'expired'
   | 'no_show'
@@ -192,6 +200,12 @@ const UNIFIED_LABELS: Record<
     shortKo: '취소',
     shortEn: 'CXL',
   },
+  weather_cancelled: {
+    ko: '날씨 취소',
+    en: 'Weather cancel',
+    shortKo: '날씨',
+    shortEn: 'WX',
+  },
   failed: {
     ko: '전량 취소',
     en: 'Fully cancelled',
@@ -230,7 +244,8 @@ export function resolveTicketBookingUnifiedStatus(
   let key: TicketBookingUnifiedStatusKey = 'other'
 
   // `failed`는 가예약 전량 취소(벤더 거절 버튼 등)에 쓰이므로 예약 실패가 아니라 취소로 표시
-  if (bs === 'expired') key = 'expired'
+  if (bs === 'weather_cancelled') key = 'weather_cancelled'
+  else if (bs === 'expired') key = 'expired'
   else if (bs === 'no_show') key = 'no_show'
   else if (isTicketBookingCancelledStatus(b) && vs === 'confirmed') key = 'cancel_approved'
   else if (isTicketBookingCancelledStatus(b) && vs === 'cancelled') key = 'vendor_cancelled'
@@ -283,6 +298,7 @@ export const TICKET_BOOKING_UNIFIED_STATUS_FILTER_KEYS: TicketBookingUnifiedStat
   'cancel_approved',
   'vendor_cancelled',
   'cancelled',
+  'weather_cancelled',
   'expired',
   'no_show',
   'other',
@@ -312,6 +328,8 @@ export function getTicketBookingUnifiedStatusBadgeClass(
     case 'cancelled':
     case 'failed':
       return 'bg-red-100 text-red-900 ring-1 ring-red-200/80'
+    case 'weather_cancelled':
+      return 'bg-sky-600 text-white ring-1 ring-sky-800'
     case 'expired':
     case 'no_show':
       return 'bg-slate-200 text-slate-800 ring-1 ring-slate-300/80'
@@ -344,6 +362,7 @@ export type TicketWorkboardFilter =
   | 'cancel_due'
   | 'needs_vendor'
   | 'unpaid'
+  | 'weather_credit'
   | 'tour_day'
 
 export function matchesTicketWorkboardFilter(
@@ -386,6 +405,8 @@ export function matchesTicketWorkboardFilter(
       if (expense > 0 && paid + 0.001 >= expense) return false
       return ps === 'not_due' || ps === 'requested' || ps === 'failed' || ps === 'partially_paid' || !ps
     }
+    case 'weather_credit':
+      return getWeatherCancelCreditFollowUpState(b) === 'pending'
     case 'tour_day': {
       const checkIn = (b.check_in_date || '').slice(0, 10)
       return checkIn === today

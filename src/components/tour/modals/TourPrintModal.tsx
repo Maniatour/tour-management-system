@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { X, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { removePrintIframe, runPrintAndKeepAlive } from '@/lib/printHtmlDocument'
 import { fetchReservationOptionLinesBatch } from '@/lib/reservationOptionsForEmail'
 import {
   adjustOptionTotalExcludingLegacyNonResident,
@@ -656,20 +657,7 @@ export default function TourPrintModal({
       }
       printWin.focus()
       setTimeout(() => {
-        try {
-          printWin.print()
-        } catch {
-          /* ignore */
-        }
-        const cleanup = () => {
-          try {
-            if (iframe.parentNode) document.body.removeChild(iframe)
-          } catch {
-            /* ignore */
-          }
-        }
-        printWin.addEventListener('afterprint', cleanup, { once: true })
-        setTimeout(cleanup, 3000)
+        runPrintAndKeepAlive(printWin, () => removePrintIframe(iframe))
       }, 250)
     }
 

@@ -8,6 +8,8 @@ import TourPhotoUploadProgressOverlay from '@/components/TourPhotoUploadProgress
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTourDetailSectionChrome } from './TourDetailModalChromeContext'
+import { listAllTourStorageFiles } from '@/lib/tourPhotoBucket'
+import { isTourStorageMediaFileName } from '@/lib/tourPhotoUploadUtils'
 
 interface TourPhotosProps {
   tour: any
@@ -30,21 +32,9 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
   useEffect(() => {
     const checkPhotoCount = async () => {
       try {
-        const { data: files, error } = await supabase.storage
-          .from('tour-photos')
-          .list(tour.id)
-
-        if (!error && files) {
-          const photoFiles = files.filter((file: { name: string }) => 
-            !file.name.includes('.folder_info.json') && 
-            !file.name.includes('folder.info') &&
-            !file.name.includes('.info') &&
-            !file.name.includes('.README') &&
-            !file.name.startsWith('.') &&
-            file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-          )
-          setPhotoCount(photoFiles.length)
-        }
+        const files = await listAllTourStorageFiles(tour.id)
+        const photoFiles = files.filter((file) => isTourStorageMediaFileName(file.name))
+        setPhotoCount(photoFiles.length)
       } catch (error) {
         console.error('Error checking photo count:', error)
       }
@@ -244,28 +234,13 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
             onPhotosUpdated()
             // 사진 개수 다시 확인
             setTimeout(() => {
-              const checkPhotoCount = async () => {
-                try {
-                  const { data: files, error } = await supabase.storage
-                    .from('tour-photos')
-                    .list(tour.id)
-
-                  if (!error && files) {
-                    const photoFiles = files.filter((file: { name: string }) => 
-                      !file.name.includes('.folder_info.json') && 
-                      !file.name.includes('folder.info') &&
-                      !file.name.includes('.info') &&
-                      !file.name.includes('.README') &&
-                      !file.name.startsWith('.') &&
-                      file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-                    )
-                    setPhotoCount(photoFiles.length)
-                  }
-                } catch (error) {
+              void listAllTourStorageFiles(tour.id)
+                .then((files) => {
+                  setPhotoCount(files.filter((file) => isTourStorageMediaFileName(file.name)).length)
+                })
+                .catch((error) => {
                   console.error('Error checking photo count:', error)
-                }
-              }
-              checkPhotoCount()
+                })
             }, 1000)
           }}
         />

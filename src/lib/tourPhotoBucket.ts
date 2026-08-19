@@ -32,8 +32,8 @@ VALUES (
   'tour-photos',
   'tour-photos',
   true,
-  104857600, -- 100MB
-  ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml']
+  524288000, -- 500MB
+  ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif', 'video/mp4', 'video/quicktime']
 );
 
 -- Storage policies for folder-based access
@@ -145,21 +145,49 @@ export function getTourPhotoStoragePath(tourId: string, filename: string): strin
   return `${tourId}/${filename}`
 }
 
+export type TourStorageFile = {
+  id?: string | null
+  name: string
+  created_at?: string | null
+  updated_at?: string | null
+  metadata?: { size?: number; mimetype?: string } | null
+}
+
+/**
+ * Storage list 기본 한도(100)를 넘기도록 페이지네이션해서 폴더 전체를 가져온다.
+ * 원본+썸네일이 100개를 넘으면 갤러리에 51장만 보이는 현상의 원인.
+ */
+export async function listAllTourStorageFiles(tourId: string): Promise<TourStorageFile[]> {
+  const pageSize = 1000
+  const all: TourStorageFile[] = []
+  let offset = 0
+
+  for (;;) {
+    const { data, error } = await supabase.storage.from('tour-photos').list(tourId, {
+      limit: pageSize,
+      offset,
+      sortBy: { column: 'created_at', order: 'desc' },
+    })
+
+    if (error) {
+      throw error
+    }
+    if (!data?.length) break
+    all.push(...data)
+    if (data.length < pageSize) break
+    offset += pageSize
+  }
+
+  return all
+}
+
 /**
  * 특정 투어의 사진 목록을 조회하는 함수
  */
 export async function listTourPhotos(tourId: string): Promise<string[]> {
   try {
-    const { data, error } = await supabase.storage
-      .from('tour-photos')
-      .list(tourId)
-    
-    if (error) {
-      console.error('Error listing tour photos:', error)
-      return []
-    }
-    
-    return data?.map(file => file.name) || []
+    const files = await listAllTourStorageFiles(tourId)
+    return files.map((file) => file.name)
   } catch (error) {
     console.error('Error listing tour photos:', error)
     return []

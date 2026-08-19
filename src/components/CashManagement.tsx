@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Search, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, DollarSign, TrendingUp, TrendingDown, History, ChevronLeft, ChevronRight, Wand2, Landmark } from 'lucide-react'
+import { Search, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, DollarSign, TrendingUp, TrendingDown, History, ChevronLeft, ChevronRight, Wand2, Landmark, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDateTimeForDatetimeLocalInput, parseDatetimeLocalInputToISOString } from '@/utils/datetimeLocal'
 import { fetchReconciledSourceIds } from '@/lib/reconciliation-match-queries'
@@ -37,13 +37,9 @@ import type { CashAutoMatchInputRow } from '@/lib/cash-transaction-auto-match'
 import type { ExpenseAutoMatchInputRow } from '@/lib/expense-statement-auto-match'
 import { compareSortValues, type SortDir } from '@/lib/clientTableSort'
 import { DROPDOWN_Z_INDEX } from '@/lib/dialogZIndex'
+import { fetchAllSupabasePages } from '@/lib/supabasePaginatedFetch'
 import { getCashPaymentMethodFilterValues } from '@/lib/cashPaymentMethodValues'
-import {
-  buildCashTransactionsSearchOr,
-  buildPaymentRecordsNoteSearchOr,
-  buildCashCompanyExpenseSearchOr,
-  buildCashReservationExpenseSearchOr,
-} from '@/lib/cashTransactionSearch'
+import { compareCashLedgerChronology } from '@/lib/cashLedgerChronology'
 import { ExpensePaidToCombobox } from '@/components/expense/ExpensePaidToCombobox'
 import { isReusableExpenseVendor } from '@/lib/expenseVendors'
 import TableSortHeaderButton from '@/components/expenses/TableSortHeaderButton'
@@ -53,6 +49,7 @@ import CashColumnFiltersBar, {
 } from '@/components/expenses/CashColumnFiltersBar'
 import CashLedgerReviewControls from '@/components/expenses/CashLedgerReviewControls'
 import ProfitShareOffsetQuickButtons from '@/components/expenses/ProfitShareOffsetQuickButtons'
+import CashAtmReceiptPicker from '@/components/expenses/CashAtmReceiptPicker'
 import ProfitShareExcludeFields from '@/components/expenses/ProfitShareOffsetFields'
 import ProfitShareSplitFields, { ProfitSharePaidToPresets } from '@/components/expenses/ProfitShareSplitFields'
 import { MoveExpenseTableButton } from '@/components/expenses/MoveExpenseTableDialog'
@@ -71,7 +68,6 @@ import {
   emptyProfitShareExcludeForm,
   excludeFormFromTransaction,
   ensureBankDepositDescription,
-  formatProfitShareExcludeLabel,
   formatProfitShareSplitLabel,
   isBankDepositDescription,
   isLikelyProfitShareCashOut,
@@ -124,6 +120,9 @@ interface CashTransaction {
   share_chad_amount?: number | null
   share_joey_amount?: number | null
   profit_share_excluded?: boolean | null
+  atm_receipt_import_id?: string | null
+  /** 목록에 불러온 거래 기준, 해당 건 반영 후 현금 잔액 */
+  running_balance?: number
 }
 
 interface TransactionHistory {
@@ -173,6 +172,14 @@ function cashSourceBadge(source: CashTransaction['source']): {
     default:
       return { label: '현금 관리', variant: 'default' }
   }
+}
+
+function cashTypeBadgeVariant(
+  isBankDeposit: boolean,
+  transactionType: CashTransaction['transaction_type']
+): NonNullable<BadgeProps['variant']> {
+  if (isBankDeposit) return 'secondary'
+  return transactionType === 'deposit' ? 'default' : 'destructive'
 }
 
 type CashSourceValue = NonNullable<CashTransaction['source']>
@@ -293,6 +300,26 @@ function cashPaymentStatusFilterValue(tx: CashTransaction): string {
   return v || EMPTY_COL_FILTER
 }
 
+function matchesCashTableSearch(tx: CashTransaction, raw: string): boolean {
+  const needle = raw.trim().toLowerCase()
+  if (!needle) return true
+  const hay = [
+    tx.description,
+    tx.paid_to,
+    tx.notes,
+    tx.category,
+    tx.reference_id,
+    tx.payment_status,
+    tx.created_by_name,
+    tx.created_by,
+    tx.id,
+  ]
+    .filter((v) => Boolean(v && String(v).trim()))
+    .join('\n')
+    .toLowerCase()
+  return hay.includes(needle)
+}
+
 function cashSourceFilterValue(tx: CashTransaction): CashSourceValue {
   if (tx.source === 'payment_records') return 'payment_records'
   if (tx.source === 'company_expenses') return 'company_expenses'
@@ -322,6 +349,16 @@ function matchesColFilter(selected: ReadonlySet<string>, value: string): boolean
 
 function colEmptyLabel(value: string): string {
   return value === EMPTY_COL_FILTER ? '—' : value
+}
+
+function canLinkAtmReceipt(tx: CashTransaction): boolean {
+  return tx.source === 'cash_transactions' && isBankDepositDescription(tx.description)
+}
+
+function atmReceiptMailButtonClass(linked: boolean, extra = ''): string {
+  return linked
+    ? `${extra} bg-violet-600 text-white shadow-sm hover:bg-violet-700 hover:text-white`.trim()
+    : extra
 }
 
 function reconSourceFromCashTransaction(
@@ -413,6 +450,7 @@ export default function CashManagement() {
   const [exemptCashRowKeys, setExemptCashRowKeys] = useState<Set<string>>(() => new Set())
   const [stmtReconOpen, setStmtReconOpen] = useState(false)
   const [stmtReconCtx, setStmtReconCtx] = useState<ExpenseStatementReconContext | null>(null)
+  const [atmPickerTx, setAtmPickerTx] = useState<CashTransaction | null>(null)
   const [bulkAutoMatchOpen, setBulkAutoMatchOpen] = useState(false)
   const [transactions, setTransactions] = useState<CashTransaction[]>([])
   const [balance, setBalance] = useState<number>(0)
@@ -550,125 +588,83 @@ export default function CashManagement() {
       const cashPaymentMethods = await getCashPaymentMethodFilterValues()
       if (gen !== loadTransactionsGenRef.current) return
 
-      const searchOrCash = searchTerm ? buildCashTransactionsSearchOr(searchTerm) : null
-      const searchOrPayment = searchTerm ? buildPaymentRecordsNoteSearchOr(searchTerm) : null
-      const searchOrCompany = searchTerm ? buildCashCompanyExpenseSearchOr(searchTerm) : null
-      const searchOrReservation = searchTerm ? buildCashReservationExpenseSearchOr(searchTerm) : null
+      const rangeStartIso = startDate
+        ? (() => {
+            const start = new Date(startDate)
+            start.setHours(0, 0, 0, 0)
+            return start.toISOString()
+          })()
+        : null
+      const rangeEndIso = endDate
+        ? (() => {
+            const end = new Date(endDate)
+            end.setHours(23, 59, 59, 999)
+            return end.toISOString()
+          })()
+        : null
 
-      // 1. cash_transactions 테이블에서 데이터 가져오기
-      let cashTransactionsQuery = supabase
-        .from('cash_transactions')
-        .select('*')
-        .eq('operator_id', activeOperatorId)
-        .order('transaction_date', { ascending: false })
-        .order('created_at', { ascending: false })
-
-      if (searchOrCash) {
-        cashTransactionsQuery = cashTransactionsQuery.or(searchOrCash)
-      }
-
-      if (startDate) {
-        const start = new Date(startDate)
-        start.setHours(0, 0, 0, 0)
-        cashTransactionsQuery = cashTransactionsQuery.gte('transaction_date', start.toISOString())
-      }
-
-      if (endDate) {
-        const end = new Date(endDate)
-        end.setHours(23, 59, 59, 999)
-        cashTransactionsQuery = cashTransactionsQuery.lte('transaction_date', end.toISOString())
-      }
-
-      const { data: cashTransactions, error: cashError } = await cashTransactionsQuery
+      const { data: cashTransactions, error: cashError } = await fetchAllSupabasePages((from, to) => {
+        let q = supabase
+          .from('cash_transactions')
+          .select('*')
+          .eq('operator_id', activeOperatorId)
+          .order('transaction_date', { ascending: false })
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: true })
+        if (rangeStartIso) q = q.gte('transaction_date', rangeStartIso)
+        if (rangeEndIso) q = q.lte('transaction_date', rangeEndIso)
+        return q.range(from, to)
+      })
       if (cashError) throw cashError
 
-      // 2. payment_records 테이블에서 현금 입금 (PAYM032/PAYM001 + payment_method cash)
-      let paymentRecordsQuery = supabase
-        .from('payment_records')
-        .select('id, amount, submit_on, submit_by, note, reservation_id, payment_status')
-        .eq('operator_id', activeOperatorId)
-        .in('payment_method', cashPaymentMethods)
-        .order('submit_on', { ascending: false })
-
-      if (searchOrPayment) {
-        paymentRecordsQuery = paymentRecordsQuery.or(searchOrPayment)
-      }
-
-      if (startDate) {
-        const start = new Date(startDate)
-        start.setHours(0, 0, 0, 0)
-        paymentRecordsQuery = paymentRecordsQuery.gte('submit_on', start.toISOString())
-      }
-
-      if (endDate) {
-        const end = new Date(endDate)
-        end.setHours(23, 59, 59, 999)
-        paymentRecordsQuery = paymentRecordsQuery.lte('submit_on', end.toISOString())
-      }
-
-      const { data: paymentRecordsRaw, error: paymentError } = await paymentRecordsQuery
+      const { data: paymentRecordsRaw, error: paymentError } = await fetchAllSupabasePages((from, to) => {
+        let q = supabase
+          .from('payment_records')
+          .select('id, amount, submit_on, submit_by, note, reservation_id, payment_status')
+          .eq('operator_id', activeOperatorId)
+          .in('payment_method', cashPaymentMethods)
+          .order('submit_on', { ascending: false })
+          .order('id', { ascending: true })
+        if (rangeStartIso) q = q.gte('submit_on', rangeStartIso)
+        if (rangeEndIso) q = q.lte('submit_on', rangeEndIso)
+        return q.range(from, to)
+      })
       if (paymentError) {
         console.warn('payment_records 로드 오류:', paymentError)
       }
-      /** 보증금 요청 단계(미입금) — 실현 거래가 아니므로 현금 거래 내역에서 제외 */
+
       const paymentRecords = (paymentRecordsRaw || []).filter(
         (pr) => String(pr.payment_status ?? '').trim() !== 'Deposit Requested'
       )
 
-      // 3. company_expenses 테이블에서 현금 결제 데이터 가져오기
-      let companyExpensesQuery = supabase
-        .from('company_expenses')
-        .select('id, amount, submit_on, submit_by, description, notes, paid_for, paid_to')
-        .eq('operator_id', activeOperatorId)
-        .in('payment_method', cashPaymentMethods)
-        .order('submit_on', { ascending: false })
-
-      if (searchOrCompany) {
-        companyExpensesQuery = companyExpensesQuery.or(searchOrCompany)
-      }
-
-      if (startDate) {
-        const start = new Date(startDate)
-        start.setHours(0, 0, 0, 0)
-        companyExpensesQuery = companyExpensesQuery.gte('submit_on', start.toISOString())
-      }
-
-      if (endDate) {
-        const end = new Date(endDate)
-        end.setHours(23, 59, 59, 999)
-        companyExpensesQuery = companyExpensesQuery.lte('submit_on', end.toISOString())
-      }
-
-      const { data: companyExpenses, error: companyError } = await companyExpensesQuery
+      const { data: companyExpenses, error: companyError } = await fetchAllSupabasePages((from, to) => {
+        let q = supabase
+          .from('company_expenses')
+          .select('id, amount, submit_on, submit_by, description, notes, paid_for, paid_to')
+          .eq('operator_id', activeOperatorId)
+          .in('payment_method', cashPaymentMethods)
+          .order('submit_on', { ascending: false })
+          .order('id', { ascending: true })
+        if (rangeStartIso) q = q.gte('submit_on', rangeStartIso)
+        if (rangeEndIso) q = q.lte('submit_on', rangeEndIso)
+        return q.range(from, to)
+      })
       if (companyError) {
         console.warn('company_expenses 로드 오류:', companyError)
       }
 
-      // 4. reservation_expenses 테이블에서 Cash (현금) 데이터 가져오기
-      let reservationExpensesQuery = supabase
-        .from('reservation_expenses')
-        .select('id, amount, submit_on, submitted_by, note, paid_for, paid_to, reservation_id')
-        .eq('operator_id', activeOperatorId)
-        .in('payment_method', cashPaymentMethods)
-        .order('submit_on', { ascending: false })
-
-      if (searchOrReservation) {
-        reservationExpensesQuery = reservationExpensesQuery.or(searchOrReservation)
-      }
-
-      if (startDate) {
-        const start = new Date(startDate)
-        start.setHours(0, 0, 0, 0)
-        reservationExpensesQuery = reservationExpensesQuery.gte('submit_on', start.toISOString())
-      }
-
-      if (endDate) {
-        const end = new Date(endDate)
-        end.setHours(23, 59, 59, 999)
-        reservationExpensesQuery = reservationExpensesQuery.lte('submit_on', end.toISOString())
-      }
-
-      const { data: reservationExpenses, error: reservationExpensesError } = await reservationExpensesQuery
+      const { data: reservationExpenses, error: reservationExpensesError } = await fetchAllSupabasePages((from, to) => {
+        let q = supabase
+          .from('reservation_expenses')
+          .select('id, amount, submit_on, submitted_by, note, paid_for, paid_to, reservation_id')
+          .eq('operator_id', activeOperatorId)
+          .in('payment_method', cashPaymentMethods)
+          .order('submit_on', { ascending: false })
+          .order('id', { ascending: true })
+        if (rangeStartIso) q = q.gte('submit_on', rangeStartIso)
+        if (rangeEndIso) q = q.lte('submit_on', rangeEndIso)
+        return q.range(from, to)
+      })
       if (reservationExpensesError) {
         console.warn('reservation_expenses 로드 오류:', reservationExpensesError)
       }
@@ -680,6 +676,7 @@ export default function CashManagement() {
       if (cashTransactions) {
         const converted: CashTransaction[] = cashTransactions.map((t) => ({
           ...t,
+          amount: Number(t.amount) || 0,
           transaction_type: t.transaction_type as CashTransaction['transaction_type'],
           source: 'cash_transactions' as const,
           created_by_name: teamDisplayLabel(t.created_by),
@@ -691,7 +688,8 @@ export default function CashManagement() {
           offset_method: t.offset_method || null,
           share_chad_amount: t.share_chad_amount != null ? Number(t.share_chad_amount) : null,
           share_joey_amount: t.share_joey_amount != null ? Number(t.share_joey_amount) : null,
-          profit_share_excluded: Boolean(t.profit_share_excluded) || Boolean(t.offset_paid_to),
+                          profit_share_excluded: Boolean(t.profit_share_excluded) || Boolean(t.offset_paid_to),
+                          atm_receipt_import_id: t.atm_receipt_import_id ?? null,
         }))
         allTransactions.push(...converted)
       }
@@ -767,13 +765,28 @@ export default function CashManagement() {
         allTransactions.push(...converted)
       }
 
-      // 날짜순 정렬
-      allTransactions.sort((a, b) => {
-        const dateA = new Date(a.transaction_date).getTime()
-        const dateB = new Date(b.transaction_date).getTime()
-        if (dateA !== dateB) return dateB - dateA
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      const ledgerKey = (tx: CashTransaction) => ({
+        occurredAt: tx.transaction_date,
+        createdAt: tx.created_at,
+        source: tx.source,
+        id: tx.id,
       })
+      allTransactions.sort(
+        (a, b) => compareCashLedgerChronology(ledgerKey(b), ledgerKey(a))
+      )
+
+      const chronological = [...allTransactions].sort((a, b) =>
+        compareCashLedgerChronology(ledgerKey(a), ledgerKey(b))
+      )
+      let running = 0
+      const balanceById = new Map<string, number>()
+      for (const tx of chronological) {
+        running += tx.transaction_type === 'deposit' ? tx.amount : -tx.amount
+        balanceById.set(tx.id, running)
+      }
+      for (const tx of allTransactions) {
+        tx.running_balance = balanceById.get(tx.id) ?? 0
+      }
 
       setTransactions(allTransactions)
 
@@ -801,7 +814,7 @@ export default function CashManagement() {
         setLoading(false)
       }
     }
-  }, [searchTerm, startDate, endDate, teamDisplayLabel, activeOperatorId])
+  }, [startDate, endDate, teamDisplayLabel, activeOperatorId])
 
   const applySearch = useCallback(() => {
     setSearchTerm(searchInput.trim())
@@ -1408,6 +1421,7 @@ export default function CashManagement() {
 
   const columnFilteredTransactions = useMemo(() => {
     return transactions.filter((tx) => {
+      if (!matchesCashTableSearch(tx, searchTerm)) return false
       return (
         matchesColFilter(typeColFilters, cashTypeFilterValue(tx)) &&
         matchesColFilter(paidToColFilters, cashPaidToFilterValue(tx)) &&
@@ -1420,6 +1434,7 @@ export default function CashManagement() {
     })
   }, [
     transactions,
+    searchTerm,
     typeColFilters,
     paidToColFilters,
     categoryColFilters,
@@ -1439,42 +1454,22 @@ export default function CashManagement() {
     authorColFilters.size > 0 ||
     reviewColFilters.size > 0
 
-  // 전체 통계 (컬럼 필터 반영, 잔액 카드는 별도)
-  const totalDeposits = columnFilteredTransactions
-    .filter(t => t.transaction_type === 'deposit')
-    .reduce((sum, t) => sum + t.amount, 0)
-  
-  const totalWithdrawals = columnFilteredTransactions
-    .filter(t => t.transaction_type === 'withdrawal')
+  const totalDeposits = transactions
+    .filter((t) => t.transaction_type === 'deposit')
     .reduce((sum, t) => sum + t.amount, 0)
 
-  // 기간별 통계 계산
-  const periodTransactions = columnFilteredTransactions.filter(t => {
-    if (!startDate && !endDate) return true
-    const transactionDate = new Date(t.transaction_date)
-    if (startDate && transactionDate < new Date(startDate)) return false
-    if (endDate) {
-      const end = new Date(endDate)
-      end.setHours(23, 59, 59, 999)
-      if (transactionDate > end) return false
-    }
-    return true
-  })
+  const totalWithdrawals = transactions
+    .filter((t) => t.transaction_type === 'withdrawal')
+    .reduce((sum, t) => sum + t.amount, 0)
 
-  const periodDeposits = periodTransactions
-    .filter(t => t.transaction_type === 'deposit')
-    .reduce((sum, t) => sum + t.amount, 0)
-  
-  const periodWithdrawals = periodTransactions
-    .filter(t => t.transaction_type === 'withdrawal')
-    .reduce((sum, t) => sum + t.amount, 0)
-  
+  const periodDeposits = totalDeposits
+  const periodWithdrawals = totalWithdrawals
   const periodBalance = periodDeposits - periodWithdrawals
 
   const profitShareSummary = useMemo(() => {
-    const rows = periodTransactions.filter((tx) => isLikelyProfitShareCashOut(tx))
+    const rows = transactions.filter((tx) => isLikelyProfitShareCashOut(tx))
     return summarizeProfitShareRows(rows)
-  }, [periodTransactions])
+  }, [transactions])
 
   const handleCashTableSort = useCallback(
     (key: string) => {
@@ -1506,13 +1501,16 @@ export default function CashManagement() {
   const sortedTransactions = useMemo(() => {
     const rows = [...columnFilteredTransactions]
     rows.sort((a, b) => {
+      if (cashTableSortKey === 'date') {
+        const cmp = compareCashLedgerChronology(
+          { occurredAt: a.transaction_date, createdAt: a.created_at, source: a.source, id: a.id },
+          { occurredAt: b.transaction_date, createdAt: b.created_at, source: b.source, id: b.id }
+        )
+        return cashTableSortDir === 'asc' ? cmp : -cmp
+      }
       let va: unknown
       let vb: unknown
       switch (cashTableSortKey) {
-        case 'date':
-          va = a.transaction_date
-          vb = b.transaction_date
-          break
         case 'type':
           va = cashTypeSortValue(a)
           vb = cashTypeSortValue(b)
@@ -1520,6 +1518,10 @@ export default function CashManagement() {
         case 'amount':
           va = a.amount
           vb = b.amount
+          break
+        case 'balance':
+          va = a.running_balance ?? Number.NEGATIVE_INFINITY
+          vb = b.running_balance ?? Number.NEGATIVE_INFINITY
           break
         case 'description':
           va = a.description
@@ -2286,7 +2288,10 @@ export default function CashManagement() {
                             ) : null}
                             <div>
                               <p className="text-xs text-gray-500">{dateStr}</p>
-                              <Badge variant={transaction.transaction_type === 'deposit' ? 'default' : 'destructive'} className="text-xs mt-1">
+                              <Badge
+                                variant={cashTypeBadgeVariant(isBankDeposit, transaction.transaction_type)}
+                                className={`text-xs mt-1${isBankDeposit ? ' border-violet-200 bg-violet-100 text-violet-800' : ''}`}
+                              >
                                 {displayType}
                               </Badge>
                             </div>
@@ -2296,18 +2301,19 @@ export default function CashManagement() {
                             {transaction.transaction_type === 'deposit' ? '+' : '-'}
                             ${transaction.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </p>
+                          {transaction.running_balance != null ? (
+                            <p className="text-xs text-muted-foreground tabular-nums mt-0.5">
+                              잔액 ${transaction.running_balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                          ) : null}
                         </div>
                         <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs text-gray-600 border-t border-gray-100 pt-3">
                           <span className="text-gray-400">설명</span>
-                          <span className="truncate">{transaction.description || '-'}</span>
+                          <span className="truncate" title={transaction.description || undefined}>
+                            {transaction.description || '-'}
+                          </span>
                           <span className="text-gray-400">결제처</span>
                           <span className="truncate">{transaction.paid_to?.trim() || '—'}</span>
-                          {formatProfitShareExcludeLabel(transaction) ? (
-                            <>
-                              <span className="text-gray-400">상계</span>
-                              <span className="truncate">{formatProfitShareExcludeLabel(transaction)}</span>
-                            </>
-                          ) : null}
                           {formatProfitShareSplitLabel(transaction) ? (
                             <>
                               <span className="text-gray-400">분배</span>
@@ -2351,6 +2357,20 @@ export default function CashManagement() {
                               disabled={offsetSavingId === transaction.id || saving}
                               onChange={(excluded) => void handleToggleProfitShareExcluded(transaction, excluded)}
                             />
+                          ) : null}
+                          {canLinkAtmReceipt(transaction) ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={atmReceiptMailButtonClass(
+                                Boolean(transaction.atm_receipt_import_id),
+                                'h-10 w-10 p-0 min-h-[44px]'
+                              )}
+                              onClick={() => setAtmPickerTx(transaction)}
+                              title={transaction.atm_receipt_import_id ? 'ATM Receipt 연결됨' : 'ATM Receipt 연결'}
+                            >
+                              <Mail className={`w-4 h-4${transaction.atm_receipt_import_id ? ' fill-current' : ''}`} />
+                            </Button>
                           ) : null}
                           <Button variant="ghost" size="sm" className="h-10 w-10 p-0 min-h-[44px]" onClick={() => handleViewHistory(transaction)} title="히스토리">
                             <History className="w-4 h-4" />
@@ -2430,7 +2450,7 @@ export default function CashManagement() {
                           onClick={() => handleCashTableSort('date')}
                         />
                       </TableHead>
-                      <TableHead className="w-32 min-w-[8rem] max-w-[8.5rem] pl-2 py-2 align-bottom">
+                      <TableHead className="w-40 min-w-[10rem] max-w-[11rem] pl-2 py-2 align-bottom">
                         <CashColumnHeader
                           label="유형"
                           sortKey="type"
@@ -2451,7 +2471,15 @@ export default function CashManagement() {
                           onClick={() => handleCashTableSort('amount')}
                         />
                       </TableHead>
-                      <TableHead className="py-2 align-bottom">
+                      <TableHead className="py-2 align-bottom text-right">
+                        <TableSortHeaderButton
+                          label="잔액"
+                          active={cashTableSortKey === 'balance'}
+                          dir={cashTableSortDir}
+                          onClick={() => handleCashTableSort('balance')}
+                        />
+                      </TableHead>
+                      <TableHead className="w-[16rem] max-w-[16rem] py-2 align-bottom">
                         <TableSortHeaderButton
                           label="설명"
                           active={cashTableSortKey === 'description'}
@@ -2533,13 +2561,13 @@ export default function CashManagement() {
                           searchable={false}
                         />
                       </TableHead>
-                      <TableHead className="text-right w-64 min-w-[16rem] py-2">작업</TableHead>
+                      <TableHead className="text-right w-[22rem] min-w-[22rem] py-2">작업</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {paginatedTransactions.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={14} className="py-8 text-center text-sm text-gray-500">
+                        <TableCell colSpan={15} className="py-8 text-center text-sm text-gray-500">
                           {hasActiveColFilters ? '선택한 필터에 맞는 거래가 없습니다.' : '거래 내역이 없습니다.'}
                         </TableCell>
                       </TableRow>
@@ -2549,7 +2577,14 @@ export default function CashManagement() {
                       const reconSrc = reconSourceFromCashTransaction(transaction)
                       const rowExempt = isCashRowExempt(transaction, exemptCashRowKeys)
                       const rowMatched = isCashRowStmtMatched(transaction, reconciledCashRowKeys)
-                      
+                      const descriptionText =
+                        transaction.description?.trim() ||
+                        (transaction.source === 'payment_records' && transaction.reference_id
+                          ? `예약 결제 (${transaction.reference_id})`
+                          : transaction.source === 'reservation_expenses' && transaction.reference_id
+                            ? `예약 지출 (${transaction.reference_id})`
+                            : '-')
+
                       return (
                         <TableRow key={transaction.id} className="h-10">
                           <TableCell className="py-1 w-10 text-center align-middle">
@@ -2594,14 +2629,14 @@ export default function CashManagement() {
                               return `${year}. ${month}. ${day}.`
                             })()}
                           </TableCell>
-                          <TableCell className="w-32 max-w-[8.5rem] pl-2 py-1">
+                          <TableCell className="w-40 min-w-[10rem] max-w-[11rem] pl-2 py-1">
                             {(() => {
                               const isBankDeposit = transaction.description?.includes('은행 Deposit') || transaction.description === '은행 Deposit'
                               const displayType = isBankDeposit ? '은행 Deposit' : (transaction.transaction_type === 'deposit' ? '입금' : '출금')
                               return (
                                 <Badge
-                                  variant={transaction.transaction_type === 'deposit' ? 'default' : 'destructive'}
-                                  className="flex items-center gap-1 w-fit text-xs"
+                                  variant={cashTypeBadgeVariant(isBankDeposit, transaction.transaction_type)}
+                                  className={`flex items-center gap-1 w-fit text-xs${isBankDeposit ? ' border-violet-200 bg-violet-100 text-violet-800' : ''}`}
                                 >
                                   {transaction.transaction_type === 'deposit' ? (
                                     <ArrowDownCircle className="w-3 h-3" />
@@ -2619,20 +2654,28 @@ export default function CashManagement() {
                               ${transaction.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </span>
                           </TableCell>
-                          <TableCell className="py-1 text-sm">
+                          <TableCell className="py-1 text-sm text-right tabular-nums text-muted-foreground">
+                            {transaction.running_balance != null
+                              ? `$${transaction.running_balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : '—'}
+                          </TableCell>
+                          <TableCell className="w-[16rem] max-w-[16rem] py-1 text-sm align-middle">
                             {(transaction.source === 'payment_records' || transaction.source === 'reservation_expenses') && transaction.reference_id ? (
                               <button
+                                type="button"
                                 onClick={() => {
                                   setSelectedReservationId(transaction.reference_id)
                                   setShowReservationModal(true)
                                 }}
-                                className="text-primary hover:text-primary/80 hover:underline cursor-pointer"
-                                title="예약 상세 보기"
+                                className="block w-full truncate text-left text-primary hover:text-primary/80 hover:underline cursor-pointer"
+                                title={descriptionText}
                               >
-                                {transaction.description || (transaction.source === 'payment_records' ? `예약 결제 (${transaction.reference_id})` : `예약 지출 (${transaction.reference_id})`)}
+                                {descriptionText}
                               </button>
                             ) : (
-                              transaction.description || '-'
+                              <span className="block truncate" title={descriptionText === '-' ? undefined : descriptionText}>
+                                {descriptionText}
+                              </span>
                             )}
                           </TableCell>
                           <TableCell
@@ -2640,7 +2683,6 @@ export default function CashManagement() {
                             title={
                               [
                                 transaction.paid_to?.trim() || '',
-                                formatProfitShareExcludeLabel(transaction) || '',
                                 formatProfitShareSplitLabel(transaction) || '',
                               ]
                                 .filter(Boolean)
@@ -2648,11 +2690,6 @@ export default function CashManagement() {
                             }
                           >
                             <div className="truncate">{transaction.paid_to?.trim() || '—'}</div>
-                            {formatProfitShareExcludeLabel(transaction) ? (
-                              <div className="text-[11px] text-muted-foreground truncate">
-                                {formatProfitShareExcludeLabel(transaction)}
-                              </div>
-                            ) : null}
                             {formatProfitShareSplitLabel(transaction) ? (
                               <div className="text-[11px] text-muted-foreground truncate">
                                 {formatProfitShareSplitLabel(transaction)}
@@ -2692,7 +2729,7 @@ export default function CashManagement() {
                               )
                             })()}
                           </TableCell>
-                          <TableCell className="text-right w-64 min-w-[16rem] py-1">
+                          <TableCell className="text-right w-[22rem] min-w-[22rem] py-1">
                             <div className="flex justify-end gap-1 flex-wrap items-center">
                               {canToggleProfitShareExcluded(transaction) ? (
                                 <ProfitShareOffsetQuickButtons
@@ -2700,6 +2737,17 @@ export default function CashManagement() {
                                   disabled={offsetSavingId === transaction.id || saving}
                                   onChange={(excluded) => void handleToggleProfitShareExcluded(transaction, excluded)}
                                 />
+                              ) : null}
+                              {canLinkAtmReceipt(transaction) ? (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className={atmReceiptMailButtonClass(Boolean(transaction.atm_receipt_import_id))}
+                                  onClick={() => setAtmPickerTx(transaction)}
+                                  title={transaction.atm_receipt_import_id ? 'ATM Receipt 연결됨' : 'ATM Receipt 연결'}
+                                >
+                                  <Mail className={`w-4 h-4${transaction.atm_receipt_import_id ? ' fill-current' : ''}`} />
+                                </Button>
                               ) : null}
                               <Button
                                 variant="ghost"
@@ -3346,6 +3394,20 @@ export default function CashManagement() {
         context={stmtReconCtx}
         onApplied={() => void loadTransactions()}
       />
+
+      {atmPickerTx ? (
+        <CashAtmReceiptPicker
+          open
+          onOpenChange={(open) => {
+            if (!open) setAtmPickerTx(null)
+          }}
+          cashTransactionId={atmPickerTx.id}
+          amount={Math.abs(Number(atmPickerTx.amount ?? 0))}
+          transactionDate={atmPickerTx.transaction_date}
+          linkedImportId={atmPickerTx.atm_receipt_import_id}
+          onLinked={() => void loadTransactions()}
+        />
+      ) : null}
 
       <CashTransactionBulkAutoMatchModal
         open={bulkAutoMatchOpen}

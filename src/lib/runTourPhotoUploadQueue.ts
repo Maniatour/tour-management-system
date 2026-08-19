@@ -1,11 +1,18 @@
 import { supabase } from '@/lib/supabase'
 import { ensureFreshAuthSessionForUpload } from '@/lib/uploadClient'
-import { createThumbnail, getThumbnailFileName } from '@/lib/imageUtils'
+import {
+  createThumbnail,
+  createVideoThumbnail,
+  getJpegThumbnailFileName,
+  getThumbnailFileName,
+} from '@/lib/imageUtils'
 import {
   dedupeFilesByContent,
   inferTourPhotoMimeType,
-  isLikelyTourPhotoFile,
+  isLikelyTourMediaFile,
+  isLikelyTourVideoFile,
   runWithConcurrency,
+  tourPhotoMaxBytesForFile,
   tourPhotoMetadataKey,
   tourPhotoStorageExtension,
   withUploadRetries,
@@ -16,11 +23,20 @@ import {
   updateTourPhotoUploadProgress,
 } from '@/lib/tourPhotoUploadSession'
 
+export type TourPhotoUploadQueueLabels = {
+  noFiles: string
+  mediaOnlyError: string
+  fileTooLarge: string
+  duplicateInSelection: string
+  alreadyUploaded: string
+  nothingToUpload: string
+}
+
 export type TourPhotoUploadQueueParams = {
   files: File[]
   tourId: string
   uploadedBy: string
-  imageOnlyErrorLabel: string
+  labels: TourPhotoUploadQueueLabels
 }
 
 export type TourPhotoUploadQueueResult = {
@@ -40,13 +56,17 @@ export function dispatchTourPhotoUploadFinished(tourId: string) {
   window.dispatchEvent(new CustomEvent(FINISHED_EVENT, { detail: { tourId } }))
 }
 
+function interpolate(template: string, values: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ''))
+}
+
 /**
- * 투어 사진 다중 업로드 (전역 진행 세션 사용 — 페이지 이동 후에도 Promise는 계속 실행됨)
+ * 투어 사진·영상 다중 업로드 (전역 진행 세션 사용 — 페이지 이동 후에도 Promise는 계속 실행됨)
  */
 export async function runTourPhotoUploadQueue(
   params: TourPhotoUploadQueueParams
 ): Promise<TourPhotoUploadQueueResult> {
-  const { files, tourId, uploadedBy, imageOnlyErrorLabel } = params
+  const { files, tourId, uploadedBy, labels } = params
 
   const empty: TourPhotoUploadQueueResult = {
     totalSuccessful: 0,
@@ -58,7 +78,7 @@ export async function runTourPhotoUploadQueue(
 
   if (!files.length) {
     endTourPhotoUploadSession()
-    return { ...empty, userMessages: ['파일이 선택되지 않았습니다.'] }
+    return { ...empty, userMessages: [labels.noFiles] }
   }
 
   let totalSuccessful = 0
@@ -70,13 +90,23 @@ export async function runTourPhotoUploadQueue(
   try {
     await ensureFreshAuthSessionForUpload()
 
-    const { data: existingRows } = await supabase
-      .from('tour_photos')
-      .select('file_name, file_size')
-      .eq('tour_id', tourId)
+    const pageSize = 1000
+    const existingRows: Array<{ file_name: string; file_size: number }> = []
+    let from = 0
+    for (;;) {
+      const { data: page } = await supabase
+        .from('tour_photos')
+        .select('file_name, file_size')
+        .eq('tour_id', tourId)
+        .range(from, from + pageSize - 1)
+      if (!page?.length) break
+      existingRows.push(...page)
+      if (page.length < pageSize) break
+      from += pageSize
+    }
 
     const existingMeta = new Set(
-      (existingRows || []).map((r: { file_name: string; file_size: number }) => `${r.file_name}\0${r.file_size}`)
+      existingRows.map((r) => `${r.file_name}\0${r.file_size}`)
     )
 
     const deduped = await dedupeFilesByContent(files)
@@ -97,16 +127,16 @@ export async function runTourPhotoUploadQueue(
       endTourPhotoUploadSession()
       const parts: string[] = []
       if (skippedDuplicateContent > 0) {
-        parts.push(`선택한 사진 중 동일한 이미지 ${skippedDuplicateContent}장은 한 번만 올립니다.`)
+        parts.push(interpolate(labels.duplicateInSelection, { count: skippedDuplicateContent }))
       }
       if (skippedAlreadyUploaded > 0) {
-        parts.push(`이미 이 투어에 올라간 사진과 같은 파일(이름·크기) ${skippedAlreadyUploaded}장은 건너뛰었습니다.`)
+        parts.push(interpolate(labels.alreadyUploaded, { count: skippedAlreadyUploaded }))
       }
       return {
         ...empty,
         skippedDuplicateContent,
         skippedAlreadyUploaded,
-        userMessages: parts.length > 0 ? [parts.join('\n')] : ['업로드할 새 사진이 없습니다.'],
+        userMessages: parts.length > 0 ? [parts.join('\n')] : [labels.nothingToUpload],
       }
     }
 
@@ -118,18 +148,26 @@ export async function runTourPhotoUploadQueue(
       await ensureFreshAuthSessionForUpload().catch(() => {})
     }
 
+    const hasLargeVideo = toUpload.some(
+      (file) => isLikelyTourVideoFile(file) && file.size > 20 * 1024 * 1024
+    )
+    const concurrency = hasLargeVideo ? 2 : 4
+
     try {
-      await runWithConcurrency(toUpload, 4, async (file) => {
+      await runWithConcurrency(toUpload, concurrency, async (file) => {
       try {
         await withUploadRetries(
           async () => {
-            if (file.size > 50 * 1024 * 1024) {
-              throw new Error(`파일 크기가 너무 큽니다: ${file.name} (최대 50MB)`)
+            const maxBytes = tourPhotoMaxBytesForFile(file)
+            if (file.size > maxBytes) {
+              const maxMb = Math.round(maxBytes / (1024 * 1024))
+              throw new Error(interpolate(labels.fileTooLarge, { name: file.name, maxMb }))
             }
-            if (!isLikelyTourPhotoFile(file)) {
-              throw new Error(`${imageOnlyErrorLabel}: ${file.name}`)
+            if (!isLikelyTourMediaFile(file)) {
+              throw new Error(`${labels.mediaOnlyError}: ${file.name}`)
             }
 
+            const isVideo = isLikelyTourVideoFile(file)
             const resolvedMime = inferTourPhotoMimeType(file)
             const safeExt = tourPhotoStorageExtension(file)
             const fileName = `${Date.now()}-${crypto.randomUUID()}.${safeExt}`
@@ -148,8 +186,12 @@ export async function runTourPhotoUploadQueue(
 
             let thumbnailPath: string | null = null
             try {
-              const thumbnailBlob = await createThumbnail(file, 400, 400, 0.8)
-              const thumbnailFileName = getThumbnailFileName(fileName)
+              const thumbnailBlob = isVideo
+                ? await createVideoThumbnail(file, 400, 400, 0.8)
+                : await createThumbnail(file, 400, 400, 0.8)
+              const thumbnailFileName = isVideo
+                ? getJpegThumbnailFileName(fileName)
+                : getThumbnailFileName(fileName)
               thumbnailPath = `${tourId}/${thumbnailFileName}`
               const thumbnailFile = new File([thumbnailBlob], thumbnailFileName, { type: 'image/jpeg' })
               const { error: thumbnailUploadError } = await supabase.storage

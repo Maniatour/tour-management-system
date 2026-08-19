@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import {
+  getWeatherCancelCreditFollowUpState,
   showChangeRequestButton,
   showCreditReceivedButton,
   showPaymentCompleteButton,
@@ -239,6 +240,7 @@ export default function TicketBookingCardActionBar({
   const [creditError, setCreditError] = useState<string | null>(null)
   const saving = handlers.savingId === booking.id || Boolean(busy)
   const issueOn = isTicketBookingIssueReported(booking.operation_status)
+  const weatherCreditPending = getWeatherCancelCreditFollowUpState(booking) === 'pending'
   const hasInv = handlers.hasInvoiceAttachment?.(booking) === true
   const hasZelle = handlers.hasZelleAttachment?.(booking) === true
   const stmtOn = handlers.statementMatched?.(booking) === true
@@ -444,7 +446,15 @@ export default function TicketBookingCardActionBar({
       ) : null}
       {showCreditReceivedButton(booking) ? (
         <TicketBookingIconTipButton
-          label={isEn ? 'Credit received' : '크레딧 받음'}
+          label={
+            weatherCreditPending
+              ? isEn
+                ? 'Mark vendor credit received'
+                : '벤더 크레딧 받음'
+              : isEn
+                ? 'Credit received'
+                : '크레딧 받음'
+          }
           className="border-cyan-300 bg-cyan-50 text-cyan-950 hover:bg-cyan-100"
           disabled={saving}
           onClick={openCreditModal}
@@ -605,11 +615,23 @@ export default function TicketBookingCardActionBar({
           onClick={(e) => e.stopPropagation()}
         >
           <DialogHeader>
-            <DialogTitle>{isEn ? 'Credit received' : '크레딧 받음'}</DialogTitle>
+            <DialogTitle>
+              {weatherCreditPending
+                ? isEn
+                  ? 'Weather cancel — credit received'
+                  : '날씨 취소 · 크레딧 받음'
+                : isEn
+                  ? 'Credit received'
+                  : '크레딧 받음'}
+            </DialogTitle>
             <DialogDescription>
-              {isEn
-                ? 'Keep the payment as paid. Use this when the vendor issued credit instead of a cash refund.'
-                : '결제는 완료 상태로 유지됩니다. 벤더가 현금 대신 크레딧을 준 경우에만 사용하세요.'}
+              {weatherCreditPending
+                ? isEn
+                  ? 'This booking was cancelled for weather after payment. Record the vendor credit amount to close follow-up.'
+                  : '날씨로 취소됐고 이미 결제한 건입니다. 벤더 크레딧 금액을 기록하면 팔로업이 완료됩니다.'
+                : isEn
+                  ? 'Keep the payment as paid. Use this when the vendor issued credit instead of a cash refund.'
+                  : '결제는 완료 상태로 유지됩니다. 벤더가 현금 대신 크레딧을 준 경우에만 사용하세요.'}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={(e) => void submitCreditReceived(e)} className="space-y-3">

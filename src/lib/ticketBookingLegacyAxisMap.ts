@@ -131,6 +131,7 @@ export function deriveLegacyTicketBookingStatusFromAxes(
   _os: string
 ): string {
   if (bs === 'cancelled') return 'cancelled'
+  if (bs === 'weather_cancelled') return 'cancelled'
   if (bs === 'cancel_requested') return 'cancellation_requested'
   if (bs === 'failed' || bs === 'expired') return 'cancelled'
   if (rs === 'credit_received' || rs === 'partially_refunded') return 'credit'

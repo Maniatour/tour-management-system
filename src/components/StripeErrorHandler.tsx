@@ -13,6 +13,11 @@ export default function StripeErrorHandler() {
     // 전역 Promise rejection 핸들러
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       const error = event.reason
+
+      if (isAbortLikeError(error)) {
+        event.preventDefault()
+        return
+      }
       
       // Stripe 배너 리소스 로딩 오류 무시
       if (
@@ -60,9 +65,20 @@ export default function StripeErrorHandler() {
       originalWarn(...(args as []))
     }
 
+    const originalError = console.error
+    console.error = (...args: unknown[]) => {
+      if (args.some((a) => isAbortLikeError(a))) return
+      originalError(...(args as []))
+    }
+
     // 일반 에러 핸들러
     const handleError = (event: ErrorEvent) => {
       const error = event.error
+
+      if (isAbortLikeError(error) || isAbortLikeError(event.message)) {
+        event.preventDefault()
+        return false
+      }
       
       // Stripe 관련 fetch 오류 무시
       if (
@@ -85,8 +101,8 @@ export default function StripeErrorHandler() {
     return () => {
       window.removeEventListener('unhandledrejection', handleUnhandledRejection)
       window.removeEventListener('error', handleError)
-      // console.warn 복원
       console.warn = originalWarn
+      console.error = originalError
     }
   }, [])
 

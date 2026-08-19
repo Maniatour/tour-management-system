@@ -42,5 +42,11 @@ export function isTicketBookingOffsetOrCancelRow(row: {
   const legacy = String(row.status ?? '').toLowerCase();
   if (legacy === 'cancelled' || legacy === 'canceled') return true;
   const axis = String(row.booking_status ?? '').toLowerCase();
-  return axis === 'cancelled' || axis === 'canceled';
+  return (
+    axis === 'cancelled' ||
+    axis === 'canceled' ||
+    axis === 'weather_cancelled' ||
+    axis === 'failed' ||
+    axis === 'expired'
+  );
 }
