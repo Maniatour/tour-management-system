@@ -16,7 +16,11 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
-import { useReservationFormChildOverlayZIndex } from '@/components/reservation/ReservationFormModalStackContext'
+import { childModalZIndex, DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
+import {
+  useReservationFormChildOverlayZIndex,
+  useReservationFormGrandchildOverlayZIndex,
+} from '@/components/reservation/ReservationFormModalStackContext'
 
 export type QuickPaymentFormInitials = {
   email?: string
@@ -45,6 +49,8 @@ type QuickPaymentRequestFormProps = {
   /** page: 독립 페이지 / modal: 모달 본문 */
   variant?: 'page' | 'modal'
   onClose?: () => void
+  /** 빠른 금액 청구 모달 오버레이 z-index. 수수료 확인창은 이 위에 띄움 */
+  overlayZIndex?: number
 }
 
 export default function QuickPaymentRequestForm({
@@ -52,10 +58,14 @@ export default function QuickPaymentRequestForm({
   initials,
   variant = 'page',
   onClose,
+  overlayZIndex,
 }: QuickPaymentRequestFormProps) {
   const params = useParams()
   const locale = (localeProp ?? (params?.locale === 'en' ? 'en' : 'ko')) as 'ko' | 'en'
   const isModal = variant === 'modal'
+  const stackedConfirmZIndex = useReservationFormGrandchildOverlayZIndex(DIALOG_Z_INDEX.elevated)
+  const confirmZIndex =
+    overlayZIndex != null ? childModalZIndex(overlayZIndex) : stackedConfirmZIndex
 
   const [email, setEmail] = useState(initials?.email ?? '')
   const [recipientName, setRecipientName] = useState(initials?.recipientName ?? '')
@@ -87,6 +97,18 @@ export default function QuickPaymentRequestForm({
     setShowCardFeeConfirm(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- remount via key handles open; avoid wiping result on parent re-renders
   }, [initials?.email, initials?.recipientName, initials?.description, initials?.amountUsd, initials?.reservationId])
+
+  useEffect(() => {
+    if (!showCardFeeConfirm) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation()
+      setShowCardFeeConfirm(false)
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [showCardFeeConfirm])
 
   const resetForm = () => {
     setEmail(initials?.email ?? '')
@@ -459,7 +481,9 @@ export default function QuickPaymentRequestForm({
       {showCardFeeConfirm
         ? createPortal(
             <div
-              className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4"
+              className="fixed inset-0 flex items-center justify-center bg-black/50 p-4 pointer-events-auto"
+              style={{ zIndex: confirmZIndex }}
+              data-quick-payment-card-fee-confirm
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
@@ -774,7 +798,7 @@ export function QuickPaymentRequestModal({
   initials,
   overlayZIndex,
 }: QuickPaymentRequestModalProps) {
-  const stackedZIndex = useReservationFormChildOverlayZIndex(80)
+  const stackedZIndex = useReservationFormChildOverlayZIndex(DIALOG_Z_INDEX.elevated)
   const resolvedOverlayZIndex = overlayZIndex ?? stackedZIndex
   const [view, setView] = useState<'form' | 'history'>('form')
   const [formInitials, setFormInitials] = useState<QuickPaymentFormInitials | undefined>(initials)
@@ -800,6 +824,7 @@ export function QuickPaymentRequestModal({
     if (!open) return
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
+      if (document.querySelector('[data-quick-payment-card-fee-confirm]')) return
       e.preventDefault()
       e.stopPropagation()
       onClose()
@@ -899,6 +924,7 @@ export function QuickPaymentRequestModal({
             {...(formInitials ? { initials: formInitials } : {})}
             variant="modal"
             onClose={onClose}
+            overlayZIndex={resolvedOverlayZIndex}
           />
         )}
       </div>
