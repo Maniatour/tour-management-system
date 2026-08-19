@@ -119,3 +119,45 @@ export function matchesCourseSearch(course: RepresentativeCourseLike, searchTerm
     (course.location || '').toLowerCase().includes(needle)
   )
 }
+
+export type CourseDescriptionSource = RepresentativeCourseLike & {
+  customer_name_ko?: string | null
+  customer_name_en?: string | null
+  customer_description_ko?: string | null
+  customer_description_en?: string | null
+}
+
+export function courseDisplayName(course: CourseDescriptionSource, locale = 'ko'): string {
+  const isEnglish = locale === 'en' || locale.startsWith('en')
+  return (
+    isEnglish
+      ? (course.customer_name_en || course.customer_name_ko || course.name_en || course.name_ko || '')
+      : (course.customer_name_ko || course.customer_name_en || course.name_ko || course.name_en || '')
+  ).trim()
+}
+
+export function courseDisplayDescription(course: CourseDescriptionSource, locale = 'ko'): string {
+  const isEnglish = locale === 'en' || locale.startsWith('en')
+  return (
+    isEnglish
+      ? (course.customer_description_en || course.customer_description_ko || '')
+      : (course.customer_description_ko || course.customer_description_en || '')
+  ).trim()
+}
+
+export function listOrderedCourseDescriptions<T extends CourseDescriptionSource>(
+  orderedIds: string[],
+  allCourses: T[],
+  locale = 'ko'
+): T[] {
+  const byId = new Map(allCourses.map((course) => [course.id, course]))
+  const result: T[] = []
+  for (const id of orderedIds) {
+    const course = byId.get(id)
+    if (!course || isNonDestinationCourse(course)) continue
+    if (courseDisplayName(course, locale) || courseDisplayDescription(course, locale)) {
+      result.push(course)
+    }
+  }
+  return result
+}

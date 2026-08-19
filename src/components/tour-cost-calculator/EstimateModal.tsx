@@ -1,11 +1,13 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { X, Send, DollarSign, Users, Calendar, MapPin, Route, Plus, Save, Copy } from 'lucide-react'
+import { X, Send, DollarSign, Users, Calendar, MapPin, Route, Plus, Save, Copy, Clock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { loadHtml2Canvas, loadJsPDF } from '@/lib/lazyPdfLibs'
 import { stripSpacesFromContactInput } from '@/lib/contactInputUtils'
+import { listOrderedCourseDescriptions } from '@/lib/representativeTourCourses'
+import { resolveScheduleStopCoords, type GeoPoint } from '@/lib/quickQuoteWaypoints'
 import type { Database } from '@/lib/database.types'
 
 // Google Maps 타입 정의 - 다른 파일의 타입 선언과 충돌을 피하기 위해 any 사용
@@ -75,6 +77,7 @@ interface EstimateModalProps {
   tipAmount: number
   sellingPriceWithTip: number
   mileage: number | null
+  travelTime?: number | null
   configId?: string | null
   onClose: () => void
   onTourCourseDescriptionChange: (description: string) => void
@@ -83,6 +86,47 @@ interface EstimateModalProps {
 
 const formatUSD = (usd: number): string => {
   return `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+const GOOGLE_MAX_WAYPOINTS = 25
+
+function formatMileageLabel(mileage: number | null, isEnglish: boolean): string {
+  if (!mileage) return 'N/A'
+  const km = (mileage * 1.60934).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+  return isEnglish
+    ? `${mileage.toFixed(1)} miles (${km} km)`
+    : `${mileage.toFixed(1)} 마일 (${km} km)`
+}
+
+function formatDrivingTimeLabel(hours: number | null | undefined, isEnglish: boolean): string {
+  if (hours == null || hours <= 0) return 'N/A'
+  const h = Math.floor(hours)
+  const m = Math.round((hours % 1) * 60)
+  const base = `${hours.toFixed(1)} ${isEnglish ? 'hours' : '시간'}`
+  if (hours < 1) return base
+  return isEnglish ? `${base} (${h}h ${m}m)` : `${base} (${h}시간 ${m}분)`
+}
+
+function requestDrivingDirections(
+  service: { route: (request: unknown, cb: (result: unknown, status: string) => void) => void },
+  origin: GeoPoint,
+  destination: GeoPoint,
+  waypoints: GeoPoint[]
+): Promise<{ result: any; status: string }> {
+  return new Promise((resolve) => {
+    service.route(
+      {
+        origin,
+        destination,
+        waypoints: waypoints.map((point) => ({ location: point, stopover: true })),
+        travelMode: (window.google.maps as any).TravelMode.DRIVING,
+        optimizeWaypoints: false,
+      },
+      (result: any, status: any) => {
+        resolve({ result, status: String(status || '') })
+      }
+    )
+  })
 }
 
 // 모든 부모 이름을 계층적으로 가져오는 함수
@@ -117,6 +161,18 @@ const getFullCoursePath = (course: TourCourseInfo, tourCourses: TourCourseInfo[]
   return path.join(' > ')
 }
 
+function getValidDescriptionCourses(
+  courseItems: Array<{ courseId: string }>,
+  allCourses: TourCourseInfo[],
+  currentLocale: string
+): TourCourseInfo[] {
+  return listOrderedCourseDescriptions(
+    courseItems.map((item) => item.courseId),
+    allCourses,
+    currentLocale
+  )
+}
+
 export default function EstimateModal({
   customer,
   courses,
@@ -143,6 +199,7 @@ export default function EstimateModal({
   tipAmount,
   sellingPriceWithTip,
   mileage,
+  travelTime = null,
   configId: _configId,
   onClose,
   onTourCourseDescriptionChange: _onTourCourseDescriptionChange,
@@ -165,7 +222,13 @@ export default function EstimateModal({
   const [map, setMap] = useState<any>(null)
   const [directionsRenderer, setDirectionsRenderer] = useState<any>(null)
   const markersRef = useRef<any[]>([])
+  const extraRenderersRef = useRef<any[]>([])
   const [mapImageData, setMapImageData] = useState<string | null>(null)
+  const [routeDrivingHours, setRouteDrivingHours] = useState<number | null>(travelTime ?? null)
+
+  useEffect(() => {
+    setRouteDrivingHours(travelTime ?? null)
+  }, [travelTime])
 
   // 라스베가스 시간대 날짜 가져오기
   const getLasVegasDate = () => {
@@ -500,21 +563,21 @@ export default function EstimateModal({
   useEffect(() => {
     if (!map || !directionsRenderer || !window.google || !window.google.maps) return
 
-    // 기존 마커 제거
     if (markersRef.current) {
-      markersRef.current.forEach(marker => marker.setMap(null))
+      markersRef.current.forEach((marker) => marker.setMap(null))
       markersRef.current = []
     }
+    extraRenderersRef.current.forEach((renderer) => renderer.setMap(null))
+    extraRenderersRef.current = []
 
-    // 좌표가 있는 유효한 코스들만 필터링
-    const selected = courses
-      .map(c => tourCourses.find(tc => tc.id === c.courseId))
-      .filter((tc): tc is TourCourseInfo => 
-        !!tc && tc.start_latitude !== null && tc.start_latitude !== undefined &&
-        tc.start_longitude !== null && tc.start_longitude !== undefined
-      )
+    const stops = courses.map((course, index) => ({
+      index,
+      name: course.courseName,
+      coords: resolveScheduleStopCoords(course.courseId, tourCourses),
+    }))
+    const mapped = stops.filter((stop): stop is typeof stop & { coords: GeoPoint } => Boolean(stop.coords))
 
-    if (selected.length === 0) {
+    if (mapped.length === 0) {
       if (courses.length === 0) {
         map.setCenter({ lat: 36.1699, lng: -115.1398 })
         map.setZoom(8)
@@ -522,77 +585,97 @@ export default function EstimateModal({
       return
     }
 
-    // 마커 표시
-    selected.forEach((course, index) => {
-      if (!course.start_latitude || !course.start_longitude) return
-
-      const position = { lat: course.start_latitude, lng: course.start_longitude }
+    mapped.forEach((stop) => {
       const marker = new (window.google.maps as any).Marker({
-        position,
+        position: stop.coords,
         map,
-        title: course.customer_name_ko || course.customer_name_en || '',
+        title: stop.name || `${stop.index + 1}`,
         label: {
-          text: String(index + 1),
+          text: String(stop.index + 1),
           color: 'white',
-          fontWeight: 'bold'
-        } as any
+          fontWeight: 'bold',
+        } as any,
       })
-
       markersRef.current.push(marker)
     })
 
-    // 경로 계산 및 표시
-    if (selected.length >= 2 && (window.google.maps as any).DirectionsService) {
-      const directionsService = new (window.google.maps as any).DirectionsService()
-      const waypoints = selected.slice(1, -1).map(course => ({
-        location: { lat: course.start_latitude!, lng: course.start_longitude! },
-        stopover: true
-      }))
+    const bounds = new (window.google.maps as any).LatLngBounds()
+    mapped.forEach((stop) => bounds.extend(stop.coords))
 
-      // 첫 번째 경로: 첫 번째 코스 → ... → 마지막 코스
-      const forwardRequest: any = {
-        origin: { lat: selected[0].start_latitude!, lng: selected[0].start_longitude! },
-        destination: { lat: selected[selected.length - 1].start_latitude!, lng: selected[selected.length - 1].start_longitude! },
-        waypoints: waypoints.length > 0 ? waypoints : undefined,
-        travelMode: (window.google.maps as any).TravelMode.DRIVING,
-        optimizeWaypoints: false
-      }
-
-      directionsService.route(forwardRequest, (forwardResult: any, forwardStatus: any) => {
-        if (forwardStatus === (window.google.maps as any).DirectionsStatus?.OK && forwardResult) {
-          // 경로 표시
-          if (directionsRenderer) {
-            directionsRenderer.setDirections(forwardResult)
-          }
-          
-          // 경로에 맞게 지도 조정
-          const bounds = new (window.google.maps as any).LatLngBounds()
-          forwardResult.routes[0].legs.forEach((leg: any) => {
-            bounds.extend(leg.start_location)
-            bounds.extend(leg.end_location)
-          })
-          map.fitBounds(bounds)
-        }
-      })
-    } else if (selected.length === 1) {
-      map.setCenter({ lat: selected[0].start_latitude!, lng: selected[0].start_longitude! })
+    if (mapped.length === 1) {
+      map.setCenter(mapped[0].coords)
       map.setZoom(15)
-    } else if (selected.length > 0) {
-      // 경로가 없어도 모든 마커가 보이도록 조정
-      const bounds = new (window.google.maps as any).LatLngBounds()
-      selected.forEach(course => {
-        if (course.start_latitude && course.start_longitude) {
-          bounds.extend({ lat: course.start_latitude, lng: course.start_longitude })
-        }
-      })
+      return
+    }
+
+    if (!(window.google.maps as any).DirectionsService) {
       map.fitBounds(bounds)
-      if (selected.length === 1) {
-        map.setZoom(15)
+      return
+    }
+
+    let cancelled = false
+    const directionsService = new (window.google.maps as any).DirectionsService()
+    const points = mapped.map((stop) => stop.coords)
+
+    void (async () => {
+      let durationSec = 0
+      const results: any[] = []
+      let cursor = 0
+
+      while (cursor < points.length - 1) {
+        const hop = Math.min(points.length - 1 - cursor, GOOGLE_MAX_WAYPOINTS + 1)
+        const destIndex = cursor + hop
+        const { result, status } = await requestDrivingDirections(
+          directionsService,
+          points[cursor],
+          points[destIndex],
+          points.slice(cursor + 1, destIndex)
+        )
+        if (cancelled) return
+        if (status === 'OK' && result?.routes?.[0]?.legs) {
+          results.push(result)
+          for (const leg of result.routes[0].legs) {
+            durationSec += Number(leg.duration?.value || 0)
+          }
+        }
+        cursor = destIndex
       }
+
+      if (cancelled) return
+
+      if (results.length > 0) {
+        directionsRenderer.setDirections(results[0])
+        results.slice(1).forEach((result) => {
+          const extra = new (window.google.maps as any).DirectionsRenderer({
+            map,
+            suppressMarkers: true,
+            polylineOptions: {
+              strokeColor: '#3B82F6',
+              strokeWeight: 5,
+              strokeOpacity: 0.8,
+            },
+          })
+          extra.setDirections(result)
+          extraRenderersRef.current.push(extra)
+        })
+        if (durationSec > 0) {
+          setRouteDrivingHours(Math.round((durationSec / 3600) * 10) / 10)
+        }
+      }
+
+      map.fitBounds(bounds)
+    })()
+
+    return () => {
+      cancelled = true
     }
   }, [map, directionsRenderer, courses, tourCourses])
 
   const resolvedVehicleTypeName = vehicleTypeLabel ?? (vehicleType === 'minivan' ? '미니밴' : vehicleType === '9seater' ? '9인승' : '13인승')
+  const displayedDrivingHours = routeDrivingHours ?? travelTime ?? null
+  const routeStopsHtml = courses
+    .map((course, index) => `${index + 1}. ${course.courseName || (locale === 'en' ? 'Untitled stop' : '이름 없는 코스')}`)
+    .join('<br>')
 
   // PDF용 Estimate HTML 생성 (인보이스 스타일)
   const _generateEstimateHTMLForPDF = (mapImageDataParam?: string | null): string => {
@@ -601,49 +684,10 @@ export default function EstimateModal({
     const formattedDate = estimateDate ? new Date(estimateDate).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US') : new Date().toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')
     
     // 투어 코스 설명 생성
-    const courseOrderMap = new Map<string, number>()
-    courses.forEach((c, index) => {
-      courseOrderMap.set(c.courseId, index)
-    })
-    
-    const pointCourses = tourCourses.filter(course => {
-      const category = course.category?.toLowerCase() || ''
-      return courseOrderMap.has(course.id) && 
-             (category.includes('포인트') || category.includes('point'))
-    })
-
-    const validCourses = pointCourses.filter(course => {
-      const courseName = isEnglish 
-        ? (course.customer_name_en || course.customer_name_ko || '')
-        : (course.customer_name_ko || course.customer_name_en || '')
-      const courseDescription = isEnglish
-        ? (course.customer_description_en || course.customer_description_ko || '')
-        : (course.customer_description_ko || course.customer_description_en || '')
-      
-      return (courseName || '').trim() !== '' || (courseDescription || '').trim() !== ''
-    })
-
-    validCourses.sort((a, b) => {
-      const orderA = courseOrderMap.get(a.id) ?? Infinity
-      const orderB = courseOrderMap.get(b.id) ?? Infinity
-      return orderA - orderB
-    })
+    const validCourses = getValidDescriptionCourses(courses, tourCourses, locale)
 
     const courseDescriptionsHTML = validCourses.map(course => {
-      const parentName = course.parent 
-        ? (isEnglish 
-            ? (course.parent.customer_name_en || course.parent.customer_name_ko || '')
-            : (course.parent.customer_name_ko || course.parent.customer_name_en || ''))
-        : null
-      
-      const courseName = isEnglish 
-        ? (course.customer_name_en || course.customer_name_ko || '')
-        : (course.customer_name_ko || course.customer_name_en || '')
-      
-      const fullCourseName = parentName 
-        ? `${parentName} - ${courseName}`
-        : courseName
-      
+      const fullCourseName = getFullCoursePath(course, tourCourses, isEnglish)
       const courseDescription = isEnglish
         ? (course.customer_description_en || course.customer_description_ko || '')
         : (course.customer_description_ko || course.customer_description_en || '')
@@ -1059,9 +1103,16 @@ export default function EstimateModal({
           <h3>${isEnglish ? 'Route & Mileage' : '경로 및 마일리지'}</h3>
           <div class="map-container">
             <div class="map-header">
-              <div class="map-header-content">
-                <span style="font-size: 11px; font-weight: 500; color: #374151;">${isEnglish ? 'Total Mileage' : '총 마일리지'}</span>
-                <span style="font-size: 11px; font-weight: 600; color: #111827;">${mileage ? `${mileage.toFixed(1)} ${isEnglish ? 'miles' : '마일'} (${(mileage * 1.60934).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km)` : 'N/A'}</span>
+              <div class="map-header-content" style="flex-direction:column;align-items:stretch;gap:6px;">
+                <div style="display:flex;justify-content:space-between;gap:12px;">
+                  <span style="font-size: 11px; font-weight: 500; color: #374151;">${isEnglish ? 'Total Mileage' : '총 마일리지'}</span>
+                  <span style="font-size: 11px; font-weight: 600; color: #111827;">${formatMileageLabel(mileage, isEnglish)}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;gap:12px;">
+                  <span style="font-size: 11px; font-weight: 500; color: #374151;">${isEnglish ? 'Total driving time' : '총 주행 시간'}</span>
+                  <span style="font-size: 11px; font-weight: 600; color: #111827;">${formatDrivingTimeLabel(displayedDrivingHours, isEnglish)}</span>
+                </div>
+                ${courses.length > 0 ? `<div style="margin-top:4px;font-size:11px;line-height:1.55;color:#111827;font-weight:500;">${routeStopsHtml}</div>` : ''}
               </div>
             </div>
             <div class="map-image-wrapper">
@@ -1713,9 +1764,16 @@ export default function EstimateModal({
           <h3>${locale === 'en' ? 'Route & Mileage' : '경로 및 마일리지'}</h3>
           <div class="map-container">
             <div class="map-header">
-              <div class="map-header-content">
-                <span style="font-size: 15px; font-weight: 500; color: #374151;">${locale === 'en' ? 'Total Mileage' : '총 마일리지'}</span>
-                <span style="font-size: 15px; font-weight: 600; color: #111827;">${mileage ? `${mileage.toFixed(1)} ${locale === 'en' ? 'miles' : '마일'} (${(mileage * 1.60934).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km)` : 'N/A'}</span>
+              <div class="map-header-content" style="flex-direction:column;align-items:stretch;gap:8px;">
+                <div style="display:flex;justify-content:space-between;gap:12px;">
+                  <span style="font-size: 15px; font-weight: 500; color: #374151;">${locale === 'en' ? 'Total Mileage' : '총 마일리지'}</span>
+                  <span style="font-size: 15px; font-weight: 600; color: #111827;">${formatMileageLabel(mileage, locale === 'en')}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;gap:12px;">
+                  <span style="font-size: 15px; font-weight: 500; color: #374151;">${locale === 'en' ? 'Total driving time' : '총 주행 시간'}</span>
+                  <span style="font-size: 15px; font-weight: 600; color: #111827;">${formatDrivingTimeLabel(displayedDrivingHours, locale === 'en')}</span>
+                </div>
+                ${courses.length > 0 ? `<div style="margin-top:2px;font-size:13px;line-height:1.55;color:#111827;font-weight:500;">${routeStopsHtml}</div>` : ''}
               </div>
             </div>
             <div class="map-image-wrapper">
@@ -1830,33 +1888,7 @@ export default function EstimateModal({
       }
 
       // 페이지 3부터: 투어 코스 설명 (이어서 배치)
-      const courseOrderMap = new Map<string, number>()
-      courses.forEach((c, index) => {
-        courseOrderMap.set(c.courseId, index)
-      })
-      
-      const pointCourses = tourCourses.filter(course => {
-        const category = course.category?.toLowerCase() || ''
-        return courseOrderMap.has(course.id) && 
-               (category.includes('포인트') || category.includes('point'))
-      })
-
-      const validCourses = pointCourses.filter(course => {
-        const courseName = locale === 'en' 
-          ? (course.customer_name_en || course.customer_name_ko || '')
-          : (course.customer_name_ko || course.customer_name_en || '')
-        const courseDescription = locale === 'en'
-          ? (course.customer_description_en || course.customer_description_ko || '')
-          : (course.customer_description_ko || course.customer_description_en || '')
-        
-        return (courseName || '').trim() !== '' || (courseDescription || '').trim() !== ''
-      })
-
-      validCourses.sort((a, b) => {
-        const orderA = courseOrderMap.get(a.id) ?? Infinity
-        const orderB = courseOrderMap.get(b.id) ?? Infinity
-        return orderA - orderB
-      })
+      const validCourses = getValidDescriptionCourses(courses, tourCourses, locale)
 
       if (validCourses.length > 0) {
         const courseDescriptionsHTML = validCourses.map(course => {
@@ -2103,6 +2135,14 @@ export default function EstimateModal({
       text += '\n'
     }
 
+    text += isEnglish ? 'Route & Mileage\n' : '경로 및 마일리지\n'
+    text += `${isEnglish ? 'Total Mileage' : '총 마일리지'}: ${formatMileageLabel(mileage, isEnglish)}\n`
+    text += `${isEnglish ? 'Total driving time' : '총 주행 시간'}: ${formatDrivingTimeLabel(displayedDrivingHours, isEnglish)}\n`
+    courses.forEach((course, index) => {
+      text += `${index + 1}. ${course.courseName || (isEnglish ? 'Untitled stop' : '이름 없는 코스')}\n`
+    })
+    text += '\n'
+
     text += isEnglish ? 'Cost Breakdown\n' : '금액 안내\n'
     text += `${isEnglish ? 'Participants' : '참가 인원'}: ${participantCount} ${isEnglish ? 'people' : '명'}\n`
     text += `${isEnglish ? 'Selling Price (excluding tip)' : '판매가 (팁 제외)'}: ${formatUSD(sellingPrice)}\n`
@@ -2119,33 +2159,7 @@ export default function EstimateModal({
     text += `${isEnglish ? 'Selling Price (including tip)' : '팁 포함 판매가'}: ${formatUSD(sellingPriceWithTip)}\n\n`
 
     // 투어 코스 설명
-    const courseOrderMap = new Map<string, number>()
-    courses.forEach((c, index) => {
-      courseOrderMap.set(c.courseId, index)
-    })
-    
-    const pointCourses = tourCourses.filter(course => {
-      const category = course.category?.toLowerCase() || ''
-      return courseOrderMap.has(course.id) && 
-             (category.includes('포인트') || category.includes('point'))
-    })
-
-    const validCourses = pointCourses.filter(course => {
-      const courseName = isEnglish 
-        ? (course.customer_name_en || course.customer_name_ko || '')
-        : (course.customer_name_ko || course.customer_name_en || '')
-      const courseDescription = isEnglish
-        ? (course.customer_description_en || course.customer_description_ko || '')
-        : (course.customer_description_ko || course.customer_description_en || '')
-      
-      return (courseName || '').trim() !== '' || (courseDescription || '').trim() !== ''
-    })
-
-    validCourses.sort((a, b) => {
-      const orderA = courseOrderMap.get(a.id) ?? Infinity
-      const orderB = courseOrderMap.get(b.id) ?? Infinity
-      return orderA - orderB
-    })
+    const validCourses = getValidDescriptionCourses(courses, tourCourses, locale)
 
     if (validCourses.length > 0) {
       text += isEnglish ? 'Tour Course Description\n' : '투어 코스 설명\n'
@@ -2358,39 +2372,8 @@ export default function EstimateModal({
           </div>
 
           ${(() => {
-            // 선택된 코스 ID 목록과 순서 유지
-            const courseOrderMap = new Map<string, number>()
-            courses.forEach((c, index) => {
-              courseOrderMap.set(c.courseId, index)
-            })
-            
-            // 카테고리가 "포인트"인 코스만 필터링
-            const pointCourses = tourCourses.filter(course => {
-              const category = course.category?.toLowerCase() || ''
-              return courseOrderMap.has(course.id) && 
-                     (category.includes('포인트') || category.includes('point'))
-            })
-
-            // 이름과 설명이 모두 있는 코스만 필터링
             const isEnglish = locale === 'en'
-            const validCourses = pointCourses.filter(course => {
-              const courseName = isEnglish 
-                ? (course.customer_name_en || course.customer_name_ko || '')
-                : (course.customer_name_ko || course.customer_name_en || '')
-              const courseDescription = isEnglish
-                ? (course.customer_description_en || course.customer_description_ko || '')
-                : (course.customer_description_ko || course.customer_description_en || '')
-              
-              // 이름 또는 설명 중 하나라도 있으면 포함
-              return (courseName || '').trim() !== '' || (courseDescription || '').trim() !== ''
-            })
-
-            // 스케줄 순서대로 정렬
-            validCourses.sort((a, b) => {
-              const orderA = courseOrderMap.get(a.id) ?? Infinity
-              const orderB = courseOrderMap.get(b.id) ?? Infinity
-              return orderA - orderB
-            })
+            const validCourses = getValidDescriptionCourses(courses, tourCourses, locale)
 
             if (validCourses.length === 0) return ''
 
@@ -2649,44 +2632,12 @@ export default function EstimateModal({
             </h3>
             <div className="border border-gray-200 rounded-lg p-4 space-y-4 bg-gray-50">
               {(() => {
-                // 선택된 코스 ID 목록과 순서 유지
-                const courseOrderMap = new Map<string, number>()
-                courses.forEach((c, index) => {
-                  courseOrderMap.set(c.courseId, index)
-                })
-                
-                // 카테고리가 "포인트"인 코스만 필터링
-                const pointCourses = tourCourses.filter(course => {
-                  const category = course.category?.toLowerCase() || ''
-                  return courseOrderMap.has(course.id) && 
-                         (category.includes('포인트') || category.includes('point'))
-                })
-
-                // 이름과 설명이 모두 있는 코스만 필터링
-                const validCourses = pointCourses.filter(course => {
-                  const isEnglish = locale === 'en'
-                  const courseName = isEnglish 
-                    ? (course.customer_name_en || course.customer_name_ko || '')
-                    : (course.customer_name_ko || course.customer_name_en || '')
-                  const courseDescription = isEnglish
-                    ? (course.customer_description_en || course.customer_description_ko || '')
-                    : (course.customer_description_ko || course.customer_description_en || '')
-                  
-                  // 이름 또는 설명 중 하나라도 있으면 포함
-                  return courseName.trim() !== '' || courseDescription.trim() !== ''
-                })
-
-                // 스케줄 순서대로 정렬
-                validCourses.sort((a, b) => {
-                  const orderA = courseOrderMap.get(a.id) ?? Infinity
-                  const orderB = courseOrderMap.get(b.id) ?? Infinity
-                  return orderA - orderB
-                })
+                const validCourses = getValidDescriptionCourses(courses, tourCourses, locale)
 
                 if (validCourses.length === 0) {
                   return (
                     <p className="text-sm text-gray-500 text-center py-4">
-                      카테고리가 "포인트"인 투어 코스가 없습니다.
+                      {locale === 'en' ? 'No selected tour courses to describe.' : '설명할 선택된 투어 코스가 없습니다.'}
                     </p>
                   )
                 }
@@ -2752,13 +2703,34 @@ export default function EstimateModal({
               경로 및 마일리지
             </h3>
             <div className="border border-gray-200 rounded-lg overflow-hidden">
-              <div className="p-4 bg-gray-50 border-b border-gray-200">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700">총 마일리지</span>
+              <div className="p-4 bg-gray-50 border-b border-gray-200 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-gray-700">{locale === 'en' ? 'Total Mileage' : '총 마일리지'}</span>
                   <span className="text-sm font-semibold text-gray-900">
-                    {mileage ? `${mileage.toFixed(1)} 마일 (${(mileage * 1.60934).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km)` : 'N/A'}
+                    {formatMileageLabel(mileage, locale === 'en')}
                   </span>
                 </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-gray-700 inline-flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-primary" />
+                    {locale === 'en' ? 'Total driving time' : '총 주행 시간'}
+                  </span>
+                  <span className="text-sm font-semibold text-gray-900">
+                    {formatDrivingTimeLabel(displayedDrivingHours, locale === 'en')}
+                  </span>
+                </div>
+                {courses.length > 0 ? (
+                  <ol className="mt-2 space-y-1 text-sm text-gray-800">
+                    {courses.map((course, index) => (
+                      <li key={`${course.courseId}-${index}`} className="flex gap-2">
+                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
+                          {index + 1}
+                        </span>
+                        <span className="leading-5">{course.courseName || (locale === 'en' ? 'Untitled stop' : '이름 없는 코스')}</span>
+                      </li>
+                    ))}
+                  </ol>
+                ) : null}
               </div>
               {mapImageData ? (
                 <img 

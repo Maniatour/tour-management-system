@@ -21,7 +21,6 @@ import {
   getQuickArriveId,
   getQuickDepartId,
   getQuickQuoteWaypoint,
-  isQuickQuoteOneWay,
   orderQuickQuoteStops,
   parseQuickArriveCity,
   parseQuickDepartCity,
@@ -41,6 +40,7 @@ import {
   persistQuickAddonRates,
   type QuickAddonId,
 } from '@/lib/quickQuoteAddons'
+import { listOrderedCourseDescriptions } from '@/lib/representativeTourCourses'
 
 const TourCourseEditModal = dynamic(() => import('@/components/TourCourseEditModal'), { ssr: false, loading: () => null })
 const EstimateModal = dynamic(() => import('@/components/tour-cost-calculator/EstimateModal'), { ssr: false, loading: () => null })
@@ -105,7 +105,7 @@ export default function TourCostCalculatorPage() {
   const [mileage, setMileage] = useState<number | null>(null)
   const [travelTime, setTravelTime] = useState<number | null>(null) // 이동 시간 (시간 단위)
   const [totalHours, setTotalHours] = useState<number>(0)
-  const [guideHourlyRate, setGuideHourlyRate] = useState<number>(0)
+  const [guideHourlyRate, setGuideHourlyRate] = useState<number>(30)
   const [guideFee, setGuideFee] = useState<number | null>(null)
   const [marginType, setMarginType] = useState<MarginType>('default')
   const [customMarginRate, setCustomMarginRate] = useState<number>(30)
@@ -113,8 +113,8 @@ export default function TourCostCalculatorPage() {
   const [editingCourse, setEditingCourse] = useState<TourCourse | null>(null)
   const [courseSearchTerm, setCourseSearchTerm] = useState<string>('')
   const [courseSelectTab, setCourseSelectTab] = useState<'quick' | 'detailed'>('quick')
-  const [quickDeparture, setQuickDeparture] = useState<QuickQuoteCity | null>(null)
-  const [quickArrival, setQuickArrival] = useState<QuickQuoteCity | null>(null)
+  const [quickDeparture, setQuickDeparture] = useState<QuickQuoteCity | null>('lv')
+  const [quickArrival, setQuickArrival] = useState<QuickQuoteCity | null>('lv')
   const [quickHotelSeason, setQuickHotelSeason] = useState<QuickHotelSeason | null>(null)
   const [quickHotelCustomerRooms, setQuickHotelCustomerRooms] = useState(1)
   const [quickStayNights, setQuickStayNights] = useState(0)
@@ -409,7 +409,7 @@ export default function TourCostCalculatorPage() {
     })
 
     const departId = quickDeparture ? getQuickDepartId(quickDeparture) : null
-    const arriveId = quickArrival && quickArrival !== quickDeparture ? getQuickArriveId(quickArrival) : null
+    const arriveId = quickArrival ? getQuickArriveId(quickArrival) : null
 
     if (destinationLeaves.length === 0 && leafCourses.length === 0 && !departId && !arriveId) {
       setSelectedCoursesOrder([])
@@ -1581,10 +1581,10 @@ export default function TourCostCalculatorPage() {
       }
 
       const service = new (window.google.maps as any).DirectionsService()
-      const oneWay = isQuickQuoteOneWay(quickDeparture, quickArrival)
+      const endAtLast = Boolean(quickArrival)
       const origin = waypoints[0]
-      const destination = oneWay ? waypoints[waypoints.length - 1] : waypoints[0]
-      const intermediateWaypoints = (oneWay ? waypoints.slice(1, -1) : waypoints.slice(1)).map((wp) => ({ location: wp }))
+      const destination = endAtLast ? waypoints[waypoints.length - 1] : waypoints[0]
+      const intermediateWaypoints = (endAtLast ? waypoints.slice(1, -1) : waypoints.slice(1)).map((wp) => ({ location: wp }))
 
       const request: any = {
         origin: origin,
@@ -2570,39 +2570,11 @@ export default function TourCostCalculatorPage() {
             </h2>
             <div className="border border-gray-200 rounded-lg p-3 sm:p-4 space-y-3 sm:space-y-4 bg-gray-50">
               {(() => {
-                // 선택된 코스 ID 목록과 순서 유지
-                const courseOrderMap = new Map<string, number>()
-                selectedCoursesOrder.forEach((c, index) => {
-                  courseOrderMap.set(c.id, index)
-                })
-                
-                // 카테고리가 "포인트"인 코스만 필터링
-                const pointCourses = tourCourses.filter(course => {
-                  const category = course.category?.toLowerCase() || ''
-                  return courseOrderMap.has(course.id) && 
-                         (category.includes('포인트') || category.includes('point'))
-                })
-
-                // 이름과 설명이 모두 있는 코스만 필터링
-                const validCourses = pointCourses.filter(course => {
-                  const isEnglish = locale === 'en'
-                  const courseName = isEnglish 
-                    ? (course.customer_name_en || course.customer_name_ko || '')
-                    : (course.customer_name_ko || course.customer_name_en || '')
-                  const courseDescription = isEnglish
-                    ? (course.customer_description_en || course.customer_description_ko || '')
-                    : (course.customer_description_ko || course.customer_description_en || '')
-                  
-                  // 이름 또는 설명 중 하나라도 있으면 포함
-                  return courseName.trim() !== '' || courseDescription.trim() !== ''
-                })
-
-                // 스케줄 순서대로 정렬
-                validCourses.sort((a, b) => {
-                  const orderA = courseOrderMap.get(a.id) ?? Infinity
-                  const orderB = courseOrderMap.get(b.id) ?? Infinity
-                  return orderA - orderB
-                })
+                const validCourses = listOrderedCourseDescriptions(
+                  selectedCoursesOrder.map((item) => item.id),
+                  tourCourses,
+                  locale
+                )
 
                 if (validCourses.length === 0) {
                   return (
@@ -3343,6 +3315,7 @@ export default function TourCostCalculatorPage() {
           tourCourses={tourCoursesWithPhotos as any}
           isCharterGuide={tourType === 'charter_guide'}
           mileage={mileage}
+          travelTime={travelTime}
           locale={locale}
           tourCourseDescription={tourCourseDescription}
           scheduleDescription={scheduleDescription}

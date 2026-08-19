@@ -1350,7 +1350,15 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       case 'cancelled':
         return <XCircle className="w-4 h-4 text-red-600" />
       case 'no_show':
-        return <XCircle className="w-4 h-4 text-orange-600" />
+        return (
+          <span
+            className={`inline-flex items-center rounded-md bg-orange-100 px-1.5 py-0.5 font-semibold text-orange-800 ${
+              cardCompact ? 'text-[9px] leading-none' : 'text-[10px] leading-none'
+            }`}
+          >
+            No Show
+          </span>
+        )
       case 'completed':
         return <CheckCircle2 className="w-4 h-4 text-gray-600" />
       case 'pending':
@@ -1369,7 +1377,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       case 'cancelled':
         return '취소됨'
       case 'no_show':
-        return '노쇼'
+        return 'No Show'
       case 'completed':
         return '완료됨'
       case 'pending':
@@ -2175,7 +2183,11 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                     setShowStatusDropdown(prev => !prev)
                   }
                 }}
-                className={`p-1 rounded-full transition-colors ${onStatusChange && isStaff ? 'hover:bg-gray-200 cursor-pointer' : 'cursor-default hover:bg-gray-100'}`}
+                className={`transition-colors ${
+                  reservation.status?.toLowerCase() === 'no_show'
+                    ? `rounded-md ${onStatusChange && isStaff ? 'hover:bg-orange-50 cursor-pointer' : 'cursor-default'}`
+                    : `p-1 rounded-full ${onStatusChange && isStaff ? 'hover:bg-gray-200 cursor-pointer' : 'cursor-default hover:bg-gray-100'}`
+                }`}
                 title={getReservationStatusText(reservation.status)}
               >
                 {statusUpdating ? (
@@ -2193,7 +2205,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                       { value: 'pending', label: '대기 중', icon: <AlertCircle className="w-3.5 h-3.5 text-yellow-600" /> },
                       { value: 'completed', label: '완료됨', icon: <CheckCircle2 className="w-3.5 h-3.5 text-gray-600" /> },
                       { value: 'cancelled', label: '취소됨', icon: <XCircle className="w-3.5 h-3.5 text-red-600" /> },
-                      { value: 'no_show', label: '노쇼', icon: <XCircle className="w-3.5 h-3.5 text-orange-600" /> },
+                      { value: 'no_show', label: 'No Show', icon: <XCircle className="w-3.5 h-3.5 text-orange-600" /> },
                     ].map((option) => (
                       <button
                         key={option.value}

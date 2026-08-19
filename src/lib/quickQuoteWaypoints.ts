@@ -174,6 +174,17 @@ export function haversineMiles(a: GeoPoint, b: GeoPoint): number {
   return 2 * 3958.8 * Math.asin(Math.min(1, Math.sqrt(h)))
 }
 
+export function resolveScheduleStopCoords(
+  courseId: string,
+  allCourses: CoordCourse[]
+): GeoPoint | null {
+  const waypoint = getQuickQuoteWaypoint(courseId)
+  if (waypoint) {
+    return { lat: waypoint.start_latitude, lng: waypoint.start_longitude }
+  }
+  return getCourseMapCoords(allCourses.find((course) => course.id === courseId), allCourses)
+}
+
 export function getCourseMapCoords(
   course: CoordCourse | undefined,
   allCourses: CoordCourse[],
@@ -234,8 +245,7 @@ export function orderQuickQuoteStops(options: {
 
   ordered.push(...withoutCoords)
 
-  const includeArrival = Boolean(arrival && arrival !== departure)
-  if (arrival && includeArrival) ordered.push(getQuickArriveId(arrival))
+  if (arrival) ordered.push(getQuickArriveId(arrival))
 
   return ordered
 }
