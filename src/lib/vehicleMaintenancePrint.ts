@@ -715,7 +715,7 @@ function openPrintDocument(html: string, title: string): void {
     }
     printWin.focus()
     setTimeout(() => {
-      runPrintAndKeepAlive(printWin, () => removePrintIframe(iframe))
+      runPrintAndKeepAlive(printWin, () => removePrintIframe(iframe), safeTitle)
     }, 200)
   }
 

@@ -48,16 +48,49 @@ function parentStylesheetMarkup(): string {
   return `${links}${styles}`
 }
 
+function applyPrintDocumentTitle(win: Window, title?: string): string | null {
+  const printTitle = title?.trim()
+  if (!printTitle) return null
+
+  const previousParentTitle = document.title
+  try {
+    document.title = printTitle
+  } catch {
+    /* ignore */
+  }
+  try {
+    win.document.title = printTitle
+  } catch {
+    /* ignore */
+  }
+  return previousParentTitle
+}
+
+function restoreParentDocumentTitle(previousTitle: string | null): void {
+  if (previousTitle == null) return
+  try {
+    document.title = previousTitle
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Call `print()` and only tear down the source after the dialog closes.
  * Chromium may return a Promise from `print()`; rejection is ignorable.
+ *
+ * Chrome's iframe "Save as PDF" uses the *parent* `document.title` as the
+ * default filename, not the iframe `<title>`. Temporarily swap the parent
+ * title so PDFs keep the original print name (email subject, report name, …).
  */
-export function runPrintAndKeepAlive(win: Window, cleanup: () => void): void {
+export function runPrintAndKeepAlive(win: Window, cleanup: () => void, title?: string): void {
+  const previousParentTitle = applyPrintDocumentTitle(win, title)
   let cleaned = false
   let printed = false
   const once = () => {
     if (cleaned) return
     cleaned = true
+    restoreParentDocumentTitle(previousParentTitle)
     cleanup()
   }
 
@@ -67,6 +100,7 @@ export function runPrintAndKeepAlive(win: Window, cleanup: () => void): void {
   window.setTimeout(() => {
     if (printed) return
     printed = true
+    applyPrintDocumentTitle(win, title)
     try {
       win.focus()
     } catch {
@@ -85,12 +119,17 @@ export function runPrintAndKeepAlive(win: Window, cleanup: () => void): void {
   }, 50)
 }
 
-function startPrintWhenReady(iframe: HTMLIFrameElement, win: Window, doc: Document): void {
+function startPrintWhenReady(
+  iframe: HTMLIFrameElement,
+  win: Window,
+  doc: Document,
+  title?: string
+): void {
   let started = false
   const start = () => {
     if (started) return
     started = true
-    runPrintAndKeepAlive(win, () => removePrintIframe(iframe))
+    runPrintAndKeepAlive(win, () => removePrintIframe(iframe), title)
   }
   if (doc.readyState === 'complete') {
     requestAnimationFrame(() => requestAnimationFrame(start))
@@ -111,6 +150,11 @@ export function printHtmlDocument(html: string, title = 'Print'): void {
   doc.open()
   doc.write(html)
   doc.close()
+  try {
+    doc.title = title
+  } catch {
+    /* ignore */
+  }
 
   const win = iframe.contentWindow
   if (!win) {
@@ -118,7 +162,7 @@ export function printHtmlDocument(html: string, title = 'Print'): void {
     return
   }
 
-  startPrintWhenReady(iframe, win, doc)
+  startPrintWhenReady(iframe, win, doc, title)
 }
 
 export type PrintDomCloneOptions = {

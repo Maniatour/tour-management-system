@@ -657,7 +657,7 @@ export default function TourPrintModal({
       }
       printWin.focus()
       setTimeout(() => {
-        runPrintAndKeepAlive(printWin, () => removePrintIframe(iframe))
+        runPrintAndKeepAlive(printWin, () => removePrintIframe(iframe), `${productName} - ${tourDate}`)
       }, 250)
     }
 

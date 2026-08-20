@@ -688,7 +688,7 @@ export default function TourEnvelopeModal({
 
     try {
       await waitForDocumentImages(iframeDoc)
-      runPrintAndKeepAlive(printWin, () => removePrintIframe(iframe))
+      runPrintAndKeepAlive(printWin, () => removePrintIframe(iframe), 'Tour Envelope')
     } catch {
       removePrintIframe(iframe)
     }
