@@ -12,7 +12,13 @@ import { useLocale } from 'next-intl'
 import { X, Receipt, Calendar, Users, User, Car, CheckCircle, Upload, Camera, Folder } from 'lucide-react'
 import GoogleDriveReceiptImporter from './GoogleDriveReceiptImporter'
 import { ensureFreshAuthSessionForUpload } from '@/lib/uploadClient'
-import { ensureImageFitsMaxBytes, RECEIPT_COMPRESS_FAILED } from '@/lib/imageUtils'
+import {
+  EMPTY_RECEIPT_FILE,
+  isLikelyReceiptImageFile,
+  prepareReceiptImageForUpload,
+  RECEIPT_COMPRESS_FAILED,
+  snapshotInputFiles,
+} from '@/lib/imageUtils'
 
 const TOUR_RECEIPT_MAX_STORAGE_BYTES = 10 * 1024 * 1024
 const TOUR_RECEIPT_MAX_ORIGINAL_BYTES = 35 * 1024 * 1024
@@ -310,25 +316,40 @@ export default function TourReceiptModal({ isOpen, onClose, locale: _locale }: T
     try {
       setUploading(true)
 
-      if (!file.type.startsWith('image/')) {
+      if (file.size <= 0) {
+        alert(getText(
+          '사진 데이터를 읽지 못했습니다. 다시 촬영하거나 갤러리에서 선택해 주세요.',
+          'Could not read the photo. Please retake it or choose it from the gallery.'
+        ))
+        return
+      }
+      if (!isLikelyReceiptImageFile(file)) {
         alert(getText('이미지 파일만 업로드할 수 있습니다.', 'Only image files can be uploaded.'))
         return
       }
-      if (file.size > TOUR_RECEIPT_MAX_ORIGINAL_BYTES) {
-        alert(getText('한 장당 35MB를 넘는 이미지는 올릴 수 없습니다.', 'Each image must be 35MB or smaller.'))
-        return
-      }
 
-      await ensureFreshAuthSessionForUpload()
-
-      const safeLimit = TOUR_RECEIPT_MAX_STORAGE_BYTES - 256 * 1024
       let prepared: File
       try {
-        prepared = file.size > safeLimit ? await ensureImageFitsMaxBytes(file, safeLimit) : file
+        prepared = await prepareReceiptImageForUpload(
+          file,
+          TOUR_RECEIPT_MAX_STORAGE_BYTES,
+          TOUR_RECEIPT_MAX_ORIGINAL_BYTES
+        )
       } catch (e) {
-        const failed = e instanceof Error && e.message === RECEIPT_COMPRESS_FAILED
+        const code = e instanceof Error ? e.message : ''
+        if (code === 'ORIGINAL_RECEIPT_TOO_LARGE') {
+          alert(getText('한 장당 35MB를 넘는 이미지는 올릴 수 없습니다.', 'Each image must be 35MB or smaller.'))
+          return
+        }
+        if (code === EMPTY_RECEIPT_FILE) {
+          alert(getText(
+            '사진 데이터를 읽지 못했습니다. 다시 촬영하거나 갤러리에서 선택해 주세요.',
+            'Could not read the photo. Please retake it or choose it from the gallery.'
+          ))
+          return
+        }
         alert(
-          failed
+          code === RECEIPT_COMPRESS_FAILED
             ? getText(
                 '이미지를 불러오거나 줄이지 못했습니다. 다른 사진을 선택하거나 JPG로 저장해 보세요.',
                 'Could not load or shrink the image. Try another photo or save as JPEG.'
@@ -338,13 +359,18 @@ export default function TourReceiptModal({ isOpen, onClose, locale: _locale }: T
         return
       }
 
-      const fileExt = prepared.name.split('.').pop() || 'jpg'
+      await ensureFreshAuthSessionForUpload()
+
+      const fileExt = prepared.type === 'image/jpeg' ? 'jpg' : (prepared.name.split('.').pop() || 'jpg')
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
       const filePath = `receipts/${fileName}`
 
       const { error: uploadError } = await supabase.storage
         .from('tour-expenses')
-        .upload(filePath, prepared)
+        .upload(filePath, prepared, {
+          contentType: prepared.type || 'image/jpeg',
+          upsert: false,
+        })
 
       if (uploadError) {
         console.error('파일 업로드 오류:', uploadError)
@@ -370,21 +396,23 @@ export default function TourReceiptModal({ isOpen, onClose, locale: _locale }: T
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      void handleFileUpload(file)
-    }
-    e.target.value = ''
+    const input = e.currentTarget
+    void (async () => {
+      const files = await snapshotInputFiles(input.files)
+      input.value = ''
+      if (files[0]) await handleFileUpload(files[0])
+    })()
   }
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
-    
-    const file = e.dataTransfer.files[0]
-    if (file) {
-      handleFileUpload(file)
-    }
+    const incoming = e.dataTransfer.files
+    if (!incoming.length) return
+    void (async () => {
+      const files = await snapshotInputFiles(incoming)
+      if (files[0]) await handleFileUpload(files[0])
+    })()
   }
 
   const handleDragOver = (e: React.DragEvent) => {

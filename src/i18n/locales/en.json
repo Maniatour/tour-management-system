@@ -5436,6 +5436,7 @@
       "receiptOnlyPendingPaidFor": "Receipt review needed",
       "receiptOriginalTooLarge": "Each image must be 35MB or smaller.",
       "receiptCompressFailed": "Could not load or shrink the image. Try another photo or save as JPEG.",
+      "receiptEmptyFile": "Could not read the photo. The file is sometimes empty after the camera closes. Please retake it or choose it from the gallery.",
       "imageOnlyError": "Only image files can be uploaded",
       "receiptOcrAction": "Extract expense candidates with OCR",
       "receiptOcrNoImage": "There is no receipt image to OCR.",

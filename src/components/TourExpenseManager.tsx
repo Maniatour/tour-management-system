@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
-import { Plus, Upload, X, DollarSign, ChevronDown, ChevronRight, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Package, Camera, ZoomIn, ZoomOut, ListOrdered, RotateCcw, RotateCw, Sparkles, type LucideIcon } from 'lucide-react'
+import { Plus, Upload, X, DollarSign, ChevronDown, ChevronRight, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Package, ZoomIn, ZoomOut, ListOrdered, RotateCcw, RotateCw, Sparkles, type LucideIcon } from 'lucide-react'
 import ExpenseVendorManagerModal from '@/components/expense/ExpenseVendorManagerModal'
 import { supabase } from '@/lib/supabase'
 import { useLocale, useTranslations } from 'next-intl'
@@ -39,7 +39,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ensureFreshAuthSessionForUpload } from '@/lib/uploadClient'
-import { ensureImageFitsMaxBytes, RECEIPT_COMPRESS_FAILED } from '@/lib/imageUtils'
+import {
+  EMPTY_RECEIPT_FILE,
+  isLikelyReceiptImageFile,
+  prepareReceiptImageForUpload,
+  RECEIPT_COMPRESS_FAILED,
+  snapshotInputFiles,
+} from '@/lib/imageUtils'
 import { TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR } from '@/lib/tourExpenseConstants'
 import AntelopeOnSiteToTicketBookingModal from '@/components/expense/AntelopeOnSiteToTicketBookingModal'
 import { isAntelopeOnSiteTourExpense } from '@/lib/antelopeOnSiteReceipt'
@@ -232,8 +238,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const receiptOnlyInputRef = useRef<HTMLInputElement>(null)
-  const receiptOnlyCameraInputRef = useRef<HTMLInputElement>(null)
-  const [webcamTarget, setWebcamTarget] = useState<null | 'toolbar' | 'addForm'>(null)
+  const [webcamTarget, setWebcamTarget] = useState<null | 'addForm'>(null)
   const receiptWebcamVideoRef = useRef<HTMLVideoElement>(null)
   const receiptWebcamStreamRef = useRef<MediaStream | null>(null)
   /** 카메라·갤러리 확인 직후 합성 click이 배경으로 전달되며 모달이 닫히는 것을 막음 (특히 iOS). */
@@ -318,6 +323,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
     if (!(error instanceof Error)) return t('unknownError')
     if (error.message === 'ORIGINAL_RECEIPT_TOO_LARGE') return t('receiptOriginalTooLarge')
     if (error.message === RECEIPT_COMPRESS_FAILED) return t('receiptCompressFailed')
+    if (error.message === EMPTY_RECEIPT_FILE) return t('receiptEmptyFile')
     return error.message
   }
 
@@ -958,39 +964,46 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
   // 영수증 이미지 업로드
   const handleImageUpload = async (file: File) => {
     try {
-      await ensureFreshAuthSessionForUpload()
-
-      // MIME 타입 체크
-      if (!file.type.startsWith('image/')) {
+      if (!isLikelyReceiptImageFile(file)) {
         throw new Error(t('imageOnlyError'))
       }
-
-      if (file.size > TOUR_RECEIPT_MAX_ORIGINAL_BYTES) {
-        throw new Error('ORIGINAL_RECEIPT_TOO_LARGE')
+      if (file.size <= 0) {
+        throw new Error(EMPTY_RECEIPT_FILE)
       }
 
-      const safeLimit = TOUR_RECEIPT_MAX_STORAGE_BYTES - 256 * 1024
-      const prepared =
-        file.size > safeLimit ? await ensureImageFitsMaxBytes(file, safeLimit) : file
+      const prepared = await prepareReceiptImageForUpload(
+        file,
+        TOUR_RECEIPT_MAX_STORAGE_BYTES,
+        TOUR_RECEIPT_MAX_ORIGINAL_BYTES
+      )
+      if (prepared.size <= 0) {
+        throw new Error(EMPTY_RECEIPT_FILE)
+      }
 
-      // 고유한 파일명 생성
-      const fileExt = prepared.name.split('.').pop() || 'jpg'
+      await ensureFreshAuthSessionForUpload()
+
+      const fileExt = prepared.type === 'image/jpeg' ? 'jpg' : (prepared.name.split('.').pop() || 'jpg')
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
       const filePath = `tour-expenses/${tourId}/${fileName}`
 
-      // Supabase Storage에 업로드
       const { error: uploadError } = await supabase.storage
         .from('tour-expenses')
-        .upload(filePath, prepared)
+        .upload(filePath, prepared, {
+          contentType: prepared.type || 'image/jpeg',
+          upsert: false,
+        })
 
       if (uploadError) throw uploadError
 
-      // 공개 URL 생성
       const { data: { publicUrl } } = supabase.storage
         .from('tour-expenses')
         .getPublicUrl(filePath)
 
-      return { filePath, imageUrl: publicUrl }
+      if (!publicUrl) {
+        throw new Error(t('expenseRegistrationError'))
+      }
+
+      return { filePath, imageUrl: publicUrl, prepared }
     } catch (error) {
       console.error('Error uploading image:', error)
       throw error
@@ -1204,9 +1217,9 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
 
   // 영수증만 첨부: 여러 장이면 각각 별도 tour_expenses 행으로 저장
   const processReceiptOnlyFiles = async (files: File[]) => {
-    const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+    const imageFiles = files.filter((f) => f.size > 0 && isLikelyReceiptImageFile(f))
     if (imageFiles.length === 0) {
-      alert(t('imageOnlyError'))
+      alert(files.some((f) => f.size <= 0) ? t('receiptEmptyFile') : t('imageOnlyError'))
       return
     }
 
@@ -1230,7 +1243,10 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
       const expenseOperatorId = await lookupTourOperatorId(supabase, tourId, activeOperatorId)
       for (const file of imageFiles) {
         try {
-          const { filePath, imageUrl } = await handleImageUpload(file)
+          const { filePath, imageUrl, prepared } = await handleImageUpload(file)
+          if (!imageUrl || !filePath) {
+            throw new Error(EMPTY_RECEIPT_FILE)
+          }
           const { data, error } = await supabase
             .from('tour_expenses')
             .insert({
@@ -1255,7 +1271,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
           if (data) {
             const { expense: expenseRow, applied } = await applyClientReceiptOcrToExpense(
               data.id,
-              file,
+              prepared,
               data as TourExpense
             )
             if (applied) ocrAppliedCount += 1
@@ -1301,9 +1317,9 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
     }
   }
 
-  const handleReceiptOnlyUpload = async (files: FileList | null) => {
-    if (!files?.length) return
-    await processReceiptOnlyFiles(Array.from(files))
+  const handleReceiptOnlyUpload = async (files: File[]) => {
+    if (!files.length) return
+    await processReceiptOnlyFiles(files)
   }
 
   const applyUploadedImageToForm = async (file: File) => {
@@ -1311,11 +1327,17 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
       expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
       setUploading(true)
 
-      if (!file.type.startsWith('image/')) {
+      if (file.size <= 0) {
+        throw new Error(EMPTY_RECEIPT_FILE)
+      }
+      if (!isLikelyReceiptImageFile(file)) {
         throw new Error(t('imageOnlyError'))
       }
 
       const { filePath, imageUrl } = await handleImageUpload(file)
+      if (!imageUrl || !filePath) {
+        throw new Error(EMPTY_RECEIPT_FILE)
+      }
 
       setFormData((prev) => ({
         ...prev,
@@ -1334,7 +1356,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
     }
   }
 
-  const handleFileUpload = async (files: FileList) => {
+  const handleFileUpload = async (files: File[]) => {
     if (!files.length) return
 
     if (files.length > 1 && editingExpense) {
@@ -1345,7 +1367,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
 
     if (files.length > 1 && !editingExpense) {
       if (typeof window !== 'undefined' && window.confirm(t('receiptBatchFromFormConfirm', { count: files.length }))) {
-        await processReceiptOnlyFiles(Array.from(files))
+        await processReceiptOnlyFiles(files)
       }
       return
     }
@@ -1370,11 +1392,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
         if (!blob) return
         const file = new File([blob], `receipt-${Date.now()}.jpg`, { type: 'image/jpeg' })
         setWebcamTarget(null)
-        if (target === 'toolbar') {
-          void processReceiptOnlyFiles([file])
-        } else {
-          void applyUploadedImageToForm(file)
-        }
+        void applyUploadedImageToForm(file)
       },
       'image/jpeg',
       0.88
@@ -1441,10 +1459,12 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
-    const files = e.dataTransfer.files
-    if (files.length) {
-      handleFileUpload(files)
-    }
+    const incoming = e.dataTransfer.files
+    if (!incoming.length) return
+    void (async () => {
+      const files = await snapshotInputFiles(incoming)
+      await handleFileUpload(files)
+    })()
   }
 
   // 이미지 삭제 핸들러
@@ -2388,46 +2408,20 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
           {allowReceiptOnlyUpload && (
             <div className="flex items-center gap-1">
               <input
-                ref={receiptOnlyCameraInputRef}
-                type="file"
-                accept="image/*"
-                capture={
-                  typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-                    ? 'environment'
-                    : undefined
-                }
-                onChange={(e) => {
-                  void handleReceiptOnlyUpload(e.target.files)
-                  e.target.value = ''
-                }}
-                className="hidden"
-              />
-              <input
                 ref={receiptOnlyInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp"
                 multiple
                 onChange={(e) => {
-                  void handleReceiptOnlyUpload(e.target.files)
-                  e.target.value = ''
+                  const input = e.currentTarget
+                  void (async () => {
+                    const files = await snapshotInputFiles(input.files)
+                    input.value = ''
+                    await handleReceiptOnlyUpload(files)
+                  })()
                 }}
                 className="hidden"
               />
-              <button
-                type="button"
-                onClick={() => {
-                  if (typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-                    receiptOnlyCameraInputRef.current?.click()
-                  } else {
-                    setWebcamTarget('toolbar')
-                  }
-                }}
-                disabled={uploading}
-                className={`${toolbarIconBtnClass} bg-primary text-primary-foreground hover:bg-primary/90`}
-                title={t('camera')}
-              >
-                <Camera size={toolbarIconSize} />
-              </button>
               <button
                 type="button"
                 onClick={() => receiptOnlyInputRef.current?.click()}
@@ -2439,6 +2433,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
               </button>
             </div>
           )}
+          {!allowReceiptOnlyUpload && (
           <button
             onClick={() => setShowOptionManagement(true)}
             className={`${toolbarIconBtnClass} bg-gray-600 text-white hover:bg-gray-700`}
@@ -2446,6 +2441,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
           >
             <Settings size={toolbarIconSize} />
           </button>
+          )}
           <button
             type="button"
             onClick={openAddExpenseForm}
@@ -3843,19 +3839,18 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*"
+                      accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp"
                       multiple
                       onChange={(e) => {
                         e.stopPropagation()
-                        if (e.target.files && e.target.files.length > 0) {
-                          expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
-                          handleFileUpload(e.target.files)
-                          setTimeout(() => {
-                            if (e.target) {
-                              (e.target as HTMLInputElement).value = ''
-                            }
-                          }, 100)
-                        }
+                        const input = e.currentTarget
+                        if (!input.files || input.files.length === 0) return
+                        expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
+                        void (async () => {
+                          const files = await snapshotInputFiles(input.files)
+                          input.value = ''
+                          await handleFileUpload(files)
+                        })()
                       }}
                       onClick={(e) => e.stopPropagation()}
                       className="hidden"
@@ -3863,19 +3858,18 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                     <input
                       ref={cameraInputRef}
                       type="file"
-                      accept="image/*"
+                      accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp"
                       capture={typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'environment' : undefined}
                       onChange={(e) => {
                         e.stopPropagation()
-                        if (e.target.files && e.target.files.length > 0) {
-                          expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
-                          handleFileUpload(e.target.files)
-                          setTimeout(() => {
-                            if (e.target) {
-                              (e.target as HTMLInputElement).value = ''
-                            }
-                          }, 100)
-                        }
+                        const input = e.currentTarget
+                        if (!input.files || input.files.length === 0) return
+                        expenseModalBackdropSuppressedUntilRef.current = Date.now() + 2500
+                        void (async () => {
+                          const files = await snapshotInputFiles(input.files)
+                          input.value = ''
+                          await handleFileUpload(files)
+                        })()
                       }}
                       onClick={(e) => e.stopPropagation()}
                       className="hidden"

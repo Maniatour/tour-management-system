@@ -205,18 +205,73 @@ export function getThumbnailFileName(originalFileName: string): string {
 
 /** Thrown as `Error.message` from `ensureImageFitsMaxBytes` when decode/compress fails. */
 export const RECEIPT_COMPRESS_FAILED = 'RECEIPT_COMPRESS_FAILED'
+/** Camera/gallery File was empty after the input was reset (common on iOS). */
+export const EMPTY_RECEIPT_FILE = 'EMPTY_RECEIPT_FILE'
+
+const RECEIPT_IMAGE_EXT_RE = /\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?|avif)$/i
+
+export function isHeicLikeReceiptFile(file: File): boolean {
+  const t = (file.type || '').trim().toLowerCase()
+  const n = (file.name || '').toLowerCase()
+  return t.includes('heic') || t.includes('heif') || n.endsWith('.heic') || n.endsWith('.heif')
+}
 
 /**
- * If an image exceeds `maxBytes`, re-encode as JPEG with downscaling until it fits (for receipt uploads).
- * GIF animation / transparency are flattened to a single JPEG frame.
+ * iPhone/Android often give `File.type === ''` for camera/gallery photos.
+ * `image/` MIME-only checks drop those files before upload.
  */
-export async function ensureImageFitsMaxBytes(file: File, maxBytes: number): Promise<File> {
-  if (!file.type.startsWith('image/')) return file
-  if (file.size <= maxBytes) return file
+export function isLikelyReceiptImageFile(file: File): boolean {
+  const t = (file.type || '').trim().toLowerCase()
+  if (t.startsWith('image/')) return true
+  if (t === '' || t === 'application/octet-stream') {
+    return RECEIPT_IMAGE_EXT_RE.test(file.name) || !/\.[a-z0-9]+$/i.test(file.name)
+  }
+  return RECEIPT_IMAGE_EXT_RE.test(file.name)
+}
 
+/**
+ * Copy file bytes immediately so WebKit can reset `<input type="file">`
+ * without emptying the original blob (guide camera upload).
+ */
+export async function snapshotInputFiles(files: FileList | File[] | null | undefined): Promise<File[]> {
+  if (!files || files.length === 0) return []
+  const out: File[] = []
+  for (const file of Array.from(files)) {
+    const buf = await file.arrayBuffer()
+    const name = file.name?.trim() ? file.name : `receipt-${Date.now()}.jpg`
+    out.push(
+      new File([buf], name, {
+        type: file.type || 'application/octet-stream',
+        lastModified: file.lastModified || Date.now(),
+      })
+    )
+  }
+  return out
+}
+
+async function decodeReceiptBitmap(file: File): Promise<ImageBitmap> {
+  try {
+    return await createImageBitmap(file)
+  } catch {
+    const url = URL.createObjectURL(file)
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image()
+        el.onload = () => resolve(el)
+        el.onerror = () => reject(new Error(RECEIPT_COMPRESS_FAILED))
+        el.src = url
+      })
+      return await createImageBitmap(img)
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  }
+}
+
+async function encodeReceiptFileAsJpeg(file: File, maxBytes: number): Promise<File> {
   let bitmap: ImageBitmap
   try {
-    bitmap = await createImageBitmap(file)
+    bitmap = await decodeReceiptBitmap(file)
   } catch {
     throw new Error(RECEIPT_COMPRESS_FAILED)
   }
@@ -263,5 +318,43 @@ export async function ensureImageFitsMaxBytes(file: File, maxBytes: number): Pro
   } finally {
     bitmap.close()
   }
+}
+
+/**
+ * If an image exceeds `maxBytes`, re-encode as JPEG with downscaling until it fits (for receipt uploads).
+ * GIF animation / transparency are flattened to a single JPEG frame.
+ * Pass `forceJpeg` for HEIC/HEIF so office browsers can display the receipt.
+ */
+export async function ensureImageFitsMaxBytes(
+  file: File,
+  maxBytes: number,
+  options?: { forceJpeg?: boolean }
+): Promise<File> {
+  const forceJpeg = Boolean(options?.forceJpeg) || isHeicLikeReceiptFile(file)
+  const mime = (file.type || '').trim().toLowerCase()
+  const looksLikeImage = mime.startsWith('image/') || mime === '' || mime === 'application/octet-stream'
+
+  if (!forceJpeg && file.size <= maxBytes && mime.startsWith('image/')) return file
+  if (!forceJpeg && !looksLikeImage) return file
+
+  return encodeReceiptFileAsJpeg(file, maxBytes)
+}
+
+/** Validate, convert HEIC, and shrink before Storage upload. */
+export async function prepareReceiptImageForUpload(
+  file: File,
+  maxStorageBytes: number,
+  maxOriginalBytes: number
+): Promise<File> {
+  if (file.size <= 0) throw new Error(EMPTY_RECEIPT_FILE)
+  if (file.size > maxOriginalBytes) throw new Error('ORIGINAL_RECEIPT_TOO_LARGE')
+
+  const safeLimit = maxStorageBytes - 256 * 1024
+  const forceJpeg =
+    isHeicLikeReceiptFile(file) ||
+    !(file.type || '').trim().toLowerCase().startsWith('image/')
+
+  if (!forceJpeg && file.size <= safeLimit) return file
+  return ensureImageFitsMaxBytes(file, safeLimit, { forceJpeg: true })
 }
 

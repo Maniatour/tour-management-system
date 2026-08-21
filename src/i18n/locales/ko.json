@@ -5485,6 +5485,7 @@
       "receiptOnlyPendingPaidFor": "영수증 확인 필요",
       "receiptOriginalTooLarge": "한 장당 35MB를 넘는 이미지는 올릴 수 없습니다.",
       "receiptCompressFailed": "이미지를 불러오거나 줄이지 못했습니다. 다른 사진을 선택하거나 JPG로 저장해 보세요.",
+      "receiptEmptyFile": "사진 데이터를 읽지 못했습니다. 촬영 후 바로 페이지가 바뀌면 파일이 비는 경우가 있습니다. 다시 촬영하거나 갤러리에서 선택해 주세요.",
       "imageOnlyError": "이미지 파일만 업로드할 수 있습니다",
       "receiptOcrAction": "OCR로 지출 후보 추출",
       "receiptOcrNoImage": "OCR을 실행할 영수증 이미지가 없습니다.",
