@@ -7,6 +7,8 @@ const QUEUE_PANEL_TITLE_GROUPS: string[][] = [
   ['투어 봉투 프린트', 'tour envelope print'],
   ['Pick up Notification', 'pickup notification'],
   ['가이드와 스케줄 컨펌', 'guide & schedule confirm'],
+  ['렌트카 픽드랍 안내', 'rental pickup / return notice'],
+  ['앤텔롭캐년 부킹 관리', 'antelope canyon booking management'],
   ['고객 정보 검수', 'customer info review'],
   ['취소 고객 재예약 권유', 'cancelled customer — rebook outreach'],
   ['취소 / 상담중 고객 재예약 권유', 'cancelled / consulting — rebook outreach'],
@@ -17,9 +19,7 @@ const QUEUE_PANEL_TITLE_GROUPS: string[][] = [
   ['투어 호텔 CC Form', 'tour hotel cc form'],
   ['투어 정산', 'tour settlement'],
   ['예약 대행 관리', 'reservation agency management'],
-  ['앤텔롭캐년 부킹 관리', 'antelope canyon booking management'],
   ['도시락 체크', 'bento check'],
-  ['렌트카 픽드랍 안내', 'rental pickup / return notice'],
 ]
 
 function normalizeTodoTitleKey(title: string): string {

@@ -2381,6 +2381,43 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
               <li
                 className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
                   'daily',
+                  rentalCarPickupDropoffCompleted,
+                  rentalCarPickupDropoffLinkedTodo?.on_hold ?? false
+                )} ${showRentalCarPickupDropoffInList ? '' : 'hidden'}`}
+                aria-hidden={!showRentalCarPickupDropoffInList}
+              >
+                <RentalCarPickupDropoffPanel
+                  locale={locale}
+                  variant="list"
+                  linkedTodos={todos as never}
+                  onCompletedChange={setRentalCarPickupDropoffCompleted}
+                  onToggleLinkedTodo={handleRentalCarPickupDropoffToggleLinkedTodo}
+                  onEditRequest={openEditRentalCarPickupDropoffTodo}
+                  {...panelHoldProps(rentalCarPickupDropoffLinkedTodo)}
+                />
+              </li>
+              <li
+                className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
+                  'daily',
+                  antelopeCanyonBookingCompleted,
+                  antelopeCanyonBookingLinkedTodo?.on_hold ?? false
+                )} ${showAntelopeCanyonBookingInList ? '' : 'hidden'}`}
+                aria-hidden={!showAntelopeCanyonBookingInList}
+              >
+                <AntelopeCanyonBookingPanel
+                  locale={locale}
+                  variant="list"
+                  linkedTodos={todos as never}
+                  onCompletedChange={setAntelopeCanyonBookingCompleted}
+                  onToggleLinkedTodo={handleAntelopeCanyonBookingToggleLinkedTodo}
+                  onEditRequest={openEditAntelopeCanyonBookingTodo}
+                  onOpenTourDetail={setTourHotelDetailModalId}
+                  {...panelHoldProps(antelopeCanyonBookingLinkedTodo)}
+                />
+              </li>
+              <li
+                className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
+                  'daily',
                   customerInfoReviewCompleted,
                   customerReviewLinkedTodo?.on_hold ?? false
                 )} ${showCustomerInfoReviewInList ? '' : 'hidden'}`}
@@ -2550,25 +2587,6 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
               <li
                 className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
                   'daily',
-                  antelopeCanyonBookingCompleted,
-                  antelopeCanyonBookingLinkedTodo?.on_hold ?? false
-                )} ${showAntelopeCanyonBookingInList ? '' : 'hidden'}`}
-                aria-hidden={!showAntelopeCanyonBookingInList}
-              >
-                <AntelopeCanyonBookingPanel
-                  locale={locale}
-                  variant="list"
-                  linkedTodos={todos as never}
-                  onCompletedChange={setAntelopeCanyonBookingCompleted}
-                  onToggleLinkedTodo={handleAntelopeCanyonBookingToggleLinkedTodo}
-                  onEditRequest={openEditAntelopeCanyonBookingTodo}
-                  onOpenTourDetail={setTourHotelDetailModalId}
-                  {...panelHoldProps(antelopeCanyonBookingLinkedTodo)}
-                />
-              </li>
-              <li
-                className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
-                  'daily',
                   bentoCheckCompleted,
                   bentoCheckLinkedTodo?.on_hold ?? false
                 )} ${showBentoCheckInList ? '' : 'hidden'}`}
@@ -2583,24 +2601,6 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   onEditRequest={openEditBentoCheckTodo}
                   onOpenTourDetail={setTourHotelDetailModalId}
                   {...panelHoldProps(bentoCheckLinkedTodo)}
-                />
-              </li>
-              <li
-                className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
-                  'daily',
-                  rentalCarPickupDropoffCompleted,
-                  rentalCarPickupDropoffLinkedTodo?.on_hold ?? false
-                )} ${showRentalCarPickupDropoffInList ? '' : 'hidden'}`}
-                aria-hidden={!showRentalCarPickupDropoffInList}
-              >
-                <RentalCarPickupDropoffPanel
-                  locale={locale}
-                  variant="list"
-                  linkedTodos={todos as never}
-                  onCompletedChange={setRentalCarPickupDropoffCompleted}
-                  onToggleLinkedTodo={handleRentalCarPickupDropoffToggleLinkedTodo}
-                  onEditRequest={openEditRentalCarPickupDropoffTodo}
-                  {...panelHoldProps(rentalCarPickupDropoffLinkedTodo)}
                 />
               </li>
             {visibleTodos.map((todo) => {

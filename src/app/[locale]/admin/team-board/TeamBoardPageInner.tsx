@@ -3919,6 +3919,59 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
               {(queryEnabled) => (
               <div
                 className={`${dailyCollageItemClass} rounded border p-2 ${
+                  rentalCarPickupDropoffCompleted
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <RentalCarPickupDropoffPanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setRentalCarPickupDropoffLocalCompleted}
+                  onEditRequest={onEditRentalCarPickupDropoffTodo}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={4} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
+                  antelopeCanyonBookingCompleted
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-gray-300 bg-white'
+                }`}
+                title="우클릭: 수정"
+              >
+                <AntelopeCanyonBookingPanel
+                  locale={locale}
+                  variant="list"
+                  queryEnabled={queryEnabled}
+                  linkedTodos={opTodos}
+                  onToggleLinkedTodo={async (todo, completed) => {
+                    await toggleTodoCompletion(todo.id, completed)
+                  }}
+                  onCompletedChange={setAntelopeCanyonBookingLocalCompleted}
+                  onEditRequest={onEditAntelopeCanyonBookingTodo}
+                  onOpenTourDetail={onOpenTourDetail}
+                />
+              </div>
+              )}
+            </DeferredDailyPanel>
+          )}
+          {category === 'daily' && (
+            <DeferredDailyPanel panelIndex={5} className={dailyCollageItemClass}>
+              {(queryEnabled) => (
+              <div
+                className={`${dailyCollageItemClass} rounded border p-2 ${
                   customerInfoReviewCompleted
                     ? 'border-emerald-300 bg-emerald-50'
                     : 'border-gray-300 bg-white'
@@ -3941,7 +3994,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
             </DeferredDailyPanel>
           )}
           {category === 'daily' && (
-            <DeferredDailyPanel panelIndex={4} className={dailyCollageItemClass}>
+            <DeferredDailyPanel panelIndex={6} className={dailyCollageItemClass}>
               {(queryEnabled) => (
               <div
                 className={`${dailyCollageItemClass} rounded border p-2 ${
@@ -3969,7 +4022,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
             </DeferredDailyPanel>
           )}
           {category === 'daily' && (
-            <DeferredDailyPanel panelIndex={5} className={dailyCollageItemClass}>
+            <DeferredDailyPanel panelIndex={7} className={dailyCollageItemClass}>
               {(queryEnabled) => (
               <div
                 className={`${dailyCollageItemClass} rounded border p-2 ${
@@ -3996,7 +4049,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
             </DeferredDailyPanel>
           )}
           {category === 'daily' && (
-            <DeferredDailyPanel panelIndex={6} className={dailyCollageItemClass}>
+            <DeferredDailyPanel panelIndex={8} className={dailyCollageItemClass}>
               {(queryEnabled) => (
               <div
                 className={`${dailyCollageItemClass} rounded border p-2 ${
@@ -4020,7 +4073,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
             </DeferredDailyPanel>
           )}
           {category === 'daily' && (
-            <DeferredDailyPanel panelIndex={7} className={dailyCollageItemClass}>
+            <DeferredDailyPanel panelIndex={9} className={dailyCollageItemClass}>
               {(queryEnabled) => (
               <div
                 className={`${dailyCollageItemClass} rounded border p-2 ${
@@ -4047,7 +4100,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
             </DeferredDailyPanel>
           )}
           {category === 'daily' && (
-            <DeferredDailyPanel panelIndex={8} className={dailyCollageItemClass}>
+            <DeferredDailyPanel panelIndex={10} className={dailyCollageItemClass}>
               {(queryEnabled) => (
               <div
                 className={`${dailyCollageItemClass} rounded border p-2 ${
@@ -4074,7 +4127,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
             </DeferredDailyPanel>
           )}
           {category === 'daily' && (
-            <DeferredDailyPanel panelIndex={9} className={dailyCollageItemClass}>
+            <DeferredDailyPanel panelIndex={11} className={dailyCollageItemClass}>
               {(queryEnabled) => (
               <div
                 className={`${dailyCollageItemClass} rounded border p-2 ${
@@ -4101,7 +4154,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
             </DeferredDailyPanel>
           )}
           {category === 'daily' && (
-            <DeferredDailyPanel panelIndex={10} className={dailyCollageItemClass}>
+            <DeferredDailyPanel panelIndex={12} className={dailyCollageItemClass}>
               {(queryEnabled) => (
               <div
                 className={`${dailyCollageItemClass} rounded border p-2 ${
@@ -4128,7 +4181,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
             </DeferredDailyPanel>
           )}
           {category === 'daily' && (
-            <DeferredDailyPanel panelIndex={11} className={dailyCollageItemClass}>
+            <DeferredDailyPanel panelIndex={13} className={dailyCollageItemClass}>
               {(queryEnabled) => (
               <div
                 className={`${dailyCollageItemClass} rounded border p-2 ${
@@ -4154,34 +4207,7 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
             </DeferredDailyPanel>
           )}
           {category === 'daily' && (
-            <DeferredDailyPanel panelIndex={12} className={dailyCollageItemClass}>
-              {(queryEnabled) => (
-              <div
-                className={`${dailyCollageItemClass} rounded border p-2 ${
-                  antelopeCanyonBookingCompleted
-                    ? 'border-emerald-300 bg-emerald-50'
-                    : 'border-gray-300 bg-white'
-                }`}
-                title="우클릭: 수정"
-              >
-                <AntelopeCanyonBookingPanel
-                  locale={locale}
-                  variant="list"
-                  queryEnabled={queryEnabled}
-                  linkedTodos={opTodos}
-                  onToggleLinkedTodo={async (todo, completed) => {
-                    await toggleTodoCompletion(todo.id, completed)
-                  }}
-                  onCompletedChange={setAntelopeCanyonBookingLocalCompleted}
-                  onEditRequest={onEditAntelopeCanyonBookingTodo}
-                  onOpenTourDetail={onOpenTourDetail}
-                />
-              </div>
-              )}
-            </DeferredDailyPanel>
-          )}
-          {category === 'daily' && (
-            <DeferredDailyPanel panelIndex={13} className={dailyCollageItemClass}>
+            <DeferredDailyPanel panelIndex={14} className={dailyCollageItemClass}>
               {(queryEnabled) => (
               <div
                 className={`${dailyCollageItemClass} rounded border p-2 ${
@@ -4202,32 +4228,6 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
                   onCompletedChange={setBentoCheckLocalCompleted}
                   onEditRequest={onEditBentoCheckTodo}
                   onOpenTourDetail={onOpenTourDetail}
-                />
-              </div>
-              )}
-            </DeferredDailyPanel>
-          )}
-          {category === 'daily' && (
-            <DeferredDailyPanel panelIndex={14} className={dailyCollageItemClass}>
-              {(queryEnabled) => (
-              <div
-                className={`${dailyCollageItemClass} rounded border p-2 ${
-                  rentalCarPickupDropoffCompleted
-                    ? 'border-emerald-300 bg-emerald-50'
-                    : 'border-gray-300 bg-white'
-                }`}
-                title="우클릭: 수정"
-              >
-                <RentalCarPickupDropoffPanel
-                  locale={locale}
-                  variant="list"
-                  queryEnabled={queryEnabled}
-                  linkedTodos={opTodos}
-                  onToggleLinkedTodo={async (todo, completed) => {
-                    await toggleTodoCompletion(todo.id, completed)
-                  }}
-                  onCompletedChange={setRentalCarPickupDropoffLocalCompleted}
-                  onEditRequest={onEditRentalCarPickupDropoffTodo}
                 />
               </div>
               )}
