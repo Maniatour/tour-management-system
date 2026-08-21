@@ -29,6 +29,10 @@ import ChatSidebar from '@/components/chat/ChatSidebar'
 import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
 import { useChatParticipants } from '@/hooks/useChatParticipants'
 import {
+  commitOptimisticChatMessage,
+  upsertIncomingChatMessage
+} from '@/lib/chatMessageMerge'
+import {
   ADMIN_TOUR_CHAT_ACTIVE_ROOM_KEY,
   ADMIN_TOUR_CHAT_PENDING_ROOM_KEY
 } from '@/components/admin/AdminTourChatNotificationListener'
@@ -289,6 +293,7 @@ export default function ChatManagementPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [sending, setSending] = useState(false)
+  const sendingLockRef = useRef(false)
   const [listUi, setListUi] = useRoutePersistedState('chat-management', CHAT_MGMT_UI_DEFAULT)
   const { searchTerm, filterStatus, activeTab } = listUi
   const setSearchTerm = (v: string) => setListUi((prev) => ({ ...prev, searchTerm: v }))
@@ -1677,13 +1682,14 @@ export default function ChatManagementPage() {
 
   // 메시지 전송
   const sendMessage = async () => {
-    if (!newMessage.trim() || !selectedRoom || sending) return
+    if (!newMessage.trim() || !selectedRoom || sending || sendingLockRef.current) return
     const staffEmail = user?.email?.trim()
     if (!staffEmail) {
       alert('로그인된 이메일이 없어 메시지를 보낼 수 없습니다.')
       return
     }
 
+    sendingLockRef.current = true
     const messageText = newMessage.trim()
     setSending(true)
 
@@ -1722,13 +1728,11 @@ export default function ChatManagementPage() {
         .single()
 
       if (error) throw error
-      
-      // 실제 메시지로 교체
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === tempMessage.id ? (data as ChatMessage) : msg
+      if (data) {
+        setMessages((prev) =>
+          commitOptimisticChatMessage(prev, tempMessage.id, data as ChatMessage)
         )
-      )
+      }
     } catch (error) {
       console.error('Error sending message:', error)
       alert('메시지 전송 중 오류가 발생했습니다.')
@@ -1736,6 +1740,7 @@ export default function ChatManagementPage() {
       // 실패 시 임시 메시지 제거
       setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id))
     } finally {
+      sendingLockRef.current = false
       setSending(false)
     }
   }
@@ -2036,7 +2041,7 @@ export default function ChatManagementPage() {
         },
         (payload) => {
           const newMessage = payload.new as ChatMessage
-          setMessages(prev => [...prev, newMessage])
+          setMessages((prev) => upsertIncomingChatMessage(prev, newMessage))
           setRoomMessageCounts((prev) => {
             if (prev[selectedRoom.id] === undefined) return prev
             return { ...prev, [selectedRoom.id]: prev[selectedRoom.id] + 1 }

@@ -38,6 +38,7 @@ import { useGuidePickupGeofenceOptional } from '@/contexts/GuidePickupGeofenceCo
 import { fetchPickupScheduleForTour } from '@/lib/fetchPickupScheduleForTour'
 import { guideChatSendTextMessage } from '@/lib/guideChatSendTextMessage'
 import { getVoiceCallTabBroadcastChannel } from '@/lib/voiceCallTabBroadcast'
+import { commitOptimisticChatMessage } from '@/lib/chatMessageMerge'
 
 // 타입은 @/types/chat에서 import
 
@@ -138,6 +139,7 @@ export default function TourChatRoom({
     customerName: customerName || undefined,
     guideEmail: guideEmail || undefined
   })
+  const sendingLockRef = useRef(false)
 
   const [teamMembersDetail, setTeamMembersDetail] = useState<Map<string, {
     name_ko?: string
@@ -1792,8 +1794,9 @@ export default function TourChatRoom({
   
   // 이미지 메시지 전송
   const sendImageMessage = async (imageUrl: string, fileName: string, fileSize: number) => {
-    if (!room || sending) return
+    if (!room || sending || sendingLockRef.current) return
     
+    sendingLockRef.current = true
     setSending(true)
     
     // 즉시 UI에 메시지 표시 (낙관적 업데이트)
@@ -1882,25 +1885,24 @@ export default function TourChatRoom({
       
       // 실제 메시지로 교체
       if (data) {
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === tempMessage.id ? data : msg
-          )
-        )
+        setMessages(prev => commitOptimisticChatMessage(prev, tempMessage.id, data))
       }
     } catch (error) {
       console.error('Error sending image message:', error)
       alert(error instanceof Error ? error.message : 'An error occurred while sending the image.')
       setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id))
     } finally {
+      sendingLockRef.current = false
       setSending(false)
     }
   }
 
   const sendMessage = async () => {
-    if (!newMessage.trim() || !room || sending) return
+    if (!newMessage.trim() || !room || sending || sendingLockRef.current) return
+    sendingLockRef.current = true
     // block banned customers
     if (await checkBanned(room.id)) {
+      sendingLockRef.current = false
       alert('You are blocked from this chat room.')
       return
     }
@@ -1988,11 +1990,7 @@ export default function TourChatRoom({
       
       // 실제 메시지로 교체
       if (data) {
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === tempMessage.id ? data : msg
-          )
-        )
+        setMessages(prev => commitOptimisticChatMessage(prev, tempMessage.id, data))
         
         // 가이드가 메시지를 보낸 경우 푸시 알림 전송
         if (!isPublicView && room.id) {
@@ -2024,6 +2022,7 @@ export default function TourChatRoom({
       // 실패 시 임시 메시지 제거
       setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id))
     } finally {
+      sendingLockRef.current = false
       setSending(false)
     }
   }
@@ -2031,7 +2030,8 @@ export default function TourChatRoom({
 
   // 위치 공유 확인 후 메시지 전송
   const confirmLocationShare = async () => {
-    if (!pendingLocation || !room) return
+    if (!pendingLocation || !room || sendingLockRef.current) return
+    sendingLockRef.current = true
     
     setShowLocationShareModal(false)
     setGettingLocation(false)
@@ -2125,11 +2125,7 @@ export default function TourChatRoom({
       
       // 실제 메시지로 교체
       if (data) {
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === tempMessage.id ? data : msg
-          )
-        )
+        setMessages(prev => commitOptimisticChatMessage(prev, tempMessage.id, data))
         
         // 가이드가 메시지를 보낸 경우 푸시 알림 전송
         if (!isPublicView && room.id) {
@@ -2170,6 +2166,7 @@ export default function TourChatRoom({
       
       // pendingLocation은 유지하여 다시 시도할 수 있도록 함
     } finally {
+      sendingLockRef.current = false
       setSending(false)
     }
   }
@@ -2242,7 +2239,8 @@ export default function TourChatRoom({
 
   const sendGuideAutomatedMessage = useCallback(
     async (messageText: string): Promise<boolean> => {
-      if (!room) return false
+      if (!room || sendingLockRef.current) return false
+      sendingLockRef.current = true
       setSending(true)
       const tempMessage = {
         id: `temp_${Date.now()}`,
@@ -2267,7 +2265,7 @@ export default function TourChatRoom({
           messageText
         })
         if (!result.ok) throw result.error
-        setMessages((prev) => prev.map((msg) => (msg.id === tempMessage.id ? result.data : msg)))
+        setMessages((prev) => commitOptimisticChatMessage(prev, tempMessage.id, result.data))
         return true
       } catch (error) {
         console.error('Error sending pickup update message:', error)
@@ -2279,6 +2277,7 @@ export default function TourChatRoom({
         setMessages((prev) => prev.filter((msg) => msg.id !== tempMessage.id))
         return false
       } finally {
+        sendingLockRef.current = false
         setSending(false)
       }
     },

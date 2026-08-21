@@ -132,6 +132,7 @@ export default function MessageInput({
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing || e.key === 'Process') return
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
               onSendMessage()

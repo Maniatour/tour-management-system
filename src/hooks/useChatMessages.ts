@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import {
+  mergePolledChatMessages,
+  upsertIncomingChatMessage
+} from '@/lib/chatMessageMerge'
 import type { ChatMessage } from '@/types/chat'
 
 const PUBLIC_CHAT_POLL_MS = 4000
@@ -16,29 +20,17 @@ interface UseChatMessagesProps {
 export function useChatMessages({
   roomId,
   roomCode,
-  isPublicView,
-  customerName,
-  guideEmail
+  isPublicView
 }: UseChatMessagesProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [sending, setSending] = useState(false)
   const messagesRef = useRef<ChatMessage[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
-  const guideEmailRef = useRef<string | undefined>(guideEmail)
-  const customerNameRef = useRef<string | undefined>(customerName)
 
   useEffect(() => {
     messagesRef.current = messages
   }, [messages])
-
-  useEffect(() => {
-    guideEmailRef.current = guideEmail
-  }, [guideEmail])
-
-  useEffect(() => {
-    customerNameRef.current = customerName
-  }, [customerName])
 
   const scrollToBottom = useCallback((instant = false) => {
     const container = messagesScrollRef.current
@@ -74,13 +66,12 @@ export function useChatMessages({
 
           if (options?.publicPoll) {
             setMessages(prev => {
-              const idSet = new Set(prev.map(m => m.id))
-              const additions = sortedMessages.filter(m => !idSet.has(m.id))
-              if (additions.length === 0) return prev
-              const merged = [...prev, ...additions].sort(
+              const merged = mergePolledChatMessages(prev, sortedMessages)
+              if (merged === prev) return prev
+              const sorted = [...merged].sort(
                 (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
               )
-              const next = merged.length > 500 ? merged.slice(-500) : merged
+              const next = sorted.length > 500 ? sorted.slice(-500) : sorted
               queueMicrotask(() => scrollToBottom())
               return next
             })
@@ -183,37 +174,20 @@ export function useChatMessages({
         (payload: { new: Record<string, unknown> }) => {
           const newMessage = payload.new as unknown as ChatMessage
 
-          if (isPublicView) {
-            if (
-              newMessage.sender_type === 'customer' &&
-              newMessage.sender_name === (customerNameRef.current || '고객')
-            ) {
-              return
-            }
-          } else if (
-            newMessage.sender_type === 'guide' &&
-            newMessage.sender_email === guideEmailRef.current
-          ) {
-            return
-          }
-
           setMessages((prev) => {
-            const exists = prev.some((m) => m.id === newMessage.id)
-            if (exists) {
-              return prev
-            }
-            const updated = [...prev, newMessage]
-            if (updated.length > 500) {
-              return updated
+            const next = upsertIncomingChatMessage(prev, newMessage)
+            if (next === prev) return prev
+            queueMicrotask(() => scrollToBottomRef.current())
+            if (next.length > 500) {
+              return next
                 .sort(
                   (a, b) =>
                     new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
                 )
                 .slice(-500)
             }
-            return updated
+            return next
           })
-          scrollToBottomRef.current()
         }
       )
       .subscribe()
