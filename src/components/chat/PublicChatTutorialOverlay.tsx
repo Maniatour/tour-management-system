@@ -14,7 +14,7 @@ import {
   ImageIcon,
   Users,
   Phone,
-  Copy,
+  Star,
   Share2,
   ChevronDown,
   Send,
@@ -239,8 +239,8 @@ export default function PublicChatTutorialOverlay({
           <TutorialRow
             visual={
               <>
-                <span className="inline-flex p-2 text-gray-600 rounded border border-gray-200 bg-white">
-                  <Copy size={18} />
+                <span className="inline-flex p-2 text-amber-600 rounded border border-amber-200 bg-amber-50">
+                  <Star size={18} className="fill-amber-400" />
                 </span>
                 <span className="inline-flex p-2 text-gray-600 rounded border border-gray-200 bg-white">
                   <Share2 size={18} />

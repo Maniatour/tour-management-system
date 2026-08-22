@@ -26,7 +26,7 @@ import {
   shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
 } from '@/utils/channelSettlement'
 import { isHomepageBookingChannel, couponMatchesReservationChannel } from '@/utils/homepageBookingChannel'
-import { summarizePaymentRecordsForBalance, cancelledNonOtaNetCollectedFromPayments, type PaymentRecordLike } from '@/utils/reservationPricingBalance'
+import { summarizePaymentRecordsForBalance, cancelledNonOtaNetCollectedFromPayments, parseUsdNumberInput, type PaymentRecordLike } from '@/utils/reservationPricingBalance'
 import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
 import { useAuth } from '@/contexts/AuthContext'
 import { isSuperAdminActor } from '@/lib/superAdmin'
@@ -2140,7 +2140,7 @@ export default function PricingInfoModal({
                             <input
                               type="number"
                               value={editData?.balance_amount ?? ''}
-                              onChange={(e) => handleInputChange('balance_amount', Number(e.target.value) || 0)}
+                              onChange={(e) => handleInputChange('balance_amount', parseUsdNumberInput(e.target.value))}
                               className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right"
                               step="0.01"
                             />

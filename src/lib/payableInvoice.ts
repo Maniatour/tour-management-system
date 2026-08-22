@@ -8,6 +8,10 @@ import { operatorIdInsert, resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 import { isReservationCancelledStatus } from '@/utils/tourUtils'
+import {
+  appendOtaTempEmailToSpecialRequests,
+  isGetYourGuideReplyEmail,
+} from '@/lib/otaDirectCustomerEmail'
 
 export const STAFF_PAYABLE_INVOICE_PURPOSE = 'staff_payable_invoice'
 
@@ -24,6 +28,95 @@ export function isQuickPaymentInvoiceNotes(notes: string | null | undefined): bo
 }
 
 type AdminClient = SupabaseClient<Database>
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+export async function replaceGetYourGuideRelayCustomerEmail(
+  admin: AdminClient,
+  params: {
+    reservationId: string
+    newEmail: string
+    recipientName?: string
+    locale?: 'ko' | 'en'
+  }
+): Promise<{
+  customerId: string
+  email: string
+  previousEmail: string
+  specialRequests: string
+} | null> {
+  const locale = params.locale === 'ko' ? 'ko' : 'en'
+  const email = params.newEmail.trim().toLowerCase()
+  const reservationId = params.reservationId.trim()
+  const recipientName = (params.recipientName || '').trim()
+
+  if (!reservationId) {
+    throw new Error(locale === 'ko' ? '예약 정보가 필요합니다.' : 'Reservation is required.')
+  }
+  if (!email || !EMAIL_RE.test(email)) {
+    throw new Error(locale === 'ko' ? '유효한 이메일이 필요합니다.' : 'A valid email is required.')
+  }
+  if (isGetYourGuideReplyEmail(email)) {
+    throw new Error(
+      locale === 'ko'
+        ? 'GetYourGuide 임시 이메일(@reply.getyourguide.com)로는 금액 청구를 보낼 수 없습니다. 고객의 실제 이메일을 입력해 주세요.'
+        : 'GetYourGuide relay addresses (@reply.getyourguide.com) cannot receive payment requests. Enter the guest\'s real email.'
+    )
+  }
+
+  const { data: reservation } = await admin
+    .from('reservations')
+    .select('id, customer_id')
+    .eq('id', reservationId)
+    .maybeSingle()
+
+  if (!reservation?.customer_id) return null
+
+  const { data: reservationCustomer } = await admin
+    .from('customers')
+    .select('id, name, email, special_requests')
+    .eq('id', reservation.customer_id)
+    .maybeSingle()
+
+  if (!reservationCustomer?.id) return null
+
+  const storedEmail = (reservationCustomer.email || '').trim()
+  if (!isGetYourGuideReplyEmail(storedEmail)) return null
+  if (storedEmail.toLowerCase() === email) return null
+
+  const nextSpecial = appendOtaTempEmailToSpecialRequests(
+    reservationCustomer.special_requests,
+    storedEmail
+  )
+  const customerUpdate: {
+    email: string
+    special_requests: string
+    updated_at: string
+    name?: string
+  } = {
+    email,
+    special_requests: nextSpecial,
+    updated_at: new Date().toISOString(),
+  }
+  if (recipientName && reservationCustomer.name !== recipientName) {
+    customerUpdate.name = recipientName
+  }
+
+  const { error: emailUpdateError } = await admin
+    .from('customers')
+    .update(customerUpdate as never)
+    .eq('id', reservationCustomer.id)
+  if (emailUpdateError) {
+    throw new Error(emailUpdateError.message || 'Failed to update customer email')
+  }
+
+  return {
+    customerId: reservationCustomer.id,
+    email,
+    previousEmail: storedEmail,
+    specialRequests: nextSpecial,
+  }
+}
 
 type InvoiceItemRow = {
   productName?: string | null
@@ -745,6 +838,9 @@ export async function createQuickPayableInvoice(
   invoiceNumber: string
   customerId: string
   customerCreated: boolean
+  customerEmailUpdated: boolean
+  previousEmail: string | null
+  specialRequests: string | null
   stripeInvoiceId: string
   hostedInvoiceUrl: string
   paymentToken: string
@@ -764,6 +860,13 @@ export async function createQuickPayableInvoice(
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new Error(locale === 'ko' ? '유효한 이메일이 필요합니다.' : 'A valid email is required.')
   }
+  if (isGetYourGuideReplyEmail(email)) {
+    throw new Error(
+      locale === 'ko'
+        ? 'GetYourGuide 임시 이메일(@reply.getyourguide.com)로는 금액 청구를 보낼 수 없습니다. 고객의 실제 이메일을 입력해 주세요.'
+        : 'GetYourGuide relay addresses (@reply.getyourguide.com) cannot receive payment requests. Enter the guest\'s real email.'
+    )
+  }
   if (!description) {
     throw new Error(locale === 'ko' ? '청구 내용을 입력해 주세요.' : 'Description is required.')
   }
@@ -775,48 +878,99 @@ export async function createQuickPayableInvoice(
   }
 
   const operatorId = resolveOperatorId(params.operatorId)
+  const reservationId = (params.reservationId || '').trim() || null
 
-  const { data: existingCustomer } = await admin
-    .from('customers')
-    .select('id, name, email')
-    .eq('operator_id', operatorId)
-    .ilike('email', email)
-    .eq('archive', false)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  let customerId: string
+  let customerId: string | null = null
   let customerCreated = false
+  let customerEmailUpdated = false
+  let previousEmail: string | null = null
+  let specialRequests: string | null = null
 
-  if (existingCustomer?.id) {
-    customerId = existingCustomer.id
-    if (recipientName && existingCustomer.name !== recipientName) {
-      await admin
-        .from('customers')
-        .update({ name: recipientName, updated_at: new Date().toISOString() } as never)
-        .eq('id', customerId)
+  if (reservationId) {
+    const replaced = await replaceGetYourGuideRelayCustomerEmail(admin, {
+      reservationId,
+      newEmail: email,
+      recipientName,
+      locale,
+    })
+    if (replaced) {
+      customerId = replaced.customerId
+      customerEmailUpdated = true
+      previousEmail = replaced.previousEmail
+      specialRequests = replaced.specialRequests
+    } else {
+      const { data: reservation } = await admin
+        .from('reservations')
+        .select('id, customer_id')
+        .eq('id', reservationId)
+        .maybeSingle()
+
+      if (reservation?.customer_id) {
+        const { data: reservationCustomer } = await admin
+          .from('customers')
+          .select('id, name, email, special_requests')
+          .eq('id', reservation.customer_id)
+          .maybeSingle()
+
+        if (reservationCustomer?.id) {
+          const storedEmailNorm = (reservationCustomer.email || '').trim().toLowerCase()
+          if (storedEmailNorm === email) {
+            customerId = reservationCustomer.id
+            specialRequests = reservationCustomer.special_requests || null
+            if (recipientName && reservationCustomer.name !== recipientName) {
+              await admin
+                .from('customers')
+                .update({ name: recipientName, updated_at: new Date().toISOString() } as never)
+                .eq('id', customerId)
+            }
+          }
+        }
+      }
     }
-  } else {
-    customerId = generateCustomerId()
-    const { error: customerError } = await admin.from('customers').insert({
-      id: customerId,
-      name: recipientName,
-      email,
-      status: 'active',
-      ...operatorIdInsert(operatorId),
-    } as never)
-    if (customerError) {
-      throw new Error(customerError.message || 'Failed to create customer')
+  }
+
+  if (!customerId) {
+    const { data: existingCustomer } = await admin
+      .from('customers')
+      .select('id, name, email')
+      .eq('operator_id', operatorId)
+      .ilike('email', email)
+      .eq('archive', false)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (existingCustomer?.id) {
+      customerId = existingCustomer.id
+      if (recipientName && existingCustomer.name !== recipientName) {
+        await admin
+          .from('customers')
+          .update({ name: recipientName, updated_at: new Date().toISOString() } as never)
+          .eq('id', customerId)
+      }
+    } else {
+      customerId = generateCustomerId()
+      const { error: customerError } = await admin.from('customers').insert({
+        id: customerId,
+        name: recipientName,
+        email,
+        status: 'active',
+        ...operatorIdInsert(operatorId),
+      } as never)
+      if (customerError) {
+        throw new Error(customerError.message || 'Failed to create customer')
+      }
+      customerCreated = true
     }
-    customerCreated = true
+  }
+
+  if (!customerId) {
+    throw new Error(locale === 'ko' ? '고객을 찾을 수 없습니다.' : 'Customer could not be resolved.')
   }
 
   const invoiceNumber = buildQuickInvoiceNumber()
   const invoiceDate = lasVegasDateString()
   const dueDate = lasVegasDateString(7)
-
-  const reservationId = (params.reservationId || '').trim() || null
 
   const items = [
     {
@@ -870,6 +1024,9 @@ export async function createQuickPayableInvoice(
     invoiceNumber: pay.invoiceNumber,
     customerId,
     customerCreated,
+    customerEmailUpdated,
+    previousEmail,
+    specialRequests,
     stripeInvoiceId: pay.stripeInvoiceId,
     hostedInvoiceUrl: pay.hostedInvoiceUrl,
     paymentToken: pay.paymentToken,

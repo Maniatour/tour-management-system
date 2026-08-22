@@ -1230,6 +1230,9 @@ function bookingFieldLabel(key: string, locale: string): string {
     notes: ['메모', 'Notes'],
     note: ['메모', 'Notes'],
     submitted_by: ['제출자', 'Submitted by'],
+    reservation_name: ['체크인 담당자', 'Check-in guest'],
+    booker_name: ['예약자', 'Booker'],
+    wyndham_account_name: ['Wyndham 계정명', 'Wyndham account'],
   }
   const pair = map[key]
   if (pair) return lo(locale, pair[0], pair[1])

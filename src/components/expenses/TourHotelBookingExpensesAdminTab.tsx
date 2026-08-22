@@ -517,6 +517,8 @@ export default function TourHotelBookingExpensesAdminTab({ locale }: { locale: s
                     check_in_date: formInitialRow.check_in_date,
                     check_out_date: formInitialRow.check_out_date,
                     reservation_name: formInitialRow.reservation_name,
+                    booker_name: formInitialRow.booker_name ?? '',
+                    wyndham_account_name: formInitialRow.wyndham_account_name ?? '',
                     submitted_by: formInitialRow.submitted_by ?? '',
                     cc: formInitialRow.cc ?? 'not_sent',
                     rooms: formInitialRow.rooms ?? 1,

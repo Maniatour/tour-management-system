@@ -274,6 +274,8 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'check_in_date', type: 'date', nullable: false, default: null },
       { name: 'check_out_date', type: 'date', nullable: false, default: null },
       { name: 'reservation_name', type: 'character varying', nullable: false, default: null },
+      { name: 'booker_name', type: 'text', nullable: true, default: null },
+      { name: 'wyndham_account_name', type: 'text', nullable: true, default: null },
       { name: 'submitted_by', type: 'character varying', nullable: true, default: null },
       { name: 'cc', type: 'character varying', nullable: true, default: null },
       { name: 'rooms', type: 'integer', nullable: false, default: '1' },

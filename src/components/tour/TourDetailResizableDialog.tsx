@@ -71,20 +71,22 @@ export function TourDetailResizableDialog({
 }: TourDetailResizableDialogProps) {
   const locale = useLocale()
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const onOpenChangeRef = useRef(onOpenChange)
+  onOpenChangeRef.current = onOpenChange
   const [meta, setMetaState] = useState<TourDetailModalMeta | null>(null)
   const [toolbarContent, setToolbarContentState] = useState<ReactNode | null>(null)
   const zIndex = DIALOG_Z_INDEX[stackLevel]
 
   const handleClose = useCallback(() => {
-    onOpenChange(false)
-  }, [onOpenChange])
+    onOpenChangeRef.current(false)
+  }, [])
 
   const setMeta = useCallback((next: TourDetailModalMeta | null) => {
     setMetaState((prev) => (metaEquals(prev, next) ? prev : next))
   }, [])
 
   const setToolbarContent = useCallback((next: ReactNode | null) => {
-    setToolbarContentState(next)
+    setToolbarContentState((prev) => (prev === next || (prev == null && next == null) ? prev : next))
   }, [])
 
   const resetScroll = useCallback(() => {

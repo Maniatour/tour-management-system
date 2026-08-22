@@ -32,6 +32,10 @@ type GooglePlaceDetailsResponse = {
 
 const DEFAULT_MANIA_TOUR_PLACE_ID = 'ChIJ7W4fZpfGyIARL1o2YnYWOmE'
 
+/** Google Business 리뷰 작성 단축 링크 (Las Vegas Mania Tour / Kovegas). */
+export const GOOGLE_BUSINESS_WRITE_REVIEW_URL =
+  'https://g.page/r/CS9aNmJ2FjphEBM/review'
+
 const CACHE_TTL_MS = 60 * 60 * 1000
 
 let cachedPayload: {

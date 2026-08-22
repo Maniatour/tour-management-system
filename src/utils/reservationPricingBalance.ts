@@ -20,13 +20,30 @@ function roundUsd2(n: number): number {
 export function pricingFieldToNumber(v: unknown): number {
   if (v == null || v === '') return 0
   if (typeof v === 'number' && !Number.isNaN(v)) return v
-  if (typeof v === 'string') return parseFloat(v) || 0
-  return Number(v) || 0
+  if (typeof v === 'string') {
+    const n = parseFloat(v)
+    return Number.isFinite(n) ? n : 0
+  }
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
+/** number input 값. `Number(x) || 0`은 `-10`은 유지하지만 `-` 입력 중 NaN을 0으로 만든다. */
+export function parseUsdNumberInput(raw: string): number {
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : 0
+}
+
+/** 수동 입력 잔액(음수 크레딧 포함)이 있는지 — `> 0.005`만 보면 -10이 계산값으로 덮인다. */
+export function hasExplicitOnSiteBalance(value: unknown): boolean {
+  const n = Number(value)
+  return Number.isFinite(n) && Math.abs(n) > 0.005
 }
 
 /**
  * 투어 당일 잔액 저장값.
  * 이메일 가져오기 등에서 총액 로드 전에 보증금만 채워지면 `0 − 보증금`이 음수로 남는 문제를 막는다.
+ * 총액이 있는 상태에서 입력한 음수(인당 $10 크레딧 등)는 그대로 저장한다.
  */
 export function resolveOnSiteBalanceAmountForSave(opts: {
   formBalance: unknown
@@ -37,7 +54,11 @@ export function resolveOnSiteBalanceAmountForSave(opts: {
     Math.max(0, (Number(opts.totalPrice) || 0) - (Number(opts.depositAmount) || 0))
   )
   const form = Number(opts.formBalance)
-  if (!Number.isFinite(form) || form < -0.005) {
+  if (!Number.isFinite(form)) {
+    return computed
+  }
+  const total = Number(opts.totalPrice) || 0
+  if (form < -0.005 && total < 0.005) {
     return computed
   }
   return roundUsd2(form)
@@ -969,6 +990,9 @@ export function withNormalizedBalanceAmountForDisplay(
  * (비거주자 비용 반영 후 DB 미동기화·구버전 sync 보정).
  */
 function resolveBalanceDisplayAmount(storedNum: number, defaultBalance: number): number {
+  if (storedNum < -0.005) {
+    return roundUsd2(storedNum)
+  }
   if (Math.abs(defaultBalance - storedNum) > 0.01) {
     return defaultBalance
   }

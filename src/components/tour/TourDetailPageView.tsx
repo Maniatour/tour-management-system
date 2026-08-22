@@ -78,6 +78,7 @@ import {
 } from '@/utils/tourUtils'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
 import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
+import { convertAssignedLowerCanyonToX } from '@/lib/convertAssignedLowerToXCanyon'
 import { RESERVATION_EDIT_MODAL_RECT_KEY } from '@/lib/adminModalRectStorage'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import {
@@ -252,6 +253,7 @@ export function TourDetailPageView({
   const [showGuideAssignmentHistoryModal, setShowGuideAssignmentHistoryModal] = useState(false)
   const [envelopeModalVariant, setEnvelopeModalVariant] = useState<'tip' | 'balance' | null>(null)
   const [showTourPrintModal, setShowTourPrintModal] = useState<boolean>(false)
+  const [convertingLowerToX, setConvertingLowerToX] = useState(false)
   const [pickupPresets, setPickupPresets] = useState<PickupGroupPresetRow[]>([])
   const [activePickupPreset, setActivePickupPreset] = useState<PickupGroupPresetWithReps | null>(null)
   const [activeSection, setActiveSection] = useState<string>('')
@@ -2271,15 +2273,75 @@ export function TourDetailPageView({
     }
   }
 
+  const handleConvertLowerToX = useCallback(async () => {
+    const reservationIds = (tourData.assignedReservations || [])
+      .map((r: { id?: string }) => String(r.id || '').trim())
+      .filter(Boolean)
+    if (reservationIds.length === 0) {
+      alert(locale === 'ko' ? '배정된 예약이 없습니다.' : 'No assigned reservations.')
+      return
+    }
+    const ok = window.confirm(
+      locale === 'ko'
+        ? '이 투어에 배정된 Lower Antelope(L) 예약을 모두 X Canyon으로 바꾸고,\n인원당 $10 추가할인을 넣은 뒤 잔액을 업데이트합니다.\n계속할까요?'
+        : 'Switch all assigned Lower Antelope (L) bookings to X Canyon,\nadd $10 off per person, and update the remaining balance.\nContinue?'
+    )
+    if (!ok) return
+
+    setConvertingLowerToX(true)
+    try {
+      const result = await convertAssignedLowerCanyonToX({
+        supabase,
+        reservationIds,
+        fallbackProductId: tourData.tour?.product_id ?? tourData.product?.id ?? null,
+      })
+      if (tourData.refreshReservations) {
+        await tourData.refreshReservations()
+      }
+      const parts =
+        locale === 'ko'
+          ? [`전환 ${result.converted}건`, result.skipped ? `건너뜀 ${result.skipped}건` : '']
+          : [`Converted ${result.converted}`, result.skipped ? `Skipped ${result.skipped}` : '']
+      const summary = parts.filter(Boolean).join(', ')
+      if (result.errors.length > 0) {
+        alert(`${summary}\n\n${result.errors.slice(0, 8).join('\n')}`)
+      } else if (result.converted === 0) {
+        alert(
+          locale === 'ko'
+            ? '전환할 L 예약이 없습니다. 이미 X이거나 초이스가 없는 예약입니다.'
+            : 'No Lower Antelope reservations to convert.'
+        )
+      } else {
+        alert(locale === 'ko' ? `${summary} 완료.` : `${summary} done.`)
+      }
+    } catch (err) {
+      console.error('L > X 전환 오류:', err)
+      alert(locale === 'ko' ? 'L > X 전환 중 오류가 발생했습니다.' : 'Failed to convert L to X.')
+    } finally {
+      setConvertingLowerToX(false)
+    }
+  }, [
+    locale,
+    tourData.assignedReservations,
+    tourData.product?.id,
+    tourData.refreshReservations,
+    tourData.tour?.product_id,
+  ])
+
+  const setToolbarContent = modalChrome?.setToolbarContent
+  const onCloseModal = modalChrome?.onClose
+  const convertLowerToXRef = useRef(handleConvertLowerToX)
+  convertLowerToXRef.current = handleConvertLowerToX
+
   useEffect(() => {
-    if (!modalLightLoad || !modalChrome) return
+    if (!modalLightLoad || !setToolbarContent) return
 
     if (!tourData.tour || tourData.pageLoading) {
-      modalChrome.setToolbarContent(null)
+      setToolbarContent(null)
       return
     }
 
-    modalChrome.setToolbarContent(
+    setToolbarContent(
       <TourHeader
         variant="modal-toolbar"
         tour={tourData.tour}
@@ -2293,10 +2355,10 @@ export function TourDetailPageView({
         getTotalPeopleNonCancelled={tourData.getTotalPeopleNonCancelled}
         getTotalCancelledPeople={tourData.getTotalCancelledPeople}
         onToggleTourStatusDropdown={() =>
-          tourData.setShowTourStatusDropdown(!tourData.showTourStatusDropdown)
+          tourData.setShowTourStatusDropdown((prev: boolean) => !prev)
         }
         onToggleAssignmentStatusDropdown={() =>
-          tourData.setShowAssignmentStatusDropdown(!tourData.showAssignmentStatusDropdown)
+          tourData.setShowAssignmentStatusDropdown((prev: boolean) => !prev)
         }
         onUpdateTourStatus={handleTourStatusUpdate}
         onUpdateAssignmentStatus={handleAssignmentStatusUpdate}
@@ -2323,7 +2385,15 @@ export function TourDetailPageView({
             }
           : {})}
         {...(tourData.isStaff ? { onViewAssignmentHistory: openGuideAssignmentHistoryModal } : {})}
-        onCloseModal={modalChrome.onClose}
+        {...(onCloseModal ? { onCloseModal } : {})}
+        {...(tourData.isStaff
+          ? {
+              onConvertLowerToX: () => {
+                void convertLowerToXRef.current()
+              },
+              convertingLowerToX,
+            }
+          : {})}
         isPrivateTour={tourData.isPrivateTour}
         maxParticipants={
           typeof tourData.tour.max_participants === 'number' &&
@@ -2333,31 +2403,42 @@ export function TourDetailPageView({
         }
       />
     )
-
-    return () => modalChrome.setToolbarContent(null)
   }, [
     modalLightLoad,
-    modalChrome,
-    tourData.tour?.id,
+    setToolbarContent,
+    onCloseModal,
+    tourData.tour,
     tourData.pageLoading,
-    tourData.product?.id,
-    tourData.tour?.tour_status,
+    tourData.product,
+    tourData.showTourStatusDropdown,
+    tourData.showAssignmentStatusDropdown,
+    tourData.getTotalAssignedPeople,
+    tourData.getTotalPeopleNonCancelled,
+    tourData.getTotalCancelledPeople,
     tourData.isStaff,
     tourData.isPrivateTour,
-    tourData.tour?.max_participants,
     locale,
+    convertingLowerToX,
+    canSendGuideScheduleConfirm,
   ])
 
+  useEffect(() => {
+    if (!modalLightLoad || !setToolbarContent) return
+    return () => setToolbarContent(null)
+  }, [modalLightLoad, setToolbarContent])
+
+  const resetModalScroll = modalChrome?.resetScroll
+
   useLayoutEffect(() => {
-    if (!modalLightLoad || !modalChrome || tourData.pageLoading || !tourData.tour) return
-    modalChrome.resetScroll()
+    if (!modalLightLoad || !resetModalScroll || tourData.pageLoading || !tourData.tour) return
+    resetModalScroll()
     const raf = requestAnimationFrame(() => {
-      modalChrome.resetScroll()
+      resetModalScroll()
     })
     return () => cancelAnimationFrame(raf)
   }, [
     modalLightLoad,
-    modalChrome,
+    resetModalScroll,
     tourData.pageLoading,
     tourData.tour?.id,
   ])

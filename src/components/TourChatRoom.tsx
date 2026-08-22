@@ -17,6 +17,7 @@ import TourPhotoGallery from './TourPhotoGallery'
 import { SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 import { formatTourChatStaffDisplayName } from '@/lib/tourChatStaffDisplay'
 import { buildTourChatRoomUrl } from '@/lib/tourChatRoomEmailHtml'
+import { GOOGLE_BUSINESS_WRITE_REVIEW_URL } from '@/lib/googlePlaceReviews'
 import { formatPublicChatRoomTitle } from '@/lib/formatPublicChatRoomTitle'
 import { usePushNotification } from '@/hooks/usePushNotification'
 import { useChatRoom } from '@/hooks/useChatRoom'
@@ -2368,6 +2369,10 @@ export default function TourChatRoom({
     alert('Chat room link has been copied to clipboard.')
   }
 
+  const openGoogleReview = () => {
+    window.open(GOOGLE_BUSINESS_WRITE_REVIEW_URL, '_blank', 'noopener,noreferrer')
+  }
+
   const shareRoomLink = () => {
     if (!room) return
     setShowShareModal(true)
@@ -2600,6 +2605,7 @@ export default function TourChatRoom({
           onGoToTourDetail={goToTourDetail}
           onStartCall={handleStartCall}
           onCopyLink={copyRoomLink}
+          onWriteReview={openGoogleReview}
           onShare={shareRoomLink}
           onTogglePush={async () => {
             if (isPushSubscribed) {

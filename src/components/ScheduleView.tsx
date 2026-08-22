@@ -7149,8 +7149,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                     type="button"
                     onClick={() => setShowPastMissingReceiptsModal(true)}
                     className="relative flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors"
-                    title={locale === 'ko' ? '오늘 이전 · 영수증 미첨부' : 'Past tours missing receipts'}
-                    aria-label={locale === 'ko' ? '영수증 미첨부 투어' : 'Tours missing receipts'}
+                    title={locale === 'ko' ? '오늘 이전 · 지출 없는 투어' : 'Past tours with no expenses'}
+                    aria-label={locale === 'ko' ? '지출 없는 투어' : 'Tours with no expenses'}
                   >
                     <Receipt className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden />
                     {pastMissingReceiptCount != null && pastMissingReceiptCount > 0 ? (

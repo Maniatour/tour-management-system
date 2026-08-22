@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { Megaphone, Calendar, ExternalLink, ImageIcon, Users, Phone, Copy, Share2, Bell, BellOff, Car, Power } from 'lucide-react'
+import { Megaphone, Calendar, ExternalLink, ImageIcon, Users, Phone, Copy, Share2, Bell, BellOff, Car, Power, Star } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import type { SupportedLanguage } from '@/lib/translation'
 import type { ChatRoom } from '@/types/chat'
@@ -34,6 +34,8 @@ interface ChatHeaderProps {
   onGoToTourDetail: () => void
   onStartCall: () => void
   onCopyLink: () => void
+  /** 고객 공개 화면: 구글 리뷰 작성 페이지 열기 */
+  onWriteReview?: () => void
   onShare: () => void
   onTogglePush: () => void
   onLanguageToggle: () => void
@@ -66,6 +68,7 @@ export default function ChatHeader({
   onGoToTourDetail,
   onStartCall,
   onCopyLink,
+  onWriteReview,
   onShare,
   onTogglePush,
   onLanguageToggle,
@@ -166,36 +169,46 @@ export default function ChatHeader({
       ...(onlineParticipantsCount > 0 ? { badge: onlineParticipantsCount } : {}),
     })
 
-    actions.push(
-      {
-        id: 'call',
-        label: ko ? '통화' : 'Call',
-        icon: Phone,
-        onClick: () => {
-          if (!callDisabled) onStartCall()
-        },
-        tileClass:
-          callStatus === 'connected'
-            ? 'bg-gradient-to-br from-emerald-500 to-green-700'
-            : callDisabled
-              ? 'bg-gradient-to-br from-slate-300 to-slate-500 opacity-70'
-              : 'bg-gradient-to-br from-green-500 to-emerald-700',
+    actions.push({
+      id: 'call',
+      label: ko ? '통화' : 'Call',
+      icon: Phone,
+      onClick: () => {
+        if (!callDisabled) onStartCall()
       },
-      {
+      tileClass:
+        callStatus === 'connected'
+          ? 'bg-gradient-to-br from-emerald-500 to-green-700'
+          : callDisabled
+            ? 'bg-gradient-to-br from-slate-300 to-slate-500 opacity-70'
+            : 'bg-gradient-to-br from-green-500 to-emerald-700',
+    })
+
+    if (isPublicView && onWriteReview) {
+      actions.push({
+        id: 'review',
+        label: ko ? '리뷰' : 'Review',
+        icon: Star,
+        onClick: onWriteReview,
+        tileClass: 'bg-gradient-to-br from-amber-400 to-orange-600',
+      })
+    } else {
+      actions.push({
         id: 'copy',
         label: ko ? '복사' : 'Copy',
         icon: Copy,
         onClick: onCopyLink,
         tileClass: 'bg-gradient-to-br from-sky-500 to-blue-700',
-      },
-      {
-        id: 'share',
-        label: ko ? '공유' : 'Share',
-        icon: Share2,
-        onClick: onShare,
-        tileClass: 'bg-gradient-to-br from-teal-500 to-teal-700',
-      }
-    )
+      })
+    }
+
+    actions.push({
+      id: 'share',
+      label: ko ? '공유' : 'Share',
+      icon: Share2,
+      onClick: onShare,
+      tileClass: 'bg-gradient-to-br from-teal-500 to-teal-700',
+    })
 
     return actions
   }, [
@@ -216,6 +229,7 @@ export default function ChatHeader({
     callStatus,
     onStartCall,
     onCopyLink,
+    onWriteReview,
     onShare,
   ])
 
@@ -355,13 +369,25 @@ export default function ChatHeader({
 
         {/* 데스크톱: 오른쪽 버튼 그룹 */}
         <div className="hidden lg:flex items-center space-x-1 lg:space-x-2">
-          <button
-            onClick={onCopyLink}
-            className="p-1.5 lg:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
-            title={selectedLanguage === 'ko' ? '링크 복사' : 'Copy Link'}
-          >
-            <Copy size={14} className="lg:w-4 lg:h-4" />
-          </button>
+          {isPublicView && onWriteReview ? (
+            <button
+              type="button"
+              onClick={onWriteReview}
+              className="p-1.5 lg:p-2 text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded"
+              title={selectedLanguage === 'ko' ? '구글 리뷰 작성' : 'Write a Google review'}
+            >
+              <Star size={14} className="lg:w-4 lg:h-4 fill-amber-400" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onCopyLink}
+              className="p-1.5 lg:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
+              title={selectedLanguage === 'ko' ? '링크 복사' : 'Copy Link'}
+            >
+              <Copy size={14} className="lg:w-4 lg:h-4" />
+            </button>
+          )}
           <button
             onClick={onShare}
             className="p-1.5 lg:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"

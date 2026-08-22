@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import {
   fetchSchedulePastTourFollowUp,
   markTourReceiptNotRequired,
+  markTourReceiptRequired,
   type SchedulePastFollowUpTour,
 } from '@/lib/schedulePastTourFollowUp'
 
@@ -18,6 +19,8 @@ export type SchedulePastMissingReceiptsModalProps = {
   onCountsChange?: (count: number) => void
 }
 
+type ListTab = 'visible' | 'hidden'
+
 export default function SchedulePastMissingReceiptsModal({
   isOpen,
   onClose,
@@ -28,7 +31,9 @@ export default function SchedulePastMissingReceiptsModal({
 }: SchedulePastMissingReceiptsModalProps) {
   const isKo = locale === 'ko'
   const [loading, setLoading] = useState(false)
-  const [rows, setRows] = useState<SchedulePastFollowUpTour[]>([])
+  const [visibleRows, setVisibleRows] = useState<SchedulePastFollowUpTour[]>([])
+  const [hiddenRows, setHiddenRows] = useState<SchedulePastFollowUpTour[]>([])
+  const [listTab, setListTab] = useState<ListTab>('visible')
   const [savingId, setSavingId] = useState<string | null>(null)
   const onCountsChangeRef = useRef(onCountsChange)
   onCountsChangeRef.current = onCountsChange
@@ -37,11 +42,13 @@ export default function SchedulePastMissingReceiptsModal({
     setLoading(true)
     try {
       const data = await fetchSchedulePastTourFollowUp(supabase)
-      setRows(data.missingReceipts)
+      setVisibleRows(data.missingReceipts)
+      setHiddenRows(data.missingReceiptsHidden)
       onCountsChangeRef.current?.(data.missingReceipts.length)
     } catch (err) {
       console.error('SchedulePastMissingReceiptsModal load', err)
-      setRows([])
+      setVisibleRows([])
+      setHiddenRows([])
     } finally {
       setLoading(false)
     }
@@ -49,14 +56,11 @@ export default function SchedulePastMissingReceiptsModal({
 
   useEffect(() => {
     if (!isOpen) return
+    setListTab('visible')
     void load()
   }, [isOpen, load])
 
-  const handleMarkNoReceipt = async (tour: SchedulePastFollowUpTour) => {
-    const confirmMsg = isKo
-      ? `${tour.tour_date || ''} ${tour.product_name || ''} — 영수증이 필요 없는 투어로 저장할까요? 이 목록에서 사라집니다.`
-      : `${tour.tour_date || ''} ${tour.product_name || ''} — Mark this tour as not requiring a receipt? It will leave this list.`
-    if (!window.confirm(confirmMsg)) return
+  const handleHide = async (tour: SchedulePastFollowUpTour) => {
     setSavingId(tour.id)
     try {
       const { error } = await markTourReceiptNotRequired(supabase, tour.id, actorEmail ?? null)
@@ -64,8 +68,28 @@ export default function SchedulePastMissingReceiptsModal({
         alert(isKo ? `저장 실패: ${error}` : `Save failed: ${error}`)
         return
       }
-      setRows((prev) => {
+      setVisibleRows((prev) => {
         const next = prev.filter((r) => r.id !== tour.id)
+        onCountsChangeRef.current?.(next.length)
+        return next
+      })
+      setHiddenRows((prev) => [tour, ...prev.filter((r) => r.id !== tour.id)])
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  const handleUnhide = async (tour: SchedulePastFollowUpTour) => {
+    setSavingId(tour.id)
+    try {
+      const { error } = await markTourReceiptRequired(supabase, tour.id)
+      if (error) {
+        alert(isKo ? `저장 실패: ${error}` : `Save failed: ${error}`)
+        return
+      }
+      setHiddenRows((prev) => prev.filter((r) => r.id !== tour.id))
+      setVisibleRows((prev) => {
+        const next = [tour, ...prev.filter((r) => r.id !== tour.id)]
         onCountsChangeRef.current?.(next.length)
         return next
       })
@@ -75,6 +99,27 @@ export default function SchedulePastMissingReceiptsModal({
   }
 
   if (!isOpen) return null
+
+  const showingHidden = listTab === 'hidden'
+  const rows = showingHidden ? hiddenRows : visibleRows
+
+  const tabBtn = (id: ListTab, label: string, count: number) => {
+    const active = listTab === id
+    return (
+      <button
+        type="button"
+        onClick={() => setListTab(id)}
+        className={`px-3 h-8 rounded-full text-xs font-medium border transition-colors ${
+          active
+            ? 'bg-rose-700 text-white border-rose-700'
+            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+        }`}
+      >
+        {label}
+        <span className={`ml-1 tabular-nums ${active ? 'text-white/90' : 'text-gray-500'}`}>({count})</span>
+      </button>
+    )
+  }
 
   return (
     <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/50">
@@ -86,12 +131,12 @@ export default function SchedulePastMissingReceiptsModal({
             </div>
             <div className="min-w-0">
               <h2 className="text-lg font-semibold text-gray-900">
-                {isKo ? '영수증 미첨부 투어' : 'Tours missing receipts'}
+                {isKo ? '지출 없는 투어' : 'Tours with no expenses'}
               </h2>
               <p className="text-sm text-gray-600 mt-1">
                 {isKo
-                  ? '오늘 이전 투어 중 영수증 이미지가 없는 목록입니다. 야경·불의계곡처럼 영수증이 없으면 ‘영수증 없음’으로 저장하세요.'
-                  : 'Past tours (before today) without a receipt image. Mark night / Valley of Fire tours as “No receipt” to hide them.'}
+                  ? '오늘 이전 투어 중 지출 기록이 없는 목록입니다. 숨김을 체크하면 목록에서 빠지고, 숨김 탭에서 다시 볼 수 있습니다.'
+                  : 'Past tours (before today) with no expenses. Check Hide to move a tour to the Hidden tab.'}
               </p>
             </div>
           </div>
@@ -105,6 +150,11 @@ export default function SchedulePastMissingReceiptsModal({
           </button>
         </div>
 
+        <div className="px-4 pt-3 pb-2 flex flex-wrap items-center gap-2 border-b border-gray-100">
+          {tabBtn('visible', isKo ? '목록' : 'List', visibleRows.length)}
+          {tabBtn('hidden', isKo ? '숨김' : 'Hidden', hiddenRows.length)}
+        </div>
+
         <div className="flex-1 overflow-y-auto p-4">
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -113,17 +163,24 @@ export default function SchedulePastMissingReceiptsModal({
             </div>
           ) : rows.length === 0 ? (
             <p className="text-sm text-gray-500">
-              {isKo ? '영수증이 없는 지난 투어가 없습니다.' : 'No past tours are missing receipts.'}
+              {showingHidden
+                ? isKo
+                  ? '숨긴 투어가 없습니다.'
+                  : 'No hidden tours.'
+                : isKo
+                  ? '지출이 없는 지난 투어가 없습니다.'
+                  : 'No past tours without expenses.'}
             </p>
           ) : (
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="text-left text-gray-600 border-b">
+                  <th className="py-2 pr-2 w-14">{isKo ? '숨김' : 'Hide'}</th>
                   <th className="py-2 pr-2">{isKo ? '투어일' : 'Date'}</th>
                   <th className="py-2 pr-2">{isKo ? '상품' : 'Product'}</th>
                   <th className="py-2 pr-2">{isKo ? '가이드' : 'Guide'}</th>
                   <th className="py-2 pr-2">{isKo ? '상태' : 'Status'}</th>
-                  <th className="py-2 pr-2 w-40">{isKo ? '작업' : 'Action'}</th>
+                  <th className="py-2 pr-2 w-24">{isKo ? '작업' : 'Action'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -132,6 +189,27 @@ export default function SchedulePastMissingReceiptsModal({
                   const busy = savingId === t.id
                   return (
                     <tr key={t.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-2 pr-2">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 text-rose-700 focus:ring-rose-600"
+                          checked={showingHidden}
+                          disabled={busy}
+                          onChange={() => {
+                            if (showingHidden) void handleUnhide(t)
+                            else void handleHide(t)
+                          }}
+                          aria-label={
+                            showingHidden
+                              ? isKo
+                                ? '목록으로 되돌리기'
+                                : 'Restore to list'
+                              : isKo
+                                ? '이 목록에서 숨기기'
+                                : 'Hide from this list'
+                          }
+                        />
+                      </td>
                       <td className="py-2 pr-2 whitespace-nowrap">{t.tour_date || '—'}</td>
                       <td className="py-2 pr-2 truncate max-w-[220px]" title={t.product_name || t.product_id || ''}>
                         {t.product_name || t.product_id || '—'}
@@ -139,23 +217,13 @@ export default function SchedulePastMissingReceiptsModal({
                       <td className="py-2 pr-2 truncate max-w-[140px]">{t.guide_name || '—'}</td>
                       <td className="py-2 pr-2">{(t.tour_status || '—').toString()}</td>
                       <td className="py-2 pr-2">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => onOpenTour(t.id, title || (isKo ? '투어 상세' : 'Tour detail'))}
-                            className="text-xs font-medium text-primary hover:text-primary/80"
-                          >
-                            {isKo ? '상세' : 'Open'}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => void handleMarkNoReceipt(t)}
-                            className="px-2 py-0.5 rounded border border-rose-200 bg-rose-50 text-rose-900 text-[11px] font-medium hover:bg-rose-100 disabled:opacity-50"
-                          >
-                            {busy ? '…' : isKo ? '영수증 없음' : 'No receipt'}
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onOpenTour(t.id, title || (isKo ? '투어 상세' : 'Tour detail'))}
+                          className="text-xs font-medium text-primary hover:text-primary/80"
+                        >
+                          {isKo ? '상세' : 'Open'}
+                        </button>
                       </td>
                     </tr>
                   )

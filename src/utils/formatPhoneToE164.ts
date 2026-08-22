@@ -32,3 +32,12 @@ export function pickCustomerSmsPhone(
   if (primary) return primary
   return formatPhoneToE164(emergencyContact)
 }
+
+/** + 없이 저장된 미국·한국 번호도 SMS/WhatsApp용 E.164로 맞춘다. */
+export function resolveSmsPhone(phone: string | null | undefined): string | null {
+  return (
+    formatPhoneToE164(phone) ||
+    formatPhoneToE164(phone, 'US') ||
+    formatPhoneToE164(phone, 'KR')
+  )
+}

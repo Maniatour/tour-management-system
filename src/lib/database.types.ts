@@ -9939,6 +9939,7 @@ export type Database = {
           audited_by_email: string | null
           audited_by_name: string | null
           audited_by_nick_name: string | null
+          booker_name: string | null
           cc: string | null
           check_in_date: string
           check_out_date: string
@@ -9965,6 +9966,7 @@ export type Database = {
           updated_at: string | null
           uploaded_file_urls: string[] | null
           website: string | null
+          wyndham_account_name: string | null
         }
         Insert: {
           audited?: boolean
@@ -9972,6 +9974,7 @@ export type Database = {
           audited_by_email?: string | null
           audited_by_name?: string | null
           audited_by_nick_name?: string | null
+          booker_name?: string | null
           cc?: string | null
           check_in_date: string
           check_out_date: string
@@ -9998,6 +10001,7 @@ export type Database = {
           updated_at?: string | null
           uploaded_file_urls?: string[] | null
           website?: string | null
+          wyndham_account_name?: string | null
         }
         Update: {
           audited?: boolean
@@ -10005,6 +10009,7 @@ export type Database = {
           audited_by_email?: string | null
           audited_by_name?: string | null
           audited_by_nick_name?: string | null
+          booker_name?: string | null
           cc?: string | null
           check_in_date?: string
           check_out_date?: string
@@ -10031,6 +10036,7 @@ export type Database = {
           updated_at?: string | null
           uploaded_file_urls?: string[] | null
           website?: string | null
+          wyndham_account_name?: string | null
         }
         Relationships: [
           {

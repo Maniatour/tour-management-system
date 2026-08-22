@@ -557,7 +557,16 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         // 방법명으로도 매핑 (payment_records에 방법명이 직접 저장된 경우 대비)
         methodMap[pm.method] = pm.method
       })
-      setPaymentMethodMap(methodMap)
+      setPaymentMethodMap((prev) => {
+        const keys = Object.keys(methodMap)
+        if (
+          keys.length === Object.keys(prev).length &&
+          keys.every((key) => prev[key] === methodMap[key])
+        ) {
+          return prev
+        }
+        return methodMap
+      })
     } catch (error) {
       if (!isAbortError(error)) {
         console.error('결제 방법 정보 로드 오류:', error)
@@ -1175,11 +1184,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
   }, [reservation.id, reservation.product_id, isAbortError])
 
+  useEffect(() => {
+    void loadPaymentMethods()
+  }, [loadPaymentMethods])
+
   // 컴포넌트 마운트 시 가격 정보, 입금 내역, 채널 정보, 고객 정보 가져오기
   useEffect(() => {
-    // 결제 방법 정보 로드
-    loadPaymentMethods()
-    
     // 동시 요청을 방지하기 위해 예약 ID를 기반으로 일관된 지연 시간 설정
     // 예약 ID의 마지막 문자를 숫자로 변환하여 0-1000ms 사이의 지연 시간 생성
     const reservationIdHash = reservation.id.charCodeAt(reservation.id.length - 1) % 1000
@@ -1196,7 +1206,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }, delay)
 
     return () => clearTimeout(timeoutId)
-  }, [isStaff, reservation.id, reservation.customer_id, loadPaymentMethods, fetchReservationPricing, fetchPaymentRecords, fetchChannelInfo, fetchCustomerData, fetchReservationChoices])
+  }, [isStaff, reservation.id, reservation.customer_id, fetchReservationPricing, fetchPaymentRecords, fetchChannelInfo, fetchCustomerData, fetchReservationChoices])
 
   // 입금 내역 표시 토글
   const togglePaymentRecords = () => {
@@ -1211,11 +1221,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     if (reservation.customer_id) {
       const { data } = await supabase
         .from('customers')
-        .select('email, name')
+        .select('email, name, phone, emergency_contact')
         .eq('id', reservation.customer_id)
         .maybeSingle()
       email = (data?.email || '').trim()
       const name = (data?.name || customerName || '').trim()
+      const phone = (data?.phone || data?.emergency_contact || '').trim()
       const balance = reservationPricing?.balance_amount
       const balanceNum =
         balance != null && Number.isFinite(Number(balance)) && Number(balance) > 0
@@ -1225,12 +1236,14 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       const description = [customerName, tourDate, reservation.id].filter(Boolean).join(' · ')
       const nextInitials: {
         email?: string
+        phone?: string
         recipientName?: string
         description?: string
         amountUsd?: number | string
         reservationId?: string
       } = {
         email,
+        phone,
         recipientName: name,
         description,
         reservationId: reservation.id,

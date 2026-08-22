@@ -524,6 +524,8 @@ export default function DataSyncPage() {
         { name: 'check_in_date', type: 'date', nullable: false, default: null },
         { name: 'check_out_date', type: 'date', nullable: false, default: null },
         { name: 'reservation_name', type: 'text', nullable: false, default: null },
+        { name: 'booker_name', type: 'text', nullable: true, default: null },
+        { name: 'wyndham_account_name', type: 'text', nullable: true, default: null },
         { name: 'submitted_by', type: 'text', nullable: true, default: null },
         { name: 'cc', type: 'text', nullable: true, default: null },
         { name: 'rooms', type: 'integer', nullable: false, default: '1' },

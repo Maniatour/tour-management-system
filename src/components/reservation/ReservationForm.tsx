@@ -188,6 +188,8 @@ import {
   summarizePaymentRecordsForBalance,
   computeCustomerPaymentNetForCompanyRevenueBase,
   resolveOnSiteBalanceAmountForSave,
+  hasExplicitOnSiteBalance,
+  parseUsdNumberInput,
   type PaymentRecordLike,
 } from '@/utils/reservationPricingBalance'
 import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
@@ -4075,7 +4077,7 @@ export default function ReservationForm({
           }
           
           // DB에 저장된 잔액(가격 정보 모달 「잔액(투어 당일 지불)」 등)은 채널 종류와 관계없이 로드
-          const balanceAmount = Number(existingPricing.balance_amount) || 0
+          const balanceAmount = parseUsdNumberInput(String(existingPricing.balance_amount ?? ''))
           // 옵션명 없는 choices JSON·상품 메타·폼 selectedChoices에서 양수 금액만 복원
           // (empty 0 스프레드로 기존 금액을 지우던 버그 방지)
           const fdSnap = formDataRef.current
@@ -4249,7 +4251,7 @@ export default function ReservationForm({
             const rawBalRow = (existingPricing as any).balance_amount
             const hasStoredBalance =
               rawBalRow !== null && rawBalRow !== undefined && rawBalRow !== ''
-            const storedBalance = hasStoredBalance ? Number(rawBalRow) || 0 : null
+            const storedBalance = hasStoredBalance ? parseUsdNumberInput(String(rawBalRow)) : null
             const finalBalanceAmount =
               storedBalance != null
                 ? storedBalance
@@ -4473,9 +4475,12 @@ export default function ReservationForm({
           requiredOptionTotal: requiredOptionTotal,
           subtotal: newSubtotal,
           totalPrice: newTotalPrice,
-          onSiteBalanceAmount:
-            (updated.onSiteBalanceAmount ?? 0) > 0.005 ? updated.onSiteBalanceAmount : newBalance,
-          balanceAmount: (updated.onSiteBalanceAmount ?? 0) > 0.005 ? updated.onSiteBalanceAmount : newBalance
+          onSiteBalanceAmount: hasExplicitOnSiteBalance(updated.onSiteBalanceAmount)
+            ? updated.onSiteBalanceAmount
+            : newBalance,
+          balanceAmount: hasExplicitOnSiteBalance(updated.onSiteBalanceAmount)
+            ? updated.onSiteBalanceAmount
+            : newBalance
         }
       })
 
@@ -4603,7 +4608,7 @@ export default function ReservationForm({
         reservationOptionsTotalPrice
       const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional - refundAmount)
       const newBalance = Math.max(0, newTotalPrice - updated.depositAmount)
-      const keepOnSite = (updated.onSiteBalanceAmount ?? 0) > 0.005
+      const keepOnSite = hasExplicitOnSiteBalance(updated.onSiteBalanceAmount)
       return {
         ...updated,
         productPriceTotal: newProductPriceTotal,
@@ -5370,7 +5375,7 @@ export default function ReservationForm({
     const newTotalPrice = calculateTotalPrice()
     setFormData((prev) => {
       const newBalance = Math.max(0, newTotalPrice - (Number(prev.depositAmount) || 0))
-      const keepOnSite = (Number(prev.onSiteBalanceAmount) || 0) > 0.005
+      const keepOnSite = hasExplicitOnSiteBalance(prev.onSiteBalanceAmount)
       if (
         Math.abs((prev.totalPrice || 0) - newTotalPrice) < 0.005 &&
         (keepOnSite || Math.abs((prev.balanceAmount || 0) - newBalance) < 0.005) &&
@@ -6687,6 +6692,7 @@ export default function ReservationForm({
     const balance = Number(formData.onSiteBalanceAmount ?? formData.balanceAmount) || 0
     const next: QuickPaymentFormInitials = {
       email: (formData.customerEmail || '').trim(),
+      phone: (formData.customerPhone || formData.customerEmergencyContact || '').trim(),
       recipientName: (formData.customerName || '').trim(),
       description,
       reservationId: reservation.id,
@@ -6699,6 +6705,8 @@ export default function ReservationForm({
     formData.channelRN,
     formData.customerEmail,
     formData.customerName,
+    formData.customerPhone,
+    formData.customerEmergencyContact,
     formData.onSiteBalanceAmount,
     formData.productId,
     formData.tourDate,
@@ -7915,6 +7923,14 @@ export default function ReservationForm({
           locale={locale === 'en' ? 'en' : 'ko'}
           initials={quickPaymentInitials}
           overlayZIndex={childOverlayZIndex}
+          onCustomerContactUpdated={({ email, specialRequests }) => {
+            setFormData((prev) => ({
+              ...prev,
+              customerEmail: stripSpacesFromContactInput(email),
+              ...(specialRequests != null ? { customerSpecialRequests: specialRequests } : {}),
+            }))
+            void onRefreshCustomers().catch(() => {})
+          }}
         />
       ) : null}
 

@@ -190,7 +190,7 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
     if (tableName === 'tour_hotel_bookings') {
       validFields = [
         'id', 'tour_id', 'event_date', 'submit_on', 'check_in_date', 'check_out_date',
-        'reservation_name', 'submitted_by', 'cc', 'rooms', 'city', 'hotel', 'room_type',
+        'reservation_name', 'booker_name', 'wyndham_account_name', 'submitted_by', 'cc', 'rooms', 'city', 'hotel', 'room_type',
         'unit_price', 'total_price', 'payment_method', 'website', 'rn_number',
         'status', 'created_at', 'updated_at'
       ]

@@ -68,6 +68,8 @@ interface TourHotelBooking {
   check_in_date: string;
   check_out_date: string;
   reservation_name: string;
+  booker_name?: string | null;
+  wyndham_account_name?: string | null;
   submitted_by: string;
   cc: string;
   rooms: number;
@@ -471,6 +473,8 @@ export default function TourHotelBookingList() {
             'check_in_date',
             'check_out_date',
             'reservation_name',
+            'booker_name',
+            'wyndham_account_name',
             'submitted_by',
             'cc',
             'rooms',
@@ -760,6 +764,8 @@ export default function TourHotelBookingList() {
         (booking.hotel ?? '').toLowerCase().includes(q) ||
         (booking.city ?? '').toLowerCase().includes(q) ||
         (booking.reservation_name ?? '').toLowerCase().includes(q) ||
+        (booking.booker_name ?? '').toLowerCase().includes(q) ||
+        (booking.wyndham_account_name ?? '').toLowerCase().includes(q) ||
         (booking.rn_number ?? '').toLowerCase().includes(q);
 
       const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
@@ -1280,7 +1286,9 @@ export default function TourHotelBookingList() {
         <th className={`${HOTEL_TABLE_TH} hidden md:table-cell`}>CC</th>
         <th className={`${HOTEL_TABLE_TH} hidden md:table-cell`}>RN#</th>
         <th className={`${HOTEL_TABLE_TH} hidden lg:table-cell min-w-[9rem]`}>{t('tour')}</th>
-        <th className={`${HOTEL_TABLE_TH} hidden xl:table-cell`}>{locale === 'ko' ? '예약자' : 'Guest'}</th>
+        <th className={`${HOTEL_TABLE_TH} hidden xl:table-cell min-w-[9rem]`}>
+          {locale === 'ko' ? '이름' : 'Names'}
+        </th>
         <th className={`${HOTEL_TABLE_TH} text-center min-w-[8rem]`}>{tStmtRecon('columnHeaderShort')}</th>
         <th
           className={`${HOTEL_TABLE_TH} cursor-pointer hover:bg-gray-100 select-none`}
@@ -1351,8 +1359,18 @@ export default function TourHotelBookingList() {
           '-'
         )}
       </td>
-      <td className={`${HOTEL_TABLE_CELL} hidden xl:table-cell max-w-[8rem] truncate`}>
-        {booking.reservation_name || '-'}
+      <td className={`${HOTEL_TABLE_CELL} hidden xl:table-cell max-w-[11rem] whitespace-normal`}>
+        <div className="min-w-0 leading-snug">
+          <div className="truncate" title={booking.reservation_name || undefined}>
+            {booking.reservation_name || '-'}
+          </div>
+          <div className="truncate text-[10px] text-gray-500" title={booking.booker_name || undefined}>
+            {locale === 'ko' ? '예약' : 'Booker'}: {booking.booker_name || '-'}
+          </div>
+          <div className="truncate text-[10px] text-gray-500" title={booking.wyndham_account_name || undefined}>
+            Wyndham: {booking.wyndham_account_name || '-'}
+          </div>
+        </div>
       </td>
       <td
         className={`${HOTEL_TABLE_CELL} min-w-[7rem] max-w-[11rem]`}
@@ -1403,6 +1421,12 @@ export default function TourHotelBookingList() {
         <span>
           {booking.rooms} · {booking.room_type || '-'}
         </span>
+        <span className="text-gray-500">{locale === 'ko' ? '체크인' : 'Check-in'}</span>
+        <span className="truncate">{booking.reservation_name || '-'}</span>
+        <span className="text-gray-500">{locale === 'ko' ? '예약자' : 'Booker'}</span>
+        <span className="truncate">{booking.booker_name || '-'}</span>
+        <span className="text-gray-500">Wyndham</span>
+        <span className="truncate">{booking.wyndham_account_name || '-'}</span>
         <span className="text-gray-500">{t('totalPrice')}</span>
         <span>${Number(booking.total_price ?? 0).toLocaleString()}</span>
       </div>
@@ -2113,6 +2137,20 @@ export default function TourHotelBookingList() {
                       </h3>
                       <p className="text-sm text-gray-600">{booking.city}</p>
                       <p className="text-xs text-gray-500 mt-1">{booking.reservation_name}</p>
+                      {(booking.booker_name || booking.wyndham_account_name) ? (
+                        <p className="text-[11px] text-gray-400 mt-0.5">
+                          {[
+                            booking.booker_name
+                              ? `${locale === 'ko' ? '예약' : 'Booker'} ${booking.booker_name}`
+                              : null,
+                            booking.wyndham_account_name
+                              ? `Wyndham ${booking.wyndham_account_name}`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </p>
+                      ) : null}
                     </div>
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(booking.status)}`}>
                       {getStatusText(booking.status)}
@@ -2352,6 +2390,20 @@ export default function TourHotelBookingList() {
                         </h4>
                         <p className="text-sm text-gray-600">{booking.city}</p>
                         <p className="text-xs text-gray-500 mt-1">{booking.reservation_name}</p>
+                        {(booking.booker_name || booking.wyndham_account_name) ? (
+                          <p className="text-[11px] text-gray-400 mt-0.5">
+                            {[
+                              booking.booker_name
+                                ? `${locale === 'ko' ? '예약' : 'Booker'} ${booking.booker_name}`
+                                : null,
+                              booking.wyndham_account_name
+                                ? `Wyndham ${booking.wyndham_account_name}`
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </p>
+                        ) : null}
                       </div>
                       <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(booking.status)}`}>
                         {getStatusText(booking.status)}

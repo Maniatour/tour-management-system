@@ -22,6 +22,54 @@ import {
   type TourHotelReference,
 } from '@/lib/tourHotelReferences';
 
+type TeamMemberNameRow = {
+  email?: string | null;
+  name_ko?: string | null;
+  name_en?: string | null;
+  position?: string | null;
+};
+
+function teamDisplayNameFromEmail(
+  members: TeamMemberNameRow[],
+  email: string | null | undefined
+): string {
+  const needle = (email || '').trim().toLowerCase();
+  if (!needle) return '';
+  const member = members.find((m) => (m.email || '').trim().toLowerCase() === needle);
+  if (!member) return '';
+  return (member.name_ko || '').trim() || (member.name_en || '').trim();
+}
+
+function buildTeamNameOptions(
+  members: TeamMemberNameRow[],
+  current: string | null | undefined,
+  preferEnglish = false
+): Array<{ value: string; label: string; hint?: string }> {
+  const opts: Array<{ value: string; label: string; hint?: string }> = [];
+  const seen = new Set<string>();
+  members.forEach((member) => {
+    const ko = (member.name_ko || '').trim();
+    const en = (member.name_en || '').trim();
+    const position = member.position || '';
+    const ordered = preferEnglish ? [en, ko] : [ko, en];
+    ordered.forEach((name, idx) => {
+      if (!name || seen.has(name)) return;
+      seen.add(name);
+      const other = ordered[idx === 0 ? 1 : 0];
+      opts.push({
+        value: name,
+        label: name,
+        hint: [other, position].filter(Boolean).join(' · '),
+      });
+    });
+  });
+  const currentValue = current?.trim();
+  if (currentValue && !seen.has(currentValue)) {
+    opts.unshift({ value: currentValue, label: currentValue, hint: '기존 값' });
+  }
+  return opts;
+}
+
 interface TourHotelBooking {
   id?: string;
   tour_id: string;
@@ -29,7 +77,12 @@ interface TourHotelBooking {
   event_date?: string | null;
   check_in_date: string;
   check_out_date: string;
+  /** 체크인 담당자 */
   reservation_name: string;
+  /** 예약을 진행한 예약자 (로그인 이메일에서 자동 입력) */
+  booker_name?: string | null;
+  /** Wyndham 로그인 계정 이름 */
+  wyndham_account_name?: string | null;
   submitted_by: string;
   cc: string;
   rooms: number;
@@ -74,6 +127,10 @@ function toTourHotelBookingRowPayload(
     check_in_date: formData.check_in_date,
     check_out_date: formData.check_out_date,
     reservation_name: formData.reservation_name,
+    booker_name: formData.booker_name?.trim() ? formData.booker_name.trim() : null,
+    wyndham_account_name: formData.wyndham_account_name?.trim()
+      ? formData.wyndham_account_name.trim()
+      : null,
     submitted_by: submittedByEmail,
     cc: formData.cc?.trim() ? formData.cc : null,
     rooms: formData.rooms,
@@ -114,6 +171,8 @@ function buildInitialFormData(
     check_in_date: tourDate,
     check_out_date: tourDate ? addDaysToYmd(tourDate, 1) : '',
     reservation_name: '',
+    booker_name: '',
+    wyndham_account_name: '',
     submitted_by: '',
     cc: 'not_sent',
     rooms: 1,
@@ -139,6 +198,8 @@ function buildInitialFormData(
       check_in_date: booking.check_in_date ?? empty.check_in_date,
       check_out_date: booking.check_out_date ?? empty.check_out_date,
       reservation_name: booking.reservation_name ?? empty.reservation_name,
+      booker_name: booking.booker_name ?? empty.booker_name,
+      wyndham_account_name: booking.wyndham_account_name ?? empty.wyndham_account_name,
       submitted_by: booking.submitted_by ?? empty.submitted_by,
       cc: booking.cc ?? empty.cc,
       rooms: booking.rooms ?? empty.rooms,
@@ -165,6 +226,8 @@ function buildInitialFormData(
       check_in_date: seedBooking.check_in_date ?? empty.check_in_date,
       check_out_date: seedBooking.check_out_date ?? empty.check_out_date,
       reservation_name: seedBooking.reservation_name ?? empty.reservation_name,
+      booker_name: '',
+      wyndham_account_name: seedBooking.wyndham_account_name ?? empty.wyndham_account_name,
       cc: seedBooking.cc ?? empty.cc,
       rooms: seedBooking.rooms ?? empty.rooms,
       city: (seedBooking.city != null ? String(seedBooking.city).trim() : '') || empty.city,
@@ -193,6 +256,8 @@ function buildInitialFormData(
     check_in_date: booking.check_in_date ?? empty.check_in_date,
     check_out_date: booking.check_out_date ?? empty.check_out_date,
     reservation_name: booking.reservation_name ?? empty.reservation_name,
+    booker_name: booking.booker_name ?? empty.booker_name,
+    wyndham_account_name: booking.wyndham_account_name ?? empty.wyndham_account_name,
     submitted_by: booking.submitted_by ?? empty.submitted_by,
     cc: booking.cc ?? empty.cc,
     rooms: booking.rooms ?? empty.rooms,
@@ -252,7 +317,7 @@ export default function TourHotelBookingForm({
 
   const [tours, setTours] = useState<TicketTourPickerRow[]>([]);
   const [toursLoading, setToursLoading] = useState(false);
-  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMemberNameRow[]>([]);
   const [hotelReferences, setHotelReferences] = useState<TourHotelReference[]>([]);
   const [hotels, setHotels] = useState<string[]>([]);
   const [websites, setWebsites] = useState<string[]>([]);
@@ -395,7 +460,7 @@ export default function TourHotelBookingForm({
         .order('name_ko');
       
       if (error) throw error;
-      setTeamMembers(data || []);
+      setTeamMembers((data || []) as TeamMemberNameRow[]);
     } catch (error) {
       console.error('팀원 목록 조회 오류:', error);
     }
@@ -462,36 +527,40 @@ export default function TourHotelBookingForm({
       .map((name) => ({ value: name, label: name }));
   }, [hotelReferences, hotels]);
 
-  const reservationNameOptions = useMemo(() => {
-    const opts: Array<{ value: string; label: string; hint?: string }> = [];
-    const seen = new Set<string>();
-    teamMembers.forEach((member) => {
-      const ko = (member.name_ko || '').trim();
-      const en = (member.name_en || '').trim();
-      const position = member.position || '';
-      if (ko && !seen.has(ko)) {
-        seen.add(ko);
-        opts.push({
-          value: ko,
-          label: ko,
-          hint: [en, position].filter(Boolean).join(' · '),
-        });
-      }
-      if (en && en !== ko && !seen.has(en)) {
-        seen.add(en);
-        opts.push({
-          value: en,
-          label: en,
-          hint: [ko, position].filter(Boolean).join(' · '),
-        });
-      }
-    });
-    const current = formData.reservation_name?.trim();
-    if (current && !seen.has(current)) {
-      opts.unshift({ value: current, label: current, hint: '기존 값' });
+  const checkInNameOptions = useMemo(
+    () => buildTeamNameOptions(teamMembers, formData.reservation_name),
+    [teamMembers, formData.reservation_name]
+  );
+
+  const bookerNameOptions = useMemo(
+    () => buildTeamNameOptions(teamMembers, formData.booker_name),
+    [teamMembers, formData.booker_name]
+  );
+
+  const wyndhamAccountNameOptions = useMemo(
+    () => buildTeamNameOptions(teamMembers, formData.wyndham_account_name, true),
+    [teamMembers, formData.wyndham_account_name]
+  );
+
+  const bookerEmailHint = useMemo(() => {
+    if (booking?.id) {
+      return (formData.submitted_by || authUser?.email || '').trim();
     }
-    return opts;
-  }, [teamMembers, formData.reservation_name]);
+    return (authUser?.email || '').trim();
+  }, [authUser?.email, booking?.id, formData.submitted_by]);
+
+  useEffect(() => {
+    if (teamMembers.length === 0) return;
+    setFormData((prev) => {
+      if (prev.booker_name?.trim()) return prev;
+      const lookupEmail = booking?.id
+        ? prev.submitted_by || authUser?.email
+        : authUser?.email;
+      const autoName = teamDisplayNameFromEmail(teamMembers, lookupEmail);
+      if (!autoName) return prev;
+      return { ...prev, booker_name: autoName };
+    });
+  }, [teamMembers, authUser?.email, booking?.id]);
 
   const paymentMethodOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -629,6 +698,26 @@ export default function TourHotelBookingForm({
     const submitterEmail = authUser?.email?.trim();
     if (!submitterEmail) {
       alert('제출자 이메일을 확인할 수 없습니다. 다시 로그인한 뒤 시도해 주세요.');
+      return;
+    }
+    if (!formData.booker_name?.trim()) {
+      alert(
+        locale === 'ko'
+          ? '예약자명을 입력해 주세요. 로그인 이메일로 자동 입력되지 않으면 팀원에서 선택하세요.'
+          : 'Enter the booker name. If it was not auto-filled from your email, pick a team member.'
+      );
+      return;
+    }
+    if (!formData.reservation_name?.trim()) {
+      alert(locale === 'ko' ? '체크인 담당자를 선택해 주세요.' : 'Select the check-in guest.');
+      return;
+    }
+    if (!formData.wyndham_account_name?.trim()) {
+      alert(
+        locale === 'ko'
+          ? 'Wyndham 로그인 계정 이름을 입력해 주세요.'
+          : 'Enter the Wyndham login account name.'
+      );
       return;
     }
     setLoading(true);
@@ -1014,18 +1103,56 @@ export default function TourHotelBookingForm({
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                예약자명 *
-              </label>
-              <SearchableTextSelect
-                value={formData.reservation_name || ''}
-                onChange={(v) => setFormData((prev) => ({ ...prev, reservation_name: v }))}
-                options={reservationNameOptions}
-                placeholder="이름 검색"
-                required
-                allowCustom={false}
-              />
+            <div className="sm:col-span-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    예약자 *
+                  </label>
+                  <SearchableTextSelect
+                    value={formData.booker_name || ''}
+                    onChange={(v) => setFormData((prev) => ({ ...prev, booker_name: v }))}
+                    options={bookerNameOptions}
+                    placeholder="이름 검색"
+                    required
+                    allowCustom={false}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    {locale === 'ko'
+                      ? `로그인 이메일에서 자동 입력${bookerEmailHint ? ` (${bookerEmailHint})` : ''}`
+                      : `Auto-filled from login email${bookerEmailHint ? ` (${bookerEmailHint})` : ''}`}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    체크인 담당자 *
+                  </label>
+                  <SearchableTextSelect
+                    value={formData.reservation_name || ''}
+                    onChange={(v) => setFormData((prev) => ({ ...prev, reservation_name: v }))}
+                    options={checkInNameOptions}
+                    placeholder="이름 검색"
+                    required
+                    allowCustom={false}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Wyndham 계정명 *
+                  </label>
+                  <SearchableTextSelect
+                    value={formData.wyndham_account_name || ''}
+                    onChange={(v) => setFormData((prev) => ({ ...prev, wyndham_account_name: v }))}
+                    options={wyndhamAccountNameOptions}
+                    placeholder="이름 검색"
+                    required
+                    allowCustom
+                    customHintLabel={(q) =>
+                      locale === 'ko' ? `"${q}" 직접 입력` : `Use "${q}"`
+                    }
+                  />
+                </div>
+              </div>
             </div>
 
             <div>

@@ -1466,6 +1466,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             .join(' · ')
           return {
             email: customer?.email || '',
+            phone: customer?.phone || customer?.emergency_contact || '',
             recipientName: customer?.name || getCustomerName(reservation.customerId, customers || []),
             description,
             reservationId: reservation.id,

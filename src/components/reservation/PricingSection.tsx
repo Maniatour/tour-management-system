@@ -50,6 +50,7 @@ import {
   customerRefundCreditAgainstDue,
   depositNetForBalanceSettlement,
   summarizePaymentRecordsForBalance,
+  parseUsdNumberInput,
 } from '@/utils/reservationPricingBalance'
 import { splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
 import {
@@ -4212,7 +4213,7 @@ export default function PricingSection({
                     onChange={(e) => {
                       const inputValue = e.target.value
                       setOnSiteBalanceAmountInput(inputValue)
-                      const newBalance = Number(inputValue) || 0
+                      const newBalance = parseUsdNumberInput(inputValue)
                       markPricingEdited('onSiteBalanceAmount', 'balanceAmount')
                       setFormData({ ...formData, onSiteBalanceAmount: newBalance, balanceAmount: newBalance })
                     }}
@@ -4222,7 +4223,7 @@ export default function PricingSection({
                     }}
                     onBlur={() => {
                       setIsOnSiteBalanceAmountFocused(false)
-                      const finalValue = parseFloat(parseFloat(onSiteBalanceAmountInput || '0').toFixed(2))
+                      const finalValue = roundUsd2(parseUsdNumberInput(onSiteBalanceAmountInput || '0'))
                       markPricingEdited('onSiteBalanceAmount', 'balanceAmount')
                       setFormData({ ...formData, onSiteBalanceAmount: finalValue, balanceAmount: finalValue })
                     }}

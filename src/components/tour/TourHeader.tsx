@@ -37,6 +37,9 @@ interface TourHeaderProps {
   onPrintTourInfo?: () => void
   /** 모달 닫기 (modal-toolbar 전용) */
   onCloseModal?: () => void
+  /** 우천 시 L → X 일괄 전환 (modal-toolbar 전용) */
+  onConvertLowerToX?: () => void
+  convertingLowerToX?: boolean
   /** modal-toolbar: 일반투어 여부 */
   isPrivateTour?: boolean
   /** modal-toolbar: 최대 수용 인원 */
@@ -79,6 +82,8 @@ export default function TourHeader({
   onPrintBalanceEnvelopes,
   onPrintTourInfo,
   onCloseModal,
+  onConvertLowerToX,
+  convertingLowerToX = false,
   isPrivateTour = false,
   maxParticipants,
   onSendGuideScheduleConfirm,
@@ -135,6 +140,22 @@ export default function TourHeader({
                   ? `${tour.tour_date} - ${productName}`
                   : productName || tour.tour_date || 'Tour Detail'}
               </p>
+              {onConvertLowerToX ? (
+                <button
+                  type="button"
+                  onClick={onConvertLowerToX}
+                  disabled={convertingLowerToX}
+                  className="inline-flex shrink-0 items-center rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                  title={
+                    params.locale === 'ko'
+                      ? 'Lower Antelope 우천 폐쇄 시 X Canyon으로 전환 (인원당 $10 할인)'
+                      : 'Switch Lower Antelope to X Canyon ($10 off per person)'
+                  }
+                  data-no-drag
+                >
+                  {convertingLowerToX ? '...' : 'L > X'}
+                </button>
+              ) : null}
               {!isPrivateTour ? (
                 <button
                   type="button"
