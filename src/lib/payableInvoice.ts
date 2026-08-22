@@ -12,6 +12,7 @@ import {
   appendOtaTempEmailToSpecialRequests,
   isGetYourGuideReplyEmail,
 } from '@/lib/otaDirectCustomerEmail'
+import { parseRecipientEmail } from '@/lib/quickPaymentRequestMessage'
 
 export const STAFF_PAYABLE_INVOICE_PURPOSE = 'staff_payable_invoice'
 
@@ -29,7 +30,29 @@ export function isQuickPaymentInvoiceNotes(notes: string | null | undefined): bo
 
 type AdminClient = SupabaseClient<Database>
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+function isUniqueViolation(error: { code?: string; message?: string } | null | undefined): boolean {
+  const code = String(error?.code || '')
+  const message = String(error?.message || '').toLowerCase()
+  return code === '23505' || message.includes('duplicate key') || message.includes('unique constraint')
+}
+
+function stripeErrorMessage(err: unknown, locale: 'ko' | 'en'): string {
+  const raw =
+    err && typeof err === 'object' && 'message' in err
+      ? String((err as { message?: unknown }).message || '')
+      : err instanceof Error
+        ? err.message
+        : ''
+  if (!raw) {
+    return locale === 'ko' ? 'Stripe 결제 링크를 만들지 못했습니다.' : 'Failed to create a Stripe payment link.'
+  }
+  if (/email/i.test(raw) && /customer/i.test(raw)) {
+    return locale === 'ko'
+      ? `고객 이메일 때문에 Stripe 결제 링크를 만들지 못했습니다. (${raw})`
+      : `Stripe could not create a payment link because of the customer email. (${raw})`
+  }
+  return locale === 'ko' ? `Stripe 결제 링크 생성 실패: ${raw}` : `Failed to create Stripe payment link: ${raw}`
+}
 
 export async function replaceGetYourGuideRelayCustomerEmail(
   admin: AdminClient,
@@ -46,14 +69,14 @@ export async function replaceGetYourGuideRelayCustomerEmail(
   specialRequests: string
 } | null> {
   const locale = params.locale === 'ko' ? 'ko' : 'en'
-  const email = params.newEmail.trim().toLowerCase()
+  const email = parseRecipientEmail(params.newEmail)
   const reservationId = params.reservationId.trim()
   const recipientName = (params.recipientName || '').trim()
 
   if (!reservationId) {
     throw new Error(locale === 'ko' ? '예약 정보가 필요합니다.' : 'Reservation is required.')
   }
-  if (!email || !EMAIL_RE.test(email)) {
+  if (!email) {
     throw new Error(locale === 'ko' ? '유효한 이메일이 필요합니다.' : 'A valid email is required.')
   }
   if (isGetYourGuideReplyEmail(email)) {
@@ -172,8 +195,15 @@ async function findOrCreateStripeCustomer(
 ): Promise<string> {
   const email = params.email.trim().toLowerCase()
   const existing = await stripe.customers.list({ email, limit: 1 })
-  if (existing.data[0]?.id) {
-    return existing.data[0].id
+  const found = existing.data[0]
+  if (found?.id) {
+    if (!found.email || found.email.trim().toLowerCase() !== email) {
+      await stripe.customers.update(found.id, {
+        email,
+        ...(params.name ? { name: params.name } : {}),
+      })
+    }
+    return found.id
   }
   const created = await stripe.customers.create({
     email,
@@ -280,7 +310,7 @@ export async function createOrRefreshStripePayableInvoice(
       .select('id, name, email')
       .eq('id', invoice.customer_id)
       .maybeSingle()
-    customerEmail = (customer?.email || '').trim()
+    customerEmail = parseRecipientEmail(customer?.email || '')
     customerName = (customer?.name || '').trim()
   }
 
@@ -294,11 +324,16 @@ export async function createOrRefreshStripePayableInvoice(
 
   await voidOpenStripeInvoice(stripe, invoice.stripe_invoice_id)
 
-  const stripeCustomerId = await findOrCreateStripeCustomer(stripe, {
-    email: customerEmail,
-    name: customerName,
-    customerId: invoice.customer_id,
-  })
+  let stripeCustomerId: string
+  try {
+    stripeCustomerId = await findOrCreateStripeCustomer(stripe, {
+      email: customerEmail,
+      name: customerName,
+      customerId: invoice.customer_id,
+    })
+  } catch (err) {
+    throw new Error(stripeErrorMessage(err, locale))
+  }
 
   const items = (Array.isArray(invoice.items) ? invoice.items : []) as InvoiceItemRow[]
   const reservationIdFromItems = items
@@ -330,87 +365,112 @@ export async function createOrRefreshStripePayableInvoice(
     daysUntilDue = Math.max(1, Math.min(Number.isFinite(diffDays) ? diffDays : 14, 90))
   }
 
-  const draft = await stripe.invoices.create({
-    customer: stripeCustomerId,
-    collection_method: 'send_invoice',
-    days_until_due: daysUntilDue,
-    currency: 'usd',
-    metadata: {
-      purpose: STAFF_PAYABLE_INVOICE_PURPOSE,
-      invoice_id: invoiceId,
-      invoice_number: invoice.invoice_number,
-      customer_id: invoice.customer_id || '',
-      ...(reservationIdFromItems
-        ? { reservation_id: reservationIdFromItems }
-        : {}),
-    },
-    pending_invoice_items_behavior: 'exclude',
-    auto_advance: false,
-  })
-
-  for (const line of lineAmounts) {
-    if (line.amountCents === 0) continue
-    await stripe.invoiceItems.create({
+  let draftId: string | null = null
+  try {
+    const draft = await stripe.invoices.create({
       customer: stripeCustomerId,
-      invoice: draft.id,
-      amount: line.amountCents,
+      collection_method: 'send_invoice',
+      days_until_due: daysUntilDue,
       currency: 'usd',
-      description: line.description,
+      metadata: {
+        purpose: STAFF_PAYABLE_INVOICE_PURPOSE,
+        invoice_id: invoiceId,
+        invoice_number: invoice.invoice_number,
+        customer_id: invoice.customer_id || '',
+        ...(reservationIdFromItems
+          ? { reservation_id: reservationIdFromItems }
+          : {}),
+      },
+      pending_invoice_items_behavior: 'exclude',
+      auto_advance: false,
     })
-  }
+    draftId = draft.id
 
-  if (adjustment !== 0) {
-    await stripe.invoiceItems.create({
-      customer: stripeCustomerId,
-      invoice: draft.id,
-      amount: adjustment,
-      currency: 'usd',
-      description:
+    for (const line of lineAmounts) {
+      if (line.amountCents === 0) continue
+      await stripe.invoiceItems.create({
+        customer: stripeCustomerId,
+        invoice: draft.id,
+        amount: line.amountCents,
+        currency: 'usd',
+        description: line.description,
+      })
+    }
+
+    if (adjustment !== 0) {
+      await stripe.invoiceItems.create({
+        customer: stripeCustomerId,
+        invoice: draft.id,
+        amount: adjustment,
+        currency: 'usd',
+        description:
+          locale === 'ko'
+            ? adjustment > 0
+              ? '세금·수수료·기타 조정'
+              : '할인·기타 조정'
+            : adjustment > 0
+              ? 'Tax, fees & adjustments'
+              : 'Discount & adjustments',
+      })
+    }
+
+    const finalized = await stripe.invoices.finalizeInvoice(draft.id)
+    const hostedInvoiceUrl = finalized.hosted_invoice_url
+    if (!hostedInvoiceUrl) {
+      throw new Error(
         locale === 'ko'
-          ? adjustment > 0
-            ? '세금·수수료·기타 조정'
-            : '할인·기타 조정'
-          : adjustment > 0
-            ? 'Tax, fees & adjustments'
-            : 'Discount & adjustments',
-    })
-  }
+          ? 'Stripe 결제 URL을 받지 못했습니다.'
+          : 'Stripe did not return a hosted invoice URL.'
+      )
+    }
 
-  const finalized = await stripe.invoices.finalizeInvoice(draft.id)
-  const hostedInvoiceUrl = finalized.hosted_invoice_url
-  if (!hostedInvoiceUrl) {
-    throw new Error(
-      locale === 'ko'
-        ? 'Stripe 결제 URL을 받지 못했습니다.'
-        : 'Stripe did not return a hosted invoice URL.'
-    )
-  }
+    const paymentToken = invoice.payment_token || randomUUID()
 
-  const paymentToken = invoice.payment_token || randomUUID()
+    const { error: updateError } = await admin
+      .from('invoices')
+      .update({
+        stripe_invoice_id: finalized.id,
+        stripe_customer_id: stripeCustomerId,
+        hosted_invoice_url: hostedInvoiceUrl,
+        stripe_invoice_status: finalized.status || 'open',
+        payment_token: paymentToken,
+      } as never)
+      .eq('id', invoiceId)
 
-  const { error: updateError } = await admin
-    .from('invoices')
-    .update({
-      stripe_invoice_id: finalized.id,
-      stripe_customer_id: stripeCustomerId,
-      hosted_invoice_url: hostedInvoiceUrl,
-      stripe_invoice_status: finalized.status || 'open',
-      payment_token: paymentToken,
-    } as never)
-    .eq('id', invoiceId)
+    if (updateError) {
+      throw new Error(updateError.message || 'Failed to save Stripe invoice fields')
+    }
 
-  if (updateError) {
-    throw new Error(updateError.message || 'Failed to save Stripe invoice fields')
-  }
-
-  return {
-    invoiceId,
-    invoiceNumber: invoice.invoice_number,
-    stripeInvoiceId: finalized.id,
-    hostedInvoiceUrl,
-    paymentToken,
-    sitePayUrl: buildInvoiceSitePayUrl(paymentToken, locale),
-    reused: false,
+    return {
+      invoiceId,
+      invoiceNumber: invoice.invoice_number,
+      stripeInvoiceId: finalized.id,
+      hostedInvoiceUrl,
+      paymentToken,
+      sitePayUrl: buildInvoiceSitePayUrl(paymentToken, locale),
+      reused: false,
+    }
+  } catch (err) {
+    if (draftId) {
+      try {
+        await stripe.invoices.del(draftId)
+      } catch {
+        try {
+          await stripe.invoices.voidInvoice(draftId)
+        } catch {
+          // ignore cleanup failure
+        }
+      }
+    }
+    if (
+      err instanceof Error &&
+      /Stripe 결제|Stripe could not|Failed to create Stripe|Failed to save Stripe|결제 URL|hosted invoice URL/i.test(
+        err.message
+      )
+    ) {
+      throw err
+    }
+    throw new Error(stripeErrorMessage(err, locale))
   }
 }
 
@@ -750,7 +810,7 @@ function lasVegasDateString(offsetDays = 0): string {
 
 function buildQuickInvoiceNumber(): string {
   const date = lasVegasDateString().replace(/-/g, '')
-  const random = Math.floor(Math.random() * 9000) + 1000
+  const random = Math.floor(Math.random() * 900000) + 100000
   return `INV-${date}-${random}`
 }
 
@@ -852,12 +912,12 @@ export async function createQuickPayableInvoice(
   reservationId: string | null
 }> {
   const locale = params.locale === 'ko' ? 'ko' : 'en'
-  const email = params.email.trim().toLowerCase()
-  const description = params.description.trim()
+  const email = parseRecipientEmail(params.email)
+  const description = params.description.trim().slice(0, 450)
   const amountUsd = roundMoney(Number(params.amountUsd))
   const recipientName = (params.recipientName || '').trim() || email.split('@')[0] || 'Guest'
 
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (!email) {
     throw new Error(locale === 'ko' ? '유효한 이메일이 필요합니다.' : 'A valid email is required.')
   }
   if (isGetYourGuideReplyEmail(email)) {
@@ -949,18 +1009,48 @@ export async function createQuickPayableInvoice(
           .eq('id', customerId)
       }
     } else {
-      customerId = generateCustomerId()
-      const { error: customerError } = await admin.from('customers').insert({
-        id: customerId,
-        name: recipientName,
-        email,
-        status: 'active',
-        ...operatorIdInsert(operatorId),
-      } as never)
-      if (customerError) {
-        throw new Error(customerError.message || 'Failed to create customer')
+      const { data: archivedOrOther } = await admin
+        .from('customers')
+        .select('id, name, email')
+        .ilike('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (archivedOrOther?.id) {
+        customerId = archivedOrOther.id
+        if (recipientName && archivedOrOther.name !== recipientName) {
+          await admin
+            .from('customers')
+            .update({ name: recipientName, updated_at: new Date().toISOString() } as never)
+            .eq('id', customerId)
+        }
+      } else {
+        customerId = generateCustomerId()
+        const { error: customerError } = await admin.from('customers').insert({
+          id: customerId,
+          name: recipientName,
+          email,
+          status: 'active',
+          ...operatorIdInsert(operatorId),
+        } as never)
+        if (customerError) {
+          const { data: raced } = await admin
+            .from('customers')
+            .select('id, name, email')
+            .ilike('email', email)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if (raced?.id) {
+            customerId = raced.id
+          } else {
+            throw new Error(customerError.message || 'Failed to create customer')
+          }
+        } else {
+          customerCreated = true
+        }
       }
-      customerCreated = true
     }
   }
 
@@ -968,7 +1058,6 @@ export async function createQuickPayableInvoice(
     throw new Error(locale === 'ko' ? '고객을 찾을 수 없습니다.' : 'Customer could not be resolved.')
   }
 
-  const invoiceNumber = buildQuickInvoiceNumber()
   const invoiceDate = lasVegasDateString()
   const dueDate = lasVegasDateString(7)
 
@@ -988,30 +1077,39 @@ export async function createQuickPayableInvoice(
     },
   ]
 
-  const { data: invoice, error: invoiceError } = await admin
-    .from('invoices')
-    .insert({
-      customer_id: customerId,
-      invoice_number: invoiceNumber,
-      invoice_date: invoiceDate,
-      due_date: dueDate,
-      items: items as never,
-      subtotal: amountUsd,
-      tax: 0,
-      tax_percent: 0,
-      apply_tax: false,
-      discount: 0,
-      discount_percent: 0,
-      apply_discount: false,
-      processing_fee: 0,
-      apply_processing_fee: false,
-      total: amountUsd,
-      notes: QUICK_PAYMENT_INVOICE_NOTES,
-      status: 'draft',
-      created_by: params.createdBy || null,
-    } as never)
-    .select('id')
-    .single()
+  let invoice: { id: string } | null = null
+  let invoiceError: { code?: string; message?: string } | null = null
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const invoiceNumber = buildQuickInvoiceNumber()
+    const inserted = await admin
+      .from('invoices')
+      .insert({
+        customer_id: customerId,
+        invoice_number: invoiceNumber,
+        invoice_date: invoiceDate,
+        due_date: dueDate,
+        items: items as never,
+        subtotal: amountUsd,
+        tax: 0,
+        tax_percent: 0,
+        apply_tax: false,
+        discount: 0,
+        discount_percent: 0,
+        apply_discount: false,
+        processing_fee: 0,
+        apply_processing_fee: false,
+        total: amountUsd,
+        notes: QUICK_PAYMENT_INVOICE_NOTES,
+        status: 'draft',
+        created_by: params.createdBy || null,
+      } as never)
+      .select('id')
+      .single()
+    invoice = inserted.data
+    invoiceError = inserted.error
+    if (invoice?.id) break
+    if (!isUniqueViolation(invoiceError)) break
+  }
 
   if (invoiceError || !invoice) {
     throw new Error(invoiceError?.message || 'Failed to create invoice')

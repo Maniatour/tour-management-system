@@ -9,12 +9,109 @@ import {
   listQuickPaymentInvoices,
   replaceGetYourGuideRelayCustomerEmail,
 } from '@/lib/payableInvoice'
-import { buildQuickPaymentRequestSmsText } from '@/lib/quickPaymentRequestMessage'
+import {
+  buildQuickPaymentRequestEmailText,
+  buildQuickPaymentRequestSmsText,
+  parseRecipientEmail,
+} from '@/lib/quickPaymentRequestMessage'
 import { supabaseAdmin } from '@/lib/supabase'
 import { sendTwilioSms } from '@/lib/twilioClient'
 import { resolveSmsPhone } from '@/utils/formatPhoneToE164'
 
 export const runtime = 'nodejs'
+export const maxDuration = 60
+
+function resendFromHeader(): string {
+  const raw = (process.env.RESEND_FROM_EMAIL || 'info@maniatour.com').trim()
+  if (!raw) return 'Las Vegas Mania Tour <info@maniatour.com>'
+  if (raw.includes('<')) return raw
+  return `Las Vegas Mania Tour <${raw}>`
+}
+
+function isNonRetryableEmailError(message: string): boolean {
+  return /invalid|not a valid|unsubscribed|blocked|domain is not verified|missing.*from|unauthorized/i.test(
+    message
+  )
+}
+
+async function sendQuickPaymentEmail(params: {
+  to: string
+  recipientName: string
+  description: string
+  amountUsd: number
+  invoiceNumber: string
+  payUrl: string
+  locale: 'ko' | 'en'
+}): Promise<{ emailSent: boolean; emailId: string | null; emailError: string | null }> {
+  const resendApiKey = process.env.RESEND_API_KEY
+  if (!resendApiKey) {
+    return {
+      emailSent: false,
+      emailId: null,
+      emailError:
+        params.locale === 'ko'
+          ? '이메일 서비스가 설정되지 않았습니다. 결제 링크는 생성되었습니다.'
+          : 'Email service is not configured. Payment link was still created.',
+    }
+  }
+
+  const to = parseRecipientEmail(params.to)
+  if (!to) {
+    return {
+      emailSent: false,
+      emailId: null,
+      emailError:
+        params.locale === 'ko' ? '유효한 이메일이 필요합니다.' : 'A valid email is required.',
+    }
+  }
+
+  const resend = new Resend(resendApiKey)
+  const subject =
+    params.locale === 'ko'
+      ? `결제 요청 $${params.amountUsd.toFixed(2)} - ${params.invoiceNumber}`
+      : `Payment request $${params.amountUsd.toFixed(2)} - ${params.invoiceNumber}`
+  const payload = {
+    from: resendFromHeader(),
+    replyTo: process.env.RESEND_REPLY_TO || 'info@maniatour.com',
+    to,
+    subject,
+    html: buildQuickPaymentRequestEmailHtml({
+      locale: params.locale,
+      recipientName: params.recipientName,
+      description: params.description,
+      amountUsd: params.amountUsd,
+      invoiceNumber: params.invoiceNumber,
+      payUrl: params.payUrl,
+    }),
+    text: buildQuickPaymentRequestEmailText({
+      recipientName: params.recipientName,
+      description: params.description,
+      amountUsd: params.amountUsd,
+      invoiceNumber: params.invoiceNumber,
+      payUrl: params.payUrl,
+    }),
+  }
+
+  let lastError: string | null = null
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const { data, error } = await resend.emails.send(payload)
+      if (error) {
+        lastError = error.message || 'Failed to send email'
+        console.error('[quick-payment-request] email', error)
+        if (isNonRetryableEmailError(lastError) || attempt === 1) break
+        continue
+      }
+      return { emailSent: true, emailId: data?.id || null, emailError: null }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : 'Failed to send email'
+      console.error('[quick-payment-request] email throw', err)
+      if (isNonRetryableEmailError(lastError) || attempt === 1) break
+    }
+  }
+
+  return { emailSent: false, emailId: null, emailError: lastError }
+}
 
 async function sendQuickPaymentSms(params: {
   phone: string
@@ -94,7 +191,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'JSON body required' }, { status: 400 })
   }
 
-  const email = typeof body.email === 'string' ? body.email : ''
+  const email = parseRecipientEmail(typeof body.email === 'string' ? body.email : '')
   const description = typeof body.description === 'string' ? body.description : ''
   const recipientName = typeof body.recipientName === 'string' ? body.recipientName : ''
   const reservationId = typeof body.reservationId === 'string' ? body.reservationId : ''
@@ -105,8 +202,9 @@ export async function POST(request: NextRequest) {
   const sendEmail = body.sendEmail !== false
   const sendSms = body.sendSms === true
   const sendSmsOnly = body.sendSmsOnly === true
+  const sendEmailOnly = body.sendEmailOnly === true
   const phone = typeof body.phone === 'string' ? body.phone : ''
-  const invoiceIdForSms = typeof body.invoiceId === 'string' ? body.invoiceId.trim() : ''
+  const invoiceIdForFollowUp = typeof body.invoiceId === 'string' ? body.invoiceId.trim() : ''
   const updateCustomerEmailOnly = body.updateCustomerEmailOnly === true
 
   if (updateCustomerEmailOnly) {
@@ -144,7 +242,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (sendSmsOnly) {
-    if (!invoiceIdForSms) {
+    if (!invoiceIdForFollowUp) {
       return NextResponse.json(
         { error: locale === 'ko' ? '인보이스가 필요합니다.' : 'Invoice is required.' },
         { status: 400 }
@@ -156,7 +254,7 @@ export async function POST(request: NextRequest) {
         .select(
           'id, invoice_number, total, items, notes, payment_token, hosted_invoice_url, customers(name)'
         )
-        .eq('id', invoiceIdForSms)
+        .eq('id', invoiceIdForFollowUp)
         .maybeSingle()
 
       if (!invoice || !isQuickPaymentInvoiceNotes((invoice as { notes?: string | null }).notes)) {
@@ -210,6 +308,99 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (sendEmailOnly) {
+    if (!invoiceIdForFollowUp) {
+      return NextResponse.json(
+        { error: locale === 'ko' ? '인보이스가 필요합니다.' : 'Invoice is required.' },
+        { status: 400 }
+      )
+    }
+    try {
+      const { data: invoice } = await supabaseAdmin
+        .from('invoices')
+        .select(
+          'id, invoice_number, total, items, notes, payment_token, hosted_invoice_url, customers(name, email)'
+        )
+        .eq('id', invoiceIdForFollowUp)
+        .maybeSingle()
+
+      if (!invoice || !isQuickPaymentInvoiceNotes((invoice as { notes?: string | null }).notes)) {
+        return NextResponse.json(
+          {
+            error:
+              locale === 'ko' ? '빠른 금액 청구 내역을 찾을 수 없습니다.' : 'Payment request not found.',
+          },
+          { status: 404 }
+        )
+      }
+
+      const paymentToken = String((invoice as { payment_token?: string | null }).payment_token || '').trim()
+      const hostedUrl = String((invoice as { hosted_invoice_url?: string | null }).hosted_invoice_url || '').trim()
+      const payUrl = paymentToken ? buildInvoiceSitePayUrl(paymentToken, 'en') : hostedUrl
+      if (!payUrl) {
+        return NextResponse.json(
+          { error: locale === 'ko' ? '결제 링크가 없습니다.' : 'Payment link is missing.' },
+          { status: 400 }
+        )
+      }
+
+      const items = Array.isArray((invoice as { items?: unknown }).items)
+        ? (invoice as { items: Array<{ description?: string | null; productName?: string | null }> }).items
+        : []
+      const firstItem = items[0]
+      const mailDescription =
+        (firstItem?.description || firstItem?.productName || '').trim() || 'Tour payment'
+      const mailAmountUsd = Number((invoice as { total?: number }).total) || 0
+      const customerRaw = (
+        invoice as {
+          customers?:
+            | { name?: string | null; email?: string | null }
+            | { name?: string | null; email?: string | null }[]
+        }
+      ).customers
+      const customer = Array.isArray(customerRaw) ? customerRaw[0] : customerRaw
+      const toEmail = parseRecipientEmail(email) || parseRecipientEmail(customer?.email || '')
+      if (!toEmail) {
+        return NextResponse.json(
+          {
+            error: locale === 'ko' ? '유효한 이메일이 필요합니다.' : 'A valid email is required.',
+          },
+          { status: 400 }
+        )
+      }
+
+      const sent = await sendQuickPaymentEmail({
+        to: toEmail,
+        recipientName: recipientName.trim() || customer?.name || '',
+        description: mailDescription,
+        amountUsd: mailAmountUsd,
+        invoiceNumber: String((invoice as { invoice_number?: string }).invoice_number || ''),
+        payUrl,
+        locale: 'en',
+      })
+      if (!sent.emailSent) {
+        return NextResponse.json(
+          { error: sent.emailError || 'Email failed', ...sent },
+          { status: 400 }
+        )
+      }
+      await supabaseAdmin
+        .from('invoices')
+        .update({
+          status: 'sent',
+          sent_at: new Date().toISOString(),
+          sent_by: auth.userEmail,
+          email_id: sent.emailId,
+        } as never)
+        .eq('id', invoiceIdForFollowUp)
+      return NextResponse.json({ success: true, email: toEmail, ...sent })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to send email'
+      console.error('[quick-payment-request] sendEmailOnly', err)
+      return NextResponse.json({ error: message }, { status: 500 })
+    }
+  }
+
   try {
     const result = await createQuickPayableInvoice(supabaseAdmin, {
       email,
@@ -226,44 +417,20 @@ export async function POST(request: NextRequest) {
     let emailError: string | null = null
 
     if (sendEmail) {
-      const resendApiKey = process.env.RESEND_API_KEY
-      if (!resendApiKey) {
-        emailError =
-          locale === 'ko'
-            ? '이메일 서비스가 설정되지 않았습니다. 결제 링크는 생성되었습니다.'
-            : 'Email service is not configured. Payment link was still created.'
-      } else {
-        const resend = new Resend(resendApiKey)
-        const fromEmail = process.env.RESEND_FROM_EMAIL || 'info@maniatour.com'
-        const replyTo = process.env.RESEND_REPLY_TO || 'info@maniatour.com'
-        const subject =
-          locale === 'ko'
-            ? `결제 요청 $${result.amountUsd.toFixed(2)} - ${result.invoiceNumber}`
-            : `Payment request $${result.amountUsd.toFixed(2)} - ${result.invoiceNumber}`
-
-        const html = buildQuickPaymentRequestEmailHtml({
-          locale,
-          recipientName: result.recipientName,
-          description: result.description,
-          amountUsd: result.amountUsd,
-          invoiceNumber: result.invoiceNumber,
-          payUrl: result.sitePayUrl,
-        })
-
-        const { data: emailResult, error: sendErr } = await resend.emails.send({
-          from: fromEmail,
-          replyTo,
-          to: result.email,
-          subject,
-          html,
-        })
-
-        if (sendErr) {
-          emailError = sendErr.message || 'Failed to send email'
-          console.error('[quick-payment-request] email', sendErr)
-        } else {
-          emailId = emailResult?.id || null
-          emailSent = true
+      const sent = await sendQuickPaymentEmail({
+        to: result.email,
+        recipientName: result.recipientName,
+        description: result.description,
+        amountUsd: result.amountUsd,
+        invoiceNumber: result.invoiceNumber,
+        payUrl: result.sitePayUrl,
+        locale: 'en',
+      })
+      emailSent = sent.emailSent
+      emailId = sent.emailId
+      emailError = sent.emailError
+      if (emailSent) {
+        try {
           await supabaseAdmin
             .from('invoices')
             .update({
@@ -273,6 +440,8 @@ export async function POST(request: NextRequest) {
               email_id: emailId,
             } as never)
             .eq('id', result.invoiceId)
+        } catch (updateErr) {
+          console.error('[quick-payment-request] sent status update', updateErr)
         }
       }
     }
@@ -282,26 +451,32 @@ export async function POST(request: NextRequest) {
     let smsToPhone: string | null = null
 
     if (sendSms) {
-      const sms = await sendQuickPaymentSms({
-        phone,
-        recipientName: result.recipientName,
-        description: result.description,
-        amountUsd: result.amountUsd,
-        payUrl: result.sitePayUrl,
-        locale,
-      })
-      smsSent = sms.smsSent
-      smsError = sms.smsError
-      smsToPhone = sms.toPhone
-      if (smsSent && !emailSent) {
-        await supabaseAdmin
-          .from('invoices')
-          .update({
-            status: 'sent',
-            sent_at: new Date().toISOString(),
-            sent_by: auth.userEmail,
-          } as never)
-          .eq('id', result.invoiceId)
+      try {
+        const sms = await sendQuickPaymentSms({
+          phone,
+          recipientName: result.recipientName,
+          description: result.description,
+          amountUsd: result.amountUsd,
+          payUrl: result.sitePayUrl,
+          locale,
+        })
+        smsSent = sms.smsSent
+        smsError = sms.smsError
+        smsToPhone = sms.toPhone
+        if (smsSent && !emailSent) {
+          await supabaseAdmin
+            .from('invoices')
+            .update({
+              status: 'sent',
+              sent_at: new Date().toISOString(),
+              sent_by: auth.userEmail,
+            } as never)
+            .eq('id', result.invoiceId)
+        }
+      } catch (smsErr) {
+        smsSent = false
+        smsError = smsErr instanceof Error ? smsErr.message : 'SMS failed'
+        console.error('[quick-payment-request] sms', smsErr)
       }
     }
 

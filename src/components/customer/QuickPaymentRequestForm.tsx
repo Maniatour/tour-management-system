@@ -23,6 +23,7 @@ import { isGetYourGuideReplyEmail } from '@/lib/otaDirectCustomerEmail'
 import {
   buildQuickPaymentRequestSmsText,
   buildWhatsAppMeUrl,
+  parseRecipientEmail,
 } from '@/lib/quickPaymentRequestMessage'
 import { resolveSmsPhone } from '@/utils/formatPhoneToE164'
 import {
@@ -117,6 +118,7 @@ export default function QuickPaymentRequestForm({
   const [savingCustomerEmail, setSavingCustomerEmail] = useState(false)
   const [customerEmailSaved, setCustomerEmailSaved] = useState(false)
   const [smsSending, setSmsSending] = useState(false)
+  const [emailSending, setEmailSending] = useState(false)
 
   useEffect(() => {
     // 모달이 새로 열리며 initials가 바뀔 때만 필드 동기화 (제출 중/결과 화면에서 리셋되지 않도록)
@@ -175,11 +177,15 @@ export default function QuickPaymentRequestForm({
     setResult(null)
 
     const amountUsd = Number(amount)
-    if (!email.trim()) {
+    const parsedEmail = parseRecipientEmail(email)
+    if (!parsedEmail) {
       setError(locale === 'ko' ? '수신자 이메일을 입력해 주세요.' : 'Recipient email is required.')
       return null
     }
-    if (isGetYourGuideReplyEmail(email)) {
+    if (parsedEmail !== email.trim()) {
+      setEmail(parsedEmail)
+    }
+    if (isGetYourGuideReplyEmail(parsedEmail)) {
       setError(
         locale === 'ko'
           ? 'GetYourGuide 임시 이메일(@reply.getyourguide.com)로는 금액 청구를 보낼 수 없습니다. 고객의 실제 이메일을 입력해 주세요.'
@@ -222,7 +228,7 @@ export default function QuickPaymentRequestForm({
 
   const handleUpdateCustomerEmail = async () => {
     setError(null)
-    const nextEmail = email.trim()
+    const nextEmail = parseRecipientEmail(email)
     const reservationId = initials?.reservationId?.trim() || ''
     if (!reservationId) {
       setError(
@@ -235,6 +241,9 @@ export default function QuickPaymentRequestForm({
     if (!nextEmail) {
       setError(locale === 'ko' ? '수신자 이메일을 입력해 주세요.' : 'Recipient email is required.')
       return
+    }
+    if (nextEmail !== email.trim()) {
+      setEmail(nextEmail)
     }
     if (isGetYourGuideReplyEmail(nextEmail)) {
       setError(
@@ -298,7 +307,7 @@ export default function QuickPaymentRequestForm({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: email.trim(),
+          email: parseRecipientEmail(email) || email.trim(),
           recipientName: recipientName.trim() || undefined,
           description: description.trim(),
           amountUsd,
@@ -453,6 +462,56 @@ export default function QuickPaymentRequestForm({
     }
   }
 
+  const sendEmailFromResult = async () => {
+    if (!result || emailSending) return
+    const toEmail = parseRecipientEmail(email) || parseRecipientEmail(result.email)
+    if (!toEmail) {
+      setError(
+        locale === 'ko' ? '이메일을 다시 보내려면 유효한 주소가 필요합니다.' : 'A valid email is required to resend.'
+      )
+      return
+    }
+    setEmailSending(true)
+    setError(null)
+    try {
+      const response = await fetchApiWithAuth('/api/invoices/quick-payment-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sendEmailOnly: true,
+          invoiceId: result.invoiceId,
+          email: toEmail,
+          recipientName: recipientName.trim() || undefined,
+          locale,
+        }),
+      })
+      const data = await response.json().catch(() => ({} as Record<string, unknown>))
+      if (!response.ok) {
+        throw new Error(
+          (typeof data.error === 'string' && data.error) ||
+            (locale === 'ko' ? '이메일 발송 실패' : 'Email failed')
+        )
+      }
+      setEmail(toEmail)
+      setResult((prev) =>
+        prev
+          ? {
+              ...prev,
+              email: toEmail,
+              emailSent: true,
+              emailError: null,
+            }
+          : prev
+      )
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : locale === 'ko' ? '이메일 발송 실패' : 'Email failed'
+      setResult((prev) => (prev ? { ...prev, emailSent: false, emailError: message } : prev))
+    } finally {
+      setEmailSending(false)
+    }
+  }
+
   const isOtaTempEmail = isGetYourGuideReplyEmail(email)
   const originalWasOtaTempEmail = isGetYourGuideReplyEmail(initials?.email)
   const canSaveCustomerEmail =
@@ -494,7 +553,11 @@ export default function QuickPaymentRequestForm({
                   {locale === 'ko' ? '이메일을 발송했습니다.' : 'Email sent.'}
                 </p>
               ) : result.emailError ? (
-                <p className="mt-2 text-sm text-amber-700">{result.emailError}</p>
+                <p className="mt-2 text-sm text-amber-700">
+                  {locale === 'ko'
+                    ? `이메일은 보내지 못했습니다. 결제 링크는 준비되어 있으니 다시 보내거나 링크를 복사해 주세요. (${result.emailError})`
+                    : `Email was not sent, but the payment link is ready. Resend or copy the link. (${result.emailError})`}
+                </p>
               ) : (
                 <p className="mt-2 text-sm text-muted-foreground">
                   {locale === 'ko' ? '이메일은 보내지 않았습니다.' : 'Email was not sent.'}
@@ -525,6 +588,20 @@ export default function QuickPaymentRequestForm({
               {locale === 'ko' ? '결제 링크' : 'Payment link'}
             </p>
             {result.sitePayUrl || result.hostedInvoiceUrl}
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="qp-result-email" className="text-sm font-medium text-foreground">
+              {locale === 'ko' ? '수신자 이메일' : 'Recipient email'}
+            </label>
+            <input
+              id="qp-result-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              placeholder="guest@example.com"
+            />
           </div>
 
           <div className="space-y-2">
@@ -559,6 +636,27 @@ export default function QuickPaymentRequestForm({
               <ExternalLink className="h-4 w-4" aria-hidden />
               {locale === 'ko' ? '링크 열기' : 'Open link'}
             </a>
+            <button
+              type="button"
+              disabled={emailSending || !parseRecipientEmail(email || result.email)}
+              onClick={() => {
+                void sendEmailFromResult()
+              }}
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-60"
+            >
+              {emailSending ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Mail className="h-4 w-4" aria-hidden />
+              )}
+              {result.emailSent
+                ? locale === 'ko'
+                  ? '이메일 다시 보내기'
+                  : 'Resend email'
+                : locale === 'ko'
+                  ? '이메일 보내기'
+                  : 'Send email'}
+            </button>
             <button
               type="button"
               disabled={smsSending || !resolveSmsPhone(phone)}
