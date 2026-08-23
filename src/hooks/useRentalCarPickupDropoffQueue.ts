@@ -52,7 +52,7 @@ export function useRentalCarPickupDropoffQueue(enabled = true, locale = 'ko') {
         supabase
           .from('vehicles')
           .select(
-            'id, vehicle_number, nick, status, vehicle_category, rental_company, rental_agreement_number, rental_start_date, rental_end_date, rental_pickup_location, rental_return_location, rental_reserved_by'
+            'id, vehicle_number, nick, status, vehicle_category, rental_company, rental_agreement_number, rental_start_date, rental_end_date, rental_pickup_location, rental_return_location, rental_pickup_time, rental_return_time, rental_reserved_by'
           )
           .eq('vehicle_category', 'rental')
           .lte('rental_start_date', today)

@@ -9,10 +9,6 @@ import {
   Trash2, 
   DollarSign, 
   User, 
-  AlertTriangle,
-  CheckCircle,
-  XCircle,
-  Clock,
   Search,
   Upload,
   LayoutGrid,
@@ -28,6 +24,10 @@ import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { apiBearerAuthHeaders, fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 import PaymentMethodUsageModal from '@/components/PaymentMethodUsageModal'
+import PaymentMethodStatusPicker, {
+  PAYMENT_METHOD_STATUS_OPTIONS,
+  type PaymentMethodStatusValue,
+} from '@/components/PaymentMethodStatusModal'
 import PaymentMethodFinancialAccountLinkModal from '@/components/reconciliation/PaymentMethodFinancialAccountLinkModal'
 import {
   Dialog,
@@ -315,7 +315,7 @@ export default function PaymentMethodManager({
   const [bulkUserMemberSearch, setBulkUserMemberSearch] = useState('')
   const [formTeamMemberSearch, setFormTeamMemberSearch] = useState('')
   const [filters, setFilters] = useState({
-    status: '',
+    statuses: [] as string[],
     method_type: '',
     search: ''
   })
@@ -440,14 +440,18 @@ export default function PaymentMethodManager({
       const params = new URLSearchParams()
       params.append('limit', '5000')
       if (userEmail) params.append('user_email', userEmail)
-      if (filters.status) params.append('status', filters.status)
       if (filters.method_type) params.append('method_type', filters.method_type)
 
       const response = await fetchWithApiAuth(`/api/payment-methods?${params}`)
       const result = await response.json()
       
       if (result.success) {
-        let filteredData = result.data
+        let filteredData = result.data as PaymentMethod[]
+
+        if (filters.statuses.length > 0) {
+          const selected = new Set(filters.statuses)
+          filteredData = filteredData.filter((method) => selected.has(method.status))
+        }
         
         // 검색 필터 적용
         if (filters.search) {
@@ -750,7 +754,7 @@ export default function PaymentMethodManager({
     try {
       // 수정 시에는 첫 번째 선택된 사용자만 사용 (기존 레코드 업데이트)
       // 사용자가 선택되지 않은 경우 null로 설정
-      const response = await fetchWithApiAuth(`/api/payment-methods/${editingMethod.id}`, {
+      const response = await fetchWithApiAuth(`/api/payment-methods/${encodeURIComponent(editingMethod.id)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -831,12 +835,11 @@ export default function PaymentMethodManager({
     }
   }
 
-  // 결제 방법 상태 토글 (활성/비활성)
-  const handleToggleStatus = async (method: PaymentMethod) => {
-    const newStatus = method.status === 'active' ? 'inactive' : 'active'
-    
+  const handleUpdateStatus = async (method: PaymentMethod, newStatus: PaymentMethodStatusValue) => {
+    if (method.status === newStatus) return
+
     try {
-      const response = await fetchWithApiAuth(`/api/payment-methods/${method.id}`, {
+      const response = await fetchWithApiAuth(`/api/payment-methods/${encodeURIComponent(method.id)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -852,14 +855,14 @@ export default function PaymentMethodManager({
         throw new Error(result.message)
       }
 
-      // 로컬 상태 업데이트
-      setMethods(prev => prev.map(m => 
+      setMethods(prev => prev.map(m =>
         m.id === method.id ? { ...m, status: newStatus } : m
       ))
       onMethodUpdated?.()
     } catch (error) {
-      console.error('Error toggling payment method status:', error)
+      console.error('Error updating payment method status:', error)
       alert(`상태 변경에 실패했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+      throw error
     }
   }
 
@@ -1533,39 +1536,6 @@ export default function PaymentMethodManager({
     }
   }, [mergeModalOpen, mergeSourceIds])
 
-  // 상태별 색상
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'bg-green-100 text-green-800'
-      case 'inactive': return 'bg-gray-100 text-gray-800'
-      case 'suspended': return 'bg-yellow-100 text-yellow-800'
-      case 'expired': return 'bg-red-100 text-red-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
-
-  // 상태별 아이콘
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'active': return <CheckCircle size={16} />
-      case 'inactive': return <XCircle size={16} />
-      case 'suspended': return <AlertTriangle size={16} />
-      case 'expired': return <Clock size={16} />
-      default: return <Clock size={16} />
-    }
-  }
-
-  // 상태별 텍스트
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'active': return '활성'
-      case 'inactive': return '비활성'
-      case 'suspended': return '정지'
-      case 'expired': return '만료'
-      default: return status
-    }
-  }
-
   // 통화 포맷
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('ko-KR', {
@@ -1590,7 +1560,7 @@ export default function PaymentMethodManager({
   // 필터 변경 시 데이터 다시 로드
   useEffect(() => {
     loadMethods()
-  }, [filters.status, filters.method_type, filters.search])
+  }, [filters.statuses, filters.method_type, filters.search])
 
   useEffect(() => {
     if (listViewMode !== 'table') {
@@ -1728,19 +1698,41 @@ export default function PaymentMethodManager({
       {/* 필터 - 모바일 컴팩트 */}
       <div className="bg-white border rounded-lg p-3 sm:p-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
-          <div>
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">상태</label>
-            <select
-              value={filters.status}
-              onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-            >
-              <option value="">전체</option>
-              <option value="active">활성</option>
-              <option value="inactive">비활성</option>
-              <option value="suspended">정지</option>
-              <option value="expired">만료</option>
-            </select>
+          <div className="col-span-2">
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">상태</label>
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label="상태 다중 선택">
+              {PAYMENT_METHOD_STATUS_OPTIONS.map((option) => {
+                const selected = filters.statuses.includes(option.value)
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => {
+                      setFilters((prev) => ({
+                        ...prev,
+                        statuses: selected
+                          ? prev.statuses.filter((s) => s !== option.value)
+                          : [...prev.statuses, option.value],
+                      }))
+                    }}
+                    className={`inline-flex min-h-9 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                      selected
+                        ? `${option.badgeClass} border-current ring-1 ring-current/20`
+                        : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <option.icon size={13} aria-hidden />
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {filters.statuses.length === 0
+                ? '선택하지 않으면 전체 상태를 보여 줍니다.'
+                : `${filters.statuses.length}개 상태만 표시`}
+            </p>
           </div>
           <div>
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">유형</label>
@@ -1757,7 +1749,7 @@ export default function PaymentMethodManager({
               <option value="other">기타</option>
             </select>
           </div>
-          <div className="col-span-2">
+          <div className="col-span-2 md:col-span-1">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">검색</label>
             <div className="relative">
               <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
@@ -1770,10 +1762,10 @@ export default function PaymentMethodManager({
               />
             </div>
           </div>
-          <div className="col-span-2 md:col-span-1 flex md:items-end">
+          <div className="col-span-2 md:col-span-4 flex md:justify-end">
             <button
-              onClick={() => setFilters({ status: '', method_type: '', search: '' })}
-              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              onClick={() => setFilters({ statuses: [], method_type: '', search: '' })}
+              className="w-full md:w-auto px-2 sm:px-3 py-1.5 sm:py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
             >
               필터 초기화
             </button>
@@ -3133,10 +3125,12 @@ export default function PaymentMethodManager({
                         <span className="line-clamp-2 break-words">{method.notes?.trim() || '—'}</span>
                       </td>
                       <td className="px-2 py-2 sm:px-3 align-middle whitespace-nowrap">
-                        <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs ${getStatusColor(method.status)}`}>
-                          {getStatusIcon(method.status)}
-                          <span>{getStatusText(method.status)}</span>
-                        </span>
+                        <PaymentMethodStatusPicker
+                          currentStatus={method.status}
+                          methodId={method.id}
+                          methodLabel={paymentMethodUiLabel(method)}
+                          onSelect={(status) => handleUpdateStatus(method, status)}
+                        />
                       </td>
                       <td className="px-2 py-2 sm:px-3 align-middle text-right text-gray-700 whitespace-nowrap">
                         {method.limit_amount != null ? formatCurrency(method.limit_amount) : '—'}
@@ -3185,26 +3179,12 @@ export default function PaymentMethodManager({
                     </button>
                   </div>
                   <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                    <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs ${getStatusColor(method.status)}`}>
-                      {getStatusIcon(method.status)}
-                      <span>{getStatusText(method.status)}</span>
-                    </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleToggleStatus(method)
-                      }}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 flex-shrink-0 ${
-                        method.status === 'active' ? 'bg-green-500' : 'bg-gray-300'
-                      }`}
-                      title={method.status === 'active' ? '비활성화' : '활성화'}
-                    >
-                      <span
-                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                          method.status === 'active' ? 'translate-x-5' : 'translate-x-0.5'
-                        }`}
-                      />
-                    </button>
+                    <PaymentMethodStatusPicker
+                      currentStatus={method.status}
+                      methodId={method.id}
+                      methodLabel={paymentMethodUiLabel(method)}
+                      onSelect={(status) => handleUpdateStatus(method, status)}
+                    />
                   </div>
                 </div>
                 <div className="flex items-center gap-0.5 flex-shrink-0">

@@ -107,6 +107,10 @@ export function usePaymentMethodOptions() {
         )
         map[pm.id] = name
         map[pm.method] = name
+        const idLower = String(pm.id || '').toLowerCase()
+        if (idLower && idLower !== pm.id) map[idLower] = name
+        const methodLower = String(pm.method || '').toLowerCase()
+        if (methodLower && methodLower !== pm.method) map[methodLower] = name
         const faId = pm.financial_account_id ? String(pm.financial_account_id).trim() : ''
         let linkedName: string | null = null
         if (faId) {

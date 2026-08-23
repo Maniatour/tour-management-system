@@ -1,19 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
+import {
+  RESIDENT_CHECK_PAYMENT_NOTIFY_MARKER,
+  type CustomerPaymentNotifyKind,
+} from '@/lib/customerPaymentNotifyKind'
+import { getUserRole } from '@/lib/roles'
 import { SUPER_ADMIN_EMAILS } from '@/lib/superAdmin'
 
-type AdminClient = SupabaseClient<Database>
+export type { CustomerPaymentNotifyKind } from '@/lib/customerPaymentNotifyKind'
 
-const STAFF_PAYMENT_NOTIFY_POSITIONS = new Set([
-  'super',
-  'admin',
-  'op',
-  'office',
-  'office manager',
-  'office_manager',
-  'office_staff',
-  'office staff',
-])
+type AdminClient = SupabaseClient<Database>
 
 function normalizeEmail(email: string | null | undefined): string | null {
   const value = email?.trim().toLowerCase()
@@ -37,16 +33,18 @@ function formatGuestCounts(adults: number, child: number, infant: number): strin
   return parts.length > 0 ? parts.join(', ') : '인원 정보 없음'
 }
 
-function isPaymentNotifyPosition(position: string | null | undefined): boolean {
-  const normalized = (position || '').trim().toLowerCase()
-  return STAFF_PAYMENT_NOTIFY_POSITIONS.has(normalized)
+/** Admin layout accounts: admin/manager roles. Guides and drivers are excluded. */
+function isAdminAccountRecipient(
+  email: string,
+  position: string | null | undefined,
+  isActive: boolean | null | undefined
+): boolean {
+  const role = getUserRole(email, { position: position ?? null, is_active: isActive ?? null })
+  return role === 'admin' || role === 'manager'
 }
 
 async function getCustomerPaymentNotificationRecipients(admin: AdminClient): Promise<string[]> {
-  const { data, error } = await admin
-    .from('team')
-    .select('email, position')
-    .eq('is_active', true)
+  const { data, error } = await admin.from('team').select('email, position, is_active')
 
   if (error) {
     console.error('[customerPaymentNotifications] team recipients', error)
@@ -54,9 +52,10 @@ async function getCustomerPaymentNotificationRecipients(admin: AdminClient): Pro
 
   const emails = new Set<string>()
   for (const row of data || []) {
-    if (!isPaymentNotifyPosition(row.position)) continue
     const email = normalizeEmail(row.email)
-    if (email) emails.add(email)
+    if (!email) continue
+    if (!isAdminAccountRecipient(email, row.position, row.is_active)) continue
+    emails.add(email)
   }
   for (const email of SUPER_ADMIN_EMAILS) {
     emails.add(email.toLowerCase())
@@ -75,6 +74,7 @@ export async function notifyStaffOfCustomerPayment(
     paymentIntentId: string
     paymentRecordId: string | null
     amountUsd: number
+    kind?: CustomerPaymentNotifyKind
   }
 ): Promise<void> {
   try {
@@ -124,9 +124,15 @@ export async function notifyStaffOfCustomerPayment(
     const amountLabel = formatMoneyUsd(args.amountUsd)
     const guestLabel = formatGuestCounts(adults, child, infant)
     const tourDate = reservation.tour_date || null
+    const kind: CustomerPaymentNotifyKind = args.kind ?? 'web_checkout'
+    const headline =
+      kind === 'resident_check'
+        ? '고객이 거주·연간 패스 안내에서 카드 결제를 완료했습니다.'
+        : '고객 웹 결제가 완료되었습니다.'
 
     const message = [
-      `고객 웹 결제가 완료되었습니다.`,
+      kind === 'resident_check' ? RESIDENT_CHECK_PAYMENT_NOTIFY_MARKER : null,
+      headline,
       `금액: ${amountLabel}`,
       customerName ? `고객: ${customerName}` : null,
       customerEmail ? `이메일: ${customerEmail}` : null,

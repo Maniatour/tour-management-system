@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { CreditCard, ExternalLink, Users, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { customerPaymentNotifyKindFromMessage } from '@/lib/customerPaymentNotifyKind'
 
 type CustomerPaymentNotification = {
   id: string
@@ -137,6 +138,11 @@ export default function CustomerPaymentNotificationListener({ locale }: { locale
   if (!enabled || !notification) return null
 
   const remaining = Math.max(0, queue.length - 1)
+  const isResidentCheck = customerPaymentNotifyKindFromMessage(notification.message) === 'resident_check'
+  const title = isResidentCheck ? '거주·패스 안내 결제' : '고객 결제 완료'
+  const headline = isResidentCheck
+    ? '고객이 거주·연간 패스 안내에서 카드 결제를 완료했습니다.'
+    : '고객이 웹에서 결제를 완료했습니다.'
 
   return (
     <div className="fixed inset-0 z-[10060] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[1px]">
@@ -153,7 +159,7 @@ export default function CustomerPaymentNotificationListener({ locale }: { locale
             </div>
             <div>
               <h2 id="customer-payment-notify-title" className="text-base font-semibold text-gray-900">
-                고객 결제 완료
+                {title}
               </h2>
               <p className="mt-1 text-sm font-semibold text-emerald-800">
                 {formatMoney(notification.amount, notification.currency)}
@@ -174,6 +180,9 @@ export default function CustomerPaymentNotificationListener({ locale }: { locale
         </div>
 
         <div className="space-y-3 p-4">
+          <p className="rounded-lg border border-emerald-100 bg-emerald-50/70 px-3 py-2 text-sm text-emerald-900">
+            {headline}
+          </p>
           <dl className="space-y-2 text-sm text-gray-800">
             <div>
               <dt className="text-xs font-medium text-muted-foreground">고객</dt>

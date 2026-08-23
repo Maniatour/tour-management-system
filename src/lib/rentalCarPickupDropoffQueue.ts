@@ -1,6 +1,7 @@
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
+import { formatRentalTimeDisplay } from '@/lib/rentalConfirmationOcrParse'
 import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
 import { OP_TODO_LV_TZ } from '@/lib/opTodoBusinessDay'
 
@@ -66,6 +67,8 @@ export type RentalCarPickupDropoffCard = {
   agreementNumber: string | null
   startDate: string | null
   endDate: string | null
+  pickupTime: string | null
+  returnTime: string | null
   pickupLocation: string | null
   returnLocation: string | null
   status: string
@@ -92,6 +95,8 @@ export type VehicleRentalRow = {
   rental_end_date: string | null
   rental_pickup_location: string | null
   rental_return_location: string | null
+  rental_pickup_time: string | null
+  rental_return_time: string | null
   rental_reserved_by: string | null
 }
 
@@ -131,6 +136,10 @@ export function rentalVehicleLabel(vehicle: {
   vehicle_number?: string | null
 }): string {
   return String(vehicle.nick || vehicle.vehicle_number || '').trim() || '—'
+}
+
+export function formatRentalPickupDropoffTime(raw: string | null | undefined): string {
+  return formatRentalTimeDisplay(raw)
 }
 
 export function staffDisplayName(member: TeamNameRow | undefined, fallbackEmail: string, locale: string): string {
@@ -282,6 +291,8 @@ export function buildRentalCarPickupDropoffCards(input: {
       agreementNumber: vehicle.rental_agreement_number?.trim() || null,
       startDate: start || null,
       endDate: end || null,
+      pickupTime: String(vehicle.rental_pickup_time || '').trim() || null,
+      returnTime: String(vehicle.rental_return_time || '').trim() || null,
       pickupLocation: vehicle.rental_pickup_location?.trim() || null,
       returnLocation: vehicle.rental_return_location?.trim() || vehicle.rental_pickup_location?.trim() || null,
       status: String(vehicle.status || '').trim() || 'available',

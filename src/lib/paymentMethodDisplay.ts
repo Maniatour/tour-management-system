@@ -101,3 +101,100 @@ export function formatPaymentMethodDisplay(
   }
   return id
 }
+
+const PAYM_ID_ONLY = /^PAYM[\w-]+$/i
+const SHORT_HEX_ID = /^[0-9a-f]{8}$/i
+
+const BUILTIN_PAYMENT_METHOD_LABELS: Record<string, string> = {
+  bank_transfer: '은행 이체',
+  cash: '현금',
+  card: '카드',
+  stripe: 'Stripe',
+  paypal: 'PayPal',
+  other: '기타',
+}
+
+function looksLikePaymentMethodId(value: string, id?: string): boolean {
+  const v = value.trim()
+  if (!v) return true
+  if (id && v === id.trim()) return true
+  if (PAYM_ID_ONLY.test(v)) return true
+  if (SHORT_HEX_ID.test(v)) return true
+  return false
+}
+
+/** Master row → 방법명 (`method`). ID·PAYM 코드가 방법명인 행은 display_name에서 이름을 꺼낸다. */
+export function paymentMethodNameFromRow(pm: {
+  id?: string | null
+  method?: string | null
+  display_name?: string | null
+}): string {
+  const id = (pm.id || '').trim()
+  const method = (pm.method || '').trim()
+  const fromDisplay = extractPaymentMethodCardLabel(pm.display_name, null)
+
+  if (method && !looksLikePaymentMethodId(method, id)) return method
+  if (
+    fromDisplay &&
+    fromDisplay !== id &&
+    !looksLikePaymentMethodId(fromDisplay, id)
+  ) {
+    return fromDisplay
+  }
+  if (method) return method
+  if (fromDisplay) return fromDisplay
+  return id
+}
+
+function putPaymentMethodLabel(
+  map: Record<string, string>,
+  key: string | null | undefined,
+  label: string
+) {
+  const k = String(key || '').trim()
+  if (!k || !label) return
+  map[k] = label
+  const lower = k.toLowerCase()
+  if (lower !== k) map[lower] = label
+}
+
+/** `payment_methods` 행 → 저장된 id/방법명으로 방법명을 찾기 위한 맵 */
+export function buildPaymentMethodLabelMap(
+  rows: Array<{
+    id?: string | null
+    method?: string | null
+    display_name?: string | null
+  }>
+): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const pm of rows) {
+    const label = paymentMethodNameFromRow(pm)
+    if (!label) continue
+    putPaymentMethodLabel(map, pm.id, label)
+    putPaymentMethodLabel(map, pm.method, label)
+  }
+  return map
+}
+
+/** 입금 내역 등에 저장된 값(PAYM id, 짧은 hex id, 방법명) → 항상 방법명 */
+export function lookupPaymentMethodLabel(
+  stored: string | null | undefined,
+  map: Record<string, string>
+): string {
+  const raw = String(stored ?? '').trim()
+  if (!raw) return ''
+  const direct = map[raw] || map[raw.toLowerCase()]
+  if (direct) return direct
+
+  const stripped = extractPaymentMethodCardLabel(raw, null)
+  if (stripped) {
+    const fromStripped = map[stripped] || map[stripped.toLowerCase()]
+    if (fromStripped) return fromStripped
+  }
+
+  const builtin = BUILTIN_PAYMENT_METHOD_LABELS[raw.toLowerCase()]
+  if (builtin) return builtin
+
+  if (stripped && stripped !== raw && !looksLikePaymentMethodId(stripped)) return stripped
+  return raw
+}

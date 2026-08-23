@@ -6,6 +6,7 @@ import {
   tokenIsExpired,
 } from '@/lib/residentCheckTokenService'
 import { residentCheckCardPaymentBlockers } from '@/lib/residentCheckFinalize'
+import { notifyStaffOfCustomerPayment } from '@/lib/customerPaymentNotifications'
 import {
   markResidentCheckTokenCompleted,
   recordResidentCheckCardPayment,
@@ -92,6 +93,14 @@ export async function POST(request: NextRequest) {
       reservationId: token.reservation_id,
       paymentIntentId: pi.id,
       amountUsdCents: pi.amount,
+    })
+
+    await notifyStaffOfCustomerPayment(supabaseAdmin, {
+      reservationId: token.reservation_id,
+      paymentIntentId: pi.id,
+      paymentRecordId: paymentRecord.paymentRecordId,
+      amountUsd: Math.round(pi.amount) / 100,
+      kind: 'resident_check',
     })
 
     const { data: reservation } = await supabaseAdmin

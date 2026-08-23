@@ -9,6 +9,8 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
+import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
+import { ReservationResizableDialog } from '@/components/reservation/ReservationResizableDialog'
 import { PAYMENT_METHOD_REF_TABLES } from '@/lib/paymentMethodRefTables'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 
@@ -131,6 +133,8 @@ export default function PaymentMethodUsageModal({
   const [bulkPaymentMethod, setBulkPaymentMethod] = useState<string>('')
   const [bulkSaving, setBulkSaving] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
+  const [tourDetailModalId, setTourDetailModalId] = useState<string | null>(null)
+  const [reservationDetailModalId, setReservationDetailModalId] = useState<string | null>(null)
 
   const tableSummaries = PAYMENT_METHOD_REF_TABLES.map((table) => {
     const group = groups.find((g) => g.table === table)
@@ -385,21 +389,43 @@ export default function PaymentMethodUsageModal({
     }
   }
 
-  const reservationHref = (row: Record<string, unknown>) => {
-    const cid = row.customer_id
+  const nestedDetailOpen = tourDetailModalId != null || reservationDetailModalId != null
+
+  const rowReservationId = (row: Record<string, unknown>) => {
     const rid = row.reservation_id
-    if (!cid || !rid) return null
-    return `/${locale}/dashboard/reservations/${cid}/${rid}`
+    if (!rid || !String(rid).trim()) return null
+    return String(rid).trim()
   }
 
-  const tourHref = (tourId: unknown) => {
-    if (!tourId || !String(tourId).trim()) return null
-    return `/${locale}/admin/tours/${String(tourId).trim()}`
+  const rowTourId = (row: Record<string, unknown>) => {
+    const tid = row.tour_id
+    if (!tid || !String(tid).trim()) return null
+    return String(tid).trim()
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && nestedDetailOpen) return
+        onOpenChange(next)
+      }}
+    >
+      <DialogContent
+        className="max-w-5xl max-h-[90vh] overflow-y-auto"
+        onPointerDownOutside={(e) => {
+          if (nestedDetailOpen) e.preventDefault()
+        }}
+        onInteractOutside={(e) => {
+          if (nestedDetailOpen) e.preventDefault()
+        }}
+        onEscapeKeyDown={(e) => {
+          if (!nestedDetailOpen) return
+          e.preventDefault()
+          if (reservationDetailModalId) setReservationDetailModalId(null)
+          else setTourDetailModalId(null)
+        }}
+      >
         <DialogHeader>
           <DialogTitle>결제 방법 사용 내역</DialogTitle>
           <DialogDescription asChild>
@@ -503,8 +529,8 @@ export default function PaymentMethodUsageModal({
                       const id = String(row.id ?? '')
                       const key = `${g.table}:${id}`
                       const isOpen = expanded === key
-                      const hrefRes = reservationHref(row)
-                      const hrefTour = tourHref(row.tour_id)
+                      const reservationId = rowReservationId(row)
+                      const tourId = rowTourId(row)
 
                       return (
                         <div key={key} className="bg-white">
@@ -527,25 +553,23 @@ export default function PaymentMethodUsageModal({
                               </div>
                             </div>
                             <div className="flex flex-wrap items-center gap-2 shrink-0">
-                              {hrefRes && (
-                                <Link
-                                  href={hrefRes}
+                              {reservationId && (
+                                <button
+                                  type="button"
                                   className="text-xs text-primary hover:underline"
-                                  target="_blank"
-                                  rel="noreferrer"
+                                  onClick={() => setReservationDetailModalId(reservationId)}
                                 >
                                   예약 화면
-                                </Link>
+                                </button>
                               )}
-                              {hrefTour && (
-                                <Link
-                                  href={hrefTour}
+                              {tourId && (
+                                <button
+                                  type="button"
                                   className="text-xs text-primary hover:underline"
-                                  target="_blank"
-                                  rel="noreferrer"
+                                  onClick={() => setTourDetailModalId(tourId)}
                                 >
                                   투어 화면
-                                </Link>
+                                </button>
                               )}
                               {g.table === 'company_expenses' && (
                                 <Link
@@ -1011,6 +1035,27 @@ export default function PaymentMethodUsageModal({
           </div>
         )}
       </DialogContent>
+
+      <TourDetailResizableDialog
+        open={Boolean(tourDetailModalId)}
+        onOpenChange={(next) => {
+          if (!next) setTourDetailModalId(null)
+        }}
+        tourId={tourDetailModalId}
+        onNavigateToTour={setTourDetailModalId}
+        stackLevel="nested"
+        accessibilityTitle="투어 상세"
+        titleFallback="투어 상세"
+      />
+
+      <ReservationResizableDialog
+        open={Boolean(reservationDetailModalId)}
+        onOpenChange={(next) => {
+          if (!next) setReservationDetailModalId(null)
+        }}
+        reservationId={reservationDetailModalId}
+        modalStackLevel="nested"
+      />
     </Dialog>
   )
 }

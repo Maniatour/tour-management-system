@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { paymentMethodsDb } from '@/lib/paymentMethodsDb'
 import { readSheetData } from '@/lib/googleSheets'
 
 interface PaymentMethodData {
@@ -113,7 +113,8 @@ export class PaymentMethodsSyncService {
         }
         
         // 기존 데이터 확인 (같은 ID와 사용자 조합이 이미 있는지)
-        const { data: existing } = await supabase
+        const db = paymentMethodsDb()
+        const { data: existing } = await db
           .from('payment_methods')
           .select('id')
           .eq('id', recordId)
@@ -141,7 +142,7 @@ export class PaymentMethodsSyncService {
           assigned_date: new Date().toISOString().split('T')[0]
         }
 
-        const { error } = await supabase
+        const { error } = await db
           .from('payment_methods')
           .insert(insertData)
 
@@ -295,7 +296,7 @@ export class PaymentMethodsSyncService {
     totalUsage: number
   }> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await paymentMethodsDb()
         .from('payment_methods')
         .select('status, method_type, limit_amount, current_month_usage')
 
@@ -337,7 +338,7 @@ export class PaymentMethodsSyncService {
   // 사용량 업데이트 (다른 시스템에서 호출)
   async updateUsage(methodId: string, amount: number): Promise<boolean> {
     try {
-      const { error } = await supabase.rpc('update_payment_method_usage', {
+      const { error } = await paymentMethodsDb().rpc('update_payment_method_usage', {
         p_method_id: methodId,
         p_amount: amount
       })
@@ -354,7 +355,7 @@ export class PaymentMethodsSyncService {
   async resetUsage(resetType: 'monthly' | 'daily'): Promise<boolean> {
     try {
       const functionName = resetType === 'monthly' ? 'reset_monthly_usage' : 'reset_daily_usage'
-      const { error } = await supabase.rpc(functionName)
+      const { error } = await paymentMethodsDb().rpc(functionName)
 
       if (error) throw error
       return true

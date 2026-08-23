@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Car, Loader2, MapPin, Plane, RefreshCw, Send } from 'lucide-react'
+import { Car, Clock, Loader2, MapPin, Plane, RefreshCw, Send } from 'lucide-react'
 import { TodoPanelStatusButtons } from '@/components/admin/todo/TodoPanelStatusButtons'
 import { TodoPanelTourStatusButtons } from '@/components/admin/todo/TodoPanelTourStatusButtons'
 import { RentalCarPickupDropoffSmsModal } from '@/components/admin/todo/RentalCarPickupDropoffSmsModal'
@@ -26,7 +26,7 @@ import {
   getTodoPanelAutoCompleteMode,
   todoPanelPendingTourCount,
 } from '@/lib/todoPanelAutoComplete'
-import { formatStaffNames, type RentalCarPickupDropoffCard } from '@/lib/rentalCarPickupDropoffQueue'
+import { formatStaffNames, formatRentalPickupDropoffTime, type RentalCarPickupDropoffCard } from '@/lib/rentalCarPickupDropoffQueue'
 import type { RentalCarPickupDropoffSmsKind } from '@/lib/rentalCarPickupDropoffSms'
 import { supabase } from '@/lib/supabase'
 
@@ -55,6 +55,12 @@ function formatShortDate(raw: string | null | undefined): string {
   return `${Number(parts[1])}/${Number(parts[2])}`
 }
 
+function formatDateWithTime(date: string | null | undefined, time: string | null | undefined): string {
+  const day = formatShortDate(date)
+  const clock = formatRentalPickupDropoffTime(time)
+  return clock ? `${day} ${clock}` : day
+}
+
 function VehicleCard({
   card,
   locale,
@@ -79,6 +85,10 @@ function VehicleCard({
   const isKo = locale === 'ko'
   const lastUsers = formatStaffNames([card.lastTour?.guide, card.lastTour?.assistant])
   const location = card.kind === 'pickup' ? card.pickupLocation : card.returnLocation
+  const actionTime =
+    card.kind === 'pickup'
+      ? formatRentalPickupDropoffTime(card.pickupTime)
+      : formatRentalPickupDropoffTime(card.returnTime)
 
   return (
     <div className={`rounded-md border p-2 ${todoPanelTourRowClassName(status)}`}>
@@ -97,7 +107,10 @@ function VehicleCard({
             </span>
           </div>
           <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
-            {[card.rentalCompany, `${formatShortDate(card.startDate)}–${formatShortDate(card.endDate)}`]
+            {[
+              card.rentalCompany,
+              `${formatDateWithTime(card.startDate, card.pickupTime)}–${formatDateWithTime(card.endDate, card.returnTime)}`,
+            ]
               .filter(Boolean)
               .join(' · ')}
           </p>
@@ -105,6 +118,20 @@ function VehicleCard({
             <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
               <MapPin className="h-3 w-3 shrink-0" />
               <span className="truncate">{location}</span>
+            </p>
+          ) : null}
+          {actionTime ? (
+            <p className="mt-0.5 flex items-center gap-1 text-[10px] font-medium text-gray-800">
+              <Clock className="h-3 w-3 shrink-0" />
+              <span>
+                {card.kind === 'pickup'
+                  ? isKo
+                    ? `픽업 ${actionTime}`
+                    : `Pickup ${actionTime}`
+                  : isKo
+                    ? `반납 ${actionTime}`
+                    : `Return ${actionTime}`}
+              </span>
             </p>
           ) : null}
 

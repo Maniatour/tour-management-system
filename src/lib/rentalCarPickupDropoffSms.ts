@@ -1,3 +1,4 @@
+import { formatRentalTimeDisplay } from '@/lib/rentalConfirmationOcrParse'
 import { guidePreferredAppLocale } from '@/lib/guideLanguageDetection'
 import {
   formatStaffNamesForSms,
@@ -17,6 +18,8 @@ export type RentalCarPickupDropoffSmsParams = {
   agreementNumber?: string | null
   startDate?: string | null
   endDate?: string | null
+  pickupTime?: string | null
+  returnTime?: string | null
   lastUsers?: string | null
   returnCrew?: string | null
   returnVehicleLabel?: string | null
@@ -51,6 +54,17 @@ function formatShortDate(raw?: string | null): string {
   return `${Number(parts[1])}/${Number(parts[2])}`
 }
 
+function formatDateWithTime(rawDate?: string | null, rawTime?: string | null): string {
+  const date = formatShortDate(rawDate)
+  const time = formatRentalTimeDisplay(rawTime)
+  if (date === '—' && !time) return '—'
+  return time ? `${date} ${time}` : date
+}
+
+function formatClock(rawTime?: string | null): string {
+  return formatRentalTimeDisplay(rawTime)
+}
+
 export function buildRentalCarPickupSms(params: RentalCarPickupDropoffSmsParams): string {
   if (isEn(params)) {
     const lines = [
@@ -59,9 +73,12 @@ export function buildRentalCarPickupSms(params: RentalCarPickupDropoffSmsParams)
     ]
     if (params.company) lines.push(`Company: ${params.company}`)
     if (params.location) lines.push(`Pickup location: ${params.location}`)
+    if (params.pickupTime) lines.push(`Pickup time: ${formatClock(params.pickupTime)}`)
     if (params.agreementNumber) lines.push(`Agreement #: ${params.agreementNumber}`)
     if (params.startDate || params.endDate) {
-      lines.push(`Period: ${formatShortDate(params.startDate)} ~ ${formatShortDate(params.endDate)}`)
+      lines.push(
+        `Period: ${formatDateWithTime(params.startDate, params.pickupTime)} ~ ${formatDateWithTime(params.endDate, params.returnTime)}`
+      )
     }
     return lines.join('\n')
   }
@@ -72,9 +89,12 @@ export function buildRentalCarPickupSms(params: RentalCarPickupDropoffSmsParams)
   ]
   if (params.company) lines.push(`회사: ${params.company}`)
   if (params.location) lines.push(`픽업 장소: ${params.location}`)
+  if (params.pickupTime) lines.push(`픽업 시간: ${formatClock(params.pickupTime)}`)
   if (params.agreementNumber) lines.push(`계약번호: ${params.agreementNumber}`)
   if (params.startDate || params.endDate) {
-    lines.push(`기간: ${formatShortDate(params.startDate)} ~ ${formatShortDate(params.endDate)}`)
+    lines.push(
+      `기간: ${formatDateWithTime(params.startDate, params.pickupTime)} ~ ${formatDateWithTime(params.endDate, params.returnTime)}`
+    )
   }
   return lines.join('\n')
 }
@@ -86,6 +106,7 @@ export function buildRentalCarReturnSms(params: RentalCarPickupDropoffSmsParams)
       `Vehicle: ${params.vehicleLabel}`,
     ]
     if (params.location) lines.push(`Return location: ${params.location}`)
+    if (params.returnTime) lines.push(`Return time: ${formatClock(params.returnTime)}`)
     if (params.lastUsers) lines.push(`Last users: ${params.lastUsers}`)
     if (params.company) lines.push(`Company: ${params.company}`)
     return lines.join('\n')
@@ -96,6 +117,7 @@ export function buildRentalCarReturnSms(params: RentalCarPickupDropoffSmsParams)
     `차량: ${params.vehicleLabel}`,
   ]
   if (params.location) lines.push(`반납 장소: ${params.location}`)
+  if (params.returnTime) lines.push(`반납 시간: ${formatClock(params.returnTime)}`)
   if (params.lastUsers) lines.push(`마지막 사용자: ${params.lastUsers}`)
   if (params.company) lines.push(`회사: ${params.company}`)
   return lines.join('\n')
@@ -110,6 +132,7 @@ export function buildRentalCarAirportShuttleSms(params: RentalCarPickupDropoffSm
       `${returnCrew} is returning ${returnVehicle}.`,
     ]
     if (params.location) lines.push(`Location: ${params.location}`)
+    if (params.returnTime) lines.push(`Return time: ${formatClock(params.returnTime)}`)
     if (params.continuingVehicleLabel) {
       lines.push(`Continuing vehicle: ${params.continuingVehicleLabel}`)
     }
@@ -124,6 +147,7 @@ export function buildRentalCarAirportShuttleSms(params: RentalCarPickupDropoffSm
     `${returnCrew}님이 ${returnVehicle}을(를) 반납합니다.`,
   ]
   if (params.location) lines.push(`장소: ${params.location}`)
+  if (params.returnTime) lines.push(`반납 시간: ${formatClock(params.returnTime)}`)
   if (params.continuingVehicleLabel) {
     lines.push(`계속 사용 차량: ${params.continuingVehicleLabel}`)
   }
@@ -162,6 +186,8 @@ export function rentalCarPickupDropoffSmsParamsForRecipient(input: {
     agreementNumber: input.card.agreementNumber,
     startDate: input.card.startDate,
     endDate: input.card.endDate,
+    pickupTime: input.card.pickupTime,
+    returnTime: input.card.returnTime,
     lastUsers,
     returnCrew: lastUsers || (locale === 'en' ? 'the return crew' : '반납 팀'),
     returnVehicleLabel: input.card.vehicleLabel,

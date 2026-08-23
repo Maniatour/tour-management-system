@@ -4,13 +4,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { tourHotelManagementDateRange } from '@/lib/tourHotelManagementTodo'
 import {
+  assignedReservationsForTour,
   countBookedTourHotelRooms,
   countCustomerHotelRoomsForTour,
+  indexHotelChoicesByReservationId,
   isMultiDayTourProduct,
   requiredTourHotelRoomCount,
   sumCustomerHotelPeopleForTour,
   tourHotelBookingMismatch,
   type TourHotelBookingLite,
+  type TourHotelChoiceLite,
   type TourHotelReservationLite,
 } from '@/lib/tourHotelBookingCounts'
 import { parseTourAssignmentEmails } from '@/utils/tourUtils'
@@ -40,6 +43,55 @@ type TourRow = {
 }
 
 type TeamMember = { email: string; name_ko: string | null; nick_name?: string | null }
+
+type ChoiceOptionEmbed = {
+  option_name?: string | null
+  option_name_ko?: string | null
+  option_name_en?: string | null
+  option_key?: string | null
+}
+
+type ProductChoiceEmbed = {
+  choice_group?: string | null
+  choice_group_ko?: string | null
+  choice_group_en?: string | null
+}
+
+type ReservationChoiceQueryRow = {
+  reservation_id?: string | null
+  quantity?: number | null
+  choice_group?: string | null
+  option_key?: string | null
+  choice_options?: ChoiceOptionEmbed | ChoiceOptionEmbed[] | null
+  product_choices?: ProductChoiceEmbed | ProductChoiceEmbed[] | null
+}
+
+function unwrapEmbed<T>(raw: T | T[] | null | undefined): T | null {
+  if (!raw) return null
+  if (Array.isArray(raw)) {
+    const first = raw[0]
+    return first ? first : null
+  }
+  return raw
+}
+
+function toHotelChoiceLite(row: ReservationChoiceQueryRow): TourHotelChoiceLite | null {
+  const reservationId = String(row.reservation_id || '').trim()
+  if (!reservationId) return null
+  const option = unwrapEmbed(row.choice_options)
+  const group = unwrapEmbed(row.product_choices)
+  return {
+    reservation_id: reservationId,
+    quantity: row.quantity ?? null,
+    choice_group: group?.choice_group || row.choice_group || null,
+    choice_group_ko: group?.choice_group_ko || null,
+    choice_group_en: group?.choice_group_en || null,
+    option_key: option?.option_key || row.option_key || null,
+    option_name: option?.option_name || null,
+    option_name_ko: option?.option_name_ko || null,
+    option_name_en: option?.option_name_en || null,
+  }
+}
 
 function teamDisplayName(member: TeamMember | undefined): string | null {
   if (!member) return null
@@ -95,7 +147,9 @@ export function useTourHotelManagementQueue(enabled = true) {
       const [reservationsRes, hotelBookingsRes] = await Promise.all([
         supabase
           .from('reservations')
-          .select('id, tour_date, product_id, status, pickup_hotel, total_people, adults, child, infant')
+          .select(
+            'id, tour_date, product_id, status, pickup_hotel, total_people, adults, child, infant, choices'
+          )
           .gte('tour_date', start)
           .lte('tour_date', end)
           .in('status', ['confirmed', 'recruiting']),
@@ -110,6 +164,44 @@ export function useTourHotelManagementQueue(enabled = true) {
 
       const reservations = (reservationsRes.data || []) as TourHotelReservationLite[]
       const hotelBookings = (hotelBookingsRes.data || []) as TourHotelBookingLite[]
+
+      const reservationIds = reservations.map((r) => r.id).filter(Boolean)
+      const hotelChoiceRows: TourHotelChoiceLite[] = []
+      const CHOICE_SELECT_WITH_FK =
+        'reservation_id, quantity, choice_group, option_key, choice_options!reservation_choices_option_id_fkey(option_name, option_name_ko, option_key), product_choices!reservation_choices_choice_id_fkey(choice_group, choice_group_ko, choice_group_en)'
+      const CHOICE_SELECT_PLAIN =
+        'reservation_id, quantity, choice_group, option_key, choice_options(option_name, option_name_ko, option_key), product_choices(choice_group, choice_group_ko, choice_group_en)'
+      const CHOICE_SELECT_FALLBACK =
+        'reservation_id, quantity, choice_group, option_key, choice_options(option_name, option_name_ko, option_key)'
+      if (reservationIds.length > 0) {
+        const selects = [CHOICE_SELECT_WITH_FK, CHOICE_SELECT_PLAIN, CHOICE_SELECT_FALLBACK]
+        let selectIndex = 0
+        const BATCH = 250
+        for (let i = 0; i < reservationIds.length; i += BATCH) {
+          const batchIds = reservationIds.slice(i, i + BATCH)
+          let data: ReservationChoiceQueryRow[] | null = null
+          let error: { message?: string } | null = null
+          while (selectIndex < selects.length) {
+            const result = await (supabase as any)
+              .from('reservation_choices')
+              .select(selects[selectIndex])
+              .in('reservation_id', batchIds)
+            data = result.data
+            error = result.error
+            if (!error) break
+            selectIndex += 1
+          }
+          if (error) {
+            console.error('useTourHotelManagementQueue choices', error)
+            break
+          }
+          for (const row of data || []) {
+            const lite = toHotelChoiceLite(row)
+            if (lite) hotelChoiceRows.push(lite)
+          }
+        }
+      }
+      const choicesByReservationId = indexHotelChoicesByReservationId(hotelChoiceRows)
 
       const bookingsByTourId = new Map<string, TourHotelBookingLite[]>()
       for (const booking of hotelBookings) {
@@ -140,7 +232,11 @@ export function useTourHotelManagementQueue(enabled = true) {
       const nextRows: TourHotelManagementQueueRow[] = []
 
       for (const tour of multiDayTours) {
-        const customerHotelCount = countCustomerHotelRoomsForTour(tour, reservations)
+        const customerHotelCount = countCustomerHotelRoomsForTour(
+          tour,
+          reservations,
+          choicesByReservationId
+        )
         if (customerHotelCount <= 0) continue
 
         const bookedHotelCount = countBookedTourHotelRooms(bookingsByTourId.get(tour.id) || [])
@@ -158,7 +254,7 @@ export function useTourHotelManagementQueue(enabled = true) {
           required_hotel_count: requiredHotelCount,
           customer_hotel_count: customerHotelCount,
           assigned_people: sumCustomerHotelPeopleForTour(tour, reservations),
-          reservation_count: customerHotelCount,
+          reservation_count: assignedReservationsForTour(tour, reservations).length,
         })
       }
 

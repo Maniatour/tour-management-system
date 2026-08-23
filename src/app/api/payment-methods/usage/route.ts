@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { paymentMethodsDb } from '@/lib/paymentMethodsDb'
 
 // POST: 결제 방법 사용량 업데이트
 export async function POST(request: NextRequest) {
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 사용량 업데이트 함수 호출
-    const { error } = await supabase.rpc('update_payment_method_usage' as never, {
+    const { error } = await paymentMethodsDb().rpc('update_payment_method_usage' as never, {
       p_method_id: method_id,
       p_amount: parseFloat(amount),
     } as never)
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     const userEmail = searchParams.get('user_email')
     const methodType = searchParams.get('method_type')
 
-    let query = supabase
+    let query = paymentMethodsDb()
       .from('payment_methods')
       .select('*')
 
@@ -133,7 +133,7 @@ export async function PUT(request: NextRequest) {
       functionName = 'reset_daily_usage'
     }
 
-    const { error } = await supabase.rpc(functionName as never)
+    const { error } = await paymentMethodsDb().rpc(functionName as never)
 
     if (error) {
       console.error(`Error resetting ${reset_type} usage:`, error)

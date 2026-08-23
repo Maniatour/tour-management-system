@@ -107,8 +107,8 @@ export const ADMIN_TODO_LIST_MANUAL_SECTIONS: AdminTodoListManualSection[] = [
     departmentKo: 'Office',
     departmentEn: 'Office',
     filterLinesKo: [
-      '오늘 픽업: 렌터카 시작일 = 오늘(라스베가스 기준).',
-      '오늘 반납: 렌터카 종료일 = 오늘.',
+      '오늘 픽업: 렌터카 시작일 = 오늘(라스베가스 기준). 차량에 저장된 픽업 시간도 표시.',
+      '오늘 반납: 렌터카 종료일 = 오늘. 차량에 저장된 반납 시간도 표시.',
       '취소·비활성 차량 제외.',
       '픽업 안내는 렌터카 예약자(팀원)에게 발송.',
       '반납 안내는 해당 차량의 마지막 투어 가이드·드라이버에게 발송.',
@@ -261,13 +261,15 @@ export const ADMIN_TODO_LIST_MANUAL_SECTIONS: AdminTodoListManualSection[] = [
     filterLinesKo: [
       '투어일: 오늘 ~ +90일.',
       '멀티데이(숙박) 상품 투어만.',
-      '고객 호텔 예약(객실)이 1건 이상 있는 투어.',
+      '고객 호텔 객실이 1실 이상 있는 투어. 객실 수는 예약 초이스(2인1실·3인1실 등) 수량을 합산하고, 초이스가 없으면 예약 1건=1실.',
+      '필요 객실 = 고객 객실 + 가이드 1실.',
       '예약된 투어 호텔 객실 수가 필요 객실 수와 불일치할 때만 표시.',
     ],
     filterLinesEn: [
       'Tour dates: today through +90 days.',
       'Multi-day (lodging) products only.',
-      'Tour must have at least one customer hotel room.',
+      'Customer hotel rooms are summed from occupancy choices (e.g. 2-person + 3-person rooms). If none, 1 reservation = 1 room.',
+      'Required rooms = customer rooms + 1 guide room.',
       'Shown only when booked tour-hotel rooms ≠ required room count.',
     ],
     completeKo: '호텔 부킹 수량을 맞춘 뒤 투어별 완료 처리.',

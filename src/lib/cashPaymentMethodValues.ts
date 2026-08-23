@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { paymentMethodsDb } from '@/lib/paymentMethodsDb'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 /**
@@ -53,7 +53,7 @@ export async function getCashPaymentMethodFilterValues(): Promise<string[]> {
 
   const values = new Set<string>(CASH_PAYMENT_METHOD_DB_VALUES)
 
-  const { data, error } = await supabase
+  const { data, error } = await paymentMethodsDb()
     .from('payment_methods')
     .select('id, method')
     .eq('method_type', 'cash')

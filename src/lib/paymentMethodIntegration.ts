@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { paymentMethodsDb } from '@/lib/paymentMethodsDb'
 
 // 결제 방법 관리 유틸리티 클래스
 export class PaymentMethodIntegration {
@@ -9,7 +9,7 @@ export class PaymentMethodIntegration {
       if (!paymentMethodString) return null
 
       // 먼저 정확한 매치를 찾기
-      const { data: exactMatch, error: exactError } = await supabase
+      const { data: exactMatch, error: exactError } = await paymentMethodsDb()
         .from('payment_methods')
         .select('id')
         .eq('method', paymentMethodString)
@@ -21,7 +21,7 @@ export class PaymentMethodIntegration {
       }
 
       // 부분 매치 찾기 (카드 번호 등)
-      const { data: partialMatch, error: partialError } = await supabase
+      const { data: partialMatch, error: partialError } = await paymentMethodsDb()
         .from('payment_methods')
         .select('id')
         .ilike('method', `%${paymentMethodString}%`)
@@ -35,7 +35,7 @@ export class PaymentMethodIntegration {
 
       // 사용자별 매치 찾기
       if (userEmail) {
-        const { data: userMatch, error: userError } = await supabase
+        const { data: userMatch, error: userError } = await paymentMethodsDb()
           .from('payment_methods')
           .select('id')
           .eq('user_email', userEmail)
@@ -60,7 +60,7 @@ export class PaymentMethodIntegration {
     try {
       if (!paymentMethodId) return null
 
-      const { data, error } = await supabase
+      const { data, error } = await paymentMethodsDb()
         .from('payment_methods')
         .select('method')
         .eq('id', paymentMethodId)
@@ -81,7 +81,7 @@ export class PaymentMethodIntegration {
   // 결제 시 사용량 업데이트
   async updatePaymentUsage(paymentMethodId: string, amount: number): Promise<boolean> {
     try {
-      const { error } = await supabase.rpc('update_payment_method_usage', {
+      const { error } = await paymentMethodsDb().rpc('update_payment_method_usage', {
         p_method_id: paymentMethodId,
         p_amount: amount
       })
@@ -99,7 +99,7 @@ export class PaymentMethodIntegration {
   // 고객 결제 내역에서는 userEmail 없이 호출하여 모든 결제 방법(직원용 + 고객용) 표시
   async getPaymentMethodOptions(userEmail?: string, includeCustomerMethods: boolean = true): Promise<Array<{id: string, method: string, method_type: string, user_email: string | null}>> {
     try {
-      let query = supabase
+      let query = paymentMethodsDb()
         .from('payment_methods')
         .select('id, method, method_type, user_email')
         .eq('status', 'active')
@@ -130,7 +130,7 @@ export class PaymentMethodIntegration {
     remainingLimit?: number
   }> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await paymentMethodsDb()
         .from('payment_methods')
         .select('limit_amount, monthly_limit, daily_limit, current_month_usage, current_day_usage, status')
         .eq('id', paymentMethodId)
@@ -191,7 +191,7 @@ export class PaymentMethodIntegration {
     remainingDailyLimit: number
   } | null> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await paymentMethodsDb()
         .from('payment_methods')
         .select('limit_amount, monthly_limit, daily_limit, current_month_usage, current_day_usage')
         .eq('id', paymentMethodId)
@@ -225,7 +225,7 @@ export class PaymentMethodIntegration {
       let migrated = 0
 
       // payment_records 테이블에서 고유한 payment_method 값들 가져오기
-      const { data: paymentRecords, error: recordsError } = await supabase
+      const { data: paymentRecords, error: recordsError } = await paymentMethodsDb()
         .from('payment_records')
         .select('payment_method')
         .not('payment_method', 'is', null)
@@ -237,7 +237,7 @@ export class PaymentMethodIntegration {
       for (const method of uniqueMethods) {
         try {
           // 이미 존재하는지 확인
-          const { data: existing } = await supabase
+          const { data: existing } = await paymentMethodsDb()
             .from('payment_methods')
             .select('id')
             .eq('method', method)
@@ -249,7 +249,7 @@ export class PaymentMethodIntegration {
           // 새 결제 방법 생성
           const id = `PAYM${Date.now().toString().slice(-6)}_${Math.random().toString(36).substring(2, 6).toUpperCase()}`
           
-          const { error: insertError } = await supabase
+          const { error: insertError } = await paymentMethodsDb()
             .from('payment_methods')
             .insert({
               id,

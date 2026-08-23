@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { paymentMethodsDb } from '@/lib/paymentMethodsDb'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 
 /**
@@ -22,7 +22,7 @@ export class PaymentMethodMigration {
 
       for (const table of tables) {
         try {
-          const { data, error } = await fromUntypedTable(supabase, table)
+          const { data, error } = await fromUntypedTable(paymentMethodsDb(), table)
             .select('payment_method')
             .not('payment_method', 'is', null)
 
@@ -112,7 +112,7 @@ export class PaymentMethodMigration {
       }
 
       // 2. 이미 존재하는 payment_methods 확인
-      const { data: existingPaymentMethods } = await supabase
+      const { data: existingPaymentMethods } = await paymentMethodsDb()
         .from('payment_methods')
         .select('id')
 
@@ -134,7 +134,7 @@ export class PaymentMethodMigration {
           const methodType = this.detectMethodType(methodId)
           const methodName = this.generateMethodName(methodId)
 
-          const { error: insertError } = await supabase
+          const { error: insertError } = await paymentMethodsDb()
             .from('payment_methods')
             .insert({
               id: methodId,
@@ -184,7 +184,7 @@ export class PaymentMethodMigration {
    */
   async validatePaymentMethodExists(methodId: string): Promise<boolean> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await paymentMethodsDb()
         .from('payment_methods')
         .select('id')
         .eq('id', methodId)
@@ -207,7 +207,7 @@ export class PaymentMethodMigration {
     if (!methodId) return null
 
     try {
-      const { data, error } = await supabase
+      const { data, error } = await paymentMethodsDb()
         .from('payment_methods')
         .select('method')
         .eq('id', methodId)

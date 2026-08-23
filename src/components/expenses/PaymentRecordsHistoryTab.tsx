@@ -12,6 +12,7 @@ import type { ExpenseStatementReconContext } from '@/lib/expense-reconciliation-
 import { ExpenseStatementReconIcon } from '@/components/reconciliation/ExpenseStatementReconIcon'
 import ExpenseStatementSimilarLinesModal from '@/components/reconciliation/ExpenseStatementSimilarLinesModal'
 import { usePaymentMethodOptions } from '@/hooks/usePaymentMethodOptions'
+import { lookupPaymentMethodLabel } from '@/lib/paymentMethodDisplay'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { matchesPaymentRecordAmountSearch } from '@/lib/amountSearch'
@@ -344,7 +345,7 @@ export default function PaymentRecordsHistoryTab() {
     (id: string | null | undefined) => {
       if (!id || !String(id).trim()) return '—'
       const s = String(id).trim()
-      return paymentMethodMap[s] || s
+      return lookupPaymentMethodLabel(s, paymentMethodMap) || '—'
     },
     [paymentMethodMap]
   )

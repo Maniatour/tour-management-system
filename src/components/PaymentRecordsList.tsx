@@ -8,7 +8,7 @@ import {
   CANCEL_DEPOSIT_REFUND_NOTE_MANUAL,
   insertCancelDepositRefundPaymentRecord,
 } from '@/lib/cancelDepositRefundPaymentRecord'
-import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
+import { buildPaymentMethodLabelMap, lookupPaymentMethodLabel } from '@/lib/paymentMethodDisplay'
 import PaymentRecordForm from './PaymentRecordForm'
 import { displayPaymentRecordNote, fetchTeamDisplayNameMap } from '@/utils/paymentRecordNoteDisplay'
 import { summarizePaymentRecordsForBalance, type PaymentRecordLike } from '@/utils/reservationPricingBalance'
@@ -76,70 +76,14 @@ export default function PaymentRecordsList({
   const [addingStripeRefund, setAddingStripeRefund] = useState(false)
   const locale = useLocale()
 
-  // 결제 방법 정보 로드 (methodKeys 없으면 전체 — 폼용)
-  const loadPaymentMethods = async (methodKeys?: string[]) => {
+  const loadPaymentMethods = async () => {
     try {
-      let query = supabase
+      const { data, error } = await supabase
         .from('payment_methods')
-        .select('id, method, display_name, card_holder_name, user_email')
-
-      if (methodKeys && methodKeys.length > 0) {
-        const keys = methodKeys.map((k) => String(k).trim()).filter(Boolean)
-        const uuidKeys = keys.filter((k) => /^[0-9a-f-]{36}$/i.test(k))
-        const slugKeys = keys.filter((k) => !/^[0-9a-f-]{36}$/i.test(k))
-        const filters: string[] = []
-        if (uuidKeys.length > 0) filters.push(`id.in.(${uuidKeys.join(',')})`)
-        if (slugKeys.length > 0) filters.push(`method.in.(${slugKeys.join(',')})`)
-        if (filters.length === 0) return
-        query = query.or(filters.join(','))
-      }
-
-      const { data, error } = await query
+        .select('id, method, display_name')
 
       if (error) throw error
-
-      const rows = data || []
-      const emails = [
-        ...new Set(rows.map((pm) => String(pm.user_email || '').toLowerCase()).filter(Boolean)),
-      ]
-      let teamMap = new Map<
-        string,
-        { nick_name?: string | null; name_en?: string | null; name_ko?: string | null }
-      >()
-      if (emails.length > 0) {
-        const { data: teams } = await supabase
-          .from('team')
-          .select('email, nick_name, name_en, name_ko')
-          .in('email', emails)
-        teamMap = new Map(
-          (teams || []).map((t) => [String((t as { email: string }).email).toLowerCase(), t as { nick_name?: string | null; name_en?: string | null; name_ko?: string | null }])
-        )
-      }
-
-      const methodMap: Record<string, string> = {}
-      rows.forEach((pm) => {
-        const em = pm.user_email ? String(pm.user_email).toLowerCase() : ''
-        const team = em ? teamMap.get(em) : undefined
-        const label = formatPaymentMethodDisplay(
-          {
-            id: pm.id,
-            method: pm.method,
-            display_name: pm.display_name,
-            user_email: pm.user_email,
-            card_holder_name: pm.card_holder_name,
-          },
-          team
-            ? {
-                nick_name: team.nick_name ?? null,
-                name_en: team.name_en ?? null,
-                name_ko: team.name_ko ?? null,
-              }
-            : undefined
-        )
-        methodMap[pm.id] = label
-        methodMap[pm.method] = label
-      })
-      setPaymentMethodMap((prev) => ({ ...prev, ...methodMap }))
+      setPaymentMethodMap(buildPaymentMethodLabelMap(data || []))
     } catch (error) {
       if (!isAbortLikeError(error)) {
         console.error('결제 방법 정보 로드 오류:', error)
@@ -157,10 +101,6 @@ export default function PaymentRecordsList({
   }
 
   const enrichPaymentRecordsMeta = async (list: PaymentRecord[]) => {
-    const methodKeys = [...new Set(list.map((r) => r.payment_method).filter(Boolean))]
-    if (methodKeys.length > 0) {
-      void loadPaymentMethods(methodKeys)
-    }
     const emails = [...new Set(list.map((r) => r.submit_by).filter(Boolean))] as string[]
     if (emails.length > 0) {
       const map = await fetchTeamDisplayNameMap(supabase, emails)
@@ -174,12 +114,16 @@ export default function PaymentRecordsList({
     setLoading(true)
     setError('')
     try {
-      const { data, error: fetchError } = await supabase
-        .from('payment_records')
-        .select('*')
-        .eq('reservation_id', reservationId)
-        .order('created_at', { ascending: false })
+      const [recordsResult] = await Promise.all([
+        supabase
+          .from('payment_records')
+          .select('*')
+          .eq('reservation_id', reservationId)
+          .order('created_at', { ascending: false }),
+        loadPaymentMethods(),
+      ])
 
+      const { data, error: fetchError } = recordsResult
       if (fetchError) throw fetchError
 
       const list = (data || []) as PaymentRecord[]
@@ -334,24 +278,7 @@ export default function PaymentRecordsList({
     return 'bg-gray-100 text-gray-800'
   }
 
-  const getPaymentMethodText = (method: string) => {
-    // payment_methods 테이블에서 조회한 방법명이 있으면 사용
-    if (paymentMethodMap[method]) {
-      return paymentMethodMap[method]
-    }
-    
-    // 기본 결제 방법 매핑
-    const methods: Record<string, string> = {
-      bank_transfer: '은행 이체',
-      cash: '현금',
-      card: '카드',
-      paypal: 'PayPal',
-      other: '기타'
-    }
-    
-    // 매핑에 없으면 원본 값 반환 (이미 방법명이거나 ID일 수 있음)
-    return methods[method] || method
-  }
+  const getPaymentMethodText = (method: string) => lookupPaymentMethodLabel(method, paymentMethodMap)
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('ko-KR', {

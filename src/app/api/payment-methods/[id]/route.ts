@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase'
+import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { assertSuper, resolveFinancialApiAuth } from '@/lib/financial-api-auth'
 import { buildPaymentMethodStoredDisplayName } from '@/lib/paymentMethodDisplay'
@@ -10,16 +11,19 @@ function normalizedId(params: Promise<{ id: string }> | { id: string }): Promise
 
 // GET: 특정 결제 방법 조회
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    const authSb = await getSupabaseForApiRoute(request)
+    if (authSb instanceof NextResponse) return authSb
+
     const id = await normalizedId(params)
     if (!id) {
       return NextResponse.json({ success: false, message: 'ID is required' }, { status: 400 })
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await authSb
       .from('payment_methods')
       .select('*')
       .eq('id', id)
@@ -43,7 +47,7 @@ export async function GET(
     // team 정보 별도 조회
     let team = null
     if (data.user_email) {
-      const { data: teamData } = await supabase
+      const { data: teamData } = await authSb
         .from('team')
         .select('email, name_ko, name_en, nick_name')
         .eq('email', data.user_email)
@@ -82,6 +86,9 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    const authSb = await getSupabaseForApiRoute(request)
+    if (authSb instanceof NextResponse) return authSb
+
     const id = await normalizedId(params)
     if (!id) {
       return NextResponse.json({ success: false, message: 'ID is required' }, { status: 400 })
@@ -106,7 +113,7 @@ export async function PUT(
       body.id !== undefined ||
       body.card_holder_name !== undefined
     ) {
-      const { data: existingData } = await supabase
+      const { data: existingData } = await authSb
         .from('payment_methods')
         .select('method, card_holder_name')
         .eq('id', id)
@@ -211,7 +218,7 @@ export async function PUT(
 
     console.log('Updating payment method:', id, 'with data:', updateData)
 
-    const { data, error } = await supabase
+    const { data, error } = await authSb
       .from('payment_methods')
       .update(updateData as never)
       .eq('id', id)
@@ -239,7 +246,7 @@ export async function PUT(
     // team 정보 별도 조회
     let team = null
     if (data.user_email) {
-      const { data: teamData } = await supabase
+      const { data: teamData } = await authSb
         .from('team')
         .select('email, name_ko, name_en, nick_name')
         .eq('email', data.user_email)
@@ -463,16 +470,19 @@ export async function PATCH(
 
 // DELETE: 특정 결제 방법 삭제
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    const authSb = await getSupabaseForApiRoute(request)
+    if (authSb instanceof NextResponse) return authSb
+
     const id = await normalizedId(params)
     if (!id) {
       return NextResponse.json({ success: false, message: 'ID is required' }, { status: 400 })
     }
 
-    const client = supabaseAdmin ?? supabase
+    const client = supabaseAdmin ?? authSb
     const { data: deletedRows, error } = await client
       .from('payment_methods')
       .delete()

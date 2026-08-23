@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { paymentMethodMigration } from '@/lib/paymentMethodMigration'
-import { supabase } from '@/lib/supabase'
+import { paymentMethodsDb } from '@/lib/paymentMethodsDb'
 
 /**
  * 기존 테이블의 payment_method 값들을 payment_methods 테이블로 마이그레이션
@@ -40,7 +40,7 @@ export async function GET(_request: NextRequest) {
     const existingMethods = await paymentMethodMigration.collectExistingPaymentMethods()
 
     // payment_methods 테이블에 존재하는지 확인
-    const { data: existingPaymentMethods } = await supabase
+    const { data: existingPaymentMethods } = await paymentMethodsDb()
       .from('payment_methods')
       .select('id')
 

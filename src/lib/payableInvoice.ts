@@ -24,8 +24,8 @@ const STRIPE_INVOICE_NOTE_PREFIX = 'stripe_invoice_id:'
 export function isQuickPaymentInvoiceNotes(notes: string | null | undefined): boolean {
   const n = (notes || '').trim()
   if (!n) return false
-  if (n === QUICK_PAYMENT_INVOICE_NOTES) return true
-  return (QUICK_PAYMENT_NOTES_LEGACY as readonly string[]).includes(n)
+  if (n === QUICK_PAYMENT_INVOICE_NOTES || n.includes(QUICK_PAYMENT_INVOICE_NOTES)) return true
+  return (QUICK_PAYMENT_NOTES_LEGACY as readonly string[]).some((legacy) => n.includes(legacy))
 }
 
 type AdminClient = SupabaseClient<Database>
@@ -547,10 +547,27 @@ export async function markInvoicePaidFromStripeWebhook(
   }
 }
 
-function paymentStatusForQuickDescription(description: string): string {
-  const d = description.trim().toLowerCase()
-  if (d === 'guide tips' || d.includes('guide tip')) return 'Deposit Received'
+function paymentStatusForQuickDescription(_description: string): string {
   return 'Balance Received'
+}
+
+async function resolveStripePaymentMethodValue(admin: AdminClient): Promise<string> {
+  const { data: byId } = await admin
+    .from('payment_methods')
+    .select('id')
+    .eq('id', 'stripe')
+    .maybeSingle()
+  if (byId?.id) return byId.id
+
+  const { data: byMethod } = await admin
+    .from('payment_methods')
+    .select('id')
+    .ilike('method', 'stripe')
+    .limit(1)
+    .maybeSingle()
+  if (byMethod?.id) return byMethod.id
+
+  return 'stripe'
 }
 
 function reservationIdFromInvoiceItems(items: unknown): string | null {
@@ -757,6 +774,7 @@ export async function applyPaidStaffInvoiceToReservation(
   }
 
   const paymentStatus = paymentStatusForQuickDescription(description)
+  const paymentMethod = await resolveStripePaymentMethodValue(admin)
   const operatorId = await lookupReservationOperatorId(admin, resolved.reservationId)
   const paymentId = `payment_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
   const note = [
@@ -774,7 +792,7 @@ export async function applyPaidStaffInvoiceToReservation(
     reservation_id: resolved.reservationId,
     payment_status: paymentStatus,
     amount: amountUsd,
-    payment_method: 'card',
+    payment_method: paymentMethod,
     note,
     submit_by: 'stripe_webhook',
     submit_on: new Date().toISOString(),

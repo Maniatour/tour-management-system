@@ -50,6 +50,7 @@ import {
   fetchTeamDisplayNameByEmail,
   fetchTeamDisplayNameMap,
 } from '@/utils/paymentRecordNoteDisplay'
+import { buildPaymentMethodLabelMap, lookupPaymentMethodLabel } from '@/lib/paymentMethodDisplay'
 import {
   isChoiceOptionUuid,
   simplifyChoiceLabel,
@@ -546,17 +547,11 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     try {
       const { data, error } = await supabase
         .from('payment_methods')
-        .select('id, method')
+        .select('id, method, display_name')
       
       if (error) throw error
       
-      const methodMap: Record<string, string> = {}
-      data?.forEach((pm: any) => {
-        // ID로 조회 시 방법명(method)만 반환
-        methodMap[pm.id] = pm.method
-        // 방법명으로도 매핑 (payment_records에 방법명이 직접 저장된 경우 대비)
-        methodMap[pm.method] = pm.method
-      })
+      const methodMap = buildPaymentMethodLabelMap(data || [])
       setPaymentMethodMap((prev) => {
         const keys = Object.keys(methodMap)
         if (
@@ -1795,24 +1790,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     return statusMap[status] || statusMap[status.toLowerCase()] || status
   }
 
-  const getPaymentMethodText = (method: string) => {
-    // payment_methods 테이블에서 조회한 방법명이 있으면 사용
-    if (paymentMethodMap[method]) {
-      return paymentMethodMap[method]
-    }
-    
-    // 기본 결제 방법 매핑
-    switch (method?.toLowerCase()) {
-      case 'bank_transfer':
-        return '계좌이체'
-      case 'cash':
-        return '현금'
-      case 'card':
-        return '카드'
-      default:
-        return method
-    }
-  }
+  const getPaymentMethodText = (method: string) => lookupPaymentMethodLabel(method, paymentMethodMap)
 
   const formatCurrency = (amount: number | null | undefined, currency: string = 'USD') => {
     if (amount === null || amount === undefined) {
