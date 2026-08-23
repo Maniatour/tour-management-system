@@ -41,6 +41,33 @@ export function hasExplicitOnSiteBalance(value: unknown): boolean {
 }
 
 /**
+ * 예약 가져오기 레이스: 총액이 아직 0일 때 잔액이 `0 − 보증금`으로 음수가 된 뒤,
+ * 총액이 채워져도 그 음수가 수동 입력으로 남는 경우.
+ * 인당 $10 크레딧처럼 보증금과 무관한 소액 음수는 해당하지 않음.
+ */
+export function isPhantomNegativeOnSiteBalance(
+  formBalance: unknown,
+  depositAmount: unknown
+): boolean {
+  const form = Number(formBalance)
+  const dep = Number(depositAmount) || 0
+  if (!Number.isFinite(form) || form >= -0.005) return false
+  if (dep < 0.005) return false
+  return Math.abs(form + dep) < 0.05
+}
+
+/** 가져오기·가격 재계산 시 잔액을 유지할지. 보증금 레이스 음수는 유지하지 않음. */
+export function shouldPreserveOnSiteBalance(
+  formBalance: unknown,
+  depositAmount: unknown = 0
+): boolean {
+  return (
+    hasExplicitOnSiteBalance(formBalance) &&
+    !isPhantomNegativeOnSiteBalance(formBalance, depositAmount)
+  )
+}
+
+/**
  * 투어 당일 잔액 저장값.
  * 이메일 가져오기 등에서 총액 로드 전에 보증금만 채워지면 `0 − 보증금`이 음수로 남는 문제를 막는다.
  * 총액이 있는 상태에서 입력한 음수(인당 $10 크레딧 등)는 그대로 저장한다.
@@ -59,6 +86,9 @@ export function resolveOnSiteBalanceAmountForSave(opts: {
   }
   const total = Number(opts.totalPrice) || 0
   if (form < -0.005 && total < 0.005) {
+    return computed
+  }
+  if (isPhantomNegativeOnSiteBalance(form, opts.depositAmount)) {
     return computed
   }
   return roundUsd2(form)
@@ -989,7 +1019,14 @@ export function withNormalizedBalanceAmountForDisplay(
  * DB `balance_amount`와 계산값이 0.01 초과로 다르면 계산값 우선
  * (비거주자 비용 반영 후 DB 미동기화·구버전 sync 보정).
  */
-function resolveBalanceDisplayAmount(storedNum: number, defaultBalance: number): number {
+function resolveBalanceDisplayAmount(
+  storedNum: number,
+  defaultBalance: number,
+  depositAmount: number
+): number {
+  if (isPhantomNegativeOnSiteBalance(storedNum, depositAmount)) {
+    return defaultBalance
+  }
   if (storedNum < -0.005) {
     return roundUsd2(storedNum)
   }
@@ -1051,14 +1088,19 @@ export function getBalanceAmountForDisplay(
     if (rawStored === undefined || rawStored === null || rawStored === '') {
       return defaultBalance
     }
-    return resolveBalanceDisplayAmount(pricingFieldToNumber(rawStored), defaultBalance)
+    return resolveBalanceDisplayAmount(
+      pricingFieldToNumber(rawStored),
+      defaultBalance,
+      pricingFieldToNumber(pricing.deposit_amount)
+    )
   }
 
   const rawStoredNoRecords = pricing.balance_amount
   if (rawStoredNoRecords !== undefined && rawStoredNoRecords !== null && rawStoredNoRecords !== '') {
     return resolveBalanceDisplayAmount(
       pricingFieldToNumber(rawStoredNoRecords),
-      defaultBalanceNoRecords
+      defaultBalanceNoRecords,
+      pricingFieldToNumber(pricing.deposit_amount)
     )
   }
 

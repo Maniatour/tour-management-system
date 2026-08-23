@@ -188,7 +188,8 @@ import {
   summarizePaymentRecordsForBalance,
   computeCustomerPaymentNetForCompanyRevenueBase,
   resolveOnSiteBalanceAmountForSave,
-  hasExplicitOnSiteBalance,
+  isPhantomNegativeOnSiteBalance,
+  shouldPreserveOnSiteBalance,
   parseUsdNumberInput,
   type PaymentRecordLike,
 } from '@/utils/reservationPricingBalance'
@@ -4092,6 +4093,10 @@ export default function ReservationForm({
           })
           const residentFeesFromChoices = sumResidentFeeAmountsUsd(residentAmountsFromChoices)
           const onSiteBalanceAmount = balanceAmount
+          const storedLooksPhantom = isPhantomNegativeOnSiteBalance(
+            balanceAmount,
+            Number(existingPricing.deposit_amount) || 0
+          )
 
           if (loadGen !== pricingLoadGenerationRef.current) return
           setFormData(prev => {
@@ -4252,8 +4257,9 @@ export default function ReservationForm({
             const hasStoredBalance =
               rawBalRow !== null && rawBalRow !== undefined && rawBalRow !== ''
             const storedBalance = hasStoredBalance ? parseUsdNumberInput(String(rawBalRow)) : null
-            const finalBalanceAmount =
-              storedBalance != null
+            const finalBalanceAmount = storedLooksPhantom
+              ? newBalance
+              : storedBalance != null
                 ? storedBalance
                 : balanceWithResident
             
@@ -4319,12 +4325,18 @@ export default function ReservationForm({
             optionTotal: (existingPricing as any).option_total != null && (existingPricing as any).option_total !== '',
             totalPrice: (existingPricing as any).total_price != null && (existingPricing as any).total_price !== '',
             depositAmount: (existingPricing as any).deposit_amount != null && (existingPricing as any).deposit_amount !== '',
-            balanceAmount: (existingPricing as any).balance_amount != null && (existingPricing as any).balance_amount !== '',
+            balanceAmount:
+              (existingPricing as any).balance_amount != null &&
+              (existingPricing as any).balance_amount !== '' &&
+              !storedLooksPhantom,
             commission_percent: (existingPricing as any).commission_percent != null && (existingPricing as any).commission_percent !== '',
             commission_amount: (existingPricing as any).commission_amount != null && (existingPricing as any).commission_amount !== '',
             not_included_price: (existingPricing as any).not_included_price != null && (existingPricing as any).not_included_price !== '',
             choicesTotal: (existingPricing as any).choices_total != null && (existingPricing as any).choices_total !== '',
-            onSiteBalanceAmount: (existingPricing as any).balance_amount != null && (existingPricing as any).balance_amount !== '',
+            onSiteBalanceAmount:
+              (existingPricing as any).balance_amount != null &&
+              (existingPricing as any).balance_amount !== '' &&
+              !storedLooksPhantom,
             onlinePaymentAmount: (existingPricing as any).commission_base_price != null && (existingPricing as any).commission_base_price !== '',
             /** 채널 결제(net) DB 보존 — PricingSection 자동 덮어쓰기 억제용 */
             commission_base_price: (existingPricing as any).commission_base_price != null && (existingPricing as any).commission_base_price !== '',
@@ -4475,10 +4487,16 @@ export default function ReservationForm({
           requiredOptionTotal: requiredOptionTotal,
           subtotal: newSubtotal,
           totalPrice: newTotalPrice,
-          onSiteBalanceAmount: hasExplicitOnSiteBalance(updated.onSiteBalanceAmount)
+          onSiteBalanceAmount: shouldPreserveOnSiteBalance(
+            updated.onSiteBalanceAmount,
+            updated.depositAmount
+          )
             ? updated.onSiteBalanceAmount
             : newBalance,
-          balanceAmount: hasExplicitOnSiteBalance(updated.onSiteBalanceAmount)
+          balanceAmount: shouldPreserveOnSiteBalance(
+            updated.onSiteBalanceAmount,
+            updated.depositAmount
+          )
             ? updated.onSiteBalanceAmount
             : newBalance
         }
@@ -4608,7 +4626,10 @@ export default function ReservationForm({
         reservationOptionsTotalPrice
       const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional - refundAmount)
       const newBalance = Math.max(0, newTotalPrice - updated.depositAmount)
-      const keepOnSite = hasExplicitOnSiteBalance(updated.onSiteBalanceAmount)
+      const keepOnSite = shouldPreserveOnSiteBalance(
+        updated.onSiteBalanceAmount,
+        updated.depositAmount
+      )
       return {
         ...updated,
         productPriceTotal: newProductPriceTotal,
@@ -5375,7 +5396,10 @@ export default function ReservationForm({
     const newTotalPrice = calculateTotalPrice()
     setFormData((prev) => {
       const newBalance = Math.max(0, newTotalPrice - (Number(prev.depositAmount) || 0))
-      const keepOnSite = hasExplicitOnSiteBalance(prev.onSiteBalanceAmount)
+      const keepOnSite = shouldPreserveOnSiteBalance(
+        prev.onSiteBalanceAmount,
+        prev.depositAmount
+      )
       if (
         Math.abs((prev.totalPrice || 0) - newTotalPrice) < 0.005 &&
         (keepOnSite || Math.abs((prev.balanceAmount || 0) - newBalance) < 0.005) &&

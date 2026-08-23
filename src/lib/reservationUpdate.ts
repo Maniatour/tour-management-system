@@ -16,6 +16,7 @@ import {
   isReturnedPaymentStatus,
   summarizePaymentRecordsForBalance,
   computeCustomerPaymentNetForCompanyRevenueBase,
+  resolveOnSiteBalanceAmountForSave,
   type PaymentRecordLike,
 } from '@/utils/reservationPricingBalance'
 import { aggregateReservationOptionSumsByReservationId } from '@/lib/syncReservationPricingAggregates'
@@ -530,6 +531,11 @@ export async function updateReservation(
         saveTotals.baseProductPriceTotal + notIncludedForSettlement
 
       const depAmtForGross = toNum(pricingInfo.depositAmount)
+      const resolvedOnSiteBalance = resolveOnSiteBalanceAmountForSave({
+        formBalance: pricingInfo.balanceAmount,
+        totalPrice: newTotal,
+        depositAmount: depAmtForGross,
+      })
       const storedCb =
         pickFiniteNumber(
           pricingInfo.commission_base_price,
@@ -557,7 +563,7 @@ export async function updateReservation(
         tax: toNum(pricingInfo.tax),
         cardFee: toNum(pricingInfo.cardFee ?? (pricingInfo as { card_fee?: unknown }).card_fee),
         prepaymentTip: toNum(pricingInfo.prepaymentTip),
-        onSiteBalanceAmount: toNum(pricingInfo.balanceAmount),
+        onSiteBalanceAmount: resolvedOnSiteBalance,
         returnedAmount,
         partnerReceivedAmount,
         commissionAmount: toNum(pricingInfo.commission_amount),
@@ -710,7 +716,7 @@ export async function updateReservation(
         option_total: keep(Math.max(optionActiveSum, newOptionTotal), existingRow?.option_total),
         total_price: keep(newTotal, existingRow?.total_price),
         deposit_amount: toNum(pricingInfo.depositAmount),
-        balance_amount: toNum(pricingInfo.balanceAmount),
+        balance_amount: resolvedOnSiteBalance,
         private_tour_additional_cost: toNum(pricingInfo.privateTourAdditionalCost),
         commission_percent: toNum(pricingInfo.commission_percent),
         commission_amount: keep(toNum(pricingInfo.commission_amount), existingRow?.commission_amount),

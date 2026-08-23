@@ -51,6 +51,7 @@ import {
   depositNetForBalanceSettlement,
   summarizePaymentRecordsForBalance,
   parseUsdNumberInput,
+  isPhantomNegativeOnSiteBalance,
 } from '@/utils/reservationPricingBalance'
 import { splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
 import {
@@ -939,6 +940,9 @@ export default function PricingSection({
     const stored = formData.onSiteBalanceAmount
     if (stored === undefined || stored === null) return defaultBalance
     if (pricingFieldsFromDb.onSiteBalanceAmount) {
+      if (isPhantomNegativeOnSiteBalance(stored, formData.depositAmount)) {
+        return defaultBalance
+      }
       return roundUsd2(Number(stored))
     }
     if (stored === 0 && defaultBalance > 0.01) return defaultBalance
@@ -946,6 +950,7 @@ export default function PricingSection({
   }, [
     computeOnSiteBalanceAmount,
     formData.onSiteBalanceAmount,
+    formData.depositAmount,
     pricingFieldsFromDb.onSiteBalanceAmount,
   ])
 
@@ -1116,7 +1121,11 @@ export default function PricingSection({
       return
     }
     if (isExistingPricingLoaded && pricingFieldsFromDb.onSiteBalanceAmount === true) {
-      return
+      if (
+        !isPhantomNegativeOnSiteBalance(formData.onSiteBalanceAmount, formData.depositAmount)
+      ) {
+        return
+      }
     }
     const totalCustomerPayment = effectiveTotalCustomerPayment()
     const calculatedBalance = computeOnSiteBalanceAmount()
@@ -1205,6 +1214,7 @@ export default function PricingSection({
     productSalePriceCommitTick,
     pricingFieldsFromDb.onSiteBalanceAmount,
     isExistingPricingLoaded,
+    formData.onSiteBalanceAmount,
     markPricingEdited,
     reservationId,
   ])
@@ -1369,7 +1379,7 @@ export default function PricingSection({
             // 잔액도 함께 계산하여 업데이트
             const totalCustomerPayment = effectiveTotalCustomerPayment()
             const totalPaid = discountedPrice + calculatedBalanceReceivedTotal
-            const calculatedBalance = roundUsd2(totalCustomerPayment - totalPaid)
+            const calculatedBalance = roundUsd2(Math.max(0, totalCustomerPayment - totalPaid))
             const existingBalance = formData.onSiteBalanceAmount ?? 0
             const manualRefundAmount = Math.max(0, Number(formData.refundAmount) || 0)
             const balanceToUse =

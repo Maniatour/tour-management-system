@@ -25,6 +25,7 @@ import {
   normalizeTourTeamType,
 } from '@/utils/tourUtils'
 import {
+  getChannelName,
   getCustomerName,
   getProductNameForLocale,
   getStatusColor,
@@ -400,6 +401,12 @@ type ProductCellPickupHotel = {
   hotel?: string | null
   internal_name?: string | null
   pick_up_location?: string | null
+}
+
+type ProductCellChannel = {
+  id: string
+  name?: string | null
+  favicon_url?: string | null
 }
 
 type GuideModalPickupHotelGroupRow = {
@@ -1277,6 +1284,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const [productCellCancellationReasons, setProductCellCancellationReasons] = useState<Record<string, string>>({})
   const [productCellFollowUpContacts, setProductCellFollowUpContacts] = useState<Record<string, string[]>>({})
   const [productCellPickupHotels, setProductCellPickupHotels] = useState<ProductCellPickupHotel[]>([])
+  const [productCellChannels, setProductCellChannels] = useState<ProductCellChannel[]>([])
+  const [productCellChannelIdByReservation, setProductCellChannelIdByReservation] = useState<
+    Record<string, string>
+  >({})
   /** 투어 요약 정보 카드: 픽업 호텔 id → group_number */
   const [guideModalPickupHotelGroups, setGuideModalPickupHotelGroups] = useState<
     GuideModalPickupHotelGroupRow[]
@@ -2721,6 +2732,53 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       cancelled = true
     }
   }, [productCellReservationsModal, productCellPickupHotels.length])
+
+  useEffect(() => {
+    if (!productCellReservationsModal) {
+      setProductCellChannelIdByReservation({})
+      return
+    }
+    const reservationIds = productCellReservationList
+      .map((r) => String(r.id || '').trim())
+      .filter(Boolean)
+    let cancelled = false
+    void (async () => {
+      const channelsPromise =
+        productCellChannels.length > 0
+          ? Promise.resolve({ data: productCellChannels, error: null })
+          : supabase.from('channels').select('id, name, favicon_url').order('name', { ascending: true })
+      const reservationChannelsPromise =
+        reservationIds.length > 0
+          ? supabase.from('reservations').select('id, channel_id').in('id', reservationIds)
+          : Promise.resolve({ data: [] as Array<{ id: string; channel_id?: string | null }>, error: null })
+      const [channelsRes, reservationChannelsRes] = await Promise.all([
+        channelsPromise,
+        reservationChannelsPromise,
+      ])
+      if (cancelled) return
+      if (channelsRes.error) {
+        console.error('product cell channels load error:', channelsRes.error)
+      } else if (productCellChannels.length === 0) {
+        setProductCellChannels((channelsRes.data || []) as ProductCellChannel[])
+      }
+      if (reservationChannelsRes.error) {
+        console.error('product cell reservation channels load error:', reservationChannelsRes.error)
+        return
+      }
+      const next: Record<string, string> = {}
+      for (const row of reservationChannelsRes.data || []) {
+        const id = String((row as { id?: string }).id || '').trim()
+        const channelId = String((row as { channel_id?: string | null }).channel_id || '').trim()
+        if (id && channelId) next[id] = channelId
+      }
+      setProductCellChannelIdByReservation(next)
+    })()
+    return () => {
+      cancelled = true
+    }
+    // productCellChannels is a cache; refetching it would loop after the first load
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productCellReservationsModal, productCellReservationList])
 
   useEffect(() => {
     if (!showGuideModal || !guideModalContent.tourId) return
@@ -9493,7 +9551,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           if (!open) setProductCellReservationsModal(null)
         }}
       >
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-hidden flex flex-col sm:max-w-lg">
+        <DialogContent className="flex max-h-[85vh] w-[min(96vw,48rem)] max-w-3xl flex-col overflow-hidden sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle className="text-base pr-8">
               {productCellReservationsModal
@@ -9556,6 +9614,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   ? productCellCancellationReasons[String(res.id)].trim()
                   : tResCard('noCancellationReasonShort')
                 const followUpContactLines = productCellFollowUpContacts[String(res.id)] ?? []
+                const channelId = String(
+                  productCellChannelIdByReservation[String(res.id)] ||
+                    res.channel_id ||
+                    res.channelId ||
+                    '',
+                ).trim()
+                const channel = channelId
+                  ? productCellChannels.find((c) => String(c.id) === channelId)
+                  : undefined
+                const channelName = channel?.name?.trim() || (channelId ? getChannelName(channelId, productCellChannels) : '')
+                const showChannel = Boolean(channelName && channelName !== 'Unknown')
                 const antelopeChoiceKeys = [
                   ...new Set(
                     reservationChoices
@@ -9595,6 +9664,24 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                           <span className="font-medium text-sm text-gray-900 truncate">
                             {getCustomerName(String(res.customer_id || ''), customers as Customer[])}
                           </span>
+                          {showChannel ? (
+                            <span
+                              className="inline-flex min-w-0 max-w-[12rem] shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-700"
+                              title={channelName}
+                            >
+                              {channel?.favicon_url ? (
+                                <img
+                                  src={channel.favicon_url}
+                                  alt=""
+                                  className="h-3 w-3 shrink-0 rounded object-cover"
+                                  onError={(e) => {
+                                    ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+                                  }}
+                                />
+                              ) : null}
+                              <span className="truncate">{channelName}</span>
+                            </span>
+                          ) : null}
                           {antelopeChoiceKeys.map((key) => (
                             <span
                               key={key}
@@ -9654,7 +9741,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                       </label>
                       <select
                         id={`schedule-product-cell-status-${res.id}`}
-                        className="text-xs border border-gray-300 rounded-md px-1.5 py-1 bg-white max-w-[7.5rem] disabled:opacity-50"
+                        className="text-xs border border-gray-300 rounded-md px-1.5 py-1 bg-white max-w-[9rem] disabled:opacity-50"
                         value={normalizedSt || 'pending'}
                         disabled={productCellStatusSavingId === String(res.id)}
                         onChange={(e) => {
