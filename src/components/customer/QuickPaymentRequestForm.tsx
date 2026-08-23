@@ -119,6 +119,7 @@ export default function QuickPaymentRequestForm({
   const [customerEmailSaved, setCustomerEmailSaved] = useState(false)
   const [smsSending, setSmsSending] = useState(false)
   const [emailSending, setEmailSending] = useState(false)
+  const [copiedKind, setCopiedKind] = useState<'link' | 'message' | null>(null)
 
   useEffect(() => {
     // 모달이 새로 열리며 initials가 바뀔 때만 필드 동기화 (제출 중/결과 화면에서 리셋되지 않도록)
@@ -138,6 +139,7 @@ export default function QuickPaymentRequestForm({
     setOpenWhatsAppAfterCreate(false)
     setShowCardFeeConfirm(false)
     setCustomerEmailSaved(false)
+    setCopiedKind(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- remount via key handles open; avoid wiping result on parent re-renders
   }, [initials?.email, initials?.recipientName, initials?.description, initials?.amountUsd, initials?.reservationId, initials?.phone])
 
@@ -170,6 +172,7 @@ export default function QuickPaymentRequestForm({
     setError(null)
     setShowCardFeeConfirm(false)
     setCustomerEmailSaved(false)
+    setCopiedKind(null)
   }
 
   const validateBeforeSubmit = (): number | null => {
@@ -372,15 +375,37 @@ export default function QuickPaymentRequestForm({
     }
   }
 
-  const copyPayUrl = async () => {
-    const url = result?.sitePayUrl || result?.hostedInvoiceUrl
-    if (!url) return
+  const shareMessageText = result
+    ? buildQuickPaymentRequestSmsText({
+        recipientName: recipientName.trim() || result.email,
+        description: result.description,
+        amountUsd: result.amountUsd,
+        payUrl: result.sitePayUrl || result.hostedInvoiceUrl,
+      })
+    : ''
+
+  const copyText = async (value: string, kind: 'link' | 'message') => {
+    if (!value) return
     try {
-      await navigator.clipboard.writeText(url)
-      alert(locale === 'ko' ? '결제 링크가 복사되었습니다.' : 'Payment link copied.')
+      await navigator.clipboard.writeText(value)
+      setCopiedKind(kind)
+      window.setTimeout(() => {
+        setCopiedKind((current) => (current === kind ? null : current))
+      }, 2000)
     } catch {
-      alert(url)
+      window.prompt(
+        locale === 'ko' ? '복사할 내용을 선택해 Ctrl+C 하세요.' : 'Select the text and press Ctrl+C.',
+        value
+      )
     }
+  }
+
+  const copyPayUrl = () => {
+    void copyText(result?.sitePayUrl || result?.hostedInvoiceUrl || '', 'link')
+  }
+
+  const copyShareMessage = () => {
+    void copyText(shareMessageText, 'message')
   }
 
   const openWhatsAppWithPaymentLink = (params: {
@@ -590,6 +615,40 @@ export default function QuickPaymentRequestForm({
             {result.sitePayUrl || result.hostedInvoiceUrl}
           </div>
 
+          <div className="rounded-lg border border-border/60 bg-background p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-medium text-muted-foreground">
+                {locale === 'ko' ? 'WhatsApp / 붙여넣기용 메시지' : 'WhatsApp / pasteable message'}
+              </p>
+              <button
+                type="button"
+                onClick={copyShareMessage}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-medium hover:bg-muted"
+              >
+                <Copy className="h-3.5 w-3.5" aria-hidden />
+                {copiedKind === 'message'
+                  ? locale === 'ko'
+                    ? '복사됨'
+                    : 'Copied'
+                  : locale === 'ko'
+                    ? '메시지 복사'
+                    : 'Copy message'}
+              </button>
+            </div>
+            <textarea
+              readOnly
+              rows={4}
+              value={shareMessageText}
+              className="w-full resize-none rounded-lg border border-input bg-muted/40 px-3 py-2 text-sm leading-6 text-foreground"
+              onFocus={(e) => e.currentTarget.select()}
+            />
+            <p className="text-xs leading-5 text-muted-foreground">
+              {locale === 'ko'
+                ? '메시지를 복사한 뒤 WhatsApp, 카카오톡, 문자에 붙여넣을 수 있습니다. 아래 WhatsApp 버튼은 전화번호가 있을 때 창을 열고 이 문구를 미리 채워 둡니다. 자동 전송은 되지 않습니다.'
+                : 'Copy this message and paste it into WhatsApp, KakaoTalk, or SMS. The WhatsApp button opens a chat with this text pre-filled. It does not send automatically.'}
+            </p>
+          </div>
+
           <div className="space-y-2">
             <label htmlFor="qp-result-email" className="text-sm font-medium text-foreground">
               {locale === 'ko' ? '수신자 이메일' : 'Recipient email'}
@@ -625,7 +684,13 @@ export default function QuickPaymentRequestForm({
               className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-background px-4 text-sm font-medium hover:bg-muted"
             >
               <Copy className="h-4 w-4" aria-hidden />
-              {locale === 'ko' ? '링크 복사' : 'Copy link'}
+              {copiedKind === 'link'
+                ? locale === 'ko'
+                  ? '링크 복사됨'
+                  : 'Link copied'
+                : locale === 'ko'
+                  ? '링크 복사'
+                  : 'Copy link'}
             </button>
             <a
               href={result.sitePayUrl || result.hostedInvoiceUrl}
@@ -916,16 +981,23 @@ export default function QuickPaymentRequestForm({
               />
               {locale === 'ko' ? '문자(SMS)로 결제 링크 보내기' : 'Send the payment link by SMS'}
             </label>
-            <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+            <label className="flex items-start gap-2 text-sm text-foreground cursor-pointer">
               <input
                 type="checkbox"
                 checked={openWhatsAppAfterCreate}
                 onChange={(e) => setOpenWhatsAppAfterCreate(e.target.checked)}
-                className="h-4 w-4 rounded border-input"
+                className="mt-0.5 h-4 w-4 rounded border-input"
               />
-              {locale === 'ko'
-                ? 'WhatsApp 창 열기 (링크가 채워진 채 전송)'
-                : 'Open WhatsApp with the payment link'}
+              <span>
+                {locale === 'ko'
+                  ? 'WhatsApp 창 열기 (문구·링크 미리 채움)'
+                  : 'Open WhatsApp with the payment link'}
+                <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                  {locale === 'ko'
+                    ? '서버에서 보내지 않습니다. 전화번호가 있으면 WhatsApp이 열리고 메시지가 미리 채워지며, 보내기는 직접 눌러야 합니다. 창이 안 열리면 결과 화면에서 메시지를 복사해 붙여넣으세요.'
+                    : 'This does not send from the server. If a phone number is entered, WhatsApp opens with the message pre-filled and you tap send. If the window does not open, copy the message from the result screen and paste it.'}
+                </span>
+              </span>
             </label>
           </div>
 
