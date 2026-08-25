@@ -21,7 +21,19 @@ import { loadResidentStatusAmountsForReservation } from '@/lib/saveResidentStatu
 import { getEffectivePickupHotelId, getPickupHotelNameById } from '@/lib/effectivePickupHotel'
 import type { PickupResolveContext } from '@/lib/pickupGroupPreset'
 import { isActiveTourHotelBookingForList } from '@/lib/tourHotelReferences'
+import { loadCalendarChoiceRows } from '@/lib/fetchCanyonChoiceRows'
+import { isCanyonTourChoiceKey, type ReservationChoiceRow } from '@/lib/tourChoiceCounts'
 import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
+
+type CanyonPrintKey = 'X' | 'L' | 'U'
+
+function canyonKeysFromRows(rows: ReservationChoiceRow[] | undefined): CanyonPrintKey[] {
+  const present = new Set<CanyonPrintKey>()
+  for (const row of rows || []) {
+    if (isCanyonTourChoiceKey(row.choiceKey)) present.add(row.choiceKey)
+  }
+  return (['X', 'L', 'U'] as CanyonPrintKey[]).filter((key) => present.has(key))
+}
 
 // ---------------------------------------------------------------------------
 // 타입
@@ -196,9 +208,11 @@ function getScopedStyles(): string {
     .tp-root .tp-pax-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 20px; padding: 6px 0; border-top: 1px dashed #d1d5db; }
     .tp-root .tp-pax-row:first-of-type { border-top: none; }
     .tp-root .tp-pax-name { font-weight: 700; }
+    .tp-root .tp-canyon { font-weight: 700; margin-left: 8px; }
     .tp-root .tp-pax-meta { display: flex; gap: 18px; align-items: baseline; }
     .tp-root .tp-pax-people { color: #374151; font-weight: 600; }
     .tp-root .tp-pax-balance { font-weight: 800; color: #047857; min-width: 90px; text-align: right; }
+    .tp-root .tp-pax-balance.tp-due { text-decoration: underline; }
     .tp-root table.tp-table { width: 100%; border-collapse: collapse; font-size: 20px; }
     .tp-root table.tp-table th, .tp-root table.tp-table td { border: 1px solid #9ca3af; padding: 8px 10px; text-align: left; }
     .tp-root table.tp-table th { background: #f3f4f6; font-weight: 800; font-size: 19px; }
@@ -240,6 +254,7 @@ export default function TourPrintModal({
   tourHotelBookings,
 }: TourPrintModalProps) {
   const [balanceByResId, setBalanceByResId] = useState<Map<string, number>>(new Map())
+  const [canyonByResId, setCanyonByResId] = useState<Map<string, CanyonPrintKey[]>>(new Map())
   const [loading, setLoading] = useState(false)
   const [printLang, setPrintLang] = useState<'ko' | 'en'>(locale === 'en' ? 'en' : 'ko')
 
@@ -307,6 +322,7 @@ export default function TourPrintModal({
       : []
     if (ids.length === 0) {
       setBalanceByResId(new Map())
+      setCanyonByResId(new Map())
       setLoading(false)
       return
     }
@@ -316,7 +332,7 @@ export default function TourPrintModal({
       try {
         const { data: rezList } = await supabase
           .from('reservations')
-          .select('id, adults, child, infant, status, product_id')
+          .select('id, adults, child, infant, status, product_id, canyon_choice, choices')
           .in('id', ids)
         type RezRow = {
           id: string
@@ -325,6 +341,8 @@ export default function TourPrintModal({
           infant?: number
           status?: string | null
           product_id?: string | null
+          canyon_choice?: string | null
+          choices?: unknown
         }
         const rezById = new Map<string, RezRow>()
         ;(rezList || []).forEach((r) => rezById.set((r as RezRow).id, r as RezRow))
@@ -374,7 +392,7 @@ export default function TourPrintModal({
           if (!pricingByResId.has(id)) pricingByResId.set(id, null)
         }
 
-        const [optionLinesByResId, payResult, rcResult] = await Promise.all([
+        const [optionLinesByResId, payResult, rcResult, canyonRowsByResId] = await Promise.all([
           fetchReservationOptionLinesBatch(supabase, ids),
           supabase
             .from('payment_records')
@@ -384,6 +402,17 @@ export default function TourPrintModal({
             .from('reservation_customers')
             .select('reservation_id, resident_status')
             .in('reservation_id', ids),
+          loadCalendarChoiceRows(
+            supabase,
+            (rezList || []).map((r) => {
+              const row = r as RezRow
+              return {
+                id: row.id,
+                canyon_choice: row.canyon_choice ?? null,
+                choices: row.choices,
+              }
+            })
+          ),
         ])
 
         const optionsTotalByResId = new Map<string, number | null>()
@@ -489,10 +518,20 @@ export default function TourPrintModal({
           })
           map.set(id, balance)
         }
-        if (!cancelled) setBalanceByResId(map)
+        const canyonMap = new Map<string, CanyonPrintKey[]>()
+        for (const id of ids) {
+          canyonMap.set(id, canyonKeysFromRows(canyonRowsByResId.get(id)))
+        }
+        if (!cancelled) {
+          setBalanceByResId(map)
+          setCanyonByResId(canyonMap)
+        }
       } catch (e) {
         console.error('[TourPrintModal] 잔금 로드 오류:', e)
-        if (!cancelled) setBalanceByResId(new Map())
+        if (!cancelled) {
+          setBalanceByResId(new Map())
+          setCanyonByResId(new Map())
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -766,10 +805,15 @@ export default function TourPrintModal({
                       {g.reservations.map((r) => {
                         const pc = getPeopleCount(r)
                         const balance = balanceByResId.get(r.id) || 0
+                        const isDue = Math.abs(balance) >= 0.005
+                        const canyonKeys = canyonByResId.get(r.id) || []
                         return (
                           <div key={r.id} className="tp-pax-row">
                             <span className="tp-pax-name">
                               {getCustomerName(r.customer_id || '') || '—'}
+                              {canyonKeys.map((key) => (
+                                <span key={key} className="tp-canyon">{`🏜️ ${key}`}</span>
+                              ))}
                               {useRepresentativePickup &&
                                 r.pickup_hotel &&
                                 (getEffectivePickupHotelId(
@@ -789,7 +833,9 @@ export default function TourPrintModal({
                                 {pc.total}
                                 {L.people}
                               </span>
-                              <span className="tp-pax-balance">{formatMoney(balance)}</span>
+                              <span className={`tp-pax-balance${isDue ? ' tp-due' : ''}`}>
+                                {formatMoney(balance)}
+                              </span>
                             </span>
                           </div>
                         )

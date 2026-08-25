@@ -10,6 +10,7 @@ import { canonicalReservationIdKey, normalizeReservationIds } from '@/utils/tour
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { normalizeTourLanguageToken } from '@/lib/tourHighlightLanguages'
 
 type TourRow = {
   id: string
@@ -73,7 +74,7 @@ const PRIORITY_LABELS: Record<PriorityKey, string> = {
 }
 const PRIORITY_HELP: Record<PriorityKey, string> = {
   language:
-    '같은 투어 안에서 고객 언어가 통일되도록 합니다. 한국어 고객은 한국어 가능 가이드/어시스턴트가 있는 투어로 모읍니다.',
+    '같은 언어 고객끼리 한 투어로 모읍니다. 일본어·영어·한국어 등은 서로 다른 투어로 나누고, 가이드/어시스턴트가 해당 언어를 할 수 있는 투어를 우선합니다.',
   choice: '초이스(🏜️ L / 🏜️ X 등)가 섞이지 않도록, 같은 초이스끼리 한 투어로 모읍니다. 다른 초이스는 다른 투어와 분리됩니다.',
   hotel: '같은 픽업 호텔 고객끼리 한 투어로 모을 수 있도록 이동합니다.',
   people: '투어별 인원이 차량 정원을 초과하면, 초과분을 다른 투어로 나누어 배정합니다.',
@@ -105,10 +106,17 @@ const choiceLabelToKey = (
   return '_other'
 }
 
-const isKorean = (lang: string | null | undefined): boolean => {
-  if (!lang) return false
-  const l = String(lang).toLowerCase().trim()
-  return l === 'ko' || l === 'kr' || l === '한국어' || l === 'korean' || l === 'kr'
+/** 자동 배정에서 같은 언어로 묶을 코드 (ko/ja/en/zh/…) */
+function canonicalizeAssignLanguage(lang: string | null | undefined): string {
+  const raw = String(lang ?? '').trim()
+  if (!raw || /^unknown$/i.test(raw)) return 'en'
+  const token = normalizeTourLanguageToken(raw)
+  if (!token || token === '_unknown' || token === 'unknown') return 'en'
+  if (token === 'kr' || token.startsWith('ko')) return 'ko'
+  if (token === 'jp' || token.startsWith('ja')) return 'ja'
+  if (token.startsWith('en') || token === 'us' || token === 'usa') return 'en'
+  if (token === 'cn' || token.startsWith('zh')) return 'zh'
+  return token
 }
 
 /** 자동/수동 배정 대상에서 제외 (취소·삭제 등) */
@@ -179,6 +187,8 @@ interface AutoAssignModalProps {
   getCustomerName: (customerId: string) => string
   getCustomerLanguage: (customerId: string) => string
   onSuccess: () => Promise<void>
+  /** 스케줄 요약 모달(z-1100) 등 위에 띄울 때 */
+  overlayZIndex?: number
 }
 
 export default function AutoAssignModal({
@@ -189,7 +199,8 @@ export default function AutoAssignModal({
   tourDate,
   getCustomerName,
   getCustomerLanguage,
-  onSuccess
+  onSuccess,
+  overlayZIndex = 50,
 }: AutoAssignModalProps) {
   const { operatorId } = useOperatorOptional()
   const activeOperatorId = resolveOperatorId(operatorId)
@@ -264,14 +275,22 @@ export default function AutoAssignModal({
     return 'US'
   }, [])
 
-  const hasKorean = useCallback((tour: TourRow) => {
+  const tourStaffLanguageSet = useCallback((tour: TourRow): Set<string> => {
+    const langArr = (v: TeamRow | null | undefined) => (v?.languages && Array.isArray(v.languages) ? v.languages : [])
     const guide = tour.tour_guide_id ? teamByEmail(tour.tour_guide_id) : null
     const asst = tour.assistant_id ? teamByEmail(tour.assistant_id) : null
-    const langArr = (v: TeamRow | null | undefined) => (v?.languages && Array.isArray(v.languages) ? v.languages : [])
-    const guideLangs = langArr(guide).map((l: string) => String(l).toLowerCase())
-    const asstLangs = langArr(asst).map((l: string) => String(l).toLowerCase())
-    return guideLangs.includes('ko') || asstLangs.includes('ko')
+    const set = new Set<string>()
+    for (const raw of [...langArr(guide), ...langArr(asst)]) {
+      set.add(canonicalizeAssignLanguage(raw))
+    }
+    set.delete('_unknown')
+    return set
   }, [teamByEmail])
+
+  const tourSpeaksLanguage = useCallback((tour: TourRow, langKey: string) => {
+    if (!langKey || langKey === '_unknown') return false
+    return tourStaffLanguageSet(tour).has(langKey)
+  }, [tourStaffLanguageSet])
 
   const peopleCount = useCallback((res: ReservationRow | null | undefined) => {
     if (!res) return 0
@@ -296,21 +315,196 @@ export default function AutoAssignModal({
     return tourList.map(t => ({ ...t, reservation_ids: Array.from(updates.get(t.id) || []) }))
   }, [])
 
+  const getReservationLanguage = useCallback((res: ReservationRow | undefined): string => {
+    if (!res?.customer_id) return ''
+    return customerLanguages.get(res.customer_id) ?? getCustomerLanguage(res.customer_id)
+  }, [customerLanguages, getCustomerLanguage])
+
+  const primaryTourForChoice = useCallback((tours: TourRow[], choiceKey: 'L' | 'X' | '_other', excludeReservationId?: string): string | null => {
+    let bestTourId: string | null = null
+    let bestCount = -1
+    for (const tour of tours) {
+      const count = (tour.reservation_ids || []).filter((id) => {
+        if (excludeReservationId && id === excludeReservationId) return false
+        return (reservationChoiceMap.get(id) || '_other') === choiceKey
+      }).length
+      if (count > bestCount) {
+        bestCount = count
+        bestTourId = tour.id
+      }
+    }
+    return bestCount > 0 ? bestTourId : null
+  }, [reservationChoiceMap])
+
+  const primaryTourForLanguage = useCallback((tours: TourRow[], langKey: string, excludeReservationId?: string): string | null => {
+    let bestTourId: string | null = null
+    let bestPeople = -1
+    for (const tour of tours) {
+      const people = (tour.reservation_ids || []).reduce((sum, id) => {
+        if (excludeReservationId && id === excludeReservationId) return sum
+        const res = reservations.find(r => r.id === id)
+        if (canonicalizeAssignLanguage(getReservationLanguage(res)) !== langKey) return sum
+        return sum + peopleCount(res)
+      }, 0)
+      if (people > bestPeople) {
+        bestPeople = people
+        bestTourId = tour.id
+      }
+    }
+    return bestPeople > 0 ? bestTourId : null
+  }, [getReservationLanguage, peopleCount, reservations])
+
+  const primaryTourForHotel = useCallback((tours: TourRow[], hotel: string, excludeReservationId?: string): string | null => {
+    let bestTourId: string | null = null
+    let bestCount = -1
+    for (const tour of tours) {
+      const count = (tour.reservation_ids || []).filter((id) => {
+        if (excludeReservationId && id === excludeReservationId) return false
+        return (reservations.find(r => r.id === id)?.pickup_hotel ?? '') === hotel
+      }).length
+      if (count > bestCount) {
+        bestCount = count
+        bestTourId = tour.id
+      }
+    }
+    return bestCount > 0 ? bestTourId : null
+  }, [reservations])
+
+  const majorityLanguageOnTour = useCallback((tour: TourRow, excludeReservationId?: string): string | null => {
+    const peopleByLang = new Map<string, number>()
+    for (const id of tour.reservation_ids || []) {
+      if (excludeReservationId && id === excludeReservationId) continue
+      const res = reservations.find(r => r.id === id)
+      const langKey = canonicalizeAssignLanguage(getReservationLanguage(res))
+      peopleByLang.set(langKey, (peopleByLang.get(langKey) || 0) + peopleCount(res))
+    }
+    let bestLang: string | null = null
+    let bestPeople = 0
+    peopleByLang.forEach((people, langKey) => {
+      if (people > bestPeople) {
+        bestPeople = people
+        bestLang = langKey
+      }
+    })
+    return bestPeople > 0 ? bestLang : null
+  }, [getReservationLanguage, peopleCount, reservations])
+
+  const tourPeopleCount = useCallback((tour: TourRow, excludeReservationId?: string) => {
+    return (tour.reservation_ids || [])
+      .filter((id) => !excludeReservationId || id !== excludeReservationId)
+      .reduce((sum, rid) => sum + peopleCount(reservations.find(r => r.id === rid)), 0)
+  }, [peopleCount, reservations])
+
+  const moveBreaksConstraint = useCallback((move: Move, tours: TourRow[], constraint: PriorityKey): boolean => {
+    const res = reservations.find(r => r.id === move.reservationId)
+    const toTour = tours.find(t => t.id === move.toTourId)
+    if (!res || !toTour) return true
+
+    if (constraint === 'language') {
+      const langKey = canonicalizeAssignLanguage(getReservationLanguage(res))
+      const primaryId = primaryTourForLanguage(tours, langKey, move.reservationId)
+      if (primaryId && primaryId !== move.toTourId) return true
+      const toMajority = majorityLanguageOnTour(toTour, move.reservationId)
+      return Boolean(toMajority && toMajority !== langKey)
+    }
+
+    if (constraint === 'choice') {
+      const key = reservationChoiceMap.get(move.reservationId) || '_other'
+      const primaryId = primaryTourForChoice(tours, key, move.reservationId)
+      return Boolean(primaryId && primaryId !== move.toTourId)
+    }
+
+    if (constraint === 'hotel') {
+      const hotel = res.pickup_hotel ?? ''
+      const primaryId = primaryTourForHotel(tours, hotel, move.reservationId)
+      return Boolean(primaryId && primaryId !== move.toTourId)
+    }
+
+    if (constraint === 'people') {
+      const max = maxCapacity(toTour)
+      if (max == null) return false
+      return tourPeopleCount(toTour, move.reservationId) + peopleCount(res) > max
+    }
+
+    return false
+  }, [
+    getReservationLanguage,
+    maxCapacity,
+    peopleCount,
+    primaryTourForChoice,
+    primaryTourForHotel,
+    primaryTourForLanguage,
+    majorityLanguageOnTour,
+    reservationChoiceMap,
+    reservations,
+    tourPeopleCount,
+  ])
+
   const getMovesForStep = useCallback((priorityKey: PriorityKey, currentTours: TourRow[]): Move[] => {
     const next: Move[] = []
     if (priorityKey === 'language') {
+      const currentTourOf = new Map<string, string>()
+      const idsByLang = new Map<string, string[]>()
       currentTours.forEach(tour => {
-        const ids = tour.reservation_ids || []
-        const hasKo = hasKorean(tour)
-        ids.forEach(rid => {
+        (tour.reservation_ids || []).forEach(rid => {
+          currentTourOf.set(rid, tour.id)
           const res = reservations.find(r => r.id === rid)
-          if (!res?.customer_id) return
-          const lang = customerLanguages.get(res.customer_id) ?? getCustomerLanguage(res.customer_id)
-          if (!isKorean(lang)) return
-          if (hasKo) return
-          const name = getCustomerName(res.customer_id)
-          const other = currentTours.find(t => t.id !== tour.id && hasKorean(t))
-          if (other) next.push({ reservationId: rid, reservationLabel: name, fromTourId: tour.id, toTourId: other.id })
+          const langKey = canonicalizeAssignLanguage(getReservationLanguage(res))
+          if (!idsByLang.has(langKey)) idsByLang.set(langKey, [])
+          idsByLang.get(langKey)!.push(rid)
+        })
+      })
+      const tourOrder = [...currentTours].sort((a, b) => a.id.localeCompare(b.id))
+      const loadByTour = new Map(tourOrder.map(t => [t.id, 0]))
+      const assignedLangByTour = new Map<string, string>()
+      const langTarget = new Map<string, string>()
+      const langsRanked = [...idsByLang.entries()].sort((a, b) => {
+        const peopleA = a[1].reduce((sum, id) => sum + peopleCount(reservations.find(r => r.id === id)), 0)
+        const peopleB = b[1].reduce((sum, id) => sum + peopleCount(reservations.find(r => r.id === id)), 0)
+        if (peopleB !== peopleA) return peopleB - peopleA
+        return a[0].localeCompare(b[0])
+      })
+      for (const [langKey, rids] of langsRanked) {
+        const groupPeople = rids.reduce((sum, id) => sum + peopleCount(reservations.find(r => r.id === id)), 0)
+        const hasFreeTour = tourOrder.some(t => !assignedLangByTour.has(t.id))
+        const hasSameLangTour = tourOrder.some(t => assignedLangByTour.get(t.id) === langKey)
+        let bestTourId: string | undefined
+        let bestScore = Number.NEGATIVE_INFINITY
+        for (const tour of tourOrder) {
+          const occupiedLang = assignedLangByTour.get(tour.id)
+          if (occupiedLang && occupiedLang !== langKey) {
+            if (hasFreeTour || hasSameLangTour) continue
+          }
+          const load = loadByTour.get(tour.id) ?? 0
+          const max = maxCapacity(tour)
+          let score = -load
+          if (!occupiedLang) score += 100
+          if (occupiedLang === langKey) score += 200
+          if (tourSpeaksLanguage(tour, langKey)) score += 1000
+          if (max != null) {
+            const remaining = Math.max(0, max - load)
+            score += groupPeople <= remaining ? 50 : -25
+          }
+          if (score > bestScore) {
+            bestScore = score
+            bestTourId = tour.id
+          }
+        }
+        if (!bestTourId) bestTourId = tourOrder.find(t => !assignedLangByTour.has(t.id))?.id ?? tourOrder[0]?.id
+        if (!bestTourId) continue
+        langTarget.set(langKey, bestTourId)
+        if (!assignedLangByTour.has(bestTourId)) assignedLangByTour.set(bestTourId, langKey)
+        loadByTour.set(bestTourId, (loadByTour.get(bestTourId) ?? 0) + groupPeople)
+      }
+      idsByLang.forEach((rids, langKey) => {
+        const targetId = langTarget.get(langKey)
+        if (!targetId) return
+        rids.forEach(rid => {
+          const fromTourId = currentTourOf.get(rid)
+          if (!fromTourId || fromTourId === targetId) return
+          const res = reservations.find(r => r.id === rid)
+          const name = res?.customer_id ? getCustomerName(res.customer_id) : rid.slice(0, 8)
+          next.push({ reservationId: rid, reservationLabel: name, fromTourId, toTourId: targetId })
         })
       })
       return next
@@ -337,47 +531,58 @@ export default function AutoAssignModal({
       return next
     }
     if (priorityKey === 'hotel') {
-      const countByTourAndHotel = new Map<string, Map<string, number>>()
-      currentTours.forEach(tour => {
-        const m = new Map<string, number>()
-        ;(tour.reservation_ids || []).forEach(rid => {
-          const hotel = reservations.find(r => r.id === rid)?.pickup_hotel ?? ''
-          m.set(hotel, (m.get(hotel) || 0) + 1)
-        })
-        countByTourAndHotel.set(tour.id, m)
-      })
-      const hotelToTours = new Map<string, { tourId: string; count: number }[]>()
-      currentTours.forEach(tour => {
-        const m = countByTourAndHotel.get(tour.id)
-        m?.forEach((count, hotel) => {
-          if (!hotelToTours.has(hotel)) hotelToTours.set(hotel, [])
-          hotelToTours.get(hotel)!.push({ tourId: tour.id, count })
-        })
-      })
-      const primaryTourForHotel = new Map<string, string>()
-      hotelToTours.forEach((arr, hotel) => {
-        const best = arr.reduce((a, b) => (a.count >= b.count ? a : b), { tourId: '', count: 0 })
-        primaryTourForHotel.set(hotel, best.tourId)
-      })
+      const idsByHotel = new Map<string, string[]>()
+      const currentTourOf = new Map<string, string>()
       currentTours.forEach(tour => {
         (tour.reservation_ids || []).forEach(rid => {
+          currentTourOf.set(rid, tour.id)
+          const hotel = reservations.find(r => r.id === rid)?.pickup_hotel ?? ''
+          if (!idsByHotel.has(hotel)) idsByHotel.set(hotel, [])
+          idsByHotel.get(hotel)!.push(rid)
+        })
+      })
+      const tourOrder = [...currentTours].sort((a, b) => a.id.localeCompare(b.id))
+      const loadByTour = new Map(tourOrder.map(t => [t.id, 0]))
+      const hotelTarget = new Map<string, string>()
+      const hotelsRanked = [...idsByHotel.entries()].sort((a, b) => {
+        const peopleA = a[1].reduce((sum, id) => sum + peopleCount(reservations.find(r => r.id === id)), 0)
+        const peopleB = b[1].reduce((sum, id) => sum + peopleCount(reservations.find(r => r.id === id)), 0)
+        if (peopleB !== peopleA) return peopleB - peopleA
+        return a[0].localeCompare(b[0])
+      })
+      for (const [hotel, rids] of hotelsRanked) {
+        const groupPeople = rids.reduce((sum, id) => sum + peopleCount(reservations.find(r => r.id === id)), 0)
+        let bestTourId = tourOrder[0]?.id
+        let bestLoad = Number.POSITIVE_INFINITY
+        for (const tour of tourOrder) {
+          const load = loadByTour.get(tour.id) ?? 0
+          if (load < bestLoad) {
+            bestLoad = load
+            bestTourId = tour.id
+          }
+        }
+        if (!bestTourId) continue
+        hotelTarget.set(hotel, bestTourId)
+        loadByTour.set(bestTourId, bestLoad + groupPeople)
+      }
+      idsByHotel.forEach((rids, hotel) => {
+        const targetId = hotelTarget.get(hotel)
+        if (!targetId) return
+        rids.forEach(rid => {
+          const fromTourId = currentTourOf.get(rid)
+          if (!fromTourId || fromTourId === targetId) return
           const res = reservations.find(r => r.id === rid)
-          const hotel = res?.pickup_hotel ?? ''
-          const targetId = primaryTourForHotel.get(hotel)
-          if (!targetId || targetId === tour.id) return
           const name = res?.customer_id ? getCustomerName(res.customer_id) : rid.slice(0, 8)
-          next.push({ reservationId: rid, reservationLabel: name, fromTourId: tour.id, toTourId: targetId })
+          next.push({ reservationId: rid, reservationLabel: name, fromTourId, toTourId: targetId })
         })
       })
       return next
     }
     if (priorityKey === 'people') {
-      const tourPeople = (t: TourRow) =>
-        reservations.filter(r => (t.reservation_ids || []).includes(r.id)).reduce((sum, r) => sum + peopleCount(r), 0)
       currentTours.forEach(tour => {
         const max = maxCapacity(tour)
         if (max == null) return
-        const current = tourPeople(tour)
+        const current = tourPeopleCount(tour)
         if (current <= max) return
         let toMove = current - max
         const ids = [...(tour.reservation_ids || [])]
@@ -387,7 +592,7 @@ export default function AutoAssignModal({
           return peopleCount(rb) - peopleCount(ra)
         })
         const targetTour = currentTours.find(
-          t => t.id !== tour.id && (maxCapacity(t) == null || tourPeople(t) < (maxCapacity(t) ?? 0))
+          t => t.id !== tour.id && (maxCapacity(t) == null || tourPeopleCount(t) < (maxCapacity(t) ?? 0))
         )
         if (!targetTour) return
         for (const rid of ids) {
@@ -401,42 +606,55 @@ export default function AutoAssignModal({
       return next
     }
     return []
-  }, [reservations, customerLanguages, reservationChoiceMap, hasKorean, maxCapacity, peopleCount, getCustomerName, getCustomerLanguage])
+  }, [reservations, reservationChoiceMap, maxCapacity, peopleCount, tourPeopleCount, getCustomerName, getReservationLanguage, tourSpeaksLanguage])
 
   const proposedTours = useMemo(() => {
     if (initialTours.length === 0) return []
-    let current: TourRow[] = initialTours.map(t => ({
-      ...t,
-      reservation_ids: t.reservation_ids ? [...t.reservation_ids] : [],
-    }))
 
-    const assignedKeys = new Set(
-      current.flatMap(t => t.reservation_ids || []).map(id => canonicalReservationIdKey(id))
-    )
-    const unassignedIds = reservations
+    const assignableIds = reservations
       .filter(r => {
         const status = (r.status || '').toLowerCase().trim()
         if (status !== 'confirmed' && status !== 'recruiting') return false
-        if (!isAssignableReservationStatus(r.status)) return false
-        return !assignedKeys.has(canonicalReservationIdKey(String(r.id)))
+        return isAssignableReservationStatus(r.status)
       })
       .map(r => r.id)
 
-    if (unassignedIds.length > 0) {
-      const seedTargetId = [...current].sort((a, b) => a.id.localeCompare(b.id))[0]?.id
-      current = current.map(t =>
-        t.id === seedTargetId
-          ? { ...t, reservation_ids: [...(t.reservation_ids || []), ...unassignedIds] }
-          : t
-      )
+    const seenAssignable = new Set<string>()
+    const poolIds: string[] = []
+    for (const id of assignableIds) {
+      const key = canonicalReservationIdKey(id)
+      if (seenAssignable.has(key)) continue
+      seenAssignable.add(key)
+      poolIds.push(id)
     }
 
+    const seedTargetId = [...initialTours].sort((a, b) => a.id.localeCompare(b.id))[0]?.id
+    let current: TourRow[] = initialTours.map(t => ({
+      ...t,
+      reservation_ids: t.id === seedTargetId ? [...poolIds] : [],
+    }))
+
+    const higherPriorities: PriorityKey[] = []
     for (const priorityKey of priorityOrder) {
-      const moves = getMovesForStep(priorityKey, current)
-      current = applyMovesToTours(current, moves)
+      if (priorityKey === 'people') {
+        let guard = 0
+        while (guard++ < 80) {
+          const peopleMoves = getMovesForStep(priorityKey, current).filter((move) =>
+            !higherPriorities.some((constraint) => moveBreaksConstraint(move, current, constraint))
+          )
+          if (peopleMoves.length === 0) break
+          current = applyMovesToTours(current, [peopleMoves[0]])
+        }
+      } else {
+        const moves = getMovesForStep(priorityKey, current).filter((move) =>
+          !higherPriorities.some((constraint) => moveBreaksConstraint(move, current, constraint))
+        )
+        current = applyMovesToTours(current, moves)
+      }
+      higherPriorities.push(priorityKey)
     }
     return current
-  }, [initialTours, reservations, priorityOrder, getMovesForStep, applyMovesToTours])
+  }, [initialTours, reservations, priorityOrder, getMovesForStep, applyMovesToTours, moveBreaksConstraint])
 
   const displayTours = useMemo(() => {
     if (proposedTours.length === 0) return []
@@ -722,7 +940,10 @@ export default function AutoAssignModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+    <div
+      className="fixed inset-0 flex items-center justify-center p-4 bg-black/50"
+      style={{ zIndex: overlayZIndex }}
+    >
       <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] flex flex-col">
         <div className="border-b">
           <div className="flex items-center justify-between p-4">
@@ -748,7 +969,7 @@ export default function AutoAssignModal({
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-medium text-gray-600">우선순위</span>
               {priorityOrder.map((key, index) => (
-                <label key={`${index}-${key}`} className="inline-flex items-center gap-1">
+                <label key={`priority-rank-${index}`} className="inline-flex items-center gap-1">
                   <span className="text-[11px] text-gray-500 whitespace-nowrap">{index + 1}순위</span>
                   <select
                     value={key}
@@ -774,6 +995,7 @@ export default function AutoAssignModal({
             <div className="px-4 pb-4 pt-0">
               <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-sm text-slate-700 space-y-2">
                 <p className="font-medium text-slate-800">자동 배정 시 적용되는 {priorityOrderLabel} 우선순위</p>
+                <p className="text-xs text-slate-600">1순위가 가장 중요합니다. 아래 순위는 위 순위를 깨지 않는 범위에서만 적용됩니다.</p>
                 <ol className="list-decimal list-inside space-y-1.5">
                   {priorityOrder.map((key) => (
                     <li key={key}>
@@ -864,8 +1086,8 @@ export default function AutoAssignModal({
                     )
                   })}
                 </div>
-                {/* 자동 배정 (언어→초이스→호텔→인원 적용 결과) */}
-                <div className="space-y-3">
+                {/* 자동 배정 (선택한 우선순위 적용 결과) */}
+                <div key={priorityOrder.join('-')} className="space-y-3">
                   <p className="text-xs font-medium text-gray-500 uppercase">자동 배정</p>
                   {displayTours.map(tour => {
                     const ids = tour.reservation_ids || []

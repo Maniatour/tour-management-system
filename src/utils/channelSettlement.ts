@@ -313,7 +313,7 @@ function roundUsd2(n: number): number {
 /**
  * PricingSection「4. 최종 매출 & 운영 이익」의 총 매출(Total Revenue)과 동일한 산식.
  * - OTA: 기준 `channelSettlementBase`(③ 채널 정산) + 옵션·불포함·부가 + 진행 예약 시 폼 카드수수료·선결제 팁(총매출 항목) + 추가할인/추가비용(③에 없을 때 omit 무시)
- * - Self(`revenueFromCustomerPaymentTotal`): 기준 `channelSettlementBase` = ① 고객 총 결제(넷) — 옵션·불포함·추가비용 등은 이미 포함되어 이중 가산·차감하지 않음
+ * - Self(`revenueFromCustomerPaymentTotal`): 기준 `channelSettlementBase` = ① 고객 총 결제(넷) — 옵션·불포함·추가비용·환불은 이미 포함되어 이중 가산·차감하지 않음
  * - 자체(홈페이지) OTA 경로: `excludeHomepageAdditionalCostFromCompanyTotals` — ③ 정산 베이스 경로에서만 추가비용 가산 후 말미 차감
  */
 export type CompanyTotalRevenueInput = {
@@ -384,9 +384,8 @@ export function computeCompanyTotalRevenueLikePricingSection(inp: CompanyTotalRe
   })
 
   if (revenueFromCustomerPaymentTotal) {
-    let totalRevenue = channelSettlementBase
-    totalRevenue -= refundedOurAmount
-    return roundUsd2(totalRevenue)
+    /** ① 고객 총 결제(넷)에 추가할인·투어환불·입금 Refunded가 이미 반영됨 — 환불 재차감 없음 */
+    return roundUsd2(channelSettlementBase)
   }
 
   let totalRevenue = channelSettlementBase

@@ -2299,7 +2299,7 @@ export default function PricingInfoModal({
                           </span>
                         </div>
                       )}
-                      {refundedAmount > 0.005 && (
+                      {refundedAmount > 0.005 && (isOTAChannel || isReservationCancelled) && (
                         <div className="flex justify-between text-red-600">
                           <span className="text-gray-600">환불금 (우리)</span>
                           <span>-${refundedAmount.toFixed(2)}</span>

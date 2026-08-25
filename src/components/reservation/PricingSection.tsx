@@ -1500,6 +1500,7 @@ export default function PricingSection({
 
   /**
    * ④ 총 매출·운영 이익에서 차감할 입금 환불(Refunded) 상당액.
+   * Self·진행 예약은 ① 고객 총 결제(넷) 베이스를 쓰므로 이 값을 다시 빼지 않는다.
    * 예약 옵션 금액이 ④에 +되지 않은 경우(취소 등): Refunded 중 옵션취소 입력분은 채널 정산과 무관한 현금흐름으로 보지 않고,
    * 투어 관련 환불만 반영(max(투어 환불 입력, Refunded − 옵션취소분)).
    * OTA: 채널 정산 금액 산식에 이미 max(Returned, 투어 환불)가 들어가 있으므로,
@@ -2061,16 +2062,10 @@ export default function PricingSection({
         trSelf -= rexSelf
       }
 
-      const refbSelf = refundAmountForCompanyRevenueBlock
-      if (refbSelf > 0.005) {
-        linesSelf.push({
-          sign: '-',
-          labelKo: '환불 (총매출 차감)',
-          labelEn: 'Refund (deducted from revenue)',
-          amount: refbSelf,
-        })
-        trSelf -= refbSelf
-      }
+      /**
+       * ① 고객 총 결제(넷)·입금 순액에는 추가할인·투어환불 입력·입금 Refunded가 이미 들어 있다.
+       * 여기서 refundAmountForCompanyRevenueBlock을 다시 빼면 같은 환불이 두 번 차감된다.
+       */
 
       trSelf = roundUsd2(trSelf)
       return finishLedger(linesSelf, trSelf, null)

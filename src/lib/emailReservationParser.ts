@@ -396,6 +396,7 @@ function mapWixHomepageProductTitleToProduct(
   const s = title.replace(/\s+/g, ' ').trim()
   if (!s) return {}
   if (
+    /밤도깨비/i.test(s) ||
     /라스베가스\s*[>＞]\s*그랜드캐년\s*일출/i.test(s) ||
     (/그랜드\s*캐년\s*일출/i.test(s) &&
       /(?:앤텔로프|앤텔롭|홀슈|밴드|Antelope|Horseshoe)/i.test(s)) ||
@@ -406,6 +407,30 @@ function mapWixHomepageProductTitleToProduct(
     return { product_id: 'MDGCSUNRISE', product_name: '밤도깨비 그랜드캐년 일출 투어' }
   }
   return {}
+}
+
+/** Wix 본문이 한 줄로 이어질 때 다음 레이블 앞에서 값 자르기 */
+function clipWixLabeledValue(raw: string): string {
+  return raw
+    .replace(
+      /\s+(?:Name|Email|Contact\s*number|Phone|When|Number\s*of\s*participants|Pick[\s-]*up\s*(?:Hotel|Location)|Special\s*requests?|Price|Choose\s+one|Clients?\s+details)\s*:.*$/i,
+      ''
+    )
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function applyWixAntelopeChoiceQuantity(
+  out: Partial<ExtractedReservationData>,
+  raw: string
+): void {
+  const qty = raw.match(/\s+x\s*(\d+)\s*$/i)
+  if (!qty?.[1]) return
+  const n = parseInt(qty[1], 10)
+  if (!Number.isNaN(n) && n > 0) {
+    out.adults = n
+    out.total_people = n
+  }
 }
 
 /** Wix 홈페이지 예약 메일(자사) 전용 추출 — 레이블은 사이트 커스터마이즈에 따라 일부만 매칭될 수 있음 */
@@ -445,12 +470,26 @@ function extractManiatour(
   if (whenParts.length >= 2) {
     const beforeWhen = whenParts[0].trimEnd()
     const lines = beforeWhen.split(/\n/).map((l) => l.trim()).filter(Boolean)
+    const titleLines = lines.filter(
+      (l) =>
+        !/^\s*choose\s+one\b/i.test(l) &&
+        !/^(?:lower\s+antelope|antelope\s+canyon\s+x)\b/i.test(l) &&
+        !/^(?:name|email|contact\s*number|phone|when|price|special\s*requests?|pick[\s-]*up|number\s*of\s*participants|clients?\s+details)\s*:/i.test(
+          l
+        )
+    )
+    const mappedTitle = [...titleLines]
+      .reverse()
+      .find((l) => mapWixHomepageProductTitleToProduct(l.replace(/\s+/g, ' ')).product_id)
     const productLine =
-      [...lines]
+      mappedTitle ||
+      [...titleLines]
         .reverse()
         .find((l) =>
-          /[>＞]|라스베가스|Las\s+Vegas|그랜드|Grand|Sunrise|일출|앤텔로프|Antelope|홀슈|Horseshoe|밴드|&/i.test(l)
-        ) || lines[lines.length - 1]
+          /[>＞]|라스베가스|Las\s+Vegas|그랜드|Grand|Sunrise|일출|밤도깨비|홀슈|Horseshoe|밴드|&/i.test(l)
+        ) ||
+      titleLines[titleLines.length - 1] ||
+      lines[lines.length - 1]
     if (productLine && productLine.length >= 4) {
       const cleaned = productLine.replace(/\s+/g, ' ')
       out.product_name = cleaned
@@ -476,9 +515,9 @@ function extractManiatour(
   }
 
   // "Name: Fuka  Sugiyama" — 반드시 Name(단어) + 콜론; Clients details 등과 구분
-  const nameFromLabel = t.match(/(?:^|[\r\n])\s*\bName\s*:\s*([^\r\n]+)/im)
+  const nameFromLabel = t.match(/\bName\s*:\s*([^\r\n]+)/im)
   if (nameFromLabel?.[1]) {
-    const n = nameFromLabel[1].trim().replace(/\s+/g, ' ')
+    const n = clipWixLabeledValue(nameFromLabel[1].trim().replace(/\s+/g, ' '))
     if (n.length > 1 && !/^(when|service|tour)\b/i.test(n) && !isGarbageImportedCustomerName(n)) out.customer_name = n
   }
   if (!out.customer_name) {
@@ -509,9 +548,14 @@ function extractManiatour(
   }
 
   const phoneLabeled = t.match(
-    /(?:phone|mobile|tel|cell)\s*:?\s*([+()\d][+()\d\s.-]{8,})\b/im
+    /(?:contact\s*number|phone|mobile|tel|cell)\s*:?\s*(\+?[()\d][+()\d\s.-]{7,})/im
   )
-  if (phoneLabeled?.[1]) out.customer_phone = phoneLabeled[1].trim()
+  if (phoneLabeled?.[1]) out.customer_phone = clipWixLabeledValue(phoneLabeled[1].trim())
+
+  if (!out.customer_phone) {
+    const intlPhone = t.match(/\+(?:[1-9]\d{0,2})[\s.-]?(?:\d[\s.-]?){6,14}\d\b/)
+    if (intlPhone) out.customer_phone = intlPhone[0].replace(/[\s.-]+/g, '').trim()
+  }
 
   if (!out.customer_phone) {
     const phoneLoose = t.match(
@@ -575,24 +619,26 @@ function extractManiatour(
     }
   }
 
-  // Choose one : Antelope Canyon X x2 (314 USD) — 엑스 앤텔로프 초이스 + 수량 xN (guests보다 우선)
+  // Choose one : Lower Antelope Canyon x2 / Antelope Canyon X x2 (314 USD)
   const chooseOne = t.match(
     /Choose\s+one\s*:?\s*(.+?)(?:\s*\([\d,.\s]*\s*USD\)|\n|$)/im
   )
   if (chooseOne?.[1]) {
-    const raw = chooseOne[1].trim().replace(/\s+/g, ' ')
+    const raw = clipWixLabeledValue(chooseOne[1].trim().replace(/\s+/g, ' '))
     out.product_choices = raw
-    if (/antelope\s+canyon\s+x/i.test(raw)) {
+    if (/lower\s+antelope/i.test(raw)) {
+      out.import_choice_option_names = ['Lower Antelope Canyon']
+      applyWixAntelopeChoiceQuantity(out, raw)
+    } else if (/antelope\s+canyon\s+x(?:\s+canyon)?(?!\d)/i.test(raw) || /antelope\s*x\s*canyon/i.test(raw)) {
       out.import_choice_option_names = ['X Antelope Canyon', 'Antelope X Canyon']
-      const qty = raw.match(/\s+x\s*(\d+)\s*$/i)
-      if (qty?.[1]) {
-        const n = parseInt(qty[1], 10)
-        if (!Number.isNaN(n) && n > 0) {
-          out.adults = n
-          out.total_people = n
-        }
-      }
+      applyWixAntelopeChoiceQuantity(out, raw)
     }
+  }
+
+  const pickupLabeled = t.match(/pick[\s-]*up\s*(?:hotel|location)\s*:?\s*([^\n]+)/im)
+  if (pickupLabeled?.[1]) {
+    const hotel = clipWixLabeledValue(pickupLabeled[1])
+    if (hotel) out.pickup_hotel = normalizePickupHotelFromEmail(hotel)
   }
 
   const amt =
@@ -603,15 +649,23 @@ function extractManiatour(
   const noteM = t.match(
     /(?:note|message|comments?|special\s*requests?|additional\s*(?:info|information))\s*:?\s*([^\n]+)/i
   )
-  if (noteM?.[1]) out.special_requests = noteM[1].trim()
+  if (noteM?.[1]) {
+    const note = clipWixLabeledValue(noteM[1].trim())
+    if (note) out.special_requests = note
+  }
 
   if (!out.import_choice_option_names?.length) {
     const productHint = `${out.product_name || ''} ${t}`
     if (/lower\s+antelope/i.test(productHint)) {
       out.import_choice_option_names = ['Lower Antelope Canyon']
-    } else if (/antelope\s+canyon\s*x|antelope\s+x\s*canyon/i.test(productHint)) {
+    } else if (/antelope\s+canyon\s+x(?:\s+canyon)?(?!\d)/i.test(productHint) || /antelope\s*x\s*canyon/i.test(productHint)) {
       out.import_choice_option_names = ['X Antelope Canyon', 'Antelope X Canyon']
     }
+  }
+
+  if (!out.language && out.customer_phone) {
+    const langFromPhone = languageFromPhoneCountry(out.customer_phone)
+    if (langFromPhone) out.language = langFromPhone
   }
 
   out.import_choice_undecided_groups = ['미국 거주자 구분', '기타 입장료']

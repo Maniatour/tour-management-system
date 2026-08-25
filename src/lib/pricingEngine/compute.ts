@@ -462,13 +462,19 @@ function computeCompanyLayer(
     reservationOptionsTotalPrice: ctx.reservationOptionsTotal,
   })
 
+  /** Self·진행: ① 고객 총 결제(넷)에 환불이 이미 포함되어 ④에서 재차감하지 않음 */
+  const refundLineAmount =
+    !ctx.isOtaChannel && !isCancelledReservationStatus(ctx.reservationStatus)
+      ? 0
+      : refundForRevenue
+
   for (const [id, sign, ko, en, amt] of [
     ['add_discount', '-', '추가할인', 'Additional discount', formExtras.additionalDiscount],
     ['add_cost', '+', '추가비용', 'Additional cost', formExtras.additionalCost],
     ['tax', '+', '세금', 'Tax', formExtras.tax],
     ['card_fee', '+', '카드 수수료', 'Card fee', formExtras.cardFee],
     ['prepay_cost', '+', '선결제 지출', 'Prepayment cost', formExtras.prepaymentCost],
-    ['refund', '-', '환불', 'Refund', refundForRevenue],
+    ['refund', '-', '환불', 'Refund', refundLineAmount],
   ] as const) {
     if (amt > 0.005) {
       lines.push(line(id, sign, ko, en, amt))

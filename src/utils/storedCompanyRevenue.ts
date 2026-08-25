@@ -16,6 +16,10 @@ import {
   isNotIncludedExcludedReservationStatus,
 } from '@/lib/reservationStatus'
 
+/**
+ * OTA·취소 등 채널 정산 베이스를 쓰는 ④에서 차감할 입금 환불액.
+ * Self·진행 예약은 ① 고객 총 결제(넷) 베이스를 쓰므로 이 값을 다시 빼지 않는다.
+ */
 export function computeRefundAmountForCompanyRevenueBlock(inp: {
   refundedFromRecords: number
   reservationOptionsActiveSum: number
@@ -47,7 +51,7 @@ export type StoredCompanyRevenueComputeInput = {
   channelSettlementBase: number
   /**
    * 비-OTA·진행 예약: ④ 시작점을 고객 총 결제(넷)으로 할 때 설정.
-   * 설정 시 `channelSettlementBase`는 무시되고 옵션·불포함·세·선결제 등은 이중 가산하지 않음.
+   * 설정 시 `channelSettlementBase`는 무시되고 옵션·불포함·세·선결제·환불은 이중 가산·차감하지 않음.
    */
   customerPaymentNetForRevenueBase?: number | null
   /** OTA·진행: ④ 총매출에 가산하는 폼 카드수수료 */
@@ -235,9 +239,7 @@ export function computeStoredCompanyRevenueFields(
   ) {
     let tr = roundUsd2(Math.max(0, Number(cpn) || 0))
     tr -= rex
-    if (refb > 0.005) {
-      tr -= refb
-    }
+    /** ① 고객 총 결제(넷)에 추가할인·투어환불·입금 Refunded가 이미 반영됨 — 환불 재차감 없음 */
     tr = roundUsd2(tr)
     return {
       company_total_revenue: tr,

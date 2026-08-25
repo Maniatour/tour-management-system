@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Loader2, Hash, Calendar, Users, User, Mail, Phone, Globe, MapPin, DollarSign, ChevronDown, ChevronUp, FileText, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Loader2, Hash, Calendar, Users, User, Mail, Phone, Globe, MapPin, DollarSign, ChevronDown, ChevronUp, FileText, RefreshCw, MessageSquare } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { getChannelIdForPlatform } from '@/lib/platformChannelMapping'
 import {
@@ -30,6 +30,7 @@ import { useReservationData } from '@/hooks/useReservationData'
 import type { ExtractedReservationData } from '@/types/reservationImport'
 import type { Channel, Customer, PickupHotel } from '@/types/reservation'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { isPickupImportNotDecidedLabel } from '@/lib/reservationImportPickup'
 import type { TourDepartureConfirmationBatchContext } from '@/components/reservation/TourDepartureConfirmationBatchModal'
 
 const TourDepartureConfirmationBatchModal = dynamic(
@@ -157,6 +158,19 @@ export default function ReservationImportDetailPage() {
       ext?.product_name === '그랜드서클 당일 투어' &&
       /Shared\s*Van\s*with\s*Lower\s*Antelope|Lower\s*Antelope/i.test(rawCombinedForGyG) &&
       /\b00\s*:\s*00\b|00:00/i.test(rawCombinedForGyG)
+    const rawCombinedForManiatour = `${data.raw_body_text || ''}\n${data.raw_body_html || ''}`
+    const maniatourNeedsPickup =
+      effectiveKey === 'maniatour' &&
+      /pick[\s-]*up\s*(?:hotel|location)/i.test(rawCombinedForManiatour) &&
+      (!ext.pickup_hotel || isPickupImportNotDecidedLabel(ext.pickup_hotel))
+    const maniatourNeedsIntlPhone =
+      effectiveKey === 'maniatour' &&
+      /(?:contact\s*number|phone)\s*:?\s*\+\d/i.test(rawCombinedForManiatour) &&
+      !/\+/.test(String(ext.customer_phone || ''))
+    const maniatourLowerMisparsedAsX =
+      effectiveKey === 'maniatour' &&
+      /lower\s+antelope/i.test(rawCombinedForManiatour) &&
+      (ext.import_choice_option_names || []).some((n) => /(?:^|\b)(?:x\s*antelope|antelope\s*x)/i.test(n))
     const looksIncomplete =
       hasBody &&
       (((effectiveKey === 'getyourguide' && (!ext.customer_name || ext.adults == null)) ||
@@ -167,7 +181,10 @@ export default function ReservationImportDetailPage() {
         (effectiveKey === 'viator' && (!ext.customer_name || !ext.pickup_hotel)) ||
         (effectiveKey === 'tripcom' && (!ext.customer_name || ext.adults == null)) ||
         (effectiveKey === 'zoomzoom' &&
-          (!ext.tour_date || ext.adults == null || !ext.product_name))) ||
+          (!ext.tour_date || ext.adults == null || !ext.product_name)) ||
+        maniatourNeedsPickup ||
+        maniatourNeedsIntlPhone ||
+        maniatourLowerMisparsedAsX) ||
         (bodyHasWhatsApp && !ext.emergency_contact))
     if (looksIncomplete) {
       const reparseRes = await fetchApiWithAuth(`/api/reservation-imports/${id}/reparse`, { method: 'POST' })
@@ -708,6 +725,15 @@ export default function ReservationImportDetailPage() {
                     </div>
                   )}
                 </>
+              )}
+              {ext?.special_requests && (
+                <div className="flex items-start gap-3">
+                  <MessageSquare className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <dt className="text-xs font-medium text-gray-500">Special request</dt>
+                    <dd className="text-sm text-gray-900 mt-0.5">{ext.special_requests}</dd>
+                  </div>
+                </div>
               )}
               {ext?.pickup_hotel && (
                 <div className="flex items-start gap-3">

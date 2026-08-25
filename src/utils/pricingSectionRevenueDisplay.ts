@@ -70,7 +70,7 @@ export function computePricingSectionDisplayTotalRevenue(inp: PricingSectionReve
   })
 
   if (useCustomerBase) {
-    totalRevenue -= inp.refundedAmount
+    /** ① 고객 총 결제(넷)에 추가할인·투어환불·입금 Refunded가 이미 반영됨 — 환불 재차감 없음 */
     return roundUsd2(totalRevenue)
   }
 

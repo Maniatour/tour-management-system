@@ -7,7 +7,7 @@ import { useTranslations } from 'next-intl'
 import { createClientSupabase } from '@/lib/supabase'
 import { generateTourId } from '@/lib/entityIds'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
-import { dedupeReservationIdsPreservingOrder, normalizeReservationIds } from '@/utils/tourUtils'
+import { dedupeReservationIdsPreservingOrder, normalizeReservationIds, resolveTeamTypeForTourCreate } from '@/utils/tourUtils'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { fetchToursNeedCheckData, type TourNeedCheckRow, type DuplicateAssignmentReservationRow, type UnassignedReservationNeedCheckRow } from '@/lib/toursNeedCheckStats'
 import { markTourReceiptNotRequired } from '@/lib/schedulePastTourFollowUp'
@@ -539,6 +539,9 @@ export function ToursNeedCheckModal({
         }
 
         const tourId = generateTourId()
+        const teamType = resolveTeamTypeForTourCreate({
+          product: { id: pid, name: r.productName },
+        })
         const { data: newTour, error: insertErr } = await supabase
           .from('tours')
           .insert({
@@ -548,6 +551,7 @@ export function ToursNeedCheckModal({
             reservation_ids: [rid],
             tour_status: 'scheduled',
             is_private_tour: false,
+            team_type: teamType,
           })
           .select()
           .single()

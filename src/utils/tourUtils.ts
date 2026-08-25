@@ -460,7 +460,7 @@ export function normalizeTourTeamType(raw: string | null | undefined): TeamTypeK
 /**
  * tours.team_type 미저장(또는 DB 컬럼 기본값 1guide만 있는 경우) 시
  * 투어 상세「팀 구성 & 차량 배정」기본값.
- * 밤도깨비(MDGCSUNRISE 포함), 그랜드서클 당일 투어 → 2가이드.
+ * 밤도깨비(MDGCSUNRISE 포함), 그랜드서클 당일 투어(MDGC1D) → 2가이드.
  */
 export function getDefaultTeamTypeForProduct(
   nameKo?: string | null,
@@ -471,7 +471,9 @@ export function getDefaultTeamTypeForProduct(
   if (
     productId === 'MDGCSUNRISE' ||
     productId.startsWith('MDGCSUNRISE') ||
-    productId.startsWith('MDGCSUNR')
+    productId.startsWith('MDGCSUNR') ||
+    productId === 'MDGC1D' ||
+    productId.startsWith('MDGC1D')
   ) {
     return '2guide'
   }
@@ -496,6 +498,11 @@ export function getDefaultTeamTypeForProduct(
   const enJoined = enParts.join(' ')
 
   if (koJoined.includes('밤도깨비') || /night\s*goblin|midnight\s*goblin/i.test(enJoined)) {
+    return '2guide'
+  }
+
+  // 상품명이 「당일 투어」(MDGC1D) — 그랜드서클이 이름에 없어도 2가이드
+  if (koJoined.includes('당일 투어') || koJoined.includes('당일투어')) {
     return '2guide'
   }
 

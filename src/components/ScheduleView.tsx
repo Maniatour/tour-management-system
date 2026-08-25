@@ -5,7 +5,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useR
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone, UserCheck, History, Receipt, Wallet } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone, UserCheck, History, Receipt, Wallet, Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
@@ -59,6 +59,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
+import AutoAssignModal from '@/components/tour/modals/AutoAssignModal'
 import {
   Select,
   SelectContent,
@@ -1039,6 +1040,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   })
   const [showGuideModal, setShowGuideModal] = useState(false)
   const [guideModalContent, setGuideModalContent] = useState({ title: '', content: '', tourId: '' })
+  const [showGuideModalAutoAssign, setShowGuideModalAutoAssign] = useState(false)
   const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; title: string } | null>(null)
   const [tourDetailIframeReloadNonce, setTourDetailIframeReloadNonce] = useState(0)
   const [updatingTourDetailModalStatusId, setUpdatingTourDetailModalStatusId] = useState<string | null>(null)
@@ -1310,6 +1312,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   // 가이드 모달 표시 함수
   const showGuideModalContent = (title: string, content: string, tourId: string = '') => {
     setGuideModalContent({ title, content, tourId })
+    setShowGuideModalAutoAssign(false)
     setShowGuideModal(true)
   }
 
@@ -5252,6 +5255,16 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     if (!guideModalContent.tourId) return null
     return tours.find((t: Tour) => t.id === guideModalContent.tourId) ?? null
   }, [guideModalContent.tourId, tours])
+
+  const getGuideModalCustomerName = useCallback(
+    (customerId: string) => getCustomerName(customerId, customers as Customer[]),
+    [customers],
+  )
+
+  const getGuideModalCustomerLanguage = useCallback((customerId: string) => {
+    const customer = (customers as Customer[]).find((row) => row.id === customerId)
+    return customer?.language ? String(customer.language) : ''
+  }, [customers])
 
   /** 선택한 투어에 배정된 예약 (요약 모달 목록) */
   const guideModalSelectedTourReservations = useMemo(() => {
@@ -10220,16 +10233,41 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       {showGuideModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
           <div className="bg-white rounded-lg p-5 max-w-xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-semibold text-gray-900">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h3 className="text-lg font-semibold text-gray-900 min-w-0 truncate">
                 {guideModalContent.title}
               </h3>
-              <button
-                onClick={() => setShowGuideModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-6 h-6" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {isScheduleStaff &&
+                guideModalRelatedTourCards.length >= 2 &&
+                guideModalTour?.product_id &&
+                guideModalTour?.tour_date &&
+                guideModalContent.tourId ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowGuideModalAutoAssign(true)}
+                    className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
+                    title={
+                      locale === 'ko'
+                        ? '조건에 맞게 팀 배정 제안 및 적용'
+                        : 'Auto-assign by language, choice, hotel, capacity'
+                    }
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    {locale === 'ko' ? '자동 배정' : 'Auto assign'}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowGuideModalAutoAssign(false)
+                    setShowGuideModal(false)
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
             </div>
             {guideModalRelatedTourCards.length > 0 ? (
               <div className="space-y-3">
@@ -10510,7 +10548,11 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 ) : null}
               </div>
               <button
-                onClick={() => setShowGuideModal(false)}
+                type="button"
+                onClick={() => {
+                  setShowGuideModalAutoAssign(false)
+                  setShowGuideModal(false)
+                }}
                 className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
               >
                 닫기
@@ -10519,6 +10561,25 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           </div>
         </div>
       )}
+
+      {showGuideModalAutoAssign &&
+        guideModalContent.tourId &&
+        guideModalTour?.product_id &&
+        guideModalTour?.tour_date && (
+          <AutoAssignModal
+            isOpen={showGuideModalAutoAssign}
+            onClose={() => setShowGuideModalAutoAssign(false)}
+            currentTourId={String(guideModalContent.tourId)}
+            productId={String(guideModalTour.product_id)}
+            tourDate={normalizeTourDateKey(guideModalTour.tour_date)}
+            getCustomerName={getGuideModalCustomerName}
+            getCustomerLanguage={getGuideModalCustomerLanguage}
+            overlayZIndex={1200}
+            onSuccess={async () => {
+              await refreshScheduleData()
+            }}
+          />
+        )}
 
       {/* 투어 상세 (스케줄 뷰에서 페이지 이동 없이 확인) */}
       <TourDetailResizableDialog
