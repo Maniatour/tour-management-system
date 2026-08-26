@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 import { MessageSquare, Plus, Send, User, Clock } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
@@ -65,6 +65,8 @@ interface ReservationFollowUpSectionProps {
   followUpPipelineCustomers?: Customer[]
   /** 상단 이메일 버튼 발송 성공 시 부모에서 증가 → 파이프라인 재조회 */
   followUpPipelineRefreshToken?: number
+  /** Follow up 제목 아래, 본문 위 */
+  belowTitle?: ReactNode
 }
 
 function formatDateTime(iso: string, locale: string = 'ko') {
@@ -90,6 +92,7 @@ export default function ReservationFollowUpSection({
   followUpPipelineReservation,
   followUpPipelineCustomers,
   followUpPipelineRefreshToken = 0,
+  belowTitle,
 }: ReservationFollowUpSectionProps) {
   const locale = useLocale()
   const tRes = useTranslations('reservations')
@@ -531,6 +534,8 @@ export default function ReservationFollowUpSection({
         <MessageSquare className="w-4 h-4" />
         {title}
       </h3>
+
+      {belowTitle ? <div className="min-w-0">{belowTitle}</div> : null}
 
       {showFollowUpPipeline ? (
         <div className="rounded-lg border border-teal-100 bg-teal-50/50 px-3 py-2.5 space-y-1.5">

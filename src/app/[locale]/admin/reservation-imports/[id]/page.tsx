@@ -24,6 +24,7 @@ import {
   resolveImportChannelVariantKey,
 } from '@/lib/resolveImportChannelVariant'
 import { fetchCustomerHintsForImportExtracted } from '@/lib/fetchImportCustomerHints'
+import { getImportedEmailPreviewParts } from '@/lib/importedEmailPreview'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import dynamic from 'next/dynamic'
 import { useReservationData } from '@/hooks/useReservationData'
@@ -75,10 +76,9 @@ export default function ReservationImportDetailPage() {
   const [pendingPriceInventoryQuery, setPendingPriceInventoryQuery] = useState<string | null>(
     null
   )
-  const isEmailHtml = Boolean(
-    row?.raw_body_text &&
-    (row.raw_body_text.trimStart().startsWith('<') || /<\/html>|<\/body>|<body/i.test(row.raw_body_text))
-  )
+  const emailPreview = getImportedEmailPreviewParts(row?.raw_body_text, row?.raw_body_html)
+  const hasEmailBody = Boolean(emailPreview.sourceCode)
+  const isEmailHtml = Boolean(emailPreview.htmlSrcDoc)
 
   const {
     customers: customersList = [],
@@ -776,7 +776,7 @@ export default function ReservationImportDetailPage() {
         </div>
 
         {/* 오른쪽(2/3): 이메일 본문 */}
-        {row.raw_body_text ? (
+        {hasEmailBody ? (
           <div className="lg:col-span-2 rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col min-h-0">
             <button
               type="button"
@@ -795,38 +795,51 @@ export default function ReservationImportDetailPage() {
             </button>
             {showEmailBody && (
               <>
-                {isEmailHtml && (
-                  <div className="flex border-b border-gray-200 bg-gray-50">
-                    <button
-                      type="button"
-                      onClick={() => setEmailBodyView('preview')}
-                      className={`px-4 py-2 text-sm font-medium ${emailBodyView === 'preview' ? 'text-primary border-b-2 border-primary bg-white' : 'text-gray-600 hover:text-gray-900'}`}
-                    >
-                      미리보기
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEmailBodyView('code')}
-                      className={`px-4 py-2 text-sm font-medium ${emailBodyView === 'code' ? 'text-primary border-b-2 border-primary bg-white' : 'text-gray-600 hover:text-gray-900'}`}
-                    >
-                      코드
-                    </button>
-                  </div>
-                )}
-                {emailBodyView === 'preview' && isEmailHtml ? (
-                  <div className="bg-gray-100 p-4 flex-1 min-h-0 overflow-auto">
-                    <iframe
-                      title="이메일 미리보기"
-                      sandbox="allow-same-origin allow-popups allow-scripts"
-                      srcDoc={row.raw_body_text}
-                      className="w-full min-h-[520px] border-0 rounded-lg bg-white shadow-sm"
-                      style={{ height: '560px' }}
-                    />
-                  </div>
+                <div className="flex border-b border-gray-200 bg-gray-50">
+                  <button
+                    type="button"
+                    onClick={() => setEmailBodyView('preview')}
+                    className={`px-4 py-2 text-sm font-medium ${emailBodyView === 'preview' ? 'text-primary border-b-2 border-primary bg-white' : 'text-gray-600 hover:text-gray-900'}`}
+                  >
+                    미리보기
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEmailBodyView('code')}
+                    className={`px-4 py-2 text-sm font-medium ${emailBodyView === 'code' ? 'text-primary border-b-2 border-primary bg-white' : 'text-gray-600 hover:text-gray-900'}`}
+                  >
+                    코드
+                  </button>
+                </div>
+                {emailBodyView === 'preview' ? (
+                  isEmailHtml && emailPreview.htmlSrcDoc ? (
+                    <div className="bg-gray-100 p-4 flex-1 min-h-0 overflow-auto">
+                      <iframe
+                        title="이메일 미리보기"
+                        sandbox="allow-same-origin allow-popups"
+                        srcDoc={emailPreview.htmlSrcDoc}
+                        className="w-full min-h-[720px] border-0 rounded-lg bg-white shadow-sm"
+                        style={{ height: '720px' }}
+                        onLoad={(e) => {
+                          const frame = e.currentTarget
+                          const doc = frame.contentDocument
+                          if (!doc?.documentElement) return
+                          const h = Math.max(doc.documentElement.scrollHeight, doc.body?.scrollHeight ?? 0)
+                          if (h > 0) frame.style.height = `${Math.min(Math.max(h + 24, 720), 2400)}px`
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="bg-white p-5 sm:p-6 flex-1 min-h-[520px] overflow-auto">
+                      <pre className="text-sm text-gray-800 whitespace-pre-wrap font-sans break-words leading-relaxed m-0">
+                        {emailPreview.plainText || '본문을 표시할 수 없습니다.'}
+                      </pre>
+                    </div>
+                  )
                 ) : (
                   <div className="p-0 flex-1 min-h-[520px] overflow-auto bg-[#1e1e1e]">
                     <pre className="p-4 text-xs text-[#d4d4d4] whitespace-pre-wrap font-mono break-words leading-relaxed block m-0">
-                      <code className="text-[#d4d4d4]">{row.raw_body_text}</code>
+                      <code className="text-[#d4d4d4]">{emailPreview.sourceCode}</code>
                     </pre>
                   </div>
                 )}

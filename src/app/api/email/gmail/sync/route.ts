@@ -8,7 +8,12 @@ import {
   parseWellsFargoAtmReceipt,
   WELLS_FARGO_ATM_PLATFORM_KEY,
 } from '@/lib/wellsFargoAtmReceipt'
-import { decodeGmailPayload, extractGmailMessageText, type GmailPart } from '@/lib/gmailMessageBody'
+import {
+  decodeGmailInlineHtmlAndText,
+  decodeGmailPayload,
+  extractGmailMessageText,
+  type GmailPart,
+} from '@/lib/gmailMessageBody'
 import type { Json } from '@/lib/database.types'
 
 export const maxDuration = 120
@@ -149,8 +154,12 @@ export async function POST(request: Request) {
 
     const subject = getHeader(full.payload.headers ?? [], 'Subject') ?? ''
     const from = getHeader(full.payload.headers ?? [], 'From')
+    const inline = decodeGmailInlineHtmlAndText(full.payload)
     const body =
-      (await extractGmailMessageText(full, accessToken, full.id)).trim() || decodeBody(full.payload)
+      inline.text.trim() ||
+      (await extractGmailMessageText(full, accessToken, full.id)).trim() ||
+      decodeBody(full.payload)
+    const html = inline.html.trim() || null
     const messageId = full.id ? `<${full.id}@gmail>` : null
     if (!messageId) return false
 
@@ -224,7 +233,7 @@ export async function POST(request: Request) {
         : extractReservationFromEmail({
           subject,
           text: body,
-          html: null,
+          html,
           sourceEmail: from,
         })
 
@@ -235,7 +244,7 @@ export async function POST(request: Request) {
       subject,
       received_at: receivedAt,
       raw_body_text: body.slice(0, 50000),
-      raw_body_html: null,
+      raw_body_html: html ? html.slice(0, 50000) : null,
       extracted_data: extracted_data as Json,
       status: 'pending',
     })

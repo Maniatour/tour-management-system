@@ -318,6 +318,10 @@ interface PricingSectionProps {
   } | null
   /** 가격 계산 안내 모달 — 예약 수정 모달 위에 표시 */
   helpModalOverlayZIndex?: number
+  onSavePricing?: () => void | Promise<void>
+  onResetPricing?: () => void
+  savePricingDisabled?: boolean
+  savePricingTitle?: string | undefined
 }
 
 export default function PricingSection({
@@ -347,6 +351,10 @@ export default function PricingSection({
   pricingDbSnapshot = null,
   dynamicPriceFormula = null,
   helpModalOverlayZIndex,
+  onSavePricing,
+  onResetPricing,
+  savePricingDisabled = false,
+  savePricingTitle,
   t
 }: PricingSectionProps) {
   const locale = useLocale()
@@ -962,30 +970,23 @@ export default function PricingSection({
     }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        console.warn('PricingSection: 세션이 없어서 입금 내역 조회를 건너뜁니다.')
+      const { data: paymentRecordsRaw, error } = await supabase
+        .from('payment_records')
+        .select('payment_status, amount')
+        .eq('reservation_id', reservationId)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.warn('PricingSection: 입금 내역 조회 실패', error)
         return
       }
 
-      const response = await fetch(`/api/payment-records?reservation_id=${reservationId}`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      })
-
-      if (!response.ok) {
-        console.warn('PricingSection: 입금 내역 조회 실패')
-        return
-      }
-
-      const data = await response.json()
-      const paymentRecords = data.paymentRecords || []
+      const paymentRecords = paymentRecordsRaw || []
 
       // 이 예약에 대한 입금 내역 유무 표시 (자동 업데이트 effect가 보증금을 덮어쓰지 않도록)
       hasPaymentRecordsRef.current = paymentRecords.length > 0
 
-      const normalized = paymentRecords.map((record: { payment_status: string; amount: number }) => ({
+      const normalized = paymentRecords.map((record) => ({
         payment_status: record.payment_status || '',
         amount: Number(record.amount) || 0,
       }))
@@ -3022,7 +3023,7 @@ export default function PricingSection({
       )}
       {/* 가격 정보 상태 뱃지 */}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <h3 className="text-sm font-medium text-gray-900">{t('form.pricingInfo')}</h3>
           {formData.channelId && (
             <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-sky-100 text-sky-800 border border-sky-200 text-xs font-medium" title={formData.channelId}>
@@ -3040,11 +3041,19 @@ export default function PricingSection({
           {!isExistingPricingLoaded && (
             <span className="px-2 py-1 bg-red-50 border border-red-200 rounded text-xs text-red-700">동적가격/계산값</span>
           )}
-          <span className="px-2 py-1 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700">
-            검정=DB값
-          </span>
-          <span className="px-2 py-1 bg-red-50 border border-red-200 rounded text-xs text-red-700">
-            빨강=계산/수정값
+          <span
+            className="group relative inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-gray-400 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            tabIndex={0}
+            aria-label="검정=DB값, 빨강=계산/수정값"
+          >
+            <HelpCircle className="h-4 w-4 cursor-help" strokeWidth={2} aria-hidden />
+            <span
+              role="tooltip"
+              className="pointer-events-none absolute left-1/2 top-full z-30 mt-1.5 hidden w-max -translate-x-1/2 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-left text-[11px] leading-relaxed shadow-lg group-hover:block group-focus-visible:block"
+            >
+              <span className="block font-medium text-gray-900">검정=DB값</span>
+              <span className="mt-0.5 block font-medium text-red-700">빨강=계산/수정값</span>
+            </span>
           </span>
           <div className="flex items-center space-x-1">
             {!formData.productId && (
@@ -3061,53 +3070,43 @@ export default function PricingSection({
             )}
           </div>
         </div>
-      </div>
-
-      {pricingAudit && (
-        <div className={`mb-3 rounded-lg border p-3 text-xs ${
-          pricingAudit.audited
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-            : 'border-amber-200 bg-amber-50 text-amber-900'
-        }`}>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1">
-              <label className="inline-flex items-center gap-2 font-semibold">
-                <input
-                  type="checkbox"
-                  checked={pricingAudit.audited}
-                  disabled={!pricingAudit.canToggle}
-                  onChange={(e) => onTogglePricingAudited?.(e.target.checked)}
-                  className="h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-60"
-                />
-                Audited
-                {!pricingAudit.canToggle && <span className="text-[11px] font-normal text-gray-500">(super 관리자만 체크 가능)</span>}
-              </label>
-              {pricingAudit.audited ? (
-                <div className="text-[11px] text-emerald-800">
-                  검수자: {pricingAudit.auditedByNickName || pricingAudit.auditedByName || pricingAudit.auditedByEmail || '-'}
-                  {pricingAudit.auditedAt ? ` · ${new Date(pricingAudit.auditedAt).toLocaleString('ko-KR')}` : ''}
-                </div>
-              ) : (
-                <div className="text-[11px] text-amber-800">아직 super 관리자 검수가 완료되지 않았습니다.</div>
-              )}
-            </div>
+        {pricingAudit && (
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             {pricingAudit.isLockedForCurrentUser && (
               <button
                 type="button"
                 onClick={onRequestPricingAuditModification}
-                className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
+                className="rounded-md bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700"
               >
                 수정 요청 보내기
               </button>
             )}
+            <label
+              className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+                pricingAudit.audited ? 'text-emerald-800' : 'text-gray-600'
+              }`}
+              title={
+                pricingAudit.audited
+                  ? `검수자: ${pricingAudit.auditedByNickName || pricingAudit.auditedByName || pricingAudit.auditedByEmail || '-'}${
+                      pricingAudit.auditedAt ? ` · ${new Date(pricingAudit.auditedAt).toLocaleString('ko-KR')}` : ''
+                    }`
+                  : !pricingAudit.canToggle
+                    ? 'Audited 체크는 super 관리자만 변경할 수 있습니다.'
+                    : '아직 super 관리자 검수가 완료되지 않았습니다.'
+              }
+            >
+              <input
+                type="checkbox"
+                checked={pricingAudit.audited}
+                disabled={!pricingAudit.canToggle}
+                onChange={(e) => onTogglePricingAudited?.(e.target.checked)}
+                className="h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-60"
+              />
+              Audited
+            </label>
           </div>
-          {pricingAudit.isLockedForCurrentUser && (
-            <p className="mt-2 text-[11px] text-amber-800">
-              Audited 된 가격 정보는 OP/Manager/Office Manager가 직접 수정할 수 없습니다.
-            </p>
-          )}
-        </div>
-      )}
+        )}
+      </div>
 
       <div className={`grid grid-cols-1 md:grid-cols-3 gap-3 ${pricingAudit?.isLockedForCurrentUser ? 'pointer-events-none opacity-70' : ''}`}>
         {/* 왼쪽 열: 상품 가격 + 초이스 (위) + 할인/추가 비용 (아래) - 1/3 너비 */}
@@ -3757,6 +3756,32 @@ export default function PricingSection({
               </div>
             </div>
           </div>
+
+          {(onSavePricing || onResetPricing) && (
+            <div className="flex items-center justify-end gap-2">
+              {onSavePricing && (
+                <button
+                  type="button"
+                  onClick={() => void onSavePricing()}
+                  disabled={savePricingDisabled}
+                  title={savePricingTitle}
+                  className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  가격 저장
+                </button>
+              )}
+              {onResetPricing && (
+                <button
+                  type="button"
+                  onClick={onResetPricing}
+                  disabled={savePricingDisabled}
+                  className="px-2 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  가격 초기화
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* 오른쪽 열: 가격 계산 - 2/3 너비 */}

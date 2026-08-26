@@ -139,11 +139,20 @@ export async function extractGmailMessageText(
   if (snippet && !zelleBodyLooksComplete(body)) {
     body = body ? `${body}\n${snippet}` : snippet
   }
-  if (!zelleBodyLooksComplete(body)) {
+  /**
+   * RAW RFC822는 Zelle처럼 Gmail 파트가 불완전할 때만 사용한다.
+   * 예약 알림(Wix 등)에 붙이면 DKIM·base64가 본문 미리보기에 그대로 노출된다.
+   */
+  const maybeZelle = /zelle|you sent money|payment sent/i.test(`${body}\n${snippet}`)
+  if (!zelleBodyLooksComplete(body) && (maybeZelle || !body.trim())) {
     const raw = await fetchGmailRawRfc822(accessToken, gmailId)
     if (raw.trim()) {
       const decoded = decodeQuotedPrintable(raw)
-      body = zelleBodyLooksComplete(decoded) ? decoded : body ? `${body}\n${decoded}` : decoded
+      if (zelleBodyLooksComplete(decoded)) {
+        body = decoded
+      } else if (!body.trim() && decoded.trim()) {
+        body = decoded
+      }
     }
   }
   return body.trim()

@@ -7188,6 +7188,18 @@ export default function ReservationForm({
                   followUpPipelineReservation={followUpPipelineReservationMerged}
                   followUpPipelineCustomers={customers}
                   followUpPipelineRefreshToken={followUpPipelineSnapshotRefreshToken}
+                  belowTitle={
+                    formData.addedTime ? (
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-medium tabular-nums whitespace-nowrap"
+                        title={locale === 'ko' ? '최초 등록일' : 'Registered at'}
+                      >
+                        {locale === 'ko' ? '최초 등록일' : 'Registered'}{' '}
+                        {formatLasVegasDateTime(formData.addedTime, locale) ??
+                          String(formData.addedTime).replace('T', ' ').slice(0, 16)}
+                      </span>
+                    ) : null
+                  }
                 />
               </div>
             )}
@@ -7242,19 +7254,40 @@ export default function ReservationForm({
               {/* 예약 정보 (투어 정보, 참가자) */}
               <div className="space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:pt-4 sm:px-4 sm:pb-1 bg-gray-50/50 max-lg:order-2 lg:min-h-0 lg:flex-none lg:h-auto">
                 <div className="flex items-center justify-between gap-2 mb-2 lg:mb-0">
-                  <h3 className="text-sm font-medium text-gray-900 shrink-0">
-                    예약 정보
-                  </h3>
+                  <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                    <h3 className="text-sm font-medium text-gray-900 shrink-0">
+                      예약 정보
+                    </h3>
+                    <label className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-violet-50 border border-violet-200 cursor-pointer hover:bg-violet-100 focus-within:ring-2 focus-within:ring-violet-400 focus-within:ring-offset-1">
+                      <input
+                        type="checkbox"
+                        checked={formData.isPrivateTour}
+                        onChange={(e) => {
+                          setPricingFieldsFromDb((prev) => ({ ...prev, totalPrice: false }))
+                          setFormData({ ...formData, isPrivateTour: e.target.checked })
+                        }}
+                        className="h-4 w-4 text-violet-600 focus:ring-violet-500 border-violet-300 rounded"
+                      />
+                      <span className="text-xs font-medium text-violet-800">단독투어</span>
+                    </label>
+                    {formData.isPrivateTour && (
+                      <div className="flex items-center space-x-1">
+                        <span className="text-xs text-gray-600">+$</span>
+                        <input
+                          type="number"
+                          value={formData.privateTourAdditionalCost}
+                          onChange={(e) => {
+                            setPricingFieldsFromDb((prev) => ({ ...prev, totalPrice: false }))
+                            setFormData({ ...formData, privateTourAdditionalCost: Number(e.target.value) || 0 })
+                          }}
+                          className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring"
+                          step="0.01"
+                          placeholder="0"
+                        />
+                      </div>
+                    )}
+                  </div>
                   <div className="flex items-center justify-end gap-2 min-w-0 flex-shrink-0 ml-auto">
-                    {formData.addedTime ? (
-                      <span
-                        className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-medium tabular-nums whitespace-nowrap"
-                        title={locale === 'ko' ? '최초 등록일' : 'Registered at'}
-                      >
-                        {locale === 'ko' ? '최초 등록일' : 'Registered'}{' '}
-                        {formatLasVegasDateTime(formData.addedTime, locale) ?? String(formData.addedTime).replace('T', ' ').slice(0, 16)}
-                      </span>
-                    ) : null}
                     {/* 모바일/태블릿 전용: 타이틀과 같은 줄 오른쪽 끝 정렬 */}
                     <div className="hidden max-lg:block lg:hidden flex-shrink-0">
                       <label className="sr-only" htmlFor="reservation-status-section">{t('form.status')}</label>
@@ -7475,94 +7508,6 @@ export default function ReservationForm({
                       계산식 적용
                     </button>
                   ) : null}
-                  <label className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-violet-50 border border-violet-200 cursor-pointer hover:bg-violet-100 focus-within:ring-2 focus-within:ring-violet-400 focus-within:ring-offset-1">
-                    <input
-                      type="checkbox"
-                      checked={formData.isPrivateTour}
-                      onChange={(e) => {
-                        setPricingFieldsFromDb((prev) => ({ ...prev, totalPrice: false }))
-                        setFormData({ ...formData, isPrivateTour: e.target.checked })
-                      }}
-                      className="h-4 w-4 text-violet-600 focus:ring-violet-500 border-violet-300 rounded"
-                    />
-                    <span className="text-xs font-medium text-violet-800">단독투어</span>
-                  </label>
-                  {formData.isPrivateTour && (
-                    <div className="flex items-center space-x-1">
-                      <span className="text-xs text-gray-600">+$</span>
-                      <input
-                        type="number"
-                        value={formData.privateTourAdditionalCost}
-                        onChange={(e) => {
-                          setPricingFieldsFromDb((prev) => ({ ...prev, totalPrice: false }))
-                          setFormData({ ...formData, privateTourAdditionalCost: Number(e.target.value) || 0 })
-                        }}
-                        className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring"
-                        step="0.01"
-                        placeholder="0"
-                      />
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        if (!effectiveReservationId) {
-                          alert(locale === 'ko' ? '가격 정보만 저장하려면 먼저 예약을 저장해 주세요.' : 'Please save the reservation first to save pricing.')
-                          return
-                        }
-                        await savePricingInfo(effectiveReservationId)
-                        alert('가격 정보가 저장되었습니다!')
-                      } catch (error) {
-                        const message = error instanceof Error ? error.message : ''
-                        if (message === 'AUDIT_SAVE_CANCELLED') {
-                          alert('Audited 가격 정보 저장을 취소했습니다.')
-                        } else if (message.includes('Audited')) {
-                          alert(message)
-                        } else {
-                          alert('가격 정보 저장 중 오류가 발생했습니다.')
-                        }
-                      }
-                    }}
-                    disabled={pricingAudit.audited && !isSuperPricingAdmin}
-                    title={pricingAudit.audited && !isSuperPricingAdmin ? 'Audited 가격 정보는 super 관리자만 저장할 수 있습니다.' : undefined}
-                    className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    저장
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPricingFieldsFromDb({})
-                      setFormData((prev: any) => ({
-                        ...prev,
-                        adultProductPrice: 0,
-                        childProductPrice: 0,
-                        infantProductPrice: 0,
-                        selectedChoices: {},
-                        couponCode: '',
-                        couponDiscount: 0,
-                        additionalDiscount: 0,
-                        additionalCost: 0,
-                        refundReason: '',
-                        refundAmount: 0,
-                        cardFee: 0,
-                        tax: 0,
-                        prepaymentCost: 0,
-                        prepaymentTip: 0,
-                        selectedOptionalOptions: {},
-                        depositAmount: 0,
-                        isPrivateTour: false,
-                        privateTourAdditionalCost: 0,
-                        commission_percent: 0,
-                        commission_amount: 0,
-                        productChoices: []
-                      }))
-                    }}
-                    className="px-2 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
-                  >
-                    초기화
-                  </button>
                 </div>
               </div>
               <PricingSection
@@ -7614,6 +7559,58 @@ export default function ReservationForm({
                 products={products}
                 pricingDbSnapshot={pricingDbSnapshot}
                 dynamicPriceFormula={dynamicPriceFormula}
+                savePricingDisabled={pricingAudit.audited && !isSuperPricingAdmin}
+                savePricingTitle={
+                  pricingAudit.audited && !isSuperPricingAdmin
+                    ? 'Audited 가격 정보는 super 관리자만 저장할 수 있습니다.'
+                    : undefined
+                }
+                onSavePricing={async () => {
+                  try {
+                    if (!effectiveReservationId) {
+                      alert(locale === 'ko' ? '가격 정보만 저장하려면 먼저 예약을 저장해 주세요.' : 'Please save the reservation first to save pricing.')
+                      return
+                    }
+                    await savePricingInfo(effectiveReservationId)
+                    alert('가격 정보가 저장되었습니다!')
+                  } catch (error) {
+                    const message = error instanceof Error ? error.message : ''
+                    if (message === 'AUDIT_SAVE_CANCELLED') {
+                      alert('Audited 가격 정보 저장을 취소했습니다.')
+                    } else if (message.includes('Audited')) {
+                      alert(message)
+                    } else {
+                      alert('가격 정보 저장 중 오류가 발생했습니다.')
+                    }
+                  }
+                }}
+                onResetPricing={() => {
+                  setPricingFieldsFromDb({})
+                  setFormData((prev: any) => ({
+                    ...prev,
+                    adultProductPrice: 0,
+                    childProductPrice: 0,
+                    infantProductPrice: 0,
+                    selectedChoices: {},
+                    couponCode: '',
+                    couponDiscount: 0,
+                    additionalDiscount: 0,
+                    additionalCost: 0,
+                    refundReason: '',
+                    refundAmount: 0,
+                    cardFee: 0,
+                    tax: 0,
+                    prepaymentCost: 0,
+                    prepaymentTip: 0,
+                    selectedOptionalOptions: {},
+                    depositAmount: 0,
+                    isPrivateTour: false,
+                    privateTourAdditionalCost: 0,
+                    commission_percent: 0,
+                    commission_amount: 0,
+                    productChoices: []
+                  }))
+                }}
               />
             </div>
           </div>
