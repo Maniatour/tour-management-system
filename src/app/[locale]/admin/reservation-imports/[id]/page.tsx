@@ -294,7 +294,7 @@ export default function ReservationImportDetailPage() {
     if (!raw || !pickupHotelsList?.length) return
     const isAlreadyId = pickupHotelsList.some((h) => h.id === raw)
     if (isAlreadyId) return
-    const matchedId = matchPickupHotelId(raw, pickupHotelsList as Array<{ id: string; hotel?: string | null; pick_up_location?: string | null; address?: string | null }>)
+    const matchedId = matchPickupHotelId(raw, pickupHotelsList as Array<{ id: string; hotel?: string | null; pick_up_location?: string | null; address?: string | null; internal_name?: string | null }>)
     if (matchedId) setForm((f) => (f.pickup_hotel === matchedId ? f : { ...f, pickup_hotel: matchedId }))
   }, [form.pickup_hotel, pickupHotelsList])
 

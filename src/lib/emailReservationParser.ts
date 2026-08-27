@@ -1,6 +1,7 @@
 import type { ExtractedReservationData } from '@/types/reservationImport'
 import {
   PICKUP_IMPORT_NOT_DECIDED_LABEL,
+  canonicalizeImportedPickupHotelQuery,
   isPickupHotelImportTextUnusable,
 } from '@/lib/reservationImportPickup'
 
@@ -936,7 +937,7 @@ function extractGygPickupHotelFromText(text: string): string | undefined {
   if (!raw) return undefined
   if (/^(reference|number\s*of|main\s*customer|date|tour\s*language)/i.test(raw)) return undefined
   const hotelNamePart = raw.split(',')[0].trim()
-  const value = hotelNamePart || raw
+  const value = normalizePickupHotelFromEmail(hotelNamePart || raw)
   return value.length >= 3 ? value : undefined
 }
 
@@ -1425,10 +1426,7 @@ function parseKlookParticipantXCount(plain: string, map: Map<string, string>): n
 
 /** 이메일에서 추출한 픽업/출발지 문자열을 픽업 호텔 드롭다운 매칭용으로 정규화 */
 function normalizePickupHotelFromEmail(raw: string): string {
-  const t = raw.trim()
-  if (!t) return raw
-  if (/\bTrump\s+(?:International\s+)?Hotel\s+(?:Las\s+Vegas)?/i.test(t)) return 'Trump hotel'
-  return t
+  return canonicalizeImportedPickupHotelQuery(raw)
 }
 
 /**
@@ -2041,7 +2039,7 @@ function extractViator(
   if (pickupMatch) {
     const full = pickupMatch[1].trim()
     const hotelNamePart = full.split(',')[0].trim()
-    out.pickup_hotel = hotelNamePart || full
+    out.pickup_hotel = normalizePickupHotelFromEmail(hotelNamePart || full)
   }
 
   // Travelers: 2 Adults → 성인 인원 (Traveler Names 와 구분: 뒤에 Adults)

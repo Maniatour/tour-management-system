@@ -2,7 +2,7 @@
 import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone, Search, ChevronDown, ExternalLink, Mail, Star } from 'lucide-react'
+import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone, Search, ChevronDown, ExternalLink, Mail, Star, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
@@ -39,6 +39,7 @@ import {
   type ReviewBonusSummary,
 } from '@/lib/reviewBonusPoints'
 import BiweeklyReviewBonusSection from '@/components/attendance/BiweeklyReviewBonusSection'
+import { buildPaymentEarningsVerificationLetterHtml } from '@/lib/paymentEarningsVerificationLetter'
 
 interface BiweeklyCalculatorModalProps {
   isOpen: boolean
@@ -117,6 +118,7 @@ interface BiweeklyTeamMember {
   display_name: string | null
   languages?: string[] | null
   phone?: string | null
+  hire_date?: string | null
   /** DB null/undefined는 활성으로 간주 */
   is_active: boolean
 }
@@ -310,7 +312,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
       const { data, error } = await supabase
         .from('team')
-        .select('email, name_ko, name_en, position, display_name, languages, phone, is_active')
+        .select('email, name_ko, name_en, position, display_name, languages, phone, is_active, hire_date')
         .order('name_ko')
 
       if (error) {
@@ -1797,6 +1799,58 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     printHtmlDocument(printContent, '2주급 계산기')
   }
 
+  const handlePrintVerificationLetter = async () => {
+    if (!selectedEmployee || !startDate || !endDate) {
+      alert('직원과 기간을 먼저 지정해 주세요.')
+      return
+    }
+    const selectedMember = teamMembers.find((m) => m.email === selectedEmployee)
+    const employeeName =
+      selectedMember?.name_en?.trim() ||
+      selectedMember?.display_name?.trim() ||
+      selectedMember?.name_ko?.trim() ||
+      selectedEmployee
+    const logoPath =
+      (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_COMPANY_LOGO_URL) ||
+      '/favicon.png'
+    let logoUrl = logoPath.startsWith('http') ? logoPath : `${window.location.origin}${logoPath}`
+    try {
+      const res = await fetch(logoUrl)
+      if (res.ok) {
+        const blob = await res.blob()
+        logoUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(String(reader.result || ''))
+          reader.onerror = () => reject(new Error('logo read failed'))
+          reader.readAsDataURL(blob)
+        })
+      }
+    } catch {
+      /* keep absolute URL if embed fails */
+    }
+    const html = buildPaymentEarningsVerificationLetterHtml({
+      employeeName,
+      employeeNameKo: selectedMember?.name_ko ?? null,
+      email: selectedEmployee,
+      phone: selectedMember?.phone?.trim() || '',
+      position: selectedMember?.position || '',
+      hireDate: selectedMember?.hire_date || null,
+      isActive: selectedMember?.is_active !== false,
+      startDate,
+      endDate,
+      hourlyRate: hourlyRate || null,
+      totalHours,
+      attendancePay: selectedAttendancePay,
+      guideFee: tourPay,
+      tipsShare: tipPay,
+      reviewBonus: reviewBonusPay,
+      totalPay: totalPay - personalCarPay,
+      showHourlyRate: !isGuideOrDriverPosition(selectedMember?.position),
+      logoUrl,
+    })
+    printHtmlDocument(html, 'Payment & Earnings Verification Letter')
+  }
+
   // 시간 포맷팅 함수
   const formatTime = (timeString: string | null) => {
     if (!timeString) return '-'
@@ -2548,6 +2602,14 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
           </div>
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <button
+              onClick={handlePrintVerificationLetter}
+              className="p-2 text-gray-400 hover:text-gray-600 transition-colors touch-manipulation"
+              title="PAYMENT & EARNINGS VERIFICATION Letter 인쇄"
+              type="button"
+            >
+              <FileText className="w-5 h-5 sm:w-6 sm:h-6" />
+            </button>
+            <button
               onClick={handlePrint}
               className="p-2 text-gray-400 hover:text-gray-600 transition-colors touch-manipulation"
               title="프린트"
@@ -2914,6 +2976,38 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                   </div>
                 )
               })()}
+            </div>
+          </div>
+
+          <div className="mt-6 sm:mt-8 rounded-xl border border-slate-200 bg-slate-50/80 p-4 sm:p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 tracking-tight">
+                  PAYMENT & EARNINGS VERIFICATION Letter
+                </h3>
+                <p className="mt-1 text-sm text-gray-600 leading-relaxed">
+                  위에서 지정한 기간과 직원의 2주급 내역으로 급여·소득 확인서를 인쇄합니다.
+                </p>
+                <p className="mt-2 text-sm text-gray-800">
+                  <span className="text-gray-500">기간:</span>{' '}
+                  <span className="font-medium tabular-nums">
+                    {startDate || '—'} ~ {endDate || '—'}
+                  </span>
+                  <span className="mx-2 text-gray-300">|</span>
+                  <span className="text-gray-500">총 지급액:</span>{' '}
+                  <span className="font-semibold tabular-nums text-emerald-700">
+                    ${formatCurrency(totalPay)}
+                  </span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handlePrintVerificationLetter}
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 transition-colors shrink-0"
+              >
+                <FileText className="w-4 h-4" />
+                레터 인쇄
+              </button>
             </div>
           </div>
 

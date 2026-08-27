@@ -1,5 +1,8 @@
 import { isGarbageImportedCustomerName } from '@/lib/emailReservationParser'
-import { isPickupImportNotDecidedLabel } from '@/lib/reservationImportPickup'
+import {
+  canonicalizeImportedPickupHotelQuery,
+  isPickupImportNotDecidedLabel,
+} from '@/lib/reservationImportPickup'
 import type { Database } from '@/lib/supabase'
 import type { 
   Customer, 
@@ -19,19 +22,25 @@ export const getPickupHotelDisplay = (hotelId: string, pickupHotels: Array<{ id:
 /** 이메일 등에서 추출한 픽업 주소/호텔명 문자열을 pickup_hotels 목록과 매칭해 id 반환 (없으면 null). 짧은/일반 문자열로 첫 행만 걸리는 오매칭을 줄인다. */
 export function matchPickupHotelId(
   extractedText: string | null | undefined,
-  pickupHotels: Array<{ id: string; hotel?: string | null; pick_up_location?: string | null; address?: string | null }> | null
+  pickupHotels: Array<{
+    id: string
+    hotel?: string | null
+    pick_up_location?: string | null
+    address?: string | null
+    internal_name?: string | null
+  }> | null
 ): string | null {
   if (!extractedText?.trim() || !pickupHotels?.length) return null
-  let query = extractedText.trim()
+  const query = canonicalizeImportedPickupHotelQuery(extractedText.trim())
   if (isPickupImportNotDecidedLabel(query)) {
     const nd = pickupHotels.find(
       (h) =>
         /not\s*decided/i.test(h.hotel ?? '') ||
-        /not\s*decided/i.test(h.pick_up_location ?? '')
+        /not\s*decided/i.test(h.pick_up_location ?? '') ||
+        /not\s*decided/i.test(h.internal_name ?? '')
     )
     if (nd) return nd.id
   }
-  if (/\bTrump\s+(?:International\s+)?Hotel\s+(?:Las\s+Vegas)?/i.test(query)) query = 'Trump hotel'
   const qNorm = query.replace(/\s+/g, ' ').trim().toLowerCase()
   const q = qNorm
   const hotelNamePart = q.split(',')[0].trim()
@@ -39,42 +48,63 @@ export function matchPickupHotelId(
   /** "las vegas" 등 짧은 공통 구간으로 잘못된 호텔이 먼저 잡히는 것 방지 (Trump 등 짧은 별칭은 하단 분기) */
   const MIN_SUB = 10
 
+  let bestId: string | null = null
+  let bestScore = -1
+  const consider = (id: string, score: number) => {
+    if (score > bestScore) {
+      bestScore = score
+      bestId = id
+    }
+  }
+
   for (const h of pickupHotels) {
     const hotel = (h.hotel ?? '').toLowerCase().replace(/\s+/g, ' ').trim()
+    const internal = (h.internal_name ?? '').toLowerCase().replace(/\s+/g, ' ').trim()
     const location = (h.pick_up_location ?? '').toLowerCase().replace(/\s+/g, ' ').trim()
     const address = (h.address ?? '').toLowerCase().replace(/\s+/g, ' ').trim()
-    if (!hotel && !location && !address) continue
+    if (!hotel && !location && !address && !internal) continue
     const disp = `${hotel} - ${location}`.replace(/\s*-\s*$/, '').trim()
     if (disp && disp === qNorm) return h.id
     if (hotel && hotel === qNorm) return h.id
-    if (
-      hotel &&
-      hotelNamePart.length >= MIN_SUB &&
-      (hotel.includes(hotelNamePart) || hotelNamePart.includes(hotel))
-    ) {
-      return h.id
+    if (internal && internal === qNorm) return h.id
+    if (hotel && hotel === hotelNamePart) return h.id
+    if (internal && internal === hotelNamePart) return h.id
+
+    for (const name of [hotel, internal]) {
+      if (!name) continue
+      if (
+        hotelNamePart.length >= MIN_SUB &&
+        (name.includes(hotelNamePart) || hotelNamePart.includes(name))
+      ) {
+        // 더 긴 카탈로그명이 이김: "Signature at MGM" > "mgm grand"
+        consider(h.id, 1000 + name.length)
+      }
+      if (name.length >= 8 && q.includes(name)) {
+        consider(h.id, 500 + name.length)
+      }
     }
-    if (hotel && hotel.length >= 8 && q.includes(hotel)) return h.id
     if (
       address &&
       addressPart.length >= MIN_SUB &&
       (address.includes(addressPart) || addressPart.includes(address) || q.includes(address))
     ) {
-      return h.id
+      consider(h.id, 200 + Math.min(address.length, 40))
     }
     if (
       location &&
       hotelNamePart.length >= MIN_SUB &&
       (location.includes(hotelNamePart) || hotelNamePart.includes(location))
     ) {
-      return h.id
+      consider(h.id, 100 + location.length)
     }
   }
+  if (bestId) return bestId
   if (q.includes('trump')) {
     const byTrump = pickupHotels.find(
       (h) =>
         (h.hotel ?? '').toLowerCase().includes('trump') ||
-        (h.pick_up_location ?? '').toLowerCase().includes('trump')
+        (h.pick_up_location ?? '').toLowerCase().includes('trump') ||
+        (h.internal_name ?? '').toLowerCase().includes('trump')
     )
     if (byTrump) return byTrump.id
   }

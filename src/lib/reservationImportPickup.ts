@@ -4,6 +4,18 @@
  */
 export const PICKUP_IMPORT_NOT_DECIDED_LABEL = '❗ Not Decided - '
 
+/**
+ * OTA 이메일 호텔명을 pickup_hotels 카탈로그 매칭용으로 정규화.
+ * "The Signature at MGM Grand" 는 MGM Grand 부분문자와 겹치므로 Signature at MGM 으로 고정.
+ */
+export function canonicalizeImportedPickupHotelQuery(raw: string): string {
+  const t = raw.trim()
+  if (!t) return raw
+  if (/\bTrump\s+(?:International\s+)?Hotel\s+(?:Las\s+Vegas)?/i.test(t)) return 'Trump hotel'
+  if (/\b(?:the\s+)?signature\s+at\s+mgm(?:\s+grand)?\b/i.test(t)) return 'Signature at MGM'
+  return t
+}
+
 /** 이 값이면 이미 "미정" 픽업으로 처리 중 — 재판정하지 않음 */
 export function isPickupImportNotDecidedLabel(text: string | null | undefined): boolean {
   const t = (text ?? '').trim().toLowerCase()
