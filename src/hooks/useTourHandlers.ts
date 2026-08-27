@@ -9,6 +9,11 @@ import {
   reservationIdsLooselyEqual,
   sameTourProductAndDate,
 } from '@/utils/tourUtils'
+import {
+  emitStaffAssignmentLockChanged,
+  isAssistantAssignmentLocked,
+  isGuideAssignmentLocked,
+} from '@/lib/staffAssignmentLock'
 
 export function useTourHandlers() {
   // 단독투어 상태 업데이트 함수
@@ -128,6 +133,16 @@ export function useTourHandlers() {
     console.log('팀 타입 변경 시작:', { tourId: tour.id, teamType: type })
 
     try {
+      const { data: currentTour } = await (supabase as any)
+        .from('tours')
+        .select('assistant_assignment_locked, assistant_id')
+        .eq('id', tour.id)
+        .maybeSingle()
+
+      if (type === '1guide' && isAssistantAssignmentLocked(currentTour)) {
+        return false
+      }
+
       const updateData: { team_type: string; assistant_id?: string | null } = { team_type: type }
       
       if (type === '1guide') {
@@ -161,6 +176,16 @@ export function useTourHandlers() {
     if (!tour) return
 
     try {
+      const { data: currentTour } = await (supabase as any)
+        .from('tours')
+        .select('guide_assignment_locked')
+        .eq('id', tour.id)
+        .maybeSingle()
+
+      if (isGuideAssignmentLocked(currentTour)) {
+        return false
+      }
+
       // tour_guide_id는 team 테이블의 email 값을 직접 저장
       // 가이드 배정 변경 시 가이드에게 전달(부여) 전 대기 상태로 리셋
       const updateData: { tour_guide_id: string; assistant_id?: string | null; assignment_status?: string } = { 
@@ -195,6 +220,16 @@ export function useTourHandlers() {
     if (!tour) return
 
     try {
+      const { data: currentTour } = await (supabase as any)
+        .from('tours')
+        .select('assistant_assignment_locked')
+        .eq('id', tour.id)
+        .maybeSingle()
+
+      if (isAssistantAssignmentLocked(currentTour)) {
+        return false
+      }
+
       // assistant_id는 team 테이블의 email 값을 직접 저장
       const { error } = await supabase
         .from('tours')
@@ -219,6 +254,46 @@ export function useTourHandlers() {
   }, [])
 
   // 투어 노트 변경 함수
+  const handleStaffAssignmentLockChange = useCallback(
+    async (
+      tour: {
+        id: string
+        guide_assignment_locked?: boolean | null
+        assistant_assignment_locked?: boolean | null
+      },
+      patch: { guide_assignment_locked?: boolean; assistant_assignment_locked?: boolean },
+    ) => {
+      if (!tour) return false
+
+      try {
+        const { error } = await (supabase as any)
+          .from('tours')
+          .update(patch as Database['public']['Tables']['tours']['Update'])
+          .eq('id', tour.id)
+
+        if (error) {
+          console.error('Error updating staff assignment lock:', error)
+          alert('배정 고정 상태 업데이트 중 오류가 발생했습니다.')
+          return false
+        }
+
+        emitStaffAssignmentLockChanged({
+          tourId: tour.id,
+          guide_assignment_locked:
+            patch.guide_assignment_locked ?? isGuideAssignmentLocked(tour),
+          assistant_assignment_locked:
+            patch.assistant_assignment_locked ?? isAssistantAssignmentLocked(tour),
+        })
+        return true
+      } catch (error) {
+        console.error('Error updating staff assignment lock:', error)
+        alert('배정 고정 상태 업데이트 중 오류가 발생했습니다.')
+        return false
+      }
+    },
+    [],
+  )
+
   const handleTourNoteChange = useCallback(async (tour: { id: string }, note: string) => {
     if (!tour) return
 
@@ -646,6 +721,7 @@ export function useTourHandlers() {
     handleTeamTypeChange,
     handleGuideSelect,
     handleAssistantSelect,
+    handleStaffAssignmentLockChange,
     handleTourNoteChange,
     handleAssignReservation,
     handleMoveReservationBetweenTours,

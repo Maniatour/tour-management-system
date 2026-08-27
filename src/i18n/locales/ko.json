@@ -4992,7 +4992,12 @@
       "teamType": "팀 타입",
       "memberTabActive": "활성",
       "memberTabInactive": "비활성",
-      "maxCapacityHint": "저장 시 차종(차량 관리) 탑승 정원으로 최대 인원이 맞춰집니다."
+      "maxCapacityHint": "저장 시 차종(차량 관리) 탑승 정원으로 최대 인원이 맞춰집니다.",
+      "lock": "고정",
+      "locked": "고정됨",
+      "lockAssignment": "배정 고정",
+      "unlockAssignment": "배정 고정 해제",
+      "lockHint": "고객이 지정한 가이드가 스케줄에서 다른 팀으로 옮겨지거나 빠지지 않도록 배정을 고정합니다."
     },
     "calendar": {
       "title": "투어 달력",
@@ -5140,7 +5145,11 @@
         "defaultValue": "기본값",
         "teamType": "팀 타입",
         "memberTabActive": "활성",
-        "memberTabInactive": "비활성"
+        "memberTabInactive": "비활성",
+        "lock": "고정",
+        "locked": "고정됨",
+        "lockAssignment": "배정 고정",
+        "unlockAssignment": "배정 고정 해제"
       },
       "months": {
         "0": "1월",

@@ -11,6 +11,7 @@ import {
   FileText,
   History,
   Hotel,
+  Pin,
   Mail,
   Printer,
   Smartphone,
@@ -137,6 +138,11 @@ type ScheduleGuideTourInfoCardProps = {
   onSelectGuide: (email: string | null) => void
   onSelectAssistant: (email: string | null) => void
   onSwapGuideAssistant: () => void
+  guideAssignmentLocked?: boolean
+  assistantAssignmentLocked?: boolean
+  onLockedAssignmentAttempt?: (role: 'guide' | 'assistant' | 'both') => void
+  onToggleGuideAssignmentLock?: () => void
+  onToggleAssistantAssignmentLock?: () => void
   onSelectVehicle: (id: string | null) => void
   onSelectTourStatus: (status: string) => void
   onSelectAssignmentStatus: (status: GuideAssignmentStatusValue) => void
@@ -210,6 +216,15 @@ function canyonChoiceBadgeClass(key: 'X' | 'L' | 'U') {
   return 'bg-amber-100 text-amber-800 border-amber-200'
 }
 
+function staffBadgeClass(assigned: boolean) {
+  return [
+    'inline-flex items-center gap-0.5 rounded-lg border py-0.5 pl-0.5 pr-2 text-xs font-medium',
+    assigned
+      ? 'border-border bg-white text-gray-900'
+      : 'border-dashed border-amber-300 bg-amber-50 text-amber-950',
+  ].join(' ')
+}
+
 function staffButtonClass(assigned: boolean) {
   return [
     'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors',
@@ -240,6 +255,11 @@ export default function ScheduleGuideTourInfoCard({
   onSelectGuide,
   onSelectAssistant,
   onSwapGuideAssistant,
+  guideAssignmentLocked = false,
+  assistantAssignmentLocked = false,
+  onLockedAssignmentAttempt,
+  onToggleGuideAssignmentLock,
+  onToggleAssistantAssignmentLock,
   onSelectVehicle,
   onSelectTourStatus,
   onSelectAssignmentStatus,
@@ -374,6 +394,17 @@ export default function ScheduleGuideTourInfoCard({
 
   const openEdit = (target: EditTarget) => {
     if (!isStaff || !target) return
+    if (target === 'guide' && guideAssignmentLocked) {
+      onLockedAssignmentAttempt?.('guide')
+      return
+    }
+    if (target === 'assistant' && assistantAssignmentLocked) {
+      onLockedAssignmentAttempt?.('assistant')
+      return
+    }
+    if (target === 'teamType' && assistantAssignmentLocked) {
+      // 1가이드로 바꾸면 어시가 해제되므로, 편집은 열되 실제 변경은 apply 쪽에서 막음
+    }
     setEditTarget(target)
   }
 
@@ -541,20 +572,53 @@ export default function ScheduleGuideTourInfoCard({
 
         {/* 스태프 · 차량 · 팀 구성 */}
         <div className="flex flex-wrap items-center gap-2 mb-2.5">
-          <button
-            type="button"
-            disabled={!isStaff}
-            onClick={(e) => {
-              e.stopPropagation()
-              openEdit('guide')
-            }}
-            className={staffButtonClass(summary.guideAssigned)}
-          >
-            <User className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-            <span className="truncate max-w-[8rem]">
+          <div className={staffBadgeClass(summary.guideAssigned)}>
+            <button
+              type="button"
+              disabled={!isStaff || (!guideAssignmentLocked && !summary.guideAssigned)}
+              onClick={(e) => {
+                e.stopPropagation()
+                onToggleGuideAssignmentLock?.()
+              }}
+              className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${
+                guideAssignmentLocked
+                  ? 'text-amber-800'
+                  : 'text-gray-400 hover:text-gray-700'
+              } disabled:cursor-not-allowed disabled:opacity-40`}
+              title={
+                locale === 'ko'
+                  ? guideAssignmentLocked
+                    ? '배정 고정 해제'
+                    : '배정 고정'
+                  : guideAssignmentLocked
+                    ? 'Unlock assignment'
+                    : 'Lock assignment'
+              }
+              aria-label={
+                locale === 'ko'
+                  ? guideAssignmentLocked
+                    ? '배정 고정 해제'
+                    : '배정 고정'
+                  : guideAssignmentLocked
+                    ? 'Unlock assignment'
+                    : 'Lock assignment'
+              }
+              aria-pressed={guideAssignmentLocked}
+            >
+              <Pin className={`h-3.5 w-3.5 ${guideAssignmentLocked ? 'fill-current' : ''}`} />
+            </button>
+            <button
+              type="button"
+              disabled={!isStaff}
+              onClick={(e) => {
+                e.stopPropagation()
+                openEdit('guide')
+              }}
+              className="truncate max-w-[8rem] py-1 text-left hover:underline disabled:cursor-not-allowed"
+            >
               {summary.guideAssigned ? summary.guideName : locale === 'ko' ? '가이드 미배정' : 'No guide'}
-            </span>
-          </button>
+            </button>
+          </div>
 
           {summary.requiresAssistant ? (
             <>
@@ -563,6 +627,16 @@ export default function ScheduleGuideTourInfoCard({
                 disabled={!canSwap}
                 onClick={(e) => {
                   e.stopPropagation()
+                  if (guideAssignmentLocked || assistantAssignmentLocked) {
+                    onLockedAssignmentAttempt?.(
+                      guideAssignmentLocked && assistantAssignmentLocked
+                        ? 'both'
+                        : guideAssignmentLocked
+                          ? 'guide'
+                          : 'assistant',
+                    )
+                    return
+                  }
                   onSwapGuideAssistant()
                 }}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -578,21 +652,50 @@ export default function ScheduleGuideTourInfoCard({
               >
                 <ArrowLeftRight className="h-3.5 w-3.5" />
               </button>
-              <button
-                type="button"
-                disabled={!isStaff}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  openEdit('assistant')
-                }}
-                className={staffButtonClass(summary.assistantAssigned)}
-              >
-                {teamType === 'guide+driver' ? (
-                  <Car className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-                ) : (
-                  <Users className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-                )}
-                <span className="truncate max-w-[8rem]">
+              <div className={staffBadgeClass(summary.assistantAssigned)}>
+                <button
+                  type="button"
+                  disabled={!isStaff || (!assistantAssignmentLocked && !summary.assistantAssigned)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleAssistantAssignmentLock?.()
+                  }}
+                  className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${
+                    assistantAssignmentLocked
+                      ? 'text-amber-800'
+                      : 'text-gray-400 hover:text-gray-700'
+                  } disabled:cursor-not-allowed disabled:opacity-40`}
+                  title={
+                    locale === 'ko'
+                      ? assistantAssignmentLocked
+                        ? '배정 고정 해제'
+                        : '배정 고정'
+                      : assistantAssignmentLocked
+                        ? 'Unlock assignment'
+                        : 'Lock assignment'
+                  }
+                  aria-label={
+                    locale === 'ko'
+                      ? assistantAssignmentLocked
+                        ? '배정 고정 해제'
+                        : '배정 고정'
+                      : assistantAssignmentLocked
+                        ? 'Unlock assignment'
+                        : 'Lock assignment'
+                  }
+                  aria-pressed={assistantAssignmentLocked}
+                >
+                  <Pin className={`h-3.5 w-3.5 ${assistantAssignmentLocked ? 'fill-current' : ''}`} />
+                </button>
+                <button
+                  type="button"
+                  disabled={!isStaff}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    openEdit('assistant')
+                  }}
+                  className="truncate max-w-[8rem] py-1 text-left hover:underline disabled:cursor-not-allowed"
+                >
                   {summary.assistantAssigned
                     ? summary.assistantName
                     : teamType === 'guide+driver'
@@ -602,8 +705,8 @@ export default function ScheduleGuideTourInfoCard({
                       : locale === 'ko'
                         ? '어시 미배정'
                         : 'No assistant'}
-                </span>
-              </button>
+                </button>
+              </div>
             </>
           ) : null}
 

@@ -13,6 +13,12 @@ import { toReservationUpdatePayload, updateReservation } from '@/lib/reservation
 import { generateTourId } from '@/lib/entityIds'
 import { reservationIdsLooselyEqual } from '@/utils/tourUtils'
 import { allowTeamPairAssignment } from '@/lib/teamDoNotTeamWith'
+import { StaffAssignmentLockedDialog } from '@/components/tour/StaffAssignmentLockedDialog'
+import {
+  isAssistantAssignmentLocked,
+  isGuideAssignmentLocked,
+  type StaffAssignmentLockBlock,
+} from '@/lib/staffAssignmentLock'
 import type { Database } from '@/lib/supabase'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
@@ -369,6 +375,8 @@ export function TourDetailPageView({
   const [startMileage, setStartMileage] = useState<number>(0)
   const [endMileage, setEndMileage] = useState<number>(0)
   const [isMileageLoading, setIsMileageLoading] = useState<boolean>(false)
+  const [staffAssignmentLockWarning, setStaffAssignmentLockWarning] =
+    useState<StaffAssignmentLockBlock | null>(null)
 
   // 팀 수수료 관련 상태
   const [guideFee, setGuideFee] = useState<number>(0)
@@ -564,6 +572,14 @@ export function TourDetailPageView({
     console.log('handleTeamTypeChange 호출됨:', { type, tour: tourData.tour })
     
     if (!tourData.tour) return
+    if (type === '1guide' && isAssistantAssignmentLocked(tourData.tour)) {
+      setStaffAssignmentLockWarning({
+        kind: 'role_locked',
+        role: 'assistant',
+        tourId: tourData.tour.id,
+      })
+      return
+    }
     const success = await tourHandlers.handleTeamTypeChange(tourData.tour, type)
     
     console.log('팀 타입 변경 결과:', success)
@@ -586,6 +602,14 @@ export function TourDetailPageView({
 
   const handleGuideSelect = async (guideEmail: string) => {
     if (!tourData.tour) return
+    if (isGuideAssignmentLocked(tourData.tour)) {
+      setStaffAssignmentLockWarning({
+        kind: 'role_locked',
+        role: 'guide',
+        tourId: tourData.tour.id,
+      })
+      return
+    }
     
     console.log('가이드 선택:', guideEmail)
     const success = await tourHandlers.handleGuideSelect(tourData.tour, guideEmail, tourData.teamType)
@@ -602,6 +626,14 @@ export function TourDetailPageView({
 
   const handleAssistantSelect = async (assistantEmail: string) => {
     if (!tourData.tour) return
+    if (isAssistantAssignmentLocked(tourData.tour)) {
+      setStaffAssignmentLockWarning({
+        kind: 'role_locked',
+        role: 'assistant',
+        tourId: tourData.tour.id,
+      })
+      return
+    }
     
     console.log('어시스턴트 선택:', assistantEmail)
     const success = await tourHandlers.handleAssistantSelect(tourData.tour, assistantEmail)
@@ -613,6 +645,34 @@ export function TourDetailPageView({
       // 어시스턴트 배정 후에는 수수료 상태를 초기화하지 않음
       // 저장된 수수료가 있으면 그대로 유지
       console.log('어시스턴트 배정 완료, 기존 수수료 유지')
+    }
+  }
+
+  const handleToggleGuideAssignmentLock = async () => {
+    if (!tourData.tour) return
+    const nextLocked = !isGuideAssignmentLocked(tourData.tour)
+    if (nextLocked && !tourData.selectedGuide) return
+    const success = await tourHandlers.handleStaffAssignmentLockChange(tourData.tour, {
+      guide_assignment_locked: nextLocked,
+    })
+    if (success) {
+      tourData.setTour((prev: TourRow | null) =>
+        prev ? { ...prev, guide_assignment_locked: nextLocked } : null,
+      )
+    }
+  }
+
+  const handleToggleAssistantAssignmentLock = async () => {
+    if (!tourData.tour) return
+    const nextLocked = !isAssistantAssignmentLocked(tourData.tour)
+    if (nextLocked && !tourData.selectedAssistant) return
+    const success = await tourHandlers.handleStaffAssignmentLockChange(tourData.tour, {
+      assistant_assignment_locked: nextLocked,
+    })
+    if (success) {
+      tourData.setTour((prev: TourRow | null) =>
+        prev ? { ...prev, assistant_assignment_locked: nextLocked } : null,
+      )
     }
   }
 
@@ -1004,16 +1064,43 @@ export function TourDetailPageView({
         assistant_fee: feesCancelled ? 0 : assistantFee
       }
 
+      const guideLocked = isGuideAssignmentLocked(tourData.tour)
+      const assistantLocked = isAssistantAssignmentLocked(tourData.tour)
+      const currentGuide = String(tourData.tour.tour_guide_id || '').trim()
+      const currentAssistant = String(tourData.tour.assistant_id || '').trim()
+
+      if (guideLocked && nextGuide !== currentGuide) {
+        setStaffAssignmentLockWarning({
+          kind: 'role_locked',
+          role: 'guide',
+          tourId: tourData.tour.id,
+        })
+        return
+      }
+      if (
+        assistantLocked &&
+        (tourData.teamType === '1guide' || nextAssistant !== currentAssistant)
+      ) {
+        setStaffAssignmentLockWarning({
+          kind: 'role_locked',
+          role: 'assistant',
+          tourId: tourData.tour.id,
+        })
+        return
+      }
+
       // 가이드 배정
-      if (tourData.selectedGuide) {
+      if (!guideLocked && tourData.selectedGuide) {
         updateData.tour_guide_id = tourData.selectedGuide
       }
 
       // 어시스턴트 배정
-      if (tourData.selectedAssistant) {
-        updateData.assistant_id = tourData.selectedAssistant
-      } else if (tourData.teamType === '1guide') {
-        updateData.assistant_id = null
+      if (!assistantLocked) {
+        if (tourData.selectedAssistant) {
+          updateData.assistant_id = tourData.selectedAssistant
+        } else if (tourData.teamType === '1guide') {
+          updateData.assistant_id = null
+        }
       }
 
       // 차량 배정 (비우면 해제 — 해제 시 DB 트리거로 max_participants → 12)
@@ -2823,6 +2910,18 @@ export function TourDetailPageView({
               onTeamTypeChange={handleTeamTypeChange}
               onGuideSelect={handleGuideSelect}
               onAssistantSelect={handleAssistantSelect}
+              guideAssignmentLocked={isGuideAssignmentLocked(tourData.tour)}
+              assistantAssignmentLocked={isAssistantAssignmentLocked(tourData.tour)}
+              onToggleGuideAssignmentLock={handleToggleGuideAssignmentLock}
+              onToggleAssistantAssignmentLock={handleToggleAssistantAssignmentLock}
+              onLockedAssignmentAttempt={(role) => {
+                if (!tourData.tour) return
+                setStaffAssignmentLockWarning({
+                  kind: 'role_locked',
+                  role,
+                  tourId: tourData.tour.id,
+                })
+              }}
               onVehicleSelect={handleVehicleSelect}
               onGuideFeeChange={handleGuideFeeChange}
               onAssistantFeeChange={handleAssistantFeeChange}
@@ -3277,6 +3376,13 @@ export function TourDetailPageView({
           onClose={() => setHotelBookingHistoryId(null)}
         />
       ) : null}
+
+      <StaffAssignmentLockedDialog
+        open={Boolean(staffAssignmentLockWarning)}
+        block={staffAssignmentLockWarning}
+        locale={locale}
+        onClose={() => setStaffAssignmentLockWarning(null)}
+      />
 
       {/* 픽업 스케줄 자동 생성 모달 */}
       {tourData.tour && (

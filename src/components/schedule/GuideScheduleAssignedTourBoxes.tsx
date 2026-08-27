@@ -1,6 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import { Pin } from 'lucide-react'
 import GuideAssignmentStatusStripe from '@/components/schedule/GuideAssignmentStatusIcon'
 import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import {
@@ -13,6 +14,7 @@ import {
   computeTourAssignedPeopleForGuideCell,
   getGuideTourProductColorClass,
 } from '@/lib/scheduleGuideTourCell'
+import { isAssistantAssignmentLocked, isGuideAssignmentLocked } from '@/lib/staffAssignmentLock'
 import { normalizeTourDateKey } from '@/utils/tourUtils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -161,6 +163,8 @@ export default function GuideScheduleAssignedTourBoxes({
         const displayAssignmentStatus = resolveTourDisplayAssignmentStatus(tour)
         const statusLabel = getAssignmentStatusLabel(displayAssignmentStatus, locale)
         const isEmptyTour = assignedPeople === 0
+        const roleLocked =
+          role === 'guide' ? isGuideAssignmentLocked(tour) : isAssistantAssignmentLocked(tour)
         const textColor =
           !isEmptyTour && colorClass
             ? getProductDisplayProps(colorClass).style?.color
@@ -197,6 +201,9 @@ export default function GuideScheduleAssignedTourBoxes({
               }
             >
               {hasPrivateTour ? <span className="text-[9px]">🔒</span> : null}
+              {roleLocked ? (
+                <Pin className="relative z-10 h-2.5 w-2.5 shrink-0 fill-current text-amber-100" aria-hidden />
+              ) : null}
               <GuideAssignmentStatusStripe
                 status={displayAssignmentStatus}
                 title={statusLabel}

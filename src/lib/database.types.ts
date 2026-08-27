@@ -10587,10 +10587,12 @@ export type Database = {
       tours: {
         Row: {
           assignment_status: string | null
+          assistant_assignment_locked: boolean
           assistant_fee: number | null
           assistant_id: string | null
           antelope_check_in_date: string | null
           created_at: string | null
+          guide_assignment_locked: boolean
           guide_fee: number | null
           id: string
           is_private_tour: boolean | null
@@ -10618,10 +10620,12 @@ export type Database = {
         }
         Insert: {
           assignment_status?: string | null
+          assistant_assignment_locked?: boolean
           assistant_fee?: number | null
           assistant_id?: string | null
           antelope_check_in_date?: string | null
           created_at?: string | null
+          guide_assignment_locked?: boolean
           guide_fee?: number | null
           id?: string
           is_private_tour?: boolean | null
@@ -10649,10 +10653,12 @@ export type Database = {
         }
         Update: {
           assignment_status?: string | null
+          assistant_assignment_locked?: boolean
           assistant_fee?: number | null
           assistant_id?: string | null
           antelope_check_in_date?: string | null
           created_at?: string | null
+          guide_assignment_locked?: boolean
           guide_fee?: number | null
           id?: string
           is_private_tour?: boolean | null

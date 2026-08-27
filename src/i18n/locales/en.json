@@ -4970,7 +4970,12 @@
       "teamType": "Team Type",
       "memberTabActive": "Active",
       "memberTabInactive": "Inactive",
-      "maxCapacityHint": "Saving applies the vehicle type’s passenger capacity as max participants."
+      "maxCapacityHint": "Saving applies the vehicle type’s passenger capacity as max participants.",
+      "lock": "Lock",
+      "locked": "Locked",
+      "lockAssignment": "Lock assignment",
+      "unlockAssignment": "Unlock assignment",
+      "lockHint": "Lock this assignment so a customer-requested guide is not moved to another team or removed from the schedule."
     },
     "calendar": {
       "title": "Tour Calendar",

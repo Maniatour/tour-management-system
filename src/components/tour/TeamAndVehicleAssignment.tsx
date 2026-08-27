@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
-import { User, Users, Car, Save, ChevronDown } from 'lucide-react'
+import { User, Users, Car, Save, ChevronDown, Pin } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
 import { isVehicleShownInTeamAssignmentDropdown } from '@/utils/tourUtils'
@@ -54,6 +54,11 @@ interface TeamAndVehicleAssignmentProps {
   onTeamTypeChange: (type: '1guide' | '2guide' | 'guide+driver') => void
   onGuideSelect: (email: string) => void
   onAssistantSelect: (email: string) => void
+  guideAssignmentLocked?: boolean
+  assistantAssignmentLocked?: boolean
+  onToggleGuideAssignmentLock?: () => void
+  onToggleAssistantAssignmentLock?: () => void
+  onLockedAssignmentAttempt?: (role: 'guide' | 'assistant' | 'both') => void
   onVehicleSelect: (vehicleId: string) => void
   onGuideFeeChange: (fee: number) => void
   onAssistantFeeChange: (fee: number) => void
@@ -74,7 +79,9 @@ function MemberSelectWithTabs({
   inactiveMembers,
   placeholder,
   getDisplayName,
-  getTeamMemberName
+  getTeamMemberName,
+  locked,
+  onLockedAttempt,
 }: {
   value: string
   onChange: (email: string) => void
@@ -83,6 +90,8 @@ function MemberSelectWithTabs({
   placeholder: string
   getDisplayName: (m: TeamMember) => string
   getTeamMemberName: (email: string) => string
+  locked?: boolean
+  onLockedAttempt?: () => void
 }) {
   const chrome = useTourDetailSectionChrome()
   const t = useTranslations('tours.teamAndVehicle')
@@ -101,6 +110,10 @@ function MemberSelectWithTabs({
     document.addEventListener('mousedown', onOutside)
     return () => document.removeEventListener('mousedown', onOutside)
   }, [isOpen])
+
+  useEffect(() => {
+    if (locked) setIsOpen(false)
+  }, [locked])
 
   const members = tab === 'active' ? activeMembers : inactiveMembers
   const normalizedQuery = searchQuery.trim().toLowerCase()
@@ -124,8 +137,17 @@ function MemberSelectWithTabs({
     <div className="relative flex-1 min-w-0" ref={containerRef}>
       <button
         type="button"
-        onClick={() => setIsOpen((o) => !o)}
-        className={`w-full text-left ${chrome.bodyTrigger} flex items-center justify-between gap-2`}
+        onClick={() => {
+          if (locked) {
+            onLockedAttempt?.()
+            return
+          }
+          setIsOpen((o) => !o)
+        }}
+        className={`w-full text-left ${chrome.bodyTrigger} flex items-center justify-between gap-2 ${
+          locked ? 'bg-amber-50 border-amber-300 text-amber-950' : ''
+        }`}
+        aria-disabled={locked}
       >
         <span className={value ? 'text-gray-900' : 'text-gray-500'}>{displayText}</span>
         <ChevronDown className={`${chrome.chevronClass} text-gray-500 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -213,6 +235,11 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
   onTeamTypeChange,
   onGuideSelect,
   onAssistantSelect,
+  guideAssignmentLocked = false,
+  assistantAssignmentLocked = false,
+  onToggleGuideAssignmentLock,
+  onToggleAssistantAssignmentLock,
+  onLockedAssignmentAttempt,
   onVehicleSelect,
   onGuideFeeChange,
   onAssistantFeeChange,
@@ -313,6 +340,14 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
     }
   }
 
+  const requestTeamTypeChange = (type: '1guide' | '2guide' | 'guide+driver') => {
+    if (type === '1guide' && assistantAssignmentLocked) {
+      onLockedAssignmentAttempt?.('assistant')
+      return
+    }
+    onTeamTypeChange(type)
+  }
+
   const hasChanges = () => {
     // 변경사항이 있는지 확인하는 로직 (필요에 따라 구현)
     return true // 임시로 항상 true 반환
@@ -394,7 +429,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
             {/* 팀 타입 선택 */}
             <div className="flex flex-wrap gap-1.5">
               <button 
-                onClick={() => onTeamTypeChange('1guide')}
+                onClick={() => requestTeamTypeChange('1guide')}
                 className={`${chrome.segmentButton} flex items-center space-x-1 ${
                   teamType === '1guide' 
                     ? 'bg-primary/10 text-primary border border-border' 
@@ -406,7 +441,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
               </button>
               
               <button 
-                onClick={() => onTeamTypeChange('2guide')}
+                onClick={() => requestTeamTypeChange('2guide')}
                 className={`${chrome.segmentButton} flex items-center space-x-1 ${
                   teamType === '2guide' 
                     ? 'bg-primary/10 text-primary border border-border' 
@@ -418,7 +453,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
               </button>
               
               <button 
-                onClick={() => onTeamTypeChange('guide+driver')}
+                onClick={() => requestTeamTypeChange('guide+driver')}
                 className={`${chrome.segmentButton} flex items-center space-x-1 ${
                   teamType === 'guide+driver' 
                     ? 'bg-primary/10 text-primary border border-border' 
@@ -442,7 +477,28 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                   placeholder={t('selectGuide')}
                   getDisplayName={getDisplayName}
                   getTeamMemberName={getTeamMemberName}
+                  locked={guideAssignmentLocked}
+                  onLockedAttempt={() => onLockedAssignmentAttempt?.('guide')}
                 />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (!guideAssignmentLocked && !selectedGuide) return
+                    onToggleGuideAssignmentLock?.()
+                  }}
+                  disabled={!onToggleGuideAssignmentLock || (!guideAssignmentLocked && !selectedGuide)}
+                  className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border flex-shrink-0 ${
+                    guideAssignmentLocked
+                      ? 'border-amber-400 bg-amber-50 text-amber-900'
+                      : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'
+                  } disabled:cursor-not-allowed disabled:opacity-50`}
+                  title={guideAssignmentLocked ? t('unlockAssignment') : t('lockAssignment')}
+                  aria-label={guideAssignmentLocked ? t('unlockAssignment') : t('lockAssignment')}
+                  aria-pressed={guideAssignmentLocked}
+                >
+                  <Pin size={chrome.iconSize} className={guideAssignmentLocked ? 'fill-current' : undefined} />
+                </button>
                 <div className="flex items-center space-x-2 relative flex-shrink-0">
                   <input
                     type="number"
@@ -486,7 +542,28 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                     placeholder={t('selectGuide')}
                     getDisplayName={getDisplayName}
                     getTeamMemberName={getTeamMemberName}
+                    locked={assistantAssignmentLocked}
+                    onLockedAttempt={() => onLockedAssignmentAttempt?.('assistant')}
                   />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (!assistantAssignmentLocked && !selectedAssistant) return
+                      onToggleAssistantAssignmentLock?.()
+                    }}
+                    disabled={!onToggleAssistantAssignmentLock || (!assistantAssignmentLocked && !selectedAssistant)}
+                    className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border flex-shrink-0 ${
+                      assistantAssignmentLocked
+                        ? 'border-amber-400 bg-amber-50 text-amber-900'
+                        : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'
+                    } disabled:cursor-not-allowed disabled:opacity-50`}
+                    title={assistantAssignmentLocked ? t('unlockAssignment') : t('lockAssignment')}
+                    aria-label={assistantAssignmentLocked ? t('unlockAssignment') : t('lockAssignment')}
+                    aria-pressed={assistantAssignmentLocked}
+                  >
+                    <Pin size={chrome.iconSize} className={assistantAssignmentLocked ? 'fill-current' : undefined} />
+                  </button>
                   <div className="flex items-center space-x-2 relative flex-shrink-0">
                     <input
                       type="number"
@@ -515,6 +592,10 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                     )}
                   </div>
                 </div>
+              )}
+
+              {(guideAssignmentLocked || assistantAssignmentLocked) && (
+                <p className={`${chrome.bodyMuted}`}>{t('lockHint')}</p>
               )}
 
               {/* 차량 선택 */}

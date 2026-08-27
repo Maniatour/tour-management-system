@@ -86,6 +86,16 @@ import {
 } from '@/lib/guideAssignmentStatus'
 import { allowTeamPairAssignment, type TeamDoNotTeamMember } from '@/lib/teamDoNotTeamWith'
 import {
+  STAFF_ASSIGNMENT_LOCK_CHANGED_EVENT,
+  getStaffAssignmentChangeBlock,
+  getLockedRoleChangeBlock,
+  isAssistantAssignmentLocked,
+  isGuideAssignmentLocked,
+  type StaffAssignmentLockBlock,
+  type StaffAssignmentLockChangedDetail,
+} from '@/lib/staffAssignmentLock'
+import { StaffAssignmentLockedDialog } from '@/components/tour/StaffAssignmentLockedDialog'
+import {
   SCHEDULE_COLOR_PRESETS,
   getScheduleProductDisplayProps,
 } from '@/lib/scheduleProductColorPresets'
@@ -867,6 +877,42 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     showConfirm,
   } = useScheduleViewDialogs()
 
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<StaffAssignmentLockChangedDetail>).detail
+      if (!detail?.tourId) return
+      const patch = {
+        guide_assignment_locked: detail.guide_assignment_locked,
+        assistant_assignment_locked: detail.assistant_assignment_locked,
+      }
+      setTours((prev) =>
+        prev.map((tour) => (String(tour.id) === String(detail.tourId) ? { ...tour, ...patch } : tour)),
+      )
+      setUnassignedTours((prev) =>
+        prev.map((tour) => (String(tour.id) === String(detail.tourId) ? { ...tour, ...patch } : tour)),
+      )
+    }
+    window.addEventListener(STAFF_ASSIGNMENT_LOCK_CHANGED_EVENT, handler)
+    return () => window.removeEventListener(STAFF_ASSIGNMENT_LOCK_CHANGED_EVENT, handler)
+  }, [setTours, setUnassignedTours])
+
+  const blockStaffAssignmentIfLocked = useCallback(
+    (
+      tour: Tour,
+      patch: {
+        tour_guide_id?: string | null
+        assistant_id?: string | null
+        team_type?: string | null
+      },
+    ): boolean => {
+      const block = getStaffAssignmentChangeBlock(tours, tour, patch)
+      if (!block) return false
+      setStaffAssignmentLockWarning(block)
+      return true
+    },
+    [tours],
+  )
+
   const {
     showDateNoteModal,
     selectedDateForNote,
@@ -1042,6 +1088,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const [guideModalContent, setGuideModalContent] = useState({ title: '', content: '', tourId: '' })
   const [showGuideModalAutoAssign, setShowGuideModalAutoAssign] = useState(false)
   const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; title: string } | null>(null)
+  const [staffAssignmentLockWarning, setStaffAssignmentLockWarning] =
+    useState<StaffAssignmentLockBlock | null>(null)
   const [tourDetailIframeReloadNonce, setTourDetailIframeReloadNonce] = useState(0)
   const [updatingTourDetailModalStatusId, setUpdatingTourDetailModalStatusId] = useState<string | null>(null)
   const [updatingGuideModalAssignmentStatusId, setUpdatingGuideModalAssignmentStatusId] = useState<string | null>(null)
@@ -3321,6 +3369,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           .eq('id', tourId)
         if (error) {
           console.error('Batch save error:', error)
+          if (String(error.message || '').includes('STAFF_ASSIGNMENT_LOCKED')) {
+            setStaffAssignmentLockWarning({
+              kind: 'role_locked',
+              role: 'both',
+              tourId,
+            })
+            return false
+          }
           showMessage('저장 실패', '일부 변경사항 저장에 실패했습니다.', 'error')
           return false
         }
@@ -4675,6 +4731,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       } else if (effectiveRole === 'assistant') {
         updateData.assistant_id = teamMemberId
       }
+      if (blockStaffAssignmentIfLocked(draggedTour, updateData)) {
+        return
+      }
       const patch = mergeStaffPatchWithAssignmentReset(draggedTour.id, draggedTour, updateData)
 
       setPendingChanges(prev => ({
@@ -4730,6 +4789,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         tour_guide_id: null,
         assistant_id: null,
       })
+      if (
+        blockStaffAssignmentIfLocked(draggedTour, {
+          tour_guide_id: null,
+          assistant_id: null,
+        })
+      ) {
+        return
+      }
       // 즉시 저장 대신 변경 누적 (해제)
       setPendingChanges(prev => ({
         ...prev,
@@ -5458,6 +5525,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       if (!tour) return
       const current = normalizeTourTeamType(tour.team_type) || '1guide'
       if (current === type) return
+      if (
+        blockStaffAssignmentIfLocked(tour, {
+          team_type: type,
+          ...(type === '1guide' ? { assistant_id: null } : {}),
+        })
+      ) {
+        return
+      }
 
       setUpdatingGuideModalTeamTypeId(tourId)
       try {
@@ -5484,6 +5559,45 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       } finally {
         setUpdatingGuideModalTeamTypeId(null)
       }
+    },
+    [tours, tourHandlers, blockStaffAssignmentIfLocked],
+  )
+
+  const toggleGuideModalStaffLock = useCallback(
+    async (tourId: string, role: 'guide' | 'assistant') => {
+      const tour = tours.find((t) => String(t.id) === String(tourId))
+      if (!tour) return
+
+      if (role === 'guide') {
+        const nextLocked = !isGuideAssignmentLocked(tour)
+        if (nextLocked && !String(tour.tour_guide_id || '').trim()) return
+        const ok = await tourHandlers.handleStaffAssignmentLockChange(tour, {
+          guide_assignment_locked: nextLocked,
+        })
+        if (!ok) return
+        const patch = { guide_assignment_locked: nextLocked }
+        setTours((prev) =>
+          prev.map((t) => (String(t.id) === String(tourId) ? { ...t, ...patch } : t)),
+        )
+        setUnassignedTours((prev) =>
+          prev.map((t) => (String(t.id) === String(tourId) ? { ...t, ...patch } : t)),
+        )
+        return
+      }
+
+      const nextLocked = !isAssistantAssignmentLocked(tour)
+      if (nextLocked && !String(tour.assistant_id || '').trim()) return
+      const ok = await tourHandlers.handleStaffAssignmentLockChange(tour, {
+        assistant_assignment_locked: nextLocked,
+      })
+      if (!ok) return
+      const patch = { assistant_assignment_locked: nextLocked }
+      setTours((prev) =>
+        prev.map((t) => (String(t.id) === String(tourId) ? { ...t, ...patch } : t)),
+      )
+      setUnassignedTours((prev) =>
+        prev.map((t) => (String(t.id) === String(tourId) ? { ...t, ...patch } : t)),
+      )
     },
     [tours, tourHandlers],
   )
@@ -6524,6 +6638,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 ? { assistant_id: null }
                 : {}),
             }
+      if (blockStaffAssignmentIfLocked(tour, rawPatch)) {
+        return
+      }
       const patch = mergeStaffPatchWithAssignmentReset(tourId, tour, rawPatch)
       const next: Tour = { ...tour, ...patch }
 
@@ -6579,6 +6696,11 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           ) {
             return
           }
+          const swapRoleBlock = getLockedRoleChangeBlock(conflict.tour, swapRaw)
+          if (swapRoleBlock) {
+            setStaffAssignmentLockWarning(swapRoleBlock)
+            return
+          }
           swapTourId = String(conflict.tour.id)
           swapPatch = mergeStaffPatchWithAssignmentReset(
             swapTourId,
@@ -6636,6 +6758,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       locale,
       findSameDayStaffConflict,
       buildStaffRoleSwapPatch,
+      blockStaffAssignmentIfLocked,
     ],
   )
 
@@ -6666,6 +6789,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       const rawPatch: Partial<Tour> = {
         assistant_id: nextAssistant,
         ...(clearGuideOnCurrent ? { tour_guide_id: null } : {}),
+      }
+      if (blockStaffAssignmentIfLocked(tour, rawPatch)) {
+        return
       }
       const patch = mergeStaffPatchWithAssignmentReset(tourId, tour, rawPatch)
       const next: Tour = { ...tour, ...patch }
@@ -6714,6 +6840,11 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               locale,
             )
           ) {
+            return
+          }
+          const swapRoleBlock = getLockedRoleChangeBlock(conflict.tour, swapRaw)
+          if (swapRoleBlock) {
+            setStaffAssignmentLockWarning(swapRoleBlock)
             return
           }
           swapTourId = String(conflict.tour.id)
@@ -6770,6 +6901,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       locale,
       findSameDayStaffConflict,
       buildStaffRoleSwapPatch,
+      blockStaffAssignmentIfLocked,
     ],
   )
 
@@ -6782,6 +6914,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       const assistantId = tour.assistant_id ? String(tour.assistant_id).trim() || null : null
       if (!guideId && !assistantId) return
       if (guideId === assistantId) return
+      if (
+        blockStaffAssignmentIfLocked(tour, {
+          tour_guide_id: assistantId,
+          assistant_id: guideId,
+        })
+      ) {
+        return
+      }
 
       const patch = mergeStaffPatchWithAssignmentReset(tourId, tour, {
         tour_guide_id: assistantId,
@@ -6804,7 +6944,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       })
       requestSaveAfterDragAssignment()
     },
-    [tours, mergeStaffPatchWithAssignmentReset, requestSaveAfterDragAssignment],
+    [tours, mergeStaffPatchWithAssignmentReset, requestSaveAfterDragAssignment, blockStaffAssignmentIfLocked],
   )
 
   const applyGuideModalVehicleValue = useCallback(
@@ -9095,6 +9235,13 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         }}
       />
 
+      <StaffAssignmentLockedDialog
+        open={Boolean(staffAssignmentLockWarning)}
+        block={staffAssignmentLockWarning}
+        locale={locale}
+        onClose={() => setStaffAssignmentLockWarning(null)}
+      />
+
       {/* 날짜 노트 모달 */}
       {/* 스케줄 종합 알림: 정원 초과 · 차량-투어 건수 · 미배정 · 입장권-인원 */}
       <Dialog
@@ -10355,6 +10502,23 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                         onSwapGuideAssistant={() => {
                           setGuideModalContent((prev) => ({ ...prev, tourId }))
                           swapGuideModalGuideAndAssistant(tourId)
+                        }}
+                        guideAssignmentLocked={isGuideAssignmentLocked(tour)}
+                        assistantAssignmentLocked={isAssistantAssignmentLocked(tour)}
+                        onLockedAssignmentAttempt={(role) => {
+                          setStaffAssignmentLockWarning({
+                            kind: 'role_locked',
+                            role,
+                            tourId,
+                          })
+                        }}
+                        onToggleGuideAssignmentLock={() => {
+                          setGuideModalContent((prev) => ({ ...prev, tourId }))
+                          void toggleGuideModalStaffLock(tourId, 'guide')
+                        }}
+                        onToggleAssistantAssignmentLock={() => {
+                          setGuideModalContent((prev) => ({ ...prev, tourId }))
+                          void toggleGuideModalStaffLock(tourId, 'assistant')
                         }}
                         onSelectVehicle={(id) => {
                           setGuideModalContent((prev) => ({ ...prev, tourId }))
