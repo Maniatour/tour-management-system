@@ -2499,7 +2499,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                     {locale === 'ko' ? '복사' : 'Copy'}
                   </button>
                   <a
-                    href={hostedInvoiceUrl || sitePayUrl || '#'}
+                    href={sitePayUrl || hostedInvoiceUrl || '#'}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-primary hover:underline"

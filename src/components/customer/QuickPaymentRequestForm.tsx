@@ -16,6 +16,7 @@ import {
   RefreshCw,
   TriangleAlert,
   Smartphone,
+  Heart,
 } from 'lucide-react'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { childModalZIndex, DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
@@ -46,6 +47,7 @@ export type QuickPaymentFormInitials = {
   description?: string
   amountUsd?: number | string
   reservationId?: string
+  openAmount?: boolean
 }
 
 type QuickPaymentResult = {
@@ -65,6 +67,7 @@ type QuickPaymentResult = {
   smsSent: boolean
   smsError: string | null
   smsToPhone: string | null
+  openAmount: boolean
 }
 
 export type QuickPaymentCustomerContactUpdate = {
@@ -111,6 +114,9 @@ export default function QuickPaymentRequestForm({
   const [sendEmail, setSendEmail] = useState(true)
   const [sendSms, setSendSms] = useState(false)
   const [openWhatsAppAfterCreate, setOpenWhatsAppAfterCreate] = useState(false)
+  const [requestKind, setRequestKind] = useState<'fixed' | 'tip_open'>(
+    initials?.openAmount ? 'tip_open' : 'fixed'
+  )
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<QuickPaymentResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -137,6 +143,7 @@ export default function QuickPaymentRequestForm({
     setSendEmail(true)
     setSendSms(false)
     setOpenWhatsAppAfterCreate(false)
+    setRequestKind(initials?.openAmount ? 'tip_open' : 'fixed')
     setShowCardFeeConfirm(false)
     setCustomerEmailSaved(false)
     setCopiedKind(null)
@@ -168,6 +175,7 @@ export default function QuickPaymentRequestForm({
     setSendEmail(true)
     setSendSms(false)
     setOpenWhatsAppAfterCreate(false)
+    setRequestKind(initials?.openAmount ? 'tip_open' : 'fixed')
     setResult(null)
     setError(null)
     setShowCardFeeConfirm(false)
@@ -175,11 +183,12 @@ export default function QuickPaymentRequestForm({
     setCopiedKind(null)
   }
 
-  const validateBeforeSubmit = (): number | null => {
+  const validateBeforeSubmit = (): number | 0 | null => {
     setError(null)
     setResult(null)
 
-    const amountUsd = Number(amount)
+    const isTipOpen = requestKind === 'tip_open'
+    const amountUsd = isTipOpen ? 0 : Number(amount)
     const parsedEmail = parseRecipientEmail(email)
     if (!parsedEmail) {
       setError(locale === 'ko' ? '수신자 이메일을 입력해 주세요.' : 'Recipient email is required.')
@@ -196,11 +205,11 @@ export default function QuickPaymentRequestForm({
       )
       return null
     }
-    if (!description.trim()) {
+    if (!isTipOpen && !description.trim()) {
       setError(locale === 'ko' ? '청구 내용을 입력해 주세요.' : 'Description is required.')
       return null
     }
-    if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
+    if (!isTipOpen && (!Number.isFinite(amountUsd) || amountUsd <= 0)) {
       setError(locale === 'ko' ? '금액은 0보다 커야 합니다.' : 'Amount must be greater than zero.')
       return null
     }
@@ -222,7 +231,7 @@ export default function QuickPaymentRequestForm({
 
     if (validateBeforeSubmit() == null) return
 
-    if (sendEmail || sendSms || openWhatsAppAfterCreate) {
+    if (requestKind !== 'tip_open' && (sendEmail || sendSms || openWhatsAppAfterCreate)) {
       setShowCardFeeConfirm(true)
       return
     }
@@ -302,6 +311,7 @@ export default function QuickPaymentRequestForm({
 
     const amountUsd = validateBeforeSubmit()
     if (amountUsd == null) return
+    const isTipOpen = requestKind === 'tip_open'
 
     setShowCardFeeConfirm(false)
     setSubmitting(true)
@@ -312,8 +322,10 @@ export default function QuickPaymentRequestForm({
         body: JSON.stringify({
           email: parseRecipientEmail(email) || email.trim(),
           recipientName: recipientName.trim() || undefined,
-          description: description.trim(),
+          description: (description.trim() || (isTipOpen ? 'Guide Tip' : '')).trim(),
           amountUsd,
+          openAmount: isTipOpen,
+          requestKind: isTipOpen ? 'tip_open' : 'fixed',
           phone: phone.trim() || undefined,
           // 고객 이메일·결제 페이지는 스태프 UI 언어와 무관하게 기본 영문
           locale: 'en',
@@ -336,7 +348,7 @@ export default function QuickPaymentRequestForm({
         invoiceNumber: String(data.invoiceNumber),
         sitePayUrl: String(data.sitePayUrl || ''),
         hostedInvoiceUrl: String(data.hostedInvoiceUrl || ''),
-        amountUsd: Number(data.amountUsd),
+        amountUsd: Number(data.amountUsd) || 0,
         description: String(data.description),
         email: String(data.email),
         emailSent: Boolean(data.emailSent),
@@ -349,6 +361,7 @@ export default function QuickPaymentRequestForm({
         smsSent: Boolean(data.smsSent),
         smsError: data.smsError ? String(data.smsError) : null,
         smsToPhone: data.smsToPhone ? String(data.smsToPhone) : null,
+        openAmount: Boolean(data.openAmount) || isTipOpen,
       })
       if (data.customerEmailUpdated) {
         setCustomerEmailSaved(true)
@@ -363,9 +376,10 @@ export default function QuickPaymentRequestForm({
         const payUrl = String(data.sitePayUrl || data.hostedInvoiceUrl || '')
         openWhatsAppWithPaymentLink({
           payUrl,
-          amountUsd: Number(data.amountUsd),
+          amountUsd: Number(data.amountUsd) || 0,
           description: String(data.description || description),
           recipientName: recipientName.trim() || String(data.recipientName || ''),
+          openAmount: Boolean(data.openAmount) || isTipOpen,
         })
       }
     } catch (err) {
@@ -381,6 +395,7 @@ export default function QuickPaymentRequestForm({
         description: result.description,
         amountUsd: result.amountUsd,
         payUrl: result.sitePayUrl || result.hostedInvoiceUrl,
+        openAmount: result.openAmount,
       })
     : ''
 
@@ -413,6 +428,7 @@ export default function QuickPaymentRequestForm({
     amountUsd: number
     description: string
     recipientName: string
+    openAmount?: boolean
   }) => {
     const e164 = resolveSmsPhone(phone)
     if (!e164 || !params.payUrl) {
@@ -428,6 +444,7 @@ export default function QuickPaymentRequestForm({
       description: params.description,
       amountUsd: params.amountUsd,
       payUrl: params.payUrl,
+      openAmount: Boolean(params.openAmount),
     })
     const waUrl = buildWhatsAppMeUrl(e164, text)
     if (!waUrl) {
@@ -555,8 +572,8 @@ export default function QuickPaymentRequestForm({
           </h1>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {locale === 'ko'
-              ? '금액, 내용, 이메일을 입력하면 Stripe 결제 링크를 만들고 이메일·문자·WhatsApp으로 보낼 수 있습니다.'
-              : 'Enter amount, description, and email to create a Stripe payment link and send it by email, SMS, or WhatsApp.'}
+              ? '고정 금액 인보이스 또는 손님이 금액을 넣는 팁 링크를 만들어 이메일·문자·WhatsApp으로 보낼 수 있습니다.'
+              : 'Create a fixed-amount invoice or a tip link where the guest chooses the amount, then send it by email, SMS, or WhatsApp.'}
           </p>
         </div>
       )}
@@ -570,7 +587,13 @@ export default function QuickPaymentRequestForm({
                 {locale === 'ko' ? '결제 요청이 준비되었습니다' : 'Payment request ready'}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {result.invoiceNumber} · ${result.amountUsd.toFixed(2)} · {result.email}
+                {result.invoiceNumber} ·{' '}
+                {result.openAmount
+                  ? locale === 'ko'
+                    ? '손님 금액 입력'
+                    : 'Guest chooses amount'
+                  : `$${result.amountUsd.toFixed(2)}`}{' '}
+                · {result.email}
               </p>
               {result.emailSent ? (
                 <p className="mt-2 flex items-center gap-1.5 text-sm text-green-700">
@@ -746,6 +769,7 @@ export default function QuickPaymentRequestForm({
                   amountUsd: result.amountUsd,
                   description: result.description,
                   recipientName: recipientName.trim() || result.email,
+                  openAmount: result.openAmount,
                 })
               }
               className="inline-flex h-11 items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 text-sm font-medium text-green-800 hover:bg-green-100 disabled:opacity-60"
@@ -783,6 +807,51 @@ export default function QuickPaymentRequestForm({
               : 'rounded-xl border border-border/60 bg-card p-6 shadow-sm space-y-5'
           }
         >
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">
+              {locale === 'ko' ? '청구 유형' : 'Request type'}
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setRequestKind('fixed')}
+                className={`h-11 rounded-xl border px-3 text-sm font-medium transition ${
+                  requestKind === 'fixed'
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-background text-foreground hover:bg-muted'
+                }`}
+                aria-pressed={requestKind === 'fixed'}
+              >
+                {locale === 'ko' ? '고정 금액' : 'Fixed amount'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRequestKind('tip_open')
+                  if (!description.trim()) setDescription('Guide Tip')
+                }}
+                className={`inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border px-3 text-sm font-medium transition ${
+                  requestKind === 'tip_open'
+                    ? 'border-rose-600 bg-rose-600 text-white'
+                    : 'border-border bg-background text-foreground hover:bg-muted'
+                }`}
+                aria-pressed={requestKind === 'tip_open'}
+              >
+                <Heart className="h-4 w-4" aria-hidden />
+                {locale === 'ko' ? '팁 링크' : 'Tip link'}
+              </button>
+            </div>
+            <p className="text-xs leading-5 text-muted-foreground">
+              {requestKind === 'tip_open'
+                ? locale === 'ko'
+                  ? '손님이 링크에서 팁 금액을 직접 입력하고 결제합니다.'
+                  : 'The guest enters their own tip amount on the payment page.'
+                : locale === 'ko'
+                  ? '우리가 금액을 정해 인보이스를 보냅니다. 결제 페이지에서 팁을 추가로 넣을 수 있습니다.'
+                  : 'You set the amount. Guests can still add a tip on the payment page.'}
+            </p>
+          </div>
+
           <div className="space-y-2">
             <label htmlFor="qp-email" className="text-sm font-medium text-foreground">
               {locale === 'ko' ? '수신자 이메일' : 'Recipient email'}
@@ -885,6 +954,7 @@ export default function QuickPaymentRequestForm({
             </p>
           </div>
 
+          {requestKind === 'fixed' ? (
           <div className="space-y-2">
             <label htmlFor="qp-amount" className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm font-medium text-foreground">
               <span>{locale === 'ko' ? '금액 (USD)' : 'Amount (USD)'}</span>
@@ -913,6 +983,13 @@ export default function QuickPaymentRequestForm({
               />
             </div>
           </div>
+          ) : (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-950">
+              {locale === 'ko'
+                ? '금액은 손님이 결제 페이지에서 직접 정합니다. 추천 금액($10, $20, $40, $50)이 표시됩니다.'
+                : 'The guest chooses the amount. Suggested amounts ($10, $20, $40, $50) are shown on the payment page.'}
+            </div>
+          )}
 
           <div className="space-y-2">
             <label htmlFor="qp-desc" className="text-sm font-medium text-foreground">
@@ -947,15 +1024,19 @@ export default function QuickPaymentRequestForm({
             </div>
             <textarea
               id="qp-desc"
-              required
+              required={requestKind === 'fixed'}
               rows={3}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
               placeholder={
-                locale === 'ko'
-                  ? '예: Non-Resident Fee, Tour Balance, Guide Tips, 5% Card Fee'
-                  : 'e.g. Non-Resident Fee, Tour Balance, Guide Tips, 5% Card Fee'
+                requestKind === 'tip_open'
+                  ? locale === 'ko'
+                    ? '예: Guide Tip'
+                    : 'e.g. Guide Tip'
+                  : locale === 'ko'
+                    ? '예: Non-Resident Fee, Tour Balance, Guide Tips, 5% Card Fee'
+                    : 'e.g. Non-Resident Fee, Tour Balance, Guide Tips, 5% Card Fee'
               }
             />
           </div>
@@ -1141,6 +1222,7 @@ type HistoryItem = {
   sitePayUrl: string | null
   hostedInvoiceUrl: string | null
   stripeInvoiceStatus: string | null
+  openAmount?: boolean
 }
 
 function statusLabel(status: string, locale: 'ko' | 'en'): string {
@@ -1284,8 +1366,17 @@ function QuickPaymentHistoryPanel({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-semibold tabular-nums text-foreground">
-                      ${item.total.toFixed(2)}
+                      {item.openAmount && item.status.toLowerCase() !== 'paid'
+                        ? locale === 'ko'
+                          ? '손님 입력'
+                          : 'Open amount'
+                        : `$${item.total.toFixed(2)}`}
                     </span>
+                    {item.openAmount ? (
+                      <span className="inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-800">
+                        {locale === 'ko' ? '팁 링크' : 'Tip link'}
+                      </span>
+                    ) : null}
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClass(item.status)}`}
                     >
@@ -1430,8 +1521,8 @@ export function QuickPaymentRequestModal({
                   ? '이전에 청구한 Stripe 결제 요청 내역입니다.'
                   : 'Previous Stripe payment requests.'
                 : locale === 'ko'
-                  ? '이메일, 문자, WhatsApp으로 Stripe 결제 링크를 보낼 수 있습니다.'
-                  : 'Send a Stripe payment link by email, SMS, or WhatsApp.'}
+                  ? '고정 금액 인보이스 또는 손님이 금액을 넣는 팁 링크를 이메일, 문자, WhatsApp으로 보낼 수 있습니다.'
+                  : 'Send a fixed invoice or a guest-amount tip link by email, SMS, or WhatsApp.'}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -1474,7 +1565,12 @@ export function QuickPaymentRequestModal({
                 recipientName: item.recipientName,
                 description: item.description,
               }
-              if (item.total > 0) next.amountUsd = item.total
+              if (item.openAmount) {
+                next.openAmount = true
+                next.description = item.description || 'Guide Tip'
+              } else if (item.total > 0) {
+                next.amountUsd = item.total
+              }
               if (item.reservationId?.trim()) next.reservationId = item.reservationId.trim()
               setFormInitials(next)
               setFormKey((k) => k + 1)

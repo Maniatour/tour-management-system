@@ -6,6 +6,7 @@ import {
   buildQuickPaymentRequestEmailHtml,
   createQuickPayableInvoice,
   isQuickPaymentInvoiceNotes,
+  isTipOpenAmountInvoiceItems,
   listQuickPaymentInvoices,
   replaceGetYourGuideRelayCustomerEmail,
 } from '@/lib/payableInvoice'
@@ -42,6 +43,7 @@ async function sendQuickPaymentEmail(params: {
   invoiceNumber: string
   payUrl: string
   locale: 'ko' | 'en'
+  openAmount?: boolean
 }): Promise<{ emailSent: boolean; emailId: string | null; emailError: string | null }> {
   const resendApiKey = process.env.RESEND_API_KEY
   if (!resendApiKey) {
@@ -66,8 +68,11 @@ async function sendQuickPaymentEmail(params: {
   }
 
   const resend = new Resend(resendApiKey)
-  const subject =
-    params.locale === 'ko'
+  const subject = params.openAmount
+    ? params.locale === 'ko'
+      ? `가이드 팁 요청 - ${params.invoiceNumber}`
+      : `Guide tip request - ${params.invoiceNumber}`
+    : params.locale === 'ko'
       ? `결제 요청 $${params.amountUsd.toFixed(2)} - ${params.invoiceNumber}`
       : `Payment request $${params.amountUsd.toFixed(2)} - ${params.invoiceNumber}`
   const payload = {
@@ -82,6 +87,7 @@ async function sendQuickPaymentEmail(params: {
       amountUsd: params.amountUsd,
       invoiceNumber: params.invoiceNumber,
       payUrl: params.payUrl,
+      openAmount: Boolean(params.openAmount),
     }),
     text: buildQuickPaymentRequestEmailText({
       recipientName: params.recipientName,
@@ -89,6 +95,7 @@ async function sendQuickPaymentEmail(params: {
       amountUsd: params.amountUsd,
       invoiceNumber: params.invoiceNumber,
       payUrl: params.payUrl,
+      openAmount: Boolean(params.openAmount),
     }),
   }
 
@@ -120,6 +127,7 @@ async function sendQuickPaymentSms(params: {
   amountUsd: number
   payUrl: string
   locale: 'ko' | 'en'
+  openAmount?: boolean
 }): Promise<{ smsSent: boolean; smsError: string | null; toPhone: string | null }> {
   const toPhone = resolveSmsPhone(params.phone)
   if (!toPhone) {
@@ -137,6 +145,7 @@ async function sendQuickPaymentSms(params: {
     description: params.description,
     amountUsd: params.amountUsd,
     payUrl: params.payUrl,
+    openAmount: Boolean(params.openAmount),
   })
   const twilioResult = await sendTwilioSms(toPhone, text)
   if ('error' in twilioResult) {
@@ -197,6 +206,10 @@ export async function POST(request: NextRequest) {
   const reservationId = typeof body.reservationId === 'string' ? body.reservationId : ''
   const amountRaw = body.amountUsd ?? body.amount
   const amountUsd = typeof amountRaw === 'number' ? amountRaw : Number(amountRaw)
+  const openAmount =
+    body.openAmount === true ||
+    body.requestKind === 'tip_open' ||
+    body.requestKind === 'tip_open_amount'
   // 고객 발송(이메일·결제 링크) 기본 영문. 한글은 body.locale === 'ko'일 때만.
   const locale = body.locale === 'ko' ? 'ko' : 'en'
   const sendEmail = body.sendEmail !== false
@@ -284,6 +297,7 @@ export async function POST(request: NextRequest) {
       const smsDescription =
         (firstItem?.description || firstItem?.productName || '').trim() || 'Tour payment'
       const smsAmountUsd = Number((invoice as { total?: number }).total) || 0
+      const smsOpenAmount = isTipOpenAmountInvoiceItems((invoice as { items?: unknown }).items)
       const customerRaw = (invoice as { customers?: { name?: string | null } | { name?: string | null }[] })
         .customers
       const customer = Array.isArray(customerRaw) ? customerRaw[0] : customerRaw
@@ -296,6 +310,7 @@ export async function POST(request: NextRequest) {
         amountUsd: smsAmountUsd,
         payUrl,
         locale,
+        openAmount: smsOpenAmount,
       })
       if (!sms.smsSent) {
         return NextResponse.json({ error: sms.smsError || 'SMS failed', ...sms }, { status: 400 })
@@ -377,6 +392,7 @@ export async function POST(request: NextRequest) {
         invoiceNumber: String((invoice as { invoice_number?: string }).invoice_number || ''),
         payUrl,
         locale: 'en',
+        openAmount: isTipOpenAmountInvoiceItems((invoice as { items?: unknown }).items),
       })
       if (!sent.emailSent) {
         return NextResponse.json(
@@ -404,11 +420,12 @@ export async function POST(request: NextRequest) {
   try {
     const result = await createQuickPayableInvoice(supabaseAdmin, {
       email,
-      amountUsd,
-      description,
+      amountUsd: openAmount ? 0 : amountUsd,
+      description: description.trim() || (openAmount ? 'Guide Tip' : ''),
       recipientName,
       locale,
       createdBy: auth.userEmail,
+      openAmount,
       ...(reservationId.trim() ? { reservationId: reservationId.trim() } : {}),
     })
 
@@ -425,6 +442,7 @@ export async function POST(request: NextRequest) {
         invoiceNumber: result.invoiceNumber,
         payUrl: result.sitePayUrl,
         locale: 'en',
+        openAmount: result.openAmount,
       })
       emailSent = sent.emailSent
       emailId = sent.emailId
@@ -459,6 +477,7 @@ export async function POST(request: NextRequest) {
           amountUsd: result.amountUsd,
           payUrl: result.sitePayUrl,
           locale,
+          openAmount: result.openAmount,
         })
         smsSent = sms.smsSent
         smsError = sms.smsError

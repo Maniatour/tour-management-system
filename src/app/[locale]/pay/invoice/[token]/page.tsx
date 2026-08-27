@@ -1,17 +1,32 @@
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { CheckCircle2, AlertCircle, CreditCard } from 'lucide-react'
+import { AlertCircle, CheckCircle2, CreditCard } from 'lucide-react'
 import { supabaseAdmin } from '@/lib/supabase'
+import { getStripeClient } from '@/lib/customerBookingCheckout'
+import {
+  isTipOpenAmountInvoiceItems,
+  markInvoicePaidFromCheckoutSession,
+} from '@/lib/payableInvoice'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
+import InvoicePayWithTipForm from '@/components/customer/InvoicePayWithTipForm'
 
 type PageProps = {
   params: Promise<{ locale: string; token: string }>
+  searchParams: Promise<{ paid?: string; canceled?: string; session_id?: string }>
 }
 
-export default async function PayInvoicePage({ params }: PageProps) {
+function descriptionFromItems(items: unknown): string {
+  if (!Array.isArray(items) || items.length === 0) return ''
+  const first = items[0] as { description?: string | null; productName?: string | null }
+  return (first.description || first.productName || '').trim()
+}
+
+export default async function PayInvoicePage({ params, searchParams }: PageProps) {
   const { locale: rawLocale, token } = await params
+  const query = await searchParams
   const locale = rawLocale === 'en' ? 'en' : 'ko'
   const isKo = locale === 'ko'
+  const canceled = query.canceled === '1'
+  const sessionId = typeof query.session_id === 'string' ? query.session_id.trim() : ''
 
   if (!token || !/^[0-9a-f-]{36}$/i.test(token)) {
     return (
@@ -41,7 +56,7 @@ export default async function PayInvoicePage({ params }: PageProps) {
 
   const { data: invoice } = await supabaseAdmin
     .from('invoices')
-    .select('id, status, hosted_invoice_url, stripe_invoice_status, invoice_number, total')
+    .select('id, status, hosted_invoice_url, stripe_invoice_status, invoice_number, total, items')
     .eq('payment_token', token)
     .maybeSingle()
 
@@ -58,24 +73,46 @@ export default async function PayInvoicePage({ params }: PageProps) {
     )
   }
 
-  if (invoice.status === 'paid' || invoice.stripe_invoice_status === 'paid') {
+  if (sessionId.startsWith('cs_')) {
+    try {
+      const stripe = getStripeClient()
+      const session = await stripe.checkout.sessions.retrieve(sessionId)
+      if (session.metadata?.invoice_id === invoice.id) {
+        await markInvoicePaidFromCheckoutSession(supabaseAdmin, session)
+      }
+    } catch (err) {
+      console.warn('[pay/invoice] checkout session finalize', err)
+    }
+  }
+
+  const { data: latestInvoice } = sessionId.startsWith('cs_')
+    ? await supabaseAdmin
+        .from('invoices')
+        .select('id, status, hosted_invoice_url, stripe_invoice_status, invoice_number, total, items')
+        .eq('id', invoice.id)
+        .maybeSingle()
+    : { data: invoice }
+
+  const current = latestInvoice || invoice
+
+  if (current.status === 'paid' || current.stripe_invoice_status === 'paid') {
     return (
       <CustomerPageShell locale={locale}>
         <PayState
           locale={locale}
           kind="success"
-          title={isKo ? '이미 결제 완료' : 'Already paid'}
+          title={isKo ? '결제가 완료되었습니다' : 'Payment complete'}
           body={
             isKo
-              ? `인보이스 ${invoice.invoice_number} 은(는) 이미 결제되었습니다. 감사합니다.`
-              : `Invoice ${invoice.invoice_number} has already been paid. Thank you.`
+              ? `인보이스 ${current.invoice_number} 결제가 확인되었습니다. 감사합니다.`
+              : `Invoice ${current.invoice_number} has been paid. Thank you.`
           }
         />
       </CustomerPageShell>
     )
   }
 
-  if (invoice.status === 'cancelled') {
+  if (current.status === 'cancelled') {
     return (
       <CustomerPageShell locale={locale}>
         <PayState
@@ -88,22 +125,37 @@ export default async function PayInvoicePage({ params }: PageProps) {
     )
   }
 
-  if (invoice.hosted_invoice_url) {
-    redirect(invoice.hosted_invoice_url)
+  const isOpenAmount = isTipOpenAmountInvoiceItems(current.items)
+  const amountDueUsd = Math.round((Number(current.total) || 0) * 100) / 100
+
+  if (!isOpenAmount && amountDueUsd <= 0 && !current.hosted_invoice_url) {
+    return (
+      <CustomerPageShell locale={locale}>
+        <PayState
+          locale={locale}
+          kind="pending"
+          title={isKo ? '결제 링크 준비 중' : 'Payment link not ready'}
+          body={
+            isKo
+              ? '아직 결제 페이지가 연결되지 않았습니다. 발송 메일의 안내를 확인하거나 고객센터로 문의해 주세요.'
+              : 'The payment page is not ready yet. Please check your invoice email or contact support.'
+          }
+          invoiceNumber={current.invoice_number}
+        />
+      </CustomerPageShell>
+    )
   }
 
   return (
     <CustomerPageShell locale={locale}>
-      <PayState
+      <InvoicePayWithTipForm
         locale={locale}
-        kind="pending"
-        title={isKo ? '결제 링크 준비 중' : 'Payment link not ready'}
-        body={
-          isKo
-            ? '아직 결제 페이지가 연결되지 않았습니다. 발송 메일의 안내를 확인하거나 고객센터로 문의해 주세요.'
-            : 'The payment page is not ready yet. Please check your invoice email or contact support.'
-        }
-        invoiceNumber={invoice.invoice_number}
+        token={token}
+        invoiceNumber={current.invoice_number}
+        description={descriptionFromItems(current.items)}
+        amountDueUsd={amountDueUsd}
+        isOpenAmount={isOpenAmount}
+        canceled={canceled}
       />
     </CustomerPageShell>
   )

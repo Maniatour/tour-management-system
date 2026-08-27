@@ -15,11 +15,15 @@ import {
 import { parseRecipientEmail } from '@/lib/quickPaymentRequestMessage'
 
 export const STAFF_PAYABLE_INVOICE_PURPOSE = 'staff_payable_invoice'
+export const STAFF_PAYABLE_CHECKOUT_PURPOSE = 'staff_payable_invoice_checkout'
 
 /** invoices.notes 마커 — 빠른 금액 청구 내역 조회용 */
 export const QUICK_PAYMENT_INVOICE_NOTES = 'quick_payment_request'
+export const TIP_OPEN_AMOUNT_ITEM_TYPE = 'tip_open_amount'
 const QUICK_PAYMENT_NOTES_LEGACY = ['빠른 금액 청구', 'Quick payment request'] as const
 const STRIPE_INVOICE_NOTE_PREFIX = 'stripe_invoice_id:'
+const STRIPE_CHECKOUT_NOTE_PREFIX = 'stripe_checkout_session_id:'
+const STRIPE_TIP_NOTE_SUFFIX = ':tip'
 
 export function isQuickPaymentInvoiceNotes(notes: string | null | undefined): boolean {
   const n = (notes || '').trim()
@@ -150,6 +154,17 @@ type InvoiceItemRow = {
   unitPrice?: number | null
   total?: number | null
   reservationId?: string | null
+  itemType?: string | null
+  openAmount?: boolean | null
+}
+
+export function isTipOpenAmountInvoiceItems(items: unknown): boolean {
+  if (!Array.isArray(items)) return false
+  return items.some((raw) => {
+    const item = raw as InvoiceItemRow
+    if (item?.openAmount === true) return true
+    return (item?.itemType || '').trim() === TIP_OPEN_AMOUNT_ITEM_TYPE
+  })
 }
 
 function roundMoney(n: number): number {
@@ -701,7 +716,10 @@ export async function applyPaidStaffInvoiceToReservation(
     total: number
     items: unknown
     customerId: string | null
-    stripeInvoice: Stripe.Invoice
+    stripeInvoice?: Stripe.Invoice | null
+    amountUsdOverride?: number
+    paymentNoteMarker?: string
+    customerEmail?: string | null
   }
 ): Promise<{
   applied: boolean
@@ -713,8 +731,13 @@ export async function applyPaidStaffInvoiceToReservation(
     return { applied: false, reservationId: null, skippedReason: 'not_quick_payment' }
   }
 
-  const stripeInvoiceId = params.stripeInvoice.id
-  const noteMarker = `${STRIPE_INVOICE_NOTE_PREFIX}${stripeInvoiceId}`
+  const stripeInvoiceId = params.stripeInvoice?.id
+  const noteMarker =
+    params.paymentNoteMarker ||
+    (stripeInvoiceId ? `${STRIPE_INVOICE_NOTE_PREFIX}${stripeInvoiceId}` : '')
+  if (!noteMarker) {
+    return { applied: false, reservationId: null, skippedReason: 'missing_payment_ref' }
+  }
 
   const { data: existingPay } = await admin
     .from('payment_records')
@@ -731,25 +754,30 @@ export async function applyPaidStaffInvoiceToReservation(
     }
   }
 
-  const amountUsd = stripeInvoicePaidAmountUsd(params.stripeInvoice, params.total)
+  const amountUsd =
+    params.amountUsdOverride != null
+      ? roundMoney(params.amountUsdOverride)
+      : params.stripeInvoice
+        ? stripeInvoicePaidAmountUsd(params.stripeInvoice, params.total)
+        : roundMoney(params.total)
   if (amountUsd <= 0) {
     return { applied: false, reservationId: null, skippedReason: 'zero_amount' }
   }
 
-  let email: string | null = null
+  let email: string | null = params.customerEmail?.trim().toLowerCase() || null
   if (params.customerId) {
     const { data: customer } = await admin
       .from('customers')
       .select('email')
       .eq('id', params.customerId)
       .maybeSingle()
-    email = (customer?.email || '').trim().toLowerCase() || null
+    email = (customer?.email || '').trim().toLowerCase() || email
   }
-  if (!email && params.stripeInvoice.customer_email) {
+  if (!email && params.stripeInvoice?.customer_email) {
     email = params.stripeInvoice.customer_email.trim().toLowerCase()
   }
 
-  const metaRid = (params.stripeInvoice.metadata?.reservation_id || '').trim() || null
+  const metaRid = (params.stripeInvoice?.metadata?.reservation_id || '').trim() || null
   const itemRid = reservationIdFromInvoiceItems(params.items)
   const description = descriptionFromInvoiceItemsQuick(params.items) || 'Quick payment'
 
@@ -847,14 +875,19 @@ export function buildQuickPaymentRequestEmailHtml(params: {
   amountUsd: number
   invoiceNumber: string
   payUrl: string
+  openAmount?: boolean
 }): string {
-  const { locale, recipientName, description, amountUsd, invoiceNumber, payUrl } = params
+  const { locale, recipientName, description, invoiceNumber, payUrl } = params
+  const openAmount = Boolean(params.openAmount)
   const greeting =
     locale === 'ko'
       ? `${escapeHtml(recipientName || '고객')}님,`
       : `Hello ${escapeHtml(recipientName || 'there')},`
-  const intro =
-    locale === 'ko'
+  const intro = openAmount
+    ? locale === 'ko'
+      ? '가이드 팁을 남겨 주시면 감사하겠습니다. 아래 링크에서 원하시는 금액을 직접 입력하고 카드로 결제해 주세요.'
+      : 'Thank you for considering a guide tip. Please open the link below, enter the amount you would like to leave, and pay securely by card.'
+    : locale === 'ko'
       ? '아래 금액에 대한 결제 요청이 도착했습니다. 카드를 통해 안전하게 결제해 주세요.'
       : 'You have a payment request. Please pay securely by card using the button below.'
   const amountLabel = locale === 'ko' ? '청구 금액' : 'Amount'
@@ -865,6 +898,11 @@ export function buildQuickPaymentRequestEmailHtml(params: {
     locale === 'ko'
       ? '본 메일은 Las Vegas Mania Tour / Kovegas에서 발송되었습니다.'
       : 'This email was sent by Las Vegas Mania Tour / Kovegas.'
+  const amountCell = openAmount
+    ? locale === 'ko'
+      ? '손님이 금액 입력'
+      : 'You choose the amount'
+    : `$${params.amountUsd.toFixed(2)}`
 
   return `<!DOCTYPE html>
 <html>
@@ -884,7 +922,7 @@ export function buildQuickPaymentRequestEmailHtml(params: {
       </tr>
       <tr>
         <td style="padding:12px 0;color:#6b7280;font-size:13px;">${amountLabel}</td>
-        <td style="padding:12px 0;text-align:right;font-size:22px;font-weight:700;">$${amountUsd.toFixed(2)}</td>
+        <td style="padding:12px 0;text-align:right;font-size:22px;font-weight:700;">${amountCell}</td>
       </tr>
     </table>
     <div style="text-align:center;margin:8px 0 20px;">
@@ -910,6 +948,7 @@ export async function createQuickPayableInvoice(
     operatorId?: string | null
     createdBy?: string | null
     reservationId?: string | null
+    openAmount?: boolean
   }
 ): Promise<{
   invoiceId: string
@@ -928,11 +967,13 @@ export async function createQuickPayableInvoice(
   email: string
   recipientName: string
   reservationId: string | null
+  openAmount: boolean
 }> {
   const locale = params.locale === 'ko' ? 'ko' : 'en'
   const email = parseRecipientEmail(params.email)
   const description = params.description.trim().slice(0, 450)
-  const amountUsd = roundMoney(Number(params.amountUsd))
+  const openAmount = Boolean(params.openAmount)
+  const amountUsd = openAmount ? 0 : roundMoney(Number(params.amountUsd))
   const recipientName = (params.recipientName || '').trim() || email.split('@')[0] || 'Guest'
 
   if (!email) {
@@ -948,11 +989,13 @@ export async function createQuickPayableInvoice(
   if (!description) {
     throw new Error(locale === 'ko' ? '청구 내용을 입력해 주세요.' : 'Description is required.')
   }
-  if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
-    throw new Error(locale === 'ko' ? '결제 금액이 0보다 커야 합니다.' : 'Amount must be greater than zero.')
-  }
-  if (amountUsd > 100_000) {
-    throw new Error(locale === 'ko' ? '금액이 너무 큽니다.' : 'Amount is too large.')
+  if (!openAmount) {
+    if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
+      throw new Error(locale === 'ko' ? '결제 금액이 0보다 커야 합니다.' : 'Amount must be greater than zero.')
+    }
+    if (amountUsd > 100_000) {
+      throw new Error(locale === 'ko' ? '금액이 너무 큽니다.' : 'Amount is too large.')
+    }
   }
 
   const operatorId = resolveOperatorId(params.operatorId)
@@ -1090,12 +1133,13 @@ export async function createQuickPayableInvoice(
       unitPrice: amountUsd,
       total: amountUsd,
       editable: true,
-      itemType: 'product',
+      itemType: openAmount ? TIP_OPEN_AMOUNT_ITEM_TYPE : 'product',
+      ...(openAmount ? { openAmount: true } : {}),
       ...(reservationId ? { reservationId } : {}),
     },
   ]
 
-  let invoice: { id: string } | null = null
+  let invoice: { id: string; invoice_number?: string; payment_token?: string | null } | null = null
   let invoiceError: { code?: string; message?: string } | null = null
   for (let attempt = 0; attempt < 5; attempt++) {
     const invoiceNumber = buildQuickInvoiceNumber()
@@ -1121,7 +1165,7 @@ export async function createQuickPayableInvoice(
         status: 'draft',
         created_by: params.createdBy || null,
       } as never)
-      .select('id')
+      .select('id, invoice_number, payment_token')
       .single()
     invoice = inserted.data
     invoiceError = inserted.error
@@ -1131,6 +1175,32 @@ export async function createQuickPayableInvoice(
 
   if (invoiceError || !invoice) {
     throw new Error(invoiceError?.message || 'Failed to create invoice')
+  }
+
+  if (openAmount) {
+    const paymentToken = invoice.payment_token || randomUUID()
+    if (!invoice.payment_token) {
+      await admin.from('invoices').update({ payment_token: paymentToken } as never).eq('id', invoice.id)
+    }
+    return {
+      invoiceId: invoice.id,
+      invoiceNumber: String(invoice.invoice_number || ''),
+      customerId,
+      customerCreated,
+      customerEmailUpdated,
+      previousEmail,
+      specialRequests,
+      stripeInvoiceId: '',
+      hostedInvoiceUrl: '',
+      paymentToken,
+      sitePayUrl: buildInvoiceSitePayUrl(paymentToken, 'en'),
+      amountUsd,
+      description,
+      email,
+      recipientName,
+      reservationId,
+      openAmount: true,
+    }
   }
 
   const pay = await createOrRefreshStripePayableInvoice(admin, invoice.id, { locale })
@@ -1152,6 +1222,7 @@ export async function createQuickPayableInvoice(
     email,
     recipientName,
     reservationId,
+    openAmount: false,
   }
 }
 
@@ -1171,6 +1242,7 @@ export type QuickPaymentHistoryItem = {
   sitePayUrl: string | null
   hostedInvoiceUrl: string | null
   stripeInvoiceStatus: string | null
+  openAmount: boolean
 }
 
 function descriptionFromInvoiceItems(items: unknown, locale: 'ko' | 'en'): string {
@@ -1227,6 +1299,456 @@ export async function listQuickPaymentInvoices(
       sitePayUrl: paymentToken ? buildInvoiceSitePayUrl(paymentToken, locale) : null,
       hostedInvoiceUrl: row.hosted_invoice_url ?? null,
       stripeInvoiceStatus: row.stripe_invoice_status ?? null,
+      openAmount: isTipOpenAmountInvoiceItems(row.items),
     }
   })
 }
+
+const MIN_TIP_CENTS = 50
+const MAX_TIP_CENTS = 200_000
+const MAX_OPEN_AMOUNT_CENTS = 1_000_000
+
+function checkoutNoteMarker(sessionId: string): string {
+  return `${STRIPE_CHECKOUT_NOTE_PREFIX}${sessionId}`
+}
+
+function tipNoteMarker(sessionId: string): string {
+  return `${STRIPE_CHECKOUT_NOTE_PREFIX}${sessionId}${STRIPE_TIP_NOTE_SUFFIX}`
+}
+
+function invoiceSummaryDescription(items: unknown, invoiceNumber: string): string {
+  const fromItems = descriptionFromInvoiceItemsQuick(items)
+  if (fromItems) return fromItems.slice(0, 120)
+  return `Invoice ${invoiceNumber}`.slice(0, 120)
+}
+
+async function applyPrepaidTipToReservation(
+  admin: AdminClient,
+  params: {
+    invoiceId: string
+    notes: string | null
+    items: unknown
+    customerId: string | null
+    customerEmail?: string | null
+    amountUsd: number
+    paymentNoteMarker: string
+    reservationIdHint?: string | null
+    description: string
+  }
+): Promise<{ applied: boolean; reservationId: string | null; skippedReason: string | null }> {
+  const amountUsd = roundMoney(params.amountUsd)
+  if (amountUsd <= 0) {
+    return { applied: false, reservationId: null, skippedReason: 'zero_amount' }
+  }
+
+  const { data: existingPay } = await admin
+    .from('payment_records')
+    .select('id, reservation_id')
+    .ilike('note', `%${params.paymentNoteMarker}%`)
+    .limit(1)
+    .maybeSingle()
+
+  if (existingPay?.id) {
+    return {
+      applied: false,
+      reservationId: existingPay.reservation_id,
+      skippedReason: 'already_applied',
+    }
+  }
+
+  let email: string | null = params.customerEmail?.trim().toLowerCase() || null
+  if (params.customerId) {
+    const { data: customer } = await admin
+      .from('customers')
+      .select('email')
+      .eq('id', params.customerId)
+      .maybeSingle()
+    email = (customer?.email || '').trim().toLowerCase() || email
+  }
+
+  const itemRid = reservationIdFromInvoiceItems(params.items)
+  const resolved = await resolveReservationForQuickPayment(admin, {
+    reservationIdHint: params.reservationIdHint || itemRid,
+    customerId: params.customerId,
+    email,
+    amountUsd,
+  })
+
+  if (!resolved.reservationId) {
+    console.warn('[payableInvoice] tip paid but no reservation matched', {
+      invoiceId: params.invoiceId,
+      email,
+      reason: resolved.reason,
+    })
+    return {
+      applied: false,
+      reservationId: null,
+      skippedReason: resolved.reason || 'reservation_not_found',
+    }
+  }
+
+  const paymentMethod = await resolveStripePaymentMethodValue(admin)
+  const operatorId = await lookupReservationOperatorId(admin, resolved.reservationId)
+  const paymentId = `payment_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+  const note = [
+    params.description || 'Guide Tip',
+    params.paymentNoteMarker,
+    `invoice_id:${params.invoiceId}`,
+    email ? `email:${email}` : '',
+  ]
+    .filter(Boolean)
+    .join(' | ')
+
+  const { error: insertError } = await admin.from('payment_records').insert({
+    id: paymentId,
+    operator_id: operatorId,
+    reservation_id: resolved.reservationId,
+    payment_status: 'Deposit Received',
+    amount: amountUsd,
+    payment_method: paymentMethod,
+    note,
+    submit_by: 'stripe_webhook',
+    submit_on: new Date().toISOString(),
+  } as never)
+
+  if (insertError) {
+    console.error('[payableInvoice] tip payment_records insert failed', insertError)
+    return {
+      applied: false,
+      reservationId: resolved.reservationId,
+      skippedReason: 'payment_insert_failed',
+    }
+  }
+
+  const { data: pricing } = await admin
+    .from('reservation_pricing')
+    .select('id, prepayment_tip')
+    .eq('reservation_id', resolved.reservationId)
+    .maybeSingle()
+
+  if (pricing?.id) {
+    const nextTip = roundMoney((Number(pricing.prepayment_tip) || 0) + amountUsd)
+    const { error: tipError } = await admin
+      .from('reservation_pricing')
+      .update({ prepayment_tip: nextTip, updated_at: new Date().toISOString() } as never)
+      .eq('id', pricing.id)
+    if (tipError) {
+      console.error('[payableInvoice] prepayment_tip update failed', tipError)
+    }
+  }
+
+  try {
+    await syncReservationPricingAggregates(admin, resolved.reservationId)
+  } catch (err) {
+    console.error('[payableInvoice] syncReservationPricingAggregates failed after tip', err)
+  }
+
+  return { applied: true, reservationId: resolved.reservationId, skippedReason: null }
+}
+
+function withPaidOpenAmountItems(items: unknown, paidUsd: number): InvoiceItemRow[] {
+  const rows = Array.isArray(items) ? ([...items] as InvoiceItemRow[]) : []
+  if (rows.length === 0) {
+    return [
+      {
+        productName: 'Guide Tip',
+        description: 'Guide Tip',
+        quantity: 1,
+        unitPrice: paidUsd,
+        total: paidUsd,
+        itemType: TIP_OPEN_AMOUNT_ITEM_TYPE,
+        openAmount: true,
+      },
+    ]
+  }
+  const first = { ...rows[0] }
+  first.unitPrice = paidUsd
+  first.total = paidUsd
+  first.quantity = first.quantity || 1
+  rows[0] = first
+  return rows
+}
+
+export async function createPublicInvoicePaySession(
+  admin: AdminClient,
+  token: string,
+  params: {
+    locale?: 'ko' | 'en'
+    tipUsd?: number
+    amountUsd?: number
+  }
+): Promise<{ url: string; mode: 'hosted_invoice' | 'checkout' }> {
+  const locale = params.locale === 'ko' ? 'ko' : 'en'
+  const stripe = getStripeClient()
+
+  const { data: invoice, error } = await admin
+    .from('invoices')
+    .select(
+      'id, status, notes, total, items, customer_id, payment_token, hosted_invoice_url, stripe_invoice_id, stripe_invoice_status, stripe_customer_id, invoice_number'
+    )
+    .eq('payment_token', token)
+    .maybeSingle()
+
+  if (error || !invoice) {
+    throw new Error(locale === 'ko' ? '인보이스를 찾을 수 없습니다.' : 'Invoice not found.')
+  }
+  if (invoice.status === 'paid' || invoice.stripe_invoice_status === 'paid') {
+    throw new Error(locale === 'ko' ? '이미 결제 완료된 인보이스입니다.' : 'Invoice is already paid.')
+  }
+  if (invoice.status === 'cancelled') {
+    throw new Error(locale === 'ko' ? '취소된 인보이스입니다.' : 'Invoice is cancelled.')
+  }
+
+  const openAmount = isTipOpenAmountInvoiceItems(invoice.items)
+  const invoiceAmountUsd = openAmount ? 0 : roundMoney(Number(invoice.total) || 0)
+  const tipUsd = openAmount
+    ? roundMoney(Number(params.amountUsd))
+    : roundMoney(Number(params.tipUsd) || 0)
+
+  if (openAmount) {
+    const tipCents = usdToCents(tipUsd)
+    if (!Number.isFinite(tipUsd) || tipCents < MIN_TIP_CENTS) {
+      throw new Error(
+        locale === 'ko'
+          ? '팁 금액은 $0.50 이상이어야 합니다.'
+          : 'Tip amount must be at least $0.50.'
+      )
+    }
+    if (tipCents > MAX_OPEN_AMOUNT_CENTS) {
+      throw new Error(locale === 'ko' ? '금액이 너무 큽니다.' : 'Amount is too large.')
+    }
+  } else {
+    if (invoiceAmountUsd <= 0) {
+      throw new Error(locale === 'ko' ? '결제 금액이 0보다 커야 합니다.' : 'Invoice total must be greater than zero.')
+    }
+    if (tipUsd < 0) {
+      throw new Error(locale === 'ko' ? '팁 금액이 올바르지 않습니다.' : 'Tip amount is invalid.')
+    }
+    const tipCents = usdToCents(tipUsd)
+    if (tipUsd > 0 && tipCents < MIN_TIP_CENTS) {
+      throw new Error(
+        locale === 'ko' ? '팁은 $0.50 이상이거나 0이어야 합니다.' : 'Tip must be at least $0.50, or left at $0.'
+      )
+    }
+    if (tipCents > MAX_TIP_CENTS) {
+      throw new Error(locale === 'ko' ? '팁 금액이 너무 큽니다.' : 'Tip amount is too large.')
+    }
+  }
+
+  const hostedUrl = String(invoice.hosted_invoice_url || '').trim()
+  if (!openAmount && tipUsd <= 0 && hostedUrl) {
+    return { url: hostedUrl, mode: 'hosted_invoice' }
+  }
+
+  let customerEmail = ''
+  if (invoice.customer_id) {
+    const { data: customer } = await admin
+      .from('customers')
+      .select('id, name, email')
+      .eq('id', invoice.customer_id)
+      .maybeSingle()
+    customerEmail = parseRecipientEmail(customer?.email || '')
+  }
+
+  const reservationId =
+    reservationIdFromInvoiceItems(invoice.items) ||
+    ''
+  const invoiceNumber = String(invoice.invoice_number || '')
+  const description = invoiceSummaryDescription(invoice.items, invoiceNumber)
+  const origin = siteOrigin()
+  const invoiceCents = usdToCents(invoiceAmountUsd)
+  const tipCents = usdToCents(tipUsd)
+
+  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = []
+  if (invoiceCents > 0) {
+    lineItems.push({
+      quantity: 1,
+      price_data: {
+        currency: 'usd',
+        unit_amount: invoiceCents,
+        product_data: {
+          name: description || `Invoice ${invoiceNumber}`,
+          ...(invoiceNumber ? { description: `Invoice ${invoiceNumber}` } : {}),
+        },
+      },
+    })
+  }
+  if (tipCents > 0) {
+    lineItems.push({
+      quantity: 1,
+      price_data: {
+        currency: 'usd',
+        unit_amount: tipCents,
+        product_data: {
+          name: 'Guide Tip',
+          description: openAmount
+            ? 'Thank you for tipping your guide'
+            : 'Optional guide gratuity',
+        },
+      },
+    })
+  }
+  if (lineItems.length === 0) {
+    throw new Error(locale === 'ko' ? '결제 금액이 없습니다.' : 'Nothing to charge.')
+  }
+
+  const metadata: Record<string, string> = {
+    purpose: STAFF_PAYABLE_CHECKOUT_PURPOSE,
+    invoice_id: invoice.id,
+    invoice_number: invoiceNumber,
+    invoice_amount_cents: String(invoiceCents),
+    tip_amount_cents: String(tipCents),
+    open_amount: openAmount ? '1' : '0',
+    customer_id: invoice.customer_id || '',
+    ...(reservationId ? { reservation_id: reservationId } : {}),
+  }
+
+  const sessionParams: Stripe.Checkout.SessionCreateParams = {
+    mode: 'payment',
+    line_items: lineItems,
+    success_url: `${origin}/${locale}/pay/invoice/${token}?paid=1&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}/${locale}/pay/invoice/${token}?canceled=1`,
+    metadata,
+    payment_intent_data: {
+      metadata,
+      description: openAmount
+        ? `Guide tip ${invoiceNumber}`
+        : `Invoice ${invoiceNumber}${tipCents > 0 ? ' + tip' : ''}`,
+    },
+    submit_type: 'pay',
+  }
+
+  if (invoice.stripe_customer_id) {
+    sessionParams.customer = invoice.stripe_customer_id
+  } else if (customerEmail) {
+    sessionParams.customer_email = customerEmail
+  }
+
+  const session = await stripe.checkout.sessions.create(sessionParams)
+  if (!session.url) {
+    throw new Error(
+      locale === 'ko' ? 'Stripe 결제 URL을 받지 못했습니다.' : 'Stripe did not return a checkout URL.'
+    )
+  }
+  return { url: session.url, mode: 'checkout' }
+}
+
+export async function markInvoicePaidFromCheckoutSession(
+  admin: AdminClient,
+  session: Stripe.Checkout.Session
+): Promise<{
+  ok: boolean
+  invoiceId?: string
+  alreadyPaid?: boolean
+  paymentApplied?: boolean
+  tipApplied?: boolean
+  reservationId?: string | null
+  paymentSkippedReason?: string | null
+}> {
+  const purpose = session.metadata?.purpose
+  const invoiceId = session.metadata?.invoice_id
+  if (purpose !== STAFF_PAYABLE_CHECKOUT_PURPOSE || !invoiceId) {
+    return { ok: false }
+  }
+  if (session.payment_status !== 'paid') {
+    return { ok: false }
+  }
+
+  const { data: invoice } = await admin
+    .from('invoices')
+    .select('id, status, notes, total, items, customer_id, stripe_invoice_id')
+    .eq('id', invoiceId)
+    .maybeSingle()
+
+  if (!invoice) return { ok: false }
+
+  const openAmount = session.metadata?.open_amount === '1' || isTipOpenAmountInvoiceItems(invoice.items)
+  const invoiceAmountUsd = roundMoney(Number(session.metadata?.invoice_amount_cents || 0) / 100)
+  const tipAmountUsd = roundMoney(Number(session.metadata?.tip_amount_cents || 0) / 100)
+  const paidTotalUsd =
+    typeof session.amount_total === 'number'
+      ? roundMoney(session.amount_total / 100)
+      : roundMoney(invoiceAmountUsd + tipAmountUsd)
+  const alreadyPaid = invoice.status === 'paid'
+  const sessionId = session.id
+
+  if (!alreadyPaid) {
+    const paidItems = openAmount ? withPaidOpenAmountItems(invoice.items, paidTotalUsd) : invoice.items
+    const updatePayload: Record<string, unknown> = {
+      status: 'paid',
+      paid_at: new Date().toISOString(),
+      stripe_invoice_status: 'paid',
+    }
+    if (openAmount) {
+      updatePayload.total = paidTotalUsd
+      updatePayload.subtotal = paidTotalUsd
+      updatePayload.items = paidItems
+    }
+    await admin.from('invoices').update(updatePayload as never).eq('id', invoice.id)
+  }
+
+  if (invoice.stripe_invoice_id) {
+    try {
+      const stripe = getStripeClient()
+      await voidOpenStripeInvoice(stripe, invoice.stripe_invoice_id)
+    } catch (err) {
+      console.warn('[payableInvoice] failed to void Stripe invoice after checkout', err)
+    }
+  }
+
+  const customerEmail =
+    (typeof session.customer_email === 'string' && session.customer_email) ||
+    (typeof session.customer_details?.email === 'string' ? session.customer_details.email : null)
+
+  let paymentApplied = false
+  let tipApplied = false
+  let reservationId: string | null = null
+  let paymentSkippedReason: string | null = null
+
+  if (!openAmount && invoiceAmountUsd > 0) {
+    const apply = await applyPaidStaffInvoiceToReservation(admin, {
+      invoiceId: invoice.id,
+      notes: invoice.notes,
+      total: invoiceAmountUsd,
+      items: invoice.items,
+      customerId: invoice.customer_id,
+      amountUsdOverride: invoiceAmountUsd,
+      paymentNoteMarker: checkoutNoteMarker(sessionId),
+      customerEmail,
+    })
+    paymentApplied = apply.applied
+    reservationId = apply.reservationId
+    paymentSkippedReason = apply.skippedReason
+  }
+
+  const tipUsd = openAmount ? paidTotalUsd : tipAmountUsd
+  if (tipUsd > 0) {
+    const tip = await applyPrepaidTipToReservation(admin, {
+      invoiceId: invoice.id,
+      notes: invoice.notes,
+      items: invoice.items,
+      customerId: invoice.customer_id,
+      customerEmail,
+      amountUsd: tipUsd,
+      paymentNoteMarker: tipNoteMarker(sessionId),
+      reservationIdHint: (session.metadata?.reservation_id || '').trim() || null,
+      description: openAmount
+        ? descriptionFromInvoiceItemsQuick(invoice.items) || 'Guide Tip'
+        : 'Guide Tip',
+    })
+    tipApplied = tip.applied
+    if (!reservationId) reservationId = tip.reservationId
+    if (!paymentSkippedReason) paymentSkippedReason = tip.skippedReason
+  }
+
+  return {
+    ok: true,
+    invoiceId: invoice.id,
+    alreadyPaid,
+    paymentApplied,
+    tipApplied,
+    reservationId,
+    paymentSkippedReason,
+  }
+}
+

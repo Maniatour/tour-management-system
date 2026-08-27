@@ -6,7 +6,7 @@ import {
   finalizeCustomerBookingPaymentByIntent,
   getStripeClient,
 } from '@/lib/customerBookingCheckout'
-import { markInvoicePaidFromStripeWebhook } from '@/lib/payableInvoice'
+import { markInvoicePaidFromCheckoutSession, markInvoicePaidFromStripeWebhook } from '@/lib/payableInvoice'
 import { syncOperatorFromStripeAccountEvent } from '@/lib/operators/stripeConnect'
 
 export const runtime = 'nodejs'
@@ -15,6 +15,7 @@ export const runtime = 'nodejs'
  * POST /api/webhooks/stripe
  * - payment_intent.succeeded → 고객 웹 예약 확정 (idempotent)
  * - invoice.paid → 스태프 발행 인보이스 paid 처리 (idempotent)
+ * - checkout.session.completed → 인보이스+팁 / 오픈금액 팁 Checkout 결제 (idempotent)
  * - account.updated → SaaS operator Stripe Connect status sync
  */
 export async function POST(request: NextRequest) {
@@ -61,6 +62,18 @@ export async function POST(request: NextRequest) {
       const result = await markInvoicePaidFromStripeWebhook(supabaseAdmin, stripeInvoice)
       console.log('[webhooks/stripe] invoice.paid', {
         stripeInvoiceId: stripeInvoice.id,
+        ...result,
+      })
+    }
+
+    if (
+      event.type === 'checkout.session.completed' ||
+      event.type === 'checkout.session.async_payment_succeeded'
+    ) {
+      const session = event.data.object as Stripe.Checkout.Session
+      const result = await markInvoicePaidFromCheckoutSession(supabaseAdmin, session)
+      console.log('[webhooks/stripe]', event.type, {
+        checkoutSessionId: session.id,
         ...result,
       })
     }

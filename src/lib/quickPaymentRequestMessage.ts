@@ -34,9 +34,18 @@ export function buildQuickPaymentRequestSmsText(params: {
   description: string
   amountUsd: number
   payUrl: string
+  openAmount?: boolean
 }): string {
   const name = params.recipientName.trim() || 'there'
   const description = params.description.trim() || 'Tour payment'
+  if (params.openAmount) {
+    return [
+      `Hello ${name},`,
+      `Please leave a ${description} at the amount you choose.`,
+      `Pay here: ${params.payUrl}`,
+      'Las Vegas Mania Tour / Kovegas',
+    ].join('\n')
+  }
   return [
     `Hello ${name},`,
     `Payment request $${params.amountUsd.toFixed(2)} — ${description}`,
@@ -51,9 +60,25 @@ export function buildQuickPaymentRequestEmailText(params: {
   amountUsd: number
   invoiceNumber: string
   payUrl: string
+  openAmount?: boolean
 }): string {
   const name = params.recipientName.trim() || 'there'
   const description = params.description.trim() || 'Tour payment'
+  if (params.openAmount) {
+    return [
+      `Hello ${name},`,
+      '',
+      'Thank you for considering a guide tip. Please open the link below, enter the amount you would like to leave, and pay securely by card.',
+      '',
+      `Invoice #: ${params.invoiceNumber}`,
+      `Description: ${description}`,
+      'Amount: you choose',
+      '',
+      `Pay now: ${params.payUrl}`,
+      '',
+      'This email was sent by Las Vegas Mania Tour / Kovegas.',
+    ].join('\n')
+  }
   return [
     `Hello ${name},`,
     '',
