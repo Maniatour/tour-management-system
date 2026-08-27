@@ -9721,8 +9721,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           </DialogHeader>
           <p className="text-xs text-gray-500 -mt-2 mb-2">
             {locale === 'ko'
-              ? '이름 영역을 누르면 수정 화면이 열립니다. 오른쪽에서 상태만 바로 변경할 수 있습니다.'
-              : 'Click the name to open the edit form. Change status quickly from the menu on the right.'}
+              ? '고객 이름을 누르면 수정 화면이 열립니다. 상태 뱃지를 누르면 예약 상태를 바꿀 수 있습니다.'
+              : 'Tap the guest name to edit. Tap the status badge to change reservation status.'}
           </p>
           <div className="flex flex-wrap items-center justify-end gap-2 pb-2 border-b border-gray-100 shrink-0">
             <button
@@ -9785,6 +9785,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   : undefined
                 const channelName = channel?.name?.trim() || (channelId ? getChannelName(channelId, productCellChannels) : '')
                 const showChannel = Boolean(channelName && channelName !== 'Unknown')
+                const customerName = (
+                  customer?.name ||
+                  getCustomerName(String(res.customer_id || ''), customers as Customer[])
+                ).trim() || (locale === 'ko' ? '이름 없음' : 'No name')
                 const antelopeChoiceKeys = [
                   ...new Set(
                     reservationChoices
@@ -9793,70 +9797,101 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                       .filter((k): k is 'X' | 'L' | 'U' => k === 'X' || k === 'L' || k === 'U')
                   ),
                 ].sort((a, b) => ['X', 'L', 'U'].indexOf(a) - ['X', 'L', 'U'].indexOf(b))
+                const openReservationEdit = () => {
+                  setProductCellReservationsModal(null)
+                  setReservationIdForScheduleEdit(String(res.id))
+                }
                 return (
                   <div
                     key={res.id}
-                    className="w-full rounded-lg border border-gray-200 px-2 py-2 hover:bg-gray-50 transition-colors flex flex-row gap-2 items-stretch min-w-0"
+                    className="w-full rounded-lg border border-gray-200 px-2.5 py-2 hover:bg-gray-50 transition-colors flex flex-col gap-1 min-w-0"
                   >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="relative shrink-0">
+                        <select
+                          id={`schedule-product-cell-status-${res.id}`}
+                          aria-label={locale === 'ko' ? '상태 변경' : 'Change status'}
+                          className={`appearance-none cursor-pointer text-xs font-medium rounded-md border-0 pl-2 pr-5 py-1 max-w-[7.5rem] ${getStatusColor(st) || getStatusColor(normalizedSt)} disabled:opacity-50`}
+                          value={normalizedSt || 'pending'}
+                          disabled={productCellStatusSavingId === String(res.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            e.stopPropagation()
+                            void handleProductCellReservationStatusChange(String(res.id), e.target.value)
+                          }}
+                        >
+                          {statusSelectOptions.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {getStatusLabel(opt, tReservations)}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          className="pointer-events-none absolute right-1 top-1/2 h-3 w-3 -translate-y-1/2 opacity-70"
+                          aria-hidden
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left hover:bg-gray-100/80 transition-colors"
+                        onClick={openReservationEdit}
+                      >
+                        {customer?.language ? (
+                          <ReactCountryFlag
+                            countryCode={getLanguageFlagCountryCode(customer.language)}
+                            svg
+                            title={customer.language}
+                            style={{ width: '14px', height: '11px', borderRadius: '2px', flexShrink: 0 }}
+                          />
+                        ) : null}
+                        <span className="min-w-0 flex-1 truncate font-semibold text-sm text-gray-900" title={customerName}>
+                          {customerName}
+                        </span>
+                      </button>
+                    </div>
                     <button
                       type="button"
-                      className="flex-1 min-w-0 text-left flex flex-col gap-0.5 justify-center rounded-md px-1 py-0.5 -m-0.5 hover:bg-gray-100/80 transition-colors"
-                      onClick={() => {
-                        setProductCellReservationsModal(null)
-                        setReservationIdForScheduleEdit(String(res.id))
-                      }}
+                      className="w-full min-w-0 text-left rounded-md px-0.5 py-0.5 hover:bg-gray-100/80 transition-colors"
+                      onClick={openReservationEdit}
                     >
-                      <div className="flex items-center justify-between gap-2 min-w-0">
-                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {showChannel ? (
                           <span
-                            className={`inline-flex shrink-0 text-xs px-2 py-0.5 rounded-md font-medium ${getStatusColor(st)}`}
+                            className="inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded border border-gray-200 bg-gray-50"
+                            title={channelName}
+                            aria-label={channelName}
                           >
-                            {st ? getStatusLabel(st, tReservations) : '—'}
+                            {channel?.favicon_url ? (
+                              <img
+                                src={channel.favicon_url}
+                                alt=""
+                                className="h-full w-full object-cover"
+                                onError={(e) => {
+                                  ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+                                }}
+                              />
+                            ) : (
+                              <span className="text-[9px] font-semibold leading-none text-gray-600">
+                                {channelName.slice(0, 1).toUpperCase()}
+                              </span>
+                            )}
                           </span>
-                          {customer?.language ? (
-                            <ReactCountryFlag
-                              countryCode={getLanguageFlagCountryCode(customer.language)}
-                              svg
-                              title={customer.language}
-                              style={{ width: '14px', height: '11px', borderRadius: '2px', flexShrink: 0 }}
-                            />
-                          ) : null}
-                          <span className="font-medium text-sm text-gray-900 truncate">
-                            {getCustomerName(String(res.customer_id || ''), customers as Customer[])}
+                        ) : null}
+                        {antelopeChoiceKeys.map((key) => (
+                          <span
+                            key={key}
+                            className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${getAntelopeChoiceBadgeClass(key)}`}
+                          >
+                            {`🏜️ ${key}`}
                           </span>
-                          {showChannel ? (
-                            <span
-                              className="inline-flex min-w-0 max-w-[12rem] shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-700"
-                              title={channelName}
-                            >
-                              {channel?.favicon_url ? (
-                                <img
-                                  src={channel.favicon_url}
-                                  alt=""
-                                  className="h-3 w-3 shrink-0 rounded object-cover"
-                                  onError={(e) => {
-                                    ;(e.currentTarget as HTMLImageElement).style.display = 'none'
-                                  }}
-                                />
-                              ) : null}
-                              <span className="truncate">{channelName}</span>
-                            </span>
-                          ) : null}
-                          {antelopeChoiceKeys.map((key) => (
-                            <span
-                              key={key}
-                              className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${getAntelopeChoiceBadgeClass(key)}`}
-                            >
-                              {`🏜️ ${key}`}
-                            </span>
-                          ))}
-                        </div>
-                        <span className="text-xs text-gray-600 shrink-0 tabular-nums">
+                        ))}
+                        <span className="ml-auto inline-flex items-center gap-0.5 text-xs text-gray-600 shrink-0 tabular-nums">
+                          <Users className="h-3 w-3 text-emerald-700" aria-hidden />
                           {res.total_people ?? 0}
                           {locale === 'ko' ? '명' : ' pax'}
                         </span>
                       </div>
-                      <div className={`text-[11px] text-gray-600 min-w-0 leading-snug pl-0.5 ${isCancelled && followUpContactLines.length > 0 ? '' : 'truncate'}`}>
+                      <div className={`mt-0.5 text-[11px] text-gray-600 min-w-0 leading-snug ${isCancelled && followUpContactLines.length > 0 ? '' : 'truncate'}`}>
                         {isCancelled ? (
                           <div className="space-y-0.5">
                             <div className="truncate" title={cancellationLine}>
@@ -9892,30 +9927,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                         <span className="text-[10px] text-gray-500 truncate">{subProductLabel}</span>
                       ) : null}
                     </button>
-                    <div
-                      className="shrink-0 flex flex-col justify-center gap-0.5 border-l border-gray-100 pl-2"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <label htmlFor={`schedule-product-cell-status-${res.id}`} className="text-[10px] text-gray-500 whitespace-nowrap">
-                        {locale === 'ko' ? '상태 변경' : 'Status'}
-                      </label>
-                      <select
-                        id={`schedule-product-cell-status-${res.id}`}
-                        className="text-xs border border-gray-300 rounded-md px-1.5 py-1 bg-white max-w-[9rem] disabled:opacity-50"
-                        value={normalizedSt || 'pending'}
-                        disabled={productCellStatusSavingId === String(res.id)}
-                        onChange={(e) => {
-                          e.stopPropagation()
-                          void handleProductCellReservationStatusChange(String(res.id), e.target.value)
-                        }}
-                      >
-                        {statusSelectOptions.map((opt) => (
-                          <option key={opt} value={opt}>
-                            {getStatusLabel(opt, tReservations)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
                   </div>
                 )
               })

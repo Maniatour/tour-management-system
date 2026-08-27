@@ -467,8 +467,8 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
 
             <div className={chrome.bodyStack}>
               {/* 가이드 선택 (드롭다운 열면 활성/비활성 탭) */}
-              <div className={`flex flex-wrap items-center ${chrome.bodyRowGap}`}>
-                <label className={`${chrome.bodyLabel} flex-shrink-0 whitespace-nowrap`}>{t('guide')}</label>
+              <div className={`flex items-center min-w-0 ${chrome.bodyRowGap}`}>
+                <label className={`${chrome.bodyLabel} shrink-0 whitespace-nowrap`}>{t('guide')}</label>
                 <MemberSelectWithTabs
                   value={selectedGuide || ''}
                   onChange={onGuideSelect}
@@ -488,7 +488,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                     onToggleGuideAssignmentLock?.()
                   }}
                   disabled={!onToggleGuideAssignmentLock || (!guideAssignmentLocked && !selectedGuide)}
-                  className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border flex-shrink-0 ${
+                  className={`${chrome.iconButton} border ${
                     guideAssignmentLocked
                       ? 'border-amber-400 bg-amber-50 text-amber-900'
                       : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'
@@ -499,39 +499,48 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                 >
                   <Pin size={chrome.iconSize} className={guideAssignmentLocked ? 'fill-current' : undefined} />
                 </button>
-                <div className="flex items-center space-x-2 relative flex-shrink-0">
-                  <input
-                    type="number"
-                    value={Number.isFinite(guideFee) ? guideFee : ''}
-                    onChange={(e) => onGuideFeeChange(Number(e.target.value) || 0)}
-                    className={`${chrome.bodyField} w-24 pl-6 ${
-                      isGuideFeeFromDefault ? 'text-primary bg-primary/5 border-border' : 
-                      isGuideFeeFromTour ? 'text-green-600 bg-green-50 border-green-300' : 
-                      'text-gray-900'
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={Number.isFinite(guideFee) ? guideFee : ''}
+                      onChange={(e) => onGuideFeeChange(Number(e.target.value) || 0)}
+                      className={`${chrome.bodyField} w-20 sm:w-24 pl-6 ${
+                        isGuideFeeFromDefault ? 'text-primary bg-primary/5 border-border' :
+                        isGuideFeeFromTour ? 'text-green-600 bg-green-50 border-green-300' :
+                        'text-gray-900'
+                      }`}
+                      placeholder="0"
+                      min="0"
+                      step="0.01"
+                      title={isGuideFeeFromDefault ? t('fromDefault') : isGuideFeeFromTour ? t('fromTour') : t('editable')}
+                    />
+                    <span className={`absolute left-2 ${chrome.bodyMuted} pointer-events-none`}>$</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleSave()
+                    }}
+                    disabled={isSaving}
+                    className={`${chrome.iconButton} ${
+                      isSaving
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-primary text-primary-foreground hover:bg-primary/90'
                     }`}
-                    placeholder="0"
-                    min="0"
-                    step="0.01"
-                    title={isGuideFeeFromDefault ? '기본값 (수정 시 자동 저장)' : isGuideFeeFromTour ? '투어에 저장됨' : '수정 가능'}
-                  />
-                  <span className={`absolute left-2 ${chrome.bodyMuted} pointer-events-none`}>$</span>
-                  {isGuideFeeFromDefault && (
-                    <span className={`${chrome.bodyText} text-primary`} title="기본값">
-                      📋
-                    </span>
-                  )}
-                  {isGuideFeeFromTour && (
-                    <span className={`${chrome.bodyText} text-green-600`} title="저장된 값">
-                      💾
-                    </span>
-                  )}
+                    title={isSaving ? t('saving') : t('save')}
+                    aria-label={isSaving ? t('saving') : t('save')}
+                  >
+                    <Save size={chrome.iconSize} />
+                  </button>
                 </div>
               </div>
 
               {/* 2차 가이드/드라이버 선택 (드롭다운 열면 활성/비활성 탭) */}
               {(teamType === '2guide' || teamType === 'guide+driver') && (
-                <div className={`flex flex-wrap items-center ${chrome.bodyRowGap}`}>
-                  <label className={`${chrome.bodyLabel} flex-shrink-0 whitespace-nowrap`}>
+                <div className={`flex items-center min-w-0 ${chrome.bodyRowGap}`}>
+                  <label className={`${chrome.bodyLabel} shrink-0 whitespace-nowrap`}>
                     {teamType === '2guide' ? t('secondGuide') : t('driver')}
                   </label>
                   <MemberSelectWithTabs
@@ -553,7 +562,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                       onToggleAssistantAssignmentLock?.()
                     }}
                     disabled={!onToggleAssistantAssignmentLock || (!assistantAssignmentLocked && !selectedAssistant)}
-                    className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border flex-shrink-0 ${
+                    className={`${chrome.iconButton} border ${
                       assistantAssignmentLocked
                         ? 'border-amber-400 bg-amber-50 text-amber-900'
                         : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'
@@ -564,32 +573,41 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                   >
                     <Pin size={chrome.iconSize} className={assistantAssignmentLocked ? 'fill-current' : undefined} />
                   </button>
-                  <div className="flex items-center space-x-2 relative flex-shrink-0">
-                    <input
-                      type="number"
-                      value={Number.isFinite(assistantFee) ? assistantFee : ''}
-                      onChange={(e) => onAssistantFeeChange(Number(e.target.value) || 0)}
-                      className={`${chrome.bodyField} w-24 pl-6 ${
-                        isAssistantFeeFromDefault ? 'text-primary bg-primary/5 border-border' : 
-                        isAssistantFeeFromTour ? 'text-green-600 bg-green-50 border-green-300' : 
-                        'text-gray-900'
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={Number.isFinite(assistantFee) ? assistantFee : ''}
+                        onChange={(e) => onAssistantFeeChange(Number(e.target.value) || 0)}
+                        className={`${chrome.bodyField} w-20 sm:w-24 pl-6 ${
+                          isAssistantFeeFromDefault ? 'text-primary bg-primary/5 border-border' :
+                          isAssistantFeeFromTour ? 'text-green-600 bg-green-50 border-green-300' :
+                          'text-gray-900'
+                        }`}
+                        placeholder="0"
+                        min="0"
+                        step="0.01"
+                        title={isAssistantFeeFromDefault ? t('fromDefault') : isAssistantFeeFromTour ? t('fromTour') : t('editable')}
+                      />
+                      <span className={`absolute left-2 ${chrome.bodyMuted} pointer-events-none`}>$</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleSave()
+                      }}
+                      disabled={isSaving}
+                      className={`${chrome.iconButton} ${
+                        isSaving
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'bg-primary text-primary-foreground hover:bg-primary/90'
                       }`}
-                      placeholder="0"
-                      min="0"
-                      step="0.01"
-                      title={isAssistantFeeFromDefault ? '기본값 (수정 시 자동 저장)' : isAssistantFeeFromTour ? '투어에 저장됨' : '수정 가능'}
-                    />
-                    <span className={`absolute left-2 ${chrome.bodyMuted} pointer-events-none`}>$</span>
-                    {isAssistantFeeFromDefault && (
-                      <span className={`${chrome.bodyText} text-primary`} title="기본값">
-                        📋
-                      </span>
-                    )}
-                    {isAssistantFeeFromTour && (
-                      <span className={`${chrome.bodyText} text-green-600`} title="저장된 값">
-                        💾
-                      </span>
-                    )}
+                      title={isSaving ? t('saving') : t('save')}
+                      aria-label={isSaving ? t('saving') : t('save')}
+                    >
+                      <Save size={chrome.iconSize} />
+                    </button>
                   </div>
                 </div>
               )}
