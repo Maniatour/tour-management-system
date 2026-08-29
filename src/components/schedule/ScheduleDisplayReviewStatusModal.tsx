@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { reviewBonusPointsFromStarCounts } from '@/lib/reviewBonusPoints'
 import { cn } from '@/lib/utils'
 import type {
   GoogleReviewStaffMonthBy,
@@ -106,6 +107,19 @@ function formatRateDetail(
 ): string {
   if (denominator <= 0) return '—'
   return `${reviews}/${denominator} ${formatPercent(percent)}`
+}
+
+const POINTS_FORMULA_KO = '5점 +1 / 4점 0 / 3점 -1 / 2점 -2 / 1점 -3'
+const POINTS_FORMULA_EN = '5★ +1 / 4★ 0 / 3★ −1 / 2★ −2 / 1★ −3'
+
+function formatPoints(points: number): string {
+  return `${points > 0 ? '+' : ''}${points}`
+}
+
+function pointsClassName(points: number): string {
+  if (points > 0) return 'text-emerald-700'
+  if (points < 0) return 'text-red-600'
+  return 'text-muted-foreground'
 }
 
 function RankBadge({ rank, large }: { rank: number; large?: boolean }) {
@@ -527,10 +541,10 @@ export default function ScheduleDisplayReviewStatusModal({
                   {isKo
                     ? `${year}년 ${monthLabels[selectedMonth - 1]} · ${
                         monthBy === 'review_date' ? '등록일' : '투어일'
-                      } 기준 · 평균 별점 → 리뷰 수 → 5점 순 · 인원별 = 리뷰÷총인원 · 예약건별 = 리뷰÷예약건수`
+                      } 기준 · 평균 별점 → 리뷰 수 → 5점 순 · 포인트 ${POINTS_FORMULA_KO} · 인원별 = 리뷰÷총인원 · 예약건별 = 리뷰÷예약건수`
                     : `${monthLabels[selectedMonth - 1]} ${year} · by ${
                         monthBy === 'review_date' ? 'review date' : 'tour date'
-                      } · avg rating → reviews → 5★ · by guests = reviews÷guests · by bookings = reviews÷groups`}
+                      } · avg rating → reviews → 5★ · points ${POINTS_FORMULA_EN} · by guests = reviews÷guests · by bookings = reviews÷groups`}
                 </div>
               ) : null}
 
@@ -538,6 +552,7 @@ export default function ScheduleDisplayReviewStatusModal({
               <ul className={cn('space-y-2', isFullscreen ? 'hidden' : 'sm:hidden')}>
                 {rankedRows.map((row) => {
                   const cell = row.cell ?? { ...EMPTY_CELL, month: selectedMonth }
+                  const points = reviewBonusPointsFromStarCounts(cell)
                   return (
                     <li
                       key={row.staffEmail}
@@ -558,6 +573,19 @@ export default function ScheduleDisplayReviewStatusModal({
                               {isKo ? '리뷰' : 'Reviews'}{' '}
                               <span className="font-medium tabular-nums text-foreground">
                                 {cell.reviewCount}
+                              </span>
+                            </span>
+                            <span
+                              title={isKo ? POINTS_FORMULA_KO : POINTS_FORMULA_EN}
+                            >
+                              {isKo ? '포인트' : 'Points'}{' '}
+                              <span
+                                className={cn(
+                                  'font-semibold tabular-nums',
+                                  pointsClassName(points)
+                                )}
+                              >
+                                {formatPoints(points)}
                               </span>
                             </span>
                             <span>
@@ -619,6 +647,15 @@ export default function ScheduleDisplayReviewStatusModal({
                       </th>
                       <th className={cn('font-medium', isFullscreen ? 'py-3 pr-5' : 'py-2 pr-4')}>
                         {isKo ? '리뷰 수' : 'Reviews'}
+                      </th>
+                      <th
+                        className={cn(
+                          'text-center font-medium',
+                          isFullscreen ? 'px-3 py-3' : 'px-2 py-2'
+                        )}
+                        title={isKo ? POINTS_FORMULA_KO : POINTS_FORMULA_EN}
+                      >
+                        {isKo ? '포인트' : 'Points'}
                       </th>
                       <th
                         className={cn(
@@ -688,6 +725,7 @@ export default function ScheduleDisplayReviewStatusModal({
                   <tbody>
                     {rankedRows.map((row) => {
                       const cell = row.cell ?? { ...EMPTY_CELL, month: selectedMonth }
+                      const points = reviewBonusPointsFromStarCounts(cell)
                       const topThree = row.rank <= 3
                       return (
                         <tr
@@ -732,6 +770,16 @@ export default function ScheduleDisplayReviewStatusModal({
                             )}
                           >
                             {cell.reviewCount}
+                          </td>
+                          <td
+                            className={cn(
+                              'text-center font-semibold tabular-nums',
+                              isFullscreen ? 'px-3 py-3.5' : 'px-2 py-2.5',
+                              pointsClassName(points)
+                            )}
+                            title={isKo ? POINTS_FORMULA_KO : POINTS_FORMULA_EN}
+                          >
+                            {formatPoints(points)}
                           </td>
                           <td
                             className={cn(

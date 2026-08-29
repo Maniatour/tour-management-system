@@ -185,16 +185,31 @@ export default function ProductDetailAirbnbView({
               </p>
               <h1 className="airbnb-detail-title">{displayName}</h1>
               {reviewRating != null && reviewCount != null && reviewCount > 0 ? (
-                <ReviewSummary
-                  rating={reviewRating}
-                  reviewCount={reviewCount}
-                  reviewsLabel={t('reviewCount', { count: reviewCount })}
-                  className="mt-1.5 sm:mt-2"
-                />
+                <div className="mt-1.5 flex flex-wrap items-center gap-3 sm:mt-2">
+                  <ReviewSummary
+                    rating={reviewRating}
+                    reviewCount={reviewCount}
+                    reviewsLabel={t('reviewCount', { count: reviewCount })}
+                  />
+                  <Link
+                    href={`/${locale}/reviews/write?productId=${encodeURIComponent(productId)}`}
+                    className="text-sm font-medium text-[#1a2b49] underline-offset-2 hover:underline"
+                  >
+                    {t('writeReviewCta')}
+                  </Link>
+                </div>
               ) : (
-                <div className="mt-1.5 flex items-center gap-1 text-xs text-[#1a2b49] sm:mt-2 sm:text-sm">
-                  <Star className="h-3.5 w-3.5 fill-[#1a2b49] sm:h-4 sm:w-4" aria-hidden />
-                  <span className="font-semibold">{categoryLabel}</span>
+                <div className="mt-1.5 flex flex-wrap items-center gap-3 sm:mt-2">
+                  <div className="flex items-center gap-1 text-xs text-[#1a2b49] sm:text-sm">
+                    <Star className="h-3.5 w-3.5 fill-[#1a2b49] sm:h-4 sm:w-4" aria-hidden />
+                    <span className="font-semibold">{categoryLabel}</span>
+                  </div>
+                  <Link
+                    href={`/${locale}/reviews/write?productId=${encodeURIComponent(productId)}`}
+                    className="text-sm font-medium text-[#1a2b49] underline-offset-2 hover:underline"
+                  >
+                    {t('writeReviewCta')}
+                  </Link>
                 </div>
               )}
             </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import { ChevronLeft, ChevronRight, Star } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
@@ -25,6 +26,7 @@ type ProductDetailReviewsSectionProps = {
   reviews: ProductReviewItem[]
   averageRating?: number
   variant?: 'default' | 'airbnb'
+  productId?: string
 }
 
 function StarRating({ rating }: { rating: number }) {
@@ -150,11 +152,34 @@ function ReviewCarouselCard({
   )
 }
 
-/** Renders only when real review data is provided — no placeholder or demo content. */
+function WriteReviewLink({
+  locale,
+  productId,
+  label,
+}: {
+  locale: string
+  productId?: string | undefined
+  label: string
+}) {
+  const href = productId
+    ? `/${locale}/reviews/write?productId=${encodeURIComponent(productId)}`
+    : `/${locale}/reviews/write`
+
+  return (
+    <Link
+      href={href}
+      className="inline-flex h-11 items-center justify-center rounded-xl border border-border/60 bg-white px-4 text-sm font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {label}
+    </Link>
+  )
+}
+
 export default function ProductDetailReviewsSection({
   reviews,
   averageRating,
   variant = 'default',
+  productId,
 }: ProductDetailReviewsSectionProps) {
   const t = useTranslations('productDetail')
   const locale = useLocale()
@@ -164,28 +189,39 @@ export default function ProductDetailReviewsSection({
     [reviews, averageRating]
   )
 
-  if (!reviews.length) {
-    return null
-  }
+  const writeCta = (
+    <div className={`${reviews.length ? 'mt-6' : ''} flex flex-col items-start gap-2`}>
+      {!reviews.length ? (
+        <p className="text-sm text-muted-foreground">{t('writeReviewBeFirst')}</p>
+      ) : null}
+      <WriteReviewLink locale={locale} productId={productId} label={t('writeReviewCta')} />
+    </div>
+  )
 
   if (variant === 'airbnb') {
     return (
       <section className="airbnb-detail-section">
         <h2 className="airbnb-detail-section-title">{t('guestReviewsTitle')}</h2>
 
-        <div className="mb-6 overflow-hidden rounded-2xl border border-border/60 bg-white shadow-sm">
-          <GuideReviewSummaryCard
-            summary={summary}
-            locale={locale}
-            interactive={false}
-            className="px-3 py-4 sm:px-5 sm:py-5"
-          />
-        </div>
+        {reviews.length > 0 ? (
+          <>
+            <div className="mb-6 overflow-hidden rounded-2xl border border-border/60 bg-white shadow-sm">
+              <GuideReviewSummaryCard
+                summary={summary}
+                locale={locale}
+                interactive={false}
+                className="px-3 py-4 sm:px-5 sm:py-5"
+              />
+            </div>
 
-        <ReviewCarouselCard
-          reviews={reviews}
-          accentClassName="bg-[#1a2b49] text-white"
-        />
+            <ReviewCarouselCard
+              reviews={reviews}
+              accentClassName="bg-[#1a2b49] text-white"
+            />
+          </>
+        ) : null}
+
+        {writeCta}
       </section>
     )
   }
@@ -199,16 +235,22 @@ export default function ProductDetailReviewsSection({
             subtitle={t('guestReviewsSubtitle')}
           />
 
-          <div className="mb-6 overflow-hidden rounded-2xl border border-border/60 bg-white shadow-sm">
-            <GuideReviewSummaryCard
-              summary={summary}
-              locale={locale}
-              interactive={false}
-              className="px-3 py-4 sm:px-5 sm:py-5"
-            />
-          </div>
+          {reviews.length > 0 ? (
+            <>
+              <div className="mb-6 overflow-hidden rounded-2xl border border-border/60 bg-white shadow-sm">
+                <GuideReviewSummaryCard
+                  summary={summary}
+                  locale={locale}
+                  interactive={false}
+                  className="px-3 py-4 sm:px-5 sm:py-5"
+                />
+              </div>
 
-          <ReviewCarouselCard reviews={reviews} />
+              <ReviewCarouselCard reviews={reviews} />
+            </>
+          ) : null}
+
+          {writeCta}
         </Container>
       </Section>
     </CustomerPageZone>

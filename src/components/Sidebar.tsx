@@ -35,6 +35,7 @@ const Sidebar = () => {
       pathname.startsWith(`/${locale}/guide`) ||
       pathname.startsWith(`/${locale}/dashboard`) ||
       pathname.startsWith(`/${locale}/products`) ||
+      pathname.startsWith(`/${locale}/reviews`) ||
       pathname.startsWith(`/${locale}/off-schedule`) ||
       pathname.startsWith(`/${locale}/photos/`) ||
       pathname.startsWith(`/${locale}/reservation-check`) ||

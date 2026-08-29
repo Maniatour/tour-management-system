@@ -1,4 +1,4 @@
-import { ArrowLeft, Edit, Trash2, Copy, Printer, Mail, DollarSign, RotateCcw, FileText, X, GripVertical, Users, Smartphone, UserCheck, History } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, Copy, Printer, Mail, DollarSign, RotateCcw, FileText, X, GripVertical, Users, Smartphone, UserCheck, History, Headphones } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import TourSunriseTime from '@/components/TourSunriseTime'
@@ -50,6 +50,8 @@ interface TourHeaderProps {
   onSendGuideScheduleAssignment?: () => void
   /** 가이드 스케줄 배정·컨펌 상세 기록 */
   onViewAssignmentHistory?: () => void
+  /** 나레이션 재생 히스토리 */
+  onViewNarrationHistory?: () => void
   /** page: 전체 페이지 헤더, modal-toolbar: 모달 고정 툴바만 */
   variant?: 'page' | 'modal-toolbar'
 }
@@ -89,6 +91,7 @@ export default function TourHeader({
   onSendGuideScheduleConfirm,
   onSendGuideScheduleAssignment,
   onViewAssignmentHistory,
+  onViewNarrationHistory,
   variant = 'page',
 }: TourHeaderProps) {
   const embeddedInModal = variant === 'modal-toolbar'
@@ -219,6 +222,17 @@ export default function TourHeader({
                   data-no-drag
                 >
                   <History className="h-4 w-4" />
+                </button>
+              ) : null}
+              {onViewNarrationHistory ? (
+                <button
+                  type="button"
+                  onClick={onViewNarrationHistory}
+                  className="rounded-md border border-sky-200 bg-sky-50 p-1.5 text-sky-700 hover:bg-sky-100"
+                  title={params.locale === 'ko' ? '나레이션 재생 히스토리' : 'Narration history'}
+                  data-no-drag
+                >
+                  <Headphones className="h-4 w-4" />
                 </button>
               ) : null}
               {onPrintReceipts ? (
@@ -420,6 +434,16 @@ export default function TourHeader({
                     title={params.locale === 'ko' ? '배정·컨펌 기록' : 'Assignment history'}
                   >
                     <History className="w-5 h-5" />
+                  </button>
+                )}
+                {onViewNarrationHistory && (
+                  <button
+                    type="button"
+                    onClick={onViewNarrationHistory}
+                    className="p-2 rounded-lg hover:bg-sky-50 text-sky-700 flex-shrink-0"
+                    title={params.locale === 'ko' ? '나레이션 재생 히스토리' : 'Narration history'}
+                  >
+                    <Headphones className="w-5 h-5" />
                   </button>
                 )}
                 {onPrintReceipts && (

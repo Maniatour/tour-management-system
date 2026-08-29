@@ -5,7 +5,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useR
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone, UserCheck, History, Receipt, Wallet, Sparkles } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone, UserCheck, History, Receipt, Wallet, Sparkles, Headphones } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
@@ -242,6 +242,11 @@ const GuideScheduleConfirmBulkModal = dynamic(
 
 const GuideScheduleAssignmentHistoryModal = dynamic(
   () => import('@/components/schedule/GuideScheduleAssignmentHistoryModal'),
+  { ssr: false, loading: () => null },
+)
+
+const TourNarrationHistoryModal = dynamic(
+  () => import('@/components/tour/TourNarrationHistoryModal'),
   { ssr: false, loading: () => null },
 )
 
@@ -1249,6 +1254,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const [showGuideScheduleBulkModal, setShowGuideScheduleBulkModal] = useState(false)
   const [showGuideScheduleAssignmentBulkModal, setShowGuideScheduleAssignmentBulkModal] = useState(false)
   const [guideAssignmentHistoryTourId, setGuideAssignmentHistoryTourId] = useState<string | null>(null)
+  const [showNarrationHistoryModal, setShowNarrationHistoryModal] = useState(false)
   const [guideModalScheduleAssignmentTourId, setGuideModalScheduleAssignmentTourId] = useState<string | null>(null)
   const [guideModalScheduleConfirmTourId, setGuideModalScheduleConfirmTourId] = useState<string | null>(null)
   const [tourQuickPrint, setTourQuickPrint] = useState<TourQuickPrintRequest>(null)
@@ -7258,6 +7264,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             selectedTeamCount={selectedTeamMembers.length}
             isRefreshing={displayRefreshing}
             onRefresh={() => void handleDisplayRefresh()}
+            onOpenNarrationHistory={() => setShowNarrationHistoryModal(true)}
           />
         ) : (
         <>
@@ -7341,6 +7348,16 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 aria-label={locale === 'ko' ? '오프 스케줄 히스토리' : 'Off schedule history'}
               >
                 <History className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowNarrationHistoryModal(true)}
+                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors"
+                title={locale === 'ko' ? '투어별 나레이션 히스토리' : 'Tour narration history'}
+                aria-label={locale === 'ko' ? '투어별 나레이션 히스토리' : 'Tour narration history'}
+              >
+                <Headphones className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
 
               {/* Price & Inventory (OTA 가격·재고 추적) */}
@@ -10218,6 +10235,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             ? getTourDetailModalTitle(guideAssignmentHistoryTourId)
             : null
         }
+      />
+
+      <TourNarrationHistoryModal
+        isOpen={showNarrationHistoryModal}
+        onClose={() => setShowNarrationHistoryModal(false)}
+        locale={locale}
+        startDate={firstDayOfMonth.format('YYYY-MM-DD')}
+        endDate={lastDayOfMonth.format('YYYY-MM-DD')}
       />
 
       <OffScheduleHistoryModal

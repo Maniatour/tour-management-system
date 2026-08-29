@@ -189,6 +189,7 @@ export async function middleware(req: NextRequest) {
     siteLocalePathTest(pathname, '/?$') ||
     siteLocalePathTest(pathname, '/products/?$') ||
     siteLocalePathTest(pathname, '/products/[^/]+/?$') ||
+    siteLocalePathTest(pathname, '/reviews(/|$)') ||
     siteLocalePathTest(pathname, '/travel-guide(/|$)')
   requestHeaders.set('x-is-guide-route', isGuideRoute ? '1' : '0')
   requestHeaders.set('x-is-resident-check-route', isResidentCheckRoute ? '1' : '0')

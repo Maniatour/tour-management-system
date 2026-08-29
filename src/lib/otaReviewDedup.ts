@@ -75,7 +75,32 @@ export async function findExistingOtaReview(input: {
   }
 
   const rn = normalizeOtaReservationNumber(input.row.reservationNumber)
-  if (!rn) return null
+  if (!rn) {
+    const author = input.row.authorName?.trim()
+    const comment = normalizeOtaComment(input.row.comment)
+    const dateKey = input.row.reviewCreatedAt?.slice(0, 10)
+    if (!author || !comment || !dateKey) return null
+
+    const { data: contentRows, error: contentError } = await fromUntypedTable(supabaseAdmin, 'google_reviews')
+      .select('id, author_name, comment, review_created_at')
+      .eq('operator_id', operatorId)
+      .eq('review_source', input.source)
+      .eq('author_name', author)
+      .gte('review_created_at', `${dateKey}T00:00:00.000Z`)
+      .lt('review_created_at', `${dateKey}T23:59:59.999Z`)
+      .limit(20)
+
+    if (contentError) {
+      throw new Error(contentError.message)
+    }
+
+    const match = (contentRows ?? []).find((row) => {
+      const existingComment = normalizeOtaComment((row as { comment?: string | null }).comment)
+      return existingComment === comment || existingComment.slice(0, 160) === comment.slice(0, 160)
+    })
+
+    return match ? { id: (match as { id: string }).id } : null
+  }
 
   const { data: legacyRows, error: legacyError } = await fromUntypedTable(supabaseAdmin, 'google_reviews')
     .select('id, raw_payload')

@@ -3,9 +3,11 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from 'react'
 
 interface AudioTrack {
+  id?: string
   src: string
   title: string
   duration?: number
+  filePath?: string
 }
 
 interface AudioPlayerContextType {
@@ -16,6 +18,7 @@ interface AudioPlayerContextType {
   volume: number
   isMuted: boolean
   playTrack: (track: AudioTrack) => void
+  primeAudioForGesture: () => void
   pauseTrack: () => void
   resumeTrack: () => void
   stopTrack: () => void
@@ -96,11 +99,16 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     const audio = audioRef.current
     
     // 같은 트랙이면 재생/일시정지 토글
-    if (currentTrack?.src === track.src) {
+    const isSameTrack = track.id
+      ? currentTrack?.id === track.id
+      : currentTrack?.src === track.src
+    if (isSameTrack) {
       if (isPlaying) {
         audio.pause()
       } else {
-        audio.play()
+        audio.play().catch((error) => {
+          console.error('Error playing audio:', error)
+        })
       }
       return
     }
@@ -114,6 +122,17 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     audio.play().catch(error => {
       console.error('Error playing audio:', error)
     })
+  }
+
+  const primeAudioForGesture = () => {
+    const audio = audioRef.current
+    if (!audio) return
+    const resume = audio.play()
+    if (resume) {
+      void resume.then(() => {
+        if (!isPlaying) audio.pause()
+      }).catch(() => {})
+    }
   }
 
   const pauseTrack = () => {
@@ -196,6 +215,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     volume,
     isMuted,
     playTrack,
+    primeAudioForGesture,
     pauseTrack,
     resumeTrack,
     stopTrack,

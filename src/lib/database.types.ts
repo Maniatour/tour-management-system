@@ -10276,6 +10276,59 @@ export type Database = {
           },
         ]
       }
+      tour_narration_plays: {
+        Row: {
+          created_at: string
+          file_path: string
+          first_played_at: string
+          id: string
+          last_played_at: string
+          material_id: string
+          material_title: string
+          play_count: number
+          play_seconds: number
+          played_as: string
+          played_by_email: string
+          tour_id: string
+        }
+        Insert: {
+          created_at?: string
+          file_path: string
+          first_played_at?: string
+          id?: string
+          last_played_at?: string
+          material_id: string
+          material_title: string
+          play_count?: number
+          play_seconds?: number
+          played_as: string
+          played_by_email: string
+          tour_id: string
+        }
+        Update: {
+          created_at?: string
+          file_path?: string
+          first_played_at?: string
+          id?: string
+          last_played_at?: string
+          material_id?: string
+          material_title?: string
+          play_count?: number
+          play_seconds?: number
+          played_as?: string
+          played_by_email?: string
+          tour_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tour_narration_plays_tour_id_fkey"
+            columns: ["tour_id"]
+            isOneToOne: false
+            referencedRelation: "tours"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tour_photos: {
         Row: {
           created_at: string | null
@@ -10356,6 +10409,36 @@ export type Database = {
           },
         ]
       }
+      tour_report_driving_segments: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          label_en: string
+          label_ko: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label_en: string
+          label_ko: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label_en?: string
+          label_ko?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       tour_reports: {
         Row: {
           activities_completed: string[] | null
@@ -10364,21 +10447,28 @@ export type Database = {
           communication: string | null
           created_at: string | null
           customer_count: number | null
+          driving_segment_ids: string[]
+          booked_customer_count: number | null
           end_mileage: number | null
           guest_comments: string | null
+          handoff_note: string | null
           id: string
           incidents_delays_health: string[] | null
+          issue_photo_urls: string[]
           lost_items_damage: string[] | null
           main_stops_visited: string[] | null
           office_note: string | null
           overall_mood: string | null
           sign: string | null
+          skipped_stops: Json
           submitted_on: string | null
           suggestions_followup: string | null
           teamwork: string | null
           tour_id: string | null
           updated_at: string | null
           user_email: string
+          vehicle_condition_note: string | null
+          vehicle_condition_tags: string[]
           weather: string | null
         }
         Insert: {
@@ -10388,21 +10478,28 @@ export type Database = {
           communication?: string | null
           created_at?: string | null
           customer_count?: number | null
+          driving_segment_ids?: string[]
+          booked_customer_count?: number | null
           end_mileage?: number | null
           guest_comments?: string | null
+          handoff_note?: string | null
           id?: string
           incidents_delays_health?: string[] | null
+          issue_photo_urls?: string[]
           lost_items_damage?: string[] | null
           main_stops_visited?: string[] | null
           office_note?: string | null
           overall_mood?: string | null
           sign?: string | null
+          skipped_stops?: Json
           submitted_on?: string | null
           suggestions_followup?: string | null
           teamwork?: string | null
           tour_id?: string | null
           updated_at?: string | null
           user_email: string
+          vehicle_condition_note?: string | null
+          vehicle_condition_tags?: string[]
           weather?: string | null
         }
         Update: {
@@ -10412,21 +10509,28 @@ export type Database = {
           communication?: string | null
           created_at?: string | null
           customer_count?: number | null
+          driving_segment_ids?: string[]
+          booked_customer_count?: number | null
           end_mileage?: number | null
           guest_comments?: string | null
+          handoff_note?: string | null
           id?: string
           incidents_delays_health?: string[] | null
+          issue_photo_urls?: string[]
           lost_items_damage?: string[] | null
           main_stops_visited?: string[] | null
           office_note?: string | null
           overall_mood?: string | null
           sign?: string | null
+          skipped_stops?: Json
           submitted_on?: string | null
           suggestions_followup?: string | null
           teamwork?: string | null
           tour_id?: string | null
           updated_at?: string | null
           user_email?: string
+          vehicle_condition_note?: string | null
+          vehicle_condition_tags?: string[]
           weather?: string | null
         }
         Relationships: [
@@ -13251,6 +13355,18 @@ export type Database = {
           option_name: string
           updated_count: number
         }[]
+      }
+      record_tour_narration_play: {
+        Args: {
+          p_tour_id: string
+          p_material_id: string
+          p_material_title: string
+          p_file_path: string
+          p_played_as: string
+          p_play_seconds?: number
+          p_new_session?: boolean
+        }
+        Returns: undefined
       }
       repair_reservation_choices: {
         Args: never

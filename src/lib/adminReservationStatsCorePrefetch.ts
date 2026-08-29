@@ -23,6 +23,8 @@ type StatsWarmArgs = {
   regCancelYearOffset: number
   selectedStatus: string
   selectedChannel: string
+  selectedPickupHotel?: string | undefined
+  selectedProduct?: string | undefined
   dateRange: { start: string; end: string }
   customerIdFromUrl: string | null
   debouncedSearchTerm: string
@@ -46,6 +48,8 @@ async function fillStatsCoreCacheIfMissing(
     rangeEndIso: coreRange.rangeEndIso,
     selectedStatus: args.selectedStatus,
     selectedChannel: args.selectedChannel,
+    selectedPickupHotel: args.selectedPickupHotel,
+    selectedProduct: args.selectedProduct,
     dateRange: args.dateRange,
     customerIdFromUrl: args.customerIdFromUrl,
     debouncedSearchTerm: args.debouncedSearchTerm,
@@ -61,6 +65,8 @@ async function fillStatsCoreCacheIfMissing(
       pageSize: 20,
       selectedStatus: args.selectedStatus,
       selectedChannel: args.selectedChannel,
+      selectedPickupHotel: args.selectedPickupHotel,
+      selectedProduct: args.selectedProduct,
       dateRange: args.dateRange,
       customerIdFromUrl: args.customerIdFromUrl,
       debouncedSearchTerm: args.debouncedSearchTerm,

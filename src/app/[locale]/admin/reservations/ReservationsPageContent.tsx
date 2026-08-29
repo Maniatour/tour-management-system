@@ -269,6 +269,8 @@ const RESERVATIONS_LIST_UI_DEFAULT = {
   /** 날짜별 카드 목록이 보여 줄 7일 구간(페이지) */
   cardsWeekPage: 0,
   selectedChannel: 'all',
+  selectedPickupHotel: 'all',
+  selectedProduct: 'all',
   dateRange: { start: '', end: '' } as { start: string; end: string },
   sortBy: 'created_at' as 'created_at' | 'tour_date' | 'customer_name' | 'product_name',
   sortOrder: 'desc' as 'asc' | 'desc',
@@ -655,6 +657,8 @@ export default function AdminReservations() {
     statisticsWeekOffset: statisticsWeekOffsetStored,
     cardsWeekPage: cardsWeekPageStored,
     selectedChannel,
+    selectedPickupHotel = 'all',
+    selectedProduct = 'all',
     dateRange,
     sortBy,
     sortOrder,
@@ -739,6 +743,14 @@ export default function AdminReservations() {
     (c: string) => setReservationListUi((u) => ({ ...u, selectedChannel: c })),
     [setReservationListUi]
   )
+  const setSelectedPickupHotel = useCallback(
+    (hotelId: string) => setReservationListUi((u) => ({ ...u, selectedPickupHotel: hotelId })),
+    [setReservationListUi]
+  )
+  const setSelectedProduct = useCallback(
+    (productId: string) => setReservationListUi((u) => ({ ...u, selectedProduct: productId })),
+    [setReservationListUi]
+  )
   const setDateRange = useCallback(
     (v: React.SetStateAction<{ start: string; end: string }>) =>
       setReservationListUi((u) => ({
@@ -800,6 +812,8 @@ export default function AdminReservations() {
   const [listQueryFilters, setListQueryFilters] = useState({
     selectedStatus,
     selectedChannel,
+    selectedPickupHotel,
+    selectedProduct,
     dateRange: { start: dateRange.start, end: dateRange.end },
   })
   /** 스토리지 복원 직후 listQueryFilters가 기본값으로 먼저 fetch되는 것 방지 */
@@ -814,12 +828,16 @@ export default function AdminReservations() {
     setListQueryFilters({
       selectedStatus,
       selectedChannel,
+      selectedPickupHotel,
+      selectedProduct,
       dateRange: { start: dateRange.start, end: dateRange.end },
     })
   }, [
     reservationListUiHydrated,
     selectedStatus,
     selectedChannel,
+    selectedPickupHotel,
+    selectedProduct,
     dateRange.start,
     dateRange.end,
   ])
@@ -830,6 +848,8 @@ export default function AdminReservations() {
         if (
           prev.selectedStatus === selectedStatus &&
           prev.selectedChannel === selectedChannel &&
+          prev.selectedPickupHotel === selectedPickupHotel &&
+          prev.selectedProduct === selectedProduct &&
           prev.dateRange.start === dateRange.start &&
           prev.dateRange.end === dateRange.end
         ) {
@@ -838,12 +858,14 @@ export default function AdminReservations() {
         return {
           selectedStatus,
           selectedChannel,
+          selectedPickupHotel,
+          selectedProduct,
           dateRange: { start: dateRange.start, end: dateRange.end },
         }
       })
     }, 180)
     return () => window.clearTimeout(timer)
-  }, [selectedStatus, selectedChannel, dateRange.start, dateRange.end])
+  }, [selectedStatus, selectedChannel, selectedPickupHotel, selectedProduct, dateRange.start, dateRange.end])
 
   /** 라우트·스토리지 복원 직후 한 번만: 저장된 검색어 → 실제 목록 쿼리에 반영 (이후에는 검색 버튼으로만 적용) */
   const reservationSearchHydratedRef = useRef(false)
@@ -1887,6 +1909,8 @@ export default function AdminReservations() {
       range.rangeEndIso,
       selectedStatus,
       selectedChannel,
+      selectedPickupHotel,
+      selectedProduct,
       `${dateRange.start}\u0001${dateRange.end}`,
       debouncedSearchTerm,
       operatorId ?? '',
@@ -1898,6 +1922,8 @@ export default function AdminReservations() {
     regCancelChartAuditIsoRange,
     selectedStatus,
     selectedChannel,
+    selectedPickupHotel,
+    selectedProduct,
     dateRange.start,
     dateRange.end,
     debouncedSearchTerm,
@@ -1929,6 +1955,8 @@ export default function AdminReservations() {
       regCancelYearOffset,
       selectedStatus,
       selectedChannel,
+      selectedPickupHotel,
+      selectedProduct,
       `${dateRange.start}\u0001${dateRange.end}`,
       debouncedSearchTerm,
     ].join('\u001f')
@@ -1941,6 +1969,8 @@ export default function AdminReservations() {
     regCancelYearOffset,
     selectedStatus,
     selectedChannel,
+    selectedPickupHotel,
+    selectedProduct,
     dateRange.start,
     dateRange.end,
     debouncedSearchTerm,
@@ -2057,6 +2087,8 @@ export default function AdminReservations() {
     itemsPerPage,
     selectedStatus,
     selectedChannel,
+    selectedPickupHotel,
+    selectedProduct,
     dateRange.start,
     dateRange.end,
   ])
@@ -2539,6 +2571,8 @@ export default function AdminReservations() {
     setAdminListChunkProgress(null)
     const selectedStatus = listQueryFilters.selectedStatus
     const selectedChannel = listQueryFilters.selectedChannel
+    const selectedPickupHotel = listQueryFilters.selectedPickupHotel ?? 'all'
+    const selectedProduct = listQueryFilters.selectedProduct ?? 'all'
     const dateRange = listQueryFilters.dateRange
     try {
       const cardsWR = browserLocalWeekRangeFromOffset(cardsWeekPage)
@@ -2553,6 +2587,8 @@ export default function AdminReservations() {
           monthOffset: calendarMonthOffset,
           selectedStatus,
           selectedChannel,
+          selectedPickupHotel,
+          selectedProduct,
           dateRange,
           customerIdFromUrl,
           debouncedSearchTerm,
@@ -2579,6 +2615,8 @@ export default function AdminReservations() {
           pageSize: 20,
           selectedStatus,
           selectedChannel,
+          selectedPickupHotel,
+          selectedProduct,
           dateRange,
           customerIdFromUrl,
           debouncedSearchTerm,
@@ -2667,6 +2705,8 @@ export default function AdminReservations() {
           currentMonthOffset: calendarMonthOffset,
           selectedStatus,
           selectedChannel,
+          selectedPickupHotel,
+          selectedProduct,
           dateRange,
           customerIdFromUrl,
           debouncedSearchTerm,
@@ -2683,6 +2723,8 @@ export default function AdminReservations() {
           pageSize: itemsPerPage,
           selectedStatus,
           selectedChannel,
+          selectedPickupHotel,
+          selectedProduct,
           dateRange,
           customerIdFromUrl,
           debouncedSearchTerm,
@@ -2707,6 +2749,8 @@ export default function AdminReservations() {
           pageSize: itemsPerPage,
           selectedStatus,
           selectedChannel,
+          selectedPickupHotel,
+          selectedProduct,
           dateRange,
           customerIdFromUrl,
           debouncedSearchTerm,
@@ -2733,6 +2777,8 @@ export default function AdminReservations() {
           pageSize: itemsPerPage,
           selectedStatus,
           selectedChannel,
+          selectedPickupHotel,
+          selectedProduct,
           dateRange,
           customerIdFromUrl,
           debouncedSearchTerm,
@@ -2750,6 +2796,8 @@ export default function AdminReservations() {
         pageSize: itemsPerPage,
         selectedStatus,
         selectedChannel,
+        selectedPickupHotel,
+        selectedProduct,
         dateRange,
         customerIdFromUrl,
         debouncedSearchTerm,
@@ -2769,6 +2817,8 @@ export default function AdminReservations() {
           weekOffset: cardsWeekPage,
           selectedStatus,
           selectedChannel,
+          selectedPickupHotel,
+          selectedProduct,
           dateRange,
           customerIdFromUrl,
           debouncedSearchTerm,
@@ -2945,6 +2995,8 @@ export default function AdminReservations() {
           currentWeekOffset: cardsWeekPage,
           selectedStatus,
           selectedChannel,
+          selectedPickupHotel,
+          selectedProduct,
           dateRange,
           customerIdFromUrl,
           debouncedSearchTerm,
@@ -3013,6 +3065,8 @@ export default function AdminReservations() {
           pageSize: itemsPerPage,
           selectedStatus,
           selectedChannel,
+          selectedPickupHotel,
+          selectedProduct,
           dateRange,
           customerIdFromUrl,
           debouncedSearchTerm,
@@ -3051,6 +3105,8 @@ export default function AdminReservations() {
           pageSize: itemsPerPage,
           selectedStatus,
           selectedChannel,
+          selectedPickupHotel,
+          selectedProduct,
           dateRange,
           customerIdFromUrl,
           debouncedSearchTerm,
@@ -3133,6 +3189,8 @@ export default function AdminReservations() {
       rangeEndIso: coreRange.rangeEndIso,
       selectedStatus,
       selectedChannel,
+      selectedPickupHotel,
+      selectedProduct,
       dateRange,
       customerIdFromUrl,
       debouncedSearchTerm,
@@ -3152,6 +3210,8 @@ export default function AdminReservations() {
       pageSize: 20,
       selectedStatus,
       selectedChannel,
+      selectedPickupHotel,
+      selectedProduct,
       dateRange,
       customerIdFromUrl,
       debouncedSearchTerm,
@@ -3222,6 +3282,8 @@ export default function AdminReservations() {
         regCancelYearOffset,
         selectedStatus,
         selectedChannel,
+        selectedPickupHotel,
+        selectedProduct,
         dateRange,
         customerIdFromUrl,
         debouncedSearchTerm,
@@ -3251,6 +3313,8 @@ export default function AdminReservations() {
     regCancelYearOffset,
     selectedStatus,
     selectedChannel,
+    selectedPickupHotel,
+    selectedProduct,
     dateRange,
     customerIdFromUrl,
     debouncedSearchTerm,
@@ -3327,6 +3391,8 @@ export default function AdminReservations() {
     ytdWeekdayAvgScopeKey,
     selectedStatus,
     selectedChannel,
+    selectedPickupHotel,
+    selectedProduct,
     dateRange,
     customerIdFromUrl,
     debouncedSearchTerm,
@@ -3390,6 +3456,8 @@ export default function AdminReservations() {
     statisticsWeekOffset,
     selectedStatus,
     selectedChannel,
+    selectedPickupHotel,
+    selectedProduct,
     dateRange,
     customerIdFromUrl,
     debouncedSearchTerm,
@@ -3579,6 +3647,8 @@ export default function AdminReservations() {
         regCancelYearOffset,
         selectedStatus,
         selectedChannel,
+        selectedPickupHotel,
+        selectedProduct,
         dateRange,
         customerIdFromUrl,
         debouncedSearchTerm,
@@ -3650,6 +3720,8 @@ export default function AdminReservations() {
     regCancelYearOffset,
     selectedStatus,
     selectedChannel,
+    selectedPickupHotel,
+    selectedProduct,
     dateRange,
     customerIdFromUrl,
     debouncedSearchTerm,
@@ -4180,6 +4252,8 @@ export default function AdminReservations() {
         debouncedSearchTerm,
         selectedStatus,
         selectedChannel,
+        selectedPickupHotel,
+        selectedProduct,
         `${dateRange.start}\u0001${dateRange.end}`,
         sortBy,
         sortOrder,
@@ -4191,6 +4265,8 @@ export default function AdminReservations() {
       debouncedSearchTerm,
       selectedStatus,
       selectedChannel,
+      selectedPickupHotel,
+      selectedProduct,
       dateRange.start,
       dateRange.end,
       sortBy,
@@ -5938,6 +6014,20 @@ export default function AdminReservations() {
     },
     [setSelectedChannel, setCurrentPage]
   )
+  const handleFiltersPickupHotelChange = useCallback(
+    (hotelId: string) => {
+      setSelectedPickupHotel(hotelId)
+      setCurrentPage(1)
+    },
+    [setSelectedPickupHotel, setCurrentPage]
+  )
+  const handleFiltersProductChange = useCallback(
+    (productId: string) => {
+      setSelectedProduct(productId)
+      setCurrentPage(1)
+    },
+    [setSelectedProduct, setCurrentPage]
+  )
   const handleFiltersDateRangeChange = useCallback(
     (range: { start: string; end: string }) => {
       setDateRange(range)
@@ -5957,6 +6047,8 @@ export default function AdminReservations() {
     setDebouncedSearchTerm('')
     setSelectedStatus('all')
     setSelectedChannel('all')
+    setSelectedPickupHotel('all')
+    setSelectedProduct('all')
     setDateRange({ start: '', end: '' })
     setSortBy('created_at')
     setSortOrder('desc')
@@ -5971,6 +6063,8 @@ export default function AdminReservations() {
     setSearchTerm,
     setSelectedStatus,
     setSelectedChannel,
+    setSelectedPickupHotel,
+    setSelectedProduct,
     setDateRange,
     setSortBy,
     setSortOrder,
@@ -5978,6 +6072,14 @@ export default function AdminReservations() {
     setCurrentPage,
     setReservationListUi,
   ])
+
+  const reservationFilterActiveCount = [
+    selectedStatus !== 'all',
+    selectedChannel !== 'all',
+    selectedPickupHotel !== 'all',
+    selectedProduct !== 'all',
+    Boolean(dateRange.start || dateRange.end),
+  ].filter(Boolean).length
 
   const renderReservationCard = useCallback(
     (reservation: Reservation) => {
@@ -6111,6 +6213,7 @@ export default function AdminReservations() {
         onActionRequired={handleOpenActionRequired}
         actionRequiredCount={headerActionRequiredCount}
         onOpenFilter={handleOpenFilter}
+        filterActiveCount={reservationFilterActiveCount}
         onOpenDeletedReservations={handleOpenDeletedReservations}
         onOpenFollowUpQueue={handleOpenFollowUpQueue}
         followUpQueueCount={headerFollowUpQueueCount}
@@ -6155,6 +6258,11 @@ export default function AdminReservations() {
         >
           <SlidersHorizontal className="h-4 w-4 shrink-0" />
           <span>{t('filter')}</span>
+          {reservationFilterActiveCount > 0 ? (
+            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-blue-700">
+              {reservationFilterActiveCount}
+            </span>
+          ) : null}
         </button>
       </div>
 
@@ -6167,6 +6275,28 @@ export default function AdminReservations() {
         selectedChannel={selectedChannel}
         onChannelChange={handleFiltersChannelChange}
         channels={(channels as Array<{ id: string; name: string }>) || []}
+        selectedPickupHotel={selectedPickupHotel}
+        onPickupHotelChange={handleFiltersPickupHotelChange}
+        pickupHotels={
+          (pickupHotels as Array<{
+            id: string
+            hotel?: string | null
+            internal_name?: string | null
+            pick_up_location?: string | null
+          }>) || []
+        }
+        selectedProduct={selectedProduct}
+        onProductChange={handleFiltersProductChange}
+        products={
+          (products as Array<{
+            id: string
+            name?: string | null
+            name_ko?: string | null
+            name_en?: string | null
+            customer_name_ko?: string | null
+            customer_name_en?: string | null
+          }>) || []
+        }
         dateRange={dateRange}
         onDateRangeChange={handleFiltersDateRangeChange}
         sortBy={sortBy}

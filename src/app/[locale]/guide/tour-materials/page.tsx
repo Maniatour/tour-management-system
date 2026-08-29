@@ -1,8 +1,8 @@
 'use client'
 import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useTranslations } from 'next-intl'
+import { useState, useCallback } from 'react'
+import { useTranslations, useLocale } from 'next-intl'
 import { createClientSupabase } from '@/lib/supabase'
 import { 
   Search,
@@ -12,77 +12,57 @@ import {
   ChevronDown,
   ChevronUp,
   Play,
-  Pause
+  Pause,
+  CheckCircle2,
+  DownloadCloud
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAudioPlayer } from '@/contexts/AudioPlayerContext'
 import ReactCountryFlag from 'react-country-flag'
-
-type TourMaterial = {
-  id: string
-  title: string
-  description: string | null
-  attraction_id: string | null
-  category_id: string | null
-  file_name: string
-  file_path: string
-  file_size: number
-  file_type: string
-  mime_type: string
-  duration: number | null
-  language: string | null
-  tags: string[] | null
-  is_active: boolean
-  is_public: boolean
-  created_by: string | null
-  updated_by: string | null
-  created_at: string
-  updated_at: string
-  tour_attractions?: { name_ko: string; name_en: string } | null
-  tour_material_categories?: { name_ko: string; name_en: string; icon: string; color: string } | null
-}
+import { useOptimizedData } from '@/hooks/useOptimizedData'
+import { useNarrationOfflineStatus } from '@/hooks/useNarrationOfflineStatus'
+import GuideTodayNarrationPlayLog from '@/components/guide/GuideTodayNarrationPlayLog'
+import {
+  GUIDE_NARRATION_SNAPSHOT_KEY,
+  resolveNarrationPlaybackSrc,
+  syncGuideNarrationOffline,
+  type GuideNarrationMaterial,
+} from '@/lib/guideNarrationOffline'
 
 export default function GuideTourMaterialsPage() {
   const t = useTranslations('guide')
+  const locale = useLocale()
   const supabase = createClientSupabase()
-  const { playTrack, currentTrack, isPlaying } = useAudioPlayer()
+  const { playTrack, primeAudioForGesture, currentTrack, isPlaying } = useAudioPlayer()
+  const narrationStatus = useNarrationOfflineStatus()
   
-  const [materials, setMaterials] = useState<TourMaterial[]>([])
-  const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
 
   const loadData = useCallback(async () => {
-    try {
-      setLoading(true)
-      
-      // 투어 자료 로드 (스크립트와 오디오만)
-      const { data: materialsData, error: materialsError } = await supabase
-        .from('tour_materials')
-        .select(`
-          *,
-          tour_attractions(name_ko, name_en),
-          tour_material_categories(name_ko, name_en, icon, color)
-        `)
-        .eq('file_type', 'audio')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
+    const { data, error } = await supabase
+      .from('tour_materials')
+      .select(`
+        *,
+        tour_attractions(name_ko, name_en),
+        tour_material_categories(name_ko, name_en, icon, color)
+      `)
+      .eq('file_type', 'audio')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
 
-      if (materialsError) throw materialsError
-      setMaterials((materialsData || []) as TourMaterial[])
-
-    } catch (error) {
-      console.error('데이터 로드 오류:', error)
-      toast.error('데이터를 불러오는 중 오류가 발생했습니다.')
-    } finally {
-      setLoading(false)
-    }
+    if (error) throw error
+    const materials = (data || []) as GuideNarrationMaterial[]
+    void syncGuideNarrationOffline()
+    return materials
   }, [supabase])
 
-  useEffect(() => {
-    loadData()
-  }, [loadData])
-
+  const { data: materials, loading } = useOptimizedData<GuideNarrationMaterial[]>({
+    fetchFn: loadData,
+    cacheKey: GUIDE_NARRATION_SNAPSHOT_KEY,
+    offlineGuideCache: true,
+    defaultToEmptyArray: true,
+  })
 
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes'
@@ -92,7 +72,6 @@ export default function GuideTourMaterialsPage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
-  // 언어를 국기 아이콘으로 표시
   const getLanguageFlag = (language: string | null) => {
     switch (language?.toLowerCase()) {
       case 'ko':
@@ -108,15 +87,34 @@ export default function GuideTourMaterialsPage() {
     }
   }
 
-  // 파일 URL 가져오기
-  const getFileUrl = (filePath: string) => {
-    const { data } = supabase.storage
-      .from('tour-materials')
-      .getPublicUrl(filePath)
-    return data.publicUrl
+  const handlePlay = async (material: GuideNarrationMaterial) => {
+    primeAudioForGesture()
+    if (currentTrack?.id === material.id) {
+    playTrack({
+      id: material.id,
+      src: currentTrack.src,
+      title: material.title,
+      filePath: material.file_path,
+      ...(material.duration != null ? { duration: material.duration } : {}),
+    })
+      return
+    }
+
+    const src = await resolveNarrationPlaybackSrc(material.file_path)
+    if (!src) {
+      toast.error(t('narrationOfflineUnavailable'))
+      return
+    }
+
+    playTrack({
+      id: material.id,
+      src,
+      title: material.title,
+      filePath: material.file_path,
+      ...(material.duration != null ? { duration: material.duration } : {}),
+    })
   }
 
-  // 아코디언 토글
   const toggleAccordion = (materialId: string) => {
     setExpandedCards(prev => {
       const newSet = new Set(prev)
@@ -129,11 +127,9 @@ export default function GuideTourMaterialsPage() {
     })
   }
 
-  const filteredMaterials = materials.filter(material => {
+  const filteredMaterials = (materials || []).filter(material => {
     const matchesSearch = material.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          material.description?.toLowerCase().includes(searchTerm.toLowerCase())
-    
-    // 오디오 파일만 표시
     return matchesSearch && material.file_type === 'audio'
   })
 
@@ -142,7 +138,7 @@ export default function GuideTourMaterialsPage() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-gray-600">데이터를 불러오는 중...</p>
+          <p className="text-gray-600">{t('chatLoading')}</p>
         </div>
       </div>
     )
@@ -150,7 +146,6 @@ export default function GuideTourMaterialsPage() {
 
   return (
     <div className="space-y-0 lg:space-y-4">
-      {/* 헤더와 검색 */}
       <div className="bg-white rounded-none shadow-none border-b border-gray-200 p-3 sm:p-4">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-bold text-gray-900">{t('tourMaterialsTitle')}</h1>
@@ -164,12 +159,29 @@ export default function GuideTourMaterialsPage() {
             />
           </div>
         </div>
+        {narrationStatus.total > 0 && (
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-500">
+            {narrationStatus.status === 'ready' ? (
+              <CheckCircle2 className="h-3.5 w-3.5 text-green-600" aria-hidden />
+            ) : (
+              <DownloadCloud className="h-3.5 w-3.5 text-primary" aria-hidden />
+            )}
+            <span>
+              {narrationStatus.status === 'ready'
+                ? t('narrationOfflineReady')
+                : narrationStatus.status === 'syncing'
+                  ? t('narrationOfflineSyncing', {
+                      cached: narrationStatus.cached,
+                      total: narrationStatus.total,
+                    })
+                  : t('narrationOfflinePartial')}
+            </span>
+          </p>
+        )}
+        <GuideTodayNarrationPlayLog locale={locale === 'en' ? 'en' : 'ko'} />
       </div>
 
-      {/* 오디오 자료만 표시 */}
       <div className="bg-white rounded-none shadow-none">
-
-        {/* 컨텐츠 */}
         <div className="px-3 py-6">
           <div className="space-y-4">
             {filteredMaterials.length === 0 ? (
@@ -180,36 +192,31 @@ export default function GuideTourMaterialsPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredMaterials.map(material => (
+                {filteredMaterials.map(material => {
+                  const isCurrent = currentTrack?.id === material.id
+                  return (
                   <div key={material.id}>
-                    {/* 오디오 파일만 표시 */}
                     {material.file_type === 'audio' && (
                       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-                        {/* 아코디언 헤더 */}
                         <div 
                           className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
                           onClick={() => toggleAccordion(material.id)}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-2 flex-1 min-w-0">
-                              {/* 플레이 버튼 */}
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  playTrack({
-                                    src: getFileUrl(material.file_path),
-                                    title: material.title,
-                                    ...(material.duration != null ? { duration: material.duration } : {}),
-                                  })
+                                  void handlePlay(material)
                                 }}
                                 className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
-                                  currentTrack?.src === getFileUrl(material.file_path) && isPlaying
+                                  isCurrent && isPlaying
                                     ? 'bg-red-600 text-white hover:bg-red-700'
                                     : 'bg-primary text-primary-foreground hover:bg-primary/90'
                                 }`}
-                                title={currentTrack?.src === getFileUrl(material.file_path) && isPlaying ? '재생 중' : '재생'}
+                                title={isCurrent && isPlaying ? t('narrationPause') : t('narrationPlay')}
                               >
-                                {currentTrack?.src === getFileUrl(material.file_path) && isPlaying ? (
+                                {isCurrent && isPlaying ? (
                                   <Pause className="w-4 h-4" />
                                 ) : (
                                   <Play className="w-4 h-4" />
@@ -236,7 +243,6 @@ export default function GuideTourMaterialsPage() {
                               </div>
                             </div>
                             <div className="ml-2">
-                              {/* 펼쳐보기 버튼 */}
                               {expandedCards.has(material.id) ? (
                                 <ChevronUp className="w-4 h-4 text-gray-400" />
                               ) : (
@@ -246,11 +252,9 @@ export default function GuideTourMaterialsPage() {
                           </div>
                         </div>
                         
-                        {/* 아코디언 콘텐츠 */}
                         {expandedCards.has(material.id) && (
                           <div className="px-3 pb-3 border-t border-gray-100">
                             <div className="pt-3 space-y-2">
-                              {/* 기본 정보 */}
                               <div className="flex items-center space-x-3 text-xs text-gray-500">
                                 <span className="flex items-center space-x-1">
                                   <MapPin className="w-3 h-3" />
@@ -287,7 +291,7 @@ export default function GuideTourMaterialsPage() {
                       </div>
                     )}
                   </div>
-                ))}
+                )})}
               </div>
             )}
           </div>

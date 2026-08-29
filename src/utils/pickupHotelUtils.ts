@@ -51,7 +51,7 @@ export type PickupHotelAssignmentOption = Pick<PickupHotel, 'id' | 'hotel'> &
 /** 예약 폼 등: 내부용 이름 우선(없으면 호텔명) + 픽업장소 */
 export function getPickupHotelPrimaryName(hotel: {
   hotel: string
-  internal_name?: string | null
+  internal_name?: string | null | undefined
 }): string {
   return hotel.internal_name?.trim() || (hotel.hotel || '').trim()
 }

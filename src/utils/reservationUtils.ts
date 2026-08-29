@@ -14,7 +14,7 @@ import type {
 } from '@/types/reservation'
 
 // 픽업 호텔 ID로 호텔 정보를 찾는 헬퍼 함수 (id, hotel, pick_up_location만 있으면 동작)
-export const getPickupHotelDisplay = (hotelId: string, pickupHotels: Array<{ id: string; hotel?: string; pick_up_location?: string | null }> | null) => {
+export const getPickupHotelDisplay = (hotelId: string, pickupHotels: Array<{ id: string; hotel?: string | null; pick_up_location?: string | null }> | null) => {
   const hotel = pickupHotels?.find(h => h.id === hotelId)
   return hotel ? `${hotel.hotel ?? ''} - ${hotel.pick_up_location ?? ''}` : hotelId
 }

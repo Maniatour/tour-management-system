@@ -30,6 +30,7 @@ interface ReservationsHeaderProps {
   onOpenWeeklyStats?: () => void
   /** 데스크톱 제목줄에 필터 버튼 표시 (클릭 시 호출) */
   onOpenFilter?: () => void
+  filterActiveCount?: number
   /** soft-delete(status=deleted) 예약 목록 모달 */
   onOpenDeletedReservations?: () => void
   /** Follow-up 단계별 대기 예약 모달 */
@@ -97,6 +98,7 @@ function ReservationsHeader({
   actionRequiredCount = 0,
   onOpenWeeklyStats,
   onOpenFilter,
+  filterActiveCount = 0,
   onOpenDeletedReservations,
   onOpenFollowUpQueue,
   followUpQueueCount = 0,
@@ -293,6 +295,7 @@ function ReservationsHeader({
               onClick={onOpenFilter}
               className="bg-blue-600 text-white hover:bg-primary/90"
               icon={<SlidersHorizontal className="h-4 w-4" aria-hidden />}
+              count={filterActiveCount}
             />
           )}
           {renderDeleted()}

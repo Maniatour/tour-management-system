@@ -7,14 +7,12 @@ import { useTranslations } from 'next-intl'
 import { createTourPhotosBucket, checkTourPhotosBucket, checkTourFolderExists, createTourFolderMarker, listAllTourStorageFiles } from '@/lib/tourPhotoBucket'
 import { useTourPhotoFolder } from '@/hooks/useTourPhotoFolder'
 import { useAuth } from '@/contexts/AuthContext'
-import { createThumbnail, createVideoThumbnail, getJpegThumbnailFileName, getThumbnailFileName } from '@/lib/imageUtils'
 import { runTourPhotoUploadQueue } from '@/lib/runTourPhotoUploadQueue'
 import {
   endTourPhotoUploadSession,
   startTourPhotoPrepare,
 } from '@/lib/tourPhotoUploadSession'
 import {
-  isTourMediaVideo,
   isTourStorageMediaFileName,
   TOUR_PHOTO_FILE_ACCEPT,
   tourMediaFileStem,
@@ -64,8 +62,6 @@ export default function TourPhotoUpload({
   const [showModal, setShowModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
-  const [generatingThumbnails, setGeneratingThumbnails] = useState(false)
-  const [thumbnailProgress, setThumbnailProgress] = useState({ current: 0, total: 0 })
   
   // Hook으로 폴더 자동 관리
   const { folderStatus, isReady, retry } = useTourPhotoFolder(tourId)
@@ -240,7 +236,7 @@ export default function TourPhotoUpload({
           photoUploadedBy && photoUploadedBy.includes('@')
             ? emailLookup || photoUploadedBy
             : photoUploadedBy
-              ? '알 수 없음'
+              ? t('unknownUploader')
               : null
         
         // 디버깅: 첫 번째 사진만 로그
@@ -555,126 +551,11 @@ export default function TourPhotoUpload({
     })()
   }
 
-  // 기존 사진들에 대한 썸네일 생성
-  const generateThumbnailsForExistingPhotos = async () => {
-    try {
-      setGeneratingThumbnails(true)
-      setThumbnailProgress({ current: 0, total: 0 })
-
-      // Storage에서 모든 파일 목록 가져오기
-      const files = await listAllTourStorageFiles(tourId)
-
-      const originalPhotos = files.filter((file) => isTourStorageMediaFileName(file.name))
-
-      const thumbnailFiles = files.filter((file) => file.name.includes('_thumb'))
-
-      const thumbnailMap = new Set(thumbnailFiles.map((f) => tourMediaFileStem(f.name)))
-
-      const photosWithoutThumbnails = originalPhotos.filter((file) => 
-        !thumbnailMap.has(tourMediaFileStem(file.name))
-      )
-
-      if (photosWithoutThumbnails.length === 0) {
-        alert(t('allThumbnailsExist'))
-        return
-      }
-
-      setThumbnailProgress({ current: 0, total: photosWithoutThumbnails.length })
-
-      let successCount = 0
-      let failCount = 0
-
-      // 각 사진에 대해 썸네일 생성
-      for (let i = 0; i < photosWithoutThumbnails.length; i++) {
-        const file = photosWithoutThumbnails[i]
-        const filePath = `${tourId}/${file.name}`
-
-        try {
-          setThumbnailProgress({ current: i + 1, total: photosWithoutThumbnails.length })
-
-          // 원본 이미지 다운로드
-          const { data: imageData, error: downloadError } = await supabase.storage
-            .from('tour-photos')
-            .download(filePath)
-
-          if (downloadError) {
-            throw downloadError
-          }
-
-          // File 객체로 변환
-          const fileBlob = new File([imageData], file.name, { 
-            type: file.metadata?.mimetype || 'image/jpeg' 
-          })
-
-          const video = isTourMediaVideo(file.name, file.metadata?.mimetype)
-          const thumbnailBlob = video
-            ? await createVideoThumbnail(fileBlob, 400, 400, 0.8)
-            : await createThumbnail(fileBlob, 400, 400, 0.8)
-          const thumbnailFileName = video
-            ? getJpegThumbnailFileName(file.name)
-            : getThumbnailFileName(file.name)
-          const thumbnailPath = `${tourId}/${thumbnailFileName}`
-          
-          const thumbnailFile = new File([thumbnailBlob], thumbnailFileName, { type: 'image/jpeg' })
-          
-          // 썸네일 업로드
-          const { error: thumbnailUploadError } = await supabase.storage
-            .from('tour-photos')
-            .upload(thumbnailPath, thumbnailFile, {
-              cacheControl: '3600',
-              upsert: false
-            })
-
-          if (thumbnailUploadError) {
-            throw thumbnailUploadError
-          }
-
-          // 데이터베이스에서 해당 사진 찾기 및 업데이트
-          const { data: photoRecords, error: queryError } = await supabase
-            .from('tour_photos')
-            .select('id')
-            .eq('file_path', filePath)
-
-          if (!queryError && photoRecords && photoRecords.length > 0) {
-            // 데이터베이스 업데이트
-            for (const record of photoRecords) {
-              await supabase
-                .from('tour_photos')
-                .update({ thumbnail_path: thumbnailPath })
-                .eq('id', record.id)
-            }
-          }
-
-          successCount++
-        } catch (error) {
-          console.error(`Error generating thumbnail for ${file.name}:`, error)
-          failCount++
-        }
-      }
-
-      // 사진 목록 새로고침
-      await loadPhotos()
-      onPhotosUpdated?.()
-
-      if (successCount > 0) {
-        alert(t('thumbnailGenerateDone', { success: successCount, failed: failCount }))
-      } else {
-        alert(t('thumbnailGenerateFailed', { count: failCount }))
-      }
-    } catch (error) {
-      console.error('Error generating thumbnails:', error)
-      alert(t('thumbnailGenerateError', { error: error instanceof Error ? error.message : String(error) }))
-    } finally {
-      setGeneratingThumbnails(false)
-      setThumbnailProgress({ current: 0, total: 0 })
-    }
-  }
-
   // 숨김 철회 (관리자만)
   const handleUnhidePhoto = async (photo: TourPhoto) => {
     if (!isAdmin) return
     
-    if (!confirm(`이 사진의 숨김을 철회하시겠습니까?\n\n파일: ${photo.file_name}\n요청자: ${photo.hide_requested_by_name || 'Unknown'}`)) {
+    if (!confirm(t('unhideConfirm', { fileName: photo.file_name, requester: photo.hide_requested_by_name || 'Unknown' }))) {
       return
     }
 
@@ -695,10 +576,10 @@ export default function TourPhotoUpload({
       await loadPhotos()
       onPhotosUpdated?.()
       
-      alert('숨김이 철회되었습니다.')
+      alert(t('unhideSuccess'))
     } catch (error) {
       console.error('Error unhiding photo:', error)
-      alert('숨김 철회 중 오류가 발생했습니다.')
+      alert(t('unhideError'))
     }
   }
 
@@ -826,13 +707,13 @@ export default function TourPhotoUpload({
             </div>
             <div className="flex-1">
               <h3 className="text-sm font-medium text-yellow-800">Storage Bucket Missing</h3>
-              <p className="text-sm text-yellow-700 mt-1">tour-photos storage bucket이 생성되지 않았습니다.</p>
+              <p className="text-sm text-yellow-700 mt-1">{t('bucketMissing')}</p>
             </div>
             <button
               onClick={() => setShowBucketModal(true)}
               className="bg-yellow-600 text-white px-3 py-1 rounded-md text-sm hover:bg-yellow-700 transition-colors"
             >
-              설정 안내
+              {t('setupGuide')}
             </button>
           </div>
         </div>
@@ -841,7 +722,7 @@ export default function TourPhotoUpload({
       {bucketStatus === 'checking' && (
         <div className="flex items-center space-x-3 p-4 bg-gray-100 rounded-lg">
           <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
-          <span className="text-gray-700">Storage bucket 상태 확인 중...</span>
+          <span className="text-gray-700">{t('checkingBucket')}</span>
         </div>
       )}
       
@@ -854,14 +735,14 @@ export default function TourPhotoUpload({
               </svg>
             </div>
             <div>
-              <h3 className="text-sm font-medium text-red-800">Storage 접근 오류</h3>
-              <p className="text-sm text-red-700">Storage bucket 상태를 확인할 수 없습니다.</p>
+              <h3 className="text-sm font-medium text-red-800">{t('storageAccessError')}</h3>
+              <p className="text-sm text-red-700">{t('storageAccessErrorDesc')}</p>
             </div>
             <button
               onClick={retry}
               className="bg-red-600 text-white px-3 py-1 rounded-md text-sm hover:bg-red-700 transition-colors"
             >
-              다시 시도
+              {t('retry')}
             </button>
           </div>
         </div>
@@ -869,23 +750,6 @@ export default function TourPhotoUpload({
 
       <div className="flex items-center justify-end">
         <div className="flex space-x-2">
-          {photos.length > 0 && (
-            <button
-              onClick={generateThumbnailsForExistingPhotos}
-              disabled={generatingThumbnails}
-              className={`flex items-center ${chrome.compact ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm'} bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed`}
-              title="기존 사진들에 대한 썸네일 생성"
-            >
-              {generatingThumbnails ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  썸네일 생성 중...
-                </>
-              ) : (
-                '기존 사진 썸네일 생성'
-              )}
-            </button>
-          )}
           {/* 투어 전체 사진 공유 링크 */}
           {photos.length > 0 && (
             <button
@@ -898,10 +762,10 @@ export default function TourPhotoUpload({
                 alert(t('shareLinkCopied'))
               }}
               className={`flex items-center justify-center ${chrome.compact ? 'px-2 h-8 text-xs' : 'px-3 h-10 text-sm'} bg-purple-600 text-white rounded-lg hover:bg-purple-700`}
-              title="투어 전체 사진 공유 링크 복사"
+              title={t('shareAllTitle')}
             >
               <Share2 size={chrome.uploadIconSize} className="mr-1" />
-              전체 공유
+              {t('shareAll')}
             </button>
           )}
           
@@ -912,7 +776,7 @@ export default function TourPhotoUpload({
             className={`flex items-center justify-center ${chrome.uploadIconButton} bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50`}
             title={
               bucketStatus !== 'exists' 
-                ? 'Storage bucket이 생성되지 않았습니다' 
+                ? t('bucketNotCreated') 
                 : uploading ? t('uploading') : t('selectFromGallery')
             }
           >
@@ -935,7 +799,7 @@ export default function TourPhotoUpload({
             className={`flex items-center justify-center ${chrome.uploadIconButton} bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50`}
             title={
               bucketStatus !== 'exists' 
-                ? 'Storage bucket이 생성되지 않았습니다' 
+                ? t('bucketNotCreated') 
                 : t('takePhoto')
             }
           >
@@ -961,13 +825,13 @@ export default function TourPhotoUpload({
         <Upload size={chrome.uploadDropIconSize} className={`mx-auto text-gray-400 ${chrome.compact ? 'mb-1.5' : 'mb-2 sm:mb-4'}`} />
         <p className={chrome.uploadZoneText}>
           {bucketStatus !== 'exists' 
-            ? 'Storage bucket이 생성되지 않았습니다' 
+            ? t('bucketNotCreated') 
             : t('dragOrClick')
           }
         </p>
         <p className={chrome.uploadZoneHint}>
           {bucketStatus !== 'exists' 
-            ? '위의 \"설정 안내\" 버튼을 눌러 bucket을 생성해주세요' 
+            ? t('bucketSetupHint') 
             : t('fileFormats')
           }
         </p>
@@ -1064,9 +928,9 @@ export default function TourPhotoUpload({
                       handleUnhidePhoto(photo)
                     }}
                     className="absolute right-1.5 top-1.5 z-20 cursor-pointer rounded bg-red-500 px-1.5 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-red-600"
-                    title="클릭하여 숨김 철회"
+                    title={t('clickToUnhide')}
                   >
-                    숨김
+                    {t('hidden')}
                   </button>
                 )}
 
@@ -1082,7 +946,7 @@ export default function TourPhotoUpload({
                     </p>
                     {isAdmin && photo.is_hidden && photo.hide_requested_by_name && (
                       <p className={`font-medium text-red-300 ${chrome.compact ? 'text-[10px]' : 'text-xs'}`}>
-                        숨김 요청: {photo.hide_requested_by_name}
+                        {t('hideRequestedBy', { name: photo.hide_requested_by_name })}
                       </p>
                     )}
                   </div>
@@ -1106,32 +970,6 @@ export default function TourPhotoUpload({
           <div className={`animate-spin rounded-full border-b-2 border-primary mx-auto ${chrome.compact ? 'h-8 w-8 mb-2' : 'h-12 w-12 mb-4'}`} />
           <p className={chrome.emptyStateTitle}>{t('uploading')}</p>
           <p className={`${chrome.emptyStateSubtext} mt-2 max-w-md mx-auto px-2`}>{t('uploadProgressBackgroundNote')}</p>
-        </div>
-      )}
-
-      {generatingThumbnails && (
-        <div className={`text-center text-gray-500 ${chrome.emptyStatePadding}`}>
-          <div className={`animate-spin rounded-full border-b-2 border-green-600 mx-auto ${chrome.compact ? 'h-8 w-8 mb-2' : 'h-12 w-12 mb-4'}`} />
-          <p className={chrome.emptyStateTitle}>썸네일 생성 중...</p>
-          
-          {/* 썸네일 생성 진행 상황 */}
-          {thumbnailProgress.total > 0 && (
-            <div className="mt-4 max-w-md mx-auto">
-              <div className="flex justify-between text-sm text-gray-600 mb-2">
-                <span>{thumbnailProgress.current}/{thumbnailProgress.total} 사진</span>
-                <span>{Math.round((thumbnailProgress.current / thumbnailProgress.total) * 100)}%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div 
-                  className="bg-green-600 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${(thumbnailProgress.current / thumbnailProgress.total) * 100}%` }}
-                />
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                {Math.round((thumbnailProgress.current / thumbnailProgress.total) * 100)}% 완료
-              </p>
-            </div>
-          )}
         </div>
       )}
 
@@ -1219,19 +1057,19 @@ export default function TourPhotoUpload({
                     onClick={() => copyShareLink(selectedPhoto.share_token)}
                     className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
                   >
-                    공유 링크 복사
+                    {t('copyShareLink')}
                   </button>
                   <button
                     onClick={() => openPhotoInNewWindow(selectedPhoto)}
                     className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
                   >
-                    새창에서 보기
+                    {t('viewInNewWindow')}
                   </button>
                   <button
                     onClick={() => handleDeletePhoto(selectedPhoto.id, selectedPhoto.file_path)}
                     className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
                   >
-                    삭제
+                    {t('deleteShort')}
                   </button>
                 </div>
               </div>
@@ -1274,7 +1112,7 @@ export default function TourPhotoUpload({
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">Storage Bucket 설정 안내</h2>
+                <h2 className="text-xl font-bold text-gray-900">{t('bucketSetupModalTitle')}</h2>
                 <button
                   onClick={() => setShowBucketModal(false)}
                   className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -1287,25 +1125,24 @@ export default function TourPhotoUpload({
               
               <div className="space-y-4">
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                  <h3 className="font-semibold text-yellow-800 mb-2">⚠️ Storage Bucket이 생성되지 않았습니다</h3>
+                  <h3 className="font-semibold text-yellow-800 mb-2">⚠️ {t('bucketSetupWarningTitle')}</h3>
                   <p className="text-yellow-700">
-                    투어 사진을 저장하기 위한 Storage bucket이 필요합니다. 
-                    아래 단계를 따라 Supabase SQL Editor에서 수동으로 생성해주세요.
+                    {t('bucketSetupWarningDesc')}
                   </p>
                 </div>
                 
                 <div className="space-y-3">
-                  <h3 className="font-semibold text-gray-900">설정 단계:</h3>
+                  <h3 className="font-semibold text-gray-900">{t('bucketSetupStepsTitle')}</h3>
                   <div className="space-y-2 text-sm text-gray-700">
-                    <p>1. <strong>Supabase 대시보드</strong> → <strong>SQL Editor</strong> 탭으로 이동</p>
-                    <p>2. 아래 SQL 코드를 복사해서 붙여넣기</p>
-                    <p>3. <strong>Run</strong> 버튼 클릭하여 실행</p>
-                    <p>4. 이 페이지를 새로고침</p>
+                    <p>1. {t('bucketSetupStep1')}</p>
+                    <p>2. {t('bucketSetupStep2')}</p>
+                    <p>3. {t('bucketSetupStep3')}</p>
+                    <p>4. {t('bucketSetupStep4')}</p>
                   </div>
                 </div>
                 
                 <div className="bg-gray-50 border rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-900 mb-2">실행할 SQL 코드:</h4>
+                  <h4 className="font-semibold text-gray-900 mb-2">{t('bucketSetupSqlTitle')}</h4>
                   <pre className="bg-gray-800 text-green-400 p-3 rounded text-xs overflow-x-auto">
 {`-- Step 1: Clean existing conflicting policies
 DROP POLICY IF EXISTS "Allow authenticated users to upload tour photos" ON storage.objects;
@@ -1343,13 +1180,13 @@ SELECT 'tour-photos bucket created successfully!' as status;`}
                     onClick={checkBucketStatus}
                     className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
                   >
-                    설정 완료 후 확인
+                    {t('setupCompleteCheck')}
                   </button>
                   <button
                     onClick={() => setShowBucketModal(false)}
                     className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition-colors"
                   >
-                    닫기
+                    {t('close')}
                   </button>
                 </div>
               </div>

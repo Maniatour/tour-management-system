@@ -18,10 +18,26 @@ import {
   MessageCircle, 
   Handshake,
   Edit,
-  Trash2
+  Trash2,
+  Car,
+  Wrench,
+  Camera,
+  NotebookPen,
+  SkipForward,
 } from 'lucide-react'
+import TourNarrationPlayLog from '@/components/tour/TourNarrationPlayLog'
 import { toast } from 'sonner'
 import { displayCourseName, type CourseForMainStops } from '@/lib/tourReportMainStops'
+import {
+  displayDrivingSegmentLabel,
+  type TourReportDrivingSegment,
+} from '@/lib/tourReportDrivingSegments'
+import {
+  displaySkipReasonLabel,
+  displayVehicleConditionLabel,
+  parseIssuePhotoUrls,
+  parseSkippedStops,
+} from '@/lib/tourReportExtras'
 
 const LOST_DAMAGE_OPTIONS = [
   { ko: '분실물 없음', en: 'No Lost Items' },
@@ -39,8 +55,15 @@ interface TourReport {
   end_mileage: number | null
   cash_balance: number | null
   customer_count: number | null
+  booked_customer_count?: number | null
   weather: string | null
   main_stops_visited: string[]
+  driving_segment_ids?: string[] | null
+  skipped_stops?: unknown
+  vehicle_condition_tags?: string[] | null
+  vehicle_condition_note?: string | null
+  issue_photo_urls?: string[] | null
+  handoff_note?: string | null
   main_stop_substitutions?: Record<string, string> | null
   overall_mood: string | null
   guest_comments: string | null
@@ -109,6 +132,7 @@ export default function TourReportList({
   const { user } = useAuth()
   const [reports, setReports] = useState<TourReport[]>([])
   const [stopCourseById] = useState<Map<string, CourseForMainStops>>(new Map())
+  const [drivingById, setDrivingById] = useState<Map<string, TourReportDrivingSegment>>(new Map())
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [weatherFilter, setWeatherFilter] = useState<string>('all')
@@ -116,7 +140,24 @@ export default function TourReportList({
 
   useEffect(() => {
     fetchReports()
+    void fetchDrivingSegments()
   }, [tourId, user])
+
+  const fetchDrivingSegments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('tour_report_driving_segments')
+        .select('id, label_ko, label_en, sort_order, is_active')
+      if (error) throw error
+      const map = new Map<string, TourReportDrivingSegment>()
+      for (const row of (data ?? []) as TourReportDrivingSegment[]) {
+        map.set(row.id, row)
+      }
+      setDrivingById(map)
+    } catch (e) {
+      console.error('Error fetching driving segments:', e)
+    }
+  }
 
   const fetchReports = async () => {
     if (!user?.email) return
@@ -354,10 +395,17 @@ export default function TourReportList({
                       <span className="text-sm">잔액: ${report.cash_balance.toFixed(2)}</span>
                     </div>
                   )}
-                  {report.customer_count && (
+                  {report.customer_count != null && (
                     <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-md">
                       <Users className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                      <span className="text-sm">고객: {report.customer_count}명</span>
+                      <span className="text-sm">
+                        {locale === 'en' ? 'On board' : '탑승'}: {report.customer_count}명
+                        {report.booked_customer_count != null
+                          ? locale === 'en'
+                            ? ` / booked ${report.booked_customer_count}`
+                            : ` / 예약 ${report.booked_customer_count}`
+                          : ''}
+                      </span>
                     </div>
                   )}
                   {report.weather && (
@@ -370,6 +418,43 @@ export default function TourReportList({
                     </div>
                   )}
                 </div>
+
+                {(() => {
+                  const tags = Array.isArray(report.vehicle_condition_tags)
+                    ? report.vehicle_condition_tags.filter(Boolean)
+                    : []
+                  const note = report.vehicle_condition_note?.trim()
+                  if (tags.length === 0 && !note) return null
+                  const hasIssue = tags.some((tag) => tag !== 'ok')
+                  return (
+                    <div className="mb-4">
+                      <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
+                        <Wrench className="h-4 w-4 text-gray-500" />
+                        {locale === 'en' ? 'Vehicle condition:' : '차량 상태:'}
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {tags.map((tag) => (
+                          <Badge
+                            key={tag}
+                            variant={tag === 'ok' ? 'secondary' : 'destructive'}
+                            className="text-xs"
+                          >
+                            {displayVehicleConditionLabel(tag, locale)}
+                          </Badge>
+                        ))}
+                      </div>
+                      {note && (
+                        <p
+                          className={`mt-2 text-sm rounded px-2 py-1 ${
+                            hasIssue ? 'bg-red-50 text-red-800' : 'bg-gray-50 text-gray-700'
+                          }`}
+                        >
+                          {note}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   {report.overall_mood && (
@@ -419,8 +504,66 @@ export default function TourReportList({
                   </div>
                 )}
 
-                {report.main_stop_substitutions &&
-                  Object.keys(report.main_stop_substitutions).length > 0 && (
+                {Array.isArray(report.driving_segment_ids) && report.driving_segment_ids.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
+                      <Car className="h-4 w-4 text-gray-500" />
+                      {locale === 'en' ? 'Driving:' : 'Driving:'}
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {report.driving_segment_ids.map((segId) => {
+                        const seg = drivingById.get(segId)
+                        const label = seg ? displayDrivingSegmentLabel(seg, locale) : segId
+                        return (
+                          <Badge key={segId} variant="outline" className="text-xs">
+                            {label}
+                          </Badge>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <TourNarrationPlayLog tourId={report.tour_id} locale={locale} />
+
+                {(() => {
+                  const skipped = parseSkippedStops(report.skipped_stops)
+                  const skippedIds = Object.keys(skipped)
+                  if (skippedIds.length === 0) return null
+                  return (
+                    <div className="mb-4">
+                      <p className="text-sm font-medium mb-2 flex items-center gap-1.5 text-amber-800">
+                        <SkipForward className="h-4 w-4" />
+                        {locale === 'en' ? 'Skipped stops:' : '스킵한 포인트:'}
+                      </p>
+                      <ul className="space-y-1 text-sm text-gray-700">
+                        {skippedIds.map((cid) => {
+                          const entry = skipped[cid]
+                          const c = stopCourseById.get(cid)
+                          const point = c ? displayCourseName(c, locale) : cid
+                          const reason = entry.reason
+                            ? displaySkipReasonLabel(entry.reason, locale)
+                            : ''
+                          const note = entry.note.trim()
+                          const detail = [reason, note].filter(Boolean).join(' — ')
+                          return (
+                            <li key={cid} className="rounded bg-amber-50/80 px-2 py-1">
+                              <span className="font-medium">{point}</span>
+                              {detail ? `: ${detail}` : ''}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  )
+                })()}
+
+                {(() => {
+                  const skipped = parseSkippedStops(report.skipped_stops)
+                  if (Object.keys(skipped).length > 0) return null
+                  if (!report.main_stop_substitutions) return null
+                  if (Object.keys(report.main_stop_substitutions).length === 0) return null
+                  return (
                     <div className="mb-4">
                       <p className="text-sm font-medium mb-2 text-amber-800">
                         {locale === 'en' ? 'Alternative stops / notes:' : '대체 방문·메모:'}
@@ -438,7 +581,8 @@ export default function TourReportList({
                         })}
                       </ul>
                     </div>
-                  )}
+                  )
+                })()}
 
                 {/* 문제사항 */}
                 {report.incidents_delays_health.length > 0 && (
@@ -473,6 +617,37 @@ export default function TourReportList({
                   </div>
                 )}
 
+                {(() => {
+                  const photos = parseIssuePhotoUrls(report.issue_photo_urls)
+                  if (photos.length === 0) return null
+                  return (
+                    <div className="mb-4">
+                      <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
+                        <Camera className="h-4 w-4 text-gray-500" />
+                        {locale === 'en' ? 'Issue photos:' : '이슈 사진:'}
+                      </p>
+                      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                        {photos.map((url) => (
+                          <a
+                            key={url}
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="relative aspect-square overflow-hidden rounded-lg border bg-muted"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={url}
+                              alt={locale === 'en' ? 'Issue photo' : '이슈 사진'}
+                              className="h-full w-full object-cover"
+                            />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
+
                 {/* 코멘트들 */}
                 <div className="space-y-2">
                   {report.guest_comments && (
@@ -491,6 +666,17 @@ export default function TourReportList({
                     <div>
                       <p className="text-sm font-medium text-gray-600 mb-1">기타 코멘트:</p>
                       <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded">{report.comments}</p>
+                    </div>
+                  )}
+                  {report.handoff_note?.trim() && (
+                    <div>
+                      <p className="text-sm font-medium text-amber-800 mb-1 flex items-center gap-1.5">
+                        <NotebookPen className="h-4 w-4" />
+                        {locale === 'en' ? 'Handoff for next team:' : '다음 팀 인수인계:'}
+                      </p>
+                      <p className="text-sm text-gray-800 bg-amber-50 p-2 rounded border border-amber-200/80">
+                        {report.handoff_note}
+                      </p>
                     </div>
                   )}
                   {report.office_note && (

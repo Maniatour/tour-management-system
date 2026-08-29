@@ -1,4 +1,5 @@
 export const REVIEW_SOURCE_GOOGLE = 'google' as const
+export const REVIEW_SOURCE_WEBSITE = 'website' as const
 
 export const OTA_REVIEW_SOURCES = [
   'getyourguide',
@@ -11,7 +12,10 @@ export const OTA_REVIEW_SOURCES = [
 ] as const
 
 export type OtaReviewSource = (typeof OTA_REVIEW_SOURCES)[number]
-export type ReviewSource = typeof REVIEW_SOURCE_GOOGLE | OtaReviewSource
+export type ReviewSource =
+  | typeof REVIEW_SOURCE_GOOGLE
+  | typeof REVIEW_SOURCE_WEBSITE
+  | OtaReviewSource
 
 export type ReviewSourceTab = {
   id: ReviewSource
@@ -22,6 +26,7 @@ export type ReviewSourceTab = {
 /** Tabs that show total review count badges in admin review integration UI. */
 export const REVIEW_SOURCE_TABS_WITH_COUNT = [
   REVIEW_SOURCE_GOOGLE,
+  REVIEW_SOURCE_WEBSITE,
   ...OTA_REVIEW_SOURCES,
 ] as const
 
@@ -33,6 +38,7 @@ export function isReviewSourceTabWithCount(value: string): value is ReviewSource
 
 export const REVIEW_SOURCE_TABS: ReviewSourceTab[] = [
   { id: 'google', labelKo: 'Google', labelEn: 'Google' },
+  { id: 'website', labelKo: '웹사이트', labelEn: 'Website' },
   { id: 'getyourguide', labelKo: 'GetYourGuide', labelEn: 'GetYourGuide' },
   { id: 'viator', labelKo: 'Viator', labelEn: 'Viator' },
   { id: 'tripadvisor', labelKo: 'TripAdvisor', labelEn: 'TripAdvisor' },
@@ -47,7 +53,11 @@ export function isOtaReviewSource(value: string): value is OtaReviewSource {
 }
 
 export function isReviewSource(value: string): value is ReviewSource {
-  return value === REVIEW_SOURCE_GOOGLE || isOtaReviewSource(value)
+  return (
+    value === REVIEW_SOURCE_GOOGLE ||
+    value === REVIEW_SOURCE_WEBSITE ||
+    isOtaReviewSource(value)
+  )
 }
 
 export function getReviewSourceLabel(source: ReviewSource, locale: string): string {
@@ -58,6 +68,10 @@ export function getReviewSourceLabel(source: ReviewSource, locale: string): stri
 
 export function otaLocationPlaceholder(source: OtaReviewSource): string {
   return `ota:${source}`
+}
+
+export function websiteLocationPlaceholder(): string {
+  return 'website:kovegas'
 }
 
 export function defaultAdminGoogleReviewListSort(source: ReviewSource): 'imported_at' | 'review_created_at' {

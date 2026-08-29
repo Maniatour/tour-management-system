@@ -612,6 +612,11 @@ export function parseOtaReviewText(text: string, source?: OtaReviewSource | null
     if (gyg) return [gyg]
   }
 
+  if (source === 'viator' || isViatorScrapedText(trimmed)) {
+    const viatorRows = parseViatorScrapedReviews(trimmed)
+    if (viatorRows.length > 0) return viatorRows
+  }
+
   if (source === 'kkday' || isKkdayScrapedText(trimmed)) {
     const kkdayRows = parseKkdayScrapedReviews(trimmed)
     if (kkdayRows.length > 0) return kkdayRows
@@ -1046,6 +1051,235 @@ export function parseKkdayScrapedReviews(text: string): ParsedOtaReviewRow[] {
   return rows
 }
 
+const VIATOR_MONTH_INDEX: Record<string, number> = {
+  jan: 0,
+  january: 0,
+  feb: 1,
+  february: 1,
+  mar: 2,
+  march: 2,
+  apr: 3,
+  april: 3,
+  may: 4,
+  jun: 5,
+  june: 5,
+  jul: 6,
+  july: 6,
+  aug: 7,
+  august: 7,
+  sep: 8,
+  sept: 8,
+  september: 8,
+  oct: 9,
+  october: 9,
+  nov: 10,
+  november: 10,
+  dec: 11,
+  december: 11,
+}
+
+const VIATOR_DATE_LINE =
+  /^(?:reviewed(?:\s+on)?[:\s]+)?([A-Za-z]{3,9})\s+(\d{1,2}),\s+(\d{4})$/i
+
+const VIATOR_PRODUCT_LINE =
+  /^(Tripadvisor|Viator|GetYourGuide|Klook|KKday)?\s*review:\s*(.+)$/i
+
+const VIATOR_SKIP_LINE =
+  /^(response\s+(?:published|unpublished)|no\s+response|reply|replied|translate|see translation|show original|view (?:review|details)|hide details|published|unpublished)$/i
+
+const VIATOR_BODY_PRODUCT_MAP: Array<{ pattern: RegExp; productId: string; productName: string }> = [
+  {
+    pattern: /Zion\s*Bryce|2\s*Day.*Zion|Zion.{0,40}Bryce.{0,40}2\s*[Dd]ay/i,
+    productId: 'MNGC1N',
+    productName: '그랜드서클 1박 2일 투어',
+  },
+  {
+    pattern: /Grand\s*Canyon\s*Sunrise|밤도깨비|Midnight\s*Goblin/i,
+    productId: 'MDGCSUNRISE',
+    productName: '밤도깨비 그랜드캐년 일출 투어',
+  },
+  {
+    pattern: /Grand\s*Canyon.{0,80}Antelope.{0,80}Horseshoe.{0,40}Lake\s*Powell/i,
+    productId: 'MDGC1D',
+    productName: '그랜드서클 당일 투어',
+  },
+  {
+    pattern: /Grand\s*Canyon.{0,80}Antelope.{0,80}Horseshoe(?:\s*Bend)?(?:\s*Tour)?(?:\s*from\s*Las\s*Vegas)?/i,
+    productId: 'MDGCSUNRISE',
+    productName: '밤도깨비 그랜드캐년 일출 투어',
+  },
+  {
+    pattern: /Night\s*City|Las\s*Vegas\s*City\s*Tour/i,
+    productId: 'MDLVN',
+    productName: '라스베가스 야경투어',
+  },
+]
+
+function isViatorDateLine(line: string): boolean {
+  return VIATOR_DATE_LINE.test(line.trim())
+}
+
+function parseViatorDateParts(line: string): { y: number; m: number; d: number } | null {
+  const match = line.trim().match(VIATOR_DATE_LINE)
+  if (!match) return null
+  const month = VIATOR_MONTH_INDEX[match[1].toLowerCase()]
+  const day = Number.parseInt(match[2], 10)
+  const year = Number.parseInt(match[3], 10)
+  if (month === undefined || !Number.isFinite(day) || !Number.isFinite(year)) return null
+  if (day < 1 || day > 31 || year < 2000) return null
+  return { y: year, m: month, d: day }
+}
+
+function parseViatorDateToIso(line: string): string | null {
+  const parts = parseViatorDateParts(line)
+  if (!parts) return null
+  return new Date(Date.UTC(parts.y, parts.m, parts.d, 12, 0, 0)).toISOString()
+}
+
+function parseViatorDateToYmd(line: string): string | null {
+  const parts = parseViatorDateParts(line)
+  if (!parts) return null
+  return `${parts.y}-${String(parts.m + 1).padStart(2, '0')}-${String(parts.d).padStart(2, '0')}`
+}
+
+function parseViatorProductLine(line: string): string | null {
+  const match = line.trim().match(VIATOR_PRODUCT_LINE)
+  return match?.[2]?.trim() || null
+}
+
+function isViatorSkipLine(line: string): boolean {
+  return VIATOR_SKIP_LINE.test(line.trim())
+}
+
+export function mapViatorProduct(text: string): {
+  productId: string
+  productName: string
+} | null {
+  const source = text.trim()
+  if (!source) return null
+  for (const entry of VIATOR_BODY_PRODUCT_MAP) {
+    if (entry.pattern.test(source)) {
+      return { productId: entry.productId, productName: entry.productName }
+    }
+  }
+  return mapGetYourGuideProduct(source)
+}
+
+/** Viator 공급자 리뷰 화면에서 복사한 텍스트인지 */
+export function isViatorScrapedText(text: string): boolean {
+  const sample = text.trim()
+  if (!sample) return false
+  const hasDate = /(?:^|\n)\s*(?:reviewed(?:\s+on)?[:\s]+)?[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}\s*(?:\n|$)/i.test(
+    sample
+  )
+  const hasProductLine = /(tripadvisor|viator)\s+review\s*:/i.test(sample)
+  const hasResponse = /response\s+(?:published|unpublished)|no\s+response/i.test(sample)
+  return hasDate && (hasProductLine || hasResponse)
+}
+
+function splitViatorReviewBlocks(text: string): string[] {
+  const lines = text.split(/\r?\n/)
+  const blocks: string[] = []
+  let current: string[] = []
+
+  const flush = () => {
+    const block = current.join('\n').trim()
+    if (block) blocks.push(block)
+    current = []
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
+    if (isViatorDateLine(line) && current.some((item) => item.trim())) {
+      flush()
+    }
+    current.push(rawLine)
+  }
+  flush()
+  return blocks.length > 0 ? blocks : [text.trim()].filter(Boolean)
+}
+
+/** Viator 리뷰 화면에서 복사한 1건 파싱. 별점은 복사되지 않으므로 null일 수 있음. */
+export function parseViatorScrapedText(text: string): ParsedOtaReviewRow | null {
+  const trimmed = text.trim()
+  if (!trimmed) return null
+
+  const lines = trimmed.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const dateIndex = lines.findIndex((line) => isViatorDateLine(line))
+  if (dateIndex < 0) return null
+
+  const dateLine = lines[dateIndex] ?? ''
+  const reviewCreatedAt = parseViatorDateToIso(dateLine)
+  const tourDate = parseViatorDateToYmd(dateLine)
+
+  let authorName: string | null = null
+  let title: string | null = null
+  let productLine: string | null = null
+  let rating: number | null = null
+  const commentLines: string[] = []
+
+  for (const line of lines.slice(dateIndex + 1)) {
+    if (isViatorDateLine(line)) break
+    if (isViatorSkipLine(line)) continue
+
+    if (rating === null) {
+      const fromLine = parseRating(line)
+      if (fromLine !== null && (/^[1-5]$/.test(line) || /star/i.test(line) || /[★⭐☆]/.test(line))) {
+        rating = fromLine
+        continue
+      }
+    }
+
+    const product = parseViatorProductLine(line)
+    if (product) {
+      productLine = product
+      continue
+    }
+
+    if (!authorName) {
+      authorName = line
+      continue
+    }
+
+    if (!title && !productLine && commentLines.length === 0 && line.length <= 120) {
+      title = line
+      continue
+    }
+
+    commentLines.push(line)
+  }
+
+  const comment = [title, ...commentLines].filter(Boolean).join('\n').trim() || null
+  const mappedProduct = mapViatorProduct(productLine ?? trimmed)
+
+  if (!authorName && !comment && !productLine) {
+    return null
+  }
+
+  return {
+    authorName,
+    rating,
+    comment,
+    reviewCreatedAt,
+    productHint: mappedProduct?.productName ?? productLine,
+    reservationNumber: null,
+    tourDate,
+    productId: mappedProduct?.productId ?? null,
+    tourId: null,
+    lineNumber: 1,
+  }
+}
+
+export function parseViatorScrapedReviews(text: string): ParsedOtaReviewRow[] {
+  const rows: ParsedOtaReviewRow[] = []
+  for (const [index, block] of splitViatorReviewBlocks(text).entries()) {
+    const row = parseViatorScrapedText(block)
+    if (!row) continue
+    rows.push({ ...row, lineNumber: index + 1 })
+  }
+  return rows
+}
+
 export function parseSingleOtaReviewText(
   text: string,
   source?: OtaReviewSource | null
@@ -1056,6 +1290,11 @@ export function parseSingleOtaReviewText(
   if (source === 'getyourguide' || isGetYourGuideScrapedText(trimmed)) {
     const gyg = parseGetYourGuideScrapedText(trimmed)
     if (gyg) return gyg
+  }
+
+  if (source === 'viator' || isViatorScrapedText(trimmed)) {
+    const viator = parseViatorScrapedText(trimmed)
+    if (viator) return viator
   }
 
   if (source === 'kkday' || isKkdayScrapedText(trimmed)) {
@@ -1124,8 +1363,10 @@ export const OTA_CSV_TEMPLATE_HINTS: Record<OtaReviewSource, OtaCsvTemplateHint>
   },
   viator: {
     source: 'viator',
-    columnsKo: 'reviewer, rating, review, date, tour',
-    columnsEn: 'reviewer, rating, review, date, tour',
+    columnsKo:
+      'Viator 리뷰 화면 텍스트 붙여넣기 (작성일 · 고객명 · 제목 · Tripadvisor/Viator review: 상품명) 또는 reviewer, rating, review, date, tour',
+    columnsEn:
+      'Paste Viator review page text (date, guest, title, Tripadvisor/Viator review: product) or reviewer, rating, review, date, tour',
   },
   tripadvisor: {
     source: 'tripadvisor',

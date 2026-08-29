@@ -86,6 +86,14 @@ function normalizeTimeForEq(s: string): string | null {
 
 export type AdminReservationListSort = 'created_at' | 'tour_date' | 'customer_name' | 'product_name'
 
+/** 픽업 호텔 미정(null/빈 값)만 보기 */
+export const ADMIN_RESERVATION_PICKUP_HOTEL_UNSET = '__unset__'
+
+function isActiveListFilterValue(v: string | null | undefined): v is string {
+  const s = String(v ?? '').trim()
+  return s.length > 0 && s !== 'all'
+}
+
 export type FetchAdminReservationListArgs = {
   mode: 'card-flat' | 'card-week' | 'calendar'
   activityRangeStartIso?: string
@@ -94,6 +102,10 @@ export type FetchAdminReservationListArgs = {
   pageSize: number
   selectedStatus: string
   selectedChannel: string
+  /** 픽업 호텔 id, `all`, 또는 `ADMIN_RESERVATION_PICKUP_HOTEL_UNSET` */
+  selectedPickupHotel?: string | undefined
+  /** 상품 id 또는 `all` */
+  selectedProduct?: string | undefined
   dateRange: { start: string; end: string }
   customerIdFromUrl: string | null
   debouncedSearchTerm: string
@@ -357,6 +369,16 @@ function applyAdminReservationListRowFilters(q: any, args: FetchAdminReservation
     q = q.eq('channel_id', args.selectedChannel)
   }
 
+  if (args.selectedPickupHotel === ADMIN_RESERVATION_PICKUP_HOTEL_UNSET) {
+    q = q.or('pickup_hotel.is.null,pickup_hotel.eq.""')
+  } else if (isActiveListFilterValue(args.selectedPickupHotel)) {
+    q = q.eq('pickup_hotel', args.selectedPickupHotel)
+  }
+
+  if (isActiveListFilterValue(args.selectedProduct)) {
+    q = q.eq('product_id', args.selectedProduct)
+  }
+
   if (args.dateRange.start && args.dateRange.end) {
     q = q.gte('tour_date', args.dateRange.start).lte('tour_date', args.dateRange.end)
   }
@@ -478,7 +500,11 @@ export async function fetchAdminReservationListActivityWindowRowCount(
     }
 
     const searchActive = args.debouncedSearchTerm.trim().length > 0
-    if (!searchActive && !cardWeekActivityCountRpcMissing) {
+    const extraRowFiltersActive =
+      args.selectedPickupHotel === ADMIN_RESERVATION_PICKUP_HOTEL_UNSET ||
+      isActiveListFilterValue(args.selectedPickupHotel) ||
+      isActiveListFilterValue(args.selectedProduct)
+    if (!searchActive && !extraRowFiltersActive && !cardWeekActivityCountRpcMissing) {
       const opId = resolveOperatorId(args.operatorId)
       const { data, error } = await supabase.rpc('admin_reservation_card_week_activity_count', {
         p_operator_id: opId,
@@ -621,6 +647,8 @@ export async function prefetchAdminReservationListAdjacentPage(
     pageSize: number
     selectedStatus: string
     selectedChannel: string
+    selectedPickupHotel?: string | undefined
+    selectedProduct?: string | undefined
     dateRange: { start: string; end: string }
     customerIdFromUrl: string | null
     debouncedSearchTerm: string
@@ -654,6 +682,8 @@ export async function prefetchAdminReservationListAdjacentPage(
         pageSize: args.pageSize,
         selectedStatus: args.selectedStatus,
         selectedChannel: args.selectedChannel,
+        selectedPickupHotel: args.selectedPickupHotel,
+        selectedProduct: args.selectedProduct,
         dateRange: args.dateRange,
         customerIdFromUrl: args.customerIdFromUrl,
         debouncedSearchTerm: args.debouncedSearchTerm,
@@ -668,6 +698,8 @@ export async function prefetchAdminReservationListAdjacentPage(
         pageSize: args.pageSize,
         selectedStatus: args.selectedStatus,
         selectedChannel: args.selectedChannel,
+        selectedPickupHotel: args.selectedPickupHotel,
+        selectedProduct: args.selectedProduct,
         dateRange: args.dateRange,
         customerIdFromUrl: args.customerIdFromUrl,
         debouncedSearchTerm: args.debouncedSearchTerm,
@@ -1257,6 +1289,8 @@ export async function prefetchAdminReservationCardWeekAdjacentSnapshots(
     currentWeekOffset: number
     selectedStatus: string
     selectedChannel: string
+    selectedPickupHotel?: string | undefined
+    selectedProduct?: string | undefined
     dateRange: { start: string; end: string }
     customerIdFromUrl: string | null
     debouncedSearchTerm: string
@@ -1279,6 +1313,8 @@ export async function prefetchAdminReservationCardWeekAdjacentSnapshots(
       weekOffset,
       selectedStatus: args.selectedStatus,
       selectedChannel: args.selectedChannel,
+      selectedPickupHotel: args.selectedPickupHotel,
+      selectedProduct: args.selectedProduct,
       dateRange: args.dateRange,
       customerIdFromUrl: args.customerIdFromUrl,
       debouncedSearchTerm: args.debouncedSearchTerm,
@@ -1292,6 +1328,8 @@ export async function prefetchAdminReservationCardWeekAdjacentSnapshots(
       pageSize: 20,
       selectedStatus: args.selectedStatus,
       selectedChannel: args.selectedChannel,
+      selectedPickupHotel: args.selectedPickupHotel,
+      selectedProduct: args.selectedProduct,
       dateRange: args.dateRange,
       customerIdFromUrl: args.customerIdFromUrl,
       debouncedSearchTerm: args.debouncedSearchTerm,
@@ -1333,6 +1371,8 @@ export async function prefetchAdminReservationCalendarAdjacentSnapshots(
     currentMonthOffset: number
     selectedStatus: string
     selectedChannel: string
+    selectedPickupHotel?: string | undefined
+    selectedProduct?: string | undefined
     dateRange: { start: string; end: string }
     customerIdFromUrl: string | null
     debouncedSearchTerm: string
@@ -1348,6 +1388,8 @@ export async function prefetchAdminReservationCalendarAdjacentSnapshots(
       monthOffset,
       selectedStatus: args.selectedStatus,
       selectedChannel: args.selectedChannel,
+      selectedPickupHotel: args.selectedPickupHotel,
+      selectedProduct: args.selectedProduct,
       dateRange: args.dateRange,
       customerIdFromUrl: args.customerIdFromUrl,
       debouncedSearchTerm: args.debouncedSearchTerm,
@@ -1361,6 +1403,8 @@ export async function prefetchAdminReservationCalendarAdjacentSnapshots(
       pageSize: 20,
       selectedStatus: args.selectedStatus,
       selectedChannel: args.selectedChannel,
+      selectedPickupHotel: args.selectedPickupHotel,
+      selectedProduct: args.selectedProduct,
       dateRange: args.dateRange,
       customerIdFromUrl: args.customerIdFromUrl,
       debouncedSearchTerm: args.debouncedSearchTerm,

@@ -330,16 +330,13 @@ export default function ProductDetailAirbnbBody({
         </section>
       </CustomerPageZone>
 
-      {reviews.length > 0 ? (
-        <>
-          <AirbnbSectionDivider />
-          <ProductDetailReviewsSection
-            reviews={reviews}
-            variant="airbnb"
-            {...(reviewRating != null ? { averageRating: reviewRating } : {})}
-          />
-        </>
-      ) : null}
+      <AirbnbSectionDivider />
+      <ProductDetailReviewsSection
+        reviews={reviews}
+        variant="airbnb"
+        productId={productId}
+        {...(reviewRating != null ? { averageRating: reviewRating } : {})}
+      />
 
       <AirbnbSectionDivider />
 

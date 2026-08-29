@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClientSupabase } from '@/lib/supabase'
 import TourReportList from '@/components/TourReportList'
 import TourReportForm from '@/components/TourReportForm'
+import TourReportDrivingSegmentsAdmin from '@/components/admin/TourReportDrivingSegmentsAdmin'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -135,6 +136,8 @@ export default function AdminTourReports({}: AdminTourReportsProps) {
           투어 리포트 관리
         </h1>
       </div>
+
+      <TourReportDrivingSegmentsAdmin locale={locale} />
 
       {/* 투어 선택 및 리포트 작성 */}
       <Card>

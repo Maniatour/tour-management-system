@@ -109,6 +109,7 @@ export default async function LocaleLayout({
   const isCustomerProductsListing = siteLocalePathTest(pathname, '/products/?$');
   const isCustomerProductDetail = siteLocalePathTest(pathname, '/products/[^/]+/?$');
   const isCustomerTravelGuide = siteLocalePathTest(pathname, '/travel-guide(/|$)');
+  const isCustomerWriteReview = siteLocalePathTest(pathname, '/reviews(/|$)');
   const fullWidthHeader = headersList.get('x-is-full-width-customer-page');
   const isFullWidthCustomerPage =
     fullWidthHeader === '1' ||
@@ -117,7 +118,8 @@ export default async function LocaleLayout({
     isCustomerHome ||
     isCustomerProductsListing ||
     isCustomerProductDetail ||
-    isCustomerTravelGuide;
+    isCustomerTravelGuide ||
+    isCustomerWriteReview;
 
   const siteBranding = await getCachedCustomerSiteBranding();
 

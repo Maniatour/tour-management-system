@@ -62,6 +62,7 @@ const ALL_LOCALE_NAMESPACE_KEYS = [
   'teamBoard',
   'customerSiteFooter',
   'legalPages',
+  'writeReview',
 ] as const
 
 type LocaleNamespace = (typeof ALL_LOCALE_NAMESPACE_KEYS)[number]
@@ -77,6 +78,7 @@ const ROUTE_NAMESPACE_RULES: RouteNamespaceRule[] = [
     test: (p) =>
       siteLocalePathTest(p, '/?$') ||
       /\/products/.test(p) ||
+      /\/reviews/.test(p) ||
       /\/reservation-check/.test(p) ||
       /\/booking\/confirmation/.test(p) ||
       /\/(terms|privacy-policy|sms-terms|cancellation-refund-policy)(\/|$)/.test(p),
@@ -90,6 +92,7 @@ const ROUTE_NAMESPACE_RULES: RouteNamespaceRule[] = [
       'customTour',
       'reservationCheck',
       'bookingConfirmation',
+      'writeReview',
     ],
   },
   {

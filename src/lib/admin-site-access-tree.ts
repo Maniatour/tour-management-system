@@ -143,6 +143,14 @@ function otherAreaClusters(): SiteAccessNode[] {
           menuVisibility: { type: 'site_doc_customer' },
           crudByRole: CRUD_DOC_CUSTOMER,
         },
+        {
+          id: 'cust-write-review',
+          kind: 'page',
+          label: { type: 'siteDirectory', key: 'nodesPublic.customerWriteReview' },
+          localePath: 'reviews/write',
+          menuVisibility: { type: 'site_doc_customer' },
+          crudByRole: CRUD_DOC_CUSTOMER,
+        },
       ],
     },
     {

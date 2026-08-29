@@ -13,6 +13,8 @@ export type AdminReservationCalendarCacheKeyArgs = {
   monthOffset: number
   selectedStatus: string
   selectedChannel: string
+  selectedPickupHotel?: string | undefined
+  selectedProduct?: string | undefined
   dateRange: { start: string; end: string }
   customerIdFromUrl: string | null
   debouncedSearchTerm: string
@@ -30,6 +32,8 @@ export function buildAdminReservationCalendarCacheKey(
     String(args.monthOffset),
     args.selectedStatus || 'all',
     args.selectedChannel || 'all',
+    args.selectedPickupHotel || 'all',
+    args.selectedProduct || 'all',
     args.dateRange.start || '',
     args.dateRange.end || '',
     args.customerIdFromUrl || '',

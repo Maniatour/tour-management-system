@@ -26,6 +26,8 @@ import { GuideScheduleConfirmPopupLayer } from '@/components/guide/GuideSchedule
 import { StaffSiteAlertPopupLayer } from '@/components/admin/staff-site-alert/StaffSiteAlertPopupLayer'
 import VoiceCallCrossTabListener from '@/components/guide/VoiceCallCrossTabListener'
 import GuideOfflineBanner from '@/components/guide/GuideOfflineBanner'
+import GuideNarrationOfflineSync from '@/components/guide/GuideNarrationOfflineSync'
+import GuideNarrationPlayLogger from '@/components/guide/GuideNarrationPlayLogger'
 import { supabase } from '@/lib/supabase'
 import { createClientSupabase } from '@/lib/supabase'
 import { GuidePickupGeofenceProvider } from '@/contexts/GuidePickupGeofenceContext'
@@ -518,6 +520,8 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
        >
        <div className="guide-shell min-h-screen bg-white flex flex-col">
          <GuideOfflineBanner />
+         <GuideNarrationOfflineSync />
+         <GuideNarrationPlayLogger />
          {/* 상단 Navigation은 [locale]/layout.tsx(가이드 분기)에서만 렌더 */}
 
          {/* 메인: 부모 패딩 없음 — 풀블리드 */}

@@ -1,7 +1,8 @@
 'use client'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
-import React, { useState } from 'react'
-import { useTranslations } from 'next-intl'
+import React, { useMemo, useState } from 'react'
+import { useLocale, useTranslations } from 'next-intl'
 import { SlidersHorizontal } from 'lucide-react'
 import {
   Dialog,
@@ -10,6 +11,85 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import { ADMIN_RESERVATION_PICKUP_HOTEL_UNSET } from '@/lib/adminReservationListFetch'
+import { getPickupHotelPrimaryName } from '@/utils/pickupHotelUtils'
+import { resolveProductInternalName } from '@/utils/reservationUtils'
+
+type FilterSelectOption = { value: string; label: string; searchText?: string }
+
+function SearchableFilterSelect({
+  id,
+  label,
+  value,
+  onChange,
+  allOptionLabel,
+  extraOptions = [],
+  options,
+  searchPlaceholder,
+}: {
+  id: string
+  label: string
+  value: string
+  onChange: (value: string) => void
+  allOptionLabel: string
+  extraOptions?: FilterSelectOption[]
+  options: FilterSelectOption[]
+  searchPlaceholder: string
+}) {
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const filtered = useMemo(() => {
+    if (!q) return options
+    return options.filter((option) =>
+      `${option.label} ${option.searchText ?? ''}`.toLowerCase().includes(q)
+    )
+  }, [options, q])
+  const selected =
+    extraOptions.find((option) => option.value === value) ||
+    options.find((option) => option.value === value)
+  const selectedMissingFromFiltered =
+    Boolean(selected) &&
+    value !== 'all' &&
+    !extraOptions.some((option) => option.value === value) &&
+    !filtered.some((option) => option.value === value)
+
+  return (
+    <div>
+      <label htmlFor={id} className="mb-1 block text-xs font-medium text-gray-700">
+        {label}
+      </label>
+      <input
+        {...BROWSER_AUTOFILL_OFF_PROPS}
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder={searchPlaceholder}
+        className="mb-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-transparent focus:ring-1 focus:ring-ring"
+      />
+      <select
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-transparent focus:ring-1 focus:ring-ring"
+      >
+        <option value="all">{allOptionLabel}</option>
+        {extraOptions.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+        {selectedMissingFromFiltered && selected ? (
+          <option value={selected.value}>{selected.label}</option>
+        ) : null}
+        {filtered.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
 
 interface ReservationsFiltersProps {
   isFiltersCollapsed?: boolean
@@ -19,6 +99,24 @@ interface ReservationsFiltersProps {
   selectedChannel: string
   onChannelChange: (channel: string) => void
   channels: Array<{ id: string; name: string }>
+  selectedPickupHotel: string
+  onPickupHotelChange: (hotelId: string) => void
+  pickupHotels: Array<{
+    id: string
+    hotel?: string | null
+    internal_name?: string | null
+    pick_up_location?: string | null
+  }>
+  selectedProduct: string
+  onProductChange: (productId: string) => void
+  products: Array<{
+    id: string
+    name?: string | null
+    name_ko?: string | null
+    name_en?: string | null
+    customer_name_ko?: string | null
+    customer_name_en?: string | null
+  }>
   dateRange: { start: string; end: string }
   onDateRangeChange: (range: { start: string; end: string }) => void
   sortBy: 'created_at' | 'tour_date' | 'customer_name' | 'product_name'
@@ -43,6 +141,12 @@ function ReservationsFilters({
   selectedChannel,
   onChannelChange,
   channels,
+  selectedPickupHotel,
+  onPickupHotelChange,
+  pickupHotels,
+  selectedProduct,
+  onProductChange,
+  products,
   dateRange,
   onDateRangeChange,
   sortBy,
@@ -59,6 +163,7 @@ function ReservationsFilters({
   onFilterModalOpenChange
 }: ReservationsFiltersProps) {
   const t = useTranslations('reservations')
+  const locale = useLocale()
   const [internalOpen, setInternalOpen] = useState(false)
   const isControlled = controlledOpen !== undefined && onFilterModalOpenChange !== undefined
   const modalOpen = isControlled ? controlledOpen : internalOpen
@@ -66,6 +171,38 @@ function ReservationsFilters({
 
   const openModal = () => setModalOpen(true)
   const closeModal = () => setModalOpen(false)
+
+  const pickupHotelOptions = useMemo(
+    () =>
+      [...pickupHotels]
+        .map((hotel) => {
+          const name = getPickupHotelPrimaryName({
+            hotel: String(hotel.hotel ?? '').trim(),
+            internal_name: hotel.internal_name,
+          })
+          const location = String(hotel.pick_up_location ?? '').trim()
+          return {
+            value: hotel.id,
+            label: location ? `${name} — ${location}` : name || hotel.id,
+            searchText: `${hotel.hotel ?? ''} ${hotel.internal_name ?? ''} ${location}`,
+          }
+        })
+        .sort((a, b) => a.label.localeCompare(b.label, locale.startsWith('en') ? 'en' : 'ko')),
+    [pickupHotels, locale]
+  )
+
+  const productOptions = useMemo(
+    () =>
+      [...products]
+        .map((product) => ({
+          value: product.id,
+          label: resolveProductInternalName(product) || product.id,
+          searchText: `${product.name ?? ''} ${product.name_ko ?? ''} ${product.name_en ?? ''}`,
+        }))
+        .filter((option) => option.label && option.label !== 'Unknown')
+        .sort((a, b) => a.label.localeCompare(b.label, locale.startsWith('en') ? 'en' : 'ko')),
+    [products, locale]
+  )
 
   const filterContent = (
     <>
@@ -120,6 +257,27 @@ function ReservationsFilters({
           />
         </div>
       </div>
+      <SearchableFilterSelect
+        id="reservations-filter-pickup-hotel"
+        label={t('filtersPickupHotelLabel')}
+        value={selectedPickupHotel}
+        onChange={onPickupHotelChange}
+        allOptionLabel={t('filters.allPickupHotels')}
+        extraOptions={[
+          { value: ADMIN_RESERVATION_PICKUP_HOTEL_UNSET, label: t('filters.pickupHotelUnset') },
+        ]}
+        options={pickupHotelOptions}
+        searchPlaceholder={t('filters.pickupHotelSearch')}
+      />
+      <SearchableFilterSelect
+        id="reservations-filter-product"
+        label={t('filtersProductLabel')}
+        value={selectedProduct}
+        onChange={onProductChange}
+        allOptionLabel={t('filters.allProducts')}
+        options={productOptions}
+        searchPlaceholder={t('filters.productSearch')}
+      />
       {/* 정렬, 그룹화, 페이지당 */}
       {listViewActive ? (
         <div className="space-y-3">
@@ -229,7 +387,7 @@ function ReservationsFilters({
       )}
 
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{t('filter')}</DialogTitle>
           </DialogHeader>

@@ -9,9 +9,30 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { MapPin, Users, DollarSign, Cloud, Star, MessageSquare, AlertTriangle, Package, Lightbulb, MessageCircle, Handshake, FileText, ChevronLeft, ChevronRight } from 'lucide-react'
+import { MapPin, Users, DollarSign, Cloud, Star, MessageSquare, AlertTriangle, Package, Lightbulb, MessageCircle, Handshake, FileText, ChevronLeft, ChevronRight, Car, Wrench, Camera, NotebookPen, SkipForward } from 'lucide-react'
+import TourNarrationPlayLog from '@/components/tour/TourNarrationPlayLog'
+import TourReportNumberStepper from '@/components/TourReportNumberStepper'
+import TourReportIssuePhotos from '@/components/TourReportIssuePhotos'
+import TourReportSkippedStops from '@/components/TourReportSkippedStops'
+import {
+  displayDrivingSegmentLabel,
+  type TourReportDrivingSegment,
+} from '@/lib/tourReportDrivingSegments'
+import {
+  VEHICLE_CONDITION_OPTIONS,
+  parseIssuePhotoUrls,
+  parseSkippedStops,
+  skippedStopsToSubstitutionNotes,
+  type SkippedStopsMap,
+} from '@/lib/tourReportExtras'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { reservationExcludedFromTourAssignment } from '@/lib/reservationStatus'
+import {
+  isReservationCancelledStatus,
+  isReservationDeletedStatus,
+  normalizeReservationIds,
+} from '@/utils/tourUtils'
 import {
   buildMainStopCourseIds,
   displayCourseName,
@@ -45,8 +66,15 @@ interface TourReportData {
   end_mileage: number | null
   cash_balance: number | null
   customer_count: number | null
+  booked_customer_count: number | null
   weather: string | null
   main_stops_visited: string[]
+  driving_segment_ids: string[]
+  skipped_stops: SkippedStopsMap
+  vehicle_condition_tags: string[]
+  vehicle_condition_note: string | null
+  issue_photo_urls: string[]
+  handoff_note: string | null
   overall_mood: string | null
   guest_comments: string | null
   incidents_delays_health: string[]
@@ -107,6 +135,18 @@ const LOST_DAMAGE_OPTIONS = [
 
 const MOBILE_BREAKPOINT = '(max-width: 1023px)'
 
+function reservationPeopleCount(row: {
+  total_people?: number | null
+  adults?: number | null
+  child?: number | null
+  infant?: number | null
+}): number {
+  const parts =
+    (Number(row.adults) || 0) + (Number(row.child) || 0) + (Number(row.infant) || 0)
+  if (parts > 0) return parts
+  return Number(row.total_people) || 0
+}
+
 export default function TourReportForm({
   tourId,
   productId: productIdProp,
@@ -129,9 +169,23 @@ export default function TourReportForm({
     fields: {
       endMileage: getText('종료 주행거리', 'End Mileage'),
       cashBalance: getText('현금 잔액', 'Cash Balance'),
-      customerCount: getText('고객 수', 'Customer Count'),
+      customerCount: getText('실제 탑승 인원', 'Guests on board'),
+      customerCountBooked: (booked: number, noShow: number) =>
+        noShow > 0
+          ? getText(
+              `예약 ${booked}명 · 노쇼 ${noShow}명. 실제 탑승 인원을 조정하세요.`,
+              `Booked ${booked} · no-show ${noShow}. Adjust the number who boarded.`
+            )
+          : getText(
+              `예약 ${booked}명. 실제 탑승 인원을 조정하세요.`,
+              `Booked ${booked}. Adjust the number who boarded.`
+            ),
       weather: getText('날씨', 'Weather'),
       mainStopsVisited: getText('주요 방문지', 'Main Stops Visited'),
+      mainStopsHint: getText(
+        '오늘 자신이 진행한 관광지를 선택해 주세요.',
+        'Select the attractions you actually led today.'
+      ),
       mainStopsLoading: getText('주요 방문지 불러오는 중…', 'Loading main stops…'),
       mainStopsFromCourseEmpty: getText('연결된 코스 방문지가 없습니다.', 'No linked course stops found.'),
       activitiesCompleted: getText('완료된 활동', 'Activities Completed'),
@@ -144,7 +198,23 @@ export default function TourReportForm({
       teamwork: getText('팀워크', 'Teamwork'),
       comments: getText('코멘트', 'Comments'),
       sign: getText('서명', 'Signature'),
-      officeNote: getText('사무실 메모', 'Office Note')
+      officeNote: getText('사무실 메모', 'Office Note'),
+      driving: getText('Driving', 'Driving'),
+      drivingHint: getText(
+        '오늘 자신이 운전한 구간을 모두 선택해 주세요.',
+        'Select every segment you drove today.'
+      ),
+      drivingLoading: getText('운전 구간 불러오는 중…', 'Loading driving segments…'),
+      drivingEmpty: getText('등록된 운전 구간이 없습니다.', 'No driving segments are set up yet.'),
+      skippedStops: getText('스킵한 포인트와 이유', 'Skipped stops & reasons'),
+      vehicleCondition: getText('차량 상태', 'Vehicle condition'),
+      vehicleConditionHint: getText(
+        '회사 차량만 해당합니다. 이상이 있으면 선택해 주세요.',
+        'Company vehicles only. Select anything that needs follow-up.'
+      ),
+      vehicleConditionNote: getText('차량 상태 메모', 'Vehicle notes'),
+      issuePhotos: getText('이슈 사진', 'Issue photos'),
+      handoffNote: getText('다음 팀 인수인계', 'Handoff for next team'),
     },
     weatherOptions: {
       sunny: getText('맑음', 'Sunny'),
@@ -182,7 +252,7 @@ export default function TourReportForm({
     },
     stepTitles: [
       getText('기본 정보', 'Basics'),
-      getText('방문·분위기', 'Stops & mood'),
+      getText('방문·운전·분위기', 'Stops, driving & mood'),
       getText('고객·이슈', 'Guest & issues'),
       getText('평가·메모·제출', 'Ratings & submit')
     ],
@@ -194,12 +264,20 @@ export default function TourReportForm({
     placeholders: {
       endMileage: getText('종료 주행거리를 입력하세요', 'Enter end mileage'),
       cashBalance: getText('현금 잔액을 입력하세요', 'Enter cash balance'),
-      customerCount: getText('고객 수를 입력하세요', 'Enter customer count'),
+      customerCount: getText('탑승 인원', 'Guests on board'),
       guestComments: getText('고객의 코멘트를 입력하세요', 'Enter guest comments'),
       suggestionsFollowup: getText('제안사항이나 후속조치를 입력하세요', 'Enter suggestions or follow-up actions'),
       comments: getText('추가 코멘트를 입력하세요', 'Enter additional comments'),
       sign: getText('서명을 입력하세요', 'Enter signature'),
-      officeNote: getText('사무실 메모를 입력하세요', 'Enter office note')
+      officeNote: getText('사무실 메모를 입력하세요', 'Enter office note'),
+      vehicleConditionNote: getText(
+        '연료, 세차, 경고등, 손상 등을 적어 주세요.',
+        'Note fuel, wash, warning lights, or damage.'
+      ),
+      handoffNote: getText(
+        '다음 팀이 알면 좋은 내용을 적어 주세요. 예: 에어컨 약함, 특정 호텔 픽업 지연.',
+        'Leave a note for the next team. Example: weak A/C, delayed hotel pickup.'
+      ),
     }
   }
   const [loading, setLoading] = useState(false)
@@ -210,13 +288,25 @@ export default function TourReportForm({
     { id: string; course: CourseForMainStops; sort_order: number }[]
   >([])
   const [courseById, setCourseById] = useState<Map<string, CourseForMainStops>>(new Map())
+  const [isRentalVehicle, setIsRentalVehicle] = useState(false)
+  const [isCompanyVehicle, setIsCompanyVehicle] = useState(false)
+  const [bookedCustomerCount, setBookedCustomerCount] = useState<number | null>(null)
+  const [drivingSegments, setDrivingSegments] = useState<TourReportDrivingSegment[]>([])
+  const [drivingSegmentsLoading, setDrivingSegmentsLoading] = useState(false)
 
   const [formData, setFormData] = useState<TourReportData>({
     end_mileage: null,
     cash_balance: null,
     customer_count: null,
+    booked_customer_count: null,
     weather: null,
     main_stops_visited: [],
+    driving_segment_ids: [],
+    skipped_stops: {},
+    vehicle_condition_tags: [],
+    vehicle_condition_note: '',
+    issue_photo_urls: [],
+    handoff_note: '',
     overall_mood: null,
     guest_comments: '',
     incidents_delays_health: [],
@@ -237,6 +327,22 @@ export default function TourReportForm({
       main_stops_visited: Array.isArray(initialData.main_stops_visited)
         ? initialData.main_stops_visited
         : prev.main_stops_visited,
+      driving_segment_ids: Array.isArray(initialData.driving_segment_ids)
+        ? initialData.driving_segment_ids
+        : prev.driving_segment_ids,
+      skipped_stops: parseSkippedStops(initialData.skipped_stops ?? prev.skipped_stops),
+      vehicle_condition_tags: Array.isArray(initialData.vehicle_condition_tags)
+        ? initialData.vehicle_condition_tags
+        : prev.vehicle_condition_tags,
+      vehicle_condition_note:
+        initialData.vehicle_condition_note !== undefined
+          ? initialData.vehicle_condition_note
+          : prev.vehicle_condition_note,
+      issue_photo_urls: parseIssuePhotoUrls(
+        initialData.issue_photo_urls ?? prev.issue_photo_urls
+      ),
+      handoff_note:
+        initialData.handoff_note !== undefined ? initialData.handoff_note : prev.handoff_note,
       incidents_delays_health: Array.isArray(initialData.incidents_delays_health)
         ? initialData.incidents_delays_health
         : prev.incidents_delays_health,
@@ -261,6 +367,125 @@ export default function TourReportForm({
   useEffect(() => {
     setMobileStep(0)
   }, [tourId])
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadTourContext() {
+      try {
+        const { data: tour, error } = await supabase
+          .from('tours')
+          .select('tour_car_id, reservation_ids')
+          .eq('id', tourId)
+          .maybeSingle()
+        if (error) throw error
+
+        const carId = (tour?.tour_car_id as string | null) ?? null
+        if (!carId) {
+          if (!cancelled) {
+            setIsRentalVehicle(false)
+            setIsCompanyVehicle(false)
+          }
+        } else {
+          const { data: vehicle, error: ve } = await supabase
+            .from('vehicles')
+            .select('vehicle_category')
+            .eq('id', carId)
+            .maybeSingle()
+          if (ve) throw ve
+          const category = String(vehicle?.vehicle_category ?? '').trim().toLowerCase()
+          const rental = category === 'rental'
+          if (!cancelled) {
+            setIsRentalVehicle(rental)
+            setIsCompanyVehicle(!rental)
+          }
+        }
+
+        const ids = normalizeReservationIds(tour?.reservation_ids)
+        if (ids.length === 0) {
+          if (!cancelled) {
+            setBookedCustomerCount(0)
+            if (!reportId) {
+              setFormData((prev) =>
+                prev.customer_count == null ? { ...prev, customer_count: 0, booked_customer_count: 0 } : prev
+              )
+            }
+          }
+          return
+        }
+
+        const { data: reservations, error: re } = await supabase
+          .from('reservations')
+          .select('id, status, total_people, adults, child, infant')
+          .in('id', ids)
+        if (re) throw re
+
+        let booked = 0
+        let boardedDefault = 0
+        for (const row of reservations || []) {
+          const status = (row as { status?: string | null }).status
+          if (
+            isReservationCancelledStatus(status) ||
+            isReservationDeletedStatus(status) ||
+            reservationExcludedFromTourAssignment(status)
+          ) {
+            continue
+          }
+          const people = reservationPeopleCount(row)
+          booked += people
+          if (String(status || '').toLowerCase().trim() !== 'no_show') {
+            boardedDefault += people
+          }
+        }
+
+        if (cancelled) return
+        setBookedCustomerCount(booked)
+        if (!reportId) {
+          setFormData((prev) => {
+            if (prev.customer_count != null && prev.booked_customer_count != null) return prev
+            return {
+              ...prev,
+              customer_count: prev.customer_count ?? boardedDefault,
+              booked_customer_count: booked,
+            }
+          })
+        }
+      } catch (e) {
+        console.error('Tour report vehicle/pax load error:', e)
+        if (!cancelled) {
+          setIsRentalVehicle(false)
+          setIsCompanyVehicle(false)
+        }
+      }
+    }
+    void loadTourContext()
+    return () => {
+      cancelled = true
+    }
+  }, [tourId, reportId])
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadDrivingSegments() {
+      setDrivingSegmentsLoading(true)
+      try {
+        const { data, error } = await supabase
+          .from('tour_report_driving_segments')
+          .select('id, label_ko, label_en, sort_order, is_active')
+          .order('sort_order', { ascending: true })
+        if (error) throw error
+        if (!cancelled) setDrivingSegments((data ?? []) as TourReportDrivingSegment[])
+      } catch (e) {
+        console.error('Tour report driving segments load error:', e)
+        if (!cancelled) setDrivingSegments([])
+      } finally {
+        if (!cancelled) setDrivingSegmentsLoading(false)
+      }
+    }
+    void loadDrivingSegments()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -596,8 +821,14 @@ export default function TourReportForm({
     const allowed = new Set(mainStopOptions.map((o) => o.id))
     setFormData((prev) => {
       const nextStops = prev.main_stops_visited.filter((id) => allowed.has(id))
-      if (nextStops.length === prev.main_stops_visited.length) return prev
-      return { ...prev, main_stops_visited: nextStops }
+      const nextSkipped: SkippedStopsMap = {}
+      for (const [id, entry] of Object.entries(prev.skipped_stops)) {
+        if (allowed.has(id) && !nextStops.includes(id)) nextSkipped[id] = entry
+      }
+      const stopsSame = nextStops.length === prev.main_stops_visited.length
+      const skipSame = Object.keys(nextSkipped).length === Object.keys(prev.skipped_stops).length
+      if (stopsSame && skipSame) return prev
+      return { ...prev, main_stops_visited: nextStops, skipped_stops: nextSkipped }
     })
   }, [mainStopOptions])
 
@@ -646,9 +877,11 @@ export default function TourReportForm({
   const toggleMainStopVisited = (courseId: string, visited: boolean) => {
     setFormData((prev) => {
       if (visited) {
+        const { [courseId]: _removed, ...restSkipped } = prev.skipped_stops
         return {
           ...prev,
           main_stops_visited: [...prev.main_stops_visited.filter((id) => id !== courseId), courseId],
+          skipped_stops: restSkipped,
         }
       }
       return {
@@ -657,6 +890,28 @@ export default function TourReportForm({
       }
     })
   }
+
+  const toggleVehicleCondition = (value: string) => {
+    setFormData((prev) => {
+      const has = prev.vehicle_condition_tags.includes(value)
+      if (value === 'ok') {
+        return { ...prev, vehicle_condition_tags: has ? [] : ['ok'] }
+      }
+      const withoutOk = prev.vehicle_condition_tags.filter((t) => t !== 'ok' && t !== value)
+      return {
+        ...prev,
+        vehicle_condition_tags: has ? withoutOk : [...withoutOk, value],
+      }
+    })
+  }
+
+  const visibleDrivingSegments = useMemo(
+    () =>
+      drivingSegments.filter(
+        (seg) => seg.is_active || formData.driving_segment_ids.includes(seg.id)
+      ),
+    [drivingSegments, formData.driving_segment_ids]
+  )
 
   const mainStopsIndented = useMemo(
     () => sortMainStopsIndented(courseById, mainStopOptions),
@@ -672,12 +927,32 @@ export default function TourReportForm({
     setLoading(true)
     try {
       const payload = {
-        end_mileage: formData.end_mileage,
+        end_mileage: isRentalVehicle ? null : formData.end_mileage,
         cash_balance: formData.cash_balance,
         customer_count: formData.customer_count,
+        booked_customer_count: bookedCustomerCount ?? formData.booked_customer_count,
         weather: formData.weather,
         main_stops_visited: formData.main_stops_visited,
-        main_stop_substitutions: {},
+        driving_segment_ids: formData.driving_segment_ids,
+        skipped_stops: Object.fromEntries(
+          Object.entries(formData.skipped_stops).filter(
+            ([id]) => !formData.main_stops_visited.includes(id)
+          )
+        ),
+        main_stop_substitutions: skippedStopsToSubstitutionNotes(
+          Object.fromEntries(
+            Object.entries(formData.skipped_stops).filter(
+              ([id]) => !formData.main_stops_visited.includes(id)
+            )
+          ),
+          locale
+        ),
+        vehicle_condition_tags: isCompanyVehicle ? formData.vehicle_condition_tags : [],
+        vehicle_condition_note: isCompanyVehicle
+          ? formData.vehicle_condition_note?.trim() || null
+          : null,
+        issue_photo_urls: formData.issue_photo_urls,
+        handoff_note: formData.handoff_note?.trim() || null,
         activities_completed: [],
         overall_mood: formData.overall_mood,
         guest_comments: formData.guest_comments,
@@ -779,7 +1054,8 @@ export default function TourReportForm({
             >
             {/* Step 0 — 기본 정보 */}
             <div className={cn(!mobileStepVisible(0) && 'hidden', blockY)}>
-            <div className={cn('grid grid-cols-1 md:grid-cols-3', gridBasic)}>
+            <div className={cn('grid grid-cols-1', isRentalVehicle ? 'md:grid-cols-2' : 'md:grid-cols-3', gridBasic)}>
+              {!isRentalVehicle && (
               <div className={fieldY}>
                 <Label htmlFor="end_mileage" className={cn('flex items-center gap-2', labelMb)}>
                   <MapPin className="h-4 w-4 shrink-0" />
@@ -794,6 +1070,7 @@ export default function TourReportForm({
                   className="h-11 md:h-10"
                 />
               </div>
+              )}
               <div className={fieldY}>
                 <Label htmlFor="cash_balance" className={cn('flex items-center gap-2', labelMb)}>
                   <DollarSign className="h-4 w-4 shrink-0" />
@@ -814,14 +1091,22 @@ export default function TourReportForm({
                   <Users className="h-4 w-4 shrink-0" />
                   {t.fields.customerCount}
                 </Label>
-                <Input
+                <TourReportNumberStepper
                   id="customer_count"
-                  type="number"
-                  value={formData.customer_count || ''}
-                  onChange={(e) => handleInputChange('customer_count', parseInt(e.target.value) || null)}
+                  value={formData.customer_count}
+                  onChange={(value) => handleInputChange('customer_count', value)}
                   placeholder={t.placeholders.customerCount}
-                  className="h-11 md:h-10"
+                  increaseLabel={getText('탑승 인원 증가', 'Increase guests on board')}
+                  decreaseLabel={getText('탑승 인원 감소', 'Decrease guests on board')}
                 />
+                {bookedCustomerCount != null && (
+                  <p className="text-xs text-muted-foreground">
+                    {t.fields.customerCountBooked(
+                      bookedCustomerCount,
+                      Math.max(0, bookedCustomerCount - (formData.customer_count ?? bookedCustomerCount))
+                    )}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -847,6 +1132,40 @@ export default function TourReportForm({
                 ))}
               </div>
             </div>
+            {isCompanyVehicle && (
+              <div className={fieldY}>
+                <Label className={cn('flex items-center gap-2', labelMb)}>
+                  <Wrench className="h-4 w-4 shrink-0" />
+                  {t.fields.vehicleCondition}
+                </Label>
+                <p className="text-sm text-muted-foreground">{t.fields.vehicleConditionHint}</p>
+                <div className={cn('grid grid-cols-2 md:grid-cols-3', chipGap)}>
+                  {VEHICLE_CONDITION_OPTIONS.map((option) => {
+                    const selected = formData.vehicle_condition_tags.includes(option.value)
+                    return (
+                      <Button
+                        key={option.value}
+                        type="button"
+                        variant={selected ? (option.value === 'ok' ? 'default' : 'destructive') : 'outline'}
+                        size="sm"
+                        onClick={() => toggleVehicleCondition(option.value)}
+                        className="flex min-h-[42px] items-center justify-start px-2 text-xs md:min-h-0 md:text-sm"
+                      >
+                        {locale === 'en' ? option.en : option.ko}
+                      </Button>
+                    )
+                  })}
+                </div>
+                <Textarea
+                  id="vehicle_condition_note"
+                  value={formData.vehicle_condition_note || ''}
+                  onChange={(e) => handleInputChange('vehicle_condition_note', e.target.value)}
+                  placeholder={t.placeholders.vehicleConditionNote}
+                  rows={2}
+                  className="min-h-[72px] resize-y md:min-h-0"
+                />
+              </div>
+            )}
             </div>
 
             {/* Step 1 — 방문·활동·분위기 */}
@@ -856,6 +1175,7 @@ export default function TourReportForm({
                 <MapPin className="h-4 w-4 shrink-0" />
                 {t.fields.mainStopsVisited}
               </Label>
+              <p className="text-sm text-muted-foreground">{t.fields.mainStopsHint}</p>
               {mainStopsLoading ? (
                 <p className="text-sm text-gray-500">{t.fields.mainStopsLoading}</p>
               ) : mainStopOptions.length === 0 ? (
@@ -914,6 +1234,95 @@ export default function TourReportForm({
                     const displayText = c ? displayCourseName(c, locale) : stopId
                     return (
                       <Badge key={stopId} variant="secondary">
+                        {displayText}
+                      </Badge>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {mainStopOptions.length > 0 && (
+              <div className={cn(fieldY, 'pt-1')}>
+                <Label className={cn('flex items-center gap-2', labelMb)}>
+                  <SkipForward className="h-4 w-4 shrink-0" />
+                  {t.fields.skippedStops}
+                </Label>
+                <TourReportSkippedStops
+                  locale={locale}
+                  stops={mainStopsIndented.map(({ id, course, depth }) => ({
+                    id,
+                    label: displayCourseName(course, locale),
+                    depth,
+                  }))}
+                  visitedIds={formData.main_stops_visited}
+                  skipped={formData.skipped_stops}
+                  onChange={(next) => handleInputChange('skipped_stops', next)}
+                />
+              </div>
+            )}
+
+            <div className={cn(fieldY, 'pt-1')}>
+              <Label className={cn('flex items-center gap-2', labelMb)}>
+                <Car className="h-4 w-4 shrink-0" />
+                {t.fields.driving}
+              </Label>
+              <p className="text-sm text-muted-foreground">{t.fields.drivingHint}</p>
+              {drivingSegmentsLoading ? (
+                <p className="text-sm text-gray-500">{t.fields.drivingLoading}</p>
+              ) : visibleDrivingSegments.length === 0 ? (
+                <p className="text-sm text-amber-700">{t.fields.drivingEmpty}</p>
+              ) : (
+                <div
+                  className={cn(
+                    'rounded-lg border border-gray-200 bg-gray-50/60',
+                    variant === 'modal' ? 'px-1 py-2' : 'px-2 py-2'
+                  )}
+                >
+                  {visibleDrivingSegments.map((segment) => {
+                    const selected = formData.driving_segment_ids.includes(segment.id)
+                    const label = displayDrivingSegmentLabel(segment, locale)
+                    return (
+                      <div key={segment.id} className="border-b border-gray-100/90 last:border-b-0">
+                        <Button
+                          type="button"
+                          variant={selected ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() =>
+                            handleArrayChange('driving_segment_ids', segment.id, !selected)
+                          }
+                          className="my-1 flex min-h-[42px] w-full max-w-full items-center justify-start gap-2 px-2 text-xs md:min-h-[38px] md:text-sm"
+                        >
+                          <span
+                            className={cn(
+                              'flex h-4 w-4 shrink-0 items-center justify-center rounded border-2',
+                              selected ? 'border-primary bg-blue-600' : 'border-gray-300'
+                            )}
+                          >
+                            {selected && (
+                              <svg className="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path
+                                  fillRule="evenodd"
+                                  d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                  clipRule="evenodd"
+                                />
+                              </svg>
+                            )}
+                          </span>
+                          <span className="whitespace-normal text-left font-medium leading-snug">{label}</span>
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              {formData.driving_segment_ids.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {formData.driving_segment_ids.map((segId) => {
+                    const seg = drivingSegments.find((s) => s.id === segId)
+                    const displayText = seg ? displayDrivingSegmentLabel(seg, locale) : segId
+                    return (
+                      <Badge key={segId} variant="secondary">
                         {displayText}
                       </Badge>
                     )
@@ -1064,6 +1473,19 @@ export default function TourReportForm({
                 </div>
               )}
             </div>
+
+            <div className={cn(fieldY, 'pt-1')}>
+              <Label className={cn('flex items-center gap-2', labelMb)}>
+                <Camera className="h-4 w-4 shrink-0" />
+                {t.fields.issuePhotos}
+              </Label>
+              <TourReportIssuePhotos
+                tourId={tourId}
+                urls={formData.issue_photo_urls}
+                onChange={(urls) => handleInputChange('issue_photo_urls', urls)}
+                locale={locale}
+              />
+            </div>
             </div>
 
             {/* Step 3 — 평가·메모·제출 */}
@@ -1142,6 +1564,23 @@ export default function TourReportForm({
                 placeholder={t.placeholders.comments}
                 rows={3}
                 className="min-h-[100px] resize-y md:min-h-0"
+              />
+            </div>
+
+            <TourNarrationPlayLog tourId={tourId} locale={locale} compact />
+
+            <div className={cn(fieldY, 'pt-1')}>
+              <Label htmlFor="handoff_note" className={cn('flex items-center gap-2', labelMb)}>
+                <NotebookPen className="h-4 w-4 shrink-0" />
+                {t.fields.handoffNote}
+              </Label>
+              <Textarea
+                id="handoff_note"
+                value={formData.handoff_note || ''}
+                onChange={(e) => handleInputChange('handoff_note', e.target.value)}
+                placeholder={t.placeholders.handoffNote}
+                rows={3}
+                className="min-h-[88px] resize-y md:min-h-0"
               />
             </div>
 

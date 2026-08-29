@@ -11,6 +11,7 @@ import {
   isGetYourGuideScrapedText,
   isKkdayScrapedText,
   isKlookTableText,
+  isViatorScrapedText,
   parseOtaReviewCsv,
   parseOtaReviewText,
   parseSingleOtaReviewText,
@@ -83,14 +84,18 @@ export default function OtaReviewsImportSection({
   onMessage,
 }: Props) {
   const isKo = locale === 'ko'
-  const isParseOnlyPaste = source === 'getyourguide' || source === 'kkday'
+  const isParseOnlyPaste = source === 'getyourguide' || source === 'kkday' || source === 'viator'
   const isBulkTablePaste = source === 'klook'
+  const isViatorPaste = source === 'viator'
   const [mode, setMode] = useState<ImportMode>('paste')
   const [csvText, setCsvText] = useState('')
   const [importing, setImporting] = useState(false)
   const [classifying, setClassifying] = useState(false)
   const [linkingTours, setLinkingTours] = useState(false)
   const [pasteText, setPasteText] = useState('')
+  const [manualRating, setManualRating] = useState<number | null>(null)
+  const [manualProductId, setManualProductId] = useState<string | null>(null)
+  const [manualTour, setManualTour] = useState<LinkedTourPreview | null>(null)
 
   const [reservationLookup, setReservationLookup] = useState<ReservationLookup | null>(null)
   const [linkedTour, setLinkedTour] = useState<LinkedTourPreview | null>(null)
@@ -132,20 +137,30 @@ export default function OtaReviewsImportSection({
 
   const singleDraft = useMemo((): ParsedOtaReviewRow | null => {
     if (!parsedFromPaste) return null
-    if (!parsedFromPaste.rating && source !== 'kkday') return null
+    if (!parsedFromPaste.rating && source !== 'kkday' && source !== 'viator' && manualRating === null) {
+      return null
+    }
+
+    const rating = manualRating ?? parsedFromPaste.rating
+    const productId = manualProductId || reservationLookup?.productId || parsedFromPaste.productId || null
+    const tourId = manualTour?.id || reservationLookup?.tourId || parsedFromPaste.tourId || null
 
     return {
       authorName: reservationLookup?.customerName || parsedFromPaste.authorName || null,
-      rating: parsedFromPaste.rating,
+      rating,
       comment: parsedFromPaste.comment,
       reviewCreatedAt: parsedFromPaste.reviewCreatedAt,
-      productHint: reservationLookup?.productName || parsedFromPaste.productHint || null,
+      productHint:
+        reservationLookup?.productName ||
+        (manualProductId ? parsedFromPaste.productHint : null) ||
+        parsedFromPaste.productHint ||
+        null,
       reservationNumber: parsedFromPaste.reservationNumber || null,
       tourDate: reservationLookup?.tourDate || parsedFromPaste.tourDate || null,
-      productId: reservationLookup?.productId || parsedFromPaste.productId || null,
-      tourId: reservationLookup?.tourId || null,
+      productId,
+      tourId,
     }
-  }, [parsedFromPaste, reservationLookup, source])
+  }, [manualProductId, manualRating, manualTour, parsedFromPaste, reservationLookup, source])
 
   const singleValidation = useMemo(() => {
     if (!singleDraft) {
@@ -254,12 +269,88 @@ export default function OtaReviewsImportSection({
     }
   }, [isKo, reservationRef, source])
 
+  useEffect(() => {
+    setManualRating(null)
+    setManualProductId(null)
+    setManualTour(null)
+  }, [pasteText])
+
+  useEffect(() => {
+    if (!isViatorPaste || !parsedFromPaste) return
+    if (reservationLookup?.tourId) return
+
+    const authorName = parsedFromPaste.authorName?.trim()
+    const productId = parsedFromPaste.productId?.trim()
+    const tourDate = parsedFromPaste.tourDate?.trim()
+    if (!authorName && !productId && !tourDate) return
+
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const trySearch = async (params: URLSearchParams) => {
+            const res = await fetchApiWithAuth(
+              `/api/admin/google-business/reviews/tours-search?${params.toString()}`,
+              { signal: controller.signal }
+            )
+            const data = (await res.json()) as {
+              ok?: boolean
+              tours?: Array<{
+                id: string
+                tourDate: string
+                productId?: string | null
+                productName: string | null
+                guideName?: string | null
+                assistantName?: string | null
+                totalPeople?: number
+              }>
+            }
+            if (!res.ok || !data.ok) return []
+            return data.tours ?? []
+          }
+
+          let tours: Awaited<ReturnType<typeof trySearch>> = []
+          if (authorName) {
+            const byGuest = new URLSearchParams({ mode: 'search', customer_name: authorName })
+            if (productId) byGuest.set('product_id', productId)
+            tours = await trySearch(byGuest)
+          }
+
+          if (tours.length !== 1 && tourDate && productId) {
+            const byDate = new URLSearchParams({
+              mode: 'search',
+              tour_date: tourDate,
+              product_id: productId,
+            })
+            tours = await trySearch(byDate)
+          }
+
+          if (tours.length !== 1) return
+          const suggested = toLinkedTourPreview(tours[0] ?? null)
+          if (!suggested) return
+          setLinkedTour(suggested)
+          setManualTour(suggested)
+        } catch {
+          if (controller.signal.aborted) return
+        }
+      })()
+    }, 200)
+
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [isViatorPaste, parsedFromPaste, reservationLookup?.tourId])
+
   const resetSingleForm = useCallback(() => {
     setPasteText('')
     setReservationLookup(null)
     setLinkedTour(null)
     setAlreadyImported(false)
     setLookupError(null)
+    setManualRating(null)
+    setManualProductId(null)
+    setManualTour(null)
     lookupCacheRef.current.clear()
   }, [])
 
@@ -269,10 +360,14 @@ export default function OtaReviewsImportSection({
         isKo
           ? source === 'kkday'
             ? 'KKday 리뷰 텍스트를 붙여넣고 예약번호·별점·리뷰 내용이 파싱되는지 확인하세요.'
-            : 'GetYourGuide 리뷰 텍스트를 붙여넣고 RN#·별점·리뷰 내용이 파싱되는지 확인하세요.'
+            : source === 'viator'
+              ? 'Viator 리뷰 텍스트를 붙여넣고 고객명·상품·리뷰 내용이 파싱되는지 확인한 뒤 별점을 선택하세요.'
+              : 'GetYourGuide 리뷰 텍스트를 붙여넣고 RN#·별점·리뷰 내용이 파싱되는지 확인하세요.'
           : source === 'kkday'
             ? 'Paste KKday review text and ensure booking number, rating, and review content are parsed.'
-            : 'Paste GetYourGuide review text and ensure RN#, rating, and review content are parsed.'
+            : source === 'viator'
+              ? 'Paste Viator review text, confirm guest, product, and review content, then select a star rating.'
+              : 'Paste GetYourGuide review text and ensure RN#, rating, and review content are parsed.'
       )
       return
     }
@@ -472,9 +567,13 @@ export default function OtaReviewsImportSection({
               ? isKo
                 ? 'KKday 리뷰 화면 텍스트를 붙여넣으면 예약번호·별점·리뷰·고객·상품·투어가 자동으로 처리됩니다.'
                 : 'Paste KKday review page text — booking number, rating, review, guest, product, and tour are handled automatically.'
-              : isKo
-                ? 'GetYourGuide 리뷰 페이지 텍스트를 붙여넣으면 RN#·별점·리뷰·고객·상품·투어가 자동으로 처리됩니다.'
-                : 'Paste GetYourGuide review page text — RN#, rating, review, guest, product, and tour are handled automatically.'
+              : source === 'viator'
+                ? isKo
+                  ? 'Viator 리뷰 화면 텍스트를 붙여넣으면 작성일·고객명·상품·리뷰가 추출됩니다. 별점은 복사되지 않으니 등록 전에 직접 선택하세요. 작성일은 투어 날짜 참고값으로 사용됩니다.'
+                  : 'Paste Viator review page text to extract date, guest, product, and review. Stars are not copied — select them before saving. The review date is used as a tour-date reference.'
+                : isKo
+                  ? 'GetYourGuide 리뷰 페이지 텍스트를 붙여넣으면 RN#·별점·리뷰·고객·상품·투어가 자동으로 처리됩니다.'
+                  : 'Paste GetYourGuide review page text — RN#, rating, review, guest, product, and tour are handled automatically.'
             : isBulkTablePaste
               ? isKo
                 ? 'Klook 리뷰 표(엑셀/시트)를 통째로 붙여넣으면 예약번호로 투어를 연결해 저장합니다.'
@@ -567,9 +666,13 @@ export default function OtaReviewsImportSection({
                   ? isKo
                     ? 'KKday 리뷰 텍스트 붙여넣기'
                     : 'Paste KKday review text'
-                  : isKo
-                    ? 'GetYourGuide 리뷰 텍스트 붙여넣기'
-                    : 'Paste GetYourGuide review text'}
+                  : source === 'viator'
+                    ? isKo
+                      ? 'Viator 리뷰 텍스트 붙여넣기'
+                      : 'Paste Viator review text'
+                    : isKo
+                      ? 'GetYourGuide 리뷰 텍스트 붙여넣기'
+                      : 'Paste GetYourGuide review text'}
               </label>
               <textarea
                 value={pasteText}
@@ -580,9 +683,13 @@ export default function OtaReviewsImportSection({
                     ? isKo
                       ? 'KKday 리뷰 화면에서 복사한 텍스트를 그대로 붙여넣으세요.\n\n상품명 · 옵션 · 등급점수 · 예약자 · 예약번호 · 리뷰 내용이 자동 추출됩니다.\n등급점수가 비어 있으면 숫자(1~5)를 등급점수 뒤에 붙여 주세요.'
                       : 'Paste the full text copied from the KKday review page.\n\nProduct, option, rating, booker, booking number, and review text are extracted automatically.\nIf the rating is blank, add a number (1–5) after 등급점수.'
-                    : isKo
-                      ? 'GetYourGuide 리뷰 관리 페이지에서 복사한 텍스트를 그대로 붙여넣으세요.\n\n별점 · RN# · 리뷰 날짜 · 리뷰 내용 · 투어 날짜가 자동 추출됩니다.'
-                      : 'Paste the full text copied from the GetYourGuide review page.\n\nRating, RN#, review date, text, and travel date are extracted automatically.'
+                    : source === 'viator'
+                      ? isKo
+                        ? 'Viator 리뷰 화면에서 복사한 텍스트를 그대로 붙여넣으세요.\n\n예:\nAug 26, 2026\n고객명\n리뷰 제목\nTripadvisor review: Grand Canyon, Antelope Canyon, Horseshoe Bend Tour from Las Vegas\n리뷰 내용\nResponse published\n\n작성일은 투어 날짜 참고값입니다. 별점은 오른쪽에서 선택하세요.'
+                        : 'Paste the full text copied from the Viator review page.\n\nExample:\nAug 26, 2026\nGuest name\nReview title\nTripadvisor review: Grand Canyon, Antelope Canyon, Horseshoe Bend Tour from Las Vegas\nReview body\nResponse published\n\nThe date is used as a tour-date reference. Select stars on the right.'
+                      : isKo
+                        ? 'GetYourGuide 리뷰 관리 페이지에서 복사한 텍스트를 그대로 붙여넣으세요.\n\n별점 · RN# · 리뷰 날짜 · 리뷰 내용 · 투어 날짜가 자동 추출됩니다.'
+                        : 'Paste the full text copied from the GetYourGuide review page.\n\nRating, RN#, review date, text, and travel date are extracted automatically.'
                 }
                 className="w-full min-h-[320px] rounded-xl border border-input bg-background px-4 py-3 text-sm leading-relaxed"
               />
@@ -593,7 +700,14 @@ export default function OtaReviewsImportSection({
                     : 'This may not be KKday format. Ensure product name, booker, and booking number (#26KK…) are included.'}
                 </p>
               ) : null}
-              {pasteText.trim() && source !== 'kkday' && !isGetYourGuideScrapedText(pasteText) ? (
+              {pasteText.trim() && source === 'viator' && !isViatorScrapedText(pasteText) ? (
+                <p className="text-xs text-warning">
+                  {isKo
+                    ? 'Viator 형식이 아닐 수 있습니다. 작성일(Aug 26, 2026)과 Tripadvisor review: 상품명이 포함된 텍스트인지 확인하세요.'
+                    : 'This may not be Viator format. Ensure a date (Aug 26, 2026) and Tripadvisor review: product name are included.'}
+                </p>
+              ) : null}
+              {pasteText.trim() && source !== 'kkday' && source !== 'viator' && !isGetYourGuideScrapedText(pasteText) ? (
                 <p className="text-xs text-warning">
                   {isKo
                     ? 'GetYourGuide 형식이 아닐 수 있습니다. Booking reference·Travel date가 포함된 텍스트인지 확인하세요.'
@@ -613,10 +727,40 @@ export default function OtaReviewsImportSection({
               locale={locale}
               draft={singleDraft}
               reservation={reservationLookup}
-              linkedTour={linkedTour}
+              linkedTour={manualTour || linkedTour}
               lookupLoading={lookupLoading}
               lookupError={lookupError}
               alreadyImported={alreadyImported}
+              ratingEditable={isViatorPaste}
+              productEditable={isViatorPaste}
+              tourEditable={isViatorPaste}
+              onRatingChange={setManualRating}
+              onProductChange={(productId) => {
+                setManualProductId(productId ?? null)
+                setManualTour(null)
+              }}
+              onTourChange={(tourId, tourProduct) => {
+                if (!tourId) {
+                  setManualTour(null)
+                  return
+                }
+                setManualTour({
+                  id: tourId,
+                  tourDate:
+                    parsedFromPaste?.tourDate ||
+                    reservationLookup?.tourDate ||
+                    linkedTour?.tourDate ||
+                    '',
+                  productId: tourProduct?.productId ?? parsedFromPaste?.productId ?? null,
+                  productName: tourProduct?.productName ?? parsedFromPaste?.productHint ?? null,
+                  guideName: null,
+                  assistantName: null,
+                  totalPeople: 0,
+                })
+                if (tourProduct?.productId) {
+                  setManualProductId(tourProduct.productId)
+                }
+              }}
             />
           </div>
 

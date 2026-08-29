@@ -3,6 +3,7 @@ import { fetchCancellationFollowUpMeta } from '@/lib/reservationCancellationReas
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { fetchReservationsByIdsProgressive } from '@/lib/operationalQueueFetch'
 import { mapDbReservationRowsToReservations } from '@/lib/mapDbReservationRowsToReservations'
+import { isReservationTourDatePastLocal, localCalendarDateKeyToday } from '@/utils/reservationUtils'
 import type { Customer, Reservation } from '@/types/reservation'
 
 /** 최근 취소 건 중 취소 사유 미기록 조회 기간(일) */
@@ -87,13 +88,15 @@ export async function fetchCancelledMissingReasonQueueMeta(
   const since = new Date()
   since.setDate(since.getDate() - CANCELLED_MISSING_REASON_LOOKBACK_DAYS)
   const sinceIso = since.toISOString()
+  const todayYmd = localCalendarDateKeyToday()
 
   const { data: rows, error } = await supabase
     .from('reservations')
-    .select('id, updated_at')
+    .select('id, updated_at, tour_date')
     .eq('operator_id', opId)
     .in('status', ['cancelled', 'canceled'])
     .gte('updated_at', sinceIso)
+    .or(`tour_date.is.null,tour_date.gte.${todayYmd}`)
     .order('updated_at', { ascending: false })
     .limit(300)
 
@@ -109,6 +112,7 @@ export async function fetchCancelledMissingReasonQueueMeta(
   }
 
   const candidateIds = (rows || [])
+    .filter((r) => !isReservationTourDatePastLocal((r as { tour_date?: string | null }).tour_date))
     .map((r) => String((r as { id?: string }).id ?? '').trim())
     .filter(Boolean)
 
@@ -175,14 +179,27 @@ export async function fetchCancelledMissingReasonQueueData(
     return { ...meta, reservations: [], customers: [] }
   }
 
-  const reservations = mapDbReservationRowsToReservations(rawRows, productMap, tourMap)
-  const order = new Map(unionIds.map((id, i) => [id, i]))
+  const reservations = mapDbReservationRowsToReservations(rawRows, productMap, tourMap).filter(
+    (reservation) => !isReservationTourDatePastLocal(reservation.tourDate)
+  )
+  const keepIds = new Set(reservations.map((r) => String(r.id)))
+  const needsFollowUpIds = meta.needsFollowUpIds.filter((id) => keepIds.has(String(id)))
+  const awaitingReasonIds = meta.awaitingReasonIds.filter((id) => keepIds.has(String(id)))
+  const order = new Map([...needsFollowUpIds, ...awaitingReasonIds].map((id, i) => [id, i]))
   reservations.sort((a, b) => (order.get(a.id) ?? 9999) - (order.get(b.id) ?? 9999))
 
   const customerIds = reservations.map((r) => r.customerId).filter(Boolean)
   const customers = await fetchCustomersByIds(supabase, customerIds)
 
-  return { ...meta, reservations, customers }
+  return {
+    needsFollowUpIds,
+    awaitingReasonIds,
+    unionCount: needsFollowUpIds.length + awaitingReasonIds.length,
+    needsFollowUpCount: needsFollowUpIds.length,
+    awaitingReasonCount: awaitingReasonIds.length,
+    reservations,
+    customers,
+  }
 }
 
 /** sessionStorage: 오늘 자동 모달 닫기 */

@@ -9,6 +9,8 @@ export type AdminReservationStatsCoreCacheKeyArgs = {
   rangeEndIso: string
   selectedStatus: string
   selectedChannel: string
+  selectedPickupHotel?: string | undefined
+  selectedProduct?: string | undefined
   dateRange: { start: string; end: string }
   customerIdFromUrl: string | null
   debouncedSearchTerm: string
@@ -28,6 +30,8 @@ export function buildAdminReservationStatsCoreCacheKey(
     args.rangeEndIso,
     args.selectedStatus || 'all',
     args.selectedChannel || 'all',
+    args.selectedPickupHotel || 'all',
+    args.selectedProduct || 'all',
     args.dateRange.start || '',
     args.dateRange.end || '',
     args.customerIdFromUrl || '',

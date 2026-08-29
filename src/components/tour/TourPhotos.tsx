@@ -87,7 +87,7 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
 
       if (error) {
         console.error('Error updating photos_extended_access:', error)
-        alert('접근 설정 업데이트 중 오류가 발생했습니다.')
+        alert(t('accessUpdateError'))
       } else {
         setPhotosExtendedAccess(newValue)
         // tour 객체도 업데이트
@@ -95,7 +95,7 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
       }
     } catch (error) {
       console.error('Error in handleToggleExtendedAccess:', error)
-      alert('접근 설정 업데이트 중 오류가 발생했습니다.')
+      alert(t('accessUpdateError'))
     } finally {
       setIsUpdating(false)
     }
@@ -116,8 +116,8 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
               <div className="flex-1">
                 <div className="flex items-center space-x-2 mb-2">
                   <Share2 size={16} className="text-primary" />
-                  <span className="text-sm font-medium text-foreground">투어 사진 공유 링크</span>
-                  <span className="text-xs text-primary">({photoCount}장)</span>
+                  <span className="text-sm font-medium text-foreground">{t('shareLinkLabel')}</span>
+                  <span className="text-xs text-primary">{t('photoCount', { count: photoCount })}</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <input
@@ -134,8 +134,8 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
                         ? `${chrome.iconButton} bg-primary text-primary-foreground hover:bg-primary/90`
                         : 'flex items-center px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors text-sm'
                     }
-                    title="링크 복사"
-                    aria-label="링크 복사"
+                    title={t('copyLinkTitle')}
+                    aria-label={t('copyLinkTitle')}
                   >
                     {copied ? (
                       chrome.compact ? (
@@ -143,7 +143,7 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
                       ) : (
                         <>
                           <Check size={16} className="mr-1" />
-                          복사됨
+                          {t('copied')}
                         </>
                       )
                     ) : chrome.compact ? (
@@ -151,7 +151,7 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
                     ) : (
                       <>
                         <Copy size={16} className="mr-1" />
-                        복사
+                        {t('copy')}
                       </>
                     )}
                   </button>
@@ -162,8 +162,8 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
                         ? `${chrome.iconButton} bg-primary text-primary-foreground hover:bg-primary/90`
                         : 'flex items-center px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors text-sm'
                     }
-                    title="새 창에서 열기"
-                    aria-label="새 창에서 열기"
+                    title={t('openInNewWindow')}
+                    aria-label={t('openInNewWindow')}
                   >
                     <ExternalLink size={chrome.compact ? chrome.iconSize : 16} />
                   </button>
@@ -185,12 +185,11 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
                     <Lock size={16} className="text-amber-600" />
                   )}
                   <span className="text-sm font-medium text-amber-900">
-                    고객용 투어 사진 페이지 접근 제어
+                    {t('customerAccessControl')}
                   </span>
                 </div>
                 <p className="text-xs text-amber-700 mb-2">
-                  투어 종료 7일이 지나 기본적으로 고객 접근이 차단됩니다. 
-                  고객 요청 시 일시적으로 접근을 허용할 수 있습니다.
+                  {t('customerAccessDesc')}
                 </p>
                 <button
                   onClick={handleToggleExtendedAccess}
@@ -204,19 +203,19 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
                   {isUpdating ? (
                     <>
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      처리 중...
+                      {t('processing')}
                     </>
                   ) : (
                     <>
                       {photosExtendedAccess ? (
                         <>
                           <Unlock size={16} className="mr-2" />
-                          고객 접근 허용됨 (클릭하여 차단)
+                          {t('accessAllowed')}
                         </>
                       ) : (
                         <>
                           <Lock size={16} className="mr-2" />
-                          고객 접근 차단됨 (클릭하여 허용)
+                          {t('accessBlocked')}
                         </>
                       )}
                     </>

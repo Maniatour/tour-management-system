@@ -17,6 +17,7 @@ import {
   getStatusColor, 
   normalizeTourDateKey
 } from '@/utils/reservationUtils'
+import { getPickupHotelPrimaryName } from '@/utils/pickupHotelUtils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { isRebookingCancellationReason } from '@/lib/reservationCancellationReason'
 import { ResidentStatusIcon } from '@/components/reservation/ResidentStatusIcon'
@@ -168,7 +169,14 @@ interface ReservationCardItemProps {
   customers: Customer[]
   products: Array<{ id: string; name: string; sub_category?: string; product_code?: string | null }>
   channels: Array<{ id: string; name: string; favicon_url?: string }>
-  pickupHotels: Array<{ id: string; hotel?: string | null; name?: string | null; name_ko?: string | null; pick_up_location?: string | null }>
+  pickupHotels: Array<{
+    id: string
+    hotel?: string | null
+    name?: string | null
+    name_ko?: string | null
+    internal_name?: string | null
+    pick_up_location?: string | null
+  }>
   productOptions: Array<{ id: string; name: string; is_required?: boolean }>
   optionChoices: Array<{ id: string; name: string }>
   tourInfoMap: Map<string, {
@@ -305,6 +313,65 @@ interface ReservationCardItemProps {
   showSimilarCustomerReservationsHint?: boolean
 }
 
+function resolveCardPickupHotelName(
+  pickUpHotel: string | null | undefined,
+  pickupHotels: Array<{
+    id: string
+    hotel?: string | null
+    name?: string | null
+    internal_name?: string | null
+    pick_up_location?: string | null
+  }>,
+  tbdLabel: string
+): string {
+  const raw = String(pickUpHotel ?? '').trim()
+  if (!raw) return tbdLabel
+  const hotel = pickupHotels.find((h) => h.id === raw)
+  if (hotel) {
+    const primary = getPickupHotelPrimaryName({
+      hotel: String(hotel.hotel ?? hotel.name ?? '').trim(),
+      internal_name: hotel.internal_name,
+    })
+    if (primary) return primary
+  }
+  const display = getPickupHotelDisplay(raw, pickupHotels)
+  const cleaned = String(display ?? '')
+    .replace(/\s*-\s*$/, '')
+    .trim()
+  return cleaned || raw || tbdLabel
+}
+
+function PickupHotelHintIcon({
+  hotelName,
+  hasHotel,
+}: {
+  hotelName: string
+  hasHotel: boolean
+}) {
+  return (
+    <span
+      className="group/pickupHotel relative ml-auto inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded hover:bg-teal-50"
+      tabIndex={0}
+      aria-label={hotelName}
+    >
+      <Hotel
+        className={`h-3.5 w-3.5 ${hasHotel ? 'text-teal-700' : 'text-gray-400'}`}
+        aria-hidden
+      />
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full right-0 z-30 mb-1.5 hidden w-max max-w-[12rem] rounded-md bg-gray-900 px-2 py-1 text-left text-[11px] leading-snug text-white shadow-lg group-hover/pickupHotel:block group-focus-visible/pickupHotel:block"
+      >
+        {hotelName}
+        <span
+          className="absolute right-1.5 top-full h-0 w-0 border-x-4 border-t-4 border-x-transparent border-t-gray-900"
+          aria-hidden
+        />
+      </span>
+    </span>
+  )
+}
+
 function tourDateProximityBorderClasses(tourDate: string | null | undefined): string {
   const key = normalizeTourDateKey(tourDate)
   const iso = key.match(/^(\d{4})-(\d{2})-(\d{2})$/)
@@ -377,6 +444,12 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
 }: ReservationCardItemProps) {
   const t = useTranslations('reservations')
   const router = useRouter()
+  const pickupHotelName = resolveCardPickupHotelName(
+    reservation.pickUpHotel,
+    pickupHotels,
+    t('card.pickupHotelTbd')
+  )
+  const hasPickupHotel = Boolean(String(reservation.pickUpHotel ?? '').trim())
 
   const prefetchedResidentCustomerRows = residentCustomerBatchMap?.get(reservation.id)
 
@@ -921,6 +994,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                       {cancelReasonBadge}
                     </span>
                   ) : null}
+                  <PickupHotelHintIcon hotelName={pickupHotelName} hasHotel={hasPickupHotel} />
                 </div>
               )
             }
@@ -981,6 +1055,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                     {simpleCardTourStatusGlyph(tourStatusLabel)}
                   </span>
                 </div>
+                <PickupHotelHintIcon hotelName={pickupHotelName} hasHotel={hasPickupHotel} />
               </div>
             )
           })()}
@@ -1502,6 +1577,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     prevProps.reservation.id === nextProps.reservation.id &&
     prevProps.reservation.status === nextProps.reservation.status &&
     prevProps.reservation.tourId === nextProps.reservation.tourId &&
+    prevProps.reservation.pickUpHotel === nextProps.reservation.pickUpHotel &&
     prevProps.linkedTourId === nextProps.linkedTourId &&
     prevProps.tourInfoMap === nextProps.tourInfoMap &&
     prevProps.reservationPricingMap.get(prevProps.reservation.id) === nextProps.reservationPricingMap.get(nextProps.reservation.id) &&

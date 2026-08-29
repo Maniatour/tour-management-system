@@ -30,6 +30,22 @@ export function ratingToReviewBonusPoints(rating: number): number {
   }
 }
 
+export function reviewBonusPointsFromStarCounts(counts: {
+  fiveStarCount: number
+  fourStarCount: number
+  threeStarCount: number
+  twoStarCount: number
+  oneStarCount: number
+}): number {
+  return (
+    counts.fiveStarCount * ratingToReviewBonusPoints(5) +
+    counts.fourStarCount * ratingToReviewBonusPoints(4) +
+    counts.threeStarCount * ratingToReviewBonusPoints(3) +
+    counts.twoStarCount * ratingToReviewBonusPoints(2) +
+    counts.oneStarCount * ratingToReviewBonusPoints(1)
+  )
+}
+
 export function reviewBonusAmountUsd(points: number): number {
   return points * REVIEW_BONUS_USD_PER_POINT
 }

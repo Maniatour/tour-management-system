@@ -75,6 +75,10 @@ const GuideScheduleAssignmentHistoryModal = dynamic(
   () => import('@/components/schedule/GuideScheduleAssignmentHistoryModal'),
   { ssr: false },
 )
+const TourNarrationHistoryModal = dynamic(
+  () => import('@/components/tour/TourNarrationHistoryModal'),
+  { ssr: false },
+)
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
 import {
@@ -257,6 +261,7 @@ export function TourDetailPageView({
   const [showGuideScheduleConfirmModal, setShowGuideScheduleConfirmModal] = useState(false)
   const [showGuideScheduleAssignmentModal, setShowGuideScheduleAssignmentModal] = useState(false)
   const [showGuideAssignmentHistoryModal, setShowGuideAssignmentHistoryModal] = useState(false)
+  const [showNarrationHistoryModal, setShowNarrationHistoryModal] = useState(false)
   const [envelopeModalVariant, setEnvelopeModalVariant] = useState<'tip' | 'balance' | null>(null)
   const [showTourPrintModal, setShowTourPrintModal] = useState<boolean>(false)
   const [convertingLowerToX, setConvertingLowerToX] = useState(false)
@@ -400,6 +405,10 @@ export function TourDetailPageView({
 
   const openGuideAssignmentHistoryModal = useCallback(() => {
     setShowGuideAssignmentHistoryModal(true)
+  }, [])
+
+  const openNarrationHistoryModal = useCallback(() => {
+    setShowNarrationHistoryModal(true)
   }, [])
 
   const canSendGuideScheduleConfirm = Boolean(
@@ -2472,6 +2481,7 @@ export function TourDetailPageView({
             }
           : {})}
         {...(tourData.isStaff ? { onViewAssignmentHistory: openGuideAssignmentHistoryModal } : {})}
+        {...(tourData.isStaff ? { onViewNarrationHistory: openNarrationHistoryModal } : {})}
         {...(onCloseModal ? { onCloseModal } : {})}
         {...(tourData.isStaff
           ? {
@@ -2507,6 +2517,8 @@ export function TourDetailPageView({
     locale,
     convertingLowerToX,
     canSendGuideScheduleConfirm,
+    openNarrationHistoryModal,
+    openGuideAssignmentHistoryModal,
   ])
 
   useEffect(() => {
@@ -2669,6 +2681,7 @@ export function TourDetailPageView({
             }
           : {})}
         {...(tourData.isStaff ? { onViewAssignmentHistory: openGuideAssignmentHistoryModal } : {})}
+        {...(tourData.isStaff ? { onViewNarrationHistory: openNarrationHistoryModal } : {})}
       />
       ) : null}
 
@@ -2766,6 +2779,13 @@ export function TourDetailPageView({
             ? `${locale === 'ko' ? tourData.product.name_ko : tourData.product.name_en || tourData.product.name_ko} · ${tourData.tour?.tour_date || ''}`
             : tourData.tour?.tour_date || null
         }
+      />
+
+      <TourNarrationHistoryModal
+        isOpen={showNarrationHistoryModal}
+        onClose={() => setShowNarrationHistoryModal(false)}
+        tourId={tourData.tour?.id ?? null}
+        locale={locale}
       />
 
       <TourDetailSectionChromeProvider compact={modalLightLoad}>

@@ -253,8 +253,12 @@ export default function UserFooter({ locale }: UserFooterProps) {
     isCustomerFacingPath(pathname) &&
     (pathname === `/${currentLocale}` || pathname === `/${currentLocale}/`)
 
-  // 가이드는 자체 하단 네비가 있음 — 고객/유저 푸터와 겹치지 않게 숨김
-  if (isCustomerHome || pathname.includes('/guide')) {
+  // 가이드·고객 공개 페이지는 자체 크롬을 씀 — 스태프 하단 네비와 겹치지 않게 숨김
+  if (
+    isCustomerHome ||
+    pathname.includes('/guide') ||
+    pathname.includes('/reviews')
+  ) {
     return null
   }
 

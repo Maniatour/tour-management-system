@@ -33,6 +33,15 @@ type Props = {
   lookupLoading: boolean
   lookupError: string | null
   alreadyImported?: boolean
+  ratingEditable?: boolean
+  productEditable?: boolean
+  tourEditable?: boolean
+  onRatingChange?: (rating: number) => void
+  onProductChange?: (productId: string | undefined, productName?: string | null) => void
+  onTourChange?: (
+    tourId: string | null,
+    tourProduct?: { productId: string | null; productName: string | null } | null
+  ) => void
 }
 
 function formatTourSelectedLabel(tour: LinkedTourPreview, isKo: boolean): string {
@@ -44,6 +53,49 @@ function formatTourSelectedLabel(tour: LinkedTourPreview, isKo: boolean): string
   return `${tour.tourDate} · ${productName}${meta ? ` (${meta})` : ''}`
 }
 
+function RatingStars({
+  rating,
+  editable,
+  isKo,
+  onChange,
+}: {
+  rating: number | null
+  editable: boolean
+  isKo: boolean
+  onChange?: ((rating: number) => void) | undefined
+}) {
+  return (
+    <div className="flex items-center gap-0.5 text-amber-500">
+      {editable ? (
+        <div className="flex items-center gap-0.5" role="group" aria-label={isKo ? '별점 선택' : 'Select rating'}>
+          {[1, 2, 3, 4, 5].map((star) => {
+            const selected = rating !== null && star <= rating
+            return (
+              <button
+                key={star}
+                type="button"
+                onClick={() => onChange?.(star)}
+                className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
+                  selected ? 'text-amber-500' : 'text-muted-foreground/40 hover:text-amber-400'
+                }`}
+                aria-label={isKo ? `${star}점` : `${star} star${star === 1 ? '' : 's'}`}
+                aria-pressed={rating === star}
+              >
+                <Star className={`h-4 w-4 ${selected ? 'fill-current' : ''}`} aria-hidden />
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <>
+          <Star className="h-3.5 w-3.5 fill-current" aria-hidden />
+          <span className="text-xs font-medium">{rating ?? '—'}</span>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function OtaReviewImportPreviewCard({
   locale,
   draft,
@@ -52,6 +104,12 @@ export default function OtaReviewImportPreviewCard({
   lookupLoading,
   lookupError,
   alreadyImported = false,
+  ratingEditable = false,
+  productEditable = false,
+  tourEditable = false,
+  onRatingChange,
+  onProductChange,
+  onTourChange,
 }: Props) {
   const isKo = locale === 'ko'
 
@@ -75,11 +133,12 @@ export default function OtaReviewImportPreviewCard({
   const authorName = reservation?.customerName || draft.authorName || (isKo ? '고객명 미확인' : 'Guest unknown')
   const productId = reservation?.productId || draft.productId || undefined
   const productName = reservation?.productName || draft.productHint || undefined
-  const tourId = linkedTour?.id || reservation?.tourId || null
+  const tourId = linkedTour?.id || reservation?.tourId || draft.tourId || null
+  const tourDateLabel = linkedTour?.tourDate || reservation?.tourDate || draft.tourDate || null
   const tourSelectedLabel = linkedTour
     ? formatTourSelectedLabel(linkedTour, isKo)
-    : reservation?.tourDate && productName
-      ? `${reservation.tourDate} · ${productName}`
+    : tourDateLabel && productName
+      ? `${tourDateLabel} · ${productName}`
       : undefined
 
   const staffMembers: Array<{ name: string; role: 'guide' | 'assistant' }> = []
@@ -100,8 +159,18 @@ export default function OtaReviewImportPreviewCard({
           <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden />
           <p>
             {isKo
-              ? '이 RN#의 리뷰는 이미 등록되어 있습니다. 중복 등록할 수 없습니다.'
-              : 'A review with this booking reference is already registered.'}
+              ? '이 리뷰는 이미 등록되어 있습니다. 중복 등록할 수 없습니다.'
+              : 'This review is already registered.'}
+          </p>
+        </div>
+      ) : null}
+      {ratingEditable && (draft.rating === null || draft.rating < 1) ? (
+        <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden />
+          <p>
+            {isKo
+              ? '별점은 복사되지 않습니다. 아래에서 1~5점을 선택하세요.'
+              : 'Stars are not copied. Select a 1–5 rating below.'}
           </p>
         </div>
       ) : null}
@@ -128,9 +197,13 @@ export default function OtaReviewImportPreviewCard({
                     {formatLasVegasDate(draft.reviewCreatedAt, locale)}
                   </span>
                 ) : null}
-                <div className="flex items-center gap-0.5 text-amber-500">
-                  <Star className="h-3.5 w-3.5 fill-current" aria-hidden />
-                  <span className="text-xs font-medium">{draft.rating ?? '—'}</span>
+                <div className={ratingEditable ? 'pointer-events-auto' : undefined}>
+                  <RatingStars
+                    rating={draft.rating}
+                    editable={ratingEditable}
+                    isKo={isKo}
+                    onChange={onRatingChange}
+                  />
                 </div>
                 <span className="text-[10px] uppercase tracking-wide font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                   pending
@@ -170,8 +243,8 @@ export default function OtaReviewImportPreviewCard({
                       variant="combobox"
                       value={productId}
                       {...(productName ? { selectedLabel: productName } : {})}
-                      disabled
-                      onChange={() => {}}
+                      disabled={!productEditable}
+                      onChange={(nextProductId) => onProductChange?.(nextProductId)}
                       inputClass="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm h-10"
                     />
                   )}
@@ -208,12 +281,14 @@ export default function OtaReviewImportPreviewCard({
                   ) : (
                     <GoogleReviewTourSelect
                       locale={locale}
-                      reviewDate={draft.reviewCreatedAt}
+                      reviewDate={draft.tourDate || draft.reviewCreatedAt}
                       productId={productId ?? null}
                       value={tourId}
                       {...(tourSelectedLabel ? { selectedLabel: tourSelectedLabel } : {})}
-                      disabled
-                      onChange={() => {}}
+                      disabled={!tourEditable}
+                      onChange={(nextTourId, tourProduct) => {
+                        onTourChange?.(nextTourId, tourProduct ?? null)
+                      }}
                     />
                   )}
                 </div>

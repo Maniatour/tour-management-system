@@ -71,6 +71,10 @@ const AdminWeatherReminderModal = dynamic(
   () => import('./admin/AdminWeatherReminderModal'),
   { ssr: false, loading: () => null }
 )
+const AdminGoblinNarrationReminderModal = dynamic(
+  () => import('./admin/AdminGoblinNarrationReminderModal'),
+  { ssr: false, loading: () => null }
+)
 const CheckoutAttendanceModal = dynamic(
   () => import('./admin/CheckoutAttendanceModal'),
   { ssr: false, loading: () => null }
@@ -1349,6 +1353,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       />
 
       <AdminWeatherReminderModal locale={locale} />
+      <AdminGoblinNarrationReminderModal locale={locale} />
 
       <AdminTourChatNotificationListener locale={locale} />
     </>
