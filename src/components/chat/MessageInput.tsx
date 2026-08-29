@@ -3,6 +3,10 @@
 import React, { useState } from 'react'
 import { Send, ImageIcon, Smile, MapPin, X } from 'lucide-react'
 import type { SupportedLanguage } from '@/lib/translation'
+import {
+  TOUR_CHAT_IMAGE_ACCEPT,
+  filesFromClipboardOrDrop,
+} from '@/lib/tourChatImage'
 
 interface MessageInputProps {
   newMessage: string
@@ -14,7 +18,7 @@ interface MessageInputProps {
   selectedLanguage: SupportedLanguage
   roomActive: boolean
   onSendMessage: () => void
-  onImageUpload: (file: File) => void
+  onImageUpload: (files: File[]) => void
   onShareLocation: () => void
   fileInputRef: React.RefObject<HTMLInputElement>
 }
@@ -34,8 +38,31 @@ export default function MessageInput({
   fileInputRef
 }: MessageInputProps) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
 
   const emojis = ['😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄', '😯', '😦', '😧', '😮', '😲', '🥱', '😴', '🤤', '😪', '😵', '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑', '🤠', '😈', '👿', '👹', '👺', '🤡', '💩', '👻', '💀', '☠️', '👽', '👾', '🤖', '🎃', '😺', '😸', '😹', '😻', '😼', '😽', '🙀', '😿', '😾']
+
+  const busy = sending || uploading || gettingLocation
+  const isKo = selectedLanguage === 'ko'
+
+  const handleImageFiles = (files: File[]) => {
+    if (busy || files.length === 0) return
+    onImageUpload(files)
+  }
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const files = filesFromClipboardOrDrop(e.clipboardData)
+    if (files.length === 0) return
+    e.preventDefault()
+    handleImageFiles(files)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    if (busy) return
+    handleImageFiles(filesFromClipboardOrDrop(e.dataTransfer))
+  }
 
   if (!roomActive) return null
 
@@ -47,15 +74,40 @@ export default function MessageInput({
           e.preventDefault()
           onSendMessage()
         }}
-        className="flex items-center space-x-1 w-full"
+        onPaste={handlePaste}
+        onDragEnter={(e) => {
+          e.preventDefault()
+          if (!busy) setIsDragging(true)
+        }}
+        onDragOver={(e) => {
+          e.preventDefault()
+          if (!busy) setIsDragging(true)
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault()
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setIsDragging(false)
+          }
+        }}
+        onDrop={handleDrop}
+        className={`flex items-center space-x-1 w-full relative rounded-xl ${
+          isDragging ? 'ring-2 ring-primary/40 bg-primary/5' : ''
+        }`}
       >
+        {isDragging && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-primary/50 bg-white/80 text-sm font-medium text-primary">
+            {isKo ? '이미지를 놓아서 보내기' : 'Drop image to send'}
+          </div>
+        )}
+
         {/* 이미지 업로드 버튼 */}
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          disabled={uploading || sending}
+          disabled={busy}
           className="flex-shrink-0 p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          title={selectedLanguage === 'ko' ? '이미지 업로드' : 'Upload Image'}
+          title={isKo ? '사진·스크린샷 보내기' : 'Send photo or screenshot'}
+          aria-label={isKo ? '사진·스크린샷 보내기' : 'Send photo or screenshot'}
         >
           {uploading ? (
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
@@ -66,11 +118,12 @@ export default function MessageInput({
         <input
           type="file"
           ref={fileInputRef}
-          accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+          accept={TOUR_CHAT_IMAGE_ACCEPT}
+          multiple
           onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file) {
-              onImageUpload(file)
+            const files = e.target.files ? Array.from(e.target.files) : []
+            if (files.length > 0) {
+              handleImageFiles(files)
             }
           }}
           className="hidden"
@@ -83,7 +136,7 @@ export default function MessageInput({
           type="button"
           onClick={() => setShowEmojiPicker(!showEmojiPicker)}
           className="flex-shrink-0 p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
-          title={selectedLanguage === 'ko' ? '이모티콘' : 'Emoji'}
+          title={isKo ? '이모티콘' : 'Emoji'}
         >
           <Smile size={18} />
         </button>
@@ -92,9 +145,9 @@ export default function MessageInput({
         <button
           type="button"
           onClick={onShareLocation}
-          disabled={gettingLocation || sending || uploading}
+          disabled={busy}
           className="flex-shrink-0 p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          title={selectedLanguage === 'ko' ? '위치 공유' : 'Share Location'}
+          title={isKo ? '위치 공유' : 'Share Location'}
         >
           {gettingLocation ? (
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
@@ -131,6 +184,7 @@ export default function MessageInput({
           rows={1}
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
+          onPaste={handlePaste}
           onKeyDown={(e) => {
             if (e.nativeEvent.isComposing || e.key === 'Process') return
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -138,9 +192,15 @@ export default function MessageInput({
               onSendMessage()
             }
           }}
-          placeholder={selectedLanguage === 'ko' ? '메시지를 입력하세요...' : 'Type your message...'}
+          placeholder={
+            uploading
+              ? (isKo ? '이미지 전송 중...' : 'Sending image...')
+              : isKo
+                ? '메시지 입력, 또는 스크린샷 붙여넣기'
+                : 'Type a message, or paste a screenshot'
+          }
           className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent text-sm lg:text-base resize-none overflow-hidden max-h-24"
-          disabled={sending || uploading || gettingLocation}
+          disabled={busy}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
@@ -155,7 +215,7 @@ export default function MessageInput({
         
         <button
           type="submit"
-          disabled={!newMessage.trim() || sending || uploading}
+          disabled={!newMessage.trim() || busy}
           className="flex-shrink-0 px-3 lg:px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1 lg:space-x-2 text-sm lg:text-base"
         >
           <Send size={14} className="lg:w-4 lg:h-4" />
@@ -168,7 +228,7 @@ export default function MessageInput({
       {showEmojiPicker && (
         <div className="absolute bottom-16 left-2 lg:left-4 bg-white border border-gray-300 rounded-lg shadow-lg p-3 z-50 max-w-xs">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-700">{selectedLanguage === 'ko' ? '이모티콘' : 'Emoji'}</span>
+            <span className="text-sm font-medium text-gray-700">{isKo ? '이모티콘' : 'Emoji'}</span>
             <button
               onClick={() => setShowEmojiPicker(false)}
               className="text-gray-400 hover:text-gray-600"
@@ -196,4 +256,3 @@ export default function MessageInput({
     </div>
   )
 }
-

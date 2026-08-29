@@ -137,7 +137,7 @@ export default async function LocaleLayout({
           <FloatingChatProvider>
             <LazyStripeErrorHandler />
             <LazyModalBackdropGuard />
-            <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden">
+            <div className="min-h-screen min-w-0 max-w-full overflow-x-clip">
               {children}
               <LazyFloatingChatContainer />
             </div>

@@ -353,7 +353,7 @@
     min-width: 0;
     min-height: 100vh;
     box-sizing: border-box;
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   .admin-main-shell::before {
@@ -439,7 +439,7 @@ html.is-guide-route,
 html:has(.guide-shell),
 html.is-admin-route,
 html:has(.admin-shell) {
-  overflow-x: hidden;
+  overflow-x: clip;
   scrollbar-gutter: auto;
 }
 html.is-guide-route body,
@@ -467,7 +467,7 @@ html:has(.admin-shell) main.main-safe-area {
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* 모바일: 좌우 풀블리드 + 상단 소폭 여백 / 데스크탑(lg+): 통일 좌우·상단 여백 */

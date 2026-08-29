@@ -69,6 +69,16 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    if (message_type === 'image' && file_url) {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+      const allowedPrefix = `${supabaseUrl}/storage/v1/object/public/images/chat-messages/`
+      if (!supabaseUrl || !String(file_url).startsWith(allowedPrefix)) {
+        return NextResponse.json({
+          error: '유효하지 않은 이미지 URL입니다',
+        }, { status: 400 })
+      }
+    }
+
     // 서비스 롤 클라이언트 사용 (RLS 우회)
     const supabaseAdmin = getSupabaseAdmin()
 
@@ -119,7 +129,7 @@ export async function POST(request: NextRequest) {
       sender_type,
       sender_name,
       sender_avatar: sender_avatar ? 'present' : 'missing',
-      message_length: message.length,
+      message_length: typeof message === 'string' ? message.length : 0,
       message_type
     })
 

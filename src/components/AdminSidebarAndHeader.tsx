@@ -1310,7 +1310,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         }`}
       >
         {/* 모바일: 풀블리드 / 데스크탑: .admin-main-content 에서 통일 여백 */}
-        <main className="main-safe-area w-full min-w-0 max-w-full overflow-x-hidden px-0 pt-0">
+        <main className="main-safe-area w-full min-w-0 max-w-full overflow-x-clip px-0 pt-0">
           <div className="admin-main-content">
             {children}
           </div>

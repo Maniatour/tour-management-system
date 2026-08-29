@@ -40,6 +40,10 @@ import { fetchPickupScheduleForTour } from '@/lib/fetchPickupScheduleForTour'
 import { guideChatSendTextMessage } from '@/lib/guideChatSendTextMessage'
 import { getVoiceCallTabBroadcastChannel } from '@/lib/voiceCallTabBroadcast'
 import { commitOptimisticChatMessage } from '@/lib/chatMessageMerge'
+import {
+  prepareTourChatImageForUpload,
+  snapshotChatImageFiles,
+} from '@/lib/tourChatImage'
 
 // 타입은 @/types/chat에서 import
 
@@ -314,6 +318,7 @@ export default function TourChatRoom({
   
   // 이미지 업로드
   const [uploading, setUploading] = useState(false)
+  const uploadingRef = useRef(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [gettingLocation, setGettingLocation] = useState(false)
   const [showLocationShareModal, setShowLocationShareModal] = useState(false)
@@ -1744,48 +1749,89 @@ export default function TourChatRoom({
     return (currentTime - messageTime) < oneMinute
   }
 
-  // 이미지 업로드 처리
-  const handleImageUpload = async (file: File) => {
-    if (!room || uploading) return
-    
-    // 파일 타입 검증
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
-    if (!allowedTypes.includes(file.type)) {
-      alert(selectedLanguage === 'ko' ? '지원하지 않는 파일 형식입니다. JPEG, PNG, GIF, WebP 파일만 업로드 가능합니다.' : 'Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.')
+  const chatImageErrorText = (code: string) => {
+    const isKo = selectedLanguage === 'ko'
+    if (code === 'NOT_IMAGE') {
+      return isKo
+        ? '이미지 파일만 보낼 수 있습니다. JPEG, PNG, GIF, WebP, HEIC를 지원합니다.'
+        : 'Only image files can be sent (JPEG, PNG, GIF, WebP, HEIC).'
+    }
+    if (code === 'TOO_LARGE') {
+      return isKo
+        ? '파일이 너무 큽니다. 최대 20MB까지 선택할 수 있습니다.'
+        : 'File is too large. Maximum original size is 20MB.'
+    }
+    if (code === 'EMPTY_FILE') {
+      return isKo ? '빈 파일입니다. 다른 이미지를 선택해 주세요.' : 'That file is empty. Please choose another image.'
+    }
+    if (code === 'RECEIPT_COMPRESS_FAILED') {
+      return isKo
+        ? '이 이미지를 처리할 수 없습니다. PNG 또는 JPEG로 저장한 뒤 다시 보내 주세요.'
+        : 'Could not process that image. Please save it as PNG or JPEG and try again.'
+    }
+    return isKo ? '이미지 업로드 중 오류가 발생했습니다.' : 'An error occurred while uploading the image.'
+  }
+
+  // 이미지 업로드 처리 (갤러리·카메라·스크린샷 붙여넣기)
+  const handleImageUpload = async (files: File[]) => {
+    if (!room || uploadingRef.current) return
+
+    if (await checkBanned(room.id)) {
+      alert('You are blocked from this chat room.')
       return
     }
-    
-    // 파일 크기 검증 (5MB)
-    const maxSize = 5 * 1024 * 1024
-    if (file.size > maxSize) {
-      alert(selectedLanguage === 'ko' ? '파일 크기가 너무 큽니다. 최대 5MB까지 업로드 가능합니다.' : 'File too large. Maximum size is 5MB.')
+
+    const snapped = await snapshotChatImageFiles(files)
+    if (snapped.length === 0) {
+      alert(chatImageErrorText('NOT_IMAGE'))
+      if (fileInputRef.current) fileInputRef.current.value = ''
       return
     }
-    
+
+    uploadingRef.current = true
     setUploading(true)
-    
+    const caption = newMessage.trim()
+    if (caption) setNewMessage('')
+
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('folder', 'chat-messages')
-      
-      const response = await fetch('/api/upload/image', {
-        method: 'POST',
-        body: formData
-      })
-      
-      const result = await response.json()
-      
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Upload failed')
+      for (let i = 0; i < snapped.length; i++) {
+        const file = snapped[i]
+        let prepared: File
+        try {
+          prepared = await prepareTourChatImageForUpload(file)
+        } catch (error) {
+          const code = error instanceof Error ? error.message : 'UPLOAD_FAILED'
+          alert(chatImageErrorText(code))
+          continue
+        }
+
+        const formData = new FormData()
+        formData.append('file', prepared)
+        formData.append('room_id', room.id)
+        formData.append('room_code', room.room_code)
+
+        const response = await fetch('/api/chat-messages/upload', {
+          method: 'POST',
+          body: formData
+        })
+
+        const result = await response.json().catch(() => ({}))
+        if (!response.ok || !result.success || !result.imageUrl) {
+          throw new Error(result.error || 'Upload failed')
+        }
+
+        await sendImageMessage(
+          result.imageUrl,
+          prepared.name || file.name,
+          prepared.size,
+          i === 0 ? caption : ''
+        )
       }
-      
-      // 이미지를 메시지로 전송
-      await sendImageMessage(result.imageUrl, file.name, file.size)
     } catch (error) {
       console.error('Image upload error:', error)
-      alert(error instanceof Error ? error.message : (selectedLanguage === 'ko' ? '이미지 업로드 중 오류가 발생했습니다.' : 'An error occurred while uploading the image.'))
+      alert(error instanceof Error ? error.message : chatImageErrorText('UPLOAD_FAILED'))
     } finally {
+      uploadingRef.current = false
       setUploading(false)
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
@@ -1794,21 +1840,26 @@ export default function TourChatRoom({
   }
   
   // 이미지 메시지 전송
-  const sendImageMessage = async (imageUrl: string, fileName: string, fileSize: number) => {
-    if (!room || sending || sendingLockRef.current) return
+  const sendImageMessage = async (
+    imageUrl: string,
+    fileName: string,
+    fileSize: number,
+    caption = ''
+  ) => {
+    if (!room || sendingLockRef.current) return
     
     sendingLockRef.current = true
     setSending(true)
     
     // 즉시 UI에 메시지 표시 (낙관적 업데이트)
     const tempMessage = {
-      id: `temp_${Date.now()}`,
+      id: `temp_img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       room_id: room.id,
       sender_type: isPublicView ? 'customer' : 'guide',
       sender_name: isPublicView ? (customerName || '고객') : guideStaffChatLabel,
       sender_email: isPublicView ? undefined : (guideEmail || undefined),
       sender_avatar: isPublicView ? selectedAvatar : undefined,
-      message: '',
+      message: caption,
       message_type: 'image' as const,
       file_url: imageUrl,
       file_name: fileName,
@@ -1834,7 +1885,7 @@ export default function TourChatRoom({
             sender_name: customerName || '고객',
             sender_type: 'customer',
             sender_avatar: selectedAvatar,
-            message: '',
+            message: caption,
             message_type: 'image',
             file_url: imageUrl,
             file_name: fileName,
@@ -1871,7 +1922,7 @@ export default function TourChatRoom({
             sender_type: 'guide',
             sender_name: guideStaffChatLabel,
             sender_email: guideEmail || null,
-            message: '',
+            message: caption,
             message_type: 'image',
             file_url: imageUrl,
             file_name: fileName,

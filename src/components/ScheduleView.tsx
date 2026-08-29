@@ -7269,11 +7269,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         ) : (
         <>
         {/* 첫 번째 줄: 좌 아이콘 | 가운데 월·오늘 | 우 저장·취소 */}
-        <div className="relative flex flex-wrap items-center gap-y-2 min-h-10 sm:min-h-11 mb-2">
-          {/* 왼쪽: 선택 버튼들 */}
-          <div className="relative z-10 flex shrink-0 items-center gap-0.5 sm:gap-2">
-            <div className="flex gap-0.5 sm:gap-2">
-              {/* 상품 선택 버튼 */}
+        <div className="relative mb-2 flex min-h-10 flex-wrap items-center gap-y-2 sm:grid sm:min-h-11 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center sm:gap-x-2">
+          {/* 왼쪽: 선택 버튼들 — sm+ 에서 월 네비와 겹치지 않게 왼쪽 열에만 배치 */}
+          <div className="relative z-10 flex min-w-0 shrink-0 items-center gap-0.5 sm:gap-2">
+            <div className="flex flex-wrap gap-0.5 sm:gap-2">
               <button
                 onClick={() => setShowProductModal(true)}
                 className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors relative"
@@ -7287,7 +7286,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 )}
               </button>
 
-              {/* 기타 투어 그룹 설정 */}
               <button
                 type="button"
                 onClick={() => {
@@ -7309,7 +7307,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 )}
               </button>
 
-              {/* 팀원 선택 버튼 */}
               <button
                 onClick={() => {
                   setShareTeamMembersSetting(false)
@@ -7326,7 +7323,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 )}
               </button>
 
-              {/* 일괄 오프 스케줄 버튼 */}
               <button
                 onClick={() => {
                   const monthStart = dayjs(currentDate).startOf('month').format('YYYY-MM-DD')
@@ -7337,93 +7333,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 title="일괄 오프 스케줄 추가"
               >
                 <CalendarOff className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
-
-              {/* 오프 스케줄 히스토리 (생성 건 확인·수정·삭제) */}
-              <button
-                type="button"
-                onClick={() => setShowOffScheduleHistoryModal(true)}
-                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
-                title={locale === 'ko' ? '오프 스케줄 히스토리' : 'Off schedule history'}
-                aria-label={locale === 'ko' ? '오프 스케줄 히스토리' : 'Off schedule history'}
-              >
-                <History className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowNarrationHistoryModal(true)}
-                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors"
-                title={locale === 'ko' ? '투어별 나레이션 히스토리' : 'Tour narration history'}
-                aria-label={locale === 'ko' ? '투어별 나레이션 히스토리' : 'Tour narration history'}
-              >
-                <Headphones className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
-
-              {/* Price & Inventory (OTA 가격·재고 추적) */}
-              <button
-                type="button"
-                onClick={() => setShowPriceInventoryModal(true)}
-                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors"
-                title="Price & Inventory"
-                aria-label="Price & Inventory"
-              >
-                <DollarSign className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
-
-              {canManageSharedSchedule ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setShowPastMissingReceiptsModal(true)}
-                    className="relative flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors"
-                    title={locale === 'ko' ? '오늘 이전 · 지출 없는 투어' : 'Past tours with no expenses'}
-                    aria-label={locale === 'ko' ? '지출 없는 투어' : 'Tours with no expenses'}
-                  >
-                    <Receipt className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden />
-                    {pastMissingReceiptCount != null && pastMissingReceiptCount > 0 ? (
-                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] sm:text-xs rounded-full min-w-4 h-4 sm:min-w-5 sm:h-5 px-0.5 flex items-center justify-center">
-                        {pastMissingReceiptCount > 99 ? '99+' : pastMissingReceiptCount}
-                      </span>
-                    ) : null}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowPastBalanceRemainingModal(true)}
-                    className="relative flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-teal-700 text-white rounded-lg hover:bg-teal-800 transition-colors"
-                    title={locale === 'ko' ? '오늘 이전 · 잔금 남음' : 'Past tours with remaining balance'}
-                    aria-label={locale === 'ko' ? '잔금 남은 투어' : 'Tours with remaining balance'}
-                  >
-                    <Wallet className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden />
-                    {pastBalanceRemainingCount != null && pastBalanceRemainingCount > 0 ? (
-                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] sm:text-xs rounded-full min-w-4 h-4 sm:min-w-5 sm:h-5 px-0.5 flex items-center justify-center">
-                        {pastBalanceRemainingCount > 99 ? '99+' : pastBalanceRemainingCount}
-                      </span>
-                    ) : null}
-                  </button>
-                </>
-              ) : null}
-
-              {/* 가이드 스케줄 부여 SMS 일괄 발송 */}
-              <button
-                type="button"
-                onClick={() => setShowGuideScheduleAssignmentBulkModal(true)}
-                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"
-                title={locale === 'ko' ? '가이드 스케줄 부여 SMS' : 'Send schedule assignment SMS'}
-                aria-label={locale === 'ko' ? '가이드 스케줄 부여 SMS' : 'Send schedule assignment SMS'}
-              >
-                <UserCheck className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
-
-              {/* 가이드 스케줄 컨펌 SMS·앱 알림 일괄 발송 */}
-              <button
-                type="button"
-                onClick={() => setShowGuideScheduleBulkModal(true)}
-                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-                title={locale === 'ko' ? '가이드 스케줄 컨펌 발송' : 'Send guide schedule confirm'}
-                aria-label={locale === 'ko' ? '가이드 스케줄 컨펌 발송' : 'Send guide schedule confirm'}
-              >
-                <Smartphone className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
 
               {isSuperAdmin ? (
@@ -7439,7 +7348,41 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 </button>
               ) : null}
 
-              {/* 캐시 비우고 새로고침: 새 정보가 바로 반영되지 않을 때 캐시 제거 후 DB 기준으로 다시 로드 */}
+              <button
+                type="button"
+                onClick={() => setScheduleHealthModalOpen(true)}
+                className="relative flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-sm hover:brightness-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                title={locale === 'ko' ? '스케줄 점검 요약' : 'Schedule health summary'}
+                aria-label={locale === 'ko' ? '스케줄 점검 요약' : 'Schedule health summary'}
+              >
+                <Bell className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
+                {scheduleHealthFetchedLoaded && scheduleHealthIssueCount > 0 ? (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-600 px-0.5 text-[10px] font-bold leading-none text-white">
+                    {scheduleHealthIssueCount > 99 ? '99+' : scheduleHealthIssueCount}
+                  </span>
+                ) : null}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowGuideScheduleAssignmentBulkModal(true)}
+                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"
+                title={locale === 'ko' ? '가이드 스케줄 부여 SMS' : 'Send schedule assignment SMS'}
+                aria-label={locale === 'ko' ? '가이드 스케줄 부여 SMS' : 'Send schedule assignment SMS'}
+              >
+                <UserCheck className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowGuideScheduleBulkModal(true)}
+                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                title={locale === 'ko' ? '가이드 스케줄 컨펌 발송' : 'Send guide schedule confirm'}
+                aria-label={locale === 'ko' ? '가이드 스케줄 컨펌 발송' : 'Send guide schedule confirm'}
+              >
+                <Smartphone className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+
               <button
                 type="button"
                 onClick={handleClearCacheAndRefresh}
@@ -7450,11 +7393,21 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               >
                 <RotateCcw className={`w-4 h-4 sm:w-5 sm:h-5 ${isClearingCache ? 'animate-spin' : ''}`} aria-hidden />
               </button>
+
+              <button
+                type="button"
+                onClick={() => setShowOffScheduleHistoryModal(true)}
+                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+                title={locale === 'ko' ? '오프 스케줄 히스토리' : 'Off schedule history'}
+                aria-label={locale === 'ko' ? '오프 스케줄 히스토리' : 'Off schedule history'}
+              >
+                <History className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
             </div>
           </div>
 
-          {/* 가운데: 모바일은 한 줄 전체(겹침 방지), sm+ 는 절대배치로 화면 중앙 */}
-          <div className="order-last flex w-full basis-full justify-center px-2 sm:pointer-events-none sm:absolute sm:inset-0 sm:order-none sm:w-auto sm:basis-auto sm:items-center sm:justify-center sm:px-24 md:px-32">
+          {/* 가운데: 모바일은 다음 줄 전체, sm+ 는 그리드 중앙 열 */}
+          <div className="order-last flex w-full basis-full justify-center px-2 sm:order-none sm:w-auto sm:basis-auto sm:justify-self-center sm:px-0">
             <div className="flex items-center gap-1 sm:gap-2 sm:pointer-events-auto">
               <div className="flex items-center space-x-1 sm:space-x-4">
                 <button
@@ -7518,8 +7471,61 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             </div>
           </div>
 
-          {/* 오른쪽: 스케줄링 모드 토글 · 저장/취소 */}
-          <div className="relative z-10 ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+          {/* 오른쪽: 나레이션·재고·저장 */}
+          <div className="relative z-10 ml-auto flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-0.5 sm:ml-0 sm:justify-self-end sm:gap-2">
+            <button
+              type="button"
+              onClick={() => setShowNarrationHistoryModal(true)}
+              className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors"
+              title={locale === 'ko' ? '투어별 나레이션 히스토리' : 'Tour narration history'}
+              aria-label={locale === 'ko' ? '투어별 나레이션 히스토리' : 'Tour narration history'}
+            >
+              <Headphones className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowPriceInventoryModal(true)}
+              className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors"
+              title="Price & Inventory"
+              aria-label="Price & Inventory"
+            >
+              <DollarSign className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+
+            {canManageSharedSchedule ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowPastMissingReceiptsModal(true)}
+                  className="relative flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors"
+                  title={locale === 'ko' ? '오늘 이전 · 지출 없는 투어' : 'Past tours with no expenses'}
+                  aria-label={locale === 'ko' ? '지출 없는 투어' : 'Tours with no expenses'}
+                >
+                  <Receipt className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden />
+                  {pastMissingReceiptCount != null && pastMissingReceiptCount > 0 ? (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] sm:text-xs rounded-full min-w-4 h-4 sm:min-w-5 sm:h-5 px-0.5 flex items-center justify-center">
+                      {pastMissingReceiptCount > 99 ? '99+' : pastMissingReceiptCount}
+                    </span>
+                  ) : null}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPastBalanceRemainingModal(true)}
+                  className="relative flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-teal-700 text-white rounded-lg hover:bg-teal-800 transition-colors"
+                  title={locale === 'ko' ? '오늘 이전 · 잔금 남음' : 'Past tours with remaining balance'}
+                  aria-label={locale === 'ko' ? '잔금 남은 투어' : 'Tours with remaining balance'}
+                >
+                  <Wallet className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden />
+                  {pastBalanceRemainingCount != null && pastBalanceRemainingCount > 0 ? (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] sm:text-xs rounded-full min-w-4 h-4 sm:min-w-5 sm:h-5 px-0.5 flex items-center justify-center">
+                      {pastBalanceRemainingCount > 99 ? '99+' : pastBalanceRemainingCount}
+                    </span>
+                  ) : null}
+                </button>
+              </>
+            ) : null}
+
             <label
               className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1 text-[10px] sm:text-xs whitespace-nowrap select-none ${
                 scheduleExplorationMode
@@ -7536,20 +7542,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               />
               <span>스케줄링</span>
             </label>
-            <button
-              type="button"
-              onClick={() => setScheduleHealthModalOpen(true)}
-              className="relative flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-sm hover:brightness-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
-              title={locale === 'ko' ? '스케줄 점검 요약' : 'Schedule health summary'}
-              aria-label={locale === 'ko' ? '스케줄 점검 요약' : 'Schedule health summary'}
-            >
-              <Bell className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
-              {scheduleHealthFetchedLoaded && scheduleHealthIssueCount > 0 ? (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-600 px-0.5 text-[10px] font-bold leading-none text-white">
-                  {scheduleHealthIssueCount > 99 ? '99+' : scheduleHealthIssueCount}
-                </span>
-              ) : null}
-            </button>
             <button
               type="button"
               onClick={() => {

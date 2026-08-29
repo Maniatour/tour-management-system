@@ -1,10 +1,11 @@
 'use client'
 
-import React from 'react'
-import { Trash2, User } from 'lucide-react'
+import React, { useState } from 'react'
+import { Trash2, User, X } from 'lucide-react'
 import type { ChatMessage } from '@/types/chat'
 import type { SupportedLanguage } from '@/lib/translation'
 import ChatMessageBody from './ChatMessageBody'
+import { chatImageDisplayName } from '@/lib/tourChatImage'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -50,6 +51,8 @@ export default function MessageList({
   translating: _translating = {},
   getMessageSenderLabel
 }: MessageListProps) {
+  const [lightbox, setLightbox] = useState<{ url: string; alt: string } | null>(null)
+
   return (
     <div 
       ref={messagesScrollRef}
@@ -179,19 +182,38 @@ export default function MessageList({
                 {/* 메시지 내용 */}
                 <div className="text-sm" style={{ touchAction: 'pan-x pan-y pinch-zoom' }}>
                   {message.message_type === 'image' && message.file_url ? (
-                    <div className="mt-2">
-                      <img
-                        src={message.file_url}
-                        alt={message.file_name || 'Uploaded image'}
-                        className="max-w-full h-auto rounded-lg cursor-pointer"
-                        onClick={() => window.open(message.file_url, '_blank')}
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23ddd" width="200" height="200"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" dy="10.5" font-weight="bold" x="50%25" y="50%25" text-anchor="middle"%3EImage not found%3C/text%3E%3C/svg%3E'
-                        }}
-                      />
-                      {message.file_name && (
-                        <div className="text-xs text-gray-500 mt-1">{message.file_name}</div>
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        className="block w-full text-left"
+                        onClick={() =>
+                          setLightbox({
+                            url: message.file_url!,
+                            alt: message.file_name || (selectedLanguage === 'ko' ? '채팅 이미지' : 'Chat image'),
+                          })
+                        }
+                      >
+                        <img
+                          src={message.file_url}
+                          alt={message.file_name || (selectedLanguage === 'ko' ? '채팅 이미지' : 'Chat image')}
+                          className="max-w-full max-h-64 lg:max-h-80 h-auto rounded-lg cursor-pointer object-contain bg-black/10"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23ddd" width="200" height="200"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" dy="10.5" font-weight="bold" x="50%25" y="50%25" text-anchor="middle"%3EImage not found%3C/text%3E%3C/svg%3E'
+                          }}
+                        />
+                      </button>
+                      {chatImageDisplayName(message.file_name) && (
+                        <div className={`text-xs ${isMyMessage || isStaffBubble ? 'text-white/80' : 'text-gray-500'}`}>
+                          {chatImageDisplayName(message.file_name)}
+                        </div>
                       )}
+                      {message.message?.trim() ? (
+                        <ChatMessageBody
+                          message={message.message}
+                          selectedLanguage={selectedLanguage}
+                          isDarkBubble={isMyMessage || isStaffBubble}
+                        />
+                      ) : null}
                     </div>
                   ) : message.message.startsWith('[EN] ') ? (
                     <div>
@@ -249,6 +271,31 @@ export default function MessageList({
         )
       })}
       <div ref={messagesEndRef} />
+
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setLightbox(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={lightbox.alt}
+        >
+          <button
+            type="button"
+            className="absolute top-4 right-4 rounded-full bg-black/50 p-2 text-white hover:bg-black/70"
+            onClick={() => setLightbox(null)}
+            aria-label={selectedLanguage === 'ko' ? '닫기' : 'Close'}
+          >
+            <X size={20} />
+          </button>
+          <img
+            src={lightbox.url}
+            alt={lightbox.alt}
+            className="max-h-[90vh] max-w-[min(100%,56rem)] rounded-xl object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   )
 }

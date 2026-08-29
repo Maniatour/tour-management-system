@@ -56,7 +56,7 @@ export default function AdminChrome({ locale, children }: AdminChromeProps) {
     <SiteAccessMatrixPatchProvider>
       <AdminPageTitle locale={locale} />
       <TeamBoardManualProvider locale={locale}>
-        <div className="admin-shell min-h-screen w-full min-w-0 max-w-full overflow-x-hidden px-0">
+        <div className="admin-shell min-h-screen w-full min-w-0 max-w-full overflow-x-clip px-0">
           <AdminSidebarAndHeader locale={locale}>
             <OpsModuleRouteGuard>{children}</OpsModuleRouteGuard>
           </AdminSidebarAndHeader>
