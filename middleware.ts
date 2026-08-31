@@ -137,8 +137,8 @@ export async function middleware(req: NextRequest) {
     return applySecurityHeaders(response, req)
   }
 
-  // /photos/ 경로는 로케일이 필요 없으므로 미들웨어를 건너뛰도록 처리
-  if (req.nextUrl.pathname.startsWith('/photos/')) {
+  // /photos/ · /waiver/ 경로는 로케일이 필요 없으므로 미들웨어를 건너뛰도록 처리
+  if (req.nextUrl.pathname.startsWith('/photos/') || req.nextUrl.pathname.startsWith('/waiver/')) {
     const requestHeaders = new Headers(req.headers)
     stampTenantRequestHeaders(requestHeaders, req, resolvedPublicOperator)
     const response = NextResponse.next({ request: { headers: requestHeaders } })

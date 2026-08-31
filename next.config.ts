@@ -54,6 +54,8 @@ const nextConfig = {
 		ignoreBuildErrors: true,
 	},
 
+	// Next 16: `app/waiver` 페이지와 `app/api/waiver`가 같이 있으면 /waiver/[token] 이 404가 난다.
+	// 공개 서명 API는 /api/waiver-signing 으로 분리하고, 기존 URL은 rewrite로 유지한다.
 	// Next 16 dev: `app/admin` 페이지와 `app/api/admin` API가 동시에 있으면 /api/admin/* 가 404 나는 경우가 있음
 	// 동일하게 `app/admin` 과 `app/[locale]/admin` 이 함께 있으면 /ko/admin/* 하위 페이지가 전부 404 — MDGC 유틸은 app/mdgc-tools 로 분리
 	// `[locale]/admin/team-chat` 페이지와 `app/api/team-chat/*` 가 같이 있으면 dev에서 일부 하위 API가 HTML 404가 나는 경우가 있음
@@ -62,6 +64,7 @@ const nextConfig = {
 			beforeFiles: [
 				{ source: '/api/admin/weather-status', destination: '/api/weather-status' },
 				{ source: '/api/team-chat/unread-count', destination: '/api/team-chat-unread-count' },
+				{ source: '/api/waiver/:token*', destination: '/api/waiver-signing/:token*' },
 			],
 		}
 	},

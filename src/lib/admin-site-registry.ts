@@ -13,6 +13,7 @@ import {
   CreditCard,
   DollarSign,
   FileCheck,
+  FileSignature,
   FileSpreadsheet,
   FileText,
   FileSearch,
@@ -285,6 +286,14 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     sidebarTranslationKey: 'companySop',
     icon: FileCheck,
     visibility: { type: 'admin_or_manager' },
+    requiresOperationsModule: true,
+  },
+  {
+    id: 'waivers',
+    path: 'waivers',
+    sidebarTranslationKey: 'waivers',
+    icon: FileSignature,
+    visibility: { type: 'always' },
     requiresOperationsModule: true,
   },
   {

@@ -23,6 +23,7 @@ import {
 } from '@/hooks/useReservationData'
 import { useReservationFollowUpSnapshots } from '@/hooks/useReservationFollowUpSnapshots'
 import { useReservationSmsLogSummaries } from '@/hooks/useReservationSmsLogSummaries'
+import { usePrefetchWaiverCardSummaries } from '@/hooks/usePrefetchWaiverCardSummaries'
 import { useOperationalQueueBadgeSnapshot } from '@/hooks/useOperationalQueueBadgeSnapshot'
 import { useCancellationReasonByReservationId } from '@/hooks/useCancellationReasonByReservationId'
 import { useImagePrefetch } from '@/hooks/useImagePrefetch'
@@ -2113,6 +2114,8 @@ export default function AdminReservations() {
     summariesByReservationId: smsLogSummariesByReservationId,
     refreshReservationIds: refreshSmsLogReservationIds,
   } = useReservationSmsLogSummaries(reservationsLiteForFollowUp)
+
+  usePrefetchWaiverCardSummaries(reservationsLiteForFollowUp.map((r) => r.id))
 
   const handleFollowUpPipelineManualChange = useCallback(
     async (reservationId: string, step: FollowUpPipelineStepKey, action: 'mark' | 'clear') => {

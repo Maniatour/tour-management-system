@@ -388,6 +388,7 @@ const DOC_SPEC: Record<
   documents: { readGate: 'canViewAdmin', manage: 'canManageTours' },
   'operations-hub': { readGate: 'canViewAdmin', manage: 'canManageTeam' },
   sop: { readGate: 'canViewAdmin', manage: 'canManageTeam' },
+  waivers: { readGate: 'canViewAdmin', manage: 'canManageReservations' },
   suppliers: { readGate: 'canViewAdmin', manage: 'canManageTours' },
   'suppliers-settlement': { readGate: 'canViewAdmin', manage: 'canViewFinance' },
   expenses: { readGate: 'canViewAdmin', manage: 'canViewFinance' },

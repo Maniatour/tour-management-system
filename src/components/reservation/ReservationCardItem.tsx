@@ -34,6 +34,7 @@ import { supabase } from '@/lib/supabase'
 import type { Reservation, Customer } from '@/types/reservation'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
 import { ReservationCardSmsMenuButton } from '@/components/reservation/ReservationCardSmsMenuButton'
+import { ReservationCardWaiverButton } from '@/components/reservation/ReservationCardWaiverButton'
 import type { ReservationSmsLogSummary } from '@/lib/reservationSmsLogSummaries'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import { ADMIN_FLOATING_PORTAL_Z_INDEX } from '@/lib/adminFloatingFabLayout'
@@ -1165,6 +1166,15 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 />
                 </>
               )}
+              <ReservationCardWaiverButton
+                reservationId={reservation.id}
+                customer={customers.find((c) => c.id === reservation.customerId)}
+                locale={locale === 'en' ? 'en' : 'ko'}
+                bookingNumber={(reservation.channelRN || '').trim() || reservation.id}
+                tourDate={reservation.tourDate ?? ''}
+                tourName={getProductName(reservation.productId, (products as any) || [])}
+                totalPeople={reservation.totalPeople || 0}
+              />
             </div>
             <div className="flex shrink-0 items-center gap-0.5">
               <div className="relative shrink-0" ref={simpleMoreMenuRef}>

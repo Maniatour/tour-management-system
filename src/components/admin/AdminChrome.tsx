@@ -23,7 +23,11 @@ type AdminChromeProps = {
 /** 대시보드 사이드바·헤더 없이 전체 화면만 쓰는 admin 경로 */
 function isAdminBareChromePath(pathname: string | null): boolean {
   if (!pathname) return false
-  return pathname.includes('/admin/schedule-display')
+  return (
+    pathname.includes('/admin/schedule-display') ||
+    /\/admin\/waivers\/documents\/preview(?:\/|$)/.test(pathname) ||
+    /\/admin\/waivers\/[^/]+\/print(?:\/|$)/.test(pathname)
+  )
 }
 
 export default function AdminChrome({ locale, children }: AdminChromeProps) {

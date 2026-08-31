@@ -18,6 +18,14 @@ function isStaffAppPath(url: URL): boolean {
   return STAFF_APP_PATH.test(url.pathname)
 }
 
+function isPublicSharePath(url: URL): boolean {
+  return (
+    url.pathname.startsWith('/chat/') ||
+    url.pathname.startsWith('/photos/') ||
+    url.pathname.startsWith('/waiver/')
+  )
+}
+
 function cloneNavigateResponse(response: Response): Response {
   if (!response.redirected) return response
   return new Response(response.body, {
@@ -114,7 +122,7 @@ const serwist = new Serwist({
   clientsClaim: true,
   // 켜지 않음. 과거 등록분 해제는 상단 disableNavigationPreload()가 activate에서 처리
   navigationPreload: false,
-  // 공개 투어 채팅(/chat/[code])·직원 앱은 런타임 캐시(NetworkFirst)와 맞지 않음
+  // 공개 투어 채팅(/chat/[code])·사진·면책 서명·직원 앱은 런타임 캐시(NetworkFirst)와 맞지 않음
   // → 네트워크만 사용하고 실패 시에도 promise reject 금지
   runtimeCaching: [
     {
@@ -125,7 +133,7 @@ const serwist = new Serwist({
     },
     {
       matcher({ url, request }) {
-        if (!url.pathname.startsWith('/chat/')) return false
+        if (!isPublicSharePath(url)) return false
         return request.mode === 'navigate' || request.destination === 'document'
       },
       handler: handleNetworkOnlySafe,
