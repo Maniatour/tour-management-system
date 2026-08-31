@@ -2167,6 +2167,7 @@ export type Database = {
           is_active: boolean | null
           name_en: string
           name_ko: string
+          parent_id: string | null
           sort_order: number | null
           updated_at: string | null
         }
@@ -2180,6 +2181,7 @@ export type Database = {
           is_active?: boolean | null
           name_en: string
           name_ko: string
+          parent_id?: string | null
           sort_order?: number | null
           updated_at?: string | null
         }
@@ -2193,10 +2195,19 @@ export type Database = {
           is_active?: boolean | null
           name_en?: string
           name_ko?: string
+          parent_id?: string | null
           sort_order?: number | null
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "document_categories_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "document_categories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       document_download_logs: {
         Row: {

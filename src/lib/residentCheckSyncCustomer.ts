@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { STRIPE_PI_NOTE_PREFIX } from '@/lib/customerBookingCheckout'
 import { supabaseAdmin } from '@/lib/supabase'
+import { hasResidentCheckProof, primaryResidentCheckProofUrl } from '@/lib/residentCheckProofUrls'
 import type { ResidentCheckSubmissionRow } from '@/lib/residentCheckTokenService'
 import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
@@ -24,7 +25,7 @@ export async function syncCustomerFromResidentCheckSubmission(args: {
   let resident_status: 'us_resident' | 'non_resident' | 'non_resident_with_pass' = 'non_resident'
   if (args.submission.residency === 'us_resident') {
     resident_status = 'us_resident'
-  } else if (args.submission.pass_photo_url) {
+  } else if (hasResidentCheckProof(args.submission.pass_photo_url)) {
     resident_status = 'non_resident_with_pass'
   } else {
     resident_status = 'non_resident'
@@ -34,8 +35,8 @@ export async function syncCustomerFromResidentCheckSubmission(args: {
     .from('customers')
     .update({
       resident_status,
-      pass_photo_url: args.submission.pass_photo_url,
-      id_photo_url: args.submission.id_proof_url,
+      pass_photo_url: primaryResidentCheckProofUrl(args.submission.pass_photo_url),
+      id_photo_url: primaryResidentCheckProofUrl(args.submission.id_proof_url),
     })
     .eq('id', args.customerId)
 }

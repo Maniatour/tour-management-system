@@ -9,6 +9,7 @@ import {
   markResidentCheckTokenCompleted,
   syncCustomerFromResidentCheckSubmission,
 } from '@/lib/residentCheckSyncCustomer'
+import { syncResidentCheckProofsToReservationEvidence } from '@/lib/syncResidentCheckProofsToReservationEvidence'
 
 /**
  * POST /api/resident-check/complete-cash
@@ -74,6 +75,7 @@ export async function POST(request: NextRequest) {
       customerId,
       submission: { ...submission, stripe_payment_status: 'cash_on_site' },
     })
+    await syncResidentCheckProofsToReservationEvidence(token.reservation_id)
     await markResidentCheckTokenCompleted(token.id)
 
     return NextResponse.json({ ok: true })

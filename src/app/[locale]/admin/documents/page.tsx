@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { 
   Plus, 
@@ -16,10 +16,18 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import DocumentUploadModal from '@/components/documents/DocumentUploadModal'
 import DocumentCategoryModal from '@/components/documents/DocumentCategoryModal'
+import DocumentPreviewModal from '@/components/documents/DocumentPreviewModal'
 import DocumentCard from '@/components/documents/DocumentCard'
 import DocumentFilters from '@/components/documents/DocumentFilters'
+import DocumentCategoryTabs from '@/components/documents/DocumentCategoryTabs'
 import DocumentReminderDashboard from '@/components/documents/DocumentReminderDashboard'
 import { toast } from 'sonner'
+import {
+  collectCategoryAndDescendantIds,
+  countDocumentsInTree,
+  flattenCategoryTree,
+  getRootCategoryId,
+} from '@/lib/documentCategories'
 
 // 타입 정의
 interface DocumentCategory {
@@ -32,6 +40,7 @@ interface DocumentCategory {
   icon: string
   sort_order: number
   is_active: boolean
+  parent_id?: string | null
   created_at: string
   updated_at: string
 }
@@ -108,7 +117,8 @@ export default function DocumentManagementPage() {
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [showReminderDashboard, setShowReminderDashboard] = useState(false)
   const [editingDocument, setEditingDocument] = useState<AdminDocument | null>(null)
-  const [editingCategory, setEditingCategory] = useState<DocumentCategory | null>(null)
+  const [previewDocument, setPreviewDocument] = useState<AdminDocument | null>(null)
+  const [updatingCategoryId, setUpdatingCategoryId] = useState<string | null>(null)
 
   const loadDocuments = useCallback(async () => {
     try {
@@ -138,7 +148,6 @@ export default function DocumentManagementPage() {
       const { data, error } = await supabase
         .from('document_categories')
         .select('*')
-        .eq('is_active', true)
         .order('sort_order')
 
       if (error) throw error
@@ -189,41 +198,112 @@ export default function DocumentManagementPage() {
     loadCategories()
   }, [loadDocuments, loadCategories])
 
-  // 필터링된 문서 목록
-  const filteredDocuments = documents.filter(doc => {
-    // 검색어 필터
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      const matchesTitle = doc.title.toLowerCase().includes(query)
-      const matchesDescription = doc.description?.toLowerCase().includes(query) || false
-      const matchesTags = doc.tags.some(tag => tag.toLowerCase().includes(query))
-      if (!matchesTitle && !matchesDescription && !matchesTags) return false
+  // 검색·만료 필터 (카테고리 탭 개수와 목록에 공통 적용)
+  const documentsMatchingSearchAndExpiry = useMemo(() => {
+    return documents.filter((doc) => {
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase()
+        const matchesTitle = doc.title.toLowerCase().includes(query)
+        const matchesDescription = doc.description?.toLowerCase().includes(query) || false
+        const matchesTags = doc.tags.some((tag) => tag.toLowerCase().includes(query))
+        if (!matchesTitle && !matchesDescription && !matchesTags) return false
+      }
+
+      if (expiryFilter !== 'all') {
+        const now = new Date()
+        const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+
+        if (expiryFilter === 'expired') {
+          if (!doc.expiry_date || new Date(doc.expiry_date) >= now) return false
+        } else if (expiryFilter === 'expiring_soon') {
+          if (!doc.expiry_date || new Date(doc.expiry_date) < now || new Date(doc.expiry_date) > thirtyDaysFromNow) return false
+        } else if (expiryFilter === 'active') {
+          if (!doc.expiry_date || new Date(doc.expiry_date) < now) return false
+        }
+      }
+
+      return true
+    })
+  }, [documents, searchQuery, expiryFilter])
+
+  const activeCategories = useMemo(
+    () => categories.filter((category) => category.is_active !== false),
+    [categories]
+  )
+
+  const categoryTabs = useMemo(() => {
+    const activeIds = new Set(activeCategories.map((category) => category.id))
+    const roots = activeCategories.filter(
+      (category) => !category.parent_id || !activeIds.has(category.parent_id)
+    )
+    const uncategorizedCount = documents.filter((doc) => !doc.category_id).length
+    const tabs = [
+      {
+        id: 'all',
+        label: '전체',
+        count: documents.length,
+        color: null as string | null,
+      },
+      ...roots
+        .map((category) => ({
+          id: category.id,
+          label: category.name_ko,
+          count: countDocumentsInTree(documents, activeCategories, category.id),
+          color: category.color,
+        }))
+        .filter((tab) => tab.count > 0),
+    ]
+
+    if (uncategorizedCount > 0) {
+      tabs.push({
+        id: 'uncategorized',
+        label: '미분류',
+        count: uncategorizedCount,
+        color: null,
+      })
     }
 
-    // 카테고리 필터
-    if (selectedCategory !== 'all') {
-      if (selectedCategory === 'uncategorized') {
-        if (doc.category_id) return false
+    return tabs
+  }, [activeCategories, documents])
+
+  const selectedRootId =
+    selectedCategory === 'all' || selectedCategory === 'uncategorized'
+      ? selectedCategory
+      : getRootCategoryId(activeCategories, selectedCategory)
+
+  const childTabs = useMemo(() => {
+    if (selectedRootId === 'all' || selectedRootId === 'uncategorized') return []
+    return flattenCategoryTree(activeCategories, selectedRootId)
+      .map((category) => ({
+        id: category.id,
+        label: category.name_ko,
+        count: countDocumentsInTree(documents, activeCategories, category.id),
+        color: category.color,
+        depth: category.depth,
+      }))
+      .filter((tab) => tab.count > 0)
+  }, [activeCategories, documents, selectedRootId])
+
+  useEffect(() => {
+    if (selectedCategory === 'all') return
+    const visibleIds = new Set([
+      ...categoryTabs.map((tab) => tab.id),
+      ...childTabs.map((tab) => tab.id),
+    ])
+    if (!visibleIds.has(selectedCategory)) {
+      if (selectedRootId !== selectedCategory && visibleIds.has(selectedRootId)) {
+        setSelectedCategory(selectedRootId)
       } else {
-        if (doc.category_id !== selectedCategory) return false
+        setSelectedCategory('all')
       }
     }
+  }, [categoryTabs, childTabs, selectedCategory, setSelectedCategory])
 
-    // 만료일 필터
-    if (expiryFilter !== 'all') {
-      const now = new Date()
-      const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
-      
-      if (expiryFilter === 'expired') {
-        if (!doc.expiry_date || new Date(doc.expiry_date) >= now) return false
-      } else if (expiryFilter === 'expiring_soon') {
-        if (!doc.expiry_date || new Date(doc.expiry_date) < now || new Date(doc.expiry_date) > thirtyDaysFromNow) return false
-      } else if (expiryFilter === 'active') {
-        if (!doc.expiry_date || new Date(doc.expiry_date) < now) return false
-      }
-    }
-
-    return true
+  const filteredDocuments = documentsMatchingSearchAndExpiry.filter((doc) => {
+    if (selectedCategory === 'all') return true
+    if (selectedCategory === 'uncategorized') return !doc.category_id
+    const ids = new Set(collectCategoryAndDescendantIds(activeCategories, selectedCategory))
+    return Boolean(doc.category_id && ids.has(doc.category_id))
   })
 
   // 정렬
@@ -261,6 +341,50 @@ export default function DocumentManagementPage() {
     } catch (error) {
       console.error('문서 삭제 오류:', error)
       toast.error('문서 삭제 중 오류가 발생했습니다.')
+    }
+  }
+
+  const handleChangeCategory = async (doc: AdminDocument, categoryId: string) => {
+    const nextId = categoryId || null
+    const prevId = doc.category_id || null
+    if (prevId === nextId) return
+
+    const nextCategory = nextId ? categories.find((category) => category.id === nextId) : undefined
+    const previous = doc
+
+    setUpdatingCategoryId(doc.id)
+    setDocuments((current) =>
+      current.map((item) => {
+        if (item.id !== doc.id) return item
+        if (!nextId) {
+          const { category_id: _omitId, category: _omitCat, ...rest } = item
+          return rest
+        }
+        return {
+          ...item,
+          category_id: nextId,
+          ...(nextCategory ? { category: nextCategory } : {}),
+        }
+      })
+    )
+
+    try {
+      const { error } = await supabase
+        .from('documents')
+        .update({
+          category_id: nextId,
+          ...(user?.id ? { updated_by: user.id } : {}),
+        } as never)
+        .eq('id', doc.id)
+
+      if (error) throw error
+      toast.success('문서 분류가 변경되었습니다.')
+    } catch (error) {
+      console.error('문서 분류 변경 오류:', error)
+      setDocuments((current) => current.map((item) => (item.id === doc.id ? previous : item)))
+      toast.error('문서 분류 변경 중 오류가 발생했습니다.')
+    } finally {
+      setUpdatingCategoryId(null)
     }
   }
 
@@ -389,20 +513,28 @@ export default function DocumentManagementPage() {
         </div>
 
         {/* 필터 및 검색 */}
-        <DocumentFilters
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          categories={categories}
-          selectedCategory={selectedCategory}
-          setSelectedCategory={setSelectedCategory}
-          expiryFilter={expiryFilter}
-          setExpiryFilter={setExpiryFilter}
-          sortBy={sortBy}
-          setSortBy={setSortBy}
-          sortOrder={sortOrder}
-          setSortOrder={setSortOrder}
-          viewMode={viewMode}
-          setViewMode={setViewMode}
+        <div className="mb-4 sm:mb-6">
+          <DocumentFilters
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            expiryFilter={expiryFilter}
+            setExpiryFilter={setExpiryFilter}
+            sortBy={sortBy}
+            setSortBy={setSortBy}
+            sortOrder={sortOrder}
+            setSortOrder={setSortOrder}
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+          />
+        </div>
+
+        {/* 카테고리 탭 */}
+        <DocumentCategoryTabs
+          tabs={categoryTabs}
+          selectedId={selectedRootId}
+          onSelect={setSelectedCategory}
+          childTabs={childTabs}
+          {...(selectedCategory !== selectedRootId ? { selectedChildId: selectedCategory } : {})}
         />
 
         {/* 문서 목록 */}
@@ -415,7 +547,15 @@ export default function DocumentManagementPage() {
           ) : sortedDocuments.length === 0 ? (
             <div className="text-center py-8 sm:py-12 px-4">
               <FileText className="mx-auto h-10 w-10 sm:h-12 sm:w-12 text-gray-400" />
-              <h3 className="mt-2 text-sm font-medium text-gray-900">문서가 없습니다</h3>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">
+                {selectedCategory === 'all'
+                  ? '문서가 없습니다'
+                  : `${
+                      categoryTabs.find((tab) => tab.id === selectedCategory)?.label ||
+                      childTabs.find((tab) => tab.id === selectedCategory)?.label ||
+                      '이 카테고리'
+                    }에 문서가 없습니다`}
+              </h3>
               <p className="mt-1 text-xs sm:text-sm text-gray-500">새로운 문서를 업로드해보세요.</p>
               <div className="mt-4 sm:mt-6">
                 <button
@@ -436,13 +576,17 @@ export default function DocumentManagementPage() {
                 <DocumentCard
                   key={document.id}
                   document={document}
+                  categories={activeCategories}
                   viewMode={viewMode}
+                  categoryUpdating={updatingCategoryId === document.id}
+                  onView={() => setPreviewDocument(document)}
                   onEdit={() => {
                     setEditingDocument(document)
                     setShowUploadModal(true)
                   }}
                   onDelete={() => handleDeleteDocument(document.id)}
                   onDownload={() => handleDownloadDocument(document)}
+                  onCategoryChange={(categoryId) => handleChangeCategory(document, categoryId)}
                 />
               ))}
             </div>
@@ -450,10 +594,18 @@ export default function DocumentManagementPage() {
         </div>
       </div>
 
+      {previewDocument && (
+        <DocumentPreviewModal
+          document={previewDocument}
+          onClose={() => setPreviewDocument(null)}
+          onDownload={() => handleDownloadDocument(previewDocument)}
+        />
+      )}
+
       {/* 모달들 */}
       {showUploadModal && (
         <DocumentUploadModal
-          categories={categories}
+          categories={activeCategories}
           onClose={() => {
             setShowUploadModal(false)
             setEditingDocument(null)
@@ -471,14 +623,11 @@ export default function DocumentManagementPage() {
         <DocumentCategoryModal
           onClose={() => {
             setShowCategoryModal(false)
-            setEditingCategory(null)
+            loadCategories()
           }}
           onSuccess={() => {
             loadCategories()
-            setShowCategoryModal(false)
-            setEditingCategory(null)
           }}
-          editingCategory={editingCategory}
         />
       )}
 

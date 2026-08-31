@@ -12,10 +12,12 @@ import {
   CheckCircle,
   CreditCard,
   FileUp,
+  Loader2,
   Lock,
   Shield,
   Upload,
   User,
+  X,
 } from 'lucide-react'
 import ResidentCheckStripePay from '@/components/resident-check/ResidentCheckStripePay'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
@@ -24,6 +26,10 @@ import {
   residentCheckCanPayByCard,
   residentCheckFinalizeBlockers,
 } from '@/lib/residentCheckFinalize'
+import {
+  hasResidentCheckProof,
+  parseResidentCheckProofUrls,
+} from '@/lib/residentCheckProofUrls'
 import type { ResidentCheckSubmissionRow } from '@/lib/residentCheckTokenService'
 
 type SessionReservation = {
@@ -186,12 +192,22 @@ function ReadOnlySummary({
           )}
           <div>
             <dt className="text-muted-foreground">{t('idProof')}</dt>
-            <dd className="font-medium">{submission.id_proof_url ? t('uploadedLabel') : '—'}</dd>
+            <dd className="font-medium">
+              {hasResidentCheckProof(submission.id_proof_url)
+                ? t('uploadedCount', {
+                    count: parseResidentCheckProofUrls(submission.id_proof_url).length,
+                  })
+                : '—'}
+            </dd>
           </div>
-          {submission.pass_photo_url && (
+          {hasResidentCheckProof(submission.pass_photo_url) && (
             <div>
               <dt className="text-muted-foreground">{t('passPhoto')}</dt>
-              <dd className="font-medium">{t('uploadedLabel')}</dd>
+              <dd className="font-medium">
+                {t('uploadedCount', {
+                  count: parseResidentCheckProofUrls(submission.pass_photo_url).length,
+                })}
+              </dd>
             </div>
           )}
           {submission.total_charge_usd_cents > 0 && (
@@ -201,9 +217,119 @@ function ReadOnlySummary({
             </div>
           )}
         </dl>
+        {hasResidentCheckProof(submission.id_proof_url) && (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {parseResidentCheckProofUrls(submission.id_proof_url).map((url, index) => (
+              <a
+                key={url}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="overflow-hidden rounded-xl border border-border/60"
+              >
+                <img src={url} alt={`${t('idProof')} ${index + 1}`} className="h-24 w-full object-cover" />
+              </a>
+            ))}
+          </div>
+        )}
         <p className="text-xs text-muted-foreground">{t('readOnlyBanner')}</p>
         <p className="text-sm text-muted-foreground">{t('contactHint')}</p>
       </div>
+    </div>
+  )
+}
+
+function ProofUploadField({
+  kind,
+  title,
+  urls,
+  uploading,
+  removingUrl,
+  chooseLabel,
+  addMoreLabel,
+  uploadedCountLabel,
+  removeLabel,
+  onSelect,
+  onRemove,
+}: {
+  kind: 'id' | 'pass'
+  title: string
+  urls: string[]
+  uploading: boolean
+  removingUrl: string | null
+  chooseLabel: string
+  addMoreLabel: string
+  uploadedCountLabel: string
+  removeLabel: string
+  onSelect: (files: FileList) => void
+  onRemove: (url: string) => void
+}) {
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {title}
+      </p>
+      <label
+        className={`flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-6 text-sm transition-colors ${
+          uploading
+            ? 'border-primary/40 bg-muted/30 text-muted-foreground'
+            : 'border-border hover:border-primary/40 hover:bg-muted/30'
+        }`}
+      >
+        {uploading ? (
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        ) : (
+          <Upload className="h-5 w-5 text-muted-foreground" />
+        )}
+        <span>{urls.length > 0 ? addMoreLabel : chooseLabel}</span>
+        <input
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          multiple
+          disabled={uploading}
+          className="hidden"
+          onChange={(e) => {
+            const selected = e.target.files
+            if (selected && selected.length > 0) onSelect(selected)
+            e.target.value = ''
+          }}
+        />
+      </label>
+      {urls.length > 0 && (
+        <p className="mt-2 flex items-center gap-1 text-xs text-success">
+          <CheckCircle className="h-3.5 w-3.5" />
+          {uploadedCountLabel}
+        </p>
+      )}
+      {urls.length > 0 && (
+        <ul className="mt-3 grid grid-cols-2 gap-2">
+          {urls.map((url, index) => (
+            <li
+              key={`${kind}-${index}-${url}`}
+              className="relative overflow-hidden rounded-xl border border-border/60 bg-muted/20"
+            >
+              <img
+                src={url}
+                alt={`${title} ${index + 1}`}
+                className="h-28 w-full object-cover"
+              />
+              <button
+                type="button"
+                onClick={() => onRemove(url)}
+                disabled={removingUrl === url || uploading}
+                className="absolute right-1.5 top-1.5 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-black/60 text-white transition-colors hover:bg-black/80 disabled:opacity-50"
+                aria-label={removeLabel}
+              >
+                {removingUrl === url ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <X className="h-4 w-4" />
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
@@ -225,6 +351,8 @@ export default function ResidentCheckFlow() {
   const [passAssistance, setPassAssistance] = useState(false)
   const [hasAnnualPass, setHasAnnualPass] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [uploadingKind, setUploadingKind] = useState<'id' | 'pass' | null>(null)
+  const [removingUrl, setRemovingUrl] = useState<string | null>(null)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
 
   const stripePromise = useMemo(() => {
@@ -290,10 +418,13 @@ export default function ResidentCheckFlow() {
   )
 
   const step1Done = Boolean(submission)
-  const step2Done = Boolean(submission?.id_proof_url) &&
-    !(submission?.residency === 'non_resident' &&
+  const step2Done =
+    hasResidentCheckProof(submission?.id_proof_url) &&
+    !(
+      submission?.residency === 'non_resident' &&
       submission?.has_annual_pass === true &&
-      !submission?.pass_photo_url)
+      !hasResidentCheckProof(submission?.pass_photo_url)
+    )
   const step3Done =
     canPayByCard ||
     (Boolean(submission) && blockers.length === 0 && (submission?.total_charge_usd_cents ?? 0) === 0)
@@ -349,21 +480,51 @@ export default function ResidentCheckFlow() {
     }
   }
 
-  const upload = async (kind: 'pass' | 'id', file: File) => {
+  const uploadFiles = async (kind: 'pass' | 'id', fileList: FileList | File[]) => {
+    if (!rawToken.trim()) return
+    const files = Array.from(fileList).filter((file) => file && file.size > 0)
+    if (files.length === 0) return
+    setActionMsg(null)
+    setUploadingKind(kind)
+    try {
+      const fd = new FormData()
+      fd.append('token', rawToken)
+      fd.append('kind', kind)
+      for (const file of files) {
+        fd.append('files', file)
+      }
+      const res = await fetch('/api/resident-check/upload', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok) {
+        setActionMsg(data.error || t('uploadFailed'))
+        return
+      }
+      setActionMsg(t('uploaded'))
+      await loadSession()
+    } finally {
+      setUploadingKind(null)
+    }
+  }
+
+  const removeUploadedFile = async (kind: 'pass' | 'id', url: string) => {
     if (!rawToken.trim()) return
     setActionMsg(null)
-    const fd = new FormData()
-    fd.append('token', rawToken)
-    fd.append('kind', kind)
-    fd.append('file', file)
-    const res = await fetch('/api/resident-check/upload', { method: 'POST', body: fd })
-    const data = await res.json()
-    if (!res.ok) {
-      setActionMsg(data.error || t('uploadFailed'))
-      return
+    setRemovingUrl(url)
+    try {
+      const fd = new FormData()
+      fd.append('token', rawToken)
+      fd.append('kind', kind)
+      fd.append('removeUrl', url)
+      const res = await fetch('/api/resident-check/upload', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok) {
+        setActionMsg(data.error || t('removeFailed'))
+        return
+      }
+      await loadSession()
+    } finally {
+      setRemovingUrl(null)
     }
-    setActionMsg(t('uploaded'))
-    await loadSession()
   }
 
   const finalizeZero = async () => {
@@ -461,6 +622,10 @@ export default function ResidentCheckFlow() {
   const total = submission?.total_charge_usd_cents ?? 0
   const nps = submission?.nps_fee_usd_cents ?? 0
   const cardFee = submission?.card_processing_fee_usd_cents ?? 0
+  const partySize =
+    (Number(r.adults) || 0) + (Number(r.child) || 0) + (Number(r.infant) || 0)
+  const idProofUrls = parseResidentCheckProofUrls(submission?.id_proof_url)
+  const passPhotoUrls = parseResidentCheckProofUrls(submission?.pass_photo_url)
 
   return shell(
     <div className="space-y-6">
@@ -661,58 +826,39 @@ export default function ResidentCheckFlow() {
             <h2 className="text-lg font-semibold text-foreground">{t('uploadProof')}</h2>
           </div>
           <p className="text-sm text-muted-foreground">{t('uploadHint')}</p>
+          {partySize > 0 ? (
+            <p className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-foreground">
+              {t('uploadPerGuestHint', { count: partySize })}
+            </p>
+          ) : null}
           <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {t('idProof')}
-              </p>
-              <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-border px-4 py-6 text-sm transition-colors hover:border-primary/40 hover:bg-muted/30">
-                <Upload className="h-5 w-5 text-muted-foreground" />
-                <span>{t('chooseFile')}</span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0]
-                    if (f) void upload('id', f)
-                    e.target.value = ''
-                  }}
-                />
-              </label>
-              {submission.id_proof_url && (
-                <p className="mt-2 flex items-center gap-1 text-xs text-success">
-                  <CheckCircle className="h-3.5 w-3.5" />
-                  {t('uploadedLabel')}
-                </p>
-              )}
-            </div>
-            {((residency === 'non_resident' && hasAnnualPass) || submission.pass_photo_url) && (
-              <div>
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {t('passPhoto')}
-                </p>
-                <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-border px-4 py-6 text-sm transition-colors hover:border-primary/40 hover:bg-muted/30">
-                  <Upload className="h-5 w-5 text-muted-foreground" />
-                  <span>{t('chooseFile')}</span>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0]
-                      if (f) void upload('pass', f)
-                      e.target.value = ''
-                    }}
-                  />
-                </label>
-                {submission.pass_photo_url && (
-                  <p className="mt-2 flex items-center gap-1 text-xs text-success">
-                    <CheckCircle className="h-3.5 w-3.5" />
-                    {t('uploadedLabel')}
-                  </p>
-                )}
-              </div>
+            <ProofUploadField
+              kind="id"
+              title={t('idProof')}
+              urls={idProofUrls}
+              uploading={uploadingKind === 'id'}
+              removingUrl={removingUrl}
+              chooseLabel={t('chooseFiles')}
+              addMoreLabel={t('addMoreFiles')}
+              uploadedCountLabel={t('uploadedCount', { count: idProofUrls.length })}
+              removeLabel={t('removeFile')}
+              onSelect={(files) => void uploadFiles('id', files)}
+              onRemove={(url) => void removeUploadedFile('id', url)}
+            />
+            {((residency === 'non_resident' && hasAnnualPass) || passPhotoUrls.length > 0) && (
+              <ProofUploadField
+                kind="pass"
+                title={t('passPhoto')}
+                urls={passPhotoUrls}
+                uploading={uploadingKind === 'pass'}
+                removingUrl={removingUrl}
+                chooseLabel={t('chooseFiles')}
+                addMoreLabel={t('addMoreFiles')}
+                uploadedCountLabel={t('uploadedCount', { count: passPhotoUrls.length })}
+                removeLabel={t('removeFile')}
+                onSelect={(files) => void uploadFiles('pass', files)}
+                onRemove={(url) => void removeUploadedFile('pass', url)}
+              />
             )}
           </div>
         </div>
@@ -840,7 +986,7 @@ export default function ResidentCheckFlow() {
           <p className="mb-4 text-sm text-muted-foreground">
             {t('cardPayAmountHint', { amount: formatUsd(total) })}
           </p>
-          {!submission.id_proof_url ? (
+          {!hasResidentCheckProof(submission.id_proof_url) ? (
             <p className="mb-4 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
               {t('cardPayUploadOptional')}
             </p>

@@ -12,6 +12,7 @@ import {
   recordResidentCheckCardPayment,
   syncCustomerFromResidentCheckSubmission,
 } from '@/lib/residentCheckSyncCustomer'
+import { syncResidentCheckProofsToReservationEvidence } from '@/lib/syncResidentCheckProofsToReservationEvidence'
 
 let stripeInstance: Stripe | null = null
 
@@ -118,6 +119,7 @@ export async function POST(request: NextRequest) {
         stripe_payment_status: pi.status,
       },
     })
+    await syncResidentCheckProofsToReservationEvidence(token.reservation_id)
     await markResidentCheckTokenCompleted(token.id)
 
     return NextResponse.json({

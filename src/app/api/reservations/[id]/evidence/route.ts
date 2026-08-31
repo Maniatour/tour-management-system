@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { syncResidentCheckProofsToReservationEvidence } from '@/lib/syncResidentCheckProofsToReservationEvidence'
 
 /** GET: 예약별 증거 첨부 목록 */
 export async function GET(
@@ -15,6 +16,8 @@ export async function GET(
     if (!reservationId) {
       return NextResponse.json({ error: 'reservation id required' }, { status: 400 })
     }
+
+    await syncResidentCheckProofsToReservationEvidence(reservationId)
 
     const { data, error } = await fromUntypedTable(sbOrErr, 'reservation_evidence_attachments')
       .select('id, file_path, file_name, image_url, created_at')

@@ -1,3 +1,4 @@
+import { hasResidentCheckProof } from '@/lib/residentCheckProofUrls'
 import type { ResidentCheckSubmissionRow } from '@/lib/residentCheckTokenService'
 
 /** Human-facing keys for missing steps (client maps to locale). */
@@ -8,12 +9,16 @@ export function residentCheckFinalizeBlockers(
   if (!s.agreed) out.push('agreed')
 
   if (s.residency === 'us_resident') {
-    if (!s.id_proof_url) out.push('id_proof')
+    if (!hasResidentCheckProof(s.id_proof_url)) out.push('id_proof')
     return out
   }
 
-  if (!s.id_proof_url) out.push('id_proof')
-  if (s.residency === 'non_resident' && s.has_annual_pass === true && !s.pass_photo_url) {
+  if (!hasResidentCheckProof(s.id_proof_url)) out.push('id_proof')
+  if (
+    s.residency === 'non_resident' &&
+    s.has_annual_pass === true &&
+    !hasResidentCheckProof(s.pass_photo_url)
+  ) {
     out.push('pass_photo')
   }
   const total = s.total_charge_usd_cents ?? 0

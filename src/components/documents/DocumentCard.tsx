@@ -11,8 +11,10 @@ import {
   Trash2,
   CheckCircle,
   XCircle,
-  Tag
+  Tag,
+  ChevronDown
 } from 'lucide-react'
+import { flattenCategoryTree, categoryOptionLabel } from '@/lib/documentCategories'
 import { format } from 'date-fns'
 import { ko } from 'date-fns/locale'
 
@@ -22,6 +24,7 @@ interface DocumentCategory {
   name_en: string
   color: string
   icon: string
+  parent_id?: string | null
 }
 
 interface Document {
@@ -53,18 +56,70 @@ interface Document {
 
 interface DocumentCardProps {
   document: Document
+  categories: DocumentCategory[]
   viewMode: 'grid' | 'list'
+  categoryUpdating?: boolean
+  onView: () => void
   onEdit: () => void
   onDelete: () => void
   onDownload: () => void
+  onCategoryChange: (categoryId: string) => void
+}
+
+function DocumentCategoryBadge({
+  categories,
+  value,
+  disabled,
+  onChange,
+}: {
+  categories: DocumentCategory[]
+  value?: string
+  disabled?: boolean
+  onChange: (categoryId: string) => void
+}) {
+  const options = flattenCategoryTree(categories)
+  const selected = options.find((category) => category.id === value)
+  const color = selected?.color || '#6B7280'
+  const label = selected?.name_ko || '미분류'
+
+  return (
+    <div className="relative inline-flex max-w-full">
+      <span
+        className="inline-flex max-w-full items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium"
+        style={{ backgroundColor: `${color}20`, color }}
+      >
+        <span className="break-words">{label}</span>
+        <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
+      </span>
+      <select
+        aria-label="문서 분류"
+        value={value || ''}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+      >
+        <option value="">미분류</option>
+        {options.map((category) => (
+          <option key={category.id} value={category.id}>
+            {categoryOptionLabel(category.name_ko, category.depth)}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
 }
 
 export default function DocumentCard({
   document,
+  categories,
   viewMode,
+  categoryUpdating = false,
+  onView,
   onEdit,
   onDelete,
-  onDownload
+  onDownload,
+  onCategoryChange,
 }: DocumentCardProps) {
   const [showActions, setShowActions] = useState(false)
 
@@ -98,6 +153,29 @@ export default function DocumentCard({
   }
 
   const expiryStatus = getExpiryStatus()
+  const categoryColor = document.category?.color || '#6B7280'
+
+  const viewButton = (
+    <button
+      type="button"
+      onClick={onView}
+      title="문서 보기"
+      aria-label="문서 보기"
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-ring"
+      style={{ backgroundColor: `${categoryColor}20` }}
+    >
+      <FileText className="h-5 w-5" style={{ color: categoryColor }} />
+    </button>
+  )
+
+  const categoryBadge = (
+    <DocumentCategoryBadge
+      categories={categories}
+      {...(document.category_id ? { value: document.category_id } : {})}
+      {...(categoryUpdating ? { disabled: true } : {})}
+      onChange={onCategoryChange}
+    />
+  )
 
   // 그리드 뷰 (모바일 컴팩트)
   if (viewMode === 'grid') {
@@ -106,23 +184,12 @@ export default function DocumentCard({
         <div className="p-4 sm:p-5 lg:p-6">
           {/* 헤더 */}
           <div className="flex items-start justify-between gap-2 mb-3 sm:mb-4">
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-              <div
-                className="p-1.5 sm:p-2 rounded-lg flex-shrink-0"
-                style={{ backgroundColor: document.category?.color + '20' }}
-              >
-                <FileText
-                  className="w-4 h-4 sm:w-5 sm:h-5"
-                  style={{ color: document.category?.color }}
-                />
-              </div>
+            <div className="flex items-start gap-2 sm:gap-3 min-w-0 flex-1">
+              {viewButton}
               <div className="min-w-0 flex-1">
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900 truncate">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 break-words leading-snug">
                   {document.title}
                 </h3>
-                {document.category && (
-                  <p className="text-xs sm:text-sm text-gray-500 truncate">{document.category.name_ko}</p>
-                )}
               </div>
             </div>
             <div className="relative flex-shrink-0">
@@ -213,8 +280,11 @@ export default function DocumentCard({
                 </span>
               </div>
             )}
-            <div className="flex items-center justify-between text-xs sm:text-sm text-gray-500">
-              <span>{formatFileSize(document.file_size)}</span>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm text-gray-500">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                {categoryBadge}
+                <span>{formatFileSize(document.file_size)}</span>
+              </div>
               <span>{document.file_type.toUpperCase()}</span>
             </div>
           </div>
@@ -229,27 +299,14 @@ export default function DocumentCard({
       <div className="p-3 sm:p-4">
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
           {/* 상단: 아이콘 + 제목 + 액션 (모바일 한 줄) */}
-          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-            <div
-              className="p-1.5 sm:p-2 rounded-lg flex-shrink-0"
-              style={{ backgroundColor: document.category?.color + '20' }}
-            >
-              <FileText
-                className="w-4 h-4 sm:w-5 sm:h-5"
-                style={{ color: document.category?.color }}
-              />
-            </div>
+          <div className="flex items-start gap-2 sm:gap-4 min-w-0">
+            {viewButton}
             <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-1 sm:gap-2">
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900 truncate">
-                  {document.title}
-                </h3>
-                {document.category && (
-                  <span className="text-xs sm:text-sm text-gray-500">({document.category.name_ko})</span>
-                )}
-              </div>
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 break-words leading-snug">
+                {document.title}
+              </h3>
               {document.description && (
-                <p className="text-gray-600 text-xs sm:text-sm mt-0.5 line-clamp-1">
+                <p className="text-gray-600 text-xs sm:text-sm mt-1 break-words">
                   {document.description}
                 </p>
               )}
@@ -282,6 +339,7 @@ export default function DocumentCard({
 
           {/* 하단: 만료일 + 파일정보 (모바일), 데스크톱에서는 위와 한 줄 */}
           <div className="flex flex-wrap items-center gap-3 sm:gap-4 pl-11 sm:pl-0 sm:flex-shrink-0 text-sm">
+            {categoryBadge}
             {document.expiry_date ? (
               <div className="flex items-center gap-1.5">
                 <span className="text-gray-600">

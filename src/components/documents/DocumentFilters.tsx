@@ -10,25 +10,13 @@ import {
   Grid3X3, 
   List,
   Calendar,
-  Folder,
   ChevronDown,
   ChevronUp
 } from 'lucide-react'
 
-interface DocumentCategory {
-  id: string
-  name_ko: string
-  name_en: string
-  color: string
-  icon: string
-}
-
 interface DocumentFiltersProps {
   searchQuery: string
   setSearchQuery: (query: string) => void
-  categories: DocumentCategory[]
-  selectedCategory: string
-  setSelectedCategory: (category: string) => void
   expiryFilter: string
   setExpiryFilter: (filter: string) => void
   sortBy: 'title' | 'expiry_date' | 'created_at'
@@ -42,9 +30,6 @@ interface DocumentFiltersProps {
 export default function DocumentFilters({
   searchQuery,
   setSearchQuery,
-  categories,
-  selectedCategory,
-  setSelectedCategory,
   expiryFilter,
   setExpiryFilter,
   sortBy,
@@ -58,23 +43,6 @@ export default function DocumentFilters({
 
   const filterContent = (
     <>
-      {/* 카테고리 필터 */}
-      <div className="flex items-center gap-2 min-w-0">
-        <Folder className="w-4 h-4 text-gray-500 flex-shrink-0" />
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          className="flex-1 min-w-0 px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-        >
-          <option value="all">모든 카테고리</option>
-          <option value="uncategorized">미분류</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name_ko}
-            </option>
-          ))}
-        </select>
-      </div>
       {/* 만료일 필터 */}
       <div className="flex items-center gap-2 min-w-0">
         <Calendar className="w-4 h-4 text-gray-500 flex-shrink-0" />

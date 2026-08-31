@@ -1,357 +1,261 @@
 'use client'
 
-import { useState } from 'react'
-import { 
-  X, 
-  Save, 
-  Loader2,
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  ArrowLeft,
   Folder,
-  Trash2
+  FolderPlus,
+  Loader2,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
-
-interface DocumentCategory {
-  id: string
-  name_ko: string
-  name_en: string
-  description_ko?: string
-  description_en?: string
-  color: string
-  icon: string
-  sort_order: number
-  is_active: boolean
-  created_at: string
-  updated_at: string
-}
+import { flattenCategoryTree } from '@/lib/documentCategories'
+import DocumentCategoryForm, {
+  type ManagedDocumentCategory,
+} from '@/components/documents/DocumentCategoryForm'
 
 interface DocumentCategoryModalProps {
   onClose: () => void
   onSuccess: () => void
-  editingCategory?: DocumentCategory | null
+  editingCategory?: ManagedDocumentCategory | null
 }
-
-const CATEGORY_COLORS = [
-  '#3B82F6', // blue
-  '#10B981', // emerald
-  '#F59E0B', // amber
-  '#8B5CF6', // violet
-  '#EF4444', // red
-  '#6B7280', // gray
-  '#F97316', // orange
-  '#84CC16', // lime
-  '#06B6D4', // cyan
-  '#EC4899', // pink
-]
-
-const CATEGORY_ICONS = [
-  'file-signature',
-  'shield-check',
-  'truck',
-  'id-card',
-  'calculator',
-  'folder',
-  'file-text',
-  'briefcase',
-  'home',
-  'users',
-  'settings',
-  'book',
-  'clipboard',
-  'archive',
-  'star'
-]
 
 export default function DocumentCategoryModal({
   onClose,
   onSuccess,
-  editingCategory
 }: DocumentCategoryModalProps) {
-  
-  const [loading, setLoading] = useState(false)
-  const [formData, setFormData] = useState({
-    name_ko: editingCategory?.name_ko || '',
-    name_en: editingCategory?.name_en || '',
-    description_ko: editingCategory?.description_ko || '',
-    description_en: editingCategory?.description_en || '',
-    color: editingCategory?.color || '#3B82F6',
-    icon: editingCategory?.icon || 'folder',
-    sort_order: editingCategory?.sort_order || 0,
-    is_active: editingCategory?.is_active ?? true
-  })
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [categories, setCategories] = useState<ManagedDocumentCategory[]>([])
+  const [docCounts, setDocCounts] = useState<Record<string, number>>({})
+  const [formOpen, setFormOpen] = useState(false)
+  const [editing, setEditing] = useState<ManagedDocumentCategory | null>(null)
+  const [lockedParentId, setLockedParentId] = useState<string | null>(null)
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (!formData.name_ko.trim() || !formData.name_en.trim()) {
-      toast.error('카테고리 이름을 입력해주세요.')
-      return
-    }
-
+  const load = useCallback(async () => {
     try {
       setLoading(true)
-      
-      const categoryData = {
-        name_ko: formData.name_ko.trim(),
-        name_en: formData.name_en.trim(),
-        description_ko: formData.description_ko.trim() || null,
-        description_en: formData.description_en.trim() || null,
-        color: formData.color,
-        icon: formData.icon,
-        sort_order: formData.sort_order,
-        is_active: formData.is_active
+      const [{ data: categoryData, error: categoryError }, { data: documentData, error: documentError }] =
+        await Promise.all([
+          supabase.from('document_categories').select('*').order('sort_order'),
+          supabase.from('documents').select('category_id'),
+        ])
+
+      if (categoryError) throw categoryError
+      if (documentError) throw documentError
+
+      setCategories((categoryData || []) as unknown as ManagedDocumentCategory[])
+      const counts: Record<string, number> = {}
+      for (const doc of documentData || []) {
+        const id = (doc as { category_id?: string | null }).category_id
+        if (!id) continue
+        counts[id] = (counts[id] || 0) + 1
       }
-      
-      if (editingCategory) {
-        // 카테고리 수정
-        const { error } = await supabase
-          .from('document_categories')
-          .update(categoryData)
-          .eq('id', editingCategory.id)
-        
-        if (error) throw error
-        
-        toast.success('카테고리가 수정되었습니다.')
-      } else {
-        // 새 카테고리 생성
-        const { error } = await supabase
-          .from('document_categories')
-          .insert(categoryData)
-        
-        if (error) throw error
-        
-        toast.success('카테고리가 생성되었습니다.')
-      }
-      
-      onSuccess()
+      setDocCounts(counts)
     } catch (error) {
-      console.error('카테고리 저장 오류:', error)
-      toast.error('카테고리 저장 중 오류가 발생했습니다.')
+      console.error('카테고리 로드 오류:', error)
+      toast.error('카테고리를 불러오는 중 오류가 발생했습니다.')
     } finally {
       setLoading(false)
     }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const treeRows = useMemo(() => flattenCategoryTree(categories), [categories])
+
+  const openCreate = (parentId: string | null = null) => {
+    setEditing(null)
+    setLockedParentId(parentId)
+    setFormOpen(true)
   }
 
-  const handleDelete = async () => {
-    if (!editingCategory) return
-    
-    if (!confirm('정말로 이 카테고리를 삭제하시겠습니까? 이 카테고리에 속한 문서들은 미분류로 변경됩니다.')) {
-      return
-    }
+  const openEdit = (category: ManagedDocumentCategory) => {
+    setEditing(category)
+    setLockedParentId(null)
+    setFormOpen(true)
+  }
+
+  const handleSaved = () => {
+    setFormOpen(false)
+    setEditing(null)
+    setLockedParentId(null)
+    void load()
+    onSuccess()
+  }
+
+  const handleDelete = async (category: ManagedDocumentCategory) => {
+    const childCount = categories.filter((item) => item.parent_id === category.id).length
+    const docCount = docCounts[category.id] || 0
+    const message = [
+      `"${category.name_ko}" 폴더를 삭제할까요?`,
+      docCount > 0 ? `이 폴더의 문서 ${docCount}개는 미분류가 됩니다.` : null,
+      childCount > 0 ? `하위 폴더 ${childCount}개는 한 단계 위로 이동합니다.` : null,
+    ]
+      .filter(Boolean)
+      .join('\n')
+
+    if (!confirm(message)) return
 
     try {
-      setLoading(true)
-      
-      const { error } = await supabase
+      setSaving(true)
+      const { error: reparentError } = await supabase
         .from('document_categories')
-        .delete()
-        .eq('id', editingCategory.id)
-      
+        .update({ parent_id: category.parent_id || null } as never)
+        .eq('parent_id', category.id)
+      if (reparentError) throw reparentError
+
+      const { error } = await supabase.from('document_categories').delete().eq('id', category.id)
       if (error) throw error
-      
+
       toast.success('카테고리가 삭제되었습니다.')
+      void load()
       onSuccess()
     } catch (error) {
       console.error('카테고리 삭제 오류:', error)
       toast.error('카테고리 삭제 중 오류가 발생했습니다.')
     } finally {
-      setLoading(false)
+      setSaving(false)
     }
   }
 
+  const title = formOpen
+    ? editing
+      ? '카테고리 수정'
+      : lockedParentId
+        ? '하위 폴더 추가'
+        : '새 카테고리'
+    : '카테고리 관리'
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
-        <div className="p-6">
-          {/* 헤더 */}
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">
-              {editingCategory ? '카테고리 수정' : '새 카테고리'}
-            </h2>
-            <button
-              onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-ring rounded"
-            >
-              <X className="w-5 h-5" />
-            </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-0 sm:p-4">
+      <div className="flex h-full w-full max-w-2xl flex-col overflow-hidden bg-white shadow-xl sm:h-auto sm:max-h-[90vh] sm:rounded-lg">
+        <div className="flex items-center justify-between gap-3 border-b px-4 py-3 sm:px-6 sm:py-4">
+          <div className="flex min-w-0 items-center gap-2">
+            {formOpen ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setFormOpen(false)
+                  setEditing(null)
+                  setLockedParentId(null)
+                }}
+                className="rounded p-1.5 text-gray-400 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-ring"
+                title="목록으로"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+            ) : null}
+            <h2 className="truncate text-lg font-semibold text-gray-900 sm:text-xl">{title}</h2>
           </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* 카테고리 이름 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  한국어 이름 *
-                </label>
-                <input
-                  type="text"
-                  value={formData.name_ko}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name_ko: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                  placeholder="예: 계약/협약"
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  영어 이름 *
-                </label>
-                <input
-                  type="text"
-                  value={formData.name_en}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name_en: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                  placeholder="예: Contracts/Agreements"
-                  required
-                />
-              </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+          {formOpen ? (
+            <DocumentCategoryForm
+              categories={categories}
+              editingCategory={editing}
+              lockedParentId={lockedParentId}
+              onCancel={() => {
+                setFormOpen(false)
+                setEditing(null)
+                setLockedParentId(null)
+              }}
+              onSaved={handleSaved}
+            />
+          ) : loading ? (
+            <div className="flex items-center justify-center py-12 text-sm text-gray-600">
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              카테고리를 불러오는 중...
             </div>
+          ) : (
+            <div className="space-y-4">
+              <button
+                type="button"
+                onClick={() => openCreate(null)}
+                className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                <Plus className="h-4 w-4" />
+                새 카테고리
+              </button>
 
-            {/* 설명 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  한국어 설명
-                </label>
-                <textarea
-                  value={formData.description_ko}
-                  onChange={(e) => setFormData(prev => ({ ...prev, description_ko: e.target.value }))}
-                  rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                  placeholder="카테고리에 대한 설명을 입력하세요"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  영어 설명
-                </label>
-                <textarea
-                  value={formData.description_en}
-                  onChange={(e) => setFormData(prev => ({ ...prev, description_en: e.target.value }))}
-                  rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                  placeholder="Enter description for this category"
-                />
-              </div>
+              {treeRows.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-gray-300 px-4 py-10 text-center text-sm text-gray-500">
+                  아직 카테고리가 없습니다. 새 카테고리를 만들어 주세요.
+                </div>
+              ) : (
+                <ul className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200">
+                  {treeRows.map((category) => (
+                    <li
+                      key={category.id}
+                      className="flex items-center gap-2 bg-white px-3 py-2.5 sm:px-4"
+                      style={{ paddingLeft: `${12 + category.depth * 20}px` }}
+                    >
+                      <span
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                        style={{ backgroundColor: `${category.color || '#6B7280'}20` }}
+                      >
+                        <Folder className="h-4 w-4" style={{ color: category.color || '#6B7280' }} />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-gray-900">
+                          {category.name_ko}
+                          {category.is_active === false ? (
+                            <span className="ml-2 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                              비활성
+                            </span>
+                          ) : null}
+                        </p>
+                        <p className="text-xs text-gray-500">문서 {docCounts[category.id] || 0}개</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => openCreate(category.id)}
+                          className="rounded p-1.5 text-gray-400 hover:bg-gray-50 hover:text-primary"
+                          title="하위 폴더 추가"
+                          disabled={saving}
+                        >
+                          <FolderPlus className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openEdit(category)}
+                          className="rounded p-1.5 text-gray-400 hover:bg-gray-50 hover:text-gray-700"
+                          title="수정"
+                          disabled={saving}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(category)}
+                          className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                          title="삭제"
+                          disabled={saving}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
-
-            {/* 색상 선택 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                색상
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {CATEGORY_COLORS.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, color }))}
-                    className={`w-8 h-8 rounded-full border-2 ${
-                      formData.color === color ? 'border-gray-800' : 'border-gray-300'
-                    }`}
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* 아이콘 선택 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                아이콘
-              </label>
-              <div className="grid grid-cols-5 gap-2">
-                {CATEGORY_ICONS.map((icon) => (
-                  <button
-                    key={icon}
-                    type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, icon }))}
-                    className={`p-2 rounded border ${
-                      formData.icon === icon 
-                        ? 'border-primary bg-primary/5' 
-                        : 'border-gray-300 hover:border-gray-400'
-                    }`}
-                  >
-                    <Folder className="w-4 h-4 mx-auto" />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 정렬 순서 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                정렬 순서
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={formData.sort_order}
-                onChange={(e) => setFormData(prev => ({ ...prev, sort_order: parseInt(e.target.value) || 0 }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-              />
-            </div>
-
-            {/* 활성 상태 */}
-            <div className="flex items-center space-x-3">
-              <input
-                type="checkbox"
-                id="is_active"
-                checked={formData.is_active}
-                onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
-                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
-              />
-              <label htmlFor="is_active" className="text-sm font-medium text-gray-700">
-                활성 상태
-              </label>
-            </div>
-
-            {/* 버튼 */}
-            <div className="flex items-center justify-between pt-6 border-t">
-              <div>
-                {editingCategory && (
-                  <button
-                    type="button"
-                    onClick={handleDelete}
-                    disabled={loading}
-                    className="px-4 py-2 text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    <span>삭제</span>
-                  </button>
-                )}
-              </div>
-              
-              <div className="flex items-center space-x-3">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  취소
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>저장 중...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-4 h-4" />
-                      <span>{editingCategory ? '수정' : '생성'}</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </form>
+          )}
         </div>
       </div>
     </div>

@@ -9,6 +9,7 @@ import {
   markResidentCheckTokenCompleted,
   syncCustomerFromResidentCheckSubmission,
 } from '@/lib/residentCheckSyncCustomer'
+import { syncResidentCheckProofsToReservationEvidence } from '@/lib/syncResidentCheckProofsToReservationEvidence'
 
 /**
  * POST /api/resident-check/finalize-zero
@@ -70,6 +71,7 @@ export async function POST(request: NextRequest) {
 
     const customerId = (reservation as { customer_id?: string | null } | null)?.customer_id ?? null
     await syncCustomerFromResidentCheckSubmission({ customerId, submission })
+    await syncResidentCheckProofsToReservationEvidence(token.reservation_id)
     await markResidentCheckTokenCompleted(token.id)
 
     return NextResponse.json({ ok: true })

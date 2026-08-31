@@ -11,6 +11,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { toast } from 'sonner'
+import { flattenCategoryTree, categoryOptionLabel } from '@/lib/documentCategories'
 
 interface DocumentCategory {
   id: string
@@ -18,6 +19,7 @@ interface DocumentCategory {
   name_en: string
   color: string
   icon: string
+  parent_id?: string | null
 }
 
 interface Document {
@@ -340,9 +342,9 @@ export default function DocumentUploadModal({
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
                 <option value="">카테고리 선택</option>
-                {categories.map((category) => (
+                {flattenCategoryTree(categories).map((category) => (
                   <option key={category.id} value={category.id}>
-                    {category.name_ko}
+                    {categoryOptionLabel(category.name_ko, category.depth)}
                   </option>
                 ))}
               </select>

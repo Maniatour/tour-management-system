@@ -8,6 +8,7 @@ import {
   computeResidentCheckUsdCents,
   type ResidentCheckResidency,
 } from '@/lib/residentCheckFees'
+import { serializeResidentCheckProofUrls, parseResidentCheckProofUrls } from '@/lib/residentCheckProofUrls'
 
 function isResidency(v: unknown): v is ResidentCheckResidency {
   return v === 'us_resident' || v === 'non_resident' || v === 'mixed'
@@ -95,10 +96,16 @@ export async function POST(request: NextRequest) {
       payment_method = null
     }
 
-    const pass_photo_url =
-      body.pass_photo_url !== undefined ? body.pass_photo_url : existing?.pass_photo_url ?? null
-    const id_proof_url =
-      body.id_proof_url !== undefined ? body.id_proof_url : existing?.id_proof_url ?? null
+    const pass_photo_url = serializeResidentCheckProofUrls(
+      parseResidentCheckProofUrls(
+        body.pass_photo_url !== undefined ? body.pass_photo_url : existing?.pass_photo_url ?? null
+      )
+    )
+    const id_proof_url = serializeResidentCheckProofUrls(
+      parseResidentCheckProofUrls(
+        body.id_proof_url !== undefined ? body.id_proof_url : existing?.id_proof_url ?? null
+      )
+    )
 
     const fees = computeResidentCheckUsdCents({
       residency: residencyInput,
@@ -115,8 +122,8 @@ export async function POST(request: NextRequest) {
       payment_method,
       pass_assistance_requested,
       has_annual_pass,
-      pass_photo_url: pass_photo_url ? String(pass_photo_url) : null,
-      id_proof_url: id_proof_url ? String(id_proof_url) : null,
+      pass_photo_url,
+      id_proof_url,
       nps_fee_usd_cents: fees.nps_fee_usd_cents,
       card_processing_fee_usd_cents: fees.card_processing_fee_usd_cents,
       total_charge_usd_cents: fees.total_charge_usd_cents,

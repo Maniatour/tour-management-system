@@ -18,9 +18,11 @@ import {
   PinOff,
   Play,
   Plus,
+  Search,
   Trash2,
   X,
 } from 'lucide-react'
+import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTeamBoardManualOptional } from '@/contexts/TeamBoardManualContext'
 import {
@@ -42,7 +44,11 @@ import {
   taskStatusLabel,
 } from '@/lib/teamBoard/taskPresentation'
 import { isAnnouncementFullyAcked } from '@/lib/teamBoard/teamBoardPermissions'
-import type { TeamBoardAnnouncement, TeamBoardTask } from '@/lib/teamBoard/workTypes'
+import type {
+  TeamBoardAnnouncement,
+  TeamBoardMember,
+  TeamBoardTask,
+} from '@/lib/teamBoard/workTypes'
 import {
   announcementToFormState,
   EMPTY_ANNOUNCEMENT_FORM,
@@ -68,6 +74,96 @@ const UPDATE_THROTTLE = 16
 const FAB_STACK_INDEX = 1
 
 type WorkTab = 'tasks' | 'announcements' | 'hub' | 'credentials'
+
+function workSearchHaystack(...parts: Array<string | null | undefined>): string {
+  return parts
+    .filter((part): part is string => !!part && part.trim().length > 0)
+    .join(' ')
+    .toLowerCase()
+}
+
+function taskMatchesQuery(
+  task: TeamBoardTask,
+  query: string,
+  members: TeamBoardMember[],
+  isKo: boolean
+): boolean {
+  if (!query) return true
+  const creator = getTeamMemberDisplayName(task.created_by, members)
+  const assignee = task.assigned_to ? getTeamMemberDisplayName(task.assigned_to, members) : ''
+  const haystack = workSearchHaystack(
+    task.title,
+    task.description,
+    (task.tags || []).join(' '),
+    creator,
+    assignee,
+    task.created_by,
+    task.assigned_to,
+    getTaskPriorityBadge(task.priority).label,
+    task.priority,
+    taskStatusLabel(task.status, isKo)
+  )
+  return haystack.includes(query)
+}
+
+function announcementMatchesQuery(
+  announcement: TeamBoardAnnouncement,
+  query: string,
+  members: TeamBoardMember[]
+): boolean {
+  if (!query) return true
+  const creator = getTeamMemberDisplayName(announcement.created_by, members)
+  const haystack = workSearchHaystack(
+    announcement.title,
+    announcement.content,
+    (announcement.tags || []).join(' '),
+    creator,
+    announcement.created_by,
+    announcement.priority
+  )
+  return haystack.includes(query)
+}
+
+function WorkWidgetSearchField({
+  locale,
+  value,
+  onChange,
+  placeholder,
+}: {
+  locale: string
+  value: string
+  onChange: (value: string) => void
+  placeholder: string
+}) {
+  const isKo = locale === 'ko'
+  return (
+    <div className="relative min-w-0 flex-1">
+      <Search
+        className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400"
+        aria-hidden
+      />
+      <input
+        {...BROWSER_AUTOFILL_OFF_PROPS}
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-md border border-gray-300 bg-white py-1.5 pl-7 pr-7 text-xs text-gray-900 placeholder:text-gray-400 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400 [&::-webkit-search-cancel-button]:hidden"
+        aria-label={placeholder}
+      />
+      {value.trim() ? (
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          aria-label={isKo ? '검색어 지우기' : 'Clear search'}
+        >
+          <X className="h-3 w-3" />
+        </button>
+      ) : null}
+    </div>
+  )
+}
 
 function readSavedSize(): FloatingPanelSize {
   if (typeof window === 'undefined') return DEFAULT_SIZE
@@ -168,6 +264,7 @@ export default function AdminWorkFloatingWidget({ locale }: AdminWorkFloatingWid
     pending: true,
     in_progress: true,
   })
+  const [itemSearch, setItemSearch] = useState('')
   const [showArchivedModal, setShowArchivedModal] = useState(false)
   const [archivedModalSection, setArchivedModalSection] = useState<'tasks' | 'announcements'>('tasks')
 
@@ -364,6 +461,7 @@ export default function AdminWorkFloatingWidget({ locale }: AdminWorkFloatingWid
     setAnnouncementFormOpen(false)
     setEditingTask(null)
     setEditingAnnouncement(null)
+    setItemSearch('')
   }
 
   const openCreateForm = () => {
@@ -426,6 +524,37 @@ export default function AdminWorkFloatingWidget({ locale }: AdminWorkFloatingWid
     setEditingAnnouncement(null)
     setAnnouncementForm({ ...EMPTY_ANNOUNCEMENT_FORM })
   }
+
+  const searchQuery = itemSearch.trim().toLowerCase()
+  const isSearchActive = searchQuery.length > 0
+
+  const filteredActiveTasks = useMemo(() => {
+    if (!searchQuery) return work.activeTasks
+    return work.activeTasks.filter((task) =>
+      taskMatchesQuery(task, searchQuery, work.teamMembers, isKo)
+    )
+  }, [isKo, searchQuery, work.activeTasks, work.teamMembers])
+
+  const filteredActiveAnnouncements = useMemo(() => {
+    if (!searchQuery) return work.activeAnnouncements
+    return work.activeAnnouncements.filter((announcement) =>
+      announcementMatchesQuery(announcement, searchQuery, work.teamMembers)
+    )
+  }, [searchQuery, work.activeAnnouncements, work.teamMembers])
+
+  const filteredArchivedTasks = useMemo(() => {
+    if (!searchQuery) return work.archivedTasks
+    return work.archivedTasks.filter((task) =>
+      taskMatchesQuery(task, searchQuery, work.teamMembers, isKo)
+    )
+  }, [isKo, searchQuery, work.archivedTasks, work.teamMembers])
+
+  const filteredArchivedAnnouncements = useMemo(() => {
+    if (!searchQuery) return work.archivedAnnouncements
+    return work.archivedAnnouncements.filter((announcement) =>
+      announcementMatchesQuery(announcement, searchQuery, work.teamMembers)
+    )
+  }, [searchQuery, work.archivedAnnouncements, work.teamMembers])
 
   if (!visible) return null
 
@@ -528,18 +657,31 @@ export default function AdminWorkFloatingWidget({ locale }: AdminWorkFloatingWid
 
   const tasksPanel = (
     <div className="space-y-2">
-      <div className="flex justify-end">
+      <div className="flex items-center gap-2">
+        <WorkWidgetSearchField
+          locale={locale}
+          value={itemSearch}
+          onChange={setItemSearch}
+          placeholder={isKo ? '제목·내용·작성자·태그 검색…' : 'Search title, notes, author, tags…'}
+        />
         <button
           type="button"
           onClick={() => openArchivedModal('tasks')}
-          className="rounded border border-gray-200 px-2 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50"
+          className="shrink-0 rounded border border-gray-200 px-2 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50"
         >
           {isKo ? '완료/삭제 보기' : 'Completed / deleted'}
         </button>
       </div>
+      {isSearchActive ? (
+        <p className="text-[10px] text-gray-500">
+          {isKo
+            ? `${filteredActiveTasks.length}개 업무`
+            : `${filteredActiveTasks.length} task${filteredActiveTasks.length === 1 ? '' : 's'}`}
+        </p>
+      ) : null}
       {(['pending', 'in_progress'] as const).map((status) => {
-        const items = work.activeTasks.filter((task) => task.status === status)
-        const expanded = expandedTaskSections[status]
+        const items = filteredActiveTasks.filter((task) => task.status === status)
+        const expanded = isSearchActive ? true : expandedTaskSections[status]
         return (
           <div key={status} className="rounded-md border border-gray-200 bg-gray-50/80">
             <button
@@ -559,7 +701,13 @@ export default function AdminWorkFloatingWidget({ locale }: AdminWorkFloatingWid
               <div className="space-y-1.5 px-2 pb-2">
                 {items.length === 0 ? (
                   <p className="py-3 text-center text-xs text-gray-400">
-                    {isKo ? '등록된 업무가 없습니다.' : 'No tasks.'}
+                    {isSearchActive
+                      ? isKo
+                        ? '검색 결과가 없습니다.'
+                        : 'No matching tasks.'
+                      : isKo
+                        ? '등록된 업무가 없습니다.'
+                        : 'No tasks.'}
                   </p>
                 ) : (
                   items.map((task) => {
@@ -673,21 +821,40 @@ export default function AdminWorkFloatingWidget({ locale }: AdminWorkFloatingWid
 
   const announcementsPanel = (
     <div className="space-y-2">
-      <div className="flex justify-end">
+      <div className="flex items-center gap-2">
+        <WorkWidgetSearchField
+          locale={locale}
+          value={itemSearch}
+          onChange={setItemSearch}
+          placeholder={isKo ? '제목·내용·작성자·태그 검색…' : 'Search title, notes, author, tags…'}
+        />
         <button
           type="button"
           onClick={() => openArchivedModal('announcements')}
-          className="rounded border border-gray-200 px-2 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50"
+          className="shrink-0 rounded border border-gray-200 px-2 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50"
         >
           {isKo ? '완료/삭제 보기' : 'Completed / deleted'}
         </button>
       </div>
-      {work.activeAnnouncements.length === 0 ? (
+      {isSearchActive ? (
+        <p className="text-[10px] text-gray-500">
+          {isKo
+            ? `${filteredActiveAnnouncements.length}개 전달사항`
+            : `${filteredActiveAnnouncements.length} note${filteredActiveAnnouncements.length === 1 ? '' : 's'}`}
+        </p>
+      ) : null}
+      {filteredActiveAnnouncements.length === 0 ? (
         <p className="py-8 text-center text-sm text-gray-500">
-          {isKo ? '등록된 전달사항이 없습니다.' : 'No announcements.'}
+          {isSearchActive
+            ? isKo
+              ? '검색 결과가 없습니다.'
+              : 'No matching notes.'
+            : isKo
+              ? '등록된 전달사항이 없습니다.'
+              : 'No announcements.'}
         </p>
       ) : (
-        work.activeAnnouncements.map((announcement) => {
+        filteredActiveAnnouncements.map((announcement) => {
           const acks = work.acksByAnnouncement[announcement.id] || []
           const ackEmails = acks.map((a) => a.ack_by)
           const mineAck = ackEmails.some(
@@ -866,14 +1033,36 @@ export default function AdminWorkFloatingWidget({ locale }: AdminWorkFloatingWid
               </button>
             </div>
             <div className="flex-1 overflow-y-auto px-4 py-3">
+              <div className="mb-3">
+                <WorkWidgetSearchField
+                  locale={locale}
+                  value={itemSearch}
+                  onChange={setItemSearch}
+                  placeholder={
+                    archivedModalSection === 'tasks'
+                      ? isKo
+                        ? '완료/삭제 업무 검색…'
+                        : 'Search completed / deleted tasks…'
+                      : isKo
+                        ? '완료/삭제 전달사항 검색…'
+                        : 'Search completed / deleted notes…'
+                  }
+                />
+              </div>
               {archivedModalSection === 'tasks' ? (
-                work.archivedTasks.length === 0 ? (
+                filteredArchivedTasks.length === 0 ? (
                   <p className="py-8 text-center text-xs text-gray-500">
-                    {isKo ? '완료/삭제된 업무가 없습니다.' : 'No completed or deleted tasks.'}
+                    {isSearchActive
+                      ? isKo
+                        ? '검색 결과가 없습니다.'
+                        : 'No matching tasks.'
+                      : isKo
+                        ? '완료/삭제된 업무가 없습니다.'
+                        : 'No completed or deleted tasks.'}
                   </p>
                 ) : (
                   <ul className="space-y-2">
-                    {work.archivedTasks.map((task) => {
+                    {filteredArchivedTasks.map((task) => {
                       const badge = getTaskPriorityBadge(task.priority)
                       return (
                         <li
@@ -913,13 +1102,19 @@ export default function AdminWorkFloatingWidget({ locale }: AdminWorkFloatingWid
                     })}
                   </ul>
                 )
-              ) : work.archivedAnnouncements.length === 0 ? (
+              ) : filteredArchivedAnnouncements.length === 0 ? (
                 <p className="py-8 text-center text-xs text-gray-500">
-                  {isKo ? '완료/삭제된 전달사항이 없습니다.' : 'No completed or deleted notes.'}
+                  {isSearchActive
+                    ? isKo
+                      ? '검색 결과가 없습니다.'
+                      : 'No matching notes.'
+                    : isKo
+                      ? '완료/삭제된 전달사항이 없습니다.'
+                      : 'No completed or deleted notes.'}
                 </p>
               ) : (
                 <ul className="space-y-2">
-                  {work.archivedAnnouncements.map((announcement) => (
+                  {filteredArchivedAnnouncements.map((announcement) => (
                     <li key={`arch-ann-${announcement.id}`} className="rounded-lg border border-gray-200 p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
