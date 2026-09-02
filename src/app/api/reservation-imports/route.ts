@@ -8,6 +8,7 @@ import {
   isKlookBookingConfirmedReservationEmail,
   isKlookOrderEmailSubjectForReservation,
   isZoomZoomTourNewBookingEmailSubject,
+  isNolTripleNewBookingEmailSubject,
 } from '@/lib/emailReservationParser'
 import { isZellePaymentSentEmail, ZELLE_PAYMENT_PLATFORM_KEY } from '@/lib/zellePaymentEmail'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -478,6 +479,13 @@ export async function GET(request: NextRequest) {
           extracted_data = { ...ext, is_booking_confirmed: true }
         }
       }
+      const looksNolTriple = isNolTripleNewBookingEmailSubject(r.subject)
+      if (looksNolTriple) {
+        const ext = extracted_data ?? ({} as ExtractedReservationData)
+        if (ext.is_booking_confirmed !== true) {
+          extracted_data = { ...ext, is_booking_confirmed: true }
+        }
+      }
       const { raw_body_text: _rawOmit, raw_body_html: _htmlOmit, ...rest } = r
       void _rawOmit
       void _htmlOmit
@@ -495,7 +503,8 @@ export async function GET(request: NextRequest) {
         platform_key:
           rest.platform_key ??
           (isKlookOrderEmailSubjectForReservation(r.subject) ? 'klook' : null) ??
-          (looksZoomZoom ? 'zoomzoom' : null),
+          (looksZoomZoom ? 'zoomzoom' : null) ??
+          (looksNolTriple ? 'nol' : null),
         extracted_data: extracted_data ?? r.extracted_data,
         reservation_exists_by_channel_rn: existsByChannelRn,
         reservation_exists_by_customer_match: existsByCustomerMatch,

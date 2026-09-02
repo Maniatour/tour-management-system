@@ -1,6 +1,10 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { findChoicePricingData } from '@/utils/choicePricingMatcher';
+import {
+  filterBookingTimeChoiceGroups,
+  usesBookingTimeChoiceCatalog,
+} from '@/lib/bookingTimeChoicePricing';
 
 interface ChoiceOption {
   id: string;
@@ -47,7 +51,7 @@ interface ChoiceCombination {
   }>;
 }
 
-export function useChoiceManagement(productId: string, selectedChannelId?: string, selectedChannelType?: string) {
+export function useChoiceManagement(productId: string, selectedChannelId?: string, selectedChannelType?: string, selectedVariantKey?: string) {
   const [choiceGroups, setChoiceGroups] = useState<ChoiceGroup[]>([]);
   const [choiceCombinations, setChoiceCombinations] = useState<ChoiceCombination[]>([]);
   const [showCombinationPricing, setShowCombinationPricing] = useState(false);
@@ -118,11 +122,14 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
       if (selectedChannelId && selectedChannelId.trim() !== '') {
         query = query.eq('channel_id', selectedChannelId);
       } else if (selectedChannelType === 'SELF') {
-        // SELF 타입이면 M00001 채널 우선 시도
         query = query.eq('channel_id', 'M00001');
-        // M00001이 없으면 B로 시작하는 채널 시도
-        // (이 부분은 주석 처리하고 M00001만 사용)
-        // query = query.like('channel_id', 'B%');
+      }
+
+      const variantKey = String(selectedVariantKey || 'default').trim() || 'default';
+      if (variantKey === 'default') {
+        query = query.or('variant_key.eq.default,variant_key.is.null');
+      } else {
+        query = query.eq('variant_key', variantKey);
       }
 
       const { data: pricingData, error: pricingError } = await query
@@ -137,6 +144,7 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
         productId,
         selectedChannelId,
         selectedChannelType,
+        selectedVariantKey,
         dataCount: pricingData?.length || 0,
         pricingDataSample: pricingData?.[0] ? {
           channel_id: pricingData[0].channel_id,
@@ -211,7 +219,14 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
           }
         };
         
-        generateCombinations(choicesData);
+        generateCombinations(
+          usesBookingTimeChoiceCatalog(selectedChannelId)
+            ? filterBookingTimeChoiceGroups(choicesData as Array<{
+                choice_group?: string | null
+                choice_group_ko?: string | null
+              }>)
+            : choicesData
+        );
         
         // 동적 가격에서 기존 가격 찾아서 적용 (초이스 변경 시에도 기존 가격 유지)
         if (pricingData && pricingData.length > 0) {
@@ -554,7 +569,10 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
           })
         }
 
-        const allCombinations = generateAllCombinations(legacyChoices.required)
+        const catalogLegacyGroups = usesBookingTimeChoiceCatalog(selectedChannelId)
+          ? filterBookingTimeChoiceGroups(legacyChoices.required)
+          : legacyChoices.required
+        const allCombinations = generateAllCombinations(catalogLegacyGroups)
         console.log('상품에서 생성된 모든 초이스 조합:', allCombinations)
         setChoiceCombinations(allCombinations as ChoiceCombination[])
         return
@@ -566,7 +584,7 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
     } catch (error) {
       console.error('초이스 조합 로드 실패:', error);
     }
-  }, [productId, selectedChannelId, selectedChannelType]);
+  }, [productId, selectedChannelId, selectedChannelType, selectedVariantKey]);
 
   const loadChoiceGroups = useCallback(async () => {
     try {
@@ -624,7 +642,11 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
           .filter((group) => group.options.length > 0);
 
         if (groupsFromTable.length > 0) {
-          setChoiceGroups(groupsFromTable);
+          setChoiceGroups(
+            usesBookingTimeChoiceCatalog(selectedChannelId)
+              ? filterBookingTimeChoiceGroups(groupsFromTable)
+              : groupsFromTable
+          );
           return;
         }
       }
@@ -651,12 +673,16 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
       const choiceGroupsFromJson: ChoiceGroup[] = productChoices.required || [];
 
       console.log('로드된 초이스 그룹:', choiceGroupsFromJson);
-      setChoiceGroups(choiceGroupsFromJson);
+      setChoiceGroups(
+        usesBookingTimeChoiceCatalog(selectedChannelId)
+          ? filterBookingTimeChoiceGroups(choiceGroupsFromJson)
+          : choiceGroupsFromJson
+      );
     } catch (error) {
       console.error('초이스 그룹 로드 실패:', error);
       setChoiceGroups([]);
     }
-  }, [productId]);
+  }, [productId, selectedChannelId]);
 
 
   const updateChoiceCombinationPrice = useCallback((

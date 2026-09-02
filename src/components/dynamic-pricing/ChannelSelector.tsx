@@ -45,6 +45,9 @@ interface ChannelSelectorProps {
   productVariants?: ProductVariant[];
   selectedVariant?: string;
   onVariantSelect?: (variantKey: string) => void;
+  channelPricingType?: 'separate' | 'single';
+  onChannelPricingTypeChange?: (pricingType: 'separate' | 'single') => void;
+  isSavingChannelPricingType?: boolean;
 }
 
 function resolvePricingStats(
@@ -78,6 +81,9 @@ export const ChannelSelector = memo(function ChannelSelector({
   productVariants = [],
   selectedVariant = 'default',
   onVariantSelect,
+  channelPricingType = 'separate',
+  onChannelPricingTypeChange,
+  isSavingChannelPricingType = false,
 }: ChannelSelectorProps) {
   const t = useTranslations('products.dynamicPricingPage');
   const [isOpen, setIsOpen] = useState(false);
@@ -272,6 +278,34 @@ export const ChannelSelector = memo(function ChannelSelector({
           </div>
         ) : null}
       </div>
+
+      {selectedChannel && onChannelPricingTypeChange ? (
+        <div className="rounded-xl border border-border/60 bg-white px-3 py-2.5">
+          <label
+            htmlFor="channel-pricing-type"
+            className="mb-1.5 block text-xs font-medium text-muted-foreground"
+          >
+            {t('pricingSaleMethod')}
+          </label>
+          <select
+            id="channel-pricing-type"
+            value={channelPricingType}
+            disabled={isSavingChannelPricingType}
+            onChange={(e) =>
+              onChannelPricingTypeChange(e.target.value as 'separate' | 'single')
+            }
+            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-wait disabled:opacity-70"
+          >
+            <option value="separate">{t('pricingTypeSeparate')}</option>
+            <option value="single">{t('pricingTypeSingle')}</option>
+          </select>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            {channelPricingType === 'single'
+              ? t('pricingTypeSingleHint')
+              : t('pricingTypeSeparateHint')}
+          </p>
+        </div>
+      ) : null}
 
       {showVariantSelector && onVariantSelect ? (
         <div className="rounded-xl border border-border/60 bg-white px-3 py-2.5">

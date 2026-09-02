@@ -7,6 +7,12 @@ import {
   getFallbackOtaAndNotIncluded,
   getNoChoiceOtaAndNotIncluded,
 } from '@/utils/choicePricingMatcher'
+import {
+  bookingTimeSelectedChoices,
+  combinationKeyFromSelectedChoices,
+  findBookingTimeChoicePricing,
+  toOtaAndNotIncluded,
+} from '@/lib/bookingTimeChoicePricing'
 
 const HOMEPAGE_CHANNEL_IDS = new Set(['M00001'])
 
@@ -165,11 +171,15 @@ export function resolveOtaFromChoicesPricing(
   selectedChoices: Array<{ choice_id?: string; option_id?: string; option_key?: string; id?: string }>
 ): { ota_sale_price: number; not_included_price?: number } | undefined {
   if (!choicesPricing || Object.keys(choicesPricing).length === 0) return undefined
-  const comboKey = (selectedChoices || [])
-    .map((c) => `${c.choice_id || c.id || ''}+${(c.option_id ?? c.option_key) ?? ''}`)
-    .filter((k) => k !== '+')
-    .sort()
-    .join('+')
+  const bookingChoices = bookingTimeSelectedChoices(selectedChoices)
+  const comboKey = combinationKeyFromSelectedChoices(bookingChoices)
+  const optionKeys = bookingChoices
+    .map((choice) => String(choice.option_key || '').trim())
+    .filter(Boolean)
+  const catalog = toOtaAndNotIncluded(
+    findBookingTimeChoicePricing(comboKey, choicesPricing, optionKeys)
+  )
+  if (catalog && catalog.ota_sale_price > 0) return catalog
   const fallback = comboKey
     ? getFallbackOtaAndNotIncluded({ id: comboKey, combination_key: comboKey }, choicesPricing)
     : undefined

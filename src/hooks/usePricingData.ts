@@ -43,7 +43,7 @@ interface PriceHistory {
   }>;
 }
 
-export function usePricingData(productId: string, selectedChannelId?: string, selectedChannelType?: string) {
+export function usePricingData(productId: string, selectedChannelId?: string, selectedChannelType?: string, selectedVariantKey?: string) {
   const [priceHistory, setPriceHistory] = useState<PriceHistory['byChannel']>({});
   const [showDetailedPrices, setShowDetailedPrices] = useState(false);
   const [pricingConfig, setPricingConfig] = useState({
@@ -89,6 +89,13 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
         query = query.eq('channel_id', selectedChannelId);
       } else if (selectedChannelType === 'SELF') {
         query = query.like('channel_id', 'B%');
+      }
+
+      const variantKey = String(selectedVariantKey || 'default').trim() || 'default';
+      if (variantKey === 'default') {
+        query = query.or('variant_key.eq.default,variant_key.is.null');
+      } else {
+        query = query.eq('variant_key', variantKey);
       }
 
       const { data, error } = await query
@@ -256,7 +263,7 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
     } catch (error) {
       console.error('가격 히스토리 로드 실패:', error);
     }
-  }, [productId, selectedChannelId, selectedChannelType]);
+  }, [productId, selectedChannelId, selectedChannelType, selectedVariantKey]);
 
   const updatePricingConfig = useCallback((updates: Partial<typeof pricingConfig>) => {
     setPricingConfig(prev => ({ ...prev, ...updates }));

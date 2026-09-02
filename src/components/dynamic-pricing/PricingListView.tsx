@@ -21,6 +21,7 @@ interface PricingListViewProps {
   onRefresh?: () => void;
   choiceCombinations?: ChoiceCombination[];
   channels?: Array<{ id: string; pricing_type?: string; [key: string]: any }>;
+  selectedVariant?: string;
 }
 
 export const PricingListView = memo(function PricingListView({
@@ -29,7 +30,8 @@ export const PricingListView = memo(function PricingListView({
   onDeleteRule,
   onRefresh,
   choiceCombinations = [],
-  channels = []
+  channels = [],
+  selectedVariant = 'default',
 }: PricingListViewProps) {
   const t = useTranslations('products.dynamicPricingPage');
   // 디버깅: choiceCombinations 로드 확인
@@ -57,14 +59,24 @@ export const PricingListView = memo(function PricingListView({
   const [saving, setSaving] = useState(false);
 
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const variantKey = selectedVariant || 'default';
+
+  const variantFilteredData = useMemo(() => {
+    return dynamicPricingData
+      .map(({ date, rules }) => ({
+        date,
+        rules: rules.filter((rule) => (rule.variant_key || 'default') === variantKey),
+      }))
+      .filter(({ rules }) => rules.length > 0);
+  }, [dynamicPricingData, variantKey]);
 
   // 날짜 필터 적용
   const filteredByDate = useMemo(() => {
-    return dynamicPricingData.filter(({ date }) => {
+    return variantFilteredData.filter(({ date }) => {
       if (dateFilter === 'past') return date < today;
       return date >= today;
     });
-  }, [dynamicPricingData, dateFilter, today]);
+  }, [variantFilteredData, dateFilter, today]);
 
   const totalPages = Math.max(1, Math.ceil(filteredByDate.length / ITEMS_PER_PAGE));
   const paginatedData = useMemo(() => {
@@ -74,7 +86,7 @@ export const PricingListView = memo(function PricingListView({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [dateFilter]);
+  }, [dateFilter, variantKey]);
   const formatDate = (dateString: string) => {
     // 날짜 문자열을 직접 파싱하여 시간대 변환 방지 (YYYY-MM-DD 형식)
     const [year, month, day] = dateString.split('-');

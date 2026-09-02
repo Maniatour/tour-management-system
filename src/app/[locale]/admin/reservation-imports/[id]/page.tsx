@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Loader2, Hash, Calendar, Users, User, Mail, Phone, Globe, MapPin, DollarSign, ChevronDown, ChevronUp, FileText, RefreshCw, MessageSquare } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { getChannelIdForPlatform } from '@/lib/platformChannelMapping'
+import { getChannelIdForPlatform, isNolTripleChannelName } from '@/lib/platformChannelMapping'
 import {
   isManiatourHomepageBookingEmail,
   isCancellationRequestEmailSubject,
@@ -12,6 +12,8 @@ import {
   isMyrealtripNewBookingEmailSubject,
   isMyrealtripChannelFromEmail,
   isZoomZoomTourNewBookingEmailSubject,
+  isNolTripleNewBookingEmailSubject,
+  isNolTripleChannelFromEmail,
 } from '@/lib/emailReservationParser'
 import {
   extractPriceFromEmailBodyForImport,
@@ -140,7 +142,10 @@ export default function ReservationImportDetailPage() {
       (isMyrealtripChannelFromEmail(data.source_email) || isMyrealtripNewBookingEmailSubject(data.subject)
         ? 'myrealtrip'
         : null) ||
-      (isZoomZoomTourNewBookingEmailSubject(data.subject) ? 'zoomzoom' : null)
+      (isZoomZoomTourNewBookingEmailSubject(data.subject) ? 'zoomzoom' : null) ||
+      (isNolTripleChannelFromEmail(data.source_email) || isNolTripleNewBookingEmailSubject(data.subject)
+        ? 'nol'
+        : null)
     const rawCombinedForGyG = `${data.subject || ''}\n${data.raw_body_text || ''}\n${data.raw_body_html || ''}`
     // GetYourGuide: DB에 옛날 extracted_data만 있으면 고객 정보는 있는데 product_id/초이스가 비어 재파싱이 스킵되던 경우 보완
     const gygLikelyHasVariantLine =
@@ -182,6 +187,9 @@ export default function ReservationImportDetailPage() {
         (effectiveKey === 'tripcom' && (!ext.customer_name || ext.adults == null)) ||
         (effectiveKey === 'zoomzoom' &&
           (!ext.tour_date || ext.adults == null || !ext.product_name)) ||
+        (effectiveKey === 'nol' &&
+          isNolTripleNewBookingEmailSubject(data.subject) &&
+          (!ext.product_id || ext.adults == null || !ext.tour_date)) ||
         maniatourNeedsPickup ||
         maniatourNeedsIntlPhone ||
         maniatourLowerMisparsedAsX) ||
@@ -206,16 +214,21 @@ export default function ReservationImportDetailPage() {
       (isMyrealtripChannelFromEmail(data.source_email) || isMyrealtripNewBookingEmailSubject(data.subject)
         ? 'myrealtrip'
         : null) ||
-      (isZoomZoomTourNewBookingEmailSubject(data.subject) ? 'zoomzoom' : null)
+      (isZoomZoomTourNewBookingEmailSubject(data.subject) ? 'zoomzoom' : null) ||
+      (isNolTripleChannelFromEmail(data.source_email) || isNolTripleNewBookingEmailSubject(data.subject)
+        ? 'nol'
+        : null)
     const ch = channelsListRef.current
     const channelsSafe = Array.isArray(ch) ? ch : []
     const mappedChannelId = effectiveKeyForChannel ? getChannelIdForPlatform(effectiveKeyForChannel) : null
-    const zoomZoomForInitial =
+    const namedChannelForInitial =
       effectiveKeyForChannel === 'zoomzoom'
         ? channelsSafe.find((c: { name?: string }) => /줌줌/.test((c.name || '').trim()))
-        : null
-    const channelForImport = zoomZoomForInitial
-      ? zoomZoomForInitial
+        : effectiveKeyForChannel === 'nol'
+          ? channelsSafe.find((c: { name?: string }) => isNolTripleChannelName(c.name))
+          : null
+    const channelForImport = namedChannelForInitial
+      ? namedChannelForInitial
       : mappedChannelId
         ? channelsSafe.find((c: { id: string; name?: string }) => c.id === mappedChannelId || (c.name || '').toLowerCase().includes(mappedChannelId))
         : effectiveKeyForChannel
@@ -266,7 +279,10 @@ export default function ReservationImportDetailPage() {
     (row && (isMyrealtripChannelFromEmail(row.source_email) || isMyrealtripNewBookingEmailSubject(row.subject))
       ? 'myrealtrip'
       : null) ||
-    (row && isZoomZoomTourNewBookingEmailSubject(row.subject) ? 'zoomzoom' : null)
+    (row && isZoomZoomTourNewBookingEmailSubject(row.subject) ? 'zoomzoom' : null) ||
+    (row && (isNolTripleChannelFromEmail(row.source_email) || isNolTripleNewBookingEmailSubject(row.subject))
+      ? 'nol'
+      : null)
 
   /** Viator만 Net Rate ↔ 채널 정산 비교 쿠폰 경로 사용 */
   const isViatorEmailImport =
@@ -275,12 +291,14 @@ export default function ReservationImportDetailPage() {
   useEffect(() => {
     if (!effectivePlatformKey || !channelsSafe.length || form.channel_id) return
     const mappedId = getChannelIdForPlatform(effectivePlatformKey)
-    const zoomZoomChannel =
+    const namedChannel =
       effectivePlatformKey === 'zoomzoom'
         ? channelsSafe.find((c: { name?: string }) => /줌줌/.test((c.name || '').trim()))
-        : undefined
-    const channel = zoomZoomChannel
-      ? zoomZoomChannel
+        : effectivePlatformKey === 'nol'
+          ? channelsSafe.find((c: { name?: string }) => isNolTripleChannelName(c.name))
+          : undefined
+    const channel = namedChannel
+      ? namedChannel
       : mappedId
         ? channelsSafe.find((c: { id: string; name?: string }) => c.id === mappedId || c.name?.toLowerCase().includes(mappedId))
         : channelsSafe.find((c: { id: string; name?: string }) => c.name?.toLowerCase().includes(effectivePlatformKey.toLowerCase()))
@@ -617,6 +635,8 @@ export default function ReservationImportDetailPage() {
                     )
                   : effectivePlatformKey === 'zoomzoom'
                     ? '줌줌투어'
+                    : effectivePlatformKey === 'nol'
+                      ? 'NOL (트리플)'
                     : (effectivePlatformKey || '이메일')}
               </span>
               {row.subject && (
@@ -813,31 +833,30 @@ export default function ReservationImportDetailPage() {
                 </div>
                 {emailBodyView === 'preview' ? (
                   isEmailHtml && emailPreview.htmlSrcDoc ? (
-                    <div className="bg-gray-100 p-4 flex-1 min-h-0 overflow-auto">
+                    <div className="bg-gray-100 p-4 h-[32rem] max-h-[60vh] overflow-auto">
                       <iframe
                         title="이메일 미리보기"
                         sandbox="allow-same-origin allow-popups"
                         srcDoc={emailPreview.htmlSrcDoc}
-                        className="w-full min-h-[720px] border-0 rounded-lg bg-white shadow-sm"
-                        style={{ height: '720px' }}
+                        className="w-full min-h-full border-0 rounded-lg bg-white shadow-sm"
                         onLoad={(e) => {
                           const frame = e.currentTarget
                           const doc = frame.contentDocument
                           if (!doc?.documentElement) return
                           const h = Math.max(doc.documentElement.scrollHeight, doc.body?.scrollHeight ?? 0)
-                          if (h > 0) frame.style.height = `${Math.min(Math.max(h + 24, 720), 2400)}px`
+                          if (h > 0) frame.style.height = `${h + 24}px`
                         }}
                       />
                     </div>
                   ) : (
-                    <div className="bg-white p-5 sm:p-6 flex-1 min-h-[520px] overflow-auto">
+                    <div className="bg-white p-5 sm:p-6 h-[32rem] max-h-[60vh] overflow-auto">
                       <pre className="text-sm text-gray-800 whitespace-pre-wrap font-sans break-words leading-relaxed m-0">
                         {emailPreview.plainText || '본문을 표시할 수 없습니다.'}
                       </pre>
                     </div>
                   )
                 ) : (
-                  <div className="p-0 flex-1 min-h-[520px] overflow-auto bg-[#1e1e1e]">
+                  <div className="p-0 h-[32rem] max-h-[60vh] overflow-auto bg-[#1e1e1e]">
                     <pre className="p-4 text-xs text-[#d4d4d4] whitespace-pre-wrap font-mono break-words leading-relaxed block m-0">
                       <code className="text-[#d4d4d4]">{emailPreview.sourceCode}</code>
                     </pre>

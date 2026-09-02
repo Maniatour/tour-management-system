@@ -15,6 +15,8 @@ import {
   isMyrealtripChannelFromEmail,
   isTripComNewOrderEmailSubject,
   isZoomZoomTourNewBookingEmailSubject,
+  isNolTripleNewBookingEmailSubject,
+  isNolTripleChannelFromEmail,
   isKlookOrderEmailSubjectForReservation,
 } from '@/lib/emailReservationParser'
 import { isZellePaymentSentEmail } from '@/lib/zellePaymentEmail'
@@ -338,6 +340,12 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const isZoomZoomRow = (row: ImportItem) =>
     row.platform_key === 'zoomzoom' || isZoomZoomTourNewBookingEmailSubject(row.subject)
 
+  /** NOL(트리플): platform_key · 발신 nol-universe · Booking Received 제목 */
+  const isNolTripleRow = (row: ImportItem) =>
+    row.platform_key === 'nol' ||
+    isNolTripleChannelFromEmail(row.source_email) ||
+    isNolTripleNewBookingEmailSubject(row.subject)
+
   /** GetYourGuide: platform_key 또는 발신 */
   const isGetYourGuideRow = (row: ImportItem) =>
     (row.platform_key || '').toLowerCase() === 'getyourguide' ||
@@ -352,6 +360,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     if (isGetYourGuideRow(row)) return 'GYG'
     if (isTripComRow(row)) return 'Trip.com'
     if (isZoomZoomRow(row)) return '줌줌투어'
+    if (isNolTripleRow(row)) return 'NOL (트리플)'
     const base = row.platform_key ?? '-'
     if (base === 'klook') {
       return formatKlookReservationImportPlatformLabel(
@@ -406,7 +415,8 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     isManiatourHomepageBookingEmail(row.source_email, row.subject) ||
     isGyGBookingRow(row) ||
     isTripComBookingRow(row) ||
-    isZoomZoomRow(row)
+    isZoomZoomRow(row) ||
+    (isNolTripleRow(row) && isNolTripleNewBookingEmailSubject(row.subject))
 
   const filteredItems = (
     activeTab === 'booking'
@@ -439,6 +449,8 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
         if (!isMyrealtripRow(row)) return false
       } else if (platformFilter === 'tripcom') {
         if (!isTripComRow(row)) return false
+      } else if (platformFilter === 'nol') {
+        if (!isNolTripleRow(row)) return false
       } else if (platform !== platformFilter) {
         return false
       }
@@ -498,6 +510,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     { value: 'tidesquare', label: '타이드스퀘어' },
     { value: 'myrealtrip', label: 'MYT' },
     { value: 'tripcom', label: 'Trip.com' },
+    { value: 'nol', label: 'NOL (트리플)' },
     { value: 'tripadvisor', label: 'Tripadvisor' },
     { value: 'booking', label: 'Booking' },
     { value: 'expedia', label: 'Expedia' },

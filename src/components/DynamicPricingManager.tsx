@@ -27,6 +27,11 @@ import { usePriceCalculation } from '@/hooks/usePriceCalculation';
 import { findHomepageChoiceData } from '@/utils/homepagePriceCalculator';
 import { couponMatchesReservationChannel } from '@/utils/homepageBookingChannel';
 import { getOtaSalePriceWithFallback } from '@/utils/choicePricingMatcher';
+import { pickLatestPricingRule } from '@/lib/pricingRuleResolver';
+import {
+  isDeferredAtBookingChoiceGroup,
+  usesBookingTimeChoiceCatalog,
+} from '@/lib/bookingTimeChoicePricing';
 import {
   type ChoicePricingMode,
   expandOptionsPricingToChoicesPricing,
@@ -95,6 +100,7 @@ interface DynamicPricingManagerProps {
   productId: string;
   onSave?: (rule: SimplePricingRule | { type: 'batch_complete'; count: number }) => void;
   isNewProduct?: boolean;
+  onHomepagePricingTypeChange?: (pricingType: 'single' | 'separate') => void;
 }
 
 const isResidencyChoiceGroupName = (name: string) => {
@@ -112,7 +118,8 @@ const isAntelopeChoiceGroupName = (name: string) =>
 
 export default function DynamicPricingManager({ 
   productId, 
-  onSave
+  onSave,
+  onHomepagePricingTypeChange,
 }: DynamicPricingManagerProps) {
   const t = useTranslations('products.dynamicPricingPage');
   const locale = useLocale();
@@ -182,7 +189,8 @@ export default function DynamicPricingManager({
     handleMultiChannelToggle,
     handleChannelToggle,
     handleSelectAllChannelsInType,
-    loadChannels
+    loadChannels,
+    patchChannel,
   } = useChannelManagement();
 
   // 디버깅: 채널 변경 시에만 로그 출력
@@ -207,6 +215,18 @@ export default function DynamicPricingManager({
     }
   }, [isLoadingChannels, selectedChannel, channelGroups, handleChannelSelect]);
 
+  const [selectedVariant, setSelectedVariant] = useState<string>('default');
+  const [productVariants, setProductVariants] = useState<Array<{
+    variant_key: string;
+    variant_name_ko?: string | null;
+    variant_name_en?: string | null;
+  }>>([]);
+  const [variantsByChannel, setVariantsByChannel] = useState<Record<string, Array<{
+    variant_key: string;
+    variant_name_ko?: string | null;
+    variant_name_en?: string | null;
+  }>>>({});
+
   const {
     saving,
     saveMessage,
@@ -228,7 +248,7 @@ export default function DynamicPricingManager({
     choiceGroups,
     choiceCombinations,
     updateChoiceCombinationPrice
-  } = useChoiceManagement(productId, selectedChannel, selectedChannelType);
+  } = useChoiceManagement(productId, selectedChannel, selectedChannelType, selectedVariant);
 
   /** 테이블 뷰용 초이스 그룹 컬럼 (옵션 없는 그룹은 숨김) */
   const choiceGroupColumns = useMemo(() => {
@@ -242,6 +262,10 @@ export default function DynamicPricingManager({
 
     const fromGroups = (choiceGroups || [])
       .filter((group) => Array.isArray(group.options) && group.options.length > 0)
+      .filter((group) => {
+        if (!usesBookingTimeChoiceCatalog(selectedChannel)) return true
+        return !isDeferredAtBookingChoiceGroup(group.name_ko, group.name)
+      })
       .map((group, index) => {
         const nameKo = group.name_ko || group.name || '';
         const nameEn = group.name || group.name_ko || '';
@@ -256,7 +280,12 @@ export default function DynamicPricingManager({
 
     const firstDetails = choiceCombinations[0]?.combination_details;
     if (firstDetails && firstDetails.length > 0) {
-      return firstDetails.map((detail, index) => {
+      return firstDetails
+        .filter((detail) => {
+          if (!usesBookingTimeChoiceCatalog(selectedChannel)) return true
+          return !isDeferredAtBookingChoiceGroup(detail.groupNameKo, detail.groupName)
+        })
+        .map((detail, index) => {
         const nameKo = detail.groupNameKo || detail.groupName || '';
         const nameEn = detail.groupName || detail.groupNameKo || '';
         return {
@@ -268,12 +297,12 @@ export default function DynamicPricingManager({
     }
 
     return [];
-  }, [choiceGroups, choiceCombinations, t, isKoUi]);
+  }, [choiceGroups, choiceCombinations, t, isKoUi, selectedChannel]);
 
   const {
     pricingConfig,
     updatePricingConfig
-  } = usePricingData(productId, selectedChannel, selectedChannelType);
+  } = usePricingData(productId, selectedChannel, selectedChannelType, selectedVariant);
 
   const {
     pricingConfig: calculationConfig,
@@ -303,20 +332,6 @@ export default function DynamicPricingManager({
     markup_percent: 0,
     choices_pricing: {}
   });
-
-  // Variant 관리 상태
-  const [selectedVariant, setSelectedVariant] = useState<string>('default');
-  const [productVariants, setProductVariants] = useState<Array<{
-    variant_key: string;
-    variant_name_ko?: string | null;
-    variant_name_en?: string | null;
-  }>>([]);
-  /** product_id 기준 채널별 variant (채널 전환 시 재조회 race로 default만 보이는 문제 방지) */
-  const [variantsByChannel, setVariantsByChannel] = useState<Record<string, Array<{
-    variant_key: string;
-    variant_name_ko?: string | null;
-    variant_name_en?: string | null;
-  }>>>({});
 
   // 채널별 포함/불포함 내역 상태
   const [channelIncludedNotIncluded, setChannelIncludedNotIncluded] = useState<{
@@ -691,6 +706,7 @@ export default function DynamicPricingManager({
 
   // 홈페이지 가격 타입 상태
   const [homepagePricingType, setHomepagePricingType] = useState<'single' | 'separate'>('separate');
+  const [savingChannelPricingType, setSavingChannelPricingType] = useState(false);
 
   // 상품 sub_category 상태
   const [productSubCategory, setProductSubCategory] = useState<string | null>(null);
@@ -728,43 +744,134 @@ export default function DynamicPricingManager({
     loadProductBasePrice();
   }, [productId]);
 
-  // 홈페이지(M00001) 채널의 가격 설정 불러오기 (고정값)
+  const selectedChannelRecord = useMemo(() => {
+    if (!selectedChannel) return null;
+    for (const group of channelGroups) {
+      const found = group.channels.find((ch) => ch.id === selectedChannel);
+      if (found) return found;
+    }
+    return null;
+  }, [selectedChannel, channelGroups]);
+
+  const selectedChannelPricingType: 'separate' | 'single' = useMemo(() => {
+    const channelType =
+      ((selectedChannelRecord as { pricing_type?: string } | null)?.pricing_type || 'separate') === 'single'
+        ? 'single'
+        : 'separate';
+    if (selectedChannel === 'M00001' && homepagePricingType === 'single') {
+      return 'single';
+    }
+    return channelType;
+  }, [selectedChannel, selectedChannelRecord, homepagePricingType]);
+
+  const handleChannelPricingTypeChange = useCallback(
+    async (nextType: 'separate' | 'single') => {
+      if (!selectedChannel || nextType === selectedChannelPricingType) return;
+
+      const previousChannelType =
+        ((selectedChannelRecord as { pricing_type?: string } | null)?.pricing_type || 'separate') === 'single'
+          ? 'single'
+          : 'separate';
+      const previousHomepageType = homepagePricingType;
+      const isHomepageChannel = selectedChannel === 'M00001';
+
+      patchChannel(selectedChannel, { pricing_type: nextType });
+      if (isHomepageChannel) {
+        setHomepagePricingType(nextType);
+      }
+
+      setSavingChannelPricingType(true);
+      try {
+        const { error } = await supabase
+          .from('channels')
+          .update({ pricing_type: nextType } as never)
+          .eq('id', selectedChannel);
+        if (error) throw error;
+
+        if (isHomepageChannel) {
+          const { error: productError } = await supabase
+            .from('products')
+            .update({ homepage_pricing_type: nextType } as never)
+            .eq('id', productId);
+          if (productError) throw productError;
+          onHomepagePricingTypeChange?.(nextType);
+        }
+      } catch (error) {
+        console.error('채널 가격 판매 방식 저장 오류:', error);
+        patchChannel(selectedChannel, { pricing_type: previousChannelType });
+        if (isHomepageChannel) {
+          setHomepagePricingType(previousHomepageType);
+        }
+        alert(t('pricingTypeUpdateError'));
+      } finally {
+        setSavingChannelPricingType(false);
+      }
+    },
+    [
+      selectedChannel,
+      selectedChannelPricingType,
+      selectedChannelRecord,
+      homepagePricingType,
+      patchChannel,
+      productId,
+      onHomepagePricingTypeChange,
+      t,
+    ]
+  );
+
+  // 홈페이지(M00001) 채널의 가격 설정 불러오기 — 선택된 Variant 기준
   useEffect(() => {
     const loadHomepagePricingConfig = async () => {
       if (!productId) return;
-      
+      const variantKey = String(selectedVariant || 'default').trim() || 'default';
+
       try {
-        // M00001 채널의 최신 가격 설정 가져오기 (choices_pricing이 null이 아닌 레코드 우선)
-        const { data, error } = await supabase
+        let query = supabase
           .from('dynamic_pricing')
           .select('markup_amount, markup_percent, choices_pricing, date')
           .eq('product_id', productId)
           .eq('channel_id', 'M00001')
-          .not('choices_pricing', 'is', null)
+          .not('choices_pricing', 'is', null);
+
+        query =
+          variantKey === 'default'
+            ? query.or('variant_key.eq.default,variant_key.is.null')
+            : query.eq('variant_key', variantKey);
+
+        const { data, error } = await query
           .order('updated_at', { ascending: false })
           .limit(1)
           .maybeSingle();
-        
-        // choices_pricing이 null이 아닌 레코드가 없으면, null 포함하여 다시 시도
-        if (!data || !(data as any).choices_pricing) {
-          const { data: fallbackData, error: fallbackError } = await supabase
+
+        if (!data || !(data as { choices_pricing?: unknown }).choices_pricing) {
+          let fallbackQuery = supabase
             .from('dynamic_pricing')
             .select('markup_amount, markup_percent, choices_pricing, date')
             .eq('product_id', productId)
-            .eq('channel_id', 'M00001')
+            .eq('channel_id', 'M00001');
+
+          fallbackQuery =
+            variantKey === 'default'
+              ? fallbackQuery.or('variant_key.eq.default,variant_key.is.null')
+              : fallbackQuery.eq('variant_key', variantKey);
+
+          const { data: fallbackData, error: fallbackError } = await fallbackQuery
             .order('updated_at', { ascending: false })
             .limit(1)
             .maybeSingle();
-          
+
           if (fallbackError && fallbackError.code !== 'PGRST116') {
             console.error('홈페이지 가격 설정 로드 오류:', fallbackError);
             return;
           }
-          
+
           if (fallbackData) {
-            const processedData = fallbackData as any;
-            
-            // choices_pricing 처리
+            const processedData = fallbackData as {
+              markup_amount?: number;
+              markup_percent?: number;
+              choices_pricing?: unknown;
+              date?: string;
+            };
             let choicesPricing = processedData.choices_pricing;
             if (typeof choicesPricing === 'string') {
               try {
@@ -774,32 +881,28 @@ export default function DynamicPricingManager({
                 choicesPricing = {};
               }
             }
-            
-            console.log('✅ 홈페이지 가격 설정 로드 성공 (M00001, fallback):', {
-              markup_amount: processedData.markup_amount,
-              markup_percent: processedData.markup_percent,
-              choices_pricing_keys: Object.keys(choicesPricing || {}),
-              choices_pricing_sample: Object.entries(choicesPricing || {}).slice(0, 2),
-              date: processedData.date
-            });
-            
+
             setHomepagePricingConfig({
               markup_amount: processedData.markup_amount || 0,
               markup_percent: processedData.markup_percent || 0,
-              choices_pricing: (choicesPricing as Record<string, any>) || {}
+              choices_pricing: (choicesPricing as Record<string, unknown>) || {},
             });
             return;
           }
         }
 
-        if (error && error.code !== 'PGRST116') { // PGRST116은 데이터 없음 에러
+        if (error && error.code !== 'PGRST116') {
           console.error('홈페이지 가격 설정 로드 오류:', error);
           return;
         }
 
         if (data) {
-          const dataAny = data as any;
-          // choices_pricing이 문자열인 경우 파싱
+          const dataAny = data as {
+            markup_amount?: number;
+            markup_percent?: number;
+            choices_pricing?: unknown;
+            date?: string;
+          };
           let choicesPricing = dataAny.choices_pricing;
           if (typeof choicesPricing === 'string') {
             try {
@@ -809,27 +912,17 @@ export default function DynamicPricingManager({
               choicesPricing = {};
             }
           }
-          
-          console.log('✅ 홈페이지 가격 설정 로드 성공 (M00001):', {
-            markup_amount: dataAny.markup_amount,
-            markup_percent: dataAny.markup_percent,
-            choices_pricing_keys: Object.keys(choicesPricing || {}),
-            choices_pricing_sample: Object.entries(choicesPricing || {}).slice(0, 2),
-            date: dataAny.date
-          });
-          
+
           setHomepagePricingConfig({
             markup_amount: dataAny.markup_amount || 0,
             markup_percent: dataAny.markup_percent || 0,
-            choices_pricing: (choicesPricing as Record<string, any>) || {}
+            choices_pricing: (choicesPricing as Record<string, unknown>) || {},
           });
         } else {
-          console.warn('⚠️ 홈페이지 가격 설정 데이터 없음 (M00001 채널)');
-          // 데이터가 없으면 기본값 유지
           setHomepagePricingConfig({
             markup_amount: 0,
             markup_percent: 0,
-            choices_pricing: {}
+            choices_pricing: {},
           });
         }
       } catch (error) {
@@ -838,7 +931,7 @@ export default function DynamicPricingManager({
     };
 
     loadHomepagePricingConfig();
-  }, [productId]);
+  }, [productId, selectedVariant]);
 
   // 날짜 범위 선택 핸들러
   const handleDateRangeSelection = useCallback((selection: DateRangeSelection) => {
@@ -992,27 +1085,34 @@ export default function DynamicPricingManager({
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [lastLoadedPricing, setLastLoadedPricing] = useState<string>('');
   
-  // 채널 변경 시 초기 로드 플래그 리셋
+  // 채널·Variant 변경 시 초이스 가격 재동기화
   useEffect(() => {
     setIsInitialLoad(true);
     setLastLoadedPricing('');
-  }, [selectedChannel, selectedChannelType]);
+  }, [selectedChannel, selectedChannelType, selectedVariant]);
 
   // 채널 수수료 자동 불러오기 (채널 선택 시)
   const lastSelectedChannelRef = useRef<string>('');
 
-  // 선택된 채널의 최신 가격 규칙에서 계산 방식 동기화
+  // 선택된 채널·Variant의 최신 가격 규칙에서 계산 방식·초이스 가격 동기화
   useEffect(() => {
-    if (!selectedChannel || !dynamicPricingData.length) return;
-    const channelRules = dynamicPricingData
-      .flatMap((d) => d.rules)
-      .filter((r) => r.channel_id === selectedChannel && (!selectedVariant || r.variant_key === selectedVariant || (!r.variant_key && selectedVariant === 'default')))
-      .sort((a, b) => String(b.date).localeCompare(String(a.date)));
-    const latest = channelRules[0];
-    if (latest?.price_calculation_method) {
+    if (!selectedChannel) return;
+    const latest = pickLatestPricingRule(
+      dynamicPricingData.flatMap((d) => d.rules),
+      {
+        channelId: selectedChannel,
+        variantKey: selectedVariant || 'default',
+      }
+    );
+    if (!latest) {
+      updatePricingConfig({ choices_pricing: {} });
+      setOptionsPricing({});
+      return;
+    }
+    if (latest.price_calculation_method) {
       setChoicePricingMode(parseChoicePricingMode(latest.price_calculation_method));
     }
-    if (latest?.options_pricing && typeof latest.options_pricing === 'object') {
+    if (latest.options_pricing && typeof latest.options_pricing === 'object') {
       const nextOptions: Record<string, OptionUnitPrice> = {};
       Object.entries(latest.options_pricing).forEach(([optionId, data]) => {
         if (!data || typeof data !== 'object') return;
@@ -1023,8 +1123,26 @@ export default function DynamicPricingManager({
         };
       });
       setOptionsPricing(nextOptions);
+    } else {
+      setOptionsPricing({});
     }
-  }, [selectedChannel, selectedVariant, dynamicPricingData]);
+    const nextChoices =
+      latest.choices_pricing && typeof latest.choices_pricing === 'object'
+        ? latest.choices_pricing
+        : {};
+    updatePricingConfig({
+      choices_pricing: nextChoices,
+      adult_price: latest.adult_price ?? 0,
+      child_price: latest.child_price ?? 0,
+      infant_price: latest.infant_price ?? 0,
+      commission_percent: latest.commission_percent ?? 0,
+      coupon_percent: latest.coupon_percent ?? 0,
+      markup_amount: latest.markup_amount ?? 0,
+      ...(latest.not_included_price != null
+        ? { not_included_price: latest.not_included_price }
+        : { not_included_price: 0 }),
+    } as Partial<typeof pricingConfig>);
+  }, [selectedChannel, selectedVariant, dynamicPricingData, updatePricingConfig]);
   
   useEffect(() => {
     // 채널이 선택되었을 때 해당 채널의 수수료(%) 값을 불러옴
@@ -2203,6 +2321,9 @@ export default function DynamicPricingManager({
             productVariants={productVariants}
             selectedVariant={selectedVariant}
             onVariantSelect={setSelectedVariant}
+            channelPricingType={selectedChannelPricingType}
+            onChannelPricingTypeChange={handleChannelPricingTypeChange}
+            isSavingChannelPricingType={savingChannelPricingType}
           />
 
           <DateRangeSelectorModal
@@ -2303,6 +2424,7 @@ export default function DynamicPricingManager({
               onRefresh={loadDynamicPricingData}
               choiceCombinations={choiceCombinations}
               channels={channelGroups.flatMap(group => group.channels)}
+              selectedVariant={selectedVariant}
             />
                )}
 
@@ -2893,6 +3015,9 @@ export default function DynamicPricingManager({
                 </div>
                 ) : null}
               </div>
+              {usesBookingTimeChoiceCatalog(selectedChannel) ? (
+                <p className="text-xs text-muted-foreground mb-3">{t('otaBookingTimePricingHint')}</p>
+              ) : null}
 
               {choicePricingMode === 'base_plus' ? (
                 <ChoiceOptionUnitPricingPanel

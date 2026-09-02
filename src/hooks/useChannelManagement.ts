@@ -173,6 +173,12 @@ export function useChannelManagement() {
     );
   }, []);
 
+  const patchChannel = useCallback((channelId: string, updates: Partial<Channel>) => {
+    setChannels((prev) =>
+      prev.map((channel) => (channel.id === channelId ? { ...channel, ...updates } : channel))
+    );
+  }, []);
+
   // 선택된 채널 타입의 모든 채널을 선택/해제
   const handleSelectAllChannelsInType = useCallback(() => {
     if (!selectedChannelType) return;
@@ -209,6 +215,7 @@ export function useChannelManagement() {
     handleChannelSelect,
     handleMultiChannelToggle,
     handleChannelToggle,
-    handleSelectAllChannelsInType
+    handleSelectAllChannelsInType,
+    patchChannel,
   };
 }

@@ -22,6 +22,12 @@ import {
   findUsResidentClassificationChoice,
   sumResidentFeeAmountsUsd,
 } from '@/utils/usResidentChoiceSync'
+import {
+  bookingTimeSelectedChoices,
+  combinationKeyFromSelectedChoices,
+  findBookingTimeChoicePricing,
+  usesBookingTimeChoiceCatalog,
+} from '@/lib/bookingTimeChoicePricing'
 import type { ChannelSettlementComputeInput } from '@/utils/channelSettlement'
 import {
   computeProductPriceTotal,
@@ -2691,9 +2697,44 @@ export default function PricingSection({
       const residentClassChoice = findUsResidentClassificationChoice(
         (formData.productChoices || []) as Parameters<typeof findUsResidentClassificationChoice>[0]
       )
+      let usedCatalogNotIncluded = false
+
+      if (
+        usesBookingTimeChoiceCatalog(formData.channelId) &&
+        Array.isArray(formData.selectedChoices)
+      ) {
+        const bookingChoices = bookingTimeSelectedChoices(
+          formData.selectedChoices as Array<{
+            choice_id?: string
+            option_id?: string
+            option_key?: string
+            id?: string
+          }>,
+          (formData.productChoices || []) as Array<{
+            id: string
+            choice_group?: string | null
+            choice_group_ko?: string | null
+          }>
+        )
+        const comboKey = combinationKeyFromSelectedChoices(bookingChoices)
+        const optionKeys = bookingChoices
+          .map((choice) => String(choice.option_key || '').trim())
+          .filter(Boolean)
+        const catalogMatch = findBookingTimeChoicePricing(comboKey, choicesPricing, optionKeys)
+        if (catalogMatch) {
+          const catalogNotIncluded = Number(
+            (catalogMatch.data as { not_included_price?: number }).not_included_price
+          )
+          totalNotIncluded =
+            Number.isFinite(catalogNotIncluded) && catalogNotIncluded > 0
+              ? catalogNotIncluded * totalPax
+              : 0
+          usedCatalogNotIncluded = true
+        }
+      }
 
       // 새로운 간결한 초이스 시스템 (selectedChoices가 배열인 경우)
-      if (Array.isArray(formData.selectedChoices)) {
+      if (!usedCatalogNotIncluded && Array.isArray(formData.selectedChoices)) {
         formData.selectedChoices.forEach(
           (choice: { choice_id?: string; id?: string; option_id?: string; quantity?: number }) => {
           const choiceId = choice.choice_id || choice.id

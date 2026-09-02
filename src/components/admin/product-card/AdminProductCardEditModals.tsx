@@ -595,7 +595,18 @@ export default function AdminProductCardEditModals({
 
       <div className="rounded-xl border border-border/60 p-2 sm:p-4">
         <h3 className="mb-3 px-2 text-sm font-semibold text-gray-900">{t('dynamicPricingSection')}</h3>
-        <DynamicPricingManager productId={product.id} />
+        <DynamicPricingManager
+          productId={product.id}
+          onHomepagePricingTypeChange={(pricingType) =>
+            setPricingForm((prev) => ({
+              ...prev,
+              homepagePricingType: pricingType,
+              ...(pricingType === 'single'
+                ? { childBasePrice: prev.adultBasePrice, infantBasePrice: prev.adultBasePrice }
+                : {}),
+            }))
+          }
+        />
       </div>
     </div>
   )

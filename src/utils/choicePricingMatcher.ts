@@ -3,6 +3,11 @@
  * 초이스 변경 시에도 기존 가격을 찾을 수 있도록 유연한 매칭 로직 제공
  */
 
+import {
+  findBookingTimeChoicePricingFromCombination,
+  toOtaAndNotIncluded,
+} from '@/lib/bookingTimeChoicePricing'
+
 interface ChoiceCombination {
   id: string;
   combination_key?: string;
@@ -82,6 +87,14 @@ export function findChoicePricingData(
     if (optionKeys && optionKeys !== optionIds && choicesPricing[optionKeys]) {
       return { data: choicesPricing[optionKeys], matchedKey: optionKeys };
     }
+  }
+
+  const bookingTimeMatch = findBookingTimeChoicePricingFromCombination(
+    combination,
+    choicesPricing
+  )
+  if (bookingTimeMatch) {
+    return { data: bookingTimeMatch.data, matchedKey: bookingTimeMatch.matchedKey }
   }
 
   // 5. 부분 일치로 매칭 시도 (키가 부분적으로 일치하는 경우)
@@ -166,6 +179,11 @@ export function getFallbackOtaAndNotIncluded(
   choicesPricing: Record<string, any>
 ): { ota_sale_price: number; not_included_price?: number } | undefined {
   if (!choicesPricing || Object.keys(choicesPricing).length === 0) return undefined;
+  const bookingTime = toOtaAndNotIncluded(
+    findBookingTimeChoicePricingFromCombination(combination, choicesPricing)
+  )
+  if (bookingTime && bookingTime.ota_sale_price > 0) return bookingTime
+
   const keyToUse = combination.combination_key || combination.id;
   const requestedParts = keyToUse ? keyToUse.split('+').filter(Boolean) : [];
   const partCount = requestedParts.length;

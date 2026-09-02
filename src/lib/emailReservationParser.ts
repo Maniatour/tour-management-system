@@ -99,6 +99,12 @@ export function extractChannelRnForCancellationLookup(
   m = sub.match(/bookingno\.?\s*,?\s*(\d{10,24})/i)
   if (m?.[1]) return m[1].trim()
 
+  // NOL (트리플): "810965 라스베가스 > … 예약이 접수되었습니다.(Booking Received)"
+  if (isNolTripleNewBookingEmailSubject(sub)) {
+    m = sub.match(/^(\d{4,12})\b/)
+    if (m?.[1]) return m[1].trim()
+  }
+
   // 제목 끝의 긴 코드 토큰
   m = sub.match(/[-–]\s*([A-Z0-9]{8,32})\s*$/i)
   if (m?.[1]) return m[1].trim()
@@ -228,6 +234,22 @@ export function isZoomZoomTourNewBookingEmailSubject(subject: string | null | un
 }
 
 /**
+ * NOL 투어 파트너센터(트리플) 예약 접수 제목
+ * 예: 810965 라스베가스 > 그랜드캐년 일출+앤텔롭캐년+홀슈밴드 도깨비 당일투어 | 소규모 프리미엄 예약이 접수되었습니다.(Booking Received)
+ */
+export function isNolTripleNewBookingEmailSubject(subject: string | null | undefined): boolean {
+  const s = (subject ?? '').trim()
+  if (!s) return false
+  return /예약이\s*접수되었습니다/i.test(s) && /\(\s*Booking\s+Received\s*\)/i.test(s)
+}
+
+/** 발신이 confirmation.triple@nol-universe.com 등 NOL 파트너센터이면 NOL(트리플) 채널 메일로 간주 */
+export function isNolTripleChannelFromEmail(sourceEmail: string | null | undefined): boolean {
+  const from = sourceEmail ?? ''
+  return /@nol-universe\.com\b/i.test(from) || /confirmation\.triple@/i.test(from)
+}
+
+/**
  * 이메일 공통 패턴 오탐(예: "Clients"에서 client만 매칭 → "s details") 또는 섹션 제목을 이름으로 넣은 경우
  */
 export function isGarbageImportedCustomerName(raw: string | null | undefined): boolean {
@@ -283,6 +305,7 @@ function detectPlatform(sourceEmail: string | null, subject: string): string | n
   if (isTidesquareChannelEmailSubject(subject)) return 'tidesquare'
   if (isMyrealtripNewBookingEmailSubject(subject)) return 'myrealtrip'
   if (isZoomZoomTourNewBookingEmailSubject(subject)) return 'zoomzoom'
+  if (isNolTripleNewBookingEmailSubject(subject) || isNolTripleChannelFromEmail(sourceEmail)) return 'nol'
   const from = (sourceEmail || '').toLowerCase()
   const subj = (subject || '').toLowerCase()
   for (const { pattern, key } of PLATFORM_FROM_PATTERNS) {
@@ -2340,6 +2363,101 @@ function extractZoomZoomTour(
   return out
 }
 
+/** NOL HTML: 곱하기 기호 엔티티(1인 &#x2715; 3)를 텍스트로 풀어 인원 파싱이 되도록 함 */
+function toPlainTextNol(html: string): string {
+  const decoded = html
+    .replace(/&times;/gi, '×')
+    .replace(/&#x2715;/gi, '✕')
+    .replace(/&#10005;/g, '✕')
+    .replace(/&#215;/g, '×')
+  return toPlainTextKlook(decoded)
+}
+
+function applyNolGoblinSunriseProduct(
+  out: Partial<ExtractedReservationData>,
+  rawTitle: string
+): void {
+  const forMap = rawTitle.split(/\s*\|\s*/)[0].trim()
+  if (!forMap) return
+  const mapped = mapWixHomepageProductTitleToProduct(forMap)
+  if (mapped.product_id) {
+    out.product_id = mapped.product_id
+    if (mapped.product_name) out.product_name = mapped.product_name
+    if (mapped.product_id === 'MDGCSUNRISE') out.tour_time = '00:00'
+    out.import_choice_undecided_groups = ['미국 거주자 구분', '기타 입장료']
+    if (/도깨비|goblin/i.test(forMap) && /앤텔롭|앤텔로프|antelope/i.test(forMap)) {
+      if (/\bantelope\s*x\b|엑스\s*앤텔롭|앤텔롭\s*x/i.test(forMap)) {
+        out.import_choice_option_names = ['X Antelope Canyon', 'Antelope X Canyon']
+      } else if (/어퍼|upper\s*antelope/i.test(forMap)) {
+        out.import_choice_option_names = ['Upper Antelope Canyon']
+      } else {
+        out.import_choice_option_names = ['Lower Antelope Canyon']
+      }
+    }
+  } else if (!out.product_name) {
+    out.product_name = rawTitle.trim()
+  }
+}
+
+/**
+ * NOL 투어 파트너센터(트리플) 예약 접수 메일.
+ * 제목 앞 숫자 = 채널 RN, 1인 ✕ N = 성인 N, Date of use / 이용예정일 = 투어일.
+ * 도깨비+앤텔롭 상품은 밤도깨비 그랜드캐년 일출 투어 + 로어 앤텔롭.
+ */
+function extractNolTriple(text: string, subject: string): Partial<ExtractedReservationData> {
+  const out: Partial<ExtractedReservationData> = {}
+  const sub = (subject || '').trim()
+  const t = (text || '').replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ')
+  const oneLine = t.replace(/\s+/g, ' ')
+  const isBookingMail =
+    isNolTripleNewBookingEmailSubject(sub) ||
+    /파트너\s*예약번호|Partner\s*booking\s*ID/i.test(t)
+  if (!isBookingMail) return out
+
+  const rnFromSubject = sub.match(/^(\d{4,12})\b/)
+  if (rnFromSubject?.[1]) out.channel_rn = rnFromSubject[1].trim()
+  if (!out.channel_rn) {
+    const rnBody =
+      t.match(/파트너\s*예약번호\s*[:：]?\s*(\d{4,12})/i) ||
+      t.match(/Partner\s*booking\s*ID\s*[:：]?\s*(\d{4,12})/i) ||
+      oneLine.match(/파트너\s*예약번호\s*[:：]?\s*(\d{4,12})/i)
+    if (rnBody?.[1]) out.channel_rn = rnBody[1].trim()
+  }
+
+  const dateM =
+    t.match(/(?:이용예정일|Date\s*of\s*use)\s*[:：]?\s*(20\d{2}-\d{2}-\d{2})/i) ||
+    oneLine.match(/(?:이용예정일|Date\s*of\s*use)\s*[:：]?\s*(20\d{2}-\d{2}-\d{2})/i)
+  if (dateM?.[1]) out.tour_date = dateM[1]
+
+  const qtyM =
+    t.match(/(\d+)\s*인\s*(?:[xX×✕✖*＊]|&#x2715;)\s*(\d{1,3})/) ||
+    oneLine.match(/(\d+)\s*인\s*(?:[xX×✕✖*＊]|&#x2715;)\s*(\d{1,3})/)
+  if (qtyM?.[2]) {
+    const n = parseInt(qtyM[2], 10)
+    if (!Number.isNaN(n) && n > 0) {
+      out.adults = n
+      out.total_people = n + (out.children ?? 0) + (out.infants ?? 0)
+    }
+  }
+
+  let productTitle = ''
+  const productLine =
+    t.match(/상품명\s*[:：]?\s*\n+\s*([^\n]+)/) ||
+    t.match(/상품명\s*[:：]?\s*([^\n]+)/) ||
+    t.match(/Product\s*name\s*[:：]?\s*\n+\s*([^\n]+)/i) ||
+    t.match(/Product\s*name\s*[:：]?\s*([^\n]+)/i)
+  if (productLine?.[1]) productTitle = productLine[1].replace(/\s+/g, ' ').trim()
+  if (!productTitle) {
+    productTitle = sub
+      .replace(/^\d{4,12}\s+/, '')
+      .replace(/\s*예약이\s*접수되었습니다.*$/i, '')
+      .trim()
+  }
+  if (productTitle) applyNolGoblinSunriseProduct(out, productTitle)
+
+  return out
+}
+
 /** 채널별 파서 등록: 플랫폼 키 → 전처리 + 추출. 새 채널 추가 시 여기에 한 줄씩 등록. */
 const CHANNEL_PARSERS: Record<string, ChannelParserConfig> = {
   getyourguide: {
@@ -2398,6 +2516,10 @@ const CHANNEL_PARSERS: Record<string, ChannelParserConfig> = {
     preprocess: toPlainText,
     extract: (text, subject, sourceEmail, rawHtml) =>
       extractZoomZoomTour(text, subject, sourceEmail, rawHtml ?? null),
+  },
+  nol: {
+    preprocess: toPlainTextNol,
+    extract: (text, subject) => extractNolTriple(text, subject),
   },
 }
 
@@ -2471,16 +2593,19 @@ export function extractReservationFromEmail(options: {
   const common = extractCommonPatterns(fullText)
   // maniatour: extractCommonPatterns 의 customer_name 은 Wix/HTML에서 자주 오탐(s details 등).
   // 채널 파서가 이름을 못 넣으면 키가 없어 스프레드 시 공통 값이 그대로 남는 문제 → 공통 이름은 제외.
-  const commonForMerge: Partial<ExtractedReservationData> =
+  const omitCommonKeys: string[] =
     platform_key === 'maniatour'
-      ? (Object.fromEntries(
-          Object.entries(common).filter(([k]) => k !== 'customer_name')
-        ) as Partial<ExtractedReservationData>)
+      ? ['customer_name']
       : platform_key === 'zoomzoom'
-        ? (Object.fromEntries(
-            Object.entries(common).filter(([k]) => k !== 'tour_date')
-          ) as Partial<ExtractedReservationData>)
-        : common
+        ? ['tour_date']
+        : platform_key === 'nol'
+          ? ['tour_time', 'customer_email']
+          : []
+  const commonForMerge: Partial<ExtractedReservationData> = omitCommonKeys.length
+    ? (Object.fromEntries(
+        Object.entries(common).filter(([k]) => !omitCommonKeys.includes(k))
+      ) as Partial<ExtractedReservationData>)
+    : common
 
   let merged: Partial<ExtractedReservationData> = {
     ...commonForMerge,
@@ -2565,6 +2690,12 @@ export function extractReservationFromEmail(options: {
   if (platform_key === 'zoomzoom' && isZoomZoomTourNewBookingEmailSubject(subject)) {
     merged.is_booking_confirmed = true
   }
+  if (platform_key === 'nol' && isNolTripleNewBookingEmailSubject(subject)) {
+    merged.is_booking_confirmed = true
+  }
+  if (platform_key === 'nol' && merged.customer_email && /@nol-universe\.com\b/i.test(String(merged.customer_email))) {
+    delete merged.customer_email
+  }
 
   // 취소 알림: 제목에 cancelled/canceled → RN 추출해 channel_rn 보강 (채널 예약 조회·처리용)
   if (isCancellationRequestEmailSubject(subject)) {
@@ -2595,6 +2726,7 @@ export const SUPPORTED_EMAIL_CHANNELS = [
   'myrealtrip',
   'tripcom',
   'zoomzoom',
+  'nol',
   'tripadvisor',
   'booking',
   'expedia',

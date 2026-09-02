@@ -175,6 +175,10 @@ import {
   getNoChoiceOtaAndNotIncluded,
 } from '@/utils/choicePricingMatcher'
 import {
+  bookingTimeSelectedChoices,
+  usesBookingTimeChoiceCatalog,
+} from '@/lib/bookingTimeChoicePricing'
+import {
   computeChannelPaymentAfterReturn,
   computeChannelSettlementAmount,
   deriveCommissionGrossForSettlement,
@@ -3101,10 +3105,21 @@ export default function ReservationForm({
       const currentSelectedChoices = rawSelectedChoices.map((c) =>
         resolveChoiceSelectionForPricing(c as any, pcsForResolve)
       )
-      const pricingSelectedChoices = normalizeUndecidedChoicesForDynamicPricing(
-        currentSelectedChoices,
-        pcsForResolve as any
-      )
+      const pricingSelectedChoices = usesBookingTimeChoiceCatalog(channelId)
+        ? bookingTimeSelectedChoices(
+            currentSelectedChoices,
+            (formDataRef.current.productChoices?.length
+              ? formDataRef.current.productChoices
+              : formData.productChoices || []) as Array<{
+              id: string
+              choice_group?: string | null
+              choice_group_ko?: string | null
+            }>
+          )
+        : normalizeUndecidedChoicesForDynamicPricing(
+            currentSelectedChoices,
+            pcsForResolve as any
+          )
       // 같은 예약에 대한 재조회(초이스/variant 변경 등)에서는 reservation_pricing id를 비우지 않음.
       // 비우는 순간 자동 쿠폰(9%/10% 등)이 끼어들어 DB 쿠폰·정산을 덮어쓸 수 있음.
       if (!pricingReservationId) {
@@ -3387,9 +3402,9 @@ export default function ReservationForm({
                   try {
                     
                     console.log('choices_pricing 데이터:', choicesPricing)
-                    console.log('선택된 초이스(동적가격 조회용·미정→미국 거주자 치환):', pricingSelectedChoices)
+                    console.log('선택된 초이스(동적가격 조회용·예약시점 초이스):', pricingSelectedChoices)
                     
-                    // normalizeUndecidedChoicesForDynamicPricing에서 미정→미국 거주자 치환 후, 남은 미정만 제외
+                    // 미정·거주자 구분 행은 카탈로그 키에서 제외된 뒤, 남은 미정만 한 번 더 걸러 냄
                     const UNDECIDED_OPTION_ID = UNDECIDED_OPTION_ID_PRICING
                     const choicesForPricingLookup = pricingSelectedChoices || []
                     const choicesForPricing = choicesForPricingLookup.filter((c: any) => c.option_id !== UNDECIDED_OPTION_ID && c.option_key !== UNDECIDED_OPTION_ID)

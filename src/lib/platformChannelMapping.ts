@@ -18,6 +18,8 @@ export const PLATFORM_CHANNEL_MAP: Record<string, string> = {
   booking: 'booking',
   expedia: 'expedia',
   airbnb: 'airbnb',
+  /** NOL 투어 파트너센터(트리플) — channels.name "NOL (트리플)" */
+  nol: '78b08b30-3047-4866-ba93-c1124d31b065',
 }
 
 /**
@@ -28,4 +30,11 @@ export const PLATFORM_CHANNEL_MAP: Record<string, string> = {
 export function getChannelIdForPlatform(platformKey: string | null): string | null {
   if (!platformKey) return null
   return PLATFORM_CHANNEL_MAP[platformKey.toLowerCase()] ?? null
+}
+
+/** channels.name 이 "NOL (트리플)" 인지 (예약 가져오기 채널 자동 선택) */
+export function isNolTripleChannelName(name: string | null | undefined): boolean {
+  const n = (name || '').trim()
+  if (!n) return false
+  return /NOL\s*\(\s*트리플\s*\)/i.test(n) || (/NOL/i.test(n) && /트리플/.test(n))
 }

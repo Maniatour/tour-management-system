@@ -1306,6 +1306,12 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                     // 동적 가격 정보가 성공적으로 저장되었음을 알림
                     // 상품 자체의 저장은 하단의 "변경사항 저장" 버튼을 통해 처리
                   }}
+                  onHomepagePricingTypeChange={(pricingType) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      homepagePricingType: pricingType,
+                    }))
+                  }
                 />
               </div>
             )}
