@@ -7,6 +7,8 @@ import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { X, FileText, Calendar, MapPin, Users, User, Car } from 'lucide-react'
 import TourReportForm from './TourReportForm'
+import { todayInLasVegas } from '@/lib/dailyReport/dateUtils'
+import { tourReportRequiredDateRange } from '@/lib/tourReportExtras'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Tour & {
@@ -57,18 +59,17 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
       
       if (!currentUserEmail) return
 
-      // 최근 30일간의 투어 데이터 가져오기
-      const thirtyDaysAgo = new Date()
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-      const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0]
+      const range = tourReportRequiredDateRange()
+      if (!range) return
 
       const { data: toursData, error } = await supabase
         .from('tours')
         .select('*')
         .or(`tour_guide_id.eq.${currentUserEmail},assistant_id.eq.${currentUserEmail}`)
-        .gte('tour_date', thirtyDaysAgoStr)
+        .gte('tour_date', range.from)
+        .lte('tour_date', range.to)
         .order('tour_date', { ascending: false })
-        .limit(50)
+        .limit(100)
 
       if (error) {
         console.error('Error loading tours:', error)
@@ -209,7 +210,7 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
     const matchesDate = !dateFilter || tour.tour_date === dateFilter
     
     // 오늘 날짜 기준으로 미래 투어는 제외
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayInLasVegas()
     const isPastOrToday = tour.tour_date <= today
     
     return matchesSearch && matchesDate && isPastOrToday

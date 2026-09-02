@@ -2,8 +2,10 @@
 import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone, Search, ChevronDown, ExternalLink, Mail, Star, FileText } from 'lucide-react'
+import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone, Search, ChevronDown, ExternalLink, Mail, Star, FileText, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
@@ -36,6 +38,9 @@ import {
 import {
   fetchGuideReviewBonusForPayPeriod,
   formatReviewBonusMonthLabel,
+  reviewBonusDisplayDriverName,
+  reviewBonusDisplayGuideName,
+  reviewBonusDisplayTourName,
   type ReviewBonusSummary,
 } from '@/lib/reviewBonusPoints'
 import BiweeklyReviewBonusSection from '@/components/attendance/BiweeklyReviewBonusSection'
@@ -224,6 +229,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; tourName: string } | null>(null)
   const [tipsShareTourId, setTipsShareTourId] = useState<string | null>(null)
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
+  const [isSendingEmail, setIsSendingEmail] = useState(false)
+  const [showEmailConfirm, setShowEmailConfirm] = useState(false)
   const [paymentData, setPaymentData] = useState<{
     paid_to: string
     paid_for: string
@@ -1387,6 +1394,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     setEmployeePickerOpen(false)
     setEmployeeSearch('')
     setEmployeeTab('active')
+    setShowEmailConfirm(false)
+    setIsSendingEmail(false)
     onClose()
   }
 
@@ -1429,7 +1438,9 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       reviewBonusSubtotal: 'Review Bonus:',
       reviewBonusSection: 'Review Bonus Points',
       reviewImportedDate: 'Posted',
-      reviewAuthor: 'Author',
+      reviewTourName: 'Tour',
+      reviewGuide: 'Guide',
+      reviewDriver: 'Driver',
       reviewRating: 'Stars',
       reviewPoints: 'Points',
       totalPay: 'Total Pay:',
@@ -1473,7 +1484,9 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       reviewBonusSubtotal: '후기 보너스:',
       reviewBonusSection: '후기 보너스 포인트',
       reviewImportedDate: '등록일',
-      reviewAuthor: '작성자',
+      reviewTourName: '투어명',
+      reviewGuide: '가이드',
+      reviewDriver: '드라이버',
       reviewRating: '별점',
       reviewPoints: '포인트',
       totalPay: '총 급여:',
@@ -1503,14 +1516,18 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     }
   }
 
-  // 프린트 함수
-  const handlePrint = () => {
-      // 직원 포지션 확인
+  const buildPrintHtml = (forEmail = false): string | null => {
+      if (!selectedEmployee || !startDate || !endDate) return null
       const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
       const isGuideOrDriver = isGuideOrDriverPosition(selectedMember?.position)
       const pr = getPrintLabels(selectedMember)
-      const employeePhone =
+      const isEnPrint = pr.title === 'Biweekly Pay Calculator'
+      const rawEmployeeName =
+        (selectedMember?.display_name || selectedMember?.name_ko || '').trim()
+      const employeeName = escapeHtml(rawEmployeeName)
+      const employeePhone = escapeHtml(
         (selectedMember?.phone && String(selectedMember.phone).trim()) ? String(selectedMember.phone).trim() : '—'
+      )
       const attendanceDays = new Set(attendanceRecords.map(record => {
         if (!record.check_in_time) return record.date
         const utcDate = new Date(record.check_in_time)
@@ -1524,13 +1541,16 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         <html>
         <head>
           <title>2주급 계산기</title>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
           <style>
             body {
               font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
               margin: 0;
-              padding: 8px 10px;
+              padding: ${forEmail ? '16px 12px' : '8px 10px'};
               color: #333;
               font-size: 11px;
+              background: #ffffff;
             }
             .header {
               text-align: center;
@@ -1637,15 +1657,21 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         <body>
           <div class="header">
             <h1>${pr.title}</h1>
-            <p>${selectedEmployee && (teamMembers.find(m => m.email === selectedEmployee)?.display_name || teamMembers.find(m => m.email === selectedEmployee)?.name_ko) || ''} | ${startDate} ~ ${endDate}</p>
+            <p>${employeeName} | ${startDate} ~ ${endDate}</p>
           </div>
+          ${forEmail ? `
+          <p style="font-size:13px;color:#374151;line-height:1.6;margin:0 0 16px;">
+            ${isEnPrint
+              ? 'Please find your biweekly pay summary below. Contact the office if you have any questions.'
+              : '아래는 해당 기간 2주급 내역입니다. 문의 사항은 사무실로 연락해 주세요.'}
+          </p>
+          ` : ''}
           
-          <div class="content">
-            <div class="left-section">
+          ${forEmail ? '<table class="content" width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr><td class="left-section" width="50%" valign="top" style="padding-right:8px;">' : '<div class="content"><div class="left-section">'}
               <div class="section-title">${pr.employeeInfo}</div>
               <div class="info-row">
                 <span class="info-label">${pr.employee}</span>
-                <span class="info-value">${selectedEmployee && (teamMembers.find(m => m.email === selectedEmployee)?.display_name || teamMembers.find(m => m.email === selectedEmployee)?.name_ko) || ''}</span>
+                <span class="info-value">${employeeName}</span>
               </div>
               <div class="info-row">
                 <span class="info-label">${pr.phone}</span>
@@ -1661,9 +1687,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                 <span class="info-value">$${hourlyRate || '0'}</span>
               </div>
               ` : ''}
-            </div>
-            
-            <div class="right-section">
+            ${forEmail ? '</td><td class="right-section" width="50%" valign="top" style="padding-left:8px;">' : '</div><div class="right-section">'}
               <div class="section-title">${pr.paySummary}</div>
               <div class="calculation-box">
                 <div class="calculation-item">
@@ -1695,8 +1719,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <span>$${formatCurrency(totalPay)}</span>
                 </div>
               </div>
-            </div>
-          </div>
+            ${forEmail ? '</td></tr></table>' : '</div></div>'}
           
           ${attendanceRecords.length > 0 ? `
             <div class="section-title">${pr.attendanceSection(attendanceDays, attendanceRecords.length)}</div>
@@ -1792,11 +1815,81 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
             </table>
           ` : ''}
           ${reviewBonusPrintTableHtml(pr)}
+          ${forEmail ? `
+          <p style="font-size:12px;color:#6b7280;margin-top:24px;border-top:1px solid #e5e7eb;padding-top:12px;">
+            ${isEnPrint
+              ? 'This is an automated payroll summary from Kovegas / Las Vegas Mania Tour.'
+              : '이 메일은 Kovegas / 라스베가스 매니아투어에서 발송한 2주급 내역입니다.'}
+          </p>
+          ` : ''}
         </body>
         </html>
       `
-      
+
+    return printContent
+  }
+
+  const handlePrint = () => {
+    const printContent = buildPrintHtml(false)
+    if (!printContent) {
+      alert('직원과 기간을 먼저 지정해 주세요.')
+      return
+    }
     printHtmlDocument(printContent, '2주급 계산기')
+  }
+
+  const openEmailConfirm = () => {
+    if (!selectedEmployee || !startDate || !endDate) {
+      alert('직원과 기간을 먼저 지정해 주세요.')
+      return
+    }
+    setShowEmailConfirm(true)
+  }
+
+  const handleSendPayEmail = async () => {
+    if (!selectedEmployee || !startDate || !endDate) {
+      alert('직원과 기간을 먼저 지정해 주세요.')
+      return
+    }
+    const selectedMember = teamMembers.find((m) => m.email === selectedEmployee)
+    const employeeName =
+      selectedMember?.display_name || selectedMember?.name_ko || selectedEmployee
+    const pr = getPrintLabels(selectedMember)
+    const isEn = pr.title === 'Biweekly Pay Calculator'
+    const subject = isEn
+      ? `Biweekly Pay ${startDate} ~ ${endDate}`
+      : `2주급 내역 ${startDate} ~ ${endDate}`
+    const html = buildPrintHtml(true)
+    if (!html) {
+      alert('이메일 내용을 만들지 못했습니다.')
+      return
+    }
+
+    try {
+      setIsSendingEmail(true)
+      const response = await fetchApiWithAuth('/api/admin/biweekly-pay/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeEmail: selectedEmployee,
+          subject,
+          html,
+          startDate,
+          endDate,
+        }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; message?: string }
+      if (!response.ok) {
+        throw new Error(payload.error || '이메일 발송에 실패했습니다.')
+      }
+      setShowEmailConfirm(false)
+      toast.success(`${employeeName} (${selectedEmployee})에게 2주급 내역을 보냈습니다.`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '이메일 발송 중 오류가 발생했습니다.'
+      toast.error(message)
+    } finally {
+      setIsSendingEmail(false)
+    }
   }
 
   const handlePrintVerificationLetter = async () => {
@@ -1966,6 +2059,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       reviewBonusSummary.month,
       pr.title === 'Biweekly Pay Calculator' ? 'en' : 'ko'
     )
+    const printLocale = pr.title === 'Biweekly Pay Calculator' ? 'en' : 'ko'
     const rows =
       reviewBonusSummary.reviews.length > 0
         ? reviewBonusSummary.reviews
@@ -1973,13 +2067,15 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               (review) => `
                   <tr>
                     <td>${escapeHtml(review.postedDateLv)}</td>
-                    <td>${escapeHtml(review.authorName || '—')}</td>
+                    <td>${escapeHtml(reviewBonusDisplayTourName(review, printLocale))}</td>
+                    <td>${escapeHtml(reviewBonusDisplayGuideName(review, printLocale))}</td>
+                    <td>${escapeHtml(reviewBonusDisplayDriverName(review, printLocale))}</td>
                     <td>${review.rating}</td>
                     <td>${review.points > 0 ? '+' : ''}${review.points}</td>
                   </tr>`
             )
             .join('')
-        : `<tr><td colspan="4">${pr.title === 'Biweekly Pay Calculator' ? 'No linked reviews this month.' : '이 달에 연결된 후기가 없습니다.'}</td></tr>`
+        : `<tr><td colspan="6">${printLocale === 'en' ? 'No linked reviews this month.' : '이 달에 연결된 후기가 없습니다.'}</td></tr>`
     return `
             <div class="review-bonus-section" style="margin-top:24px;">
             <div class="section-title">${pr.reviewBonusSection} (${escapeHtml(monthLabel)})</div>
@@ -1987,7 +2083,9 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               <thead>
                 <tr>
                   <th>${pr.reviewImportedDate}</th>
-                  <th>${pr.reviewAuthor}</th>
+                  <th>${pr.reviewTourName}</th>
+                  <th>${pr.reviewGuide}</th>
+                  <th>${pr.reviewDriver}</th>
                   <th>${pr.reviewRating}</th>
                   <th>${pr.reviewPoints}</th>
                 </tr>
@@ -1995,7 +2093,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               <tbody>
                 ${rows}
                 <tr style="font-weight: bold; background: #f3f4f6;">
-                  <td colspan="3">${pr.total} (${reviewBonusSummary.totalPoints > 0 ? '+' : ''}${reviewBonusSummary.totalPoints})</td>
+                  <td colspan="5">${pr.total} (${reviewBonusSummary.totalPoints > 0 ? '+' : ''}${reviewBonusSummary.totalPoints})</td>
                   <td>${reviewBonusPay < 0 ? '-' : ''}$${formatCurrency(Math.abs(reviewBonusPay))}</td>
                 </tr>
               </tbody>
@@ -2618,6 +2716,15 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
               <Printer className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
             <button
+              onClick={openEmailConfirm}
+              className="p-2 text-gray-400 hover:text-primary transition-colors touch-manipulation"
+              title="직원에게 이메일 보내기"
+              type="button"
+              disabled={isSendingEmail}
+            >
+              <Mail className="w-5 h-5 sm:w-6 sm:h-6" />
+            </button>
+            <button
               onClick={handleClose}
               className="p-2 text-gray-400 hover:text-gray-600 transition-colors touch-manipulation"
               type="button"
@@ -2973,9 +3080,58 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                       <span className="text-gray-600">전화번호:</span>
                       <span className="font-medium text-gray-900 truncate">{phone}</span>
                     </div>
+                    <button
+                      type="button"
+                      onClick={openEmailConfirm}
+                      disabled={isSendingEmail}
+                      className="w-full inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-border/80 bg-white text-sm font-medium text-gray-800 hover:bg-gray-50 hover:border-primary/40 transition-colors disabled:opacity-50"
+                    >
+                      {isSendingEmail ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Mail className="w-4 h-4" />
+                      )}
+                      2주급 내역 이메일 보내기
+                    </button>
                   </div>
                 )
               })()}
+            </div>
+          </div>
+
+          <div className="mt-6 sm:mt-8 rounded-xl border border-border/70 bg-white p-4 sm:p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 tracking-tight">
+                  직원에게 2주급 내역 보내기
+                </h3>
+                <p className="mt-1 text-sm text-gray-600 leading-relaxed">
+                  프린트와 동일한 2주급 내역을 선택한 직원 이메일로 바로 보냅니다.
+                </p>
+                <p className="mt-2 text-sm text-gray-800">
+                  <span className="text-gray-500">수신:</span>{' '}
+                  <span className="font-medium">
+                    {teamMembers.find((m) => m.email === selectedEmployee)?.display_name ||
+                      teamMembers.find((m) => m.email === selectedEmployee)?.name_ko ||
+                      '—'}
+                  </span>
+                  <span className="mx-2 text-gray-300">|</span>
+                  <span className="font-medium truncate">{selectedEmployee || '—'}</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={openEmailConfirm}
+                disabled={isSendingEmail}
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors shrink-0 disabled:opacity-50"
+              >
+                {isSendingEmail ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Mail className="w-4 h-4" />
+                )}
+                이메일 보내기
+              </button>
             </div>
           </div>
 
@@ -3829,6 +3985,80 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
         locale={locale}
         overlayClassName="z-[130]"
       />
+
+      {showEmailConfirm && (() => {
+        const member = teamMembers.find((m) => m.email === selectedEmployee)
+        const name = member?.display_name || member?.name_ko || selectedEmployee
+        return (
+          <div
+            className="fixed inset-0 z-[140] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="biweekly-email-confirm-title"
+            onClick={() => {
+              if (!isSendingEmail) setShowEmailConfirm(false)
+            }}
+          >
+            <div
+              className="bg-white rounded-t-xl sm:rounded-2xl shadow-xl w-full max-w-md p-5 sm:p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 id="biweekly-email-confirm-title" className="text-lg font-semibold text-gray-900 tracking-tight">
+                직원에게 2주급 내역 보내기
+              </h3>
+              <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+                프린트와 같은 내용을 아래 직원 이메일로 보냅니다.
+              </p>
+              <div className="mt-4 rounded-xl border border-border/70 bg-muted/40 p-4 space-y-2 text-sm">
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">직원</span>
+                  <span className="font-medium text-gray-900 text-right">{name}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">이메일</span>
+                  <span className="font-medium text-gray-900 text-right break-all">{selectedEmployee}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">기간</span>
+                  <span className="font-medium tabular-nums text-gray-900">{startDate} ~ {endDate}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">총 급여</span>
+                  <span className="font-semibold tabular-nums text-emerald-700">${formatCurrency(totalPay)}</span>
+                </div>
+              </div>
+              <div className="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEmailConfirm(false)}
+                  disabled={isSendingEmail}
+                  className="h-11 sm:h-11 px-4 rounded-xl border border-border text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSendPayEmail}
+                  disabled={isSendingEmail}
+                  className="h-11 sm:h-11 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 inline-flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isSendingEmail ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      보내는 중...
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="w-4 h-4" />
+                      보내기
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
     </>
   )

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -9,11 +9,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { MapPin, Users, DollarSign, Cloud, Star, MessageSquare, AlertTriangle, Package, Lightbulb, MessageCircle, Handshake, FileText, ChevronLeft, ChevronRight, Car, Wrench, Camera, NotebookPen, SkipForward } from 'lucide-react'
+import { MapPin, Users, DollarSign, Cloud, Star, MessageSquare, AlertTriangle, Package, Lightbulb, MessageCircle, Handshake, FileText, ChevronLeft, ChevronRight, Car, Wrench, Camera, NotebookPen, SkipForward, PenLine } from 'lucide-react'
+import WaiverSignaturePad from '@/components/waiver/WaiverSignaturePad'
 import TourNarrationPlayLog from '@/components/tour/TourNarrationPlayLog'
 import TourReportNumberStepper from '@/components/TourReportNumberStepper'
 import TourReportIssuePhotos from '@/components/TourReportIssuePhotos'
 import TourReportSkippedStops from '@/components/TourReportSkippedStops'
+import TourReportPaceToggle, { type TourReportPace } from '@/components/TourReportPaceToggle'
 import {
   displayDrivingSegmentLabel,
   type TourReportDrivingSegment,
@@ -23,6 +25,9 @@ import {
   parseIssuePhotoUrls,
   parseSkippedStops,
   skippedStopsToSubstitutionNotes,
+  isTourReportSignatureImage,
+  inferTourReportHasIssues,
+  tourReportNoLostItemsLabel,
   type SkippedStopsMap,
 } from '@/lib/tourReportExtras'
 import { toast } from 'sonner'
@@ -198,6 +203,22 @@ export default function TourReportForm({
       teamwork: getText('팀워크', 'Teamwork'),
       comments: getText('코멘트', 'Comments'),
       sign: getText('서명', 'Signature'),
+      signHint: getText(
+        '손가락, 스타일러스 또는 마우스로 서명하세요.',
+        'Draw with finger, stylus, or mouse.'
+      ),
+      signClear: getText('지우기', 'Clear'),
+      signUndo: getText('실행 취소', 'Undo'),
+      signExisting: getText('저장된 서명', 'Saved signature'),
+      signReplaceHint: getText(
+        '아래에 다시 그리면 기존 서명이 바뀝니다.',
+        'Draw below to replace the saved signature.'
+      ),
+      markAllStops: getText('오늘 코스 전부 방문', 'Mark all stops visited'),
+      allClearVehicle: getText(
+        '차량은 이상 없음으로 저장됩니다. 이상이 있으면 위에서 「이슈·특이사항 있음」을 선택하세요.',
+        'Vehicle will be saved as no issues. If something is wrong, choose “Something to report” above.'
+      ),
       officeNote: getText('사무실 메모', 'Office Note'),
       driving: getText('Driving', 'Driving'),
       drivingHint: getText(
@@ -256,10 +277,17 @@ export default function TourReportForm({
       getText('고객·이슈', 'Guest & issues'),
       getText('평가·메모·제출', 'Ratings & submit')
     ],
+    stepTitlesAllClear: [
+      getText('기본 정보', 'Basics'),
+      getText('방문·운전', 'Stops & driving'),
+      getText('서명·제출', 'Sign & submit')
+    ],
     messages: {
       reportSubmitted: getText('리포트가 성공적으로 제출되었습니다.', 'Report submitted successfully.'),
       submitError: getText('리포트 제출 중 오류가 발생했습니다.', 'Error submitting report.'),
-      loginRequired: getText('로그인이 필요합니다.', 'Login required.')
+      loginRequired: getText('로그인이 필요합니다.', 'Login required.'),
+      signatureRequired: getText('서명을 그려 주세요.', 'Please draw your signature.'),
+      weatherRequired: getText('날씨를 선택해 주세요.', 'Please select the weather.'),
     },
     placeholders: {
       endMileage: getText('종료 주행거리를 입력하세요', 'Enter end mileage'),
@@ -268,7 +296,6 @@ export default function TourReportForm({
       guestComments: getText('고객의 코멘트를 입력하세요', 'Enter guest comments'),
       suggestionsFollowup: getText('제안사항이나 후속조치를 입력하세요', 'Enter suggestions or follow-up actions'),
       comments: getText('추가 코멘트를 입력하세요', 'Enter additional comments'),
-      sign: getText('서명을 입력하세요', 'Enter signature'),
       officeNote: getText('사무실 메모를 입력하세요', 'Enter office note'),
       vehicleConditionNote: getText(
         '연료, 세차, 경고등, 손상 등을 적어 주세요.',
@@ -293,6 +320,16 @@ export default function TourReportForm({
   const [bookedCustomerCount, setBookedCustomerCount] = useState<number | null>(null)
   const [drivingSegments, setDrivingSegments] = useState<TourReportDrivingSegment[]>([])
   const [drivingSegmentsLoading, setDrivingSegmentsLoading] = useState(false)
+  const [reportPace, setReportPace] = useState<TourReportPace>(() =>
+    inferTourReportHasIssues(initialData) ? 'has_issues' : 'all_clear'
+  )
+  const signatureDataUrlRef = useRef('')
+  const [signatureEmpty, setSignatureEmpty] = useState(true)
+
+  const handleSignaturePadChange = useCallback((empty: boolean, dataUrl: string) => {
+    signatureDataUrlRef.current = dataUrl
+    setSignatureEmpty((prev) => (prev === empty ? prev : empty))
+  }, [])
 
   const [formData, setFormData] = useState<TourReportData>({
     end_mileage: null,
@@ -353,6 +390,19 @@ export default function TourReportForm({
   }, [initialData, reportId, tourId])
 
   useEffect(() => {
+    if (reportPace !== 'all_clear') return
+    const noneLabel = tourReportNoLostItemsLabel(locale)
+    setFormData((prev) => ({
+      ...prev,
+      vehicle_condition_tags: isCompanyVehicle ? ['ok'] : [],
+      vehicle_condition_note: isCompanyVehicle ? '' : prev.vehicle_condition_note,
+      incidents_delays_health: [],
+      lost_items_damage: [noneLabel],
+      overall_mood: prev.overall_mood || 'good',
+    }))
+  }, [reportPace, isCompanyVehicle, locale])
+
+  useEffect(() => {
     if (forceMobileWizard !== undefined) {
       setUseMobileWizard(forceMobileWizard)
       return
@@ -366,7 +416,7 @@ export default function TourReportForm({
 
   useEffect(() => {
     setMobileStep(0)
-  }, [tourId])
+  }, [tourId, reportPace])
 
   useEffect(() => {
     let cancelled = false
@@ -832,10 +882,19 @@ export default function TourReportForm({
     })
   }, [mainStopOptions])
 
-  const totalSteps = 4
+  const totalSteps = reportPace === 'all_clear' ? 3 : 4
+  const visibleStepTitles = reportPace === 'all_clear' ? t.stepTitlesAllClear : t.stepTitles
 
-  const mobileStepVisible = (index: number) =>
-    !useMobileWizard || mobileStep === index
+  const mobileStepVisible = (section: 0 | 1 | 2 | 3) => {
+    if (!useMobileWizard) return true
+    if (reportPace === 'all_clear') {
+      if (section === 0) return mobileStep === 0
+      if (section === 1) return mobileStep === 1
+      if (section === 2) return false
+      return mobileStep === 2
+    }
+    return mobileStep === section
+  }
 
   /** 모달: 거의 풀블리드(안전영역만); 인라인: 기존 */
   const shellPad =
@@ -918,6 +977,8 @@ export default function TourReportForm({
     [courseById, mainStopOptions]
   )
 
+  const hasSignature = !signatureEmpty || Boolean(formData.sign?.trim())
+
   const submitReport = async () => {
     if (!user?.email) {
       toast.error(t.messages.loginRequired)
@@ -926,6 +987,18 @@ export default function TourReportForm({
 
     setLoading(true)
     try {
+      const drawn = signatureDataUrlRef.current.trim()
+      const nextSign = drawn || formData.sign?.trim() || null
+      if (!nextSign) {
+        toast.error(t.messages.signatureRequired)
+        return
+      }
+      if (reportPace === 'all_clear' && !formData.weather) {
+        toast.error(t.messages.weatherRequired)
+        if (useMobileWizard) setMobileStep(0)
+        return
+      }
+
       const payload = {
         end_mileage: isRentalVehicle ? null : formData.end_mileage,
         cash_balance: formData.cash_balance,
@@ -962,7 +1035,7 @@ export default function TourReportForm({
         communication: formData.communication,
         teamwork: formData.teamwork,
         comments: formData.comments,
-        sign: formData.sign,
+        sign: nextSign,
         office_note: formData.office_note,
       }
 
@@ -1038,7 +1111,7 @@ export default function TourReportForm({
             {useMobileWizard && (
               <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-100 pb-3">
                 <p className="text-sm font-medium leading-snug text-gray-900">
-                  {t.stepTitles[mobileStep]}
+                  {visibleStepTitles[mobileStep]}
                 </p>
                 <span className="shrink-0 text-xs tabular-nums text-gray-500">
                   {t.buttons.stepOf(mobileStep + 1, totalSteps)}
@@ -1052,6 +1125,14 @@ export default function TourReportForm({
                   'min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain'
               )}
             >
+            <div className={cn(useMobileWizard && mobileStep !== 0 && 'hidden')}>
+              <TourReportPaceToggle
+                value={reportPace}
+                onChange={setReportPace}
+                locale={locale}
+              />
+            </div>
+
             {/* Step 0 — 기본 정보 */}
             <div className={cn(!mobileStepVisible(0) && 'hidden', blockY)}>
             <div className={cn('grid grid-cols-1', isRentalVehicle ? 'md:grid-cols-2' : 'md:grid-cols-3', gridBasic)}>
@@ -1132,7 +1213,10 @@ export default function TourReportForm({
                 ))}
               </div>
             </div>
-            {isCompanyVehicle && (
+            {isCompanyVehicle && reportPace === 'all_clear' && (
+              <p className="text-sm text-muted-foreground">{t.fields.allClearVehicle}</p>
+            )}
+            {isCompanyVehicle && reportPace === 'has_issues' && (
               <div className={fieldY}>
                 <Label className={cn('flex items-center gap-2', labelMb)}>
                   <Wrench className="h-4 w-4 shrink-0" />
@@ -1176,6 +1260,22 @@ export default function TourReportForm({
                 {t.fields.mainStopsVisited}
               </Label>
               <p className="text-sm text-muted-foreground">{t.fields.mainStopsHint}</p>
+              {reportPace === 'all_clear' && mainStopOptions.length > 0 && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="h-11 w-full rounded-xl sm:w-auto"
+                  onClick={() =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      main_stops_visited: mainStopOptions.map((o) => o.id),
+                      skipped_stops: {},
+                    }))
+                  }
+                >
+                  {t.fields.markAllStops}
+                </Button>
+              )}
               {mainStopsLoading ? (
                 <p className="text-sm text-gray-500">{t.fields.mainStopsLoading}</p>
               ) : mainStopOptions.length === 0 ? (
@@ -1332,6 +1432,7 @@ export default function TourReportForm({
             </div>
 
             {/* 전체적인 분위기 */}
+            {reportPace === 'has_issues' && (
             <div className={cn(fieldY, 'pt-1')}>
               <Label className={cn('flex items-center gap-2', labelMb)}>
                 <Star className="h-4 w-4 shrink-0" />
@@ -1353,10 +1454,11 @@ export default function TourReportForm({
                 ))}
               </div>
             </div>
+            )}
             </div>
 
             {/* Step 2 — 고객·이슈 */}
-            <div className={cn(!mobileStepVisible(2) && 'hidden', blockY)}>
+            <div className={cn((!mobileStepVisible(2) || reportPace === 'all_clear') && 'hidden', blockY)}>
             <div className={fieldY}>
               <Label htmlFor="guest_comments" className={cn('flex items-center gap-2', labelMb)}>
                 <MessageSquare className="h-4 w-4 shrink-0" />
@@ -1490,6 +1592,8 @@ export default function TourReportForm({
 
             {/* Step 3 — 평가·메모·제출 */}
             <div className={cn(blockY, !mobileStepVisible(3) && 'hidden')}>
+              {reportPace === 'has_issues' && (
+              <>
               <div className={fieldY}>
               <Label htmlFor="suggestions_followup" className={cn('flex items-center gap-2', labelMb)}>
                 <Lightbulb className="h-4 w-4 shrink-0" />
@@ -1567,8 +1671,6 @@ export default function TourReportForm({
               />
             </div>
 
-            <TourNarrationPlayLog tourId={tourId} locale={locale} compact />
-
             <div className={cn(fieldY, 'pt-1')}>
               <Label htmlFor="handoff_note" className={cn('flex items-center gap-2', labelMb)}>
                 <NotebookPen className="h-4 w-4 shrink-0" />
@@ -1583,35 +1685,42 @@ export default function TourReportForm({
                 className="min-h-[88px] resize-y md:min-h-0"
               />
             </div>
+              </>
+              )}
+
+            <TourNarrationPlayLog tourId={tourId} locale={locale} compact />
 
             {/* 서명 */}
             <div className={cn(fieldY, 'pt-1')}>
-              <Label htmlFor="sign" className={cn('flex items-center gap-2', labelMb)}>
-                <FileText className="h-4 w-4 shrink-0" />
-                {t.fields.sign}
-              </Label>
-              <Input
-                id="sign"
-                value={formData.sign || ''}
-                onChange={(e) => handleInputChange('sign', e.target.value)}
-                placeholder={t.placeholders.sign}
-                className="h-11 md:h-10"
-              />
-            </div>
-
-            {/* 사무실 메모 */}
-            <div className={cn(fieldY, 'pt-1')}>
-              <Label htmlFor="office_note" className={cn('flex items-center gap-2', labelMb)}>
-                <FileText className="h-4 w-4 shrink-0" />
-                {t.fields.officeNote}
-              </Label>
-              <Textarea
-                id="office_note"
-                value={formData.office_note || ''}
-                onChange={(e) => handleInputChange('office_note', e.target.value)}
-                placeholder={t.placeholders.officeNote}
-                rows={2}
-                className="min-h-[80px] resize-y md:min-h-0"
+              {formData.sign?.trim() && signatureEmpty ? (
+                <div className="space-y-2">
+                  <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <PenLine className="h-4 w-4 shrink-0" />
+                    {t.fields.signExisting}
+                  </p>
+                  {isTourReportSignatureImage(formData.sign) ? (
+                    <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={formData.sign}
+                        alt={t.fields.signExisting}
+                        className="h-[120px] w-full object-contain object-left bg-white"
+                      />
+                    </div>
+                  ) : (
+                    <p className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm text-foreground">
+                      {formData.sign}
+                    </p>
+                  )}
+                  <p className="text-sm text-muted-foreground">{t.fields.signReplaceHint}</p>
+                </div>
+              ) : null}
+              <WaiverSignaturePad
+                label={t.fields.sign}
+                hint={t.fields.signHint}
+                clearLabel={t.fields.signClear}
+                undoLabel={t.fields.signUndo}
+                onChange={handleSignaturePadChange}
               />
             </div>
             </div>
@@ -1627,7 +1736,7 @@ export default function TourReportForm({
             >
               <Button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !hasSignature}
                 className="flex-1 h-12 text-base font-semibold bg-primary hover:bg-primary/90 text-white shadow-lg shadow-blue-200/80 ring-2 ring-ring/30 focus-visible:ring-blue-400"
               >
                 {loading ? getText('제출 중...', 'Submitting...') : t.buttons.submit}
@@ -1689,7 +1798,7 @@ export default function TourReportForm({
                   ) : (
                     <Button
                       type="button"
-                      disabled={loading}
+                      disabled={loading || !hasSignature}
                       className="flex-1 h-11 font-semibold bg-primary hover:bg-primary/90 text-white shadow-lg shadow-blue-200/80 ring-2 ring-ring/30 focus-visible:ring-blue-400"
                       onClick={submitReport}
                     >

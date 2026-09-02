@@ -13,6 +13,7 @@ import {
   STAFF_SITE_ALERT_TARGET_GROUPS,
   staffSiteAlertLocalizedTitle,
   staffSiteAlertTargetSummary,
+  isDrawnSignatureValue,
   type StaffSiteAlertRecipientMode,
   type StaffSiteAlertRecipientRow,
   type StaffSiteAlertRow,
@@ -515,8 +516,8 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
                     </span>
                     <span className="text-xs text-gray-600">
                       {isKo
-                        ? '수신자가 이름을 입력하고 확인해야 닫을 수 있습니다.'
-                        : 'Recipients must sign with their name before dismissing.'}
+                        ? '수신자가 손으로 서명한 뒤에만 닫을 수 있습니다.'
+                        : 'Recipients must draw a handwritten signature before dismissing.'}
                     </span>
                   </span>
                 </label>
@@ -658,10 +659,18 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
                                   </td>
                                   <td className="py-2 text-gray-600">
                                     {r.signed_at ? (
-                                      <span>
-                                        {r.signature_text || '—'}
-                                        <br />
-                                        <span className="text-[10px] text-gray-500">
+                                      <span className="block">
+                                        {isDrawnSignatureValue(r.signature_text) ? (
+                                          // eslint-disable-next-line @next/next/no-img-element
+                                          <img
+                                            src={r.signature_text!}
+                                            alt={isKo ? '서명' : 'Signature'}
+                                            className="h-12 max-w-[160px] object-contain object-left bg-white border border-gray-200 rounded"
+                                          />
+                                        ) : (
+                                          r.signature_text || '—'
+                                        )}
+                                        <span className="mt-0.5 block text-[10px] text-gray-500">
                                           {new Date(r.signed_at).toLocaleString(locale)}
                                         </span>
                                       </span>

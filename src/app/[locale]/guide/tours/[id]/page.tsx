@@ -33,6 +33,7 @@ import TourChatRoom from '@/components/TourChatRoom'
 import TourExpenseManager from '@/components/TourExpenseManager'
 import TourReportSection from '@/components/TourReportSection'
 import TourReportForm from '@/components/TourReportForm'
+import { UncompletedTourReportReminderModal } from '@/components/guide/UncompletedTourReportReminderLayer'
 import TourSopChecklistSection from '@/components/sop/TourSopChecklistSection'
 import TourWeather from '@/components/TourWeather'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
@@ -40,7 +41,6 @@ import { formatCustomerNameEnhanced } from '@/utils/koreanTransliteration'
 import { formatTimeWithAMPM, timeToHHmm } from '@/lib/utils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { filterTicketBookingsExcludedFromMainUi } from '@/lib/ticketBookingSoftDelete'
-import { toast } from 'sonner'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import {
   fetchPersonallyRespondedTourIds,
@@ -72,6 +72,7 @@ import {
 } from '@/lib/guideToursVisibleUntil'
 import { GuideBackupTourBadge } from '@/components/guide/GuideBackupTourBadge'
 import { isGuideBackupTour } from '@/lib/guideBackupTour'
+import { TOUR_REPORT_REQUIRED_FROM } from '@/lib/tourReportExtras'
 
 // 타입 정의 (DB 스키마 기반) — 픽업 잔액 헬퍼보다 먼저 두어 타입 순서 유지
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -92,7 +93,6 @@ type TeamMember = {
 
 /** 픽업 호텔 미지정 예약을 한 그룹으로 묶기 위한 키 (DB id와 충돌하지 않도록 함) */
 const GUIDE_UNASSIGNED_PICKUP_HOTEL_KEY = '__guide_pickup_hotel_unassigned__'
-const REPORT_REMINDER_START_DATE = '2026-04-01'
 
 type GuidePickupBalanceBreakdown = {
   displayBalance: number
@@ -485,12 +485,13 @@ export default function GuideTourDetailPage() {
   /** 가이드 모바일(lg 미만): 부킹·사진·정산·리포트 섹션은 항상 펼침 */
   const [isGuideMobileLayout, setIsGuideMobileLayout] = useState(false)
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
+  const [showMissingReportReminder, setShowMissingReportReminder] = useState(false)
+  const reportReminderShownForTourRef = useRef<string | null>(null)
   const [calculatedTourTimes, setCalculatedTourTimes] = useState<{
     startTime: string;
     endTime: string;
     sunriseTime: string;
   } | null>(null)
-  const reportReminderShownForTourRef = useRef<string | null>(null)
   const assignmentActionRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -1078,11 +1079,7 @@ export default function GuideTourDetailPage() {
   useEffect(() => {
     const remindMissingReport = async () => {
       if (!tour?.id || !currentUserEmail) return
-
-      // 2026-04-01부터 알림 시작
-      const now = new Date()
-      const start = new Date(`${REPORT_REMINDER_START_DATE}T00:00:00`)
-      if (Number.isNaN(start.getTime()) || now < start) return
+      if (tour.tour_date < TOUR_REPORT_REQUIRED_FROM) return
 
       if (reportReminderShownForTourRef.current === tour.id) return
 
@@ -1099,11 +1096,7 @@ export default function GuideTourDetailPage() {
       }
 
       if (!data || data.length === 0) {
-        toast.warning(
-          locale === 'en'
-            ? 'Please submit your tour report for this tour.'
-            : '이 투어의 리포트를 작성해 주세요.'
-        )
+        setShowMissingReportReminder(true)
       }
 
       reportReminderShownForTourRef.current = tour.id
@@ -2504,6 +2497,29 @@ export default function GuideTourDetailPage() {
       </div>
 
       {/* 투어 리포트 추가 모달 — z-index를 가이드 하단 푸터(z-50)보다 위로 (안 그러면 버튼이 푸터에 가려짐) */}
+      <UncompletedTourReportReminderModal
+        open={showMissingReportReminder && !isReportModalOpen}
+        locale={locale}
+        items={
+          tour
+            ? [
+                {
+                  id: tour.id,
+                  tourDate: tour.tour_date,
+                  name:
+                    locale === 'en'
+                      ? product?.name_en || product?.name_ko || product?.name || tour.product_id || tour.id
+                      : product?.name_ko || product?.name_en || product?.name || tour.product_id || tour.id,
+                },
+              ]
+            : []
+        }
+        onWriteNow={() => {
+          setShowMissingReportReminder(false)
+          setIsReportModalOpen(true)
+        }}
+        onDismiss={() => setShowMissingReportReminder(false)}
+      />
       {isReportModalOpen && (
         <div
           className="modal-inset-below-chrome bg-black/50"

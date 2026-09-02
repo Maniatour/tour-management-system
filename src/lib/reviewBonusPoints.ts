@@ -4,7 +4,12 @@ import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
 import { LV_TZ, toLasVegasDateKey } from '@/lib/dailyReport/dateUtils'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import {
+  teamMemberNameForLocale,
+  type TeamMemberNameFields,
+} from '@/lib/teamMemberDisplayName'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
+import { resolveProductInternalName } from '@/utils/reservationUtils'
 import { newSopId, type SopDocument, type SopSection } from '@/types/sopStructure'
 
 dayjs.extend(utc)
@@ -72,6 +77,10 @@ export type ReviewBonusReviewRow = {
   postedDateLv: string
   authorName: string | null
   reviewSource: string | null
+  tourName: string | null
+  tourNameEn: string | null
+  guide: TeamMemberNameFields | null
+  driver: TeamMemberNameFields | null
 }
 
 export type ReviewBonusSummary = {
@@ -148,11 +157,47 @@ type GoogleReviewRow = {
   exclude_staff_rating: boolean | null
 }
 
+type ReviewTourRow = {
+  id: string
+  tour_guide_id: string | null
+  assistant_id: string | null
+  tour_status: string | null
+  product_id: string | null
+  products?:
+    | { name?: string | null; name_ko?: string | null; name_en?: string | null }
+    | Array<{ name?: string | null; name_ko?: string | null; name_en?: string | null }>
+    | null
+}
+
+type StaffLinkRow = {
+  google_review_id: string
+  staff_email: string
+  tour_id: string | null
+}
+
+type TourLinkRow = {
+  google_review_id: string
+  tour_id: string
+}
+
+function productFromJoin(products: ReviewTourRow['products']) {
+  if (!products) return null
+  return Array.isArray(products) ? products[0] ?? null : products
+}
+
 function reviewPostedAt(row: Pick<GoogleReviewRow, 'review_created_at' | 'imported_at'>): string {
   return row.review_created_at || row.imported_at
 }
 
-function toReviewRow(row: GoogleReviewRow): ReviewBonusReviewRow | null {
+function toReviewRow(
+  row: GoogleReviewRow,
+  extra?: {
+    tourName: string | null
+    tourNameEn: string | null
+    guide: TeamMemberNameFields | null
+    driver: TeamMemberNameFields | null
+  }
+): ReviewBonusReviewRow | null {
   if (row.rating == null || row.exclude_staff_rating) return null
   const postedAt = reviewPostedAt(row)
   const postedDateLv = toLasVegasDateKey(postedAt)
@@ -167,7 +212,33 @@ function toReviewRow(row: GoogleReviewRow): ReviewBonusReviewRow | null {
     postedDateLv,
     authorName: row.author_name,
     reviewSource: row.review_source,
+    tourName: extra?.tourName ?? null,
+    tourNameEn: extra?.tourNameEn ?? null,
+    guide: extra?.guide ?? null,
+    driver: extra?.driver ?? null,
   }
+}
+
+export function reviewBonusDisplayTourName(
+  review: ReviewBonusReviewRow,
+  locale: 'ko' | 'en'
+): string {
+  if (locale === 'en') return review.tourNameEn || review.tourName || '—'
+  return review.tourName || review.tourNameEn || '—'
+}
+
+export function reviewBonusDisplayGuideName(
+  review: ReviewBonusReviewRow,
+  locale: 'ko' | 'en'
+): string {
+  return teamMemberNameForLocale(review.guide, locale) || '—'
+}
+
+export function reviewBonusDisplayDriverName(
+  review: ReviewBonusReviewRow,
+  locale: 'ko' | 'en'
+): string {
+  return teamMemberNameForLocale(review.driver, locale) || '—'
 }
 
 function summarize(
@@ -274,14 +345,14 @@ export async function fetchGuideReviewBonusForPayPeriod(
 
   const staffLinks = await fetchByIds(monthIds, async (chunk) => {
     const { data, error } = await fromUntypedTable(client, 'google_review_staff')
-      .select('google_review_id, staff_email')
+      .select('google_review_id, staff_email, tour_id')
       .eq('operator_id', params.operatorId)
       .in('google_review_id', chunk)
     if (error) {
       console.error('[reviewBonusPoints] google_review_staff:', error.message)
       return []
     }
-    return (data ?? []) as Array<{ google_review_id: string; staff_email: string }>
+    return (data ?? []) as StaffLinkRow[]
   })
 
   for (const link of staffLinks) {
@@ -299,27 +370,36 @@ export async function fetchGuideReviewBonusForPayPeriod(
       console.error('[reviewBonusPoints] google_review_tours:', error.message)
       return []
     }
-    return (data ?? []) as Array<{ google_review_id: string; tour_id: string }>
+    return (data ?? []) as TourLinkRow[]
   })
 
-  const tourIds = [...new Set(tourLinks.map((row) => row.tour_id).filter(Boolean))]
+  const tourIdByReviewId = new Map<string, string>()
+  for (const link of tourLinks) {
+    if (link.tour_id) tourIdByReviewId.set(link.google_review_id, link.tour_id)
+  }
+  for (const link of staffLinks) {
+    if (link.tour_id && !tourIdByReviewId.has(link.google_review_id)) {
+      tourIdByReviewId.set(link.google_review_id, link.tour_id)
+    }
+  }
+
+  const tourIds = [...new Set([...tourIdByReviewId.values(), ...tourLinks.map((row) => row.tour_id)].filter(Boolean))]
+  const toursById = new Map<string, ReviewTourRow>()
   if (tourIds.length > 0) {
     const tours = await fetchByIds(tourIds, async (chunk) => {
       const { data, error } = await client
         .from('tours')
-        .select('id, tour_guide_id, assistant_id, tour_status')
+        .select('id, tour_guide_id, assistant_id, tour_status, product_id, products(name, name_ko, name_en)')
         .in('id', chunk)
       if (error) {
         console.error('[reviewBonusPoints] tours:', error.message)
         return []
       }
-      return (data ?? []) as Array<{
-        id: string
-        tour_guide_id: string | null
-        assistant_id: string | null
-        tour_status: string | null
-      }>
+      return (data ?? []) as ReviewTourRow[]
     })
+    for (const tour of tours) {
+      toursById.set(tour.id, tour)
+    }
     const matchingTourIds = new Set(
       tours
         .filter((tour) => {
@@ -336,9 +416,53 @@ export async function fetchGuideReviewBonusForPayPeriod(
     }
   }
 
+  const teamByEmail = new Map<string, TeamMemberNameFields>()
+  const staffEmails = [
+    ...new Set(
+      [...toursById.values()]
+        .flatMap((tour) => [tour.tour_guide_id, tour.assistant_id])
+        .map((email) => (email || '').trim())
+        .filter(Boolean)
+    ),
+  ]
+  if (staffEmails.length > 0) {
+    const { data: teamRows, error: teamError } = await client
+      .from('team')
+      .select('email, nick_name, display_name, name_ko, name_en')
+      .in('email', staffEmails)
+    if (teamError) {
+      console.error('[reviewBonusPoints] team:', teamError.message)
+    } else {
+      for (const member of teamRows ?? []) {
+        const email = normalizeEmail(member.email)
+        if (!email) continue
+        teamByEmail.set(email, {
+          nick_name: member.nick_name,
+          display_name: member.display_name,
+          name_ko: member.name_ko,
+          name_en: member.name_en,
+        })
+      }
+    }
+  }
+
   const reviews = monthReviews
     .filter((row) => attributedIds.has(row.id))
-    .map(toReviewRow)
+    .map((row) => {
+      const tour = toursById.get(tourIdByReviewId.get(row.id) || '')
+      const product = productFromJoin(tour?.products)
+      const tourName = resolveProductInternalName(product, tour?.product_id)
+      const tourNameEn =
+        product?.name_en?.trim() || product?.name?.trim() || product?.name_ko?.trim() || tourName
+      const guideEmail = normalizeEmail(tour?.tour_guide_id)
+      const driverEmail = normalizeEmail(tour?.assistant_id)
+      return toReviewRow(row, {
+        tourName,
+        tourNameEn: tourNameEn || null,
+        guide: guideEmail ? teamByEmail.get(guideEmail) ?? null : null,
+        driver: driverEmail ? teamByEmail.get(driverEmail) ?? null : null,
+      })
+    })
     .filter((row): row is ReviewBonusReviewRow => row != null)
 
   return summarize(month.year, month.month, true, reviews)

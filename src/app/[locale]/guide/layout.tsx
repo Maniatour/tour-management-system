@@ -24,6 +24,7 @@ import GuideTourChatNotificationModal from '@/components/guide/GuideTourChatNoti
 import { GuideReviewNotificationLayer } from '@/components/guide/GuideReviewNotificationLayer'
 import { GuideScheduleConfirmPopupLayer } from '@/components/guide/GuideScheduleConfirmPopupLayer'
 import { StaffSiteAlertPopupLayer } from '@/components/admin/staff-site-alert/StaffSiteAlertPopupLayer'
+import { UncompletedTourReportReminderLayer } from '@/components/guide/UncompletedTourReportReminderLayer'
 import VoiceCallCrossTabListener from '@/components/guide/VoiceCallCrossTabListener'
 import GuideOfflineBanner from '@/components/guide/GuideOfflineBanner'
 import GuideNarrationOfflineSync from '@/components/guide/GuideNarrationOfflineSync'
@@ -33,6 +34,7 @@ import { createClientSupabase } from '@/lib/supabase'
 import { GuidePickupGeofenceProvider } from '@/contexts/GuidePickupGeofenceContext'
 import { guidePathWithAppLocale, guidePreferredAppLocale } from '@/lib/guideLanguageDetection'
 import { persistPwaStartPath } from '@/lib/pwaStartUrl'
+import { tourReportRequiredDateRange } from '@/lib/tourReportExtras'
 
 interface GuideLayoutProps {
   children: React.ReactNode
@@ -56,6 +58,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
   const locale = paramsObj.locale as string
   const [showPhotoModal, setShowPhotoModal] = useState(false)
   const [showReportModal, setShowReportModal] = useState(false)
+  const [reportReminderRefresh, setReportReminderRefresh] = useState(0)
   const [showReceiptModal, setShowReceiptModal] = useState(false)
   const [showMedicalReportWarning, setShowMedicalReportWarning] = useState(false)
   const [showDocumentUploadModal, setShowDocumentUploadModal] = useState(false)
@@ -391,26 +394,20 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
       }
 
       const supabaseClient = createClientSupabase()
-      
-      // 최근 30일간의 투어 데이터 가져오기
-      const today = new Date()
-      const thirtyDaysAgo = new Date(today)
-      thirtyDaysAgo.setDate(today.getDate() - 30)
-      
-      const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0]
-      const todayStr = today.toISOString().split('T')[0]
-
-      console.log('현재 날짜:', today.toISOString())
-      console.log('30일 전 날짜:', thirtyDaysAgo.toISOString())
-      console.log('투어 조회 기간:', thirtyDaysAgoStr, '~', todayStr)
+      const range = tourReportRequiredDateRange()
+      if (!range) {
+        setUncompletedReportCount(0)
+        return
+      }
 
       const { data: toursData, error } = await supabaseClient
         .from('tours')
         .select('id, tour_date, tour_guide_id, assistant_id')
         .or(`tour_guide_id.eq.${currentUserEmail},assistant_id.eq.${currentUserEmail}`)
-        .gte('tour_date', thirtyDaysAgoStr)
+        .gte('tour_date', range.from)
+        .lte('tour_date', range.to)
         .order('tour_date', { ascending: false })
-        .limit(50)
+        .limit(100)
 
       if (error) {
         console.error('투어 데이터 로드 오류:', error)
@@ -421,10 +418,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
       console.log('투어 목록:', toursData)
 
       // 투어 리포트 모달과 동일한 필터링 적용
-      const filteredTours = (toursData || []).filter(tour => {
-        const today = new Date().toISOString().split('T')[0]
-        return tour.tour_date <= today
-      })
+      const filteredTours = (toursData || []).filter((tour) => tour.tour_date <= range.to)
 
       console.log('필터링된 투어 수:', filteredTours.length)
       console.log('필터링된 투어 목록:', filteredTours)
@@ -655,7 +649,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
         isOpen={showReportModal}
         onClose={() => {
           setShowReportModal(false)
-          // 리포트 작성 후 카운트 다시 로드
+          setReportReminderRefresh((n) => n + 1)
           loadUncompletedReportCount()
         }}
         locale={locale}
@@ -703,6 +697,14 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
 
       <GuideScheduleConfirmPopupLayer
         userEmail={isSimulating && simulatedUser ? simulatedUser.email : user?.email}
+      />
+
+      <UncompletedTourReportReminderLayer
+        userEmail={isSimulating && simulatedUser ? simulatedUser.email : user?.email}
+        locale={locale === 'en' ? 'en' : 'ko'}
+        paused={showReportModal}
+        refreshKey={reportReminderRefresh}
+        onWriteNow={() => setShowReportModal(true)}
       />
 
       <StaffSiteAlertPopupLayer

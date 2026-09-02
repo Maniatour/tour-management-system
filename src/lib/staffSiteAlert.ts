@@ -286,3 +286,10 @@ export function isStaffSiteAlertSchemaMissingError(
   const msg = String(error.message ?? '')
   return /staff_site_alert/i.test(msg) && /schema cache|could not find the table/i.test(msg)
 }
+
+/** 수기 PNG(data URL) 또는 이미지 URL. 예전 텍스트 이름 서명과 구분. */
+export function isDrawnSignatureValue(value: string | null | undefined): boolean {
+  if (!value) return false
+  const v = value.trim()
+  return v.startsWith('data:image/') || /^https?:\/\//i.test(v)
+}

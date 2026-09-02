@@ -1,10 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookOpen, Check, ExternalLink, Loader2, Megaphone, PenLine } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTeamBoardManualOptional } from '@/contexts/TeamBoardManualContext'
 import { hubArticleLinkLabel } from '@/lib/hubArticleManualLink'
+import WaiverSignaturePad from '@/components/waiver/WaiverSignaturePad'
 import {
   isStaffSiteAlertSchemaMissingError,
   staffSiteAlertLocalizedBody,
@@ -28,7 +29,9 @@ export function StaffSiteAlertPopupLayer({ userEmail, locale }: StaffSiteAlertPo
   const viewLang: SopEditLocale = locale.startsWith('ko') ? 'ko' : 'en'
   const [queue, setQueue] = useState<PendingAlert[]>([])
   const [submitting, setSubmitting] = useState(false)
-  const [signatureText, setSignatureText] = useState('')
+  const [signatureEmpty, setSignatureEmpty] = useState(true)
+  const [padKey, setPadKey] = useState(0)
+  const signatureDataUrlRef = useRef('')
   const [schemaUnavailable, setSchemaUnavailable] = useState(false)
   const isKo = locale.startsWith('ko')
 
@@ -86,13 +89,21 @@ export function StaffSiteAlertPopupLayer({ userEmail, locale }: StaffSiteAlertPo
 
   const current = queue[0] ?? null
   useEffect(() => {
-    setSignatureText('')
+    signatureDataUrlRef.current = ''
+    setSignatureEmpty(true)
+    setPadKey((k) => k + 1)
   }, [current?.id])
+
+  const handleSignaturePadChange = useCallback((empty: boolean, dataUrl: string) => {
+    signatureDataUrlRef.current = dataUrl
+    setSignatureEmpty((prev) => (prev === empty ? prev : empty))
+  }, [])
 
   const handleConfirm = async () => {
     if (!current) return
-    if (current.requires_signature && !signatureText.trim()) {
-      alert(isKo ? '서명(이름)을 입력해 주세요.' : 'Please enter your signature (name).')
+    const drawn = signatureDataUrlRef.current.trim()
+    if (current.requires_signature && (signatureEmpty || !drawn)) {
+      alert(isKo ? '서명을 그려 주세요.' : 'Please draw your signature.')
       return
     }
 
@@ -104,7 +115,7 @@ export function StaffSiteAlertPopupLayer({ userEmail, locale }: StaffSiteAlertPo
         .update({
           acknowledged_at: now,
           ...(current.requires_signature
-            ? { signature_text: signatureText.trim(), signed_at: now }
+            ? { signature_text: drawn, signed_at: now }
             : {}),
         })
         .eq('id', current.recipient_id)
@@ -123,8 +134,8 @@ export function StaffSiteAlertPopupLayer({ userEmail, locale }: StaffSiteAlertPo
 
   return (
     <div className="fixed inset-0 z-[260] flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center gap-2 border-b px-5 py-4">
+      <div className="flex max-h-[min(92vh,760px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex shrink-0 items-center gap-2 border-b px-5 py-4">
           <Megaphone className="h-5 w-5 text-primary" />
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-lg font-semibold text-gray-900">
@@ -136,7 +147,7 @@ export function StaffSiteAlertPopupLayer({ userEmail, locale }: StaffSiteAlertPo
           </div>
         </div>
 
-        <div className="space-y-4 px-5 py-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           <pre className="whitespace-pre-wrap text-sm leading-relaxed text-gray-800">
             {staffSiteAlertLocalizedBody(current, locale)}
           </pre>
@@ -173,27 +184,30 @@ export function StaffSiteAlertPopupLayer({ userEmail, locale }: StaffSiteAlertPo
 
           {current.requires_signature ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-              <div className="mb-2 flex items-center gap-2 text-sm font-medium text-amber-900">
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-amber-900">
                 <PenLine className="h-4 w-4" />
                 {isKo ? '서명이 필요한 안내입니다' : 'Signature required'}
               </div>
-              <label className="mb-1 block text-xs font-medium text-amber-900">
-                {isKo ? '이름(서명)' : 'Name (signature)'}
-              </label>
-              <input
-                value={signatureText}
-                onChange={(e) => setSignatureText(e.target.value)}
-                className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm"
-                placeholder={isKo ? '본인 이름을 입력하세요' : 'Enter your full name'}
+              <WaiverSignaturePad
+                key={padKey}
+                label={isKo ? '수기 서명' : 'Handwritten signature'}
+                hint={
+                  isKo
+                    ? '손가락, 스타일러스 또는 마우스로 서명하세요.'
+                    : 'Draw with finger, stylus, or mouse.'
+                }
+                clearLabel={isKo ? '지우기' : 'Clear'}
+                undoLabel={isKo ? '실행 취소' : 'Undo'}
+                onChange={handleSignaturePadChange}
               />
             </div>
           ) : null}
         </div>
 
-        <div className="flex justify-end border-t px-5 py-4">
+        <div className="flex shrink-0 justify-end border-t px-5 py-4">
           <button
             type="button"
-            disabled={submitting}
+            disabled={submitting || (current.requires_signature && signatureEmpty)}
             onClick={() => void handleConfirm()}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >

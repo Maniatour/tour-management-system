@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useId, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 
 type Point = { x: number; y: number }
@@ -35,6 +35,7 @@ export default function WaiverSignaturePad({
   const strokes = useRef<Stroke[]>([])
   const current = useRef<Stroke>([])
   const drawing = useRef(false)
+  const hintId = useId()
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current
@@ -88,7 +89,7 @@ export default function WaiverSignaturePad({
   return (
     <div className="space-y-3">
       <p className="text-sm font-medium tracking-wide text-foreground">{label}</p>
-      <p id="waiver-signature-hint" className="text-sm text-muted-foreground">
+      <p id={hintId} className="text-sm text-muted-foreground">
         {hint}
       </p>
       <div className="rounded-xl border border-border bg-white shadow-sm">
@@ -96,7 +97,7 @@ export default function WaiverSignaturePad({
           ref={canvasRef}
           className="h-[180px] w-full touch-none rounded-xl"
           aria-label={label}
-          aria-describedby="waiver-signature-hint"
+          aria-describedby={hintId}
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId)
             const c = canvasRef.current

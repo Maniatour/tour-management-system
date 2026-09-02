@@ -24,6 +24,7 @@ import {
   Camera,
   NotebookPen,
   SkipForward,
+  PenLine,
 } from 'lucide-react'
 import TourNarrationPlayLog from '@/components/tour/TourNarrationPlayLog'
 import { toast } from 'sonner'
@@ -35,6 +36,7 @@ import {
 import {
   displaySkipReasonLabel,
   displayVehicleConditionLabel,
+  isTourReportSignatureImage,
   parseIssuePhotoUrls,
   parseSkippedStops,
 } from '@/lib/tourReportExtras'
@@ -685,6 +687,26 @@ export default function TourReportList({
                       <p className="text-sm text-gray-700 bg-purple-50 p-2 rounded">{report.office_note}</p>
                     </div>
                   )}
+                  {report.sign?.trim() ? (
+                    <div>
+                      <p className="text-sm font-medium mb-1 flex items-center gap-1.5">
+                        <PenLine className="h-4 w-4 text-gray-500" />
+                        {locale === 'en' ? 'Signature:' : '서명:'}
+                      </p>
+                      {isTourReportSignatureImage(report.sign) ? (
+                        <div className="overflow-hidden rounded-xl border border-border bg-white">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={report.sign}
+                            alt={locale === 'en' ? 'Guide signature' : '가이드 서명'}
+                            className="h-[100px] w-full max-w-md object-contain object-left bg-white"
+                          />
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-800 bg-gray-50 p-2 rounded">{report.sign}</p>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               </CardContent>
             </Card>

@@ -4,6 +4,9 @@ import { Star } from 'lucide-react'
 import {
   REVIEW_BONUS_USD_PER_POINT,
   formatReviewBonusMonthLabel,
+  reviewBonusDisplayDriverName,
+  reviewBonusDisplayGuideName,
+  reviewBonusDisplayTourName,
   type ReviewBonusSummary,
 } from '@/lib/reviewBonusPoints'
 
@@ -79,7 +82,9 @@ export default function BiweeklyReviewBonusSection({ summary, loading, formatCur
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-2 py-1.5 text-left font-medium text-gray-500">등록일</th>
-                      <th className="px-2 py-1.5 text-left font-medium text-gray-500">작성자</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-gray-500">투어명</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-gray-500">가이드</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-gray-500">드라이버</th>
                       <th className="px-2 py-1.5 text-center font-medium text-gray-500">별점</th>
                       <th className="px-2 py-1.5 text-right font-medium text-gray-500">포인트</th>
                     </tr>
@@ -90,8 +95,14 @@ export default function BiweeklyReviewBonusSection({ summary, loading, formatCur
                         <td className="px-2 py-1.5 whitespace-nowrap text-gray-700">
                           {review.postedDateLv}
                         </td>
-                        <td className="px-2 py-1.5 text-gray-700 max-w-[10rem] truncate">
-                          {review.authorName || '—'}
+                        <td className="px-2 py-1.5 text-gray-700 max-w-[12rem] truncate">
+                          {reviewBonusDisplayTourName(review, 'ko')}
+                        </td>
+                        <td className="px-2 py-1.5 text-gray-700 whitespace-nowrap">
+                          {reviewBonusDisplayGuideName(review, 'ko')}
+                        </td>
+                        <td className="px-2 py-1.5 text-gray-700 whitespace-nowrap">
+                          {reviewBonusDisplayDriverName(review, 'ko')}
                         </td>
                         <td className="px-2 py-1.5 text-center text-gray-800">
                           <span className="inline-flex items-center justify-center gap-0.5">
