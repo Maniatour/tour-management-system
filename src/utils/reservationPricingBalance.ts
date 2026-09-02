@@ -740,18 +740,23 @@ export function inferResidentFeesUsdForBalance(
   lineGrossWithoutResidentFees: number,
   extraResidentFeeUsd?: number | null
 ): number {
-  if (extraResidentFeeUsd != null && Number(extraResidentFeeUsd) > 0.005) {
-    return roundUsd2(Number(extraResidentFeeUsd))
+  const fromChoices = sumResidentFeesFromPricingChoicesJson(pricing.choices)
+
+  /**
+   * 고객 행 기준으로 거주 비용을 이미 집계한 경우(0원 포함) `total_price` 갭을 쓰지 않는다.
+   * 갭은 추가할인·채널 환불(refund_amount)이 total_price에 아직 반영되지 않은
+   * 레거시 행에서 그 차액을 비거주자 비용으로 오인하게 만든다.
+   */
+  if (extraResidentFeeUsd != null) {
+    const extra = roundUsd2(Math.max(0, Number(extraResidentFeeUsd) || 0))
+    return roundUsd2(Math.max(extra, fromChoices))
   }
 
   const line = roundUsd2(lineGrossWithoutResidentFees)
   const storedTotal = pricingFieldToNumber(pricing.total_price)
   const fromGap = storedTotal > line + 0.01 ? roundUsd2(storedTotal - line) : 0
   if (fromGap > 0.005) return fromGap
-
-  const fromChoices = sumResidentFeesFromPricingChoicesJson(pricing.choices)
   if (fromChoices > 0.005) return fromChoices
-
   return 0
 }
 
@@ -837,8 +842,8 @@ export function residentFeesUsdFromCustomerRows(
 }
 
 /**
- * Balance 봉투·배정 카드와 동일: 고객 인원·저장 금액·total_price/choices 갭 중 최대값.
- * (`TourEnvelopeModal` / 가이드 픽업 인쇄에서 `residentFeeUsd` 누락 방지)
+ * 고객 인원·저장 금액·choices JSON 기준 거주 비용.
+ * 고객 행/저장 금액이 있으면 `total_price` 갭은 쓰지 않는다 (추가할인·채널 환불과 혼동 방지).
  */
 export function resolveResidentFeeUsdForBalanceDisplay(
   pricing:
@@ -871,8 +876,7 @@ export function resolveResidentFeeUsdForBalanceDisplay(
     option_total: optsOnly ? optionsTotalFromOptions : pricing.option_total,
   } as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]
   const lineGrossBase = computeCustomerPaymentTotalLineFormula(pricingForLine, party)
-  const inferred = inferResidentFeesUsdForBalance(pricing, lineGrossBase)
-  return roundUsd2(Math.max(fromFees, inferred))
+  return inferResidentFeesUsdForBalance(pricing, lineGrossBase, fromFees)
 }
 
 /**

@@ -10,6 +10,7 @@ import ReservationExpensesSection from '@/components/reservation/ReservationExpe
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import type { Reservation } from '@/types/reservation'
 import { roundUsd2, splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
+import { getPerPersonChargePax } from '@/lib/productPriceTotal'
 import {
   computePricingSectionCustomerPaymentGrossLike,
   computePricingSectionCustomerPaymentNet,
@@ -47,6 +48,8 @@ import { analyzeReservationPricingEngine } from '@/lib/pricingEngine/analyzeRese
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
 import {
   resolveReservationCommissionPercent,
+  computeChannelCommissionAmountUsd,
+  normalizeCommissionPercent,
   type BalanceChannelRowInput,
 } from '@/utils/balanceChannelRevenue'
 
@@ -625,15 +628,19 @@ export default function PricingInfoModal({
           ? productPriceTotalFromDb
           : (adultPrice * (reservation?.adults || 0) + childPrice * (reservation?.child || 0) + infantPrice * (reservation?.infant || 0))
 
-      const dep = toNum(raw.deposit_amount)
-      const comm = toNum(raw.commission_amount)
-      const chFromRow =
-        raw.channel_settlement_amount != null && raw.channel_settlement_amount !== ''
-          ? toNum(raw.channel_settlement_amount)
-          : null
-      /** DB에 0이 명시 저장된 경우도 그대로 사용 (전액 환불·정산 0). 없으면 보증금−수수료 추정 */
-      const chSettleFromDb =
-        chFromRow != null && Number.isFinite(chFromRow) ? roundUsd2(chFromRow) : roundUsd2(dep - comm)
+      const payBase =
+        toNum(raw.commission_base_price) || toNum(raw.deposit_amount)
+      const commissionAmountSynced = computeChannelCommissionAmountUsd(
+        payBase,
+        commissionPercentToUse
+      )
+      const comm =
+        commissionPercentToUse <= 0
+          ? 0
+          : commissionAmountSynced > 0
+            ? commissionAmountSynced
+            : toNum(raw.commission_amount)
+      const chSettleFromDb = roundUsd2(Math.max(0, payBase - comm))
 
       const pricingAdultsMerged = inferPricingAdultsWhenUnset({
         pricingAdultsRaw: raw.pricing_adults,
@@ -661,7 +668,7 @@ export default function PricingInfoModal({
           (raw as { refund_reason?: string | null }).refund_reason != null
             ? String((raw as { refund_reason?: string | null }).refund_reason)
             : null,
-        commission_amount: toNum(data.commission_amount),
+        commission_amount: comm,
         commission_percent: commissionPercentToUse,
         commission_base_price: toNum(raw.commission_base_price),
         channel_settlement_amount: chSettleFromDb,
@@ -1013,14 +1020,13 @@ export default function PricingInfoModal({
     const totalPrice = Math.max(0, subtotal - totalDiscount + totalAdditional - refundAmt)
     updatedData.total_price = totalPrice
     
-    if (field === 'commission_percent') {
+    if (field === 'commission_percent' || field === 'commission_base_price') {
       const channelPayBase = roundUsd2(
         Number(updatedData.commission_base_price) || Number(updatedData.deposit_amount) || 0
       )
-      const pct = Math.max(0, value)
-      if (channelPayBase > 0 && pct > 0) {
-        updatedData.commission_amount = roundUsd2(channelPayBase * (pct / 100))
-      }
+      const pct = normalizeCommissionPercent(updatedData.commission_percent)
+      updatedData.commission_percent = pct
+      updatedData.commission_amount = computeChannelCommissionAmountUsd(channelPayBase, pct)
     }
 
     // 디버깅: 필드 변경 시 로그 출력
@@ -1159,9 +1165,13 @@ export default function PricingInfoModal({
       pricingAdultsVal,
       reservation.child ?? 0,
       reservation.infant ?? 0,
-      ra
+      ra,
+      {
+        isSinglePrice: channelPricingType === 'single',
+        reservationAdults: reservation.adults ?? 0,
+      }
     )
-  }, [editData, reservation, pricingAdultsVal])
+  }, [editData, reservation, pricingAdultsVal, channelPricingType])
 
   const reservationOptionsTotalUsd = liveReservationOptionsTotal
 
@@ -1209,7 +1219,13 @@ export default function PricingInfoModal({
       return roundUsd2(Number(fromForm))
     }
     const pa = Math.max(0, Math.floor(Number(editData.pricing_adults ?? reservation.adults) || 0))
-    const billingPax = pa + (reservation.child || 0) + (reservation.infant || 0)
+    const billingPax = getPerPersonChargePax({
+      isSinglePrice: channelPricingType === 'single',
+      pricingAdults: pa,
+      reservationAdults: reservation.adults ?? 0,
+      child: reservation.child || 0,
+      infant: reservation.infant || 0,
+    })
     const cancelledOtaSettle = isOtaNotIncludedExcludedSettle
     const notIncludedTotal = cancelledOtaSettle ? 0 : (Number(editData.not_included_price) || 0) * (billingPax || 1)
     const productTotalForSettlement = (Number(editData.product_price_total) || 0) + notIncludedTotal
@@ -1250,7 +1266,13 @@ export default function PricingInfoModal({
       rawCb !== undefined && rawCb !== null && Number.isFinite(Number(rawCb)) ? Number(rawCb) : 0
     if (!stored) return 0
     const pa = Math.max(0, Math.floor(Number(editData.pricing_adults ?? reservation.adults) || 0))
-    const billingPax = pa + (reservation.child || 0) + (reservation.infant || 0)
+    const billingPax = getPerPersonChargePax({
+      isSinglePrice: channelPricingType === 'single',
+      pricingAdults: pa,
+      reservationAdults: reservation.adults ?? 0,
+      child: reservation.child || 0,
+      infant: reservation.infant || 0,
+    })
     const cancelledOtaSettle = isOtaNotIncludedExcludedSettle
     const notIncludedTotal = cancelledOtaSettle ? 0 : (Number(editData.not_included_price) || 0) * (billingPax || 1)
     const productTotalForSettlement = (Number(editData.product_price_total) || 0) + notIncludedTotal

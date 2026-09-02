@@ -74,6 +74,9 @@ export type StoredCompanyRevenueComputeInput = {
   pricingAdults: number
   child: number
   infant: number
+  /** 단일가 채널이면 성인 칸 총원 입력 시 아동을 다시 더하지 않음 */
+  isSinglePrice?: boolean
+  reservationAdults?: number
   residentStatusAmounts?: Record<string, number>
   choiceNotIncludedTotal?: number
   choiceNotIncludedBaseTotal?: number
@@ -279,7 +282,13 @@ export function computeStoredCompanyRevenueFields(
       inp.pricingAdults,
       inp.child,
       inp.infant,
-      inp.residentStatusAmounts
+      inp.residentStatusAmounts,
+      {
+        ...(inp.isSinglePrice !== undefined ? { isSinglePrice: inp.isSinglePrice } : {}),
+        ...(inp.reservationAdults !== undefined
+          ? { reservationAdults: inp.reservationAdults }
+          : {}),
+      }
     )
     if (baseUsd > 0.005) {
       tr += baseUsd

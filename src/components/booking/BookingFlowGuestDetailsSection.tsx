@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Hotel, Loader2, MessageCircle, Search } from 'lucide-react'
+import { Check, Hotel, Loader2, MessageCircle, Search, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { buildLegalPageHref } from '@/lib/customerSiteRoutes'
 import {
@@ -14,9 +14,10 @@ import {
 } from '@/lib/customerCommunicationChannel'
 import BookingFlowAlternativeDateFields from '@/components/booking/BookingFlowAlternativeDateFields'
 import {
-  fetchCustomerPickupHotels,
+  fetchSelectablePickupHotels,
   filterCustomerPickupHotels,
-  type CustomerPickupHotelLocation,
+  formatCustomerPickupHotelLabel,
+  type CustomerPickupHotelOption,
 } from '@/lib/customerPickupHotels'
 
 export type BookingGuestCustomerInfo = {
@@ -27,7 +28,7 @@ export type BookingGuestCustomerInfo = {
   customerLanguage: string
   tourLanguages: string[]
   specialRequests: string
-  localContactChannel: CustomerCommunicationChannel | ''
+  localContactChannels: CustomerCommunicationChannel[]
   localContactHandle: string
   smsConsent: boolean
 }
@@ -84,6 +85,12 @@ function getBookingChannelLabel(
   return tReservation(`communicationChannel.${channel}`)
 }
 
+const LOCAL_CONTACT_HANDLE_CHANNELS = new Set<CustomerCommunicationChannel>([
+  'kakaotalk',
+  'line',
+  'whatsapp',
+])
+
 export default function BookingFlowGuestDetailsSection({
   isEnglish,
   translate,
@@ -105,10 +112,9 @@ export default function BookingFlowGuestDetailsSection({
   const locale = isEnglish ? 'en' : 'ko'
   const tReservation = useTranslations('reservations.card')
 
-  const [pickupHotels, setPickupHotels] = useState<CustomerPickupHotelLocation[]>([])
-  const [loadingPickupHotels, setLoadingPickupHotels] = useState(false)
+  const [pickupHotels, setPickupHotels] = useState<CustomerPickupHotelOption[]>([])
+  const [loadingPickupHotels, setLoadingPickupHotels] = useState(true)
   const [pickupSearch, setPickupSearch] = useState('')
-  const [showPickupDropdown, setShowPickupDropdown] = useState(false)
   const [useCustomPickupHotel, setUseCustomPickupHotel] = useState(false)
 
   useEffect(() => {
@@ -116,7 +122,7 @@ export default function BookingFlowGuestDetailsSection({
     const loadHotels = async () => {
       setLoadingPickupHotels(true)
       try {
-        const hotels = await fetchCustomerPickupHotels()
+        const hotels = await fetchSelectablePickupHotels()
         if (!cancelled) setPickupHotels(hotels)
       } catch {
         if (!cancelled) setPickupHotels([])
@@ -132,9 +138,7 @@ export default function BookingFlowGuestDetailsSection({
 
   useEffect(() => {
     if (!pickupHotelId) return
-    const matched = pickupHotels.find((hotel) => hotel.id === pickupHotelId)
-    if (matched) {
-      setPickupSearch(`${matched.hotel}${matched.pick_up_location ? ` · ${matched.pick_up_location}` : ''}`)
+    if (pickupHotels.some((hotel) => hotel.id === pickupHotelId)) {
       setUseCustomPickupHotel(false)
     }
   }, [pickupHotelId, pickupHotels])
@@ -143,8 +147,12 @@ export default function BookingFlowGuestDetailsSection({
     () => filterCustomerPickupHotels(pickupHotels, pickupSearch),
     [pickupHotels, pickupSearch]
   )
-
-  const selectedChannel = customerInfo.localContactChannel
+  const selectedPickupHotel = useMemo(
+    () => pickupHotels.find((hotel) => hotel.id === pickupHotelId) ?? null,
+    [pickupHotels, pickupHotelId]
+  )
+  const selectedChannels = customerInfo.localContactChannels ?? []
+  const showContactHandle = selectedChannels.some((channel) => LOCAL_CONTACT_HANDLE_CHANNELS.has(channel))
 
   return (
     <div className="space-y-6">
@@ -261,26 +269,31 @@ export default function BookingFlowGuestDetailsSection({
             </h4>
             <p className="text-xs text-muted-foreground">
               {translate(
-                '투어 전후 회사가 연락드릴 수 있는 메신저를 선택해 주세요.',
-                'Choose how our team can reach you before or during your trip.'
+                '투어 전후 회사가 연락드릴 수 있는 방법을 하나 이상 선택해 주세요.',
+                'Choose one or more ways our team can reach you before or during your trip.'
               )}
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" role="group" aria-label={translate('현지 연락 방법', 'Local Contact Method')}>
           {BOOKING_LOCAL_CONTACT_CHANNELS.map((channel) => {
-            const selected = selectedChannel === channel
+            const selected = selectedChannels.includes(channel)
             return (
               <button
                 key={channel}
                 type="button"
-                onClick={() =>
+                aria-pressed={selected}
+                onClick={() => {
+                  const next = selected
+                    ? selectedChannels.filter((item) => item !== channel)
+                    : [...selectedChannels, channel]
+                  const nextNeedsHandle = next.some((item) => LOCAL_CONTACT_HANDLE_CHANNELS.has(item))
                   onCustomerInfoChange({
-                    localContactChannel: selected ? '' : channel,
-                    ...(selected ? { localContactHandle: '' } : {}),
+                    localContactChannels: next,
+                    ...(!nextNeedsHandle ? { localContactHandle: '' } : {}),
                   })
-                }
+                }}
                 className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${
                   selected
                     ? 'border-primary bg-primary/5 text-foreground'
@@ -290,15 +303,16 @@ export default function BookingFlowGuestDetailsSection({
                 <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
                   {renderCustomerCommunicationChannelIcon(channel, 'h-4 w-4')}
                 </span>
-                <span className="font-medium leading-tight">
+                <span className="flex-1 font-medium leading-tight">
                   {getBookingChannelLabel(channel, isEnglish, tReservation)}
                 </span>
+                {selected ? <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden /> : null}
               </button>
             )
           })}
         </div>
 
-        {selectedChannel ? (
+        {showContactHandle ? (
           <div className="mt-3">
             <label className="mb-1 block text-sm font-medium text-gray-700">
               {translate('연락처 ID / 번호', 'Contact ID / Number')}
@@ -326,65 +340,118 @@ export default function BookingFlowGuestDetailsSection({
             </h4>
             <p className="text-xs text-muted-foreground">
               {translate(
-                '픽업 받으실 호텔을 검색하거나 직접 입력해 주세요.',
-                'Search for your pickup hotel or enter it manually.'
+                '픽업 받으실 호텔을 검색하거나 아래 목록에서 선택해 주세요.',
+                'Search or choose your pickup hotel from the list below.'
               )}
             </p>
           </div>
         </div>
 
         {!useCustomPickupHotel ? (
-          <div className="relative">
+          <div className="space-y-3">
+            {selectedPickupHotel ? (
+              <div className="flex items-start justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-primary">
+                    {translate('선택한 호텔', 'Selected hotel')}
+                  </p>
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {selectedPickupHotel.hotel}
+                  </p>
+                  {selectedPickupHotel.pick_up_location ? (
+                    <p className="text-xs text-muted-foreground">{selectedPickupHotel.pick_up_location}</p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onPickupHotelIdChange('')
+                    setPickupSearch('')
+                  }}
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-card hover:text-foreground"
+                  aria-label={translate('선택 해제', 'Clear selection')}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : null}
+
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
                 value={pickupSearch}
-                onChange={(e) => {
-                  setPickupSearch(e.target.value)
-                  setShowPickupDropdown(true)
-                  if (!e.target.value.trim()) onPickupHotelIdChange('')
-                }}
-                onFocus={() => setShowPickupDropdown(true)}
+                onChange={(e) => setPickupSearch(e.target.value)}
                 className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 focus:border-transparent focus:ring-2 focus:ring-ring"
                 placeholder={translate('호텔명 검색', 'Search hotel name')}
+                autoComplete="off"
               />
             </div>
+
             {loadingPickupHotels ? (
-              <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 {translate('픽업 호텔 불러오는 중…', 'Loading pickup hotels…')}
               </div>
-            ) : null}
-            {showPickupDropdown && pickupSearch.trim() && filteredPickupHotels.length > 0 ? (
-              <div className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-border/60 bg-card shadow-md">
-                {filteredPickupHotels.slice(0, 8).map((hotel) => (
-                  <button
-                    key={hotel.id}
-                    type="button"
-                    onClick={() => {
-                      onPickupHotelIdChange(
-                        hotel.id,
-                        `${hotel.hotel}${hotel.pick_up_location ? ` · ${hotel.pick_up_location}` : ''}`
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-border/60 bg-card">
+                <div className="flex items-center justify-between border-b border-border/60 bg-muted/30 px-3 py-2">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {pickupSearch.trim()
+                      ? translate(
+                          `검색 결과 ${filteredPickupHotels.length}곳`,
+                          `${filteredPickupHotels.length} hotel${filteredPickupHotels.length === 1 ? '' : 's'} found`
+                        )
+                      : translate(
+                          `픽업 호텔 ${pickupHotels.length}곳`,
+                          `${pickupHotels.length} pickup hotel${pickupHotels.length === 1 ? '' : 's'}`
+                        )}
+                  </p>
+                </div>
+                {filteredPickupHotels.length > 0 ? (
+                  <div className="max-h-64 overflow-y-auto" role="listbox" aria-label={translate('픽업 호텔 목록', 'Pickup hotel list')}>
+                    {filteredPickupHotels.map((hotel) => {
+                      const selected = hotel.id === pickupHotelId
+                      return (
+                        <button
+                          key={hotel.id}
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          onClick={() => {
+                            onPickupHotelIdChange(hotel.id, formatCustomerPickupHotelLabel(hotel))
+                            onPickupHotelCustomChange('')
+                            setPickupSearch('')
+                          }}
+                          className={`flex w-full items-start gap-2 border-b border-border/40 px-3 py-2.5 text-left last:border-b-0 ${
+                            selected ? 'bg-primary/5' : 'hover:bg-muted/60'
+                          }`}
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium text-foreground">{hotel.hotel}</span>
+                            {hotel.pick_up_location ? (
+                              <span className="mt-0.5 block text-xs text-muted-foreground">
+                                {hotel.pick_up_location}
+                              </span>
+                            ) : null}
+                          </span>
+                          {selected ? <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden /> : null}
+                        </button>
                       )
-                      onPickupHotelCustomChange('')
-                      setPickupSearch(
-                        `${hotel.hotel}${hotel.pick_up_location ? ` · ${hotel.pick_up_location}` : ''}`
-                      )
-                      setShowPickupDropdown(false)
-                    }}
-                    className="block w-full px-3 py-2 text-left text-sm hover:bg-muted/60"
-                  >
-                    <span className="font-medium text-foreground">{hotel.hotel}</span>
-                    {hotel.pick_up_location ? (
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
-                        {hotel.pick_up_location}
-                      </span>
-                    ) : null}
-                  </button>
-                ))}
+                    })}
+                  </div>
+                ) : (
+                  <p className="px-3 py-4 text-sm text-muted-foreground">
+                    {pickupHotels.length === 0
+                      ? translate(
+                          '등록된 픽업 호텔이 없습니다. 호텔명을 직접 입력해 주세요.',
+                          'No pickup hotels are listed. Enter your hotel name instead.'
+                        )
+                      : translate('검색 결과가 없습니다.', 'No hotels match your search.')}
+                  </p>
+                )}
               </div>
-            ) : null}
+            )}
           </div>
         ) : (
           <input

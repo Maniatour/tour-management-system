@@ -25,6 +25,7 @@ import {
 import type { ChannelSettlementComputeInput } from '@/utils/channelSettlement'
 import {
   computeProductPriceTotal,
+  getPerPersonChargePax,
   getSinglePriceBillingPax,
   isChannelSinglePrice,
 } from '@/lib/productPriceTotal'
@@ -53,6 +54,11 @@ import {
   parseUsdNumberInput,
   isPhantomNegativeOnSiteBalance,
 } from '@/utils/reservationPricingBalance'
+import {
+  computeChannelCommissionAmountUsd,
+  normalizeCommissionPercent,
+  preferChannelMasterCommissionPercent,
+} from '@/utils/balanceChannelRevenue'
 import { splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
 import {
   isCancelledReservationStatus,
@@ -488,6 +494,27 @@ export default function PricingSection({
   const [choiceNotIncludedTotal, setChoiceNotIncludedTotal] = useState(0)
   const [choiceNotIncludedBaseTotal, setChoiceNotIncludedBaseTotal] = useState(0)
 
+  const perPersonChargePax = useMemo(
+    () =>
+      getPerPersonChargePax({
+        isSinglePrice: isChannelSinglePrice(
+          channels?.find((c) => c.id === formData.channelId)
+        ),
+        pricingAdults: formData.pricingAdults,
+        reservationAdults: formData.adults,
+        child: formData.child,
+        infant: formData.infant,
+      }),
+    [
+      channels,
+      formData.channelId,
+      formData.pricingAdults,
+      formData.adults,
+      formData.child,
+      formData.infant,
+    ]
+  )
+
   const notIncludedBreakdown = useMemo(
     () =>
       splitNotIncludedForDisplay(
@@ -497,7 +524,8 @@ export default function PricingSection({
         formData.pricingAdults,
         formData.child,
         formData.infant,
-        formData.residentStatusAmounts
+        formData.residentStatusAmounts,
+        { billingPax: perPersonChargePax, reservationAdults: formData.adults }
       ),
     [
       choiceNotIncludedTotal,
@@ -507,6 +535,8 @@ export default function PricingSection({
       formData.child,
       formData.infant,
       formData.residentStatusAmounts,
+      formData.adults,
+      perPersonChargePax,
     ]
   )
 
@@ -1020,6 +1050,14 @@ export default function PricingSection({
       setPartnerReceivedForSettlement(partnerReceivedStrict)
 
       const fd = formDataRef.current
+      const channelForPax = channelsRef.current?.find((c) => c.id === fd.channelId)
+      const billingPaxForNi = getPerPersonChargePax({
+        isSinglePrice: isChannelSinglePrice(channelForPax),
+        pricingAdults: fd.pricingAdults,
+        reservationAdults: fd.adults,
+        child: fd.child,
+        infant: fd.infant,
+      })
 
       // 입금 내역이 있을 때만 보증금을 입금 합계 기준으로 덮어씀.
       // 입금 내역이 없으면 DB/사용자가 입력한 보증금을 유지 (할인가로 덮어쓰면 저장값이 사라지는 버그 방지)
@@ -1031,7 +1069,8 @@ export default function PricingSection({
         fd.pricingAdults,
         fd.child,
         fd.infant,
-        (fd as any).residentStatusAmounts
+        (fd as any).residentStatusAmounts,
+        { billingPax: billingPaxForNi, reservationAdults: fd.adults }
       ).totalUsd
       const discountedPriceWithoutNotIncluded = discountedPrice - notIncludedPrice
       /** 보증금(표시·deposit_amount): 입금 보증 버킷 합(파트너 수령·보증금 수령 등). Refunded·Returned는 하위 라인·잔액은 depositTotalNet 기준. */
@@ -1240,7 +1279,11 @@ export default function PricingSection({
     
     // 채널의 commission_percent 가져오기 (숫자로 변환)
     const channelCommissionPercent = selectedChannel
-      ? (Number((selectedChannel as any).commission_percent ?? (selectedChannel as any).commission_rate ?? (selectedChannel as any).commission) || 0)
+      ? normalizeCommissionPercent(
+          (selectedChannel as any).commission_percent ??
+            (selectedChannel as any).commission_rate ??
+            (selectedChannel as any).commission
+        )
       : 0
     
     if (formData.productPriceTotal > 0) {
@@ -1270,24 +1313,11 @@ export default function PricingSection({
             calculatedComm: number
           ): number => {
             const fp = otaCommissionFeeFingerprint(commissionCalcBase, pct)
-            const refEmpty = otaCommissionAutoFingerprintRef.current === ''
-            const currentStored = formData.commission_amount ?? 0
-            if (refEmpty && isExistingPricingLoaded) {
-              otaCommissionAutoFingerprintRef.current = fp
-              isCardFeeManuallyEdited.current = false
-              return currentStored
+            if (isCardFeeManuallyEdited.current && fp === otaCommissionAutoFingerprintRef.current) {
+              return formData.commission_amount ?? 0
             }
-            if (fp !== otaCommissionAutoFingerprintRef.current) {
-              otaCommissionAutoFingerprintRef.current = fp
-              isCardFeeManuallyEdited.current = false
-              return calculatedComm
-            }
-            if (isCardFeeManuallyEdited.current) {
-              return currentStored
-            }
-            if (Math.abs(currentStored - calculatedComm) < 0.01) {
-              return currentStored
-            }
+            otaCommissionAutoFingerprintRef.current = fp
+            isCardFeeManuallyEdited.current = false
             return calculatedComm
           }
 
@@ -1306,12 +1336,14 @@ export default function PricingSection({
             const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
             const ret = Math.max(0, Number(returnedAmount) || 0)
             const channelPaymentBase = Math.max(0, roundUsd2(salePriceTimesPax - Math.max(manualRef, ret)))
-            const commissionPercent = (formData.commission_percent != null && formData.commission_percent > 0)
-              ? Number(formData.commission_percent)
-              : channelCommissionPercent
-            const calculatedCommission = (commissionPercent > 0 && channelPaymentBase > 0)
-              ? Math.round(channelPaymentBase * (commissionPercent / 100) * 100) / 100
-              : (formData.commission_amount ?? 0)
+            const commissionPercent = preferChannelMasterCommissionPercent(
+              formData.commission_percent,
+              channelCommissionPercent
+            )
+            const calculatedCommission = computeChannelCommissionAmountUsd(
+              channelPaymentBase,
+              commissionPercent
+            )
             const nextCommissionAmount = resolveNextOtaCommissionAmount(
               channelPaymentBase,
               commissionPercent,
@@ -1331,12 +1363,14 @@ export default function PricingSection({
             const manualRef = Math.max(0, Number(formData.refundAmount) || 0)
             const ret = Math.max(0, Number(returnedAmount) || 0)
             const channelPaymentBase = Math.max(0, roundUsd2(salePriceTimesPax - Math.max(manualRef, ret)))
-            const commissionPercent = (formData.commission_percent != null && formData.commission_percent > 0)
-              ? Number(formData.commission_percent)
-              : channelCommissionPercent
-            const calculatedCommission = (commissionPercent > 0 && channelPaymentBase > 0)
-              ? Math.round(channelPaymentBase * (commissionPercent / 100) * 100) / 100
-              : (formData.commission_amount ?? 0)
+            const commissionPercent = preferChannelMasterCommissionPercent(
+              formData.commission_percent,
+              channelCommissionPercent
+            )
+            const calculatedCommission = computeChannelCommissionAmountUsd(
+              channelPaymentBase,
+              commissionPercent
+            )
             const nextCommissionAmount = resolveNextOtaCommissionAmount(
               channelPaymentBase,
               commissionPercent,
@@ -1358,7 +1392,7 @@ export default function PricingSection({
                 depositAmount: depositPortion,
                 onlinePaymentAmount: salePriceTimesPax,
                 commission_base_price: channelPaymentBase,
-                commission_percent: (prev.commission_percent != null && prev.commission_percent > 0) ? prev.commission_percent : commissionPercent,
+                commission_percent: commissionPercent > 0 ? commissionPercent : prev.commission_percent,
                 commission_amount: nextCommissionAmount,
                 onSiteBalanceAmount: otaRemainingBalance,
                 balanceAmount: otaRemainingBalance
@@ -1445,10 +1479,9 @@ export default function PricingSection({
   // 채널의 commission_percent 가져오기 (여러 필드명 지원)
   // channels 테이블에는 commission 컬럼이 있음 (commission_percent는 없을 수 있음)
   const channelCommissionPercent = selectedChannel
-    ? (() => {
-        const percent = selectedChannel.commission_percent ?? selectedChannel.commission_rate ?? selectedChannel.commission
-        return percent ? Number(percent) : 0
-      })()
+    ? normalizeCommissionPercent(
+        selectedChannel.commission_percent ?? selectedChannel.commission_rate ?? selectedChannel.commission
+      )
     : 0
 
   const reservationStatusRaw = (formData as { status?: string }).status
@@ -1575,11 +1608,7 @@ export default function PricingSection({
   /** 자체(비-OTA) 채널: `computeChannelPaymentAfterReturn` / 정산과 동일 입력(상품+불포함·옵션·추가비용·카드수수료 등). */
   const selfChannelPaymentEngineInput = useMemo((): ChannelSettlementComputeInput | null => {
     if (isOTAChannel) return null
-    const pricingAdultsVal = Math.max(
-      0,
-      Math.floor(Number(formData.pricingAdults ?? formData.adults) || 0)
-    )
-    const billingPax = pricingAdultsVal + (formData.child || 0) + (formData.infant || 0)
+    const billingPax = perPersonChargePax
     const cancelledOtaSettle = isOtaNotIncludedExcludedSettle
     const notIncludedTotal =
       cancelledOtaSettle ? 0 : (Number(formData.not_included_price) || 0) * (billingPax || 1)
@@ -1617,10 +1646,7 @@ export default function PricingSection({
   }, [
     isOTAChannel,
     isReservationCancelled,
-    formData.pricingAdults,
-    formData.adults,
-    formData.child,
-    formData.infant,
+    perPersonChargePax,
     formData.not_included_price,
     formData.productPriceTotal,
     formData.depositAmount,
@@ -1768,11 +1794,7 @@ export default function PricingSection({
       return roundUsd2(Number(fromForm))
     }
 
-    const pricingAdultsVal = Math.max(
-      0,
-      Math.floor(Number(formData.pricingAdults ?? formData.adults) || 0)
-    )
-    const billingPax = pricingAdultsVal + (formData.child || 0) + (formData.infant || 0)
+    const billingPax = perPersonChargePax
     const cancelledOtaSettle = isOtaNotIncludedExcludedSettle
     const notIncludedTotal = cancelledOtaSettle
       ? 0
@@ -1816,10 +1838,7 @@ export default function PricingSection({
     channelPaymentGrossDb,
     formData.productPriceTotal,
     formData.not_included_price,
-    formData.pricingAdults,
-    formData.adults,
-    formData.child,
-    formData.infant,
+    perPersonChargePax,
     formData.couponDiscount,
     formData.additionalDiscount,
     formData.optionTotal,
@@ -2361,28 +2380,65 @@ export default function PricingSection({
     setFormData,
   ])
   
+  // 채널 수수료 %가 0·없으면 채널 수수료 $도 0 (DB에 남은 18% 금액 등 유지 금지)
+  useEffect(() => {
+    if (!isOTAChannel) return
+    if (isCommissionAmountFocused) return
+    const pct = preferChannelMasterCommissionPercent(
+      formData.commission_percent,
+      channelCommissionPercent
+    )
+    if (pct > 0) return
+    setFormData((prev: typeof formData) => {
+      if ((prev.commission_amount ?? 0) === 0) return prev
+      return { ...prev, commission_amount: 0 }
+    })
+  }, [
+    isOTAChannel,
+    formData.commission_percent,
+    formData.commission_amount,
+    channelCommissionPercent,
+    isCommissionAmountFocused,
+    setFormData,
+  ])
+
   // commission_amount가 0일 때 채널 수수료 자동 계산 (값이 실제로 다를 때만 set, 무한 루프 방지)
   useEffect(() => {
     if (isReservationCancelled) return
     if (!isOTAChannel || isCardFeeManuallyEdited.current) return
-    if (isExistingPricingLoaded) return // DB에 값이 있으면 계산하지 않음
-    if (pricingFieldsFromDb.commission_amount) return
-    const currentCommissionAmount = formData.commission_amount || 0
-    if (currentCommissionAmount !== 0) return
+    if (channelPaymentAmountFieldFocusedRef.current) return
+    if (isCommissionAmountFocused) return
 
     const adjustedBasePrice = channelPaymentAmountAfterReturn
-    const commissionPercent = (formData.commission_percent && formData.commission_percent > 0)
-      ? formData.commission_percent
-      : (channelCommissionPercent || 0)
-    if (commissionPercent <= 0 || adjustedBasePrice <= 0) return
+    const commissionPercent = preferChannelMasterCommissionPercent(
+      formData.commission_percent,
+      channelCommissionPercent
+    )
+    if (commissionPercent <= 0) {
+      setFormData((prev: typeof formData) => {
+        if ((prev.commission_amount ?? 0) === 0) return prev
+        return { ...prev, commission_amount: 0 }
+      })
+      return
+    }
+    if (adjustedBasePrice <= 0) return
 
-    const calculatedCommission = adjustedBasePrice * (commissionPercent / 100)
+    const calculatedCommission = computeChannelCommissionAmountUsd(
+      adjustedBasePrice,
+      commissionPercent
+    )
     if (calculatedCommission <= 0) return
 
     setFormData((prev: typeof formData) => {
       const prevAmount = prev.commission_amount ?? 0
-      if (Math.abs(prevAmount - calculatedCommission) < 0.01) return prev
-      return { ...prev, commission_amount: calculatedCommission }
+      const prevPct = normalizeCommissionPercent(prev.commission_percent)
+      if (
+        Math.abs(prevAmount - calculatedCommission) < 0.01 &&
+        Math.abs(prevPct - commissionPercent) < 0.0001
+      ) {
+        return prev
+      }
+      return { ...prev, commission_percent: commissionPercent, commission_amount: calculatedCommission }
     })
   }, [
     isReservationCancelled,
@@ -2399,6 +2455,7 @@ export default function PricingSection({
     formData.subtotal,
     channelCommissionPercent,
     channelPaymentAmountAfterReturn,
+    isCommissionAmountFocused,
     pricingFieldsFromDb,
     setFormData,
   ])
@@ -2407,24 +2464,39 @@ export default function PricingSection({
   useEffect(() => {
     if (isReservationCancelled) return
     if (!isOTAChannel || isCardFeeManuallyEdited.current) return
-    if (isExistingPricingLoaded) return // DB에 값이 있으면 계산하지 않음
-    if (pricingFieldsFromDb.commission_amount) return
-    const currentCommissionAmount = formData.commission_amount || 0
-    if (currentCommissionAmount !== 0) return
+    if (channelPaymentAmountFieldFocusedRef.current) return
+    if (isCommissionAmountFocused) return
 
     const adjustedBasePrice = channelPaymentAmountAfterReturn
-    const commissionPercent = (formData.commission_percent && formData.commission_percent > 0)
-      ? formData.commission_percent
-      : (channelCommissionPercent || 0)
-    if (commissionPercent <= 0 || adjustedBasePrice <= 0) return
+    const commissionPercent = preferChannelMasterCommissionPercent(
+      formData.commission_percent,
+      channelCommissionPercent
+    )
+    if (commissionPercent <= 0) {
+      setFormData((prev: typeof formData) => {
+        if ((prev.commission_amount ?? 0) === 0) return prev
+        return { ...prev, commission_amount: 0 }
+      })
+      return
+    }
+    if (adjustedBasePrice <= 0) return
 
-    const calculatedCommission = adjustedBasePrice * (commissionPercent / 100)
+    const calculatedCommission = computeChannelCommissionAmountUsd(
+      adjustedBasePrice,
+      commissionPercent
+    )
     if (calculatedCommission <= 0) return
 
     setFormData((prev: typeof formData) => {
       const prevAmount = prev.commission_amount ?? 0
-      if (Math.abs(prevAmount - calculatedCommission) < 0.01) return prev
-      return { ...prev, commission_amount: calculatedCommission }
+      const prevPct = normalizeCommissionPercent(prev.commission_percent)
+      if (
+        Math.abs(prevAmount - calculatedCommission) < 0.01 &&
+        Math.abs(prevPct - commissionPercent) < 0.0001
+      ) {
+        return prev
+      }
+      return { ...prev, commission_percent: commissionPercent, commission_amount: calculatedCommission }
     })
   }, [
     isReservationCancelled,
@@ -2441,6 +2513,7 @@ export default function PricingSection({
     formData.subtotal,
     channelCommissionPercent,
     channelPaymentAmountAfterReturn,
+    isCommissionAmountFocused,
     pricingFieldsFromDb,
     setFormData,
   ])
@@ -2448,30 +2521,46 @@ export default function PricingSection({
   // OTA + 채널 수수료: 채널이 로드된 뒤 수수료 %와 $를 한 번에 설정 (채널 수수료 %가 채널 수수료 $보다 나중에 로드되어도 동작)
   useEffect(() => {
     if (channelPaymentAmountFieldFocusedRef.current) return
+    if (isCommissionAmountFocused) return
+    if (isCardFeeManuallyEdited.current) return
     if (isReservationCancelled) return
-    if (!formData.channelId || !channels?.length || isExistingPricingLoaded) return
-    if (pricingFieldsFromDb.commission_amount) return
+    if (!formData.channelId || !channels?.length) return
     const ch = channels.find((c: { id: string }) => c.id === formData.channelId)
     const isOTA = channelIsOtaForPricingSection(ch)
     if (!isOTA) return
-    const percentFromChannel = Number((ch as any).commission_percent ?? (ch as any).commission_rate ?? (ch as any).commission) || 0
-    if (percentFromChannel <= 0) return
-    const currentAmount = formData.commission_amount ?? 0
-    if (currentAmount > 0.01) return
+    const percentFromChannel = normalizeCommissionPercent(
+      (ch as any).commission_percent ?? (ch as any).commission_rate ?? (ch as any).commission
+    )
+    const percent = preferChannelMasterCommissionPercent(
+      formData.commission_percent,
+      percentFromChannel
+    )
+    if (percent <= 0) {
+      setFormData((prev: typeof formData) => {
+        if ((prev.commission_amount ?? 0) === 0) return prev
+        return { ...prev, commission_amount: 0 }
+      })
+      return
+    }
 
     const adjustedBase = channelPaymentAmountAfterReturn
     if (adjustedBase <= 0) return
 
-    const percent = (formData.commission_percent != null && formData.commission_percent > 0) ? formData.commission_percent : percentFromChannel
-    const calculated = Math.round(adjustedBase * (percent / 100) * 100) / 100
+    const calculated = computeChannelCommissionAmountUsd(adjustedBase, percent)
     if (calculated <= 0) return
 
     setFormData((prev: typeof formData) => {
       const prevAmount = prev.commission_amount ?? 0
-      if (Math.abs(prevAmount - calculated) < 0.01) return prev
+      const prevPct = normalizeCommissionPercent(prev.commission_percent)
+      if (
+        Math.abs(prevAmount - calculated) < 0.01 &&
+        Math.abs(prevPct - percent) < 0.0001
+      ) {
+        return prev
+      }
       return {
         ...prev,
-        commission_percent: (prev.commission_percent != null && prev.commission_percent > 0) ? prev.commission_percent : percent,
+        commission_percent: percent,
         commission_amount: calculated,
         ...(prev.commission_base_price == null && adjustedBase > 0
           ? { commission_base_price: adjustedBase }
@@ -2493,6 +2582,7 @@ export default function PricingSection({
     formData.subtotal,
     returnedAmount,
     channelPaymentAmountAfterReturn,
+    isCommissionAmountFocused,
     pricingFieldsFromDb,
     setFormData,
   ])
@@ -2515,7 +2605,7 @@ export default function PricingSection({
   
   // 초이스별 불포함 금액 계산 (항상 dynamic_pricing에서 조회)
   const calculateChoiceNotIncludedTotal = useCallback(async (): Promise<NotIncludedCalcResult> => {
-    const paxEarly = (formData.pricingAdults || 0) + (formData.child || 0) + (formData.infant || 0)
+    const paxEarly = perPersonChargePax
     const residentOnlyEarly = sumResidentFeeAmountsUsd(formData.residentStatusAmounts)
     const fieldOnlyEarly = (formData.not_included_price || 0) * paxEarly
 
@@ -2586,7 +2676,7 @@ export default function PricingSection({
             : pricing.choices_pricing
         } catch (e) {
           console.warn('choices_pricing 파싱 오류:', e)
-          const pax = formData.pricingAdults + formData.child + formData.infant
+          const pax = perPersonChargePax
           const fieldFromForm = (formData.not_included_price || 0) * pax
           return packNotIncluded(
             Math.max(defaultNotIncludedPrice * pax, fieldFromForm),
@@ -2597,7 +2687,7 @@ export default function PricingSection({
 
       // 선택된 초이스별 불포함 금액 계산 (미국 거주자 구분 그룹은 UI 금액(residentStatusAmounts)으로만 합산해 초이스와 무관하게 반영)
       let totalNotIncluded = 0
-      const totalPax = formData.pricingAdults + formData.child + formData.infant
+      const totalPax = perPersonChargePax
       const residentClassChoice = findUsResidentClassificationChoice(
         (formData.productChoices || []) as Parameters<typeof findUsResidentClassificationChoice>[0]
       )
@@ -2633,7 +2723,7 @@ export default function PricingSection({
             const choiceNotIncludedPrice = choicePricing.not_included_price !== undefined && choicePricing.not_included_price !== null
               ? choicePricing.not_included_price
               : defaultNotIncludedPrice
-            totalNotIncluded += choiceNotIncludedPrice * (formData.pricingAdults + formData.child + formData.infant)
+            totalNotIncluded += choiceNotIncludedPrice * totalPax
           }
         })
       }
@@ -2652,7 +2742,7 @@ export default function PricingSection({
       return packNotIncluded(baseBeforeResident, residentPart)
     } catch (error) {
       console.error('초이스별 불포함 금액 계산 오류:', error)
-      const pax = formData.pricingAdults + formData.child + formData.infant
+      const pax = perPersonChargePax
       return packNotIncluded(
         (formData.not_included_price || 0) * pax,
         sumResidentFeeAmountsUsd(formData.residentStatusAmounts)
@@ -2665,9 +2755,7 @@ export default function PricingSection({
     (formData as any).variantKey,
     formData.selectedChoices,
     formData.productChoices,
-    formData.pricingAdults,
-    formData.child,
-    formData.infant,
+    perPersonChargePax,
     formData.not_included_price,
     formData.residentStatusAmounts,
   ])
@@ -2890,7 +2978,10 @@ export default function PricingSection({
       otaCommissionAutoFingerprintRef.current = ''
       if (isOTAChannel && channelCommissionPercent > 0) {
         const commissionCalcBase = channelPaymentAmountAfterReturn
-        const calculatedAmount = commissionCalcBase * (channelCommissionPercent / 100)
+        const calculatedAmount = computeChannelCommissionAmountUsd(
+          commissionCalcBase,
+          channelCommissionPercent
+        )
         otaCommissionAutoFingerprintRef.current = otaCommissionFeeFingerprint(
           commissionCalcBase,
           channelCommissionPercent
@@ -2932,7 +3023,10 @@ export default function PricingSection({
     if (!isUnset || formData.commission_amount !== 0) return
 
     const commissionCalcBase = channelPaymentAmountAfterReturn
-    const calculatedAmount = commissionCalcBase * (channelCommissionPercent / 100)
+    const calculatedAmount = computeChannelCommissionAmountUsd(
+      commissionCalcBase,
+      channelCommissionPercent
+    )
 
     setFormData((prev: typeof formData) => ({
       ...prev,
@@ -3235,21 +3329,6 @@ export default function PricingSection({
                       step="0.01"
                       placeholder="0"
                     />
-                    {isExistingPricingLoaded && (
-                      <PriceCalcHint
-                        stored={formData.not_included_price || 0}
-                        calculated={dynamicPriceFormula?.notIncludedPrice}
-                        isKorean={isKorean}
-                      />
-                    )}
-                  </div>
-                  {/* 합계 */}
-                  <div className="flex items-center space-x-1">
-                    <span className="text-xs text-gray-500 w-16"></span>
-                    <span className="text-xs text-gray-500">=</span>
-                    <span className="font-medium text-xs text-primary">
-                      ${((formData.adultProductPrice || 0) + (formData.not_included_price || 0)).toFixed(2)}
-                    </span>
                   </div>
                 </div>
                 {/* 성인 가격 x 인원수 */}
@@ -4380,11 +4459,14 @@ export default function PricingSection({
                         
                         if (isOTAChannel) {
                           const adjustedBasePrice = numValue
-                          const commissionPercent = formData.commission_percent || channelCommissionPercent || 0
-                          const calculatedCommission =
-                            adjustedBasePrice > 0 && commissionPercent > 0
-                              ? Math.round(adjustedBasePrice * (commissionPercent / 100) * 100) / 100
-                              : 0
+                          const commissionPercent = preferChannelMasterCommissionPercent(
+                            formData.commission_percent,
+                            channelCommissionPercent
+                          )
+                          const calculatedCommission = computeChannelCommissionAmountUsd(
+                            adjustedBasePrice,
+                            commissionPercent
+                          )
                           otaCommissionAutoFingerprintRef.current = otaCommissionFeeFingerprint(
                             adjustedBasePrice,
                             commissionPercent
@@ -4428,11 +4510,14 @@ export default function PricingSection({
                         
                         if (isOTAChannel) {
                           const adjustedBasePrice = finalValue
-                          const commissionPercent = formData.commission_percent || channelCommissionPercent || 0
-                          const calculatedCommission =
-                            adjustedBasePrice > 0 && commissionPercent > 0
-                              ? Math.round(adjustedBasePrice * (commissionPercent / 100) * 100) / 100
-                              : 0
+                          const commissionPercent = preferChannelMasterCommissionPercent(
+                            formData.commission_percent,
+                            channelCommissionPercent
+                          )
+                          const calculatedCommission = computeChannelCommissionAmountUsd(
+                            adjustedBasePrice,
+                            commissionPercent
+                          )
                           otaCommissionAutoFingerprintRef.current = otaCommissionFeeFingerprint(
                             adjustedBasePrice,
                             commissionPercent
@@ -4484,7 +4569,12 @@ export default function PricingSection({
                       <div className="flex items-center space-x-1">
                         <input
                           type="number"
-                          value={formData.commission_percent ?? channelCommissionPercent ?? 0}
+                          value={
+                            preferChannelMasterCommissionPercent(
+                              formData.commission_percent,
+                              channelCommissionPercent
+                            ) || 0
+                          }
                           title={
                             isReservationCancelled
                               ? isKorean
@@ -4493,13 +4583,13 @@ export default function PricingSection({
                               : undefined
                           }
                           onChange={(e) => {
-                            const percent = Number(e.target.value) || 0
+                            const percent = normalizeCommissionPercent(Number(e.target.value) || 0)
                             markPricingEdited('commission_percent', 'commission_amount', 'channel_settlement_amount')
                             const adjustedBasePrice = Math.max(0, channelPaymentAmountAfterReturn)
-                            const calculatedAmount =
-                              adjustedBasePrice > 0 && percent > 0
-                                ? Math.round(adjustedBasePrice * (percent / 100) * 100) / 100
-                                : 0
+                            const calculatedAmount = computeChannelCommissionAmountUsd(
+                              adjustedBasePrice,
+                              percent
+                            )
                             isCardFeeManuallyEdited.current = false
                             setIsCommissionAmountFocused(false)
                             setCommissionAmountInput('')

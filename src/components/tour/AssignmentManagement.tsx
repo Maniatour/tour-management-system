@@ -9,7 +9,7 @@ import { Sparkles, Wallet, X } from 'lucide-react'
 import { getStatusColor, getStatusText, getAssignmentStatusColor, getAssignmentStatusText } from '@/utils/tourStatusUtils'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import { computeAssignedReservationDisplayBalance } from '@/lib/assignedReservationBalance'
-import { type PaymentRecordLike } from '@/utils/reservationPricingBalance'
+import { paymentRecordAmountToNumber, type PaymentRecordLike } from '@/utils/reservationPricingBalance'
 import { getReservationPartySize } from '@/utils/reservationUtils'
 import type { PickupHotelAssignmentOption } from '@/utils/pickupHotelUtils'
 import AutoAssignModal from './modals/AutoAssignModal'
@@ -207,7 +207,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
         const list = paymentsById.get(id) || []
         list.push({
           payment_status: String((row as { payment_status?: string | null }).payment_status || ''),
-          amount: Number((row as { amount?: unknown }).amount) || 0,
+          amount: paymentRecordAmountToNumber((row as { amount?: unknown }).amount),
         })
         paymentsById.set(id, list)
       }
@@ -643,6 +643,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               {...(onRefresh && { onRefresh })}
               getProductCodeForReservation={getProductCodeForReservation}
               {...(onCommunicationChannelChange ? { onCommunicationChannelChange } : {})}
+              balanceByReservationId={assignedBalanceById}
               headerBadges={
                 isStaff ? (
                   <button

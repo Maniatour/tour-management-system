@@ -222,7 +222,7 @@ interface BookingData {
     customerLanguage: string // 고객의 국가 언어 (단일 선택)
     tourLanguages: string[] // 투어 언어 (복수 선택 가능)
     specialRequests: string
-    localContactChannel: CustomerCommunicationChannel | ''
+    localContactChannels: CustomerCommunicationChannel[]
     localContactHandle: string
     smsConsent: boolean
   }
@@ -743,7 +743,7 @@ export default function BookingFlow({
       customerLanguage: defaultCustomerInfo.customerLanguage,
       tourLanguages: defaultCustomerInfo.tourLanguages,
       specialRequests: '',
-      localContactChannel: '',
+      localContactChannels: [],
       localContactHandle: '',
       smsConsent: false,
     }
@@ -2433,7 +2433,8 @@ export default function BookingFlow({
           phone: fullPhoneNumber,
           nationality: bookingData.customerInfo.country || '',
           specialRequests: bookingData.customerInfo.specialRequests || '',
-          localContactChannel: bookingData.customerInfo.localContactChannel,
+          localContactChannels: bookingData.customerInfo.localContactChannels,
+          localContactChannel: bookingData.customerInfo.localContactChannels[0] ?? '',
           localContactHandle: bookingData.customerInfo.localContactHandle,
           smsConsent: bookingData.customerInfo.smsConsent,
           pickupHotelId: bookingData.pickupHotelId,
@@ -4297,15 +4298,18 @@ export default function BookingFlow({
                       {bookingData.participants.infants > 0 && `, ${translate(`유아 ${bookingData.participants.infants}명`, `${bookingData.participants.infants} infant${bookingData.participants.infants === 1 ? '' : 's'}`)}`}
                     </span>
                   </div>
-                  {bookingData.customerInfo.localContactChannel &&
-                  bookingData.customerInfo.localContactHandle ? (
+                  {bookingData.customerInfo.localContactChannels?.length > 0 ? (
                     <div className="flex justify-between gap-4">
                       <span className="text-gray-600">{translate('현지 연락', 'Local contact')}</span>
                       <span className="text-right font-medium">
-                        {getLocalContactChannelLabel(bookingData.customerInfo.localContactChannel)}
-                        <span className="mt-0.5 block text-xs text-gray-500">
-                          {bookingData.customerInfo.localContactHandle}
-                        </span>
+                        {bookingData.customerInfo.localContactChannels
+                          .map((channel) => getLocalContactChannelLabel(channel))
+                          .join(', ')}
+                        {bookingData.customerInfo.localContactHandle ? (
+                          <span className="mt-0.5 block text-xs text-gray-500">
+                            {bookingData.customerInfo.localContactHandle}
+                          </span>
+                        ) : null}
                       </span>
                     </div>
                   ) : null}

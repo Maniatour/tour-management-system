@@ -78,6 +78,48 @@ export function findChannelRowForBalance(
   })
 }
 
+/** 0.22 같이 소수로 저장된 수수료율을 22(%)로 맞춤. 1 이상은 이미 % */
+export function normalizeCommissionPercent(raw: unknown): number {
+  if (raw === null || raw === undefined || raw === '') return 0
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n <= 0) return 0
+  const p = n > 0 && n < 1 ? n * 100 : n
+  return Math.round(p * 10000) / 10000
+}
+
+/** 채널 수수료 $ = 채널 결제 금액 × 수수료% / 100 */
+export function computeChannelCommissionAmountUsd(
+  channelPaymentUsd: number,
+  commissionPercent: unknown
+): number {
+  const pay = Math.max(0, Number(channelPaymentUsd) || 0)
+  const pct = normalizeCommissionPercent(commissionPercent)
+  if (pay <= 0 || pct <= 0) return 0
+  return Math.round(pay * (pct / 100) * 100) / 100
+}
+
+/**
+ * 동적가격이 채널 마스터와 살짝 다른 %(예: 22 vs 22.5)를 복사한 경우.
+ * 1%p 이내 차이만 채널 마스터로 맞추고, 그 이상(의도적 수정)은 저장값을 유지한다.
+ */
+export function preferChannelMasterCommissionPercent(
+  storedPercent: unknown,
+  channelPercent: unknown
+): number {
+  const stored = normalizeCommissionPercent(storedPercent)
+  const channel = normalizeCommissionPercent(channelPercent)
+  if (
+    channel > 0 &&
+    stored > 0 &&
+    Math.abs(stored - channel) > 0.0001 &&
+    Math.abs(stored - channel) <= 1
+  ) {
+    return channel
+  }
+  if (stored > 0) return stored
+  return channel
+}
+
 /** PricingSection과 동일: `commission_percent` 우선, 없으면 `commission_rate`·`commission`(레거시 %) */
 export function commissionPercentFromChannelMaster(
   ch:
@@ -94,7 +136,9 @@ export function commissionPercentFromChannelMaster(
   if (typeof raw === 'string' && String(raw).trim() === '') return null
   const n = Number(raw)
   if (!Number.isFinite(n)) return null
-  return n
+  if (n === 0) return 0
+  const p = normalizeCommissionPercent(n)
+  return p > 0 ? p : null
 }
 
 function hasStoredReservationCommissionPercent(
@@ -129,7 +173,10 @@ export function resolveReservationCommissionPercent(opts: {
     opts
 
   if (hasStoredReservationCommissionPercent(storedPercent)) {
-    return Number(storedPercent)
+    const stored = normalizeCommissionPercent(storedPercent)
+    const channelPct = commissionPercentFromChannelMaster(channel ?? undefined)
+    if (Number(storedPercent) === 0) return 0
+    return preferChannelMasterCommissionPercent(stored, channelPct)
   }
 
   const channelPct = commissionPercentFromChannelMaster(channel ?? undefined)
@@ -144,7 +191,7 @@ export function resolveReservationCommissionPercent(opts: {
       (Number(productPriceTotal) > 0 ? Number(productPriceTotal) : 0) ||
       (Number(subtotal) > 0 ? Number(subtotal) : 0)
     if (base > 0) {
-      return (amount / base) * 100
+      return normalizeCommissionPercent((amount / base) * 100)
     }
   }
 
@@ -294,7 +341,7 @@ export function computeBalanceChannelMetrics(
 
   const commissionAmountFromFormula =
     commissionPercentFromChannel != null
-      ? round2(channelPaymentFromFormula * (commissionPercentFromChannel / 100))
+      ? computeChannelCommissionAmountUsd(channelPaymentFromFormula, commissionPercentFromChannel)
       : null
 
   const storedSettle = p.channel_settlement_amount
@@ -616,7 +663,7 @@ export function buildReservationPricingMismatchFormulaPatch(
 
   let feeUsd: number
   if (masterPct != null) {
-    feeUsd = round2(pay * (masterPct / 100))
+    feeUsd = computeChannelCommissionAmountUsd(pay, masterPct)
   } else if (m.commissionAmountFromFormula != null) {
     feeUsd = round2(m.commissionAmountFromFormula)
   } else {

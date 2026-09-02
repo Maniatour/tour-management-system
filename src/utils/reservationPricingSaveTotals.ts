@@ -3,7 +3,7 @@
  * PricingSection ① 고객 총 결제(화면)와 동일 구성 요소를 사용해
  * `formData.totalPrice + not_included×인원` 이중·누락 가산을 막는다.
  */
-import { computeProductPriceTotal, isChannelSinglePrice } from '@/lib/productPriceTotal'
+import { computeProductPriceTotal, isChannelSinglePrice, getPerPersonChargePax } from '@/lib/productPriceTotal'
 import {
   computePricingSectionCustomerPaymentGrossLike,
   computePricingSectionCustomerPaymentNet,
@@ -48,15 +48,18 @@ function toNum(v: unknown): number {
   return Number.isFinite(n) ? n : 0
 }
 
-/** 청구 인원 = pricingAdults(없으면 adults) + 아동 + 유아 */
-export function billingPaxForPricingSave(party: PricingSavePartyInput): number {
-  const adults = Math.max(
-    0,
-    Math.floor(toNum(party.pricingAdults ?? party.adults))
-  )
-  const child = Math.max(0, Math.floor(toNum(party.child)))
-  const infant = Math.max(0, Math.floor(toNum(party.infant)))
-  return adults + child + infant
+/** 청구 인원. 단일가 채널은 성인 칸에 총원을 넣은 경우 아동을 다시 더하지 않음 */
+export function billingPaxForPricingSave(
+  party: PricingSavePartyInput,
+  channel?: { pricing_type?: string | null } | null
+): number {
+  return getPerPersonChargePax({
+    isSinglePrice: isChannelSinglePrice(channel),
+    pricingAdults: toNum(party.pricingAdults ?? party.adults),
+    reservationAdults: toNum(party.adults),
+    child: toNum(party.child),
+    infant: toNum(party.infant),
+  })
 }
 
 /**
@@ -85,7 +88,7 @@ export function resolveBaseProductPriceTotalForSave(
     infant,
   })
   const stored = roundUsd2(toNum(amounts.productPriceTotal))
-  const billingPax = billingPaxForPricingSave(party) || 1
+  const billingPax = billingPaxForPricingSave(party, channel) || 1
   const fieldNi = roundUsd2(toNum(amounts.not_included_price) * billingPax)
 
   if (computed > 0.005) {
@@ -106,9 +109,10 @@ export function resolveBaseProductPriceTotalForSave(
 /** 고객 총액에 넣을 불포함(필드×인원 + 거주 현장비, 또는 폼 choiceNotIncludedTotal) */
 export function resolveNotIncludedTotalUsdForCustomerPayment(
   amounts: PricingSaveAmountInput,
-  party: PricingSavePartyInput
+  party: PricingSavePartyInput,
+  channel?: { pricing_type?: string | null } | null
 ): number {
-  const billingPax = billingPaxForPricingSave(party) || 1
+  const billingPax = billingPaxForPricingSave(party, channel) || 1
   const fieldNi = roundUsd2(toNum(amounts.not_included_price) * billingPax)
   const residentNi = roundUsd2(
     sumResidentFeeAmountsUsd(
@@ -123,9 +127,10 @@ export function resolveNotIncludedTotalUsdForCustomerPayment(
 /** DB product_price_total 에 넣을 불포함(1인당 필드 × 청구 인원만 — 거주비는 total_price 쪽) */
 export function resolveNotIncludedFieldTotalForProductSave(
   amounts: PricingSaveAmountInput,
-  party: PricingSavePartyInput
+  party: PricingSavePartyInput,
+  channel?: { pricing_type?: string | null } | null
 ): number {
-  const billingPax = billingPaxForPricingSave(party) || 1
+  const billingPax = billingPaxForPricingSave(party, channel) || 1
   return roundUsd2(toNum(amounts.not_included_price) * billingPax)
 }
 
@@ -156,10 +161,10 @@ export function computePricingTotalsForDbSave(
   params: ComputePricingTotalsForDbSaveParams
 ): PricingTotalsForDbSave {
   const { amounts, party, channel } = params
-  const billingPax = billingPaxForPricingSave(party)
+  const billingPax = billingPaxForPricingSave(party, channel)
   const baseProductPriceTotal = resolveBaseProductPriceTotalForSave(amounts, party, channel)
-  const notIncludedFieldTotal = resolveNotIncludedFieldTotalForProductSave(amounts, party)
-  const notIncludedCustomerTotal = resolveNotIncludedTotalUsdForCustomerPayment(amounts, party)
+  const notIncludedFieldTotal = resolveNotIncludedFieldTotalForProductSave(amounts, party, channel)
+  const notIncludedCustomerTotal = resolveNotIncludedTotalUsdForCustomerPayment(amounts, party, channel)
   const productPriceTotal = roundUsd2(baseProductPriceTotal + notIncludedFieldTotal)
   const optionsTotal = Math.max(0, roundUsd2(params.reservationOptionsTotalUsd))
 

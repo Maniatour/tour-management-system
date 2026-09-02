@@ -4,7 +4,10 @@ import Stripe from 'stripe'
 import type { Database, Json } from '@/lib/database.types'
 import { generateCustomerId, generateReservationId } from '@/lib/entityIds'
 import { couponMatchesProduct } from '@/lib/productDetailPromoCodes'
-import { buildBookingGuestEventNote } from '@/lib/bookingFlowGuestNotes'
+import {
+  buildBookingGuestEventNote,
+  normalizeLocalContactChannels,
+} from '@/lib/bookingFlowGuestNotes'
 import {
   deliverCustomerBookingConfirmationEmail,
   parseBookingLocale,
@@ -46,6 +49,18 @@ export function defaultBookingTenantContext(): BookingTenantContext {
 }
 export const STRIPE_PI_NOTE_PREFIX = 'stripe_payment_intent_id:'
 
+/** reservations.customer_communication_channel check constraint (line is stored in event_note only) */
+const DB_CUSTOMER_COMMUNICATION_CHANNELS = new Set([
+  'no_reply',
+  'platform',
+  'email',
+  'whatsapp',
+  'text_message',
+  'kakaotalk',
+  'phone_call',
+  'chatroom',
+])
+
 export type CustomerBookingCustomerInput = {
   name: string
   email: string
@@ -53,6 +68,7 @@ export type CustomerBookingCustomerInput = {
   language?: string | null
   specialRequests?: string | null
   localContactChannel?: string | null
+  localContactChannels?: string[]
   localContactHandle?: string | null
   pickupHotelCustom?: string | null
   alternativeDates?: string[]
@@ -172,13 +188,22 @@ export function parseCustomerBookingCustomer(raw: unknown): CustomerBookingCusto
     ? o.alternativeDates.filter((d): d is string => typeof d === 'string' && Boolean(d.trim()))
     : []
 
+  const localContactChannels = normalizeLocalContactChannels(
+    Array.isArray(o.localContactChannels) && o.localContactChannels.length > 0
+      ? o.localContactChannels.filter((item): item is string => typeof item === 'string')
+      : typeof o.localContactChannel === 'string'
+        ? o.localContactChannel
+        : []
+  )
+
   return {
     name,
     email,
     phone,
     language: typeof o.customerLanguage === 'string' ? o.customerLanguage : typeof o.language === 'string' ? o.language : null,
     specialRequests: typeof o.specialRequests === 'string' ? o.specialRequests : null,
-    localContactChannel: typeof o.localContactChannel === 'string' ? o.localContactChannel : null,
+    localContactChannel: localContactChannels[0] ?? null,
+    localContactChannels,
     localContactHandle: typeof o.localContactHandle === 'string' ? o.localContactHandle : null,
     pickupHotelCustom: typeof o.pickupHotelCustom === 'string' ? o.pickupHotelCustom : null,
     alternativeDates,
@@ -1047,11 +1072,16 @@ export async function createPendingCustomerBooking(
   const reservationId = generateReservationId()
   const totalPeople = args.line.adults + args.line.child + args.line.infant
   const now = new Date().toISOString()
+  const localContactChannels = normalizeLocalContactChannels(
+    args.customer.localContactChannels?.length
+      ? args.customer.localContactChannels
+      : args.customer.localContactChannel
+  )
+  const dbCommunicationChannel =
+    localContactChannels.find((channel) => DB_CUSTOMER_COMMUNICATION_CHANNELS.has(channel)) ?? null
 
   const eventNote = buildBookingGuestEventNote({
-    ...(args.customer.localContactChannel
-      ? { localContactChannel: args.customer.localContactChannel }
-      : {}),
+    ...(localContactChannels.length > 0 ? { localContactChannels } : {}),
     ...(args.customer.localContactHandle
       ? { localContactHandle: args.customer.localContactHandle }
       : {}),
@@ -1105,7 +1135,7 @@ export async function createPendingCustomerBooking(
     infant: args.line.infant,
     total_people: totalPeople,
     pickup_hotel: args.line.pickupHotelId || null,
-    customer_communication_channel: args.customer.localContactChannel || null,
+    customer_communication_channel: dbCommunicationChannel,
     event_note: combinedEventNote,
     selected_options: args.line.selectedOptions as unknown as Json,
     selected_choices: args.line.selectedOptions as unknown as Json,

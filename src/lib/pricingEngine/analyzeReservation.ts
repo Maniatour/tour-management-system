@@ -8,6 +8,7 @@ import { channelIsOtaForPricingSection } from '@/utils/channelSettlement'
 import {
   commissionPercentFromChannelMaster,
   computeBalanceChannelMetrics,
+  computeChannelCommissionAmountUsd,
   computeReservationPricingStoredRevenueColumns,
   findChannelRowForBalance,
   type BalanceChannelRowInput,
@@ -657,7 +658,7 @@ export function buildReservationPricingEnginePatch(
     if (masterPct != null) {
       patch.commission_percent = roundUsd2(masterPct)
       const pay = patch.commission_base_price ?? analysis.engine.totals.channelPaymentNet
-      patch.commission_amount = roundUsd2(pay * (masterPct / 100))
+      patch.commission_amount = computeChannelCommissionAmountUsd(pay, masterPct)
       if (!keys.has('channel_settlement_amount')) {
         patch.channel_settlement_amount = roundUsd2(
           Math.max(0, pay - patch.commission_amount)
@@ -673,7 +674,7 @@ export function buildReservationPricingEnginePatch(
     if (masterPct != null) {
       patch.commission_percent = roundUsd2(masterPct)
       const pay = patch.commission_base_price ?? analysis.engine.totals.channelPaymentNet
-      patch.commission_amount = roundUsd2(pay * (masterPct / 100))
+      patch.commission_amount = computeChannelCommissionAmountUsd(pay, masterPct)
       if (!keys.has('channel_settlement_amount')) {
         patch.channel_settlement_amount = roundUsd2(
           Math.max(0, pay - patch.commission_amount)

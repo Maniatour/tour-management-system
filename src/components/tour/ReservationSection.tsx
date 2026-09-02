@@ -49,6 +49,8 @@ interface ReservationSectionProps {
   onRefresh?: (updatedPickup?: { reservationId: string; pickup_time: string; pickup_hotel: string }) => Promise<void> | void
   getProductCodeForReservation?: (reservation: Reservation) => string | null | undefined
   headerBadges?: React.ReactNode
+  /** 배정 관리 헤더 합계와 동일한 예약별 잔액 (있으면 카드 뱃지가 이 값을 표시) */
+  balanceByReservationId?: Map<string, number>
   onCommunicationChannelChange?: (
     reservationId: string,
     channel: CustomerCommunicationChannel
@@ -82,6 +84,7 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
   onRefresh,
   getProductCodeForReservation,
   headerBadges,
+  balanceByReservationId,
   onCommunicationChannelChange,
 }) => {
   const uniqueReservations = React.useMemo(
@@ -122,6 +125,9 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
               key={reservation.id}
               reservation={reservation}
               productCode={getProductCodeForReservation?.(reservation) ?? null}
+              {...(balanceByReservationId?.has(reservation.id)
+                ? { displayBalanceOverride: balanceByReservationId.get(reservation.id) as number }
+                : {})}
               isStaff={isStaff}
               showActions={showActions}
               showStatus={showStatus}

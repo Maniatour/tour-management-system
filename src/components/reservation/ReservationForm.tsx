@@ -154,7 +154,7 @@ import {
 import { findSimilarCustomersInList } from '@/lib/customerSimilarity'
 import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
 import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
-import { computeProductPriceTotal, isChannelSinglePrice } from '@/lib/productPriceTotal'
+import { computeProductPriceTotal, isChannelSinglePrice, getPerPersonChargePax } from '@/lib/productPriceTotal'
 import {
   emptyResidentStatusAmounts,
   findUsResidentClassificationChoice,
@@ -182,7 +182,7 @@ import {
   resolveCommissionGrossForPricingSave,
   pickFiniteNumber,
 } from '@/utils/channelSettlement'
-import { resolveReservationCommissionPercent } from '@/utils/balanceChannelRevenue'
+import { resolveReservationCommissionPercent, commissionPercentFromChannelMaster, normalizeCommissionPercent, computeChannelCommissionAmountUsd } from '@/utils/balanceChannelRevenue'
 import {
   isReturnedPaymentStatus,
   summarizePaymentRecordsForBalance,
@@ -3335,10 +3335,14 @@ export default function ReservationForm({
                 const pricing = pricingData[0] as any
                 console.log('Dynamic pricing 데이터 조회 성공:', pricing)
                 
-                commissionPercent = (pricing?.commission_percent as number) || 0
-                
                 // 채널 정보 확인
                 const selectedChannel = channels.find(c => c.id === channelId)
+                const channelPct = commissionPercentFromChannelMaster(selectedChannel)
+                commissionPercent =
+                  channelPct != null && channelPct > 0
+                    ? channelPct
+                    : normalizeCommissionPercent(pricing?.commission_percent)
+                
                 const isOTAChannel = isLikelyOtaChannelId(channelId, selectedChannel as { type?: string; category?: string } | undefined)
                 const pricingType = (selectedChannel as any)?.pricing_type || 'separate'
                 const isSinglePrice = pricingType === 'single'
@@ -4145,10 +4149,22 @@ export default function ReservationForm({
               privateTourAdditionalCost: Number(existingPricing.private_tour_additional_cost) || 0,
               commission_percent: commissionPercentToUse,
               commission_amount: (() => {
+                const payBase =
+                  Number((existingPricing as any).commission_base_price) ||
+                  Number((existingPricing as any).deposit_amount) ||
+                  0
+                const fromPct = computeChannelCommissionAmountUsd(payBase, commissionPercentToUse)
+                if (commissionPercentToUse <= 0) {
+                  loadedCommissionAmount.current = 0
+                  return 0
+                }
+                if (fromPct > 0) {
+                  loadedCommissionAmount.current = fromPct
+                  return fromPct
+                }
                 const dbValue = (existingPricing as any).commission_amount !== null && (existingPricing as any).commission_amount !== undefined
                   ? Number((existingPricing as any).commission_amount)
                   : 0
-                // 데이터베이스에서 불러온 값 추적
                 if (dbValue > 0) {
                   loadedCommissionAmount.current = dbValue
                   console.log('ReservationForm: 데이터베이스에서 commission_amount 로드됨:', dbValue)
@@ -4263,10 +4279,8 @@ export default function ReservationForm({
                 ? storedBalance
                 : balanceWithResident
             
-            // commission_amount가 데이터베이스에서 불러온 값이면 절대 덮어쓰지 않음
-            const finalCommissionAmount = loadedCommissionAmount.current !== null && loadedCommissionAmount.current > 0
-              ? loadedCommissionAmount.current
-              : updated.commission_amount
+            // 채널 수수료 $ = 채널 결제 금액 × 수수료% (DB에 22.5%로 저장된 레거시 $는 덮어씀)
+            const finalCommissionAmount = updated.commission_amount
             
             console.log('ReservationForm: 가격 정보 업데이트', {
               loadedCommissionAmount: loadedCommissionAmount.current,
@@ -4410,19 +4424,24 @@ export default function ReservationForm({
           notIncludedPriceFromReservationPricing !== null
             ? notIncludedPriceFromReservationPricing
             : pricingFromDynamic.notIncludedPrice
+        const selectedChannelForDynamic = channels.find(c => c.id === channelId)
+        const channelCommissionPct = commissionPercentFromChannelMaster(selectedChannelForDynamic)
+        const commissionPercentToApply =
+          channelCommissionPct != null && channelCommissionPct > 0
+            ? channelCommissionPct
+            : normalizeCommissionPercent(pricingFromDynamic.commissionPercent)
         const updated = {
           ...prev,
           adultProductPrice: pricingFromDynamic.adultPrice,
           childProductPrice: pricingFromDynamic.childPrice,
           infantProductPrice: pricingFromDynamic.infantPrice,
-          commission_percent: pricingFromDynamic.commissionPercent,
+          commission_percent: commissionPercentToApply,
           not_included_price: notIncludedToUse,
           onlinePaymentAmount: notIncludedToUse != null
             ? Math.max(0, (pricingFromDynamic.adultPrice - (notIncludedToUse || 0)) * (prev.pricingAdults || 0))
             : prev.onlinePaymentAmount || 0
         }
         
-        const selectedChannelForDynamic = channels.find(c => c.id === channelId)
         const isSinglePriceForDynamic = isChannelSinglePrice(selectedChannelForDynamic)
 
         // 가격 계산 수행
@@ -4559,13 +4578,18 @@ export default function ReservationForm({
       onSiteBalanceAmount: false,
     }))
     setFormData((prev) => {
+      const channelCommissionPct = commissionPercentFromChannelMaster(ch)
+      const commissionPercentToApply =
+        channelCommissionPct != null && channelCommissionPct > 0
+          ? channelCommissionPct
+          : normalizeCommissionPercent(dynamicPriceFormula.commissionPercent)
       const updated = {
         ...prev,
         adultProductPrice: a,
         childProductPrice: c,
         infantProductPrice: i,
         not_included_price: ni,
-        commission_percent: dynamicPriceFormula.commissionPercent,
+        commission_percent: commissionPercentToApply,
         onlinePaymentAmount:
           ni != null
             ? Math.max(0, (a - (ni || 0)) * (prev.pricingAdults || 0))
@@ -4630,6 +4654,10 @@ export default function ReservationForm({
         updated.onSiteBalanceAmount,
         updated.depositAmount
       )
+      const commissionPayBase =
+        Number(updated.commission_base_price) ||
+        Number(updated.onlinePaymentAmount) ||
+        Math.max(0, newProductPriceTotal - (Number(updated.couponDiscount) || 0) - (Number(updated.additionalDiscount) || 0))
       return {
         ...updated,
         productPriceTotal: newProductPriceTotal,
@@ -4638,6 +4666,10 @@ export default function ReservationForm({
         totalPrice: newTotalPrice,
         onSiteBalanceAmount: keepOnSite ? updated.onSiteBalanceAmount : newBalance,
         balanceAmount: keepOnSite ? updated.onSiteBalanceAmount : newBalance,
+        commission_amount: computeChannelCommissionAmountUsd(
+          commissionPayBase,
+          commissionPercentToApply
+        ),
       }
     })
   }, [channels, dynamicPriceFormula, formData.channelId, reservationPricingId, reservationOptionsTotalPrice, setFormData])
@@ -4707,9 +4739,15 @@ export default function ReservationForm({
 
   // PricingSection과 동일: 쿠폰 할인 적용 전 기준 금액 (OTA는 productPriceTotal 기준, 그 외는 상품+필수옵션; 초이스 판매총액은 불포함과 중복이므로 제외)
   const getCouponDiscountSubtotal = useCallback(() => {
-    const pax = formData.pricingAdults + formData.child + formData.infant
-    const notIncludedPrice = (formData.not_included_price || 0) * pax
     const selectedChannel = channels.find(c => c.id === formData.channelId)
+    const pax = getPerPersonChargePax({
+      isSinglePrice: isChannelSinglePrice(selectedChannel),
+      pricingAdults: formData.pricingAdults,
+      reservationAdults: formData.adults,
+      child: formData.child,
+      infant: formData.infant,
+    })
+    const notIncludedPrice = (formData.not_included_price || 0) * pax
     const isOTAChannel = selectedChannel && (
       (selectedChannel as { type?: string; category?: string })?.type?.toLowerCase() === 'ota' ||
       (selectedChannel as { category?: string })?.category === 'OTA'
@@ -4721,6 +4759,7 @@ export default function ReservationForm({
     return Math.max(0, calculateProductPriceTotal() + requiredOptionTotal - notIncludedPrice)
   }, [
     formData.pricingAdults,
+    formData.adults,
     formData.child,
     formData.infant,
     formData.not_included_price,
@@ -4945,10 +4984,11 @@ export default function ReservationForm({
         )
         let commissionAmt = toN(fd.commission_amount)
         if (commissionAmt < 0.005 && isOTAChannel) {
-          const pct =
+          const pct = normalizeCommissionPercent(
             fd.commission_percent != null && fd.commission_percent > 0
-              ? Number(fd.commission_percent)
+              ? fd.commission_percent
               : commissionPctForKey
+          )
           const basePrice =
             fd.commission_base_price !== undefined &&
             fd.commission_base_price !== null &&
@@ -4957,9 +4997,7 @@ export default function ReservationForm({
               : onlinePaymentForCompute ||
                 Math.max(0, productTotalForSettlement - toN(fd.couponDiscount) - toN(fd.additionalDiscount))
           const adjustedBase = Math.max(0, basePrice)
-          if (pct > 0 && pct <= 100 && adjustedBase > 0) {
-            commissionAmt = Math.round(adjustedBase * (pct / 100) * 100) / 100
-          }
+          commissionAmt = computeChannelCommissionAmountUsd(adjustedBase, pct)
         }
 
         const settlementUi = computeChannelSettlementAmount({
@@ -6025,6 +6063,8 @@ export default function ReservationForm({
           pricingAdults: pricingAdultsVal,
           child: fd.child || 0,
           infant: fd.infant || 0,
+          isSinglePrice: isChannelSinglePrice(selectedChannelForSave),
+          reservationAdults: fd.adults || 0,
           ...(fd.residentStatusAmounts && Object.keys(fd.residentStatusAmounts).length > 0
             ? { residentStatusAmounts: fd.residentStatusAmounts }
             : {}),

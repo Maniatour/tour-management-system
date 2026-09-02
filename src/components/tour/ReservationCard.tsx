@@ -33,18 +33,7 @@ import ReservationEvidenceUpload from '@/components/reservation/ReservationEvide
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { ResidentStatusCardBadge } from '@/components/tour/ResidentStatusCardBadge'
 import { isReservationCancelledStatus } from '@/utils/tourUtils'
-import {
-  adjustOptionTotalExcludingLegacyNonResident,
-  computeCustomerPaymentTotalLineFormula,
-  getBalanceAmountForDisplay,
-  inferResidentFeesUsdForBalance,
-  type PartySizeSource,
-} from '@/utils/reservationPricingBalance'
-import {
-  sumResidentFeesFromResidentCounts,
-} from '@/utils/balanceEnvelopeBreakdown'
-import { loadResidentStatusAmountsForReservation } from '@/lib/saveResidentStatusWithPricing'
-import type { ResidentLineKey } from '@/utils/usResidentChoiceSync'
+import { computeAssignedReservationDisplayBalance } from '@/lib/assignedReservationBalance'
 import {
   displayPaymentRecordNote,
   fetchTeamDisplayNameByEmail,
@@ -157,6 +146,9 @@ interface ReservationPricing {
   card_fee?: number | string | null
   prepayment_cost?: number | string | null
   prepayment_tip?: number | string | null
+  refund_amount?: number | string | null
+  private_tour_additional_cost?: number | string | null
+  required_option_total?: number | string | null
   commission_percent?: number | string | null
   commission_amount?: number | string | null
   /** 가격 탭 성인 인원 — 라인 총액·잔액 산식과 동일하게 맞춤 */
@@ -189,6 +181,8 @@ interface ReservationCardProps {
   onRefresh?: (updatedPickup?: { reservationId: string; pickup_time: string; pickup_hotel: string }) => Promise<void> | void
   /** 예약 상품의 product_code (거주 상태 UI 표시용) */
   productCode?: string | null
+  /** 배정 관리 헤더 합계와 동일한 잔액. 있으면 카드 뱃지·수령 금액에 이 값을 사용 */
+  displayBalanceOverride?: number
   onCommunicationChannelChange?: (
     reservationId: string,
     channel: CustomerCommunicationChannel
@@ -217,6 +211,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   pickupHotels = [],
   onRefresh,
   productCode = null,
+  displayBalanceOverride,
   onCommunicationChannelChange,
 }) => {
   const tCard = useTranslations('reservations.card')
@@ -247,9 +242,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const [optionRowsForBalance, setOptionRowsForBalance] = useState<
     Array<{ option_id?: string | null; total_price?: unknown; status?: string | null }>
   >([])
-  const [residentStatusAmounts, setResidentStatusAmounts] = useState<
-    Partial<Record<ResidentLineKey, number>>
-  >({})
+  const [residentCustomerRows, setResidentCustomerRows] = useState<
+    Array<{ resident_status?: string | null }>
+  >([])
   const [showSimplePickupModal, setShowSimplePickupModal] = useState(false)
   const [showReviewModal, setShowReviewModal] = useState(false)
   const [quickPaymentOpen, setQuickPaymentOpen] = useState(false)
@@ -287,72 +282,44 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     product_id?: string | undefined
   }>>([])
 
-  /** 잔액·투어 봉투 등 라인 산식: DB `pricing_adults` 우선 (예약 카드 adults와 불일치 시 방지) */
-  const balanceParty: PartySizeSource = useMemo(() => {
-    const raw = reservationPricing?.pricing_adults
-    const hasPa =
-      raw !== undefined &&
-      raw !== null &&
-      raw !== '' &&
-      Number.isFinite(Number(raw)) &&
-      Math.floor(Number(raw)) >= 0
-    return {
-      adults: hasPa ? Math.floor(Number(raw)) : (reservation.adults ?? null),
-      children: (reservation.children ?? (reservation as { child?: number | null }).child ?? null) as number | null,
-      infants: (reservation.infants ?? (reservation as { infant?: number | null }).infant ?? null) as number | null,
-    }
+  const computedDisplayBalance = useMemo(() => {
+    if (!reservationPricing) return 0
+    return computeAssignedReservationDisplayBalance({
+      reservation: {
+        id: reservation.id,
+        status: reservation.status,
+        adults: reservation.adults,
+        children: reservation.children ?? null,
+        child: (reservation as { child?: number | null }).child ?? null,
+        infants: reservation.infants ?? null,
+        infant: (reservation as { infant?: number | null }).infant ?? null,
+      },
+      pricing: reservationPricing as unknown as Record<string, unknown>,
+      paymentRecords: paymentRecords.map((r) => ({
+        payment_status: r.payment_status,
+        amount: r.amount,
+      })),
+      optionRows: optionRowsForBalance,
+      customerRows: residentCustomerRows,
+    })
   }, [
-    reservationPricing?.pricing_adults,
+    reservationPricing,
+    reservation.id,
+    reservation.status,
     reservation.adults,
     reservation.children,
-    (reservation as { child?: number | null }).child,
     reservation.infants,
-    (reservation as { infant?: number | null }).infant,
+    paymentRecords,
+    optionRowsForBalance,
+    residentCustomerRows,
   ])
 
-  const residentFeeUsd = useMemo(() => {
-    const counts = {
-      non_resident: residentStatusCounts.nonResident,
-      non_resident_under_16: residentStatusCounts.nonResidentUnder16,
-      non_resident_with_pass: residentStatusCounts.nonResidentWithPass,
-    }
-    const fromCustomers = sumResidentFeesFromResidentCounts(counts, residentStatusAmounts)
-    if (!reservationPricing) return fromCustomers
-
-    const optsOnly = optionsTotalFromOptions !== null && optionsTotalFromOptions !== undefined
-    const pricingForLine = {
-      ...reservationPricing,
-      required_option_total: optsOnly ? 0 : (reservationPricing as { required_option_total?: unknown }).required_option_total,
-      option_total: optsOnly ? optionsTotalFromOptions : reservationPricing.option_total,
-    } as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]
-    const lineGrossBase = computeCustomerPaymentTotalLineFormula(pricingForLine, balanceParty)
-    const inferred = inferResidentFeesUsdForBalance(reservationPricing, lineGrossBase)
-    return Math.max(fromCustomers, inferred)
-  }, [
-    residentStatusCounts,
-    residentStatusAmounts,
-    reservationPricing,
-    optionsTotalFromOptions,
-    balanceParty,
-  ])
-
-  const optionsTotalForBalance = useMemo(() => {
-    if (optionsTotalFromOptions === null) return null
-    return adjustOptionTotalExcludingLegacyNonResident(
-      optionsTotalFromOptions,
-      residentFeeUsd,
-      optionRowsForBalance
-    )
-  }, [optionsTotalFromOptions, residentFeeUsd, optionRowsForBalance])
-
-  const balanceDisplayOpts = useMemo(
-    () => ({
-      paymentRecords,
-      reservationStatus: reservation.status ?? null,
-      residentFeeUsd,
-    }),
-    [paymentRecords, reservation.status, residentFeeUsd]
-  )
+  const displayBalanceAmount =
+    reservationPricing == null &&
+    displayBalanceOverride !== undefined &&
+    Number.isFinite(displayBalanceOverride)
+      ? displayBalanceOverride
+      : computedDisplayBalance
 
   // 패스 장수에 따라 실제 커버되는 인원 수 계산 (패스 1장 = 4인)
   // 실제 예약 인원을 초과할 수 없음
@@ -389,6 +356,11 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       let passCoveredCount = 0
       
       if (reservationCustomers && reservationCustomers.length > 0) {
+        setResidentCustomerRows(
+          reservationCustomers.map((rc) => ({
+            resident_status: rc.resident_status ?? null,
+          }))
+        )
         reservationCustomers.forEach((rc: any) => {
           const status = rc.resident_status || 'unknown'
           
@@ -413,6 +385,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           nonResidentWithPass: nonResidentWithPassCount,
           passCoveredCount: passCoveredCount
         })
+      } else {
+        setResidentCustomerRows([])
       }
     } catch (error) {
       if (!isAbortError(error)) console.error('고객 정보 조회 오류:', error)
@@ -508,39 +482,27 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           .from('reservation_options')
           .select('total_price, option_id, status')
           .eq('reservation_id', reservation.id)
-        const activeOpts = (opts || []).filter((o) => {
+        const allOpts = opts || []
+        setOptionRowsForBalance(allOpts)
+        const activeOpts = allOpts.filter((o) => {
           const st = String((o as { status?: string | null }).status ?? 'active').toLowerCase()
           return st !== 'cancelled' && st !== 'refunded'
         })
-        setOptionRowsForBalance(activeOpts)
         const sum = activeOpts.reduce(
           (s: number, o: { total_price?: number | string | null }) =>
             s + (typeof o.total_price === 'number' ? o.total_price : parseFloat(String(o.total_price || 0)) || 0),
           0
         )
-        setOptionsTotalFromOptions(activeOpts.length ? sum : null)
-
-        const productId = reservation.product_id ? String(reservation.product_id) : null
-        if (productId) {
-          const amounts = await loadResidentStatusAmountsForReservation(
-            supabase,
-            reservation.id,
-            productId
-          )
-          setResidentStatusAmounts(amounts)
-        } else {
-          setResidentStatusAmounts({})
-        }
+        setOptionsTotalFromOptions(allOpts.length ? sum : null)
       } else {
         setReservationPricing(null)
         setOptionsTotalFromOptions(null)
         setOptionRowsForBalance([])
-        setResidentStatusAmounts({})
       }
     } catch (error) {
       if (!isAbortError(error)) console.error('예약 가격 정보 조회 오류:', error)
     }
-  }, [isStaff, reservation.id, reservation.product_id, isAbortError])
+  }, [isStaff, reservation.id, isAbortError])
 
   // 결제 방법 정보 로드
   const loadPaymentMethods = useCallback(async () => {
@@ -1830,12 +1792,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     
     if (!reservationPricing || !isStaff) return
 
-    const balanceAmount = getBalanceAmountForDisplay(
-      reservationPricing,
-      optionsTotalForBalance,
-      balanceParty,
-      balanceDisplayOpts
-    )
+    const balanceAmount = displayBalanceAmount
     
     if (balanceAmount <= 0) {
       alert('수령할 잔액이 없습니다.')
@@ -1920,6 +1877,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       // 3. 입금 내역 및 가격 정보 새로고침
       await fetchPaymentRecords()
       await fetchReservationPricing()
+      onRefresh?.()
 
       alert('잔액 수령이 완료되었습니다.')
     } catch (error) {
@@ -1934,12 +1892,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 
     if (!reservationPricing || !isStaff) return
 
-    const balanceAmount = getBalanceAmountForDisplay(
-      reservationPricing,
-      optionsTotalForBalance,
-      balanceParty,
-      balanceDisplayOpts
-    )
+    const balanceAmount = displayBalanceAmount
     const refundAmount = Math.abs(balanceAmount)
 
     if (balanceAmount >= 0 || refundAmount <= 0) {
@@ -2454,12 +2407,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             
             {/* 잔액/환불 뱃지 — 클릭 시 수령/환불 처리 */}
             {isStaff && (() => {
-              const displayBalanceBadge = getBalanceAmountForDisplay(
-                reservationPricing,
-                optionsTotalForBalance,
-                balanceParty,
-                balanceDisplayOpts
-              )
+              const displayBalanceBadge = displayBalanceAmount
               if (displayBalanceBadge > 0) {
                 const balStr = formatCurrency(
                   displayBalanceBadge,

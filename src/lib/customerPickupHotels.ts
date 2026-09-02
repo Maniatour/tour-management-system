@@ -23,10 +23,23 @@ export function toCustomerPickupHotelLocation(
   return { ...hotel, ...coords }
 }
 
-export function filterCustomerPickupHotels(
-  hotels: CustomerPickupHotelLocation[],
+export type CustomerPickupHotelOption = {
+  id: string
+  hotel: string
+  pick_up_location: string | null
+  address: string | null
+}
+
+type PickupHotelSearchFields = {
+  hotel?: string | null
+  pick_up_location?: string | null
+  address?: string | null
+}
+
+export function filterCustomerPickupHotels<T extends PickupHotelSearchFields>(
+  hotels: T[],
   query: string
-) {
+): T[] {
   const normalized = query.trim().toLowerCase()
   if (!normalized) return hotels
 
@@ -39,7 +52,11 @@ export function filterCustomerPickupHotels(
   })
 }
 
-export async function fetchCustomerPickupHotels() {
+export function formatCustomerPickupHotelLabel(hotel: CustomerPickupHotelOption): string {
+  return `${hotel.hotel}${hotel.pick_up_location ? ` · ${hotel.pick_up_location}` : ''}`
+}
+
+async function fetchActivePickupHotels() {
   const { data, error } = await supabase
     .from('pickup_hotels')
     .select(
@@ -49,9 +66,22 @@ export async function fetchCustomerPickupHotels() {
     .order('hotel', { ascending: true })
 
   if (error) throw error
+  return (data as PickupHotel[]).filter(isPickupHotelSelectable)
+}
 
-  return (data as PickupHotel[])
-    .filter(isPickupHotelSelectable)
+export async function fetchSelectablePickupHotels(): Promise<CustomerPickupHotelOption[]> {
+  const hotels = await fetchActivePickupHotels()
+  return hotels.map((hotel) => ({
+    id: hotel.id,
+    hotel: hotel.hotel,
+    pick_up_location: hotel.pick_up_location ?? null,
+    address: hotel.address ?? null,
+  }))
+}
+
+export async function fetchCustomerPickupHotels() {
+  const hotels = await fetchActivePickupHotels()
+  return hotels
     .map(toCustomerPickupHotelLocation)
     .filter((hotel): hotel is CustomerPickupHotelLocation => Boolean(hotel))
 }

@@ -673,6 +673,8 @@ export async function updateReservation(
         pricingAdults: pricingAdultsVal,
         child: payload.child || 0,
         infant: payload.infant || 0,
+        isSinglePrice: channelPricingType === 'single',
+        reservationAdults: payload.adults || 0,
         ...(pricingInfo.residentStatusAmounts &&
         typeof pricingInfo.residentStatusAmounts === 'object' &&
         Object.keys(pricingInfo.residentStatusAmounts as object).length > 0

@@ -2,6 +2,7 @@ import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationCh
 
 type BuildBookingGuestEventNoteInput = {
   localContactChannel?: string | null
+  localContactChannels?: string[] | null
   localContactHandle?: string | null
   localContactChannelLabel?: string | null
   alternativeDates?: string[]
@@ -10,14 +11,54 @@ type BuildBookingGuestEventNoteInput = {
   formatDateLabel?: (ymd: string) => string
 }
 
+const LOCAL_CONTACT_NOTE_LABELS: Record<string, string> = {
+  kakaotalk: 'KakaoTalk',
+  line: 'Line',
+  whatsapp: 'WhatsApp',
+  chatroom: 'Tour Chat',
+  text_message: 'Text message',
+  phone_call: 'Phone call',
+  email: 'Email',
+}
+
+export function normalizeLocalContactChannels(
+  channels: string | string[] | null | undefined
+): string[] {
+  const raw = Array.isArray(channels)
+    ? channels
+    : typeof channels === 'string'
+      ? channels.split(',')
+      : []
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const item of raw) {
+    const value = item.trim()
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    result.push(value)
+  }
+  return result
+}
+
+export function formatLocalContactNoteLabels(
+  channels: string[],
+  overrideLabel?: string | null
+): string {
+  const override = overrideLabel?.trim()
+  if (override) return override
+  return channels.map((channel) => LOCAL_CONTACT_NOTE_LABELS[channel] || channel).join(', ')
+}
+
 export function buildBookingGuestEventNote(input: BuildBookingGuestEventNoteInput): string | null {
   const parts: string[] = []
 
-  const channel = input.localContactChannel?.trim()
+  const channels = normalizeLocalContactChannels(
+    input.localContactChannels?.length ? input.localContactChannels : input.localContactChannel
+  )
   const handle = input.localContactHandle?.trim()
-  if (channel && handle) {
-    const label = input.localContactChannelLabel?.trim() || channel
-    parts.push(`Local contact (${label}): ${handle}`)
+  if (channels.length > 0) {
+    const label = formatLocalContactNoteLabels(channels, input.localContactChannelLabel)
+    parts.push(handle ? `Local contact (${label}): ${handle}` : `Local contact: ${label}`)
   }
 
   if (input.alternativeDates && input.alternativeDates.length > 0) {

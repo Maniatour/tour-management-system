@@ -3,6 +3,7 @@ import {
   computeCustomerPaymentTotalLineFormula,
   getBalanceAmountForDisplay,
   inferResidentFeesUsdForBalance,
+  paymentRecordAmountToNumber,
   residentFeesUsdFromCustomerRows,
   withNormalizedBalanceAmountForDisplay,
   type PartySizeSource,
@@ -53,9 +54,10 @@ export function computeAssignedReservationDisplayBalance(args: {
     const st = String(row.status ?? 'active').toLowerCase()
     return st !== 'cancelled' && st !== 'refunded'
   })
-  const nOpts = activeOpts.length
-  const rawOptionsTotal =
-    nOpts > 0 ? activeOpts.reduce((sum, row) => sum + (Number(row.total_price) || 0), 0) : null
+  const hasLiveOptionRows = optionRows.length > 0
+  const rawOptionsTotal = hasLiveOptionRows
+    ? activeOpts.reduce((sum, row) => sum + paymentRecordAmountToNumber(row.total_price), 0)
+    : null
 
   const fromCustomers = residentFeesUsdFromCustomerRows(customerRows)
   const pricingNorm = withNormalizedBalanceAmountForDisplay(pricing)
@@ -70,10 +72,7 @@ export function computeAssignedReservationDisplayBalance(args: {
     },
     party
   )
-  const residentFeeUsd = Math.max(
-    fromCustomers,
-    inferResidentFeesUsdForBalance(pricingNorm, lineGrossBase)
-  )
+  const residentFeeUsd = inferResidentFeesUsdForBalance(pricingNorm, lineGrossBase, fromCustomers)
   const optionsTotalFromOptions =
     rawOptionsTotal !== null
       ? adjustOptionTotalExcludingLegacyNonResident(rawOptionsTotal, residentFeeUsd, activeOpts)
