@@ -19,6 +19,7 @@ interface TourReportSectionProps {
   canEditReport?: boolean
   canDeleteReport?: boolean
   showHeader?: boolean
+  highlightReportId?: string | null
 }
 
 export default function TourReportSection({
@@ -29,7 +30,8 @@ export default function TourReportSection({
   canCreateReport: _canCreateReport = true,
   canEditReport = true,
   canDeleteReport = true,
-  showHeader = true
+  showHeader = true,
+  highlightReportId = null,
 }: TourReportSectionProps) {
   const t = useTranslations('tours.tourReport')
   const locale = useLocale()
@@ -152,6 +154,7 @@ export default function TourReportSection({
           {...(canEditReport ? { onEdit: handleEditReport } : {})}
           {...(canDeleteReport ? { onDelete: handleDeleteReport } : {})}
           locale={locale}
+          highlightReportId={highlightReportId}
         />
       </div>
     )

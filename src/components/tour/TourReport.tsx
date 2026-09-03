@@ -12,6 +12,7 @@ interface TourReportProps {
   isStaff: boolean
   userRole: string
   params: { locale: string }
+  highlightReportId?: string | null
 }
 
 export const TourReport: React.FC<TourReportProps> = ({
@@ -20,7 +21,8 @@ export const TourReport: React.FC<TourReportProps> = ({
   connectionStatus,
   isStaff,
   userRole,
-  params
+  params,
+  highlightReportId = null,
 }) => {
   const chrome = useTourDetailSectionChrome()
   const t = useTranslations('tours.tourReport')
@@ -104,6 +106,7 @@ export const TourReport: React.FC<TourReportProps> = ({
             canEditReport={isStaff}
             canDeleteReport={userRole === 'admin'}
             showHeader={false}
+            highlightReportId={highlightReportId}
           />
         </div>
       </div>

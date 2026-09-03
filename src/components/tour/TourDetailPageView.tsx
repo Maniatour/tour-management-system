@@ -198,11 +198,15 @@ export function TourDetailPageView({
   tourId,
   modalLightLoad = false,
   onNavigateToTour: onNavigateToTourProp,
+  initialSection = null,
+  highlightReportId = null,
 }: {
   tourId: string
   modalLightLoad?: boolean
   /** 모달 내 투어 이동 시 콜백. 없으면 전체 페이지로 라우팅 */
   onNavigateToTour?: (tourId: string) => void
+  initialSection?: string | null
+  highlightReportId?: string | null
 }) {
   const router = useRouter()
   const locale = useLocale()
@@ -2533,6 +2537,18 @@ export function TourDetailPageView({
     resetModalScroll()
     const raf = requestAnimationFrame(() => {
       resetModalScroll()
+      if (!initialSection) return
+      const scrollToTarget = () => {
+        const element = document.getElementById(initialSection)
+        const scrollRoot = document.querySelector<HTMLElement>('[data-tour-detail-modal-scroll]')
+        if (!element || !scrollRoot) return
+        const rootTop = scrollRoot.getBoundingClientRect().top
+        const targetTop =
+          element.getBoundingClientRect().top - rootTop + scrollRoot.scrollTop - 12
+        scrollRoot.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' })
+      }
+      requestAnimationFrame(scrollToTarget)
+      window.setTimeout(scrollToTarget, 350)
     })
     return () => cancelAnimationFrame(raf)
   }, [
@@ -2540,6 +2556,7 @@ export function TourDetailPageView({
     resetModalScroll,
     tourData.pageLoading,
     tourData.tour?.id,
+    initialSection,
   ])
 
   // 인증·투어 데이터 로딩 — 전체 스피너 대신 레이아웃 스켈레톤
@@ -3090,6 +3107,7 @@ export function TourDetailPageView({
                 isStaff={tourData.isStaff}
                 userRole="admin"
                 params={{ locale }}
+                highlightReportId={highlightReportId}
             />
             </div>
           </div>

@@ -9,6 +9,8 @@ export type TourDetailModalContentProps = {
   refreshNonce?: number
   /** 배정 관리 등에서 다른 투어로 이동 시 모달 헤더·링크 동기화용 */
   onNavigateToTour?: (tourId: string) => void
+  initialSection?: string | null
+  highlightReportId?: string | null
 }
 
 /**
@@ -20,6 +22,8 @@ export function TourDetailModalContent({
   tourId,
   refreshNonce = 0,
   onNavigateToTour,
+  initialSection = null,
+  highlightReportId = null,
 }: TourDetailModalContentProps) {
   const [displayTourId, setDisplayTourId] = useState(tourId)
 
@@ -42,6 +46,8 @@ export function TourDetailModalContent({
         tourId={displayTourId}
         modalLightLoad
         onNavigateToTour={handleNavigateToTour}
+        initialSection={initialSection}
+        highlightReportId={highlightReportId}
       />
     </div>
   )

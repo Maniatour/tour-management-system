@@ -54,6 +54,8 @@ type TourDetailResizableDialogProps = {
   onInteractOutside?: (event: Event) => void
   overlayClassName?: string
   modal?: boolean
+  initialSection?: string | null
+  highlightReportId?: string | null
 }
 
 export function TourDetailResizableDialog({
@@ -68,6 +70,8 @@ export function TourDetailResizableDialog({
   header,
   overlayClassName,
   modal = true,
+  initialSection = null,
+  highlightReportId = null,
 }: TourDetailResizableDialogProps) {
   const locale = useLocale()
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -200,6 +204,8 @@ export function TourDetailResizableDialog({
               tourId={tourId}
               refreshNonce={refreshNonce}
               {...(onNavigateToTour ? { onNavigateToTour } : {})}
+              initialSection={initialSection}
+              highlightReportId={highlightReportId}
             />
           </div>
 

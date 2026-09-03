@@ -5,7 +5,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useR
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone, UserCheck, History, Receipt, Wallet, Sparkles, Headphones } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone, UserCheck, History, Receipt, Wallet, Sparkles, Headphones, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toReservationUpdatePayload, updateReservation } from '@/lib/reservationUpdate'
 import { refreshCustomerInList } from '@/lib/refreshCustomerInList'
@@ -247,6 +247,11 @@ const GuideScheduleAssignmentHistoryModal = dynamic(
 
 const TourNarrationHistoryModal = dynamic(
   () => import('@/components/tour/TourNarrationHistoryModal'),
+  { ssr: false, loading: () => null },
+)
+
+const TourReportStatusModal = dynamic(
+  () => import('@/components/schedule/TourReportStatusModal'),
   { ssr: false, loading: () => null },
 )
 
@@ -1092,7 +1097,12 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const [showGuideModal, setShowGuideModal] = useState(false)
   const [guideModalContent, setGuideModalContent] = useState({ title: '', content: '', tourId: '' })
   const [showGuideModalAutoAssign, setShowGuideModalAutoAssign] = useState(false)
-  const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; title: string } | null>(null)
+  const [tourDetailModal, setTourDetailModal] = useState<{
+    tourId: string
+    title: string
+    initialSection?: string
+    highlightReportId?: string
+  } | null>(null)
   const [staffAssignmentLockWarning, setStaffAssignmentLockWarning] =
     useState<StaffAssignmentLockBlock | null>(null)
   const [tourDetailIframeReloadNonce, setTourDetailIframeReloadNonce] = useState(0)
@@ -1255,6 +1265,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const [showGuideScheduleAssignmentBulkModal, setShowGuideScheduleAssignmentBulkModal] = useState(false)
   const [guideAssignmentHistoryTourId, setGuideAssignmentHistoryTourId] = useState<string | null>(null)
   const [showNarrationHistoryModal, setShowNarrationHistoryModal] = useState(false)
+  const [showTourReportStatusModal, setShowTourReportStatusModal] = useState(false)
   const [guideModalScheduleAssignmentTourId, setGuideModalScheduleAssignmentTourId] = useState<string | null>(null)
   const [guideModalScheduleConfirmTourId, setGuideModalScheduleConfirmTourId] = useState<string | null>(null)
   const [tourQuickPrint, setTourQuickPrint] = useState<TourQuickPrintRequest>(null)
@@ -4841,8 +4852,13 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   )
 
   const openTourDetailModal = useCallback(
-    (tourId: string) => {
-      setTourDetailModal({ tourId, title: getTourDetailModalTitle(tourId) })
+    (tourId: string, initialSection?: string, highlightReportId?: string) => {
+      setTourDetailModal({
+        tourId,
+        title: getTourDetailModalTitle(tourId),
+        ...(initialSection ? { initialSection } : {}),
+        ...(highlightReportId ? { highlightReportId } : {}),
+      })
     },
     [getTourDetailModalTitle]
   )
@@ -7265,6 +7281,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             isRefreshing={displayRefreshing}
             onRefresh={() => void handleDisplayRefresh()}
             onOpenNarrationHistory={() => setShowNarrationHistoryModal(true)}
+            onOpenTourReports={() => setShowTourReportStatusModal(true)}
           />
         ) : (
         <>
@@ -7473,6 +7490,16 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
           {/* 오른쪽: 나레이션·재고·저장 */}
           <div className="relative z-10 ml-auto flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-0.5 sm:ml-0 sm:justify-self-end sm:gap-2">
+            <button
+              type="button"
+              onClick={() => setShowTourReportStatusModal(true)}
+              className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+              title={locale === 'ko' ? '투어 리포트' : 'Tour reports'}
+              aria-label={locale === 'ko' ? '투어 리포트' : 'Tour reports'}
+            >
+              <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+
             <button
               type="button"
               onClick={() => setShowNarrationHistoryModal(true)}
@@ -10229,6 +10256,16 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         }
       />
 
+      <TourReportStatusModal
+        isOpen={showTourReportStatusModal}
+        onClose={() => setShowTourReportStatusModal(false)}
+        locale={locale}
+        onOpenTourDetail={(tourId, reportId) => {
+          setShowTourReportStatusModal(false)
+          openTourDetailModal(tourId, 'tour-report', reportId)
+        }}
+      />
+
       <TourNarrationHistoryModal
         isOpen={showNarrationHistoryModal}
         onClose={() => setShowNarrationHistoryModal(false)}
@@ -10785,6 +10822,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         }}
         tourId={tourDetailModal?.tourId ?? null}
         refreshNonce={tourDetailIframeReloadNonce}
+        initialSection={tourDetailModal?.initialSection ?? null}
+        highlightReportId={tourDetailModal?.highlightReportId ?? null}
         onNavigateToTour={(nextTourId) =>
           setTourDetailModal((prev) => (prev ? { ...prev, tourId: nextTourId } : null))
         }

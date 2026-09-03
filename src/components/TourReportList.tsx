@@ -102,6 +102,7 @@ interface TourReportListProps {
   onEdit?: (report: TourReport) => void
   onDelete?: (reportId: string) => void
   locale?: string
+  highlightReportId?: string | null
 }
 
 const WEATHER_LABELS = {
@@ -133,7 +134,8 @@ export default function TourReportList({
   showTourInfo = true, 
   onEdit, 
   onDelete,
-  locale = 'ko'
+  locale = 'ko',
+  highlightReportId = null,
 }: TourReportListProps) {
   const { user } = useAuth()
   const [reports, setReports] = useState<TourReport[]>([])
@@ -348,7 +350,13 @@ export default function TourReportList({
           </Card>
         ) : (
           filteredReports.map((report) => (
-            <Card key={report.id} className="hover:shadow-md transition-shadow">
+            <Card
+              key={report.id}
+              id={`tour-report-card-${report.id}`}
+              className={`transition-shadow hover:shadow-md ${
+                highlightReportId === report.id ? 'ring-2 ring-amber-500' : ''
+              }`}
+            >
               <CardHeader className="p-4 md:p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex-1">

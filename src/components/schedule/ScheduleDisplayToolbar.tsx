@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Headphones, MapPin, RotateCcw, Star, Users } from 'lucide-react'
+import { ArrowLeft, FileText, Headphones, MapPin, RotateCcw, Star, Users } from 'lucide-react'
 import ScheduleDisplayReviewStatusModal from '@/components/schedule/ScheduleDisplayReviewStatusModal'
 
 export type ScheduleDisplayToolbarProps = {
@@ -14,6 +14,7 @@ export type ScheduleDisplayToolbarProps = {
   isRefreshing: boolean
   onRefresh: () => void
   onOpenNarrationHistory?: () => void
+  onOpenTourReports?: () => void
 }
 
 export default function ScheduleDisplayToolbar({
@@ -25,6 +26,7 @@ export default function ScheduleDisplayToolbar({
   isRefreshing,
   onRefresh,
   onOpenNarrationHistory,
+  onOpenTourReports,
 }: ScheduleDisplayToolbarProps) {
   const [reviewStatusOpen, setReviewStatusOpen] = useState(false)
   const isKo = locale === 'ko'
@@ -67,6 +69,18 @@ export default function ScheduleDisplayToolbar({
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          {onOpenTourReports ? (
+            <button
+              type="button"
+              onClick={onOpenTourReports}
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-2.5 py-1.5 text-[11px] font-medium text-foreground shadow-sm hover:bg-muted sm:px-3 sm:py-2 sm:text-xs"
+              title={isKo ? '투어 리포트' : 'Tour reports'}
+              aria-label={isKo ? '투어 리포트' : 'Tour reports'}
+            >
+              <FileText className="h-3.5 w-3.5 text-amber-600 sm:h-4 sm:w-4" aria-hidden />
+              <span className="hidden sm:inline">{isKo ? '리포트' : 'Reports'}</span>
+            </button>
+          ) : null}
           {onOpenNarrationHistory ? (
             <button
               type="button"

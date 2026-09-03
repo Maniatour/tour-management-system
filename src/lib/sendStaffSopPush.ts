@@ -506,3 +506,103 @@ export async function sendGuideScheduleAssignmentPush(
 
   return { sent, failed, skippedNoVapid: false, noSubscriptions: 0 }
 }
+
+/** 미작성 투어 리포트 제출 요청 — 수신자 이메일의 staff_push_subscriptions로 web push */
+export async function sendTourReportReminderPush(
+  admin: SupabaseClient,
+  params: {
+    targetEmail: string
+    pushTitle: string
+    pushBody: string
+    url: string
+  }
+): Promise<ReminderPushResult> {
+  const email = params.targetEmail.trim().toLowerCase()
+  if (!email) {
+    return { sent: 0, failed: 0, skippedNoVapid: false, noSubscriptions: 0 }
+  }
+
+  try {
+    setupVapid()
+  } catch {
+    return { sent: 0, failed: 0, skippedNoVapid: true, noSubscriptions: 0 }
+  }
+
+  const { data: channels } = await admin
+    .from('channels')
+    .select('favicon_url')
+    .eq('type', 'self')
+    .not('favicon_url', 'is', null)
+    .limit(1)
+    .maybeSingle()
+
+  let faviconUrl = '/favicon.ico'
+  if (channels?.favicon_url) faviconUrl = channels.favicon_url
+
+  const baseUrl =
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://www.maniatour.com')
+  const iconUrl = faviconUrl.startsWith('http') ? faviconUrl : `${baseUrl}${faviconUrl}`
+
+  const { data: subscriptions, error } = await admin.from('staff_push_subscriptions').select('*')
+  if (error || !subscriptions?.length) {
+    return { sent: 0, failed: 0, skippedNoVapid: false, noSubscriptions: 1 }
+  }
+
+  const matched = subscriptions.filter((sub) => {
+    const subEmail = ((sub as { user_email?: string }).user_email || '').trim().toLowerCase()
+    return subEmail === email
+  })
+
+  if (matched.length === 0) {
+    return { sent: 0, failed: 0, skippedNoVapid: false, noSubscriptions: 1 }
+  }
+
+  let sent = 0
+  let failed = 0
+  const openUrl = params.url.startsWith('http')
+    ? params.url
+    : `${baseUrl}${params.url.startsWith('/') ? '' : '/'}${params.url}`
+
+  await Promise.all(
+    matched.map(async (subscription) => {
+      const row = subscription as {
+        endpoint: string
+        p256dh_key: string
+        auth_key: string
+      }
+      const payload = JSON.stringify({
+        title: params.pushTitle,
+        body: params.pushBody,
+        icon: iconUrl,
+        badge: iconUrl,
+        tag: `tour-report-reminder-${email}`,
+        data: {
+          url: openUrl,
+          type: 'tour_report_reminder',
+        },
+      })
+      try {
+        await webpush.sendNotification(
+          {
+            endpoint: row.endpoint,
+            keys: {
+              p256dh: row.p256dh_key,
+              auth: row.auth_key,
+            },
+          },
+          payload
+        )
+        sent++
+      } catch (err: unknown) {
+        failed++
+        const status = (err as { statusCode?: number })?.statusCode
+        if (status === 410 || status === 404) {
+          await admin.from('staff_push_subscriptions').delete().eq('endpoint', row.endpoint)
+        }
+      }
+    })
+  )
+
+  return { sent, failed, skippedNoVapid: false, noSubscriptions: 0 }
+}
