@@ -389,6 +389,14 @@ export async function fetchTourNarrationPlaysForTourIds(
   return withPlayedByNames(rows)
 }
 
+export type TourNarrationSkipReport = {
+  userEmail: string
+  userName: string | null
+  notPlayed: boolean
+  explainedInPerson: boolean
+  reason: string | null
+}
+
 export type TourNarrationHistoryRow = {
   tourId: string
   tourDate: string
@@ -402,6 +410,7 @@ export type TourNarrationHistoryRow = {
   assistantName: string | null
   plays: TourNarrationPlay[]
   played: boolean
+  skipReports: TourNarrationSkipReport[]
 }
 
 function productDisplayName(
@@ -473,11 +482,55 @@ export async function fetchToursNarrationHistory(args: {
     playsByTour.set(play.tour_id, list)
   }
 
-  const staffEmails = tours.flatMap((tour) => [tour.tour_guide_id, tour.assistant_id]).filter(Boolean) as string[]
+  const skipReportsByTour = new Map<string, TourNarrationSkipReport[]>()
+  const tourIds = tours.map((tour) => tour.id)
+  for (let i = 0; i < tourIds.length; i += 80) {
+    const chunk = tourIds.slice(i, i + 80)
+    const { data: reportRows, error: reportError } = await supabase
+      .from('tour_reports')
+      .select(
+        'tour_id, user_email, narration_not_played, narration_explained_in_person, narration_skip_reason',
+      )
+      .in('tour_id', chunk)
+    if (reportError) {
+      console.warn('[narration play] skip reports', reportError)
+      continue
+    }
+    for (const row of reportRows || []) {
+      const rec = row as {
+        tour_id: string | null
+        user_email: string
+        narration_not_played: boolean | null
+        narration_explained_in_person: boolean | null
+        narration_skip_reason: string | null
+      }
+      if (!rec.tour_id || !rec.narration_not_played) continue
+      const list = skipReportsByTour.get(rec.tour_id) || []
+      list.push({
+        userEmail: rec.user_email,
+        userName: null,
+        notPlayed: true,
+        explainedInPerson: Boolean(rec.narration_explained_in_person),
+        reason: rec.narration_skip_reason?.trim() || null,
+      })
+      skipReportsByTour.set(rec.tour_id, list)
+    }
+  }
+
+  const staffEmails = tours
+    .flatMap((tour) => [tour.tour_guide_id, tour.assistant_id])
+    .concat(
+      [...skipReportsByTour.values()].flatMap((rows) => rows.map((row) => row.userEmail)),
+    )
+    .filter(Boolean) as string[]
   const nameByEmail = await loadTeamNames(staffEmails)
 
   return tours.map((tour) => {
     const tourPlays = playsByTour.get(tour.id) || []
+    const skipReports = (skipReportsByTour.get(tour.id) || []).map((row) => ({
+      ...row,
+      userName: nameByEmail.get(normalizeEmail(row.userEmail)) || row.userEmail,
+    }))
     return {
       tourId: tour.id,
       tourDate: tour.tour_date || '',
@@ -495,6 +548,7 @@ export async function fetchToursNarrationHistory(args: {
         : null,
       plays: tourPlays,
       played: tourPlays.length > 0,
+      skipReports,
     }
   })
 }

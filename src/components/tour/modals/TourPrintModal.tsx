@@ -24,6 +24,11 @@ import { isActiveTourHotelBookingForList } from '@/lib/tourHotelReferences'
 import { loadCalendarChoiceRows } from '@/lib/fetchCanyonChoiceRows'
 import { isCanyonTourChoiceKey, type ReservationChoiceRow } from '@/lib/tourChoiceCounts'
 import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
+import {
+  getCanyonWaiverPrintStyles,
+  type CanyonWaiverPrintTourPayload,
+} from '@/lib/canyonWaiverPrintForms'
+import CanyonWaiverPrintPages from '@/components/tour/print/CanyonWaiverPrintPages'
 
 type CanyonPrintKey = 'X' | 'L' | 'U'
 
@@ -94,6 +99,7 @@ export interface TourPrintModalProps {
   isOpen: boolean
   onClose: () => void
   locale?: string
+  tourId?: string | null
   tourDate: string
   productNameKo: string
   productNameEn: string
@@ -227,6 +233,8 @@ function getPrintStyles(): string {
     html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
     @page { size: letter; margin: 12mm; }
     ${getScopedStyles()}
+    ${getCanyonWaiverPrintStyles()}
+    .cwf-page-break { break-before: page; page-break-before: always; }
   `
 }
 
@@ -238,6 +246,7 @@ export default function TourPrintModal({
   isOpen,
   onClose,
   locale = 'ko',
+  tourId,
   tourDate,
   productNameKo,
   productNameEn,
@@ -257,6 +266,11 @@ export default function TourPrintModal({
   const [canyonByResId, setCanyonByResId] = useState<Map<string, CanyonPrintKey[]>>(new Map())
   const [loading, setLoading] = useState(false)
   const [printLang, setPrintLang] = useState<'ko' | 'en'>(locale === 'en' ? 'en' : 'ko')
+  const [waiverPacket, setWaiverPacket] = useState<CanyonWaiverPrintTourPayload | null>(null)
+  const [waiverLoading, setWaiverLoading] = useState(false)
+  const [includeTourInfo, setIncludeTourInfo] = useState(true)
+  const [includeLowerForm, setIncludeLowerForm] = useState(true)
+  const [includeXForm, setIncludeXForm] = useState(true)
 
   // 모달이 열릴 때 현재 locale로 초기화
   useEffect(() => {
@@ -302,6 +316,13 @@ export default function TourPrintModal({
       print: isKo ? '인쇄' : 'Print',
       close: isKo ? '닫기' : 'Close',
       loading: isKo ? '잔금 정보를 불러오는 중...' : 'Loading balance...',
+      includeTourInfo: isKo ? '투어 정보' : 'Tour info',
+      includeLower: isKo ? '로어 앤텔롭 면책 폼' : 'Lower Antelope form',
+      includeX: isKo ? '앤텔롭 X 면책 폼' : 'Antelope X form',
+      waiverLoading: isKo ? '면책 서명 정보를 불러오는 중...' : 'Loading waiver signatures...',
+      printPagesHint: isKo
+        ? '캐년 폼은 투어 정보 다음 페이지로 인쇄됩니다.'
+        : 'Canyon forms print on following pages.',
     }),
     [isKo]
   )
@@ -542,6 +563,45 @@ export default function TourPrintModal({
     }
   }, [isOpen, assignedReservationIdsKey])
 
+  useEffect(() => {
+    if (!isOpen) return
+    const id = String(tourId || '').trim()
+    if (!id) {
+      setWaiverPacket(null)
+      setWaiverLoading(false)
+      return
+    }
+    let cancelled = false
+    const load = async () => {
+      setWaiverLoading(true)
+      try {
+        const { data: sessionData } = await supabase.auth.getSession()
+        const token = sessionData?.session?.access_token?.trim()
+        const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
+        const res = await fetch(`/api/admin/waivers/print-tour?tourId=${encodeURIComponent(id)}`, {
+          headers,
+          credentials: 'include',
+        })
+        if (!res.ok) throw new Error(`print-tour ${res.status}`)
+        const json = (await res.json()) as CanyonWaiverPrintTourPayload
+        if (cancelled) return
+        setWaiverPacket(json)
+        setIncludeLowerForm(Boolean(json.lower))
+        setIncludeXForm(Boolean(json.canyonX))
+        setIncludeTourInfo(true)
+      } catch (e) {
+        console.warn('[TourPrintModal] canyon waiver print', e)
+        if (!cancelled) setWaiverPacket(null)
+      } finally {
+        if (!cancelled) setWaiverLoading(false)
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, tourId])
+
   // 픽업 호텔별 그룹화 + 정렬 (픽업 미지정 예약도 총 잔금과 줄 합이 맞도록 포함)
   const pickupGroups = useMemo(() => {
     const hotelsForResolve = pickupHotels as PickupHotelUtil[]
@@ -643,22 +703,26 @@ export default function TourPrintModal({
     [tourHotelBookings]
   )
 
+  const printLower = includeLowerForm && Boolean(waiverPacket?.lower)
+  const printX = includeXForm && Boolean(waiverPacket?.canyonX)
+  const canPrint = includeTourInfo || printLower || printX
+  const busy = loading || waiverLoading
+
   const handlePrint = () => {
     const target = document.getElementById('tour-print-content')
     if (!target) return
     const clone = target.cloneNode(true) as HTMLElement
     clone.removeAttribute('id')
 
-    // Letter 인쇄 영역(96dpi 기준): 8.5" x 11", 여백 12mm
     const DPI = 96
     const MARGIN_MM = 12
     const mmToPx = (mm: number) => (mm * DPI) / 25.4
     const availW = Math.round(8.5 * DPI - 2 * mmToPx(MARGIN_MM))
     const availH = Math.round(11 * DPI - 2 * mmToPx(MARGIN_MM))
+    const printCanyonPages = printLower || printX
 
     const iframe = document.createElement('iframe')
     iframe.title = 'Tour Print'
-    // 측정 가능하도록 실제 크기를 주되 화면 밖에 배치
     iframe.style.cssText =
       'position:fixed;left:-10000px;top:0;width:816px;height:1056px;border:none;overflow:hidden;'
     document.body.appendChild(iframe)
@@ -682,13 +746,34 @@ export default function TourPrintModal({
       return
     }
 
+    const waitForImages = () => {
+      const imgs = Array.from(iframeDoc.images)
+      if (imgs.length === 0) return Promise.resolve()
+      return Promise.all(
+        imgs.map((img) =>
+          img.complete
+            ? Promise.resolve()
+            : new Promise<void>((resolve) => {
+                img.addEventListener('load', () => resolve(), { once: true })
+                img.addEventListener('error', () => resolve(), { once: true })
+              })
+        )
+      ).then(() => undefined)
+    }
+
     const runPrint = () => {
-      // 내용 높이를 측정해 한 페이지(Letter)에 맞게 축소
-      // (transform이 아닌 zoom: Chromium에서 레이아웃·인쇄 페이지 분할에 실제 반영됨)
       const fit = iframeDoc.getElementById('tp-fit')
-      if (fit) {
+      const tourInfo = iframeDoc.querySelector('.tp-tour-info') as HTMLElement | null
+      if (printCanyonPages) {
+        if (tourInfo) {
+          const contentH = tourInfo.scrollHeight
+          if (contentH > availH - 6) {
+            const scale = Math.max(0.4, (availH - 6) / contentH)
+            ;(tourInfo.style as CSSStyleDeclaration & { zoom?: string }).zoom = String(scale)
+          }
+        }
+      } else if (fit) {
         const contentH = fit.scrollHeight
-        // 6px 안전 여백을 두어 반올림으로 2페이지로 넘어가는 것 방지
         if (contentH > availH - 6) {
           const scale = Math.max(0.4, (availH - 6) / contentH)
           ;(fit.style as CSSStyleDeclaration & { zoom?: string }).zoom = String(scale)
@@ -700,11 +785,13 @@ export default function TourPrintModal({
       }, 250)
     }
 
-    // document.write 직후 onload가 이미 끝난 경우가 있어 readyState로 분기
+    const start = () => {
+      void waitForImages().then(() => requestAnimationFrame(() => requestAnimationFrame(runPrint)))
+    }
     if (iframeDoc.readyState === 'complete') {
-      requestAnimationFrame(() => requestAnimationFrame(runPrint))
+      start()
     } else {
-      printWin.addEventListener('load', runPrint, { once: true })
+      printWin.addEventListener('load', start, { once: true })
     }
   }
 
@@ -713,42 +800,81 @@ export default function TourPrintModal({
   return (
     <div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-[820px] max-h-[92vh] overflow-hidden flex flex-col">
-        <header className="flex items-center justify-between p-4 border-b flex-shrink-0">
-          <h2 className="text-lg font-bold text-gray-900">{L.title}</h2>
-          <div className="flex items-center gap-3">
-            {/* 언어 선택 토글 */}
-            <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden text-sm">
+        <header className="flex flex-col gap-3 p-4 border-b flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-gray-900">{L.title}</h2>
+            <div className="flex items-center gap-3">
+              <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden text-sm">
+                <button
+                  type="button"
+                  onClick={() => setPrintLang('ko')}
+                  className={`px-3 py-1.5 font-medium transition-colors ${
+                    isKo ? 'bg-primary text-primary-foreground' : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  한글
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintLang('en')}
+                  className={`px-3 py-1.5 font-medium transition-colors ${
+                    !isKo ? 'bg-primary text-primary-foreground' : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  English
+                </button>
+              </div>
               <button
                 type="button"
-                onClick={() => setPrintLang('ko')}
-                className={`px-3 py-1.5 font-medium transition-colors ${
-                  isKo ? 'bg-primary text-primary-foreground' : 'bg-white text-gray-600 hover:bg-gray-50'
-                }`}
+                onClick={onClose}
+                className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
               >
-                한글
-              </button>
-              <button
-                type="button"
-                onClick={() => setPrintLang('en')}
-                className={`px-3 py-1.5 font-medium transition-colors ${
-                  !isKo ? 'bg-primary text-primary-foreground' : 'bg-white text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                English
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
           </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-700">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={includeTourInfo}
+                onChange={(e) => setIncludeTourInfo(e.target.checked)}
+              />
+              {L.includeTourInfo}
+            </label>
+            {waiverPacket?.lower ? (
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={includeLowerForm}
+                  onChange={(e) => setIncludeLowerForm(e.target.checked)}
+                />
+                {L.includeLower} ({waiverPacket.lower.guests.length})
+              </label>
+            ) : null}
+            {waiverPacket?.canyonX ? (
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={includeXForm}
+                  onChange={(e) => setIncludeXForm(e.target.checked)}
+                />
+                {L.includeX} ({waiverPacket.canyonX.guests.length})
+              </label>
+            ) : null}
+          </div>
+          {waiverPacket?.lower || waiverPacket?.canyonX ? (
+            <p className="text-xs text-gray-500">{L.printPagesHint}</p>
+          ) : null}
         </header>
 
         <div className="flex-1 overflow-y-auto p-6 bg-gray-100">
-          {loading && <p className="text-sm text-gray-500 mb-3">{L.loading}</p>}
+          {(loading || waiverLoading) && (
+            <p className="text-sm text-gray-500 mb-3">{waiverLoading ? L.waiverLoading : L.loading}</p>
+          )}
 
           {/* 인쇄 콘텐츠 (미리보기 겸용) */}
           <div
@@ -756,8 +882,9 @@ export default function TourPrintModal({
             className="bg-white mx-auto shadow"
             style={{ width: '100%', maxWidth: '720px', padding: '28px 32px' }}
           >
-            <style>{getScopedStyles()}</style>
-            <div className="tp-root">
+            <style>{`${getScopedStyles()}\n${getCanyonWaiverPrintStyles()}`}</style>
+            {includeTourInfo ? (
+            <div className="tp-root tp-tour-info">
               <h1 className="tp-title">{productName || L.title}</h1>
               <p className="tp-subtitle">{tourDate}</p>
 
@@ -908,6 +1035,14 @@ export default function TourPrintModal({
                 )}
               </section>
             </div>
+            ) : null}
+            <CanyonWaiverPrintPages
+              lower={waiverPacket?.lower ?? null}
+              canyonX={waiverPacket?.canyonX ?? null}
+              includeLower={printLower}
+              includeX={printX}
+              isFirstPrintedBlock={!includeTourInfo}
+            />
           </div>
         </div>
 
@@ -915,7 +1050,7 @@ export default function TourPrintModal({
           <button
             type="button"
             onClick={handlePrint}
-            disabled={loading}
+            disabled={busy || !canPrint}
             className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
           >
             <Printer className="w-4 h-4" />

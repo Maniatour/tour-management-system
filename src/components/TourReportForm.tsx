@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { MapPin, Users, DollarSign, Cloud, Star, MessageSquare, AlertTriangle, Package, Lightbulb, MessageCircle, Handshake, FileText, ChevronLeft, ChevronRight, Car, Wrench, Camera, NotebookPen, SkipForward, PenLine } from 'lucide-react'
 import WaiverSignaturePad from '@/components/waiver/WaiverSignaturePad'
-import TourNarrationPlayLog from '@/components/tour/TourNarrationPlayLog'
+import TourReportNarrationSection from '@/components/tour/TourReportNarrationSection'
 import TourReportNumberStepper from '@/components/TourReportNumberStepper'
 import TourReportIssuePhotos from '@/components/TourReportIssuePhotos'
 import TourReportSkippedStops from '@/components/TourReportSkippedStops'
@@ -30,6 +30,14 @@ import {
   tourReportNoLostItemsLabel,
   type SkippedStopsMap,
 } from '@/lib/tourReportExtras'
+import {
+  hasNarrationSkipExplanation,
+  narrationSkipNeedsDetails,
+  parseNarrationSkip,
+  serializeNarrationSkip,
+} from '@/lib/tourReportNarration'
+import { isGoblinTourProduct } from '@/lib/goblinTour'
+import { fetchTourNarrationPlays } from '@/lib/tourNarrationPlays'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { reservationExcludedFromTourAssignment } from '@/lib/reservationStatus'
@@ -90,6 +98,9 @@ interface TourReportData {
   comments: string | null
   sign: string | null
   office_note: string | null
+  narration_not_played: boolean
+  narration_explained_in_person: boolean
+  narration_skip_reason: string | null
 }
 
 const WEATHER_OPTIONS = [
@@ -288,6 +299,14 @@ export default function TourReportForm({
       loginRequired: getText('로그인이 필요합니다.', 'Login required.'),
       signatureRequired: getText('서명을 그려 주세요.', 'Please draw your signature.'),
       weatherRequired: getText('날씨를 선택해 주세요.', 'Please select the weather.'),
+      narrationSkipRequired: getText(
+        '재생하지 않은 사유를 적거나, 충분한 설명을 했음을 체크해 주세요.',
+        'Write a reason for not playing narration, or check that you explained it sufficiently.'
+      ),
+      narrationRequired: getText(
+        '나레이션 재생 기록이 없습니다. 재생하지 않았다면 사유를 적거나, 충분한 설명을 했음을 체크해 주세요.',
+        'No narration playback was recorded. If it was not played, write a reason or check that you explained it sufficiently.'
+      ),
     },
     placeholders: {
       endMileage: getText('종료 주행거리를 입력하세요', 'Enter end mileage'),
@@ -317,6 +336,7 @@ export default function TourReportForm({
   const [courseById, setCourseById] = useState<Map<string, CourseForMainStops>>(new Map())
   const [isRentalVehicle, setIsRentalVehicle] = useState(false)
   const [isCompanyVehicle, setIsCompanyVehicle] = useState(false)
+  const [isGoblinTour, setIsGoblinTour] = useState(false)
   const [bookedCustomerCount, setBookedCustomerCount] = useState<number | null>(null)
   const [drivingSegments, setDrivingSegments] = useState<TourReportDrivingSegment[]>([])
   const [drivingSegmentsLoading, setDrivingSegmentsLoading] = useState(false)
@@ -354,6 +374,9 @@ export default function TourReportForm({
     comments: '',
     sign: '',
     office_note: '',
+    narration_not_played: false,
+    narration_explained_in_person: false,
+    narration_skip_reason: '',
   })
 
   useEffect(() => {
@@ -386,6 +409,7 @@ export default function TourReportForm({
       lost_items_damage: Array.isArray(initialData.lost_items_damage)
         ? initialData.lost_items_damage
         : prev.lost_items_damage,
+      ...parseNarrationSkip(initialData),
     }))
   }, [initialData, reportId, tourId])
 
@@ -424,10 +448,25 @@ export default function TourReportForm({
       try {
         const { data: tour, error } = await supabase
           .from('tours')
-          .select('tour_car_id, reservation_ids')
+          .select('tour_car_id, reservation_ids, product_id')
           .eq('id', tourId)
           .maybeSingle()
         if (error) throw error
+
+        const productId = (tour?.product_id as string | null) ?? productIdProp ?? null
+        if (!cancelled) {
+          setIsGoblinTour(isGoblinTourProduct(null, productId))
+        }
+        if (productId) {
+          const { data: product } = await supabase
+            .from('products')
+            .select('id, name, name_ko, name_en')
+            .eq('id', productId)
+            .maybeSingle()
+          if (!cancelled && product) {
+            setIsGoblinTour(isGoblinTourProduct(product, productId))
+          }
+        }
 
         const carId = (tour?.tour_car_id as string | null) ?? null
         if (!carId) {
@@ -511,7 +550,7 @@ export default function TourReportForm({
     return () => {
       cancelled = true
     }
-  }, [tourId, reportId])
+  }, [tourId, reportId, productIdProp])
 
   useEffect(() => {
     let cancelled = false
@@ -999,6 +1038,23 @@ export default function TourReportForm({
         return
       }
 
+      if (narrationSkipNeedsDetails(formData)) {
+        toast.error(t.messages.narrationSkipRequired)
+        if (useMobileWizard) setMobileStep(totalSteps - 1)
+        return
+      }
+
+      if (isGoblinTour && !hasNarrationSkipExplanation(formData)) {
+        const plays = await fetchTourNarrationPlays(tourId)
+        if (plays.length === 0) {
+          toast.error(t.messages.narrationRequired)
+          if (useMobileWizard) setMobileStep(totalSteps - 1)
+          return
+        }
+      }
+
+      const narrationSkip = serializeNarrationSkip(formData)
+
       const payload = {
         end_mileage: isRentalVehicle ? null : formData.end_mileage,
         cash_balance: formData.cash_balance,
@@ -1037,6 +1093,7 @@ export default function TourReportForm({
         comments: formData.comments,
         sign: nextSign,
         office_note: formData.office_note,
+        ...narrationSkip,
       }
 
       const { error } = reportId
@@ -1688,7 +1745,28 @@ export default function TourReportForm({
               </>
               )}
 
-            <TourNarrationPlayLog tourId={tourId} locale={locale} compact />
+            <TourReportNarrationSection
+              tourId={tourId}
+              locale={locale}
+              notPlayed={formData.narration_not_played}
+              explainedInPerson={formData.narration_explained_in_person}
+              skipReason={formData.narration_skip_reason || ''}
+              onNotPlayedChange={(value) => {
+                setFormData((prev) => ({
+                  ...prev,
+                  narration_not_played: value,
+                  narration_explained_in_person: value ? prev.narration_explained_in_person : false,
+                }))
+              }}
+              onExplainedChange={(value) => {
+                setFormData((prev) => ({
+                  ...prev,
+                  narration_explained_in_person: value,
+                  narration_not_played: value ? true : prev.narration_not_played,
+                }))
+              }}
+              onReasonChange={(value) => handleInputChange('narration_skip_reason', value)}
+            />
 
             {/* 서명 */}
             <div className={cn(fieldY, 'pt-1')}>

@@ -10468,6 +10468,9 @@ export type Database = {
           issue_photo_urls: string[]
           lost_items_damage: string[] | null
           main_stops_visited: string[] | null
+          narration_explained_in_person: boolean
+          narration_not_played: boolean
+          narration_skip_reason: string | null
           office_note: string | null
           overall_mood: string | null
           sign: string | null
@@ -10499,6 +10502,9 @@ export type Database = {
           issue_photo_urls?: string[]
           lost_items_damage?: string[] | null
           main_stops_visited?: string[] | null
+          narration_explained_in_person?: boolean
+          narration_not_played?: boolean
+          narration_skip_reason?: string | null
           office_note?: string | null
           overall_mood?: string | null
           sign?: string | null
@@ -10530,6 +10536,9 @@ export type Database = {
           issue_photo_urls?: string[]
           lost_items_damage?: string[] | null
           main_stops_visited?: string[] | null
+          narration_explained_in_person?: boolean
+          narration_not_played?: boolean
+          narration_skip_reason?: string | null
           office_note?: string | null
           overall_mood?: string | null
           sign?: string | null

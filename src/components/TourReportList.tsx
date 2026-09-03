@@ -40,6 +40,7 @@ import {
   parseIssuePhotoUrls,
   parseSkippedStops,
 } from '@/lib/tourReportExtras'
+import { narrationSkipSummary } from '@/lib/tourReportNarration'
 
 const LOST_DAMAGE_OPTIONS = [
   { ko: '분실물 없음', en: 'No Lost Items' },
@@ -79,6 +80,9 @@ interface TourReport {
   user_email: string
   sign: string | null
   office_note: string | null
+  narration_not_played?: boolean | null
+  narration_explained_in_person?: boolean | null
+  narration_skip_reason?: string | null
   created_at: string
   updated_at: string
   tours?: {
@@ -527,6 +531,18 @@ export default function TourReportList({
                 )}
 
                 <TourNarrationPlayLog tourId={report.tour_id} locale={locale} />
+                {(() => {
+                  const skip = narrationSkipSummary(report, locale)
+                  if (!skip) return null
+                  return (
+                    <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
+                      <p className="text-sm font-medium text-amber-900">{skip.title}</p>
+                      {skip.detail ? (
+                        <p className="mt-1 text-sm text-amber-900/80">{skip.detail}</p>
+                      ) : null}
+                    </div>
+                  )
+                })()}
 
                 {(() => {
                   const skipped = parseSkippedStops(report.skipped_stops)

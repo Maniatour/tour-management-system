@@ -2732,6 +2732,7 @@ export function TourDetailPageView({
         isOpen={showTourPrintModal}
         onClose={() => setShowTourPrintModal(false)}
         locale={locale}
+        tourId={tourData.tour?.id || null}
         tourDate={tourData.tour?.tour_date || ''}
         productNameKo={tourData.product?.name_ko || tourData.product?.name_en || ''}
         productNameEn={tourData.product?.name_en || tourData.product?.name_ko || ''}

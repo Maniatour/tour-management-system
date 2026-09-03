@@ -43,10 +43,12 @@ export default function TourNarrationPlayLog({
   tourId,
   locale = 'ko',
   compact = false,
+  hideTitle = false,
 }: {
   tourId: string
   locale?: string
   compact?: boolean
+  hideTitle?: boolean
 }) {
   const [plays, setPlays] = useState<TourNarrationPlay[]>([])
   const [loading, setLoading] = useState(true)
@@ -70,12 +72,14 @@ export default function TourNarrationPlayLog({
   if (plays.length === 0) {
     if (!compact) return null
     return (
-      <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2.5">
-        <p className="flex items-center gap-1.5 text-sm font-medium text-gray-800">
-          <Headphones className="h-4 w-4 text-gray-500" />
-          {locale === 'en' ? 'Narration playback' : '나레이션 재생 기록'}
-        </p>
-        <p className="mt-1 text-xs text-gray-500">
+      <div className="rounded-lg border border-dashed border-border/80 bg-white px-3 py-2.5">
+        {!hideTitle ? (
+          <p className="flex items-center gap-1.5 text-sm font-medium text-gray-800">
+            <Headphones className="h-4 w-4 text-gray-500" />
+            {locale === 'en' ? 'Narration playback' : '나레이션 재생 기록'}
+          </p>
+        ) : null}
+        <p className={hideTitle ? 'text-xs text-gray-500' : 'mt-1 text-xs text-gray-500'}>
           {locale === 'en'
             ? 'No narration was played on this tour yet.'
             : '이 투어에서 아직 재생된 나레이션이 없습니다.'}
@@ -85,11 +89,13 @@ export default function TourNarrationPlayLog({
   }
 
   return (
-    <div className={compact ? 'rounded-lg border border-border/70 bg-muted/30 p-3' : 'mb-4'}>
-      <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-gray-900">
-        <Headphones className="h-4 w-4 text-gray-500" />
-        {locale === 'en' ? 'Narration playback' : '나레이션 재생 기록'}
-      </p>
+    <div className={compact ? 'rounded-lg border border-border/70 bg-white p-3' : 'mb-4'}>
+      {!hideTitle ? (
+        <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-gray-900">
+          <Headphones className="h-4 w-4 text-gray-500" />
+          {locale === 'en' ? 'Narration playback' : '나레이션 재생 기록'}
+        </p>
+      ) : null}
       <ul className="space-y-2">
         {plays.map((play) => (
           <li

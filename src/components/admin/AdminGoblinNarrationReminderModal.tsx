@@ -81,8 +81,8 @@ export default function AdminGoblinNarrationReminderModal({ locale }: { locale: 
       title={isEn ? "Today's goblin tour narration" : '오늘 밤도깨비 나레이션 재생'}
       subtitle={
         isEn
-          ? 'Las Vegas 6:00 PM check — whether each goblin tour played narration, which files, how long, and who played them.'
-          : '라스베가스 오후 6시 확인 — 투어별로 나레이션을 틀었는지, 어떤 파일을 얼마나, 누가 재생했는지 안내합니다.'
+          ? 'Las Vegas 6:00 PM check — whether each goblin tour played narration, who played it, and any tour-report reason if it was not played.'
+          : '라스베가스 오후 6시 확인 — 투어별로 나레이션을 틀었는지, 누가 재생했는지, 미재생이면 리포트에 적힌 사유를 안내합니다.'
       }
       extraActions={
         <button

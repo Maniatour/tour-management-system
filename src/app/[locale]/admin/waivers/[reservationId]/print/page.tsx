@@ -3,6 +3,18 @@
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import WaiverDocumentView from '@/components/waiver/WaiverDocumentView'
+import AntelopeXCompanyInfoForm from '@/components/tour/print/AntelopeXCompanyInfoForm'
+import {
+  ANTELOPE_X_ROWS_PER_PAGE,
+  chunkPrintGuests,
+  formatCanyonFormDate,
+  formatCanyonFormTime,
+  getCanyonWaiverPrintStyles,
+  pickEnglishPrintName,
+  pickReusableWaiverSignature,
+  type CanyonWaiverPrintGuest,
+  type CanyonWaiverPrintPacket,
+} from '@/lib/canyonWaiverPrintForms'
 
 type PrintPayload = {
   bookingNumber: string
@@ -71,10 +83,34 @@ export default function WaiverPrintPage() {
       const canyonOk = !(data.required ?? []).includes('ANTELOPE_CANYON_X') || Boolean(p.canyonX)
       return maniaOk && canyonOk
     })
-  const chunks: typeof data.participants[] = []
-  for (let i = 0; i < printParticipants.length; i += 18) {
-    chunks.push(printParticipants.slice(i, i + 18))
+  const canyonXPacket: CanyonWaiverPrintPacket = {
+    canyon: 'X',
+    companyName: data.companyName,
+    date: formatCanyonFormDate(data.tourDate),
+    tourTime: formatCanyonFormTime(data.canyonTime),
+    adultCount: data.adultCount,
+    minorCount: data.minorCount,
+    guideName: data.guideName || '',
+    guidePhone: data.guidePhone || '',
+    guideSignatureUrl: data.guideSignatureUrl,
+    guests: printParticipants.map((p): CanyonWaiverPrintGuest => ({
+      id: p.id,
+      reservationId,
+      printName: pickEnglishPrintName({ fullLegalName: p.name, name: p.name }),
+      signatureUrl: pickReusableWaiverSignature({
+        canyonSignatureUrl: p.canyonX?.signatureUrl ?? null,
+        maniaSignatureUrl: p.mania?.signatureUrl ?? null,
+        guardianSignatureUrl: p.guardianSignatureUrl,
+        isMinor: p.type === 'MINOR',
+      }),
+      country: '',
+      receiptNumber: data.bookingNumber,
+      isMinor: p.type === 'MINOR',
+      age: p.age,
+      guardianName: p.guardianName,
+    })),
   }
+  const canyonXChunks = chunkPrintGuests(canyonXPacket.guests, ANTELOPE_X_ROWS_PER_PAGE)
 
   return (
     <div className="waiver-print bg-white text-black">
@@ -87,6 +123,7 @@ export default function WaiverPrintPage() {
           .avoid-break { break-inside: avoid; page-break-inside: avoid; }
           header, nav, aside, [data-admin-chrome] { display: none !important; }
         }
+        ${getCanyonWaiverPrintStyles()}
       `}</style>
       <div className="no-print sticky top-0 z-10 flex gap-2 border-b bg-white p-3">
         <button type="button" className="rounded-lg border px-4 py-2" onClick={() => window.print()}>
@@ -160,67 +197,14 @@ export default function WaiverPrintPage() {
           <section className="page-break mx-auto max-w-[8.5in] px-8 py-8">
             <WaiverDocumentView content={data.canyonXEnglish} languageNotice="" showGoverningNotice={false} />
           </section>
-          {chunks.map((group, pageIdx) => (
-            <section key={pageIdx} className="page-break mx-auto max-w-[8.5in] px-8 py-8">
-              <h2 className="text-xl font-semibold">TOUR COMPANY INFORMATION{pageIdx > 0 ? ' — CONTINUATION' : ''}</h2>
-              {pageIdx === 0 ? (
-                <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
-                  <div>COMPANY NAME: {data.companyName}</div>
-                  <div>DATE: {data.tourDate}</div>
-                  <div>TOUR TIME: {data.canyonTime || '—'}</div>
-                  <div>TOTAL ADULT CUSTOMERS: {data.adultCount}</div>
-                  <div>TOTAL MINOR CUSTOMERS: {data.minorCount}</div>
-                  <div>TOUR GUIDE NAME: {data.guideName || '—'}</div>
-                  <div>TOUR GUIDE PHONE: {data.guidePhone || '—'}</div>
-                  <div>
-                    TOUR GUIDE SIGNATURE:{' '}
-                    {data.guideSignatureUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={data.guideSignatureUrl} alt="Guide signature" className="inline h-10" />
-                    ) : (
-                      <span>Guide Signature Required</span>
-                    )}
-                  </div>
-                </dl>
-              ) : null}
-              <p className="mt-4 text-sm">
-                All participants must print their name and sign the Release of Liability Waiver before participating.
-              </p>
-              <ol className="mt-4 space-y-3">
-                {group.map((p, i) => {
-                  const line = pageIdx * 18 + i + 1
-                  const isMinor = p.type === 'MINOR'
-                  return (
-                    <li key={p.id} className="avoid-break border-b pb-2 text-sm">
-                      <div>
-                        {line}. PRINT NAME:{' '}
-                        {isMinor ? `${p.name.toUpperCase()} — AGE ${p.age ?? '—'}` : p.name.toUpperCase()}
-                      </div>
-                      <div className="mt-1 flex items-center gap-3">
-                        SIGNATURE:{' '}
-                        {isMinor ? (
-                          p.guardianSignatureUrl || p.canyonX?.signatureUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={p.guardianSignatureUrl || p.canyonX?.signatureUrl || ''}
-                              alt={`Guardian signature for ${p.name}`}
-                              className="h-10"
-                            />
-                          ) : (
-                            'Guardian signature pending'
-                          )
-                        ) : p.canyonX?.signatureUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={p.canyonX.signatureUrl} alt={`Signature of ${p.name}`} className="h-10" />
-                        ) : (
-                          'Pending'
-                        )}
-                      </div>
-                      {isMinor ? <div className="text-xs">Guardian signed on behalf of minor{p.guardianName ? `: ${p.guardianName}` : ''}</div> : null}
-                    </li>
-                  )
-                })}
-              </ol>
+          {canyonXChunks.map((group, pageIdx) => (
+            <section key={pageIdx} className="page-break mx-auto max-w-[8.5in]">
+              <AntelopeXCompanyInfoForm
+                packet={canyonXPacket}
+                guests={group}
+                pageIndex={pageIdx}
+                pageCount={canyonXChunks.length}
+              />
             </section>
           ))}
         </>

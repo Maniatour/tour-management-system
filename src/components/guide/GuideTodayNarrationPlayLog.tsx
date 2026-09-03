@@ -80,8 +80,8 @@ export default function GuideTodayNarrationPlayLog({ locale = 'ko' }: { locale?:
       {plays.length === 0 ? (
         <p className="mt-2 text-xs text-gray-500">
           {isEn
-            ? "No narration has been played on today's tour yet."
-            : '아직 오늘 투어에서 재생한 나레이션이 없습니다.'}
+            ? "No narration has been played on today's tour yet. If you skip it, record the reason in the tour report."
+            : '아직 오늘 투어에서 재생한 나레이션이 없습니다. 틀지 않았다면 투어 리포트에 사유를 남겨 주세요.'}
         </p>
       ) : (
         <ul className="mt-2 space-y-1.5">

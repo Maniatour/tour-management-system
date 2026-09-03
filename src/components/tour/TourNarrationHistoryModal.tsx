@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { CheckCircle2, Headphones, Loader2, X, XCircle } from 'lucide-react'
+import { CheckCircle2, Headphones, Loader2, MessageSquare, X, XCircle } from 'lucide-react'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import {
   fetchToursNarrationHistory,
   formatNarrationDuration,
   narrationRoleLabel,
   type TourNarrationHistoryRow,
+  type TourNarrationSkipReport,
 } from '@/lib/tourNarrationPlays'
 
 function formatWhen(value: string, locale: string): string {
@@ -52,6 +53,50 @@ function PlayList({
       ))}
     </ul>
   )
+}
+
+function SkipReports({
+  reports,
+  locale,
+}: {
+  reports: TourNarrationSkipReport[]
+  locale: string
+}) {
+  const isEn = locale === 'en'
+  if (reports.length === 0) return null
+  return (
+    <ul className="mt-2 space-y-1.5">
+      {reports.map((report, index) => (
+        <li
+          key={`${report.userEmail}-${index}`}
+          className="rounded-md bg-amber-50 px-3 py-2 text-sm ring-1 ring-amber-200/80"
+        >
+          <div className="flex items-start gap-1.5 font-medium text-amber-950">
+            <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {report.explainedInPerson
+              ? isEn
+                ? 'Not played — explained without audio'
+                : '재생 안 함 — 충분한 설명을 했습니다'
+              : isEn
+                ? 'Not played'
+                : '나레이션 재생 안 함'}
+          </div>
+          <div className="mt-0.5 text-xs text-amber-900/80">
+            {report.userName || report.userEmail}
+            {report.reason ? ` · ${report.reason}` : ''}
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function narrationStatus(row: TourNarrationHistoryRow): 'played' | 'explained' | 'reason' | 'missing' {
+  if (row.played) return 'played'
+  const reports = row.skipReports || []
+  if (reports.some((report) => report.explainedInPerson)) return 'explained'
+  if (reports.some((report) => report.reason)) return 'reason'
+  return 'missing'
 }
 
 export default function TourNarrationHistoryModal({
@@ -115,6 +160,14 @@ export default function TourNarrationHistoryModal({
   }, [isOpen, tourId, rangeStart, rangeEnd, startDate, endDate, operatorId, goblinOnly, locale])
 
   const playedCount = useMemo(() => rows.filter((row) => row.played).length, [rows])
+  const explainedCount = useMemo(
+    () => rows.filter((row) => !row.played && narrationStatus(row) === 'explained').length,
+    [rows],
+  )
+  const reasonCount = useMemo(
+    () => rows.filter((row) => !row.played && narrationStatus(row) === 'reason').length,
+    [rows],
+  )
   const heading =
     title ||
     (tourId
@@ -202,11 +255,37 @@ export default function TourNarrationHistoryModal({
             <>
               <p className="mb-3 text-sm text-gray-600">
                 {isEn
-                  ? `${playedCount} of ${rows.length} tour(s) played narration`
-                  : `${rows.length}개 투어 중 ${playedCount}개에서 나레이션을 재생했습니다`}
+                  ? `${playedCount} played · ${explainedCount} explained without audio · ${reasonCount} not played with reason · ${rows.length} total`
+                  : `${rows.length}개 투어 중 재생 ${playedCount} · 설명으로 대체 ${explainedCount} · 사유 있음 ${reasonCount}`}
               </p>
               <div className="space-y-3">
-                {rows.map((row) => (
+                {rows.map((row) => {
+                  const status = narrationStatus(row)
+                  const badgeClass =
+                    status === 'played'
+                      ? 'bg-green-50 text-green-800'
+                      : status === 'explained'
+                        ? 'bg-emerald-50 text-emerald-800'
+                        : status === 'reason'
+                          ? 'bg-sky-50 text-sky-800'
+                          : 'bg-amber-50 text-amber-800'
+                  const badgeLabel =
+                    status === 'played'
+                      ? isEn
+                        ? 'Played'
+                        : '재생함'
+                      : status === 'explained'
+                        ? isEn
+                          ? 'Explained without audio'
+                          : '설명으로 대체'
+                        : status === 'reason'
+                          ? isEn
+                            ? 'Not played · reason given'
+                            : '미재생 · 사유 있음'
+                          : isEn
+                            ? 'Not played'
+                            : '미재생'
+                  return (
                   <section
                     key={row.tourId}
                     className="rounded-lg border border-border/70 bg-muted/20 p-3"
@@ -224,27 +303,21 @@ export default function TourNarrationHistoryModal({
                         </p>
                       </div>
                       <span
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-                          row.played ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800'
-                        }`}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${badgeClass}`}
                       >
-                        {row.played ? (
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                        ) : (
+                        {status === 'missing' ? (
                           <XCircle className="h-3.5 w-3.5" />
+                        ) : (
+                          <CheckCircle2 className="h-3.5 w-3.5" />
                         )}
-                        {row.played
-                          ? isEn
-                            ? 'Played'
-                            : '재생함'
-                          : isEn
-                            ? 'Not played'
-                            : '미재생'}
+                        {badgeLabel}
                       </span>
                     </div>
                     <PlayList plays={row.plays} locale={locale} />
+                    <SkipReports reports={row.skipReports || []} locale={locale} />
                   </section>
-                ))}
+                  )
+                })}
               </div>
             </>
           )}
