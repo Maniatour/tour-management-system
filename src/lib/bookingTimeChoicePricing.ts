@@ -169,7 +169,10 @@ export function findBookingTimeChoicePricing(
     if (a.parts.length !== b.parts.length) return a.parts.length - b.parts.length
     const aOta = a.ota > 0 ? a.ota : Number.POSITIVE_INFINITY
     const bOta = b.ota > 0 ? b.ota : Number.POSITIVE_INFINITY
-    return aOta - bOta
+    if (aOta !== bOta) return aOta - bOta
+    const aNi = entryNotIncluded(a.entry) ?? 0
+    const bNi = entryNotIncluded(b.entry) ?? 0
+    return aNi - bNi
   })
 
   const best = candidates[0]

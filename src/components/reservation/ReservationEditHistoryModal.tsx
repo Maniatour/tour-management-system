@@ -471,13 +471,16 @@ function toDetailRow(
   oldValue?: unknown,
   isDiff = false
 ): DetailRow {
-  return {
+  const row: DetailRow = {
     key: fieldKey,
     label: fieldLabel(fieldKey, isEn),
-    ...(isDiff ? { oldText: formatAuditValueWithLookups(fieldKey, oldValue, isEn, lookups) } : {}),
     newText: formatAuditValueWithLookups(fieldKey, value, isEn, lookups),
     isDiff,
   }
+  if (isDiff) {
+    row.oldText = formatAuditValueWithLookups(fieldKey, oldValue, isEn, lookups)
+  }
+  return row
 }
 
 function shouldShowPricingField(

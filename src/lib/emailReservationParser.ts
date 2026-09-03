@@ -1208,9 +1208,7 @@ const KLOOK_LABEL_PATTERNS = [
   'Price',
   'Amount',
   'Amount not included',
-  'Not included',
   'Excluded amount',
-  'Excluded',
   'Excluded price',
   'Price not included',
   'Pay on site',
@@ -1592,6 +1590,15 @@ function extractKlook(
     if (!Number.isFinite(n) || n < 0) return null
     return `$${n}`
   }
+  /** 상품 설명(Not included: annual pass $250)이 아니라, 칸 전체가 금액인 경우만 불포함 금액으로 인정 */
+  const isStandaloneMoneyValue = (raw: string): boolean => {
+    const s = raw.replace(/,/g, '').replace(/\s+/g, ' ').trim()
+    if (!s || s.length > 24) return false
+    return (
+      /^\$?\s*\d+(?:\.\d{1,2})?\s*(?:usd)?$/i.test(s) ||
+      /^(?:usd)\s*\$?\s*\d+(?:\.\d{1,2})?$/i.test(s)
+    )
+  }
   if (!out.amount) {
     const amountRaw = v('total amount') ?? v('total price') ?? v('price') ?? v('amount')
     if (amountRaw?.trim()) {
@@ -1602,16 +1609,14 @@ function extractKlook(
   if (!out.amount_excluded) {
     const excludedRaw =
       v('amount not included') ??
-      v('not included') ??
       v('excluded amount') ??
       v('amount (excluded)') ??
-      v('excluded') ??
       v('excluded price') ??
       v('price not included') ??
       v('pay on site') ??
       v('to be paid on site') ??
       v('amount to pay on site')
-    if (excludedRaw?.trim()) {
+    if (excludedRaw?.trim() && isStandaloneMoneyValue(excludedRaw.trim())) {
       const normalized = normalizePrice(excludedRaw.trim())
       if (normalized) out.amount_excluded = normalized
     }
@@ -1722,36 +1727,16 @@ function extractKlook(
     if (emailMatch) out.customer_email = emailMatch[1].trim()
   }
 
-  // 불포함 금액 — 레이블로 못 잡았을 때 정규식으로: 레이블:값 / 레이블 뒤 금액 / 금액 뒤 (excluded)
+  // 불포함 금액 — 금액 전용 레이블만. "Not included: annual pass $250" 같은 상품 설명은 제외
   if (!out.amount_excluded) {
     const excludedMatch =
-      normalizedText.match(/(?:amount\s+not\s+included|not\s+included|excluded\s*amount|excluded\s*price)\s*:\s*\$?\s*([\d,]+\.?\d*)/im) ??
-      normalizedText.match(/(?:불포함\s*금액?|불포함)\s*:\s*\$?\s*([\d,]+\.?\d*)/im) ??
-      normalizedText.match(/(?:pay\s+on\s+site|to\s+be\s+paid\s+on\s+site)\s*:\s*\$?\s*([\d,]+\.?\d*)/im) ??
-      // 레이블과 값 사이에 공백/줄바꿈만: "Excluded" 다음에 오는 $95 또는 95
-      normalizedText.match(/(?:excluded|not\s+included)[\s:\-]*\$?\s*([\d,]+\.?\d*)/im) ??
-      // 금액이 먼저 오는 경우: "$95 (excluded)" / "95 USD excluded"
-      normalizedText.match(/\$?\s*([\d,]+\.?\d*)\s*(?:USD)?\s*[\(\s]*(?:excluded|not\s+included)/im)
+      normalizedText.match(/(?:amount\s+not\s+included|excluded\s*amount|excluded\s*price|price\s+not\s+included)\s*:\s*\$?\s*([\d,]+\.?\d*)/im) ??
+      normalizedText.match(/(?:불포함\s*금액)\s*:\s*\$?\s*([\d,]+\.?\d*)/im) ??
+      normalizedText.match(/(?:pay\s+on\s+site|to\s+be\s+paid\s+on\s+site|amount\s+to\s+pay\s+on\s+site)\s*:\s*\$?\s*([\d,]+\.?\d*)/im)
     if (excludedMatch) {
       const num = excludedMatch[1].replace(/,/g, '')
       const n = parseFloat(num)
-      if (Number.isFinite(n) && n >= 0) out.amount_excluded = `$${n}`
-    }
-  }
-  // 마지막 시도: "excluded"/"not included"가 포함된 줄에서만 금액 추출 (여러 금액 중 해당 줄 것만)
-  if (!out.amount_excluded) {
-    const lines = normalizedText.split(/\n+/)
-    for (const line of lines) {
-      if (!/(?:excluded|not\s+included|불포함)/i.test(line)) continue
-      const amountOnLine = line.match(/\$?\s*([\d,]+\.?\d*)\s*(?:USD)?/g)
-      if (amountOnLine && amountOnLine.length >= 1) {
-        const lastAmount = amountOnLine[amountOnLine.length - 1].replace(/[$,USD\s]/gi, '')
-        const n = parseFloat(lastAmount)
-        if (Number.isFinite(n) && n >= 0) {
-          out.amount_excluded = `$${n}`
-          break
-        }
-      }
+      if (Number.isFinite(n) && n > 0) out.amount_excluded = `$${n}`
     }
   }
 

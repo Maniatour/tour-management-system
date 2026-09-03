@@ -148,7 +148,7 @@ export function dynamicPricingRowHasUsablePrice(row: {
 function uniquePositiveOta(
   choicesPricing: Record<string, any>
 ): { ota_sale_price: number; not_included_price?: number } | undefined {
-  const seen = new Map<string, { ota: number; ni: number }>()
+  const seen = new Map<string, { ota: number; nis: number[] }>()
   for (const entry of Object.values(choicesPricing)) {
     if (!entry || typeof entry !== 'object') continue
     const ota = Number((entry as any).ota_sale_price)
@@ -156,13 +156,17 @@ function uniquePositiveOta(
     const ni = Number((entry as any).not_included_price) || 0
     const key = ota.toFixed(2)
     const prev = seen.get(key)
-    seen.set(key, { ota, ni: Math.max(prev?.ni ?? 0, ni) })
+    if (prev) prev.nis.push(ni)
+    else seen.set(key, { ota, nis: [ni] })
   }
   if (seen.size !== 1) return undefined
   const only = [...seen.values()][0]
+  const uniqueNis = [...new Set(only.nis)]
+  // 판매가는 같아도 불포함은 거주·패스 조합마다 다름(0 / 95 / 250). 최대값을 쓰면 패스구매 $250이 전 인원에 붙음.
+  const ni = uniqueNis.length === 1 ? uniqueNis[0] : 0
   return {
     ota_sale_price: only.ota,
-    ...(only.ni > 0 ? { not_included_price: only.ni } : {}),
+    ...(ni > 0 ? { not_included_price: ni } : {}),
   }
 }
 
@@ -252,10 +256,9 @@ export function pickImportDynamicPricingOta(args: {
     }
     if (score > bestScore) {
       bestScore = score
-      const ni =
-        Number(resolved?.not_included_price) > 0
-          ? Number(resolved!.not_included_price)
-          : Number(row.not_included_price) || 0
+      const ni = resolved
+        ? Number(resolved.not_included_price) || 0
+        : Number(row.not_included_price) || 0
       best = {
         variantKey: vk,
         ota,

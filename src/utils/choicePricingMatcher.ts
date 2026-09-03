@@ -212,9 +212,9 @@ export function getFallbackOtaAndNotIncluded(
     if (pairRows.length > 0) {
       const sumOta = pairRows.reduce((s, r) => s + r.ota, 0);
       const maxNi = pairRows.reduce((m, r) => {
-        const ni = r.notIncluded ?? 0;
-        return ni > m ? ni : m;
-      }, 0);
+        const ni = r.notIncluded ?? 0
+        return ni > 0 && (m === 0 || ni < m) ? ni : m
+      }, 0)
       return {
         ota_sale_price: sumOta,
         ...(maxNi > 0 ? { not_included_price: maxNi } : {}),

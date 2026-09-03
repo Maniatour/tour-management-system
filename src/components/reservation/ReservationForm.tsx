@@ -417,7 +417,7 @@ interface ReservationFormProps {
   initialChannelVariantLabelFromImport?: string
   /** 예약 가져오기: extracted_data.channel_variant_key → dynamic_pricing.variant_key 와 일치시키기 위함 */
   initialVariantKeyFromImport?: string
-  /** 예약 가져오기: 동적가격 불포함이 비었을 때만 이메일 불포함 금액을 폴백으로 사용 */
+  /** 예약 가져오기: 동적가격 판매가까지 비었을 때만 이메일 불포함 금액을 폴백으로 사용 */
   initialNotIncludedAmountFromImport?: string
   /** 폼 제목 오버라이드 (예: 이메일에서 예약 가져오기) */
   formTitle?: string
@@ -3672,14 +3672,9 @@ export default function ReservationForm({
                           (Number((b.entry as any)?.ota_sale_price) || 0) > (Number((a.entry as any)?.ota_sale_price) || 0) ? b : a
                         )
                         choiceData = best.entry
-                        const maxNi = matches.reduce((m, x) => {
-                          const ni = Number((x.entry as any)?.not_included_price)
-                          return ni > 0 && ni > m ? ni : m
-                        }, 0)
                         if (choiceData && (choiceData as any).ota_sale_price != null) {
                           foundChoicePricing = true
-                          if (maxNi > 0) (choiceData as any).not_included_price = maxNi
-                          console.log('option_id/option_key만으로 초이스 가격 찾음 (choice_id 불일치 폴백):', { matchesCount: matches.length, bestKey: best.key, ota_sale_price: (choiceData as any).ota_sale_price, not_included_price: maxNi || (choiceData as any).not_included_price })
+                          console.log('option_id/option_key만으로 초이스 가격 찾음 (choice_id 불일치 폴백):', { matchesCount: matches.length, bestKey: best.key, ota_sale_price: (choiceData as any).ota_sale_price, not_included_price: (choiceData as any).not_included_price })
                         }
                       }
                     }
@@ -3922,7 +3917,9 @@ export default function ReservationForm({
                     infantPrice = emailUnit
                     console.log('ReservationForm: 동적가격 없음 → 이메일 금액/인원 폴백', { emailUnit, pax })
                   }
-                  if (notIncludedPrice <= 0 && emailNi != null && emailNi > 0) {
+                  // 동적가격에서 판매가를 이미 찾았으면 불포함 0은 올인클루시브 등 유효값.
+                  // 이메일의 amount_excluded 는 상품 설명(연간패스 $250) 오탐이 있어 덮지 않음.
+                  if (adultPrice <= 0 && notIncludedPrice <= 0 && emailNi != null && emailNi > 0) {
                     notIncludedPrice = emailNi
                   }
                 }
