@@ -15,6 +15,7 @@ type IncomingPayload = {
   roomId: string
   senderName: string
   messagePreview: string
+  imageUrl?: string
   tourTitle: string
   roomCode?: string
   /** 투어가 없으면 null */
@@ -89,6 +90,7 @@ export default function AdminTourChatNotificationListener({ locale }: { locale: 
               sender_name?: string
               message?: string
               message_type?: string
+              file_url?: string
             }
             if (!row?.room_id || row.sender_type !== 'customer') return
 
@@ -196,17 +198,20 @@ export default function AdminTourChatNotificationListener({ locale }: { locale: 
               }
             }
 
+            const imageUrl =
+              row.message_type === 'image' && row.file_url ? String(row.file_url) : undefined
             const preview =
               row.message_type === 'image'
-                ? '[이미지]'
+                ? truncateMessage(String(row.message || '').trim() || (locale === 'ko' ? '[이미지]' : '[Image]'))
                 : row.message_type === 'file'
-                  ? '[파일]'
+                  ? (locale === 'ko' ? '[파일]' : '[File]')
                   : truncateMessage(String(row.message || ''))
 
             showNotification({
               roomId: row.room_id,
               senderName: String(row.sender_name || '고객'),
               messagePreview: preview || '(내용 없음)',
+              ...(imageUrl ? { imageUrl } : {}),
               tourTitle,
               ...(r.room_code ? { roomCode: String(r.room_code) } : {}),
               tourDate,
@@ -323,9 +328,16 @@ export default function AdminTourChatNotificationListener({ locale }: { locale: 
               </span>
             ) : null}
           </div>
-          <p className="text-sm text-gray-800 whitespace-pre-wrap break-words line-clamp-4 border border-gray-100 rounded-lg p-3 bg-gray-50">
-            {payload.messagePreview}
-          </p>
+          <div className="text-sm text-gray-800 border border-gray-100 rounded-lg p-3 bg-gray-50 space-y-2">
+            <p className="whitespace-pre-wrap break-words line-clamp-4">{payload.messagePreview}</p>
+            {payload.imageUrl ? (
+              <img
+                src={payload.imageUrl}
+                alt={locale === 'ko' ? '첨부 이미지' : 'Attached image'}
+                className="max-h-40 w-full rounded-md object-contain bg-white"
+              />
+            ) : null}
+          </div>
 
           <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-1">
             <button

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase, isAbortLikeError, canUseAuthenticatedRest } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
@@ -8,6 +8,10 @@ import {
   findOpenAttendanceSession,
   formatOpenSessionBlockMessage,
 } from '@/lib/attendanceOpenSession'
+import {
+  dispatchAttendanceChanged,
+  subscribeAttendanceChanged,
+} from '@/lib/attendanceTabSync'
 
 interface AttendanceRecord {
   id: string
@@ -30,6 +34,9 @@ export function useAttendanceSync() {
   const [isCheckingIn, setIsCheckingIn] = useState(false)
   const [employeeNotFound, setEmployeeNotFound] = useState(false)
   const [elapsedTime, setElapsedTime] = useState('00:00:00')
+  const lastRefreshAtRef = useRef(0)
+  const tokenRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const broadcastCoalesceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 오늘의 출퇴근 기록 조회
   const fetchTodayRecords = useCallback(async () => {
@@ -37,11 +44,11 @@ export function useAttendanceSync() {
     
     if (!authUser?.email) {
       console.log('authUser.email이 없습니다')
-      return
+      return false
     }
 
     if (!canUseAuthenticatedRest()) {
-      return
+      return false
     }
 
     try {
@@ -56,7 +63,7 @@ export function useAttendanceSync() {
         .eq('is_active', true)
         .maybeSingle()
 
-      if (employeeError && isAbortLikeError(employeeError)) return
+      if (employeeError && isAbortLikeError(employeeError)) return true
 
       console.log('직원 정보 조회 결과:', { 
         hasData: !!employeeData, 
@@ -76,14 +83,16 @@ export function useAttendanceSync() {
           [e.message, e.code, e.details].filter(Boolean).join(' | ') || employeeError
         )
         setEmployeeNotFound(true)
-        return
+        return true
       }
 
       if (!employeeData) {
         console.log('직원 정보를 찾을 수 없습니다.')
         setEmployeeNotFound(true)
-        return
+        return true
       }
+
+      setEmployeeNotFound(false)
 
       console.log('출퇴근 기록 조회 시작...')
       // 최근 미체크아웃 기록 조회 (체크아웃되지 않은 모든 기록)
@@ -117,7 +126,7 @@ export function useAttendanceSync() {
       if (error && error.code !== 'PGRST116') {
         console.log('출퇴근 기록 테이블이 아직 생성되지 않았습니다.')
         setCurrentSession(null)
-        return
+        return true
       }
 
       if (data && data.length > 0) {
@@ -144,7 +153,7 @@ export function useAttendanceSync() {
       }
     } catch (error) {
       if (isAbortLikeError(error)) {
-        return
+        return true
       }
       console.error('오늘 기록 조회 중 오류:', error)
       console.error('에러 타입:', typeof error)
@@ -157,7 +166,39 @@ export function useAttendanceSync() {
         setEmployeeNotFound(true)
       }
     }
+    return true
   }, [authUser?.email, activeOperatorId])
+
+  const clearTokenRetry = useCallback(() => {
+    if (tokenRetryTimerRef.current != null) {
+      clearTimeout(tokenRetryTimerRef.current)
+      tokenRetryTimerRef.current = null
+    }
+  }, [])
+
+  const refreshAttendance = useCallback(
+    (opts?: { force?: boolean }) => {
+      const now = Date.now()
+      if (!opts?.force && now - lastRefreshAtRef.current < 1200) {
+        return
+      }
+      lastRefreshAtRef.current = now
+      clearTokenRetry()
+
+      const attempt = async (retriesLeft: number) => {
+        const fetched = await fetchTodayRecords()
+        if (fetched === false && authUser?.email && retriesLeft > 0) {
+          tokenRetryTimerRef.current = setTimeout(() => {
+            tokenRetryTimerRef.current = null
+            void attempt(retriesLeft - 1)
+          }, 800)
+        }
+      }
+
+      void attempt(8)
+    },
+    [authUser?.email, clearTokenRetry, fetchTodayRecords]
+  )
 
   // 출근 체크인
   const handleCheckIn = useCallback(async () => {
@@ -199,6 +240,7 @@ export function useAttendanceSync() {
       )
       if (openSession) {
         alert(formatOpenSessionBlockMessage(openSession))
+        await fetchTodayRecords()
         return
       }
 
@@ -235,6 +277,7 @@ export function useAttendanceSync() {
 
       alert(`${nextSessionNumber}번째 출근 체크인이 완료되었습니다!`)
       await fetchTodayRecords()
+      dispatchAttendanceChanged()
     } catch (error) {
       console.error('출근 체크인 중 오류:', error)
       alert('출근 체크인 중 오류가 발생했습니다.')
@@ -271,6 +314,7 @@ export function useAttendanceSync() {
 
       alert(`${currentSession.session_number}번째 퇴근 체크아웃이 완료되었습니다! (근무시간: ${roundedWorkHours}시간)`)
       await fetchTodayRecords()
+      dispatchAttendanceChanged()
     } catch (error) {
       console.error('퇴근 체크아웃 중 오류:', error)
       alert('퇴근 체크아웃 중 오류가 발생했습니다.')
@@ -313,9 +357,50 @@ export function useAttendanceSync() {
   // 컴포넌트 마운트 직후가 아닌 idle 시점에 출퇴근 기록 조회
   useEffect(() => {
     return scheduleDeferredWork(() => {
-      void fetchTodayRecords()
+      refreshAttendance({ force: true })
     })
-  }, [fetchTodayRecords])
+  }, [refreshAttendance])
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        refreshAttendance()
+      }
+    }
+    const onFocus = () => {
+      refreshAttendance()
+    }
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        refreshAttendance({ force: true })
+      }
+    }
+
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('pageshow', onPageShow)
+    const unsubscribe = subscribeAttendanceChanged(() => {
+      if (broadcastCoalesceRef.current != null) {
+        clearTimeout(broadcastCoalesceRef.current)
+      }
+      broadcastCoalesceRef.current = setTimeout(() => {
+        broadcastCoalesceRef.current = null
+        refreshAttendance({ force: true })
+      }, 50)
+    })
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('pageshow', onPageShow)
+      unsubscribe()
+      if (broadcastCoalesceRef.current != null) {
+        clearTimeout(broadcastCoalesceRef.current)
+        broadcastCoalesceRef.current = null
+      }
+      clearTokenRetry()
+    }
+  }, [clearTokenRetry, refreshAttendance])
 
   return {
     currentSession,
@@ -324,6 +409,6 @@ export function useAttendanceSync() {
     elapsedTime,
     handleCheckIn,
     handleCheckOut,
-    refreshAttendance: fetchTodayRecords
+    refreshAttendance
   }
 }

@@ -25,6 +25,8 @@ import {
   type TourChatStaffTeamFields
 } from '@/lib/tourChatStaffDisplay'
 import ChatMessageBody from '@/components/chat/ChatMessageBody'
+import ChatImageBubble from '@/components/chat/ChatImageBubble'
+import { isChatImageMessage } from '@/lib/tourChatImage'
 import ChatSidebar from '@/components/chat/ChatSidebar'
 import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
 import { useChatParticipants } from '@/hooks/useChatParticipants'
@@ -2548,11 +2550,21 @@ export default function ChatManagementPage() {
                       )}
                       
                       {/* 원본 메시지 */}
-                      <ChatMessageBody
-                        message={message.message}
-                        selectedLanguage={selectedLanguage}
-                        isDarkBubble={isDarkBubble}
-                      />
+                      {isChatImageMessage(message) && message.file_url ? (
+                        <ChatImageBubble
+                          fileUrl={message.file_url}
+                          fileName={message.file_name}
+                          caption={message.message}
+                          selectedLanguage={selectedLanguage}
+                          isDarkBubble={isDarkBubble}
+                        />
+                      ) : (
+                        <ChatMessageBody
+                          message={message.message}
+                          selectedLanguage={selectedLanguage}
+                          isDarkBubble={isDarkBubble}
+                        />
+                      )}
                       
                       {/* 번역된 메시지 */}
                       {needsTrans && (

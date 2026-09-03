@@ -1,12 +1,14 @@
 import { applyStoredCanyonChoices, choiceKeyFromStoredChoiceRow } from '@/lib/canyonChoice'
 import { isCanyonTourChoiceKey, type ReservationChoiceRow } from '@/lib/tourChoiceCounts'
+import { SUPABASE_IN_FILTER_CHUNK_SIZE, chunkStrings } from '@/lib/supabaseInChunks'
 
 type QueryClient = { from: (table: string) => any }
 
+/** 조인 없이 canyon_key / option_key만 — 인쇄·달력 L/X 판별의 기본 경로 */
+const SELECT_COLUMNS = 'reservation_id, quantity, option_key, canyon_key, canonical_option_key'
 const SELECT_WITH_FK =
-  'reservation_id, quantity, option_key, canyon_key, canonical_option_key, choice_options!reservation_choices_option_id_fkey(option_key, option_name_ko, option_name)'
-const SELECT_PLAIN =
-  'reservation_id, quantity, option_key, canyon_key, canonical_option_key, choice_options(option_key, option_name_ko, option_name)'
+  `${SELECT_COLUMNS}, choice_options!reservation_choices_option_id_fkey(option_key, option_name_ko, option_name)`
+const SELECT_PLAIN = `${SELECT_COLUMNS}, choice_options(option_key, option_name_ko, option_name)`
 
 type ChoiceOptionEmbed = {
   option_key?: string | null
@@ -47,6 +49,15 @@ function pushChoice(
   const list = map.get(reservationId) || []
   list.push(row)
   map.set(reservationId, list)
+}
+
+function ingestChoiceQueryRows(map: Map<string, ReservationChoiceRow[]>, rows: ReservationChoiceQueryRow[]) {
+  for (const row of rows) {
+    const parsed = choiceRowFromQuery(row)
+    const rid = row.reservation_id?.trim()
+    if (!rid || !parsed) continue
+    pushChoice(map, rid, parsed)
+  }
 }
 
 function choiceRowFromQuery(row: ReservationChoiceQueryRow): ReservationChoiceRow | null {
@@ -112,11 +123,31 @@ export function appendCanyonChoicesFromReservationJson(
   }
 }
 
+async function selectReservationChoices(
+  supabase: QueryClient,
+  reservationIds: string[],
+  select: string
+): Promise<{ rows: ReservationChoiceQueryRow[]; error: { message?: string } | null }> {
+  if (reservationIds.length === 0) return { rows: [], error: null }
+  const chunks = chunkStrings(reservationIds, SUPABASE_IN_FILTER_CHUNK_SIZE)
+  const parts = await Promise.all(
+    chunks.map(async (batchIds) => {
+      const { data, error } = await supabase
+        .from('reservation_choices')
+        .select(select)
+        .in('reservation_id', batchIds)
+      return { data: (data || []) as ReservationChoiceQueryRow[], error }
+    })
+  )
+  const error = parts.find((p) => p.error)?.error ?? null
+  return { rows: parts.flatMap((p) => p.data), error }
+}
+
 /**
  * 입장권 달력 X/L 집계용.
- * - choice_options 조인이 없는 예전 행도 reservation_choices.option_key 사용
+ * - 기본은 reservation_choices 컬럼만 조회 (choice_options 조인 없음)
+ * - canyon_key / canonical_option_key / option_key로 판별되지 않는 ID만 조인 폴백
  * - inner join을 쓰지 않아 option_id 없는 행을 버리지 않음
- * - 배치 오류는 건너뛰고 나머지 예약은 계속 로드
  */
 export async function fetchCanyonChoiceRowsByReservationIds(
   supabase: QueryClient,
@@ -132,46 +163,29 @@ export async function fetchCanyonChoiceRowsByReservationIds(
     return map
   }
 
-  const BATCH = 250
-  let select = SELECT_WITH_FK
-  let usePlainSelect = false
-
-  for (let i = 0; i < ids.length; i += BATCH) {
-    const batchIds = ids.slice(i, i + BATCH)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let { data, error } = await (supabase as any)
-      .from('reservation_choices')
-      .select(select)
-      .in('reservation_id', batchIds)
-
-    if (error && !usePlainSelect) {
-      usePlainSelect = true
-      select = SELECT_PLAIN
-      const retry = await (supabase as any)
-        .from('reservation_choices')
-        .select(select)
-        .in('reservation_id', batchIds)
-      data = retry.data
-      error = retry.error
-    }
-
-    if (error) {
-      console.warn('캐년 초이스 조회:', error)
-      continue
-    }
-
-    for (const row of (data || []) as ReservationChoiceQueryRow[]) {
-      const parsed = choiceRowFromQuery(row)
-      const rid = row.reservation_id?.trim()
-      if (!rid || !parsed) continue
-      pushChoice(map, rid, parsed)
-    }
+  const columns = await selectReservationChoices(supabase, ids, SELECT_COLUMNS)
+  if (columns.error) {
+    console.warn('캐년 초이스 조회:', columns.error.message)
+  } else {
+    ingestChoiceQueryRows(map, columns.rows)
   }
 
   if (reservationsForJsonFallback?.length) {
     appendCanyonChoicesFromReservationJson(map, reservationsForJsonFallback)
   }
 
+  const unresolved = ids.filter((id) => !hasCanyonChoice(map.get(id)))
+  if (unresolved.length === 0) return map
+
+  let joined = await selectReservationChoices(supabase, unresolved, SELECT_WITH_FK)
+  if (joined.error) {
+    joined = await selectReservationChoices(supabase, unresolved, SELECT_PLAIN)
+  }
+  if (joined.error) {
+    console.warn('캐년 초이스 조인 조회:', joined.error.message)
+    return map
+  }
+  ingestChoiceQueryRows(map, joined.rows)
   return map
 }
 
@@ -181,13 +195,17 @@ export type CalendarChoiceReservation = {
   choices?: unknown
 }
 
-/** 달력·체크인: 저장된 canyon_choice 우선, 없으면 초이스 행/JSON 폴백 */
+/**
+ * 달력·체크인·인쇄: 저장된 canyon_choice → choices JSON → reservation_choices.
+ * 네트워크 조회는 canyon_choice/JSON으로 안 잡힌 예약만.
+ */
 export async function loadCalendarChoiceRows(
   supabase: QueryClient,
   reservations: CalendarChoiceReservation[]
 ): Promise<Map<string, ReservationChoiceRow[]>> {
   const map = new Map<string, ReservationChoiceRow[]>()
   applyStoredCanyonChoices(map, reservations)
+  appendCanyonChoicesFromReservationJson(map, reservations)
   const missing = reservations.filter((r) => r.id && !hasCanyonChoice(map.get(r.id)))
   if (missing.length === 0) return map
 
@@ -201,4 +219,3 @@ export async function loadCalendarChoiceRows(
   }
   return map
 }
-

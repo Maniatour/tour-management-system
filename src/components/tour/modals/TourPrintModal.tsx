@@ -21,7 +21,8 @@ import { loadResidentStatusAmountsForReservation } from '@/lib/saveResidentStatu
 import { getEffectivePickupHotelId, getPickupHotelNameById } from '@/lib/effectivePickupHotel'
 import type { PickupResolveContext } from '@/lib/pickupGroupPreset'
 import { isActiveTourHotelBookingForList } from '@/lib/tourHotelReferences'
-import { loadCalendarChoiceRows } from '@/lib/fetchCanyonChoiceRows'
+import { applyStoredCanyonChoices } from '@/lib/canyonChoice'
+import { appendCanyonChoicesFromReservationJson } from '@/lib/fetchCanyonChoiceRows'
 import { isCanyonTourChoiceKey, type ReservationChoiceRow } from '@/lib/tourChoiceCounts'
 import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
 import {
@@ -413,7 +414,7 @@ export default function TourPrintModal({
           if (!pricingByResId.has(id)) pricingByResId.set(id, null)
         }
 
-        const [optionLinesByResId, payResult, rcResult, canyonRowsByResId] = await Promise.all([
+        const [optionLinesByResId, payResult, rcResult] = await Promise.all([
           fetchReservationOptionLinesBatch(supabase, ids),
           supabase
             .from('payment_records')
@@ -423,18 +424,19 @@ export default function TourPrintModal({
             .from('reservation_customers')
             .select('reservation_id, resident_status')
             .in('reservation_id', ids),
-          loadCalendarChoiceRows(
-            supabase,
-            (rezList || []).map((r) => {
-              const row = r as RezRow
-              return {
-                id: row.id,
-                canyon_choice: row.canyon_choice ?? null,
-                choices: row.choices,
-              }
-            })
-          ),
         ])
+
+        const canyonChoiceSource = (rezList || []).map((r) => {
+          const row = r as RezRow
+          return {
+            id: row.id,
+            canyon_choice: row.canyon_choice ?? null,
+            choices: row.choices,
+          }
+        })
+        const canyonRowsByResId = new Map<string, ReservationChoiceRow[]>()
+        applyStoredCanyonChoices(canyonRowsByResId, canyonChoiceSource)
+        appendCanyonChoicesFromReservationJson(canyonRowsByResId, canyonChoiceSource)
 
         const optionsTotalByResId = new Map<string, number | null>()
         for (const id of ids) {
@@ -545,7 +547,13 @@ export default function TourPrintModal({
         }
         if (!cancelled) {
           setBalanceByResId(map)
-          setCanyonByResId(canyonMap)
+          setCanyonByResId((prev) => {
+            const next = new Map(canyonMap)
+            for (const [id, keys] of prev) {
+              if (keys.length > 0) next.set(id, keys)
+            }
+            return next
+          })
         }
       } catch (e) {
         console.error('[TourPrintModal] 잔금 로드 오류:', e)
@@ -589,6 +597,16 @@ export default function TourPrintModal({
         setIncludeLowerForm(Boolean(json.lower))
         setIncludeXForm(Boolean(json.canyonX))
         setIncludeTourInfo(true)
+        const fromApi = json.canyonKeysByReservationId
+        if (fromApi && Object.keys(fromApi).length > 0) {
+          setCanyonByResId((prev) => {
+            const next = new Map(prev)
+            for (const [id, keys] of Object.entries(fromApi)) {
+              if (keys.length > 0) next.set(id, keys)
+            }
+            return next
+          })
+        }
       } catch (e) {
         console.warn('[TourPrintModal] canyon waiver print', e)
         if (!cancelled) setWaiverPacket(null)

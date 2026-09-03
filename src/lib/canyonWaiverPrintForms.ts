@@ -34,6 +34,8 @@ export type CanyonWaiverPrintTourPayload = {
   tourDate: string
   lower: CanyonWaiverPrintPacket | null
   canyonX: CanyonWaiverPrintPacket | null
+  /** 예약별 L/X — 인쇄 모달 배지용 (서버에서 이미 해석) */
+  canyonKeysByReservationId?: Record<string, Array<'X' | 'L'>>
 }
 
 export function trimPrintText(value: string | null | undefined): string {

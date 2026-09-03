@@ -27,6 +27,34 @@ export function chatImageDisplayName(fileName?: string | null): string | null {
   return name
 }
 
+const CHAT_IMAGE_URL_RE = /\/storage\/v1\/object\/public\/images\/chat-messages\//i
+
+export function isChatImageMessage(message: {
+  message_type?: string | null
+  file_url?: string | null
+}): boolean {
+  const url = (message.file_url || '').trim()
+  if (!url) return false
+  if (message.message_type === 'image') return true
+  return CHAT_IMAGE_URL_RE.test(url)
+}
+
+export function chatMessagePreviewText(
+  message: {
+    message_type?: string | null
+    message?: string | null
+    file_url?: string | null
+  },
+  locale: 'ko' | 'en' = 'ko'
+): string {
+  const caption = (message.message || '').trim()
+  if (isChatImageMessage(message) || message.message_type === 'image') {
+    const label = locale === 'ko' ? '[이미지]' : '[Image]'
+    return caption ? `${label} ${caption}` : label
+  }
+  return caption
+}
+
 function safeChatImageFileName(file: File, mime: string): string {
   const raw = (file.name || 'screenshot').trim() || 'screenshot'
   const base = raw.replace(/\.[^.]+$/, '').replace(/[^\w가-힣.-]+/g, '_').slice(0, 48) || 'screenshot'

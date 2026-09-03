@@ -30,6 +30,7 @@ type NotificationItem = {
   customerName: string
   reservationTotalPeople: number | null
   message: string
+  imageUrl?: string
 }
 
 /** DB `YYYY-MM-DD` → 표시용 `YYYY.MM.DD` */
@@ -255,6 +256,8 @@ export default function GuideTourChatNotificationModal({ userEmail, locale }: Pr
             sender_email?: string | null
             sender_name?: string | null
             message?: string | null
+            message_type?: string | null
+            file_url?: string | null
           }
           if (!message?.id || !message.room_id) return
           if (seenMessageIdsRef.current.has(message.id)) return
@@ -268,6 +271,8 @@ export default function GuideTourChatNotificationModal({ userEmail, locale }: Pr
           const customerName = message.sender_name || (locale === 'ko' ? '고객' : 'Customer')
           const reservationMatch = tourInfo.reservation_customers.find((c) => c.name.trim() === customerName.trim())
 
+          const imageUrl =
+            message.message_type === 'image' && message.file_url ? message.file_url : undefined
           const item: NotificationItem = {
             messageId: message.id,
             roomId: message.room_id,
@@ -280,7 +285,11 @@ export default function GuideTourChatNotificationModal({ userEmail, locale }: Pr
             vehicleNumber: tourInfo.vehicle_number,
             customerName,
             reservationTotalPeople: reservationMatch ? reservationMatch.total_people : null,
-            message: message.message || '',
+            message:
+              message.message_type === 'image'
+                ? (message.message || (locale === 'ko' ? '[이미지]' : '[Image]'))
+                : message.message || '',
+            ...(imageUrl ? { imageUrl } : {}),
           }
 
           setQueue((prev) => [...prev, item])
@@ -371,6 +380,13 @@ export default function GuideTourChatNotificationModal({ userEmail, locale }: Pr
           <div className="rounded border bg-gray-50 p-2">
             <div className="mb-1 text-xs font-semibold text-gray-600">{locale === 'ko' ? '메시지' : 'Message'}</div>
             <div className="whitespace-pre-wrap break-words">{currentItem.message || '-'}</div>
+            {currentItem.imageUrl ? (
+              <img
+                src={currentItem.imageUrl}
+                alt={locale === 'ko' ? '첨부 이미지' : 'Attached image'}
+                className="mt-2 max-h-40 w-full rounded-md object-contain bg-white"
+              />
+            ) : null}
           </div>
         </div>
 

@@ -15,6 +15,9 @@ import {
   fetchGuideToursVisibleUntil,
   filterToursByGuideVisibleUntil,
 } from '@/lib/guideToursVisibleUntil'
+import ChatImageBubble from '@/components/chat/ChatImageBubble'
+import { chatMessagePreviewText, isChatImageMessage } from '@/lib/tourChatImage'
+import type { SupportedLanguage } from '@/lib/translation'
 
 interface TeamChatRoom {
   id: string
@@ -702,7 +705,7 @@ export default function GuideChatPage() {
           {room.last_message && (
             <p className="text-xs text-gray-600 truncate mt-1">
               <span className="font-medium">{room.last_message.sender_name}:</span>
-              {room.last_message.message}
+              {chatMessagePreviewText(room.last_message, locale === 'ko' ? 'ko' : 'en')}
             </p>
           )}
         </div>
@@ -929,7 +932,19 @@ export default function GuideChatPage() {
                               )}
                             </div>
                           )}
-                          <div className="text-sm">{message.message}</div>
+                          <div className="text-sm">
+                            {isChatImageMessage(message) && message.file_url ? (
+                              <ChatImageBubble
+                                fileUrl={message.file_url}
+                                fileName={message.file_name}
+                                caption={message.message}
+                                selectedLanguage={(locale === 'ko' ? 'ko' : 'en') as SupportedLanguage}
+                                isDarkBubble={message.sender_email === user?.email}
+                              />
+                            ) : (
+                              message.message
+                            )}
+                          </div>
                           
                           <div className="flex items-center justify-between mt-1">
                             <div className="text-xs opacity-70">

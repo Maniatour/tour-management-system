@@ -25,6 +25,9 @@ import {
   fetchGuideToursVisibleUntil,
   filterToursByGuideVisibleUntil,
 } from '@/lib/guideToursVisibleUntil'
+import ChatImageBubble from '@/components/chat/ChatImageBubble'
+import { chatMessagePreviewText, isChatImageMessage } from '@/lib/tourChatImage'
+import type { SupportedLanguage } from '@/lib/translation'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Omit<Tour, 'assignment_status'> & {
@@ -1656,7 +1659,7 @@ export default function GuideDashboard() {
                           {room.last_message && (
                             <p className="text-xs text-gray-600 truncate mt-1">
                               <span className="font-medium">{room.last_message.sender_name}:</span>
-                              {' '}{room.last_message.message}
+                              {' '}{chatMessagePreviewText(room.last_message, locale === 'ko' ? 'ko' : 'en')}
                             </p>
                           )}
                         </div>
@@ -1701,7 +1704,19 @@ export default function GuideDashboard() {
                             }`}
                           >
                             <div className="text-xs font-medium mb-1">{message.sender_name}</div>
-                            <div className="text-sm">{message.message}</div>
+                            <div className="text-sm">
+                              {isChatImageMessage(message) && message.file_url ? (
+                                <ChatImageBubble
+                                  fileUrl={message.file_url}
+                                  fileName={message.file_name}
+                                  caption={message.message}
+                                  selectedLanguage={(locale === 'ko' ? 'ko' : 'en') as SupportedLanguage}
+                                  isDarkBubble={message.sender_email === currentUserEmail}
+                                />
+                              ) : (
+                                message.message
+                              )}
+                            </div>
                             <div className="text-xs opacity-70 mt-1">
                               {formatChatTime(message.created_at)}
                             </div>
