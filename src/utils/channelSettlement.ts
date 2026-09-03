@@ -521,8 +521,14 @@ export function resolveCommissionBasePriceForPersistence(input: {
  */
 export function channelIsOtaForPricingSection(
   ch:
-    | { id?: string | null; type?: string | null; category?: string | null; name?: string | null }
+    | {
+        id?: string | null | undefined
+        type?: string | null | undefined
+        category?: string | null | undefined
+        name?: string | null | undefined
+      }
     | undefined
+    | null
 ): boolean {
   if (!ch) return false
   const type = String(ch.type ?? '').toLowerCase()
@@ -531,7 +537,12 @@ export function channelIsOtaForPricingSection(
     return true
   }
   const id = String(ch.id ?? '').toLowerCase()
-  if (id.includes('myrealtrip') || id.startsWith('ota_')) {
+  if (
+    id.includes('myrealtrip') ||
+    id.startsWith('ota_') ||
+    id.includes('klook') ||
+    id.includes('kkday')
+  ) {
     return true
   }
   const n = String(ch.name ?? '').toLowerCase()
@@ -541,6 +552,10 @@ export function channelIsOtaForPricingSection(
     n.includes('expedia') ||
     n.includes('booking') ||
     n.includes('viator') ||
+    n.includes('klook') ||
+    n.includes('클룩') ||
+    n.includes('kkday') ||
+    n.includes('trip.com') ||
     n.includes('getyourguide') ||
     n.includes('get your guide') ||
     n.includes('myrealtrip') ||
@@ -548,6 +563,50 @@ export function channelIsOtaForPricingSection(
     n.includes('마이리얼트립') ||
     n.includes('마이 리얼 트립')
   )
+}
+
+/**
+ * ③ 채널 결제 금액(OTA) = 할인 후 상품가.
+ * `productPriceTotal`은 이미 판매가×인원이며 불포함(현장권)은 포함하지 않는다.
+ * 판매가에서 불포함을 한 번 더 빼면 예: ($220 − $95) × 2 = $250 로 잘못된다.
+ */
+export function computeOtaChannelPaymentFromDiscountedProduct(input: {
+  productPriceTotal: number
+  couponDiscount?: number | undefined
+  additionalDiscount?: number | undefined
+}): number {
+  const ppt = toN(input.productPriceTotal)
+  const coupon = discountMagnitudeForSettlement(input.couponDiscount)
+  const extra = discountMagnitudeForSettlement(input.additionalDiscount)
+  return Math.max(0, roundUsd2(ppt - coupon - extra))
+}
+
+/**
+ * 저장된 채널 결제가 판매가×인원과 다르고, 불포함을 빼거나(이중 차감) 더한(고객 총액) 오산식과 같으면 true.
+ * 예: 판매가 $440, 불포함 $190 → 저장된 $250 또는 $630.
+ */
+export function channelPaymentLooksLikeNotIncludedDoubleSubtract(input: {
+  storedChannelPayment: number
+  productPriceTotal: number
+  notIncludedTotalUsd: number
+  couponDiscount?: number | undefined
+  additionalDiscount?: number | undefined
+  /** 단가×인원(불포함 제외). 폼 `productPriceTotal`이 고객 총액($630)이어도 판매가×인원($440)을 기준으로 판별 */
+  canonicalSaleTimesPax?: number | undefined
+}): boolean {
+  const notInc = roundUsd2(Math.max(0, toN(input.notIncludedTotalUsd)))
+  if (notInc < 0.02) return false
+  const canonical = toN(input.canonicalSaleTimesPax)
+  const expected = computeOtaChannelPaymentFromDiscountedProduct({
+    productPriceTotal: canonical > 0.005 ? canonical : input.productPriceTotal,
+    couponDiscount: input.couponDiscount,
+    additionalDiscount: input.additionalDiscount,
+  })
+  const stored = roundUsd2(toN(input.storedChannelPayment))
+  if (Math.abs(stored - expected) <= 0.02) return false
+  const subtracted = roundUsd2(Math.max(0, expected - notInc))
+  const added = roundUsd2(expected + notInc)
+  return Math.abs(stored - subtracted) <= 0.02 || Math.abs(stored - added) <= 0.02
 }
 
 /** Own 복구 등으로 category가 Own이어도 정산 통계에서는 OTA로 취급하는 한국 리셀러·제휴 투어사 */

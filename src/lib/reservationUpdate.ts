@@ -8,6 +8,8 @@ import type { Reservation } from '@/types/reservation'
 import {
   computeChannelPaymentAfterReturn,
   computeChannelSettlementAmount,
+  computeOtaChannelPaymentFromDiscountedProduct,
+  channelIsOtaForPricingSection,
   resolveCommissionBasePriceForPersistence,
   resolveCommissionGrossForPricingSave,
   pickFiniteNumber,
@@ -27,6 +29,10 @@ import {
 } from '@/utils/storedCompanyRevenue'
 import { computePricingTotalsForDbSave } from '@/utils/reservationPricingSaveTotals'
 import { isNoShowReservationStatus } from '@/lib/reservationStatus'
+import {
+  computeChannelCommissionAmountUsd,
+  normalizeCommissionPercent,
+} from '@/utils/balanceChannelRevenue'
 import {
   CANCEL_DEPOSIT_REFUND_NOTE_AUTO,
   fetchReservationDepositAmountUsd,
@@ -471,9 +477,12 @@ export async function updateReservation(
             .eq('id', payload.channelId)
             .maybeSingle()
           if (chRow) {
-            isOTAChannel =
-              String((chRow as { type?: string }).type || '').toLowerCase() === 'ota' ||
-              (chRow as { category?: string }).category === 'OTA'
+            isOTAChannel = channelIsOtaForPricingSection({
+              id: payload.channelId,
+              type: (chRow as { type?: string | null }).type,
+              category: (chRow as { category?: string | null }).category,
+              name: (chRow as { name?: string | null }).name,
+            })
             const nm = String((chRow as { name?: string }).name || '')
             isHomepageBooking =
               isHomepageBooking ||
@@ -481,10 +490,12 @@ export async function updateReservation(
               nm.includes('홈페이지')
             channelPricingType =
               (chRow as { pricing_type?: string | null }).pricing_type ?? null
+          } else if (payload.channelId) {
+            isOTAChannel = channelIsOtaForPricingSection({ id: payload.channelId })
           }
         }
       } catch {
-        isOTAChannel = false
+        isOTAChannel = channelIsOtaForPricingSection({ id: payload.channelId })
       }
 
       const saveTotals = computePricingTotalsForDbSave({
@@ -520,7 +531,6 @@ export async function updateReservation(
         returnedAmount,
       })
 
-      const newProductTotal = saveTotals.productPriceTotal
       const newSubtotal = saveTotals.subtotal
       const newTotal = saveTotals.totalPrice
 
@@ -543,14 +553,35 @@ export async function updateReservation(
           (existingRow as { commission_base_price?: number } | null)?.commission_base_price
         ) ?? 0
 
-      const commissionGross = resolveCommissionGrossForPricingSave({
-        onlinePaymentAmount: pricingInfo.onlinePaymentAmount,
-        depositAmount: depAmtForGross,
-        storedCommissionBase: storedCb,
-        returnedAmount,
-        productPriceTotal: productTotalForChannelSettlement,
-        isOTAChannel,
+      const otaSaleTimesPax = computeOtaChannelPaymentFromDiscountedProduct({
+        productPriceTotal: saveTotals.baseProductPriceTotal,
+        couponDiscount: toNum(pricingInfo.couponDiscount),
+        additionalDiscount: toNum(pricingInfo.additionalDiscount),
       })
+      const statusForOtaPay = String(payload.status || '').toLowerCase().trim()
+      const cancelledForOtaPay =
+        statusForOtaPay === 'cancelled' || statusForOtaPay === 'canceled'
+      const otaChannelPayGross =
+        isOTAChannel && !cancelledForOtaPay && otaSaleTimesPax > 0.005 ? otaSaleTimesPax : null
+      const otaCommissionToSave =
+        otaChannelPayGross != null
+          ? computeChannelCommissionAmountUsd(
+              otaChannelPayGross,
+              normalizeCommissionPercent(pricingInfo.commission_percent)
+            )
+          : toNum(pricingInfo.commission_amount)
+
+      const commissionGross =
+        otaChannelPayGross != null
+          ? otaChannelPayGross
+          : resolveCommissionGrossForPricingSave({
+              onlinePaymentAmount: pricingInfo.onlinePaymentAmount,
+              depositAmount: depAmtForGross,
+              storedCommissionBase: storedCb,
+              returnedAmount,
+              productPriceTotal: productTotalForChannelSettlement,
+              isOTAChannel,
+            })
 
       const channelSettlementComputeInput = {
         depositAmount: toNum(pricingInfo.depositAmount),
@@ -566,19 +597,25 @@ export async function updateReservation(
         onSiteBalanceAmount: resolvedOnSiteBalance,
         returnedAmount,
         partnerReceivedAmount,
-        commissionAmount: toNum(pricingInfo.commission_amount),
+        commissionAmount: otaChannelPayGross != null ? otaCommissionToSave : toNum(pricingInfo.commission_amount),
         reservationStatus: payload.status,
         isOTAChannel,
       }
 
       const channelPayNet = computeChannelPaymentAfterReturn(channelSettlementComputeInput)
-      const commissionBaseToSave = resolveCommissionBasePriceForPersistence({
-        formCommissionBase: pricingInfo.commission_base_price ?? pricingInfo.commissionBasePrice,
-        channelPayNet,
-      })
+      const commissionBaseToSave =
+        otaChannelPayGross != null
+          ? otaChannelPayGross
+          : resolveCommissionBasePriceForPersistence({
+              formCommissionBase: pricingInfo.commission_base_price ?? pricingInfo.commissionBasePrice,
+              channelPayNet,
+            })
       const channelSettlementComputed = computeChannelSettlementAmount(channelSettlementComputeInput)
 
       const channelSettlementToSave = (() => {
+        if (otaChannelPayGross != null) {
+          return Math.round(channelSettlementComputed * 100) / 100
+        }
         const raw =
           pricingInfo.channelSettlementAmount ??
           (pricingInfo as { channel_settlement_amount?: unknown }).channel_settlement_amount
@@ -695,7 +732,7 @@ export async function updateReservation(
         adult_product_price: keep(newAdult, existingRow?.adult_product_price),
         child_product_price: keep(newChild, existingRow?.child_product_price),
         infant_product_price: keep(newInfant, existingRow?.infant_product_price),
-        product_price_total: keep(newProductTotal, existingRow?.product_price_total),
+        product_price_total: keep(saveTotals.baseProductPriceTotal, existingRow?.product_price_total),
         /** 불포함 0 초기화 허용 — keep 사용 시 사용자가 0으로 저장해도 이전 DB값이 유지됨 */
         not_included_price: newNotIncluded,
         required_options: pricingInfo.requiredOptions ?? {},
@@ -721,7 +758,10 @@ export async function updateReservation(
         balance_amount: resolvedOnSiteBalance,
         private_tour_additional_cost: toNum(pricingInfo.privateTourAdditionalCost),
         commission_percent: toNum(pricingInfo.commission_percent),
-        commission_amount: keep(toNum(pricingInfo.commission_amount), existingRow?.commission_amount),
+        commission_amount: keep(
+          otaChannelPayGross != null ? otaCommissionToSave : toNum(pricingInfo.commission_amount),
+          existingRow?.commission_amount
+        ),
         pricing_adults: pricingAdultsVal,
         commission_base_price: keep(
           commissionBaseToSave,

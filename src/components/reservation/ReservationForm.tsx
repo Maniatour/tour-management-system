@@ -179,8 +179,10 @@ import {
   usesBookingTimeChoiceCatalog,
 } from '@/lib/bookingTimeChoicePricing'
 import {
+  channelIsOtaForPricingSection,
   computeChannelPaymentAfterReturn,
   computeChannelSettlementAmount,
+  computeOtaChannelPaymentFromDiscountedProduct,
   deriveCommissionGrossForSettlement,
   resolveCommissionBasePriceForPersistence,
   resolveCommissionGrossForPricingSave,
@@ -4221,9 +4223,29 @@ export default function ReservationForm({
             const dbPptRaw = (existingPricing as any).product_price_total
             const hasDbPpt =
               dbPptRaw != null && dbPptRaw !== '' && Number.isFinite(Number(dbPptRaw))
-            const newProductPriceTotal = hasDbPpt
-              ? Math.round(Number(dbPptRaw) * 100) / 100
-              : computedProductPriceTotal
+            const dbPpt = hasDbPpt ? Math.round(Number(dbPptRaw) * 100) / 100 : 0
+            const billingPaxForPpt = getPerPersonChargePax({
+              isSinglePrice,
+              pricingAdults: updated.pricingAdults,
+              reservationAdults: updated.adults,
+              child: updated.child,
+              infant: updated.infant,
+            })
+            const notIncludedFieldTotal =
+              Math.round(
+                (Number(updated.not_included_price) || 0) * (billingPaxForPpt || 1) * 100
+              ) / 100
+            const dbPptIncludesNotIncluded =
+              computedProductPriceTotal > 0.005 &&
+              notIncludedFieldTotal > 0.005 &&
+              Math.abs(
+                dbPpt - Math.round((computedProductPriceTotal + notIncludedFieldTotal) * 100) / 100
+              ) <= 0.02
+            const newProductPriceTotal = dbPptIncludesNotIncluded
+              ? computedProductPriceTotal
+              : hasDbPpt
+                ? dbPpt
+                : computedProductPriceTotal
             
             // requiredOptionTotal 계산
             let requiredOptionTotal = 0
@@ -4307,11 +4329,14 @@ export default function ReservationForm({
               const cbNum = Number(rawCbForOnline)
               if (Number.isFinite(cbNum)) {
                 const chRow = channels.find((c: { id: string }) => c.id === prev.channelId) as
-                  | { type?: string; category?: string }
+                  | { id?: string; type?: string; category?: string; name?: string }
                   | undefined
-                const isOtaLoad =
-                  !!chRow &&
-                  (String(chRow.type || '').toLowerCase() === 'ota' || chRow.category === 'OTA')
+                const isOtaLoad = channelIsOtaForPricingSection({
+                  id: prev.channelId || chRow?.id,
+                  type: chRow?.type,
+                  category: chRow?.category,
+                  name: chRow?.name,
+                })
                 nextOnlinePayment = deriveCommissionGrossForSettlement(cbNum, {
                   returnedAmount: 0,
                   depositAmount: Number(updated.depositAmount) || 0,
@@ -4449,9 +4474,6 @@ export default function ReservationForm({
           infantProductPrice: pricingFromDynamic.infantPrice,
           commission_percent: commissionPercentToApply,
           not_included_price: notIncludedToUse,
-          onlinePaymentAmount: notIncludedToUse != null
-            ? Math.max(0, (pricingFromDynamic.adultPrice - (notIncludedToUse || 0)) * (prev.pricingAdults || 0))
-            : prev.onlinePaymentAmount || 0
         }
         
         const isSinglePriceForDynamic = isChannelSinglePrice(selectedChannelForDynamic)
@@ -4467,6 +4489,13 @@ export default function ReservationForm({
           child: updated.child,
           infant: updated.infant,
         })
+        const channelPayGross = computeOtaChannelPaymentFromDiscountedProduct({
+          productPriceTotal: newProductPriceTotal,
+          couponDiscount: updated.couponDiscount,
+          additionalDiscount: updated.additionalDiscount,
+        })
+        updated.onlinePaymentAmount = channelPayGross
+        updated.commission_base_price = channelPayGross
         
         // requiredOptionTotal 계산
         let requiredOptionTotal = 0
@@ -4483,10 +4512,7 @@ export default function ReservationForm({
         
         // OTA 채널인 경우 초이스 가격을 포함하지 않음 (OTA 판매가에 이미 포함됨)
         const selectedChannelForCheck = selectedChannelForDynamic
-        const isOTAChannel = selectedChannelForCheck && (
-          (selectedChannelForCheck as any)?.type?.toLowerCase() === 'ota' || 
-          (selectedChannelForCheck as any)?.category === 'OTA'
-        )
+        const isOTAChannel = channelIsOtaForPricingSection(selectedChannelForCheck)
         
         // 초이스 판매 총액(choicesTotal)은 불포함 금액과 겹치므로 소계에 포함하지 않음. 레거시 필수 옵션만.
         const optionTotal = requiredOptionTotal
@@ -4588,6 +4614,10 @@ export default function ReservationForm({
       productPriceTotal: false,
       totalPrice: false,
       onSiteBalanceAmount: false,
+      onlinePaymentAmount: false,
+      commission_base_price: false,
+      commission_amount: false,
+      channel_settlement_amount: false,
     }))
     setFormData((prev) => {
       const channelCommissionPct = commissionPercentFromChannelMaster(ch)
@@ -4602,10 +4632,6 @@ export default function ReservationForm({
         infantProductPrice: i,
         not_included_price: ni,
         commission_percent: commissionPercentToApply,
-        onlinePaymentAmount:
-          ni != null
-            ? Math.max(0, (a - (ni || 0)) * (prev.pricingAdults || 0))
-            : prev.onlinePaymentAmount || 0,
       }
       const selectedChannelForFormula = channels.find((c) => c.id === channelIdForCalc)
       const isSinglePriceForFormula = isChannelSinglePrice(selectedChannelForFormula)
@@ -4619,6 +4645,16 @@ export default function ReservationForm({
         child: updated.child,
         infant: updated.infant,
       })
+      /** ③ 채널 결제 = 판매가×인원(이미 불포함 제외). 판매가에서 불포함을 한 번 더 빼지 않음 */
+      const channelPayGross = computeOtaChannelPaymentFromDiscountedProduct({
+        productPriceTotal: newProductPriceTotal,
+        couponDiscount: updated.couponDiscount,
+        additionalDiscount: updated.additionalDiscount,
+      })
+      const channelPayNet = Math.max(
+        0,
+        channelPayGross - Math.max(0, Number(updated.refundAmount) || 0)
+      )
       let requiredOptionTotal = 0
       Object.entries(updated.requiredOptions).forEach(([optionId, option]) => {
         const isSelected =
@@ -4634,11 +4670,7 @@ export default function ReservationForm({
         }
       })
       const selectedChannelForCheck = selectedChannelForFormula
-      const isOTAChannel = !!(
-        selectedChannelForCheck &&
-        ((selectedChannelForCheck as { type?: string; category?: string })?.type?.toLowerCase() === 'ota' ||
-          (selectedChannelForCheck as { category?: string })?.category === 'OTA')
-      )
+      const isOTAChannel = channelIsOtaForPricingSection(selectedChannelForCheck)
       const optionTotal = requiredOptionTotal
       let optionalOptionTotal = 0
       Object.values(updated.selectedOptionalOptions).forEach((option) => {
@@ -4666,12 +4698,13 @@ export default function ReservationForm({
         updated.onSiteBalanceAmount,
         updated.depositAmount
       )
-      const commissionPayBase =
-        Number(updated.commission_base_price) ||
-        Number(updated.onlinePaymentAmount) ||
-        Math.max(0, newProductPriceTotal - (Number(updated.couponDiscount) || 0) - (Number(updated.additionalDiscount) || 0))
+      const { channelSettlementAmount: _dropSettlement, ...withoutStoredSettlement } = updated as typeof updated & {
+        channelSettlementAmount?: number
+      }
       return {
-        ...updated,
+        ...withoutStoredSettlement,
+        onlinePaymentAmount: channelPayGross,
+        commission_base_price: channelPayNet,
         productPriceTotal: newProductPriceTotal,
         requiredOptionTotal,
         subtotal: newSubtotal,
@@ -4679,7 +4712,7 @@ export default function ReservationForm({
         onSiteBalanceAmount: keepOnSite ? updated.onSiteBalanceAmount : newBalance,
         balanceAmount: keepOnSite ? updated.onSiteBalanceAmount : newBalance,
         commission_amount: computeChannelCommissionAmountUsd(
-          commissionPayBase,
+          channelPayNet,
           commissionPercentToApply
         ),
       }
@@ -5853,19 +5886,44 @@ export default function ReservationForm({
             .eq('id', fd.channelId)
             .maybeSingle()
           if (chRow) {
-            isOTAChannel =
-              String((chRow as any).type || '').toLowerCase() === 'ota' ||
-              (chRow as any).category === 'OTA'
+            isOTAChannel = channelIsOtaForPricingSection({
+              id: fd.channelId,
+              type: (chRow as { type?: string | null }).type,
+              category: (chRow as { category?: string | null }).category,
+              name: (chRow as { name?: string | null }).name,
+            })
             const nm = String((chRow as { name?: string }).name || '')
             isHomepageBooking =
               isHomepageBooking ||
               nm.toLowerCase().includes('homepage') ||
               nm.includes('홈페이지')
             channelPricingType = (chRow as { pricing_type?: string | null }).pricing_type ?? null
+          } else {
+            const chMem = channels.find((c: { id: string }) => c.id === fd.channelId)
+            isOTAChannel = channelIsOtaForPricingSection(
+              chMem
+                ? {
+                    id: fd.channelId,
+                    type: (chMem as { type?: string | null }).type,
+                    category: (chMem as { category?: string | null }).category,
+                    name: (chMem as { name?: string | null }).name,
+                  }
+                : { id: fd.channelId }
+            )
           }
         }
       } catch {
-        isOTAChannel = false
+        const chMem = channels.find((c: { id: string }) => c.id === fd.channelId)
+        isOTAChannel = channelIsOtaForPricingSection(
+          chMem
+            ? {
+                id: fd.channelId,
+                type: (chMem as { type?: string | null }).type,
+                category: (chMem as { category?: string | null }).category,
+                name: (chMem as { name?: string | null }).name,
+              }
+            : { id: fd.channelId }
+        )
       }
 
       // 입금·채널 조회 await 이후 최신 폼(선결제 지출 등) 반영
@@ -5938,15 +5996,35 @@ export default function ReservationForm({
       const depAmt = overrides?.depositAmount ?? toNum(fd.depositAmount)
       const storedCb =
         pickFiniteNumber(fd.commission_base_price, (existing as any)?.commission_base_price) ?? 0
-
-      const commissionGross = resolveCommissionGrossForPricingSave({
-        onlinePaymentAmount: fd.onlinePaymentAmount,
-        depositAmount: depAmt,
-        storedCommissionBase: storedCb,
-        returnedAmount,
-        productPriceTotal: newProductTotal,
-        isOTAChannel,
+      const otaSaleTimesPax = computeOtaChannelPaymentFromDiscountedProduct({
+        productPriceTotal: saveTotals.baseProductPriceTotal,
+        couponDiscount: fd.couponDiscount,
+        additionalDiscount: fd.additionalDiscount,
       })
+      const statusForOtaPay = String(fd.status || '').toLowerCase().trim()
+      const cancelledForOtaPay =
+        statusForOtaPay === 'cancelled' || statusForOtaPay === 'canceled'
+      const otaChannelPayGross =
+        isOTAChannel && !cancelledForOtaPay && otaSaleTimesPax > 0.005 ? otaSaleTimesPax : null
+
+      const commissionGross =
+        otaChannelPayGross != null
+          ? otaChannelPayGross
+          : resolveCommissionGrossForPricingSave({
+              onlinePaymentAmount: fd.onlinePaymentAmount,
+              depositAmount: depAmt,
+              storedCommissionBase: storedCb,
+              returnedAmount,
+              productPriceTotal: newProductTotal,
+              isOTAChannel,
+            })
+      const otaCommissionToSave =
+        otaChannelPayGross != null
+          ? computeChannelCommissionAmountUsd(
+              otaChannelPayGross,
+              normalizeCommissionPercent(fd.commission_percent)
+            )
+          : Number(fd.commission_amount) || 0
 
       const channelSettlementComputeInput = {
         depositAmount: depAmt,
@@ -5966,7 +6044,7 @@ export default function ReservationForm({
         }),
         returnedAmount,
         partnerReceivedAmount,
-        commissionAmount: Number(fd.commission_amount) || 0,
+        commissionAmount: otaChannelPayGross != null ? otaCommissionToSave : Number(fd.commission_amount) || 0,
         reservationStatus: fd.status,
         isOTAChannel,
       }
@@ -5985,6 +6063,9 @@ export default function ReservationForm({
       const stSave = String(fd.status || '').toLowerCase().trim()
       const cancelledSave = stSave === 'cancelled' || stSave === 'canceled'
       const channelSettlementToSave = (() => {
+        if (otaChannelPayGross != null) {
+          return Math.round(channelSettlementComputed * 100) / 100
+        }
         const m = fd.channelSettlementAmount
         if (m !== undefined && m !== null && String(m) !== '' && Number.isFinite(Number(m))) {
           return Math.round(Number(m) * 100) / 100
@@ -6123,7 +6204,10 @@ export default function ReservationForm({
         adult_product_price: keep(newAdult, (existing as any)?.adult_product_price),
         child_product_price: keep(newChild, (existing as any)?.child_product_price),
         infant_product_price: keep(newInfant, (existing as any)?.infant_product_price),
-        product_price_total: keep(newProductTotal, (existing as any)?.product_price_total),
+        product_price_total: keep(
+          saveTotals.baseProductPriceTotal,
+          (existing as any)?.product_price_total
+        ),
         not_included_price: resolveNotIncludedForSave(newNotIncluded),
         required_options: fd.requiredOptions,
         required_option_total: keep(newRequiredOptionTotal, (existing as any)?.required_option_total),
@@ -6162,10 +6246,13 @@ export default function ReservationForm({
           }),
         private_tour_additional_cost: Number(fd.privateTourAdditionalCost) || 0,
         commission_percent: Number(fd.commission_percent) || 0,
-        commission_amount: keep(Number(fd.commission_amount) || 0, (existing as any)?.commission_amount),
+        commission_amount: keep(
+          otaChannelPayGross != null ? otaCommissionToSave : Number(fd.commission_amount) || 0,
+          (existing as any)?.commission_amount
+        ),
         pricing_adults: Math.max(0, Math.floor(Number(fd.pricingAdults ?? fd.adults) || 0)),
         commission_base_price: keep(
-          commissionBaseToSave,
+          otaChannelPayGross != null ? otaChannelPayGross : commissionBaseToSave,
           (existing as any)?.commission_base_price
         ),
         channel_settlement_amount: channelSettlementToSave,
@@ -6222,6 +6309,28 @@ export default function ReservationForm({
         totalPrice: persistedTotal,
         productPriceTotal: saveTotals.baseProductPriceTotal,
         subtotal: Math.round(newSubtotal * 100) / 100,
+        ...(otaChannelPayGross != null
+          ? {
+              onlinePaymentAmount: otaChannelPayGross,
+              commission_base_price: otaChannelPayGross,
+              commission_amount: otaCommissionToSave,
+              channelSettlementAmount: channelSettlementToSave,
+            }
+          : {}),
+      }))
+      setPricingFieldsFromDb((prev) => ({
+        ...prev,
+        productPriceTotal: true,
+        totalPrice: true,
+        ...(otaChannelPayGross != null
+          ? {
+              onlinePaymentAmount: true,
+              commission_base_price: true,
+              commission_amount: true,
+              commission_percent: true,
+              channel_settlement_amount: true,
+            }
+          : {}),
       }))
       setPricingDbSnapshot((prev) =>
         prev

@@ -37,8 +37,10 @@ import {
 } from '@/lib/productPriceTotal'
 import {
   channelIsOtaForPricingSection,
+  channelPaymentLooksLikeNotIncludedDoubleSubtract,
   computeChannelPaymentAfterReturn,
   computeChannelSettlementAmount,
+  computeOtaChannelPaymentFromDiscountedProduct,
   deriveCommissionGrossForSettlement,
   shouldOmitAdditionalDiscountAndCostFromCompanyRevenueSum,
   shouldOmitOtaExtrasFromCompanyRevenueSum,
@@ -1265,23 +1267,63 @@ export default function PricingSection({
     reservationId,
   ])
 
+  /** 단가×인원(불포함 제외). 폼 productPriceTotal이 고객 총액이어도 ③은 이 값을 씀 */
+  const canonicalOtaProductTotal = useMemo(() => {
+    const ch = channels.find((c: { id: string }) => c.id === formData.channelId)
+    const computed = computeProductPriceTotal({
+      isSinglePrice: isChannelSinglePrice(ch),
+      adultProductPrice: formData.adultProductPrice,
+      childProductPrice: formData.childProductPrice,
+      infantProductPrice: formData.infantProductPrice,
+      pricingAdults: formData.pricingAdults,
+      reservationAdults: formData.adults,
+      child: formData.child,
+      infant: formData.infant,
+    })
+    return computed > 0.005 ? computed : Number(formData.productPriceTotal) || 0
+  }, [
+    channels,
+    formData.channelId,
+    formData.adultProductPrice,
+    formData.childProductPrice,
+    formData.infantProductPrice,
+    formData.pricingAdults,
+    formData.adults,
+    formData.child,
+    formData.infant,
+    formData.productPriceTotal,
+  ])
+
   // depositAmount를 할인 후 상품가격으로 자동 업데이트 (상품 가격이나 쿠폰 변경 시)
   // OTA 채널의 경우 OTA 판매가를 depositAmount로 설정하고, 채널 결제 금액과 수수료도 함께 업데이트
   useEffect(() => {
     if (productSalePriceFocusDepthRef.current > 0) {
       return
     }
+    // OTA 채널 여부 확인
+    const selectedChannel = channels.find((c: { id: string }) => c.id === formData.channelId)
+    const isOTAChannel = channelIsOtaForPricingSection(selectedChannel)
+    const storedChannelPayForBugCheck =
+      Number(formData.onlinePaymentAmount) || Number(formData.commission_base_price) || 0
+    const looksLikeNotIncludedDoubleSubtract =
+      !!isOTAChannel &&
+      channelPaymentLooksLikeNotIncludedDoubleSubtract({
+        storedChannelPayment: storedChannelPayForBugCheck,
+        productPriceTotal: formData.productPriceTotal,
+        notIncludedTotalUsd: notIncludedBreakdown.totalUsd,
+        couponDiscount: formData.couponDiscount,
+        additionalDiscount: formData.additionalDiscount,
+        canonicalSaleTimesPax: canonicalOtaProductTotal,
+      })
     if (
       isExistingPricingLoaded &&
       pricingFieldsFromDb.depositAmount === true &&
       (pricingFieldsFromDb.onlinePaymentAmount === true ||
-        pricingFieldsFromDb.commission_base_price === true)
+        pricingFieldsFromDb.commission_base_price === true) &&
+      !looksLikeNotIncludedDoubleSubtract
     ) {
       return
     }
-    // OTA 채널 여부 확인
-    const selectedChannel = channels.find((c: { id: string }) => c.id === formData.channelId)
-    const isOTAChannel = channelIsOtaForPricingSection(selectedChannel)
     
     // 채널의 commission_percent 가져오기 (숫자로 변환)
     const channelCommissionPercent = selectedChannel
@@ -1309,9 +1351,9 @@ export default function PricingSection({
             reservationCancelled ||
             otaChannelPaymentUserEditedRef.current ||
             channelSettlementUserEditedRef.current ||
-            channelPaymentLoadedFromDb ||
+            (channelPaymentLoadedFromDb && !looksLikeNotIncludedDoubleSubtract) ||
             channelPaymentAmountFieldFocusedRef.current ||
-            channelPaymentPricingTouched
+            (channelPaymentPricingTouched && !looksLikeNotIncludedDoubleSubtract)
 
           const resolveNextOtaCommissionAmount = (
             commissionCalcBase: number,
@@ -1328,8 +1370,12 @@ export default function PricingSection({
           }
 
           const totalCustomerPayment = effectiveTotalCustomerPayment()
-          /** 채널 결제 금액(③) = 할인 후 상품가 (추가 할인·쿠폰 모두 반영) */
-          const salePriceTimesPax = Math.max(0, discountedPrice)
+          /** 채널 결제 금액(③) = 할인 후 상품가 (추가 할인·쿠폰 모두 반영, 불포함 제외) */
+          const salePriceTimesPax = computeOtaChannelPaymentFromDiscountedProduct({
+            productPriceTotal: canonicalOtaProductTotal,
+            couponDiscount: formData.couponDiscount,
+            additionalDiscount: formData.additionalDiscount,
+          })
           /** 불포함(현장/추가 결제) 금액이 있으면 고객 총 결제 = 판매·옵션 등 + 불포함. 보증금(실제 지불액)은 불포함을 제외한 금액, 잔액(투어 당일) = 불포함 합. */
           const notIncludedTotal = notIncludedBreakdown.totalUsd
           const depositPortion =
@@ -1359,8 +1405,16 @@ export default function PricingSection({
             const sameCommission =
               Math.abs((formData.commission_amount ?? 0) - nextCommissionAmount) < 0.01
             if ((!sameOnline || !sameCommission) && !skipOtaChannelPaymentAuto) {
+              if (looksLikeNotIncludedDoubleSubtract) {
+                markPricingEdited(
+                  'onlinePaymentAmount',
+                  'commission_base_price',
+                  'commission_amount',
+                  'channel_settlement_amount'
+                )
+              }
               setFormData((prev: typeof formData) => ({
-                ...prev,
+                ...stripChannelSettlementUnlessLocked(prev),
                 ...(sameOnline ? {} : { onlinePaymentAmount: salePriceTimesPax, commission_base_price: channelPaymentBase }),
                 commission_amount: nextCommissionAmount,
               }))
@@ -1393,8 +1447,16 @@ export default function PricingSection({
               Math.abs((formData.commission_amount ?? 0) - commissionToSet) < 0.01 &&
               Math.abs((formData.onSiteBalanceAmount ?? 0) - otaRemainingBalance) < 0.01
             if (!same && !skipOtaChannelPaymentAuto) {
+              if (looksLikeNotIncludedDoubleSubtract) {
+                markPricingEdited(
+                  'onlinePaymentAmount',
+                  'commission_base_price',
+                  'commission_amount',
+                  'channel_settlement_amount'
+                )
+              }
               setFormData((prev: typeof formData) => ({
-                ...prev,
+                ...stripChannelSettlementUnlessLocked(prev),
                 depositAmount: depositPortion,
                 onlinePaymentAmount: salePriceTimesPax,
                 commission_base_price: channelPaymentBase,
@@ -1442,7 +1504,7 @@ export default function PricingSection({
         }
       }
     }
-  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.status, formData.not_included_price, formData.pricingAdults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, formData.refundAmount, formData.totalPrice, channels, returnedAmount, effectiveTotalCustomerPayment, calculatedBalanceReceivedTotal, isExistingPricingLoaded, channelPaymentLoadedFromDb, channelPaymentPricingTouched, pricingFieldsFromDb.depositAmount, pricingFieldsFromDb.onlinePaymentAmount, pricingFieldsFromDb.commission_base_price, setFormData, notIncludedBreakdown.totalUsd, productSalePriceCommitTick])
+  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.status, formData.not_included_price, formData.pricingAdults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, formData.refundAmount, formData.totalPrice, formData.onlinePaymentAmount, formData.commission_base_price, channels, returnedAmount, effectiveTotalCustomerPayment, calculatedBalanceReceivedTotal, isExistingPricingLoaded, channelPaymentLoadedFromDb, channelPaymentPricingTouched, pricingFieldsFromDb.depositAmount, pricingFieldsFromDb.onlinePaymentAmount, pricingFieldsFromDb.commission_base_price, setFormData, notIncludedBreakdown.totalUsd, productSalePriceCommitTick, markPricingEdited, canonicalOtaProductTotal])
 
   // 선택된 채널 정보 가져오기
   const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
@@ -1571,8 +1633,12 @@ export default function PricingSection({
   // 할인 후 상품가 = 상품가격 - 쿠폰할인 - 추가할인 (정산·채널 결제 UI에서 공통)
   const discountedProductPrice =
     formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
-  /** OTA·홈페이지 공통: 채널 결제(상품) 기준 = 할인 후 상품가 */
-  const otaChannelProductPaymentGross = Math.max(0, discountedProductPrice)
+  /** OTA ③: 단가×인원 − 할인. 폼 productPriceTotal이 불포함을 포함한 고객 총액이어도 판매가×인원을 씀 */
+  const otaChannelProductPaymentGross = computeOtaChannelPaymentFromDiscountedProduct({
+    productPriceTotal: canonicalOtaProductTotal,
+    couponDiscount: formData.couponDiscount,
+    additionalDiscount: formData.additionalDiscount,
+  })
 
   /**
    * 정산 산식용 gross. 폼 `onlinePaymentAmount` 우선; 없으면 DB에 net만 있을 때 `deriveCommissionGrossForSettlement`로 복원.
@@ -1680,12 +1746,25 @@ export default function PricingSection({
     const effectiveReturnOffGross = Math.max(ret, manualR)
     const dep = Number(formData.depositAmount) || 0
     const cg = Number(channelPaymentGrossDb) || 0
-    const productGross = Math.max(0, discountedProductPrice)
+    const productGross = isOTAChannel
+      ? Math.max(0, otaChannelProductPaymentGross)
+      : Math.max(0, discountedProductPrice)
 
     const cbRaw = formData.commission_base_price
     const hasCommissionBase =
       cbRaw !== undefined && cbRaw !== null && String(cbRaw) !== '' && Number.isFinite(Number(cbRaw))
     const cb = hasCommissionBase ? Number(cbRaw) : NaN
+    /**
+     * OTA: 채널 결제 = 판매가×인원(할인 후 상품가). 불포함(현장권)은 채널이 받지 않음.
+     * 저장된 값이 고객 총액($630)이거나 불포함 이중 차감($250)이어도 판매가×인원을 표시.
+     * 사용자가 이 칸을 직접 입력한 경우에만 아래 저장값 경로를 씀.
+     */
+    if (isOTAChannel && !otaChannelPaymentUserEditedRef.current && !isReservationCancelled) {
+      const expectedPay = Math.max(0, roundUsd2(productGross - effectiveReturnOffGross))
+      if (expectedPay > 0.005) {
+        return expectedPay
+      }
+    }
 
     /**
      * OTA: 사용자가 채널 결제(net)를 직접 입력한 뒤에는 폼의 commission_base만 표시.
@@ -1694,7 +1773,7 @@ export default function PricingSection({
     if (
       isOTAChannel &&
       hasCommissionBase &&
-      (otaChannelPaymentUserEditedRef.current || channelPaymentPricingTouched)
+      otaChannelPaymentUserEditedRef.current
     ) {
       return Math.max(0, roundUsd2(cb))
     }
@@ -1779,10 +1858,15 @@ export default function PricingSection({
     formData.refundAmount,
     formData.depositAmount,
     discountedProductPrice,
+    otaChannelProductPaymentGross,
     isOTAChannel,
     isReservationCancelled,
     formData.commission_base_price,
     formData.onlinePaymentAmount,
+    formData.productPriceTotal,
+    formData.couponDiscount,
+    formData.additionalDiscount,
+    notIncludedBreakdown.totalUsd,
     pricingFieldsFromDb.onlinePaymentAmount,
     pricingFieldsFromDb.commission_base_price,
     selfChannelPaymentEngineInput,
@@ -1790,6 +1874,13 @@ export default function PricingSection({
 
   /** 폼에 `channelSettlementAmount`가 있으면 그 값(수동·DB 로드), 없으면 `computeChannelSettlementAmount`. */
   const channelSettlementBeforePartnerReturn = useMemo(() => {
+    const expectedOtaPay =
+      isOTAChannel && !isReservationCancelled ? channelPaymentAmountAfterReturn : null
+    const expectedOtaSettle =
+      expectedOtaPay != null
+        ? Math.max(0, roundUsd2(expectedOtaPay - (Number(formData.commission_amount) || 0)))
+        : null
+
     const fromForm = formData.channelSettlementAmount
     if (
       fromForm !== undefined &&
@@ -1797,7 +1888,14 @@ export default function PricingSection({
       String(fromForm) !== '' &&
       Number.isFinite(Number(fromForm))
     ) {
-      return roundUsd2(Number(fromForm))
+      const storedSettle = roundUsd2(Number(fromForm))
+      const ignoreStaleOtaStored =
+        expectedOtaSettle != null &&
+        !channelSettlementUserEditedRef.current &&
+        Math.abs(storedSettle - expectedOtaSettle) > 0.02
+      if (!ignoreStaleOtaStored) {
+        return storedSettle
+      }
     }
 
     const billingPax = perPersonChargePax
@@ -1818,9 +1916,12 @@ export default function PricingSection({
         )
       : Math.max(Math.max(0, Number(returnedAmount) || 0), manualRefundAmount)
 
+    const useDisplayedOtaPay = expectedOtaPay != null && expectedOtaPay > 0.005
     const baseSettled = computeChannelSettlementAmount({
       depositAmount: Number(formData.depositAmount) || 0,
-      onlinePaymentAmount: Number(formData.onlinePaymentAmount) || channelPaymentGrossDb,
+      onlinePaymentAmount: useDisplayedOtaPay
+        ? expectedOtaPay
+        : Number(formData.onlinePaymentAmount) || channelPaymentGrossDb,
       productPriceTotal: productTotalForSettlement,
       couponDiscount: Number(formData.couponDiscount) || 0,
       additionalDiscount: Number(formData.additionalDiscount) || 0,
@@ -1830,7 +1931,7 @@ export default function PricingSection({
       cardFee: Number(formData.cardFee) || 0,
       prepaymentTip: Number(formData.prepaymentTip) || 0,
       onSiteBalanceAmount: Number(formData.onSiteBalanceAmount ?? formData.balanceAmount) || 0,
-      returnedAmount: returnedForSettlementCompute,
+      returnedAmount: useDisplayedOtaPay ? 0 : returnedForSettlementCompute,
       partnerReceivedAmount: partnerReceivedForSettlement,
       commissionAmount: Number(formData.commission_amount) || 0,
       reservationStatus: formData.status ?? null,
@@ -2853,7 +2954,18 @@ export default function PricingSection({
   // 취소 OTA·부분 정산은 수동 입력만 쓰므로 자동 덮어쓰기 안 함. 수동 입력 후 사용자 값 최우선.
   useEffect(() => {
     if (channelPaymentAmountFieldFocusedRef.current) return
-    if (channelPaymentLoadedFromDb) return
+    const storedPay = Number(formData.onlinePaymentAmount) || Number(formData.commission_base_price) || 0
+    const looksLikeNotIncludedDoubleSubtract =
+      isOTAChannel &&
+      channelPaymentLooksLikeNotIncludedDoubleSubtract({
+        storedChannelPayment: storedPay,
+        productPriceTotal: formData.productPriceTotal,
+        notIncludedTotalUsd: notIncludedBreakdown.totalUsd,
+        couponDiscount: formData.couponDiscount,
+        additionalDiscount: formData.additionalDiscount,
+        canonicalSaleTimesPax: canonicalOtaProductTotal,
+      })
+    if (channelPaymentLoadedFromDb && !looksLikeNotIncludedDoubleSubtract) return
     if (!isOTAChannel && nonOtaChannelPaymentStopProductAutoSyncRef.current) return
     if (isOTAChannel && isReservationCancelled) return
 
@@ -2868,7 +2980,7 @@ export default function PricingSection({
 
         const userEditedChannelPayment =
           channelSettlementUserEditedRef.current ||
-          channelPaymentPricingTouched ||
+          (channelPaymentPricingTouched && !looksLikeNotIncludedDoubleSubtract) ||
           (isOTAChannel
             ? otaChannelPaymentUserEditedRef.current
             : nonOtaChannelPaymentUserEditedRef.current)
@@ -2876,6 +2988,7 @@ export default function PricingSection({
         const shouldSyncFromProduct =
           !userEditedChannelPayment &&
           (currentOnlinePaymentAmount === 0 ||
+            looksLikeNotIncludedDoubleSubtract ||
             (priceDifference > 0.01 && !isChannelPaymentAmountFocused))
 
         if (shouldSyncFromProduct) {
@@ -2885,7 +2998,7 @@ export default function PricingSection({
             ? Math.max(0, targetOnline - Math.max(man, ret))
             : targetOnline
           return {
-            ...prev,
+            ...stripChannelSettlementUnlessLocked(prev),
             onlinePaymentAmount: targetOnline,
             commission_base_price: isOTAChannel ? netChannel : targetOnline,
           }
@@ -2900,10 +3013,17 @@ export default function PricingSection({
     isChannelPaymentAmountFocused,
     returnedAmount,
     formData.refundAmount,
+    formData.onlinePaymentAmount,
+    formData.commission_base_price,
+    formData.productPriceTotal,
+    formData.couponDiscount,
+    formData.additionalDiscount,
+    notIncludedBreakdown.totalUsd,
     channelPaymentLoadedFromDb,
     channelPaymentPricingTouched,
     setFormData,
     otaChannelProductPaymentGross,
+    canonicalOtaProductTotal,
   ])
 
   // 채널 변경 시 선택된 쿠폰이 해당 채널에 속하지 않으면 쿠폰 초기화 (ota가 아닐 때 Homepage 쿠폰은 유지)
