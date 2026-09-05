@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import TourNarrationPlayLog from '@/components/tour/TourNarrationPlayLog'
 import { cn } from '@/lib/utils'
+import { isEnglishTourReportLocale } from '@/lib/tourReportExtras'
 
 export default function TourReportNarrationSection({
   tourId,
@@ -26,7 +27,7 @@ export default function TourReportNarrationSection({
   onExplainedChange: (value: boolean) => void
   onReasonChange: (value: string) => void
 }) {
-  const isEn = locale === 'en'
+  const isEn = isEnglishTourReportLocale(locale)
 
   return (
     <div className="space-y-3 rounded-xl border border-border/70 bg-muted/20 p-3">

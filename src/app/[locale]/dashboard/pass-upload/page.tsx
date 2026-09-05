@@ -26,7 +26,6 @@ export default function PassUploadPage() {
   
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [passPhotoUrl, setPassPhotoUrl] = useState<string | null>(null)
-  const [idPhotoUrl, setIdPhotoUrl] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -53,7 +52,6 @@ export default function PassUploadPage() {
         if (data) {
           setCustomer(data as Customer)
           setPassPhotoUrl(data.pass_photo_url)
-          setIdPhotoUrl(data.id_photo_url)
         }
       } catch (error) {
         console.error('Error loading customer:', error)
@@ -66,7 +64,7 @@ export default function PassUploadPage() {
   }, [authUser])
 
   // 파일 업로드 처리
-  const handleFileUpload = async (file: File, type: 'pass' | 'id') => {
+  const handleFileUpload = async (file: File) => {
     // 파일 타입 검증
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
     if (!allowedTypes.includes(file.type)) {
@@ -99,12 +97,7 @@ export default function PassUploadPage() {
       }
 
       const data = await response.json()
-      
-      if (type === 'pass') {
-        setPassPhotoUrl(data.imageUrl)
-      } else {
-        setIdPhotoUrl(data.imageUrl)
-      }
+      setPassPhotoUrl(data.imageUrl)
 
       toast.success(tPass('uploadSuccess'))
     } catch (error) {
@@ -117,7 +110,7 @@ export default function PassUploadPage() {
 
   // 저장 처리
   const handleSave = async () => {
-    if (!passPhotoUrl || !idPhotoUrl) {
+    if (!passPhotoUrl) {
       toast.error(tPass('bothPhotosRequired'))
       return
     }
@@ -134,8 +127,7 @@ export default function PassUploadPage() {
         .from('customers')
         .update({
           resident_status: 'non_resident_with_pass',
-          pass_photo_url: passPhotoUrl,
-          id_photo_url: idPhotoUrl
+          pass_photo_url: passPhotoUrl
         })
         .eq('id', customer.id)
 
@@ -212,7 +204,6 @@ export default function PassUploadPage() {
               <h3 className="font-semibold text-foreground mb-2">{tPass('uploadGuide')}</h3>
               <ul className="text-sm text-primary space-y-1 list-disc list-inside">
                 <li>{tPass('passPhoto')}: {tPass('passPhotoDesc')}</li>
-                <li>{tPass('idPhoto')}: {tPass('idPhotoDesc')}</li>
                 <li>{tPass('fileFormat')}</li>
                 <li>{tPass('privacyNotice')}</li>
               </ul>
@@ -234,7 +225,7 @@ export default function PassUploadPage() {
         </div>
 
         {/* 업로드 섹션 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        <div className="grid grid-cols-1 gap-6 mb-6">
           {/* 패스 사진 */}
           <div className="bg-white rounded-lg shadow-sm p-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -263,7 +254,7 @@ export default function PassUploadPage() {
                     accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
                     onChange={(e) => {
                       const file = e.target.files?.[0]
-                      if (file) handleFileUpload(file, 'pass')
+                      if (file) handleFileUpload(file)
                     }}
                     className="hidden"
                   />
@@ -286,7 +277,7 @@ export default function PassUploadPage() {
                     accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
                     onChange={(e) => {
                       const file = e.target.files?.[0]
-                      if (file) handleFileUpload(file, 'pass')
+                      if (file) handleFileUpload(file)
                     }}
                     className="hidden"
                     disabled={uploading}
@@ -300,84 +291,6 @@ export default function PassUploadPage() {
                     <div className="space-y-2">
                       <Upload className="h-10 w-10 text-gray-400 mx-auto" />
                       <p className="text-sm text-gray-600">{tPass('uploadPassPhoto')}</p>
-                      <p className="text-xs text-gray-400">{tPass('fileFormat')}</p>
-                    </div>
-                  )}
-                </div>
-              </label>
-            )}
-          </div>
-
-          {/* ID 사진 */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {tPass('idPhotoLabel')}
-            </label>
-            <div className="mb-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <p className="text-xs text-yellow-800">
-                <strong>{locale === 'ko' ? '안내:' : 'Note:'}</strong> {tPass('idPhotoNotice')}
-              </p>
-            </div>
-            {idPhotoUrl ? (
-              <div className="space-y-3">
-                <div className="relative">
-                  <img 
-                    src={idPhotoUrl} 
-                    alt={tPass('idPhoto')} 
-                    className="w-full h-64 object-contain rounded-lg border border-gray-300 bg-gray-50"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setIdPhotoUrl(null)}
-                    className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                  >
-                    <XCircle className="h-4 w-4" />
-                  </button>
-                </div>
-                <label className="block">
-                  <span className="sr-only">{tPass('changePhoto')}</span>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) handleFileUpload(file, 'id')
-                    }}
-                    className="hidden"
-                  />
-                  <span className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer">
-                    <Upload className="h-4 w-4 mr-2" />
-                    {tPass('changePhoto')}
-                  </span>
-                </label>
-              </div>
-            ) : (
-              <label className="block">
-                <span className="sr-only">{tPass('uploadIdPhoto')}</span>
-                <div className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-                  uploading 
-                    ? 'border-blue-400 bg-primary/5' 
-                    : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
-                }`}>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) handleFileUpload(file, 'id')
-                    }}
-                    className="hidden"
-                    disabled={uploading}
-                  />
-                  {uploading ? (
-                    <div className="space-y-2">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                      <p className="text-sm text-gray-600">{tPass('uploading')}</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <Upload className="h-10 w-10 text-gray-400 mx-auto" />
-                      <p className="text-sm text-gray-600">{tPass('uploadIdPhoto')}</p>
                       <p className="text-xs text-gray-400">{tPass('fileFormat')}</p>
                     </div>
                   )}
@@ -408,9 +321,9 @@ export default function PassUploadPage() {
             </div>
             <button
               onClick={handleSave}
-              disabled={!passPhotoUrl || !idPhotoUrl || saving}
+              disabled={!passPhotoUrl || saving}
               className={`px-6 py-3 rounded-lg font-medium transition-colors ${
-                passPhotoUrl && idPhotoUrl && !saving
+                passPhotoUrl && !saving
                   ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed'
               }`}
@@ -423,4 +336,3 @@ export default function PassUploadPage() {
     </div>
   )
 }
-

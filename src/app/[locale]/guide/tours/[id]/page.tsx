@@ -2490,7 +2490,16 @@ export default function GuideTourDetailPage() {
                 </svg>
               </button>
             </div>
-          <TourReportSection tourId={tour.id} productId={tour.product_id} />
+          <TourReportSection
+            tourId={tour.id}
+            productId={tour.product_id}
+            tourDate={tour.tour_date}
+            tourName={
+              locale === 'en'
+                ? product?.name_en || product?.name_ko || product?.name || ''
+                : product?.name_ko || product?.name_en || product?.name || ''
+            }
+          />
           </div>
           </AccordionSection>
         </div>
@@ -2527,7 +2536,7 @@ export default function GuideTourDetailPage() {
           role="presentation"
         >
           {/* 헤더·모바일 푸터 바깥 영역만 사용 / sm+: 카드형 */}
-          <div className="flex h-full max-h-full w-full max-w-none flex-col overflow-hidden bg-white sm:mx-auto sm:h-auto sm:max-h-[min(90vh,calc(100dvh-var(--header-height)-1.5rem))] sm:max-w-4xl sm:rounded-lg sm:shadow-xl">
+          <div className="flex h-full max-h-full w-full max-w-none flex-col overflow-hidden bg-white sm:mx-auto sm:h-[min(90vh,calc(100dvh-var(--header-height)-1.5rem))] sm:max-w-4xl sm:rounded-lg sm:shadow-xl">
             <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-3 py-3 sm:px-4 md:px-6 md:py-4">
               <h3 className="text-lg font-semibold text-gray-900">{t('addTourReport')}</h3>
               <button

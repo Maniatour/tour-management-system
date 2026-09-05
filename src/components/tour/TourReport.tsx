@@ -59,8 +59,8 @@ export const TourReport: React.FC<TourReportProps> = ({
                   type="button"
                   onClick={handleCreateReport}
                   className={`${chrome.iconButton} bg-primary text-primary-foreground hover:bg-primary/90`}
-                  title="작성"
-                  aria-label="작성"
+                  title={t('writeReport')}
+                  aria-label={t('writeReport')}
                 >
                   <Plus size={chrome.iconSize} />
                 </button>
@@ -68,8 +68,8 @@ export const TourReport: React.FC<TourReportProps> = ({
                   type="button"
                   onClick={handleViewReports}
                   className={`${chrome.iconButton} border border-gray-200 bg-white text-gray-600 hover:bg-gray-50`}
-                  title="목록"
-                  aria-label="목록"
+                  title={t('reportList')}
+                  aria-label={t('reportList')}
                 >
                   <Eye size={chrome.iconSize} />
                 </button>
@@ -82,7 +82,7 @@ export const TourReport: React.FC<TourReportProps> = ({
                   className={`inline-flex items-center gap-1 ${chrome.textActionButton} bg-primary text-primary-foreground hover:bg-primary/90`}
                 >
                   <Plus size={chrome.iconSize} />
-                  <span>작성</span>
+                  <span>{t('writeReport')}</span>
                 </button>
                 <button
                   type="button"
@@ -90,7 +90,7 @@ export const TourReport: React.FC<TourReportProps> = ({
                   className={`inline-flex items-center gap-1 ${chrome.textActionButton} border border-gray-200 bg-white text-gray-700 hover:bg-gray-50`}
                 >
                   <Eye size={chrome.iconSize} />
-                  <span>목록</span>
+                  <span>{t('reportList')}</span>
                 </button>
               </>
             )}

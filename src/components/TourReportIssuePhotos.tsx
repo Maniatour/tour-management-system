@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { fetchImageUploadApi } from '@/lib/uploadClient'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { isEnglishTourReportLocale } from '@/lib/tourReportExtras'
 
 const MAX_PHOTOS = 8
 
@@ -24,7 +25,7 @@ export default function TourReportIssuePhotos({
 }: TourReportIssuePhotosProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
-  const getText = (ko: string, en: string) => (locale === 'en' ? en : ko)
+  const getText = (ko: string, en: string) => (isEnglishTourReportLocale(locale) ? en : ko)
 
   const uploadFiles = async (files: FileList | File[]) => {
     const remaining = MAX_PHOTOS - urls.length

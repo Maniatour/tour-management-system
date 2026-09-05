@@ -1,4 +1,5 @@
 import { isSuperAdminEmail } from '@/lib/superAdmin'
+import { isEnglishTourReportLocale } from '@/lib/tourReportExtras'
 
 export type TourReportDrivingSegment = {
   id: string
@@ -30,10 +31,12 @@ export function displayDrivingSegmentLabel(
   segment: Pick<TourReportDrivingSegment, 'label_ko' | 'label_en'>,
   locale: string
 ): string {
-  if (locale === 'en') {
-    return (segment.label_en || segment.label_ko || '').trim()
+  const en = (segment.label_en || '').trim()
+  const ko = (segment.label_ko || '').trim()
+  if (isEnglishTourReportLocale(locale)) {
+    return en || ko
   }
-  return (segment.label_ko || segment.label_en || '').trim()
+  return ko || en
 }
 
 function normalizeDrivingLabel(value: string): string {
@@ -105,7 +108,7 @@ export function formatApproxDrivingDuration(minutes: number, locale: string): st
   const safe = Math.max(0, Math.round(minutes))
   const hours = Math.floor(safe / 60)
   const rest = safe % 60
-  if (locale === 'en') {
+  if (isEnglishTourReportLocale(locale)) {
     if (hours <= 0) return `approx. ${rest} min`
     if (rest === 0) return `approx. ${hours}h`
     return `approx. ${hours}h ${rest}m`

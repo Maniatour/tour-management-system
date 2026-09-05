@@ -8,6 +8,7 @@ import {
   type TourReportDrivingSegment,
 } from '@/lib/tourReportDrivingSegments'
 import type { DrivingSeat } from '@/lib/tourReportActivityDetails'
+import { isEnglishTourReportLocale } from '@/lib/tourReportExtras'
 
 export default function TourReportDrivingRoster({
   locale,
@@ -34,7 +35,7 @@ export default function TourReportDrivingRoster({
   unassignedIds: string[]
   onToggle: (segmentId: string, seat: 'me' | 'partner') => void
 }) {
-  const getText = (ko: string, en: string) => (locale === 'en' ? en : ko)
+  const getText = (ko: string, en: string) => (isEnglishTourReportLocale(locale) ? en : ko)
   const mineCount = segments.filter((seg) => assignment[seg.id] === 'me').length
   const partnerCount = segments.filter((seg) => assignment[seg.id] === 'partner').length
 
@@ -72,7 +73,7 @@ export default function TourReportDrivingRoster({
           )}
         </p>
       )}
-      <div className="overflow-hidden rounded-xl border border-border/80 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-border/80 bg-white">
         <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] border-b bg-muted/50 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:grid-cols-[minmax(0,1fr)_5.5rem_5.5rem] sm:text-xs">
           <div className="flex items-center gap-1.5 px-3 py-2">
             <Car className="h-3.5 w-3.5" />

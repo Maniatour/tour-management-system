@@ -1,5 +1,6 @@
 import type { CourseForMainStops } from '@/lib/tourReportMainStops'
 import { displayCourseName } from '@/lib/tourReportMainStops'
+import { isEnglishTourReportLocale } from '@/lib/tourReportExtras'
 import { normalizeTourReportEmail } from '@/lib/tourReportMissing'
 
 export type HorseshoeBendActivity = 'hiking' | 'parking_wait' | 'antelope_checkin'
@@ -101,19 +102,19 @@ export function sunrisePointKeyFromCourse(
 export function displayHorseshoeBendActivity(value: string, locale: string): string {
   const opt = HORSESHOE_BEND_ACTIVITIES.find((item) => item.value === value)
   if (!opt) return value
-  return locale === 'en' ? opt.en : opt.ko
+  return isEnglishTourReportLocale(locale) ? opt.en : opt.ko
 }
 
 export function displaySunrisePoint(key: string, locale: string): string {
   const opt = SUNRISE_POINTS.find((item) => item.key === key)
   if (!opt) return key
-  return locale === 'en' ? opt.en : opt.ko
+  return isEnglishTourReportLocale(locale) ? opt.en : opt.ko
 }
 
 export function displaySunriseActivity(value: string, locale: string): string {
   const opt = SUNRISE_ACTIVITIES.find((item) => item.value === value)
   if (!opt) return value
-  return locale === 'en' ? opt.en : opt.ko
+  return isEnglishTourReportLocale(locale) ? opt.en : opt.ko
 }
 
 function asStringArray(raw: unknown): string[] {

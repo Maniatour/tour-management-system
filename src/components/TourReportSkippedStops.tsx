@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import {
   SKIP_REASON_OPTIONS,
   displaySkipReasonLabel,
+  isEnglishTourReportLocale,
   type SkippedStopsMap,
 } from '@/lib/tourReportExtras'
 
@@ -31,7 +32,7 @@ export default function TourReportSkippedStops({
   skipped,
   onChange,
 }: TourReportSkippedStopsProps) {
-  const getText = (ko: string, en: string) => (locale === 'en' ? en : ko)
+  const getText = (ko: string, en: string) => (isEnglishTourReportLocale(locale) ? en : ko)
   const visited = new Set(visitedIds)
   const skippable = stops.filter((s) => !visited.has(s.id))
   const skippedIds = Object.keys(skipped).filter((id) => !visited.has(id))

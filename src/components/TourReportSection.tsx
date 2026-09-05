@@ -7,6 +7,8 @@ import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import { useLocale } from 'next-intl'
+import { isTourReportEditWindowClosed, tourReportText } from '@/lib/tourReportExtras'
+import { normalizeTourReportEmail } from '@/lib/tourReportMissing'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTourDetailSectionChrome } from '@/components/tour/TourDetailModalChromeContext'
 
@@ -88,20 +90,37 @@ export default function TourReportSection({
     setShowForm(false)
   }
 
-  const handleEditReport = (report: any) => {
-    if (!currentUserEmail || report?.user_email !== currentUserEmail) {
-      toast.error('본인이 작성한 리포트만 수정할 수 있습니다.')
+  const handleEditReport = async (report: any) => {
+    const myEmail = normalizeTourReportEmail(currentUserEmail)
+    const reportEmail = normalizeTourReportEmail(report?.user_email)
+    if (!myEmail || reportEmail !== myEmail) {
+      toast.error(
+        tourReportText(locale, '본인이 작성한 리포트만 수정할 수 있습니다.', 'You can only edit your own report.')
+      )
       return
     }
-    if (!tourDate) {
-      toast.error('투어 날짜 정보를 찾을 수 없어 수정할 수 없습니다.')
-      return
+
+    let resolvedDate =
+      tourDate ||
+      report?.tours?.tour_date ||
+      null
+    if (!resolvedDate && tourId) {
+      const { data } = await supabase
+        .from('tours')
+        .select('tour_date')
+        .eq('id', tourId)
+        .maybeSingle()
+      resolvedDate = data?.tour_date ?? null
     }
-    const endOfNextDay = new Date(tourDate)
-    endOfNextDay.setDate(endOfNextDay.getDate() + 2)
-    endOfNextDay.setHours(0, 0, 0, 0)
-    if (new Date() >= endOfNextDay) {
-      toast.error('리포트 수정은 투어 다음날까지만 가능합니다.')
+
+    if (isTourReportEditWindowClosed(resolvedDate)) {
+      toast.error(
+        tourReportText(
+          locale,
+          '리포트 수정은 투어 다음날까지만 가능합니다.',
+          'Reports can only be edited until the day after the tour.'
+        )
+      )
       return
     }
 
@@ -123,7 +142,7 @@ export default function TourReportSection({
               <h3 className="text-lg font-semibold text-gray-900">{t('writeReport')}</h3>
               {tourName && tourDate && (
                 <p className="text-sm text-gray-600">
-                  {tourName} - {new Date(tourDate).toLocaleDateString('ko-KR')}
+                  {tourName} - {new Date(tourDate).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}
                 </p>
               )}
             </div>

@@ -1,3 +1,5 @@
+import { isEnglishTourReportLocale } from '@/lib/tourReportExtras'
+
 export type TourReportNarrationSkip = {
   narration_not_played?: boolean | null
   narration_explained_in_person?: boolean | null
@@ -53,7 +55,7 @@ export function narrationSkipSummary(
 ): { title: string; detail: string | null } | null {
   const skip = parseNarrationSkip(data)
   if (!skip.narration_not_played) return null
-  const isEn = locale === 'en'
+  const isEn = isEnglishTourReportLocale(locale)
   if (skip.narration_explained_in_person) {
     return {
       title: isEn

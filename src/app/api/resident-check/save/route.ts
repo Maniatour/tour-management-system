@@ -92,7 +92,10 @@ export async function POST(request: NextRequest) {
       has_annual_pass = null
     }
 
-    if (residencyInput === 'us_resident') {
+    if (
+      residencyInput === 'us_resident' ||
+      (residencyInput === 'non_resident' && has_annual_pass === true)
+    ) {
       payment_method = null
     }
 

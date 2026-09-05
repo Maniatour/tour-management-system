@@ -1,4 +1,4 @@
-import { todayInLasVegas } from '@/lib/dailyReport/dateUtils'
+import { todayInLasVegas, toLasVegasDateKey, tomorrowInLasVegas } from '@/lib/dailyReport/dateUtils'
 
 export type SkippedStopEntry = {
   reason: string
@@ -29,16 +29,158 @@ export const SKIP_REASON_OPTIONS = [
   { value: 'other', ko: '기타', en: 'Other' },
 ] as const
 
+export function isEnglishTourReportLocale(locale: string): boolean {
+  return locale === 'en' || locale.startsWith('en')
+}
+
+export function tourReportText(locale: string, ko: string, en: string): string {
+  return isEnglishTourReportLocale(locale) ? en : ko
+}
+
+export const TOUR_REPORT_WEATHER_OPTIONS = [
+  { value: 'sunny', icon: '☀️', ko: '맑음', en: 'Sunny' },
+  { value: 'cloudy', icon: '☁️', ko: '흐림', en: 'Cloudy' },
+  { value: 'rainy', icon: '🌧️', ko: '비', en: 'Rainy' },
+  { value: 'snowy', icon: '❄️', ko: '눈', en: 'Snowy' },
+  { value: 'windy', icon: '💨', ko: '바람', en: 'Windy' },
+  { value: 'foggy', icon: '🌫️', ko: '안개', en: 'Foggy' },
+] as const
+
+export const TOUR_REPORT_MOOD_OPTIONS = [
+  { value: 'excellent', icon: '😊', ko: '가장 좋음', en: 'Excellent', aliases: ['매우 좋음'] },
+  { value: 'good', icon: '🙂', ko: '전반적 만족', en: 'Good', aliases: ['좋음'] },
+  { value: 'average', icon: '😐', ko: '보통', en: 'Average' },
+  { value: 'poor', icon: '😞', ko: '매우 불만', en: 'Poor', aliases: ['나쁨'] },
+  { value: 'terrible', icon: '😢', ko: '가이드 불만', en: 'Terrible', aliases: ['매우 나쁨'] },
+] as const
+
+export const TOUR_REPORT_RATING_OPTIONS = [
+  { value: 'excellent', icon: '⭐⭐⭐', ko: '우수', en: 'Excellent', aliases: ['매우 좋음'] },
+  { value: 'good', icon: '⭐⭐', ko: '좋음', en: 'Good' },
+  { value: 'average', icon: '⭐', ko: '보통', en: 'Average' },
+  { value: 'poor', icon: '👎', ko: '나쁨', en: 'Poor' },
+] as const
+
+export const TOUR_REPORT_INCIDENT_OPTIONS = [
+  { ko: '교통 지연', en: 'Traffic Delay' },
+  { ko: '날씨 문제', en: 'Weather Issue' },
+  { ko: '차량 고장', en: 'Vehicle Breakdown' },
+  { ko: '건강 문제', en: 'Health Issue' },
+  { ko: '사고', en: 'Accident' },
+  { ko: '예약 오류', en: 'Booking Error' },
+  { ko: '가이드 지연', en: 'Guide Delay' },
+  { ko: '고객 불만', en: 'Customer Complaint' },
+  { ko: '기타', en: 'Other' },
+] as const
+
+export const TOUR_REPORT_LOST_DAMAGE_OPTIONS = [
+  { ko: '분실물 없음', en: 'No Lost Items' },
+  { ko: '가방 분실', en: 'Bag Lost' },
+  { ko: '휴대폰 분실', en: 'Phone Lost' },
+  { ko: '카메라 분실', en: 'Camera Lost' },
+  { ko: '차량 손상', en: 'Vehicle Damage' },
+  { ko: '시설 손상', en: 'Facility Damage' },
+  { ko: '기타 손상', en: 'Other Damage' },
+] as const
+
+type CodedLabelOption = {
+  value: string
+  icon: string
+  ko: string
+  en: string
+  aliases?: readonly string[]
+}
+
+function findCodedLabelOption(
+  options: readonly CodedLabelOption[],
+  value: string
+): CodedLabelOption | undefined {
+  const needle = value.trim()
+  if (!needle) return undefined
+  const lower = needle.toLowerCase()
+  return options.find(
+    (option) =>
+      option.value === lower ||
+      option.ko === needle ||
+      option.en.toLowerCase() === lower ||
+      option.aliases?.some((alias) => alias === needle || alias.toLowerCase() === lower)
+  )
+}
+
+export function displayWeatherOption(
+  value: string | null | undefined,
+  locale: string
+): { icon: string; label: string } | null {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+  const option = findCodedLabelOption(TOUR_REPORT_WEATHER_OPTIONS, raw)
+  if (!option) return { icon: '', label: raw }
+  return {
+    icon: option.icon,
+    label: tourReportText(locale, option.ko, option.en),
+  }
+}
+
+export function displayMoodOption(
+  value: string | null | undefined,
+  locale: string
+): { icon: string; label: string } | null {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+  const option = findCodedLabelOption(TOUR_REPORT_MOOD_OPTIONS, raw)
+  if (!option) return { icon: '', label: raw }
+  return {
+    icon: option.icon,
+    label: tourReportText(locale, option.ko, option.en),
+  }
+}
+
+export function displayRatingOption(
+  value: string | null | undefined,
+  locale: string
+): { icon: string; label: string } | null {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+  const option = findCodedLabelOption(TOUR_REPORT_RATING_OPTIONS, raw)
+  if (!option) return { icon: '', label: raw }
+  return {
+    icon: option.icon,
+    label: tourReportText(locale, option.ko, option.en),
+  }
+}
+
+function displayStoredBilingualValue(
+  options: readonly { ko: string; en: string }[],
+  value: string,
+  locale: string
+): string {
+  const option = options.find((item) => item.ko === value || item.en === value)
+  if (!option) return value
+  return tourReportText(locale, option.ko, option.en)
+}
+
+export function displayIncidentLabel(value: string, locale: string): string {
+  return displayStoredBilingualValue(TOUR_REPORT_INCIDENT_OPTIONS, value, locale)
+}
+
+export function displayLostDamageLabel(value: string, locale: string): string {
+  return displayStoredBilingualValue(TOUR_REPORT_LOST_DAMAGE_OPTIONS, value, locale)
+}
+
 export function displayVehicleConditionLabel(value: string, locale: string): string {
-  const opt = VEHICLE_CONDITION_OPTIONS.find((o) => o.value === value)
+  const opt = VEHICLE_CONDITION_OPTIONS.find(
+    (o) => o.value === value || o.ko === value || o.en === value
+  )
   if (!opt) return value
-  return locale === 'en' ? opt.en : opt.ko
+  return tourReportText(locale, opt.ko, opt.en)
 }
 
 export function displaySkipReasonLabel(value: string, locale: string): string {
-  const opt = SKIP_REASON_OPTIONS.find((o) => o.value === value)
+  const opt = SKIP_REASON_OPTIONS.find(
+    (o) => o.value === value || o.ko === value || o.en === value
+  )
   if (!opt) return value
-  return locale === 'en' ? opt.en : opt.ko
+  return tourReportText(locale, opt.ko, opt.en)
 }
 
 export function parseSkippedStops(raw: unknown): SkippedStopsMap {
@@ -91,6 +233,13 @@ export function tourReportRequiredDateRange(): { from: string; to: string } | nu
   return { from: TOUR_REPORT_REQUIRED_FROM, to }
 }
 
+/** 투어일 + 다음날(라스베이거스)까지 수정 가능. 날짜를 파싱못하면 막지 않음. */
+export function isTourReportEditWindowClosed(tourDate: string | null | undefined): boolean {
+  const key = toLasVegasDateKey(tourDate)
+  if (!key) return false
+  return todayInLasVegas() > tomorrowInLasVegas(key)
+}
+
 /** 손글씨 PNG(data URL) 또는 업로드된 이미지 URL. 예전 텍스트 이름 서명과 구분. */
 export function isTourReportSignatureImage(value: string | null | undefined): boolean {
   if (!value) return false
@@ -102,7 +251,7 @@ export const TOUR_REPORT_NO_LOST_KO = '분실물 없음'
 export const TOUR_REPORT_NO_LOST_EN = 'No Lost Items'
 
 export function tourReportNoLostItemsLabel(locale: string): string {
-  return locale === 'en' ? TOUR_REPORT_NO_LOST_EN : TOUR_REPORT_NO_LOST_KO
+  return tourReportText(locale, TOUR_REPORT_NO_LOST_KO, TOUR_REPORT_NO_LOST_EN)
 }
 
 export function isTourReportNoLostItemsValue(value: string): boolean {

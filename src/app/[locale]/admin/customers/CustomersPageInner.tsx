@@ -1144,8 +1144,8 @@ export default function AdminCustomers() {
     }
   }, [customers, refetchCustomers])
 
-  // 패스 및 ID 사진 업로드 완료 후 상태 업데이트
-  const handlePassUploadComplete = async (passPhotoUrl: string | null, idPhotoUrl: string | null) => {
+  // 패스 사진 업로드 완료 후 상태 업데이트
+  const handlePassUploadComplete = async (passPhotoUrl: string | null) => {
     if (!selectedCustomerForPassUpload) return
 
     try {
@@ -1153,8 +1153,7 @@ export default function AdminCustomers() {
         .from('customers') as any)
         .update({ 
           resident_status: 'non_resident_with_pass',
-          pass_photo_url: passPhotoUrl,
-          id_photo_url: idPhotoUrl
+          pass_photo_url: passPhotoUrl
         })
         .eq('id', selectedCustomerForPassUpload.id)
       const { error } = await query
@@ -2295,7 +2294,7 @@ export default function AdminCustomers() {
   )
 }
 
-// 패스 및 ID 사진 업로드 모달 컴포넌트
+// 패스 사진 업로드 모달 컴포넌트
 function PassUploadModal({
   customer,
   onClose,
@@ -2303,13 +2302,12 @@ function PassUploadModal({
 }: {
   customer: Customer
   onClose: () => void
-  onComplete: (passPhotoUrl: string | null, idPhotoUrl: string | null) => void
+  onComplete: (passPhotoUrl: string | null) => void
 }) {
   const [passPhotoUrl, setPassPhotoUrl] = useState<string | null>(customer.pass_photo_url || null)
-  const [idPhotoUrl, setIdPhotoUrl] = useState<string | null>(customer.id_photo_url || null)
 
   const handleSave = () => {
-    onComplete(passPhotoUrl, idPhotoUrl)
+    onComplete(passPhotoUrl)
   }
 
   return (
@@ -2318,10 +2316,10 @@ function PassUploadModal({
         <div className="flex justify-between items-center mb-4">
           <div>
             <h2 className="text-xl font-bold">
-              {customer.name}님의 패스 및 ID 사진 업로드
+              {customer.name}님의 패스 사진 업로드
             </h2>
             <p className="text-sm text-gray-500 mt-1">
-              비거주자 (패스 보유) 상태로 설정하려면 패스 사진과 ID 사진을 업로드해주세요.
+              비거주자 (패스 보유) 상태로 설정하려면 이미 구매한 비거주자용 America the Beautiful 패스 사진을 올려 주세요. 신분증은 필요하지 않습니다.
             </p>
           </div>
           <button
@@ -2332,7 +2330,7 @@ function PassUploadModal({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6">
           {/* 패스 사진 업로드 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -2363,37 +2361,6 @@ function PassUploadModal({
               )}
             </div>
           </div>
-          
-          {/* ID 사진 업로드 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              ID 사진 (이름 대조용) *
-            </label>
-            <div className="space-y-2">
-              {idPhotoUrl ? (
-                <div className="relative">
-                  <img 
-                    src={idPhotoUrl} 
-                    alt="ID 사진" 
-                    className="w-full h-64 object-cover rounded-lg border border-gray-300"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setIdPhotoUrl(null)}
-                    className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                  >
-                    <XCircle className="h-4 w-4" />
-                  </button>
-                </div>
-              ) : (
-                <FileUploadInput
-                  label="ID 사진 업로드"
-                  onUpload={(url) => setIdPhotoUrl(url)}
-                  folder="customer-documents"
-                />
-              )}
-            </div>
-          </div>
         </div>
 
         <div className="flex justify-end space-x-3 mt-6 pt-4 border-t border-gray-200">
@@ -2405,9 +2372,9 @@ function PassUploadModal({
           </button>
           <button
             onClick={handleSave}
-            disabled={!passPhotoUrl || !idPhotoUrl}
+            disabled={!passPhotoUrl}
             className={`px-4 py-2 text-white rounded-lg transition-colors ${
-              passPhotoUrl && idPhotoUrl
+              passPhotoUrl
                 ? 'bg-primary hover:bg-primary/90'
                 : 'bg-gray-300 cursor-not-allowed'
             }`}

@@ -657,7 +657,6 @@ export default function CustomerProfile() {
                 <h3 className="font-semibold text-foreground mb-2 text-sm">{tPass('uploadGuide')}</h3>
                 <ul className="text-xs text-primary space-y-1 list-disc list-inside">
                   <li>{tPass('passPhoto')}: {tPass('passPhotoDesc')}</li>
-                  <li>{tPass('idPhoto')}: {tPass('idPhotoDesc')}</li>
                   <li>{tPass('fileFormat')}</li>
                 </ul>
               </div>
@@ -678,7 +677,7 @@ export default function CustomerProfile() {
           </div>
 
           {/* 업로드 섹션 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6">
             {/* 패스 사진 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -744,78 +743,6 @@ export default function CustomerProfile() {
                       <div className="flex flex-col items-center space-y-2">
                         <Upload className="h-8 w-8 text-gray-400" />
                         <span className="text-sm text-gray-600">{tPass('uploadPassPhoto')}</span>
-                      </div>
-                    )}
-                  </div>
-                </label>
-              )}
-            </div>
-
-            {/* ID 사진 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                {tPass('idPhotoLabel')}
-              </label>
-              {idPhotoUrl ? (
-                <div className="space-y-3">
-                  <div className="relative">
-                    <img 
-                      src={idPhotoUrl} 
-                      alt={tPass('idPhoto')} 
-                      className="w-full h-64 object-contain rounded-lg border border-gray-300 bg-gray-50"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleDeletePhoto('id', idPhotoUrl)}
-                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                    >
-                      <XCircle className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <label className="block">
-                    <span className="sr-only">{tPass('changePhoto')}</span>
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0]
-                        if (file) handleFileUpload(file, 'id')
-                      }}
-                      className="hidden"
-                      disabled={uploading}
-                    />
-                    <span className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-                      <Upload className="h-4 w-4 mr-2" />
-                      {tPass('changePhoto')}
-                    </span>
-                  </label>
-                </div>
-              ) : (
-                <label className="block">
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) handleFileUpload(file, 'id')
-                    }}
-                    className="hidden"
-                    disabled={uploading}
-                  />
-                  <div className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
-                    uploading 
-                      ? 'border-blue-400 bg-primary/5' 
-                      : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
-                  }`}>
-                    {uploading ? (
-                      <div className="flex flex-col items-center space-y-2">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                        <span className="text-sm text-gray-600">{tPass('uploading')}</span>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center space-y-2">
-                        <Upload className="h-8 w-8 text-gray-400" />
-                        <span className="text-sm text-gray-600">{tPass('uploadIdPhoto')}</span>
                       </div>
                     )}
                   </div>

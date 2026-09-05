@@ -46,11 +46,17 @@ import {
 import { normalizeTourReportEmail } from '@/lib/tourReportMissing'
 import {
   VEHICLE_CONDITION_OPTIONS,
+  TOUR_REPORT_WEATHER_OPTIONS,
+  TOUR_REPORT_MOOD_OPTIONS,
+  TOUR_REPORT_RATING_OPTIONS,
+  TOUR_REPORT_INCIDENT_OPTIONS,
+  TOUR_REPORT_LOST_DAMAGE_OPTIONS,
   parseIssuePhotoUrls,
   parseSkippedStops,
   skippedStopsToSubstitutionNotes,
   isTourReportSignatureImage,
   inferTourReportHasIssues,
+  isEnglishTourReportLocale,
   tourReportNoLostItemsLabel,
   type SkippedStopsMap,
 } from '@/lib/tourReportExtras'
@@ -77,6 +83,7 @@ import {
   expandManyDbKeyCandidates,
   hasChildInMap,
   isTourPointCategory,
+  navajoPointMainStopCourse,
   resolveCanonicalCourseIds,
   sortMainStopsIndented,
   type CourseForMainStops,
@@ -127,52 +134,6 @@ interface TourReportData {
   narration_skip_reason: string | null
 }
 
-const WEATHER_OPTIONS = [
-  { value: 'sunny', icon: '☀️', ko: '맑음', en: 'Sunny' },
-  { value: 'cloudy', icon: '☁️', ko: '흐림', en: 'Cloudy' },
-  { value: 'rainy', icon: '🌧️', ko: '비', en: 'Rainy' },
-  { value: 'snowy', icon: '❄️', ko: '눈', en: 'Snowy' },
-  { value: 'windy', icon: '💨', ko: '바람', en: 'Windy' },
-  { value: 'foggy', icon: '🌫️', ko: '안개', en: 'Foggy' }
-]
-
-const MOOD_OPTIONS = [
-  { value: 'excellent', icon: '😊', ko: '가장 좋음', en: 'Excellent' },
-  { value: 'good', icon: '🙂', ko: '전반적 만족', en: 'Good' },
-  { value: 'average', icon: '😐', ko: '보통', en: 'Average' },
-  { value: 'poor', icon: '😞', ko: '매우 불만', en: 'Poor' },
-  { value: 'terrible', icon: '😢', ko: '가이드 불만', en: 'Terrible' }
-]
-
-const RATING_OPTIONS = [
-  { value: 'excellent', icon: '⭐⭐⭐', ko: '우수', en: 'Excellent' },
-  { value: 'good', icon: '⭐⭐', ko: '좋음', en: 'Good' },
-  { value: 'average', icon: '⭐', ko: '보통', en: 'Average' },
-  { value: 'poor', icon: '👎', ko: '나쁨', en: 'Poor' }
-]
-
-const INCIDENTS_OPTIONS = [
-  { ko: '교통 지연', en: 'Traffic Delay' },
-  { ko: '날씨 문제', en: 'Weather Issue' },
-  { ko: '차량 고장', en: 'Vehicle Breakdown' },
-  { ko: '건강 문제', en: 'Health Issue' },
-  { ko: '사고', en: 'Accident' },
-  { ko: '예약 오류', en: 'Booking Error' },
-  { ko: '가이드 지연', en: 'Guide Delay' },
-  { ko: '고객 불만', en: 'Customer Complaint' },
-  { ko: '기타', en: 'Other' }
-]
-
-const LOST_DAMAGE_OPTIONS = [
-  { ko: '분실물 없음', en: 'No Lost Items' },
-  { ko: '가방 분실', en: 'Bag Lost' },
-  { ko: '휴대폰 분실', en: 'Phone Lost' },
-  { ko: '카메라 분실', en: 'Camera Lost' },
-  { ko: '차량 손상', en: 'Vehicle Damage' },
-  { ko: '시설 손상', en: 'Facility Damage' },
-  { ko: '기타 손상', en: 'Other Damage' }
-]
-
 const MOBILE_BREAKPOINT = '(max-width: 1023px)'
 
 function reservationPeopleCount(row: {
@@ -201,7 +162,7 @@ export default function TourReportForm({
   const { user } = useAuth()
   
   // 번역 함수 - locale prop을 사용하여 언어 결정
-  const getText = (ko: string, en: string) => locale === 'en' ? en : ko
+  const getText = (ko: string, en: string) => (isEnglishTourReportLocale(locale) ? en : ko)
   
   // 번역 함수들을 정의
   const t = {
@@ -265,8 +226,18 @@ export default function TourReportForm({
       horseshoeOptions: getText('홀스슈밴드에서 한 일', 'What you did at Horseshoe Bend'),
       sunriseTitle: getText('일출 포인트', 'Sunrise viewpoint'),
       sunriseHint: getText(
-        '오늘 일출을 본 포인트와, 차량 대기인지 사진 촬영인지 선택해 주세요.',
-        'Choose the sunrise viewpoint and whether you waited in the vehicle or took photos.'
+        '일출을 본 포인트와, 그 포인트에서 한 일을 각각 선택해 주세요.',
+        'Choose the sunrise viewpoint, then what you did there.'
+      ),
+      sunrisePointLabel: getText('1. 일출을 본 포인트', '1. Viewpoint'),
+      sunrisePointHint: getText(
+        '오늘 일출을 본 포인트를 선택하세요.',
+        'Select where you watched sunrise.'
+      ),
+      sunriseActivityLabel: getText('2. 그 포인트에서 한 일', '2. What you did there'),
+      sunriseActivityHint: getText(
+        '차량 대기인지 사진 촬영인지 선택하세요.',
+        'Choose waiting in the vehicle or taking photos.'
       ),
       drivingLoading: getText('운전 구간 불러오는 중…', 'Loading driving segments…'),
       drivingEmpty: getText('등록된 운전 구간이 없습니다.', 'No driving segments are set up yet.'),
@@ -312,7 +283,7 @@ export default function TourReportForm({
       next: getText('다음', 'Next'),
       prev: getText('이전', 'Back'),
       stepOf: (n: number, total: number) =>
-        locale === 'en' ? `Step ${n} of ${total}` : `${n}/${total} 단계`
+        isEnglishTourReportLocale(locale) ? `Step ${n} of ${total}` : `${n}/${total} 단계`
     },
     stepTitles: [
       getText('기본 정보', 'Basics'),
@@ -346,6 +317,14 @@ export default function TourReportForm({
       sunriseRequired: getText(
         '밤도깨비 투어는 일출 포인트와 차량 대기/사진 촬영을 선택해 주세요.',
         'For goblin tours, choose the sunrise viewpoint and vehicle wait or photography.'
+      ),
+      sunrisePointRequired: getText(
+        '일출을 본 포인트를 선택해 주세요.',
+        'Please select the sunrise viewpoint.'
+      ),
+      sunriseActivityRequired: getText(
+        '일출 포인트에서 한 일을 선택해 주세요.',
+        'Please select what you did at sunrise.'
       ),
       drivingGapsRequired: getText(
         '드라이빙 구간을 빠짐없이 자신 또는 파트너에게 나눠 주세요.',
@@ -405,6 +384,8 @@ export default function TourReportForm({
   )
   const signatureDataUrlRef = useRef('')
   const [signatureEmpty, setSignatureEmpty] = useState(true)
+  const [stepErrors, setStepErrors] = useState<string[]>([])
+  const scrollBodyRef = useRef<HTMLDivElement>(null)
 
   const handleSignaturePadChange = useCallback((empty: boolean, dataUrl: string) => {
     signatureDataUrlRef.current = dataUrl
@@ -1097,7 +1078,7 @@ export default function TourReportForm({
           setMainStopOptions([])
           setCourseById(new Map())
           toast.error(
-            locale === 'en' ? 'Could not load tour course stops.' : '투어 코스(방문지)를 불러오지 못했습니다.'
+            getText('투어 코스(방문지)를 불러오지 못했습니다.', 'Could not load tour course stops.')
           )
         }
       } finally {
@@ -1111,9 +1092,28 @@ export default function TourReportForm({
     }
   }, [tourId, productIdProp, locale])
 
+  const resolvedMainStops = useMemo(() => {
+    if (
+      !isGoblinTour ||
+      mainStopOptions.some((row) => sunrisePointKeyFromCourse(row.course) === 'navajo')
+    ) {
+      return { options: mainStopOptions, byId: courseById }
+    }
+    const extra = navajoPointMainStopCourse()
+    const byId = new Map(courseById)
+    byId.set(extra.id, extra)
+    return {
+      options: [
+        ...mainStopOptions,
+        { id: extra.id, course: extra, sort_order: extra.sort_order ?? 10_000 },
+      ],
+      byId,
+    }
+  }, [isGoblinTour, mainStopOptions, courseById])
+
   useEffect(() => {
-    if (mainStopOptions.length === 0) return
-    const allowed = new Set(mainStopOptions.map((o) => o.id))
+    if (resolvedMainStops.options.length === 0) return
+    const allowed = new Set(resolvedMainStops.options.map((o) => o.id))
     setFormData((prev) => {
       const nextStops = prev.main_stops_visited.filter((id) => allowed.has(id))
       const nextSkipped: SkippedStopsMap = {}
@@ -1125,7 +1125,7 @@ export default function TourReportForm({
       if (stopsSame && skipSame) return prev
       return { ...prev, main_stops_visited: nextStops, skipped_stops: nextSkipped }
     })
-  }, [mainStopOptions])
+  }, [resolvedMainStops])
 
   const totalSteps = reportPace === 'all_clear' ? 3 : 4
   const visibleStepTitles = reportPace === 'all_clear' ? t.stepTitlesAllClear : t.stepTitles
@@ -1259,11 +1259,62 @@ export default function TourReportForm({
   }
 
   const mainStopsIndented = useMemo(
-    () => sortMainStopsIndented(courseById, mainStopOptions),
-    [courseById, mainStopOptions]
+    () => sortMainStopsIndented(resolvedMainStops.byId, resolvedMainStops.options),
+    [resolvedMainStops]
   )
 
   const hasSignature = !signatureEmpty || Boolean(formData.sign?.trim())
+
+  const horseshoeIds = useMemo(
+    () => resolvedMainStops.options.filter((row) => isHorseshoeBendCourse(row.course)).map((row) => row.id),
+    [resolvedMainStops]
+  )
+
+  const getMissingForWizardStep = (stepIndex: number): string[] => {
+    const missing: string[] = []
+    const signStep = totalSteps - 1
+    if (stepIndex === 0 && reportPace === 'all_clear' && !formData.weather) {
+      missing.push(t.messages.weatherRequired)
+    }
+    if (stepIndex === 1) {
+      const visitedHorseshoe = horseshoeIds.filter((id) => formData.main_stops_visited.includes(id))
+      if (visitedHorseshoe.some((id) => !horseshoeBend[id])) {
+        missing.push(t.messages.horseshoeRequired)
+      }
+      if (isGoblinTour && !sunrisePointKey) missing.push(t.messages.sunrisePointRequired)
+      if (isGoblinTour && !sunriseActivity) missing.push(t.messages.sunriseActivityRequired)
+      if (drivingUnassignedIds.length > 0) missing.push(t.messages.drivingGapsRequired)
+    }
+    if (stepIndex === signStep) {
+      if (!hasSignature) missing.push(t.messages.signatureRequired)
+      if (narrationSkipNeedsDetails(formData)) missing.push(t.messages.narrationSkipRequired)
+    }
+    return missing
+  }
+
+  const showStepErrors = (missing: string[]) => {
+    setStepErrors(missing)
+    toast.error(missing[0])
+    requestAnimationFrame(() => {
+      const target = scrollBodyRef.current?.querySelector('[data-missing="true"]')
+      if (target instanceof HTMLElement) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        return
+      }
+      scrollBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    })
+  }
+
+  const goToNextStep = () => {
+    const missing = getMissingForWizardStep(mobileStep)
+    if (missing.length > 0) {
+      showStepErrors(missing)
+      return
+    }
+    setStepErrors([])
+    setMobileStep((s) => Math.min(totalSteps - 1, s + 1))
+    scrollBodyRef.current?.scrollTo({ top: 0 })
+  }
 
   const submitReport = async () => {
     if (!user?.email) {
@@ -1300,10 +1351,8 @@ export default function TourReportForm({
         }
       }
 
-      const horseshoeIds = mainStopOptions
-        .filter((row) => isHorseshoeBendCourse(row.course))
-        .map((row) => row.id)
-      const visitedHorseshoe = horseshoeIds.filter((id) => formData.main_stops_visited.includes(id))
+      const horseshoeIdsForSave = horseshoeIds
+      const visitedHorseshoe = horseshoeIdsForSave.filter((id) => formData.main_stops_visited.includes(id))
       if (visitedHorseshoe.some((id) => !horseshoeBend[id])) {
         toast.error(t.messages.horseshoeRequired)
         if (useMobileWizard) setMobileStep(1)
@@ -1342,7 +1391,7 @@ export default function TourReportForm({
           pointKey: sunrisePointKey,
           courseId: sunriseCourseIdForKey(
             sunrisePointKey,
-            mainStopOptions.map((row) => row.course)
+            resolvedMainStops.options.map((row) => row.course)
           ),
           activity: sunriseActivity,
         }
@@ -1472,13 +1521,28 @@ export default function TourReportForm({
               </div>
             )}
             <div
+              ref={scrollBodyRef}
               className={cn(
                 useMobileWizard && variant === 'modal' ? blockYModal : blockY,
                 useMobileWizard &&
-                  'min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain'
+                  'min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y pb-8 [-webkit-overflow-scrolling:touch]'
               )}
             >
-            <div className={cn(useMobileWizard && mobileStep !== 0 && 'hidden')}>
+            {stepErrors.length > 0 && (
+              <div
+                role="alert"
+                className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800"
+              >
+                <p className="font-medium">{getText('이 단계에서 빠뜨린 항목이 있습니다.', 'This step still has missing items.')}</p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {stepErrors.map((err) => (
+                    <li key={err}>{err}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className={cn(!mobileStepVisible(0) && 'hidden', 'divide-y divide-gray-200')}>
+            <div className="space-y-3 py-5 first:pt-1">
               <TourReportPaceToggle
                 value={reportPace}
                 onChange={setReportPace}
@@ -1487,7 +1551,7 @@ export default function TourReportForm({
             </div>
 
             {/* Step 0 — 기본 정보 */}
-            <div className={cn(!mobileStepVisible(0) && 'hidden', blockY)}>
+            <div className="space-y-3 py-5">
             <div className={cn('grid grid-cols-1', isRentalVehicle ? 'md:grid-cols-2' : 'md:grid-cols-3', gridBasic)}>
               {!isRentalVehicle && (
               <div className={fieldY}>
@@ -1543,34 +1607,41 @@ export default function TourReportForm({
                 )}
               </div>
             </div>
+            </div>
 
             {/* 날씨 */}
-            <div className={fieldY}>
+            <div
+              className="space-y-3 py-5"
+              data-missing={reportPace === 'all_clear' && !formData.weather && stepErrors.length > 0 ? 'true' : undefined}
+            >
               <Label className={cn('flex items-center gap-2', labelMb)}>
                 <Cloud className="h-4 w-4 shrink-0" />
                 {t.fields.weather}
               </Label>
               <div className={cn('grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6', chipGap)}>
-                {WEATHER_OPTIONS.map((option) => (
+                {TOUR_REPORT_WEATHER_OPTIONS.map((option) => (
                   <Button
                     key={option.value}
                     type="button"
                     variant={formData.weather === option.value ? "default" : "outline"}
                     size="sm"
-                    onClick={() => handleInputChange('weather', option.value)}
+                    onClick={() => {
+                      handleInputChange('weather', option.value)
+                      setStepErrors((prev) => prev.filter((err) => err !== t.messages.weatherRequired))
+                    }}
                     className="flex min-h-[42px] items-center gap-1.5 px-2 text-xs md:min-h-0 md:text-sm"
                   >
                     <span className="text-base">{option.icon}</span>
-                    <span className="truncate">{locale === 'en' ? option.en : option.ko}</span>
+                    <span className="truncate">{getText(option.ko, option.en)}</span>
                   </Button>
                 ))}
               </div>
-            </div>
             {isCompanyVehicle && reportPace === 'all_clear' && (
               <p className="text-sm text-muted-foreground">{t.fields.allClearVehicle}</p>
             )}
+            </div>
             {isCompanyVehicle && reportPace === 'has_issues' && (
-              <div className={fieldY}>
+              <div className="space-y-3 py-5">
                 <Label className={cn('flex items-center gap-2', labelMb)}>
                   <Wrench className="h-4 w-4 shrink-0" />
                   {t.fields.vehicleCondition}
@@ -1588,7 +1659,7 @@ export default function TourReportForm({
                         onClick={() => toggleVehicleCondition(option.value)}
                         className="flex min-h-[42px] items-center justify-start px-2 text-xs md:min-h-0 md:text-sm"
                       >
-                        {locale === 'en' ? option.en : option.ko}
+                        {getText(option.ko, option.en)}
                       </Button>
                     )
                   })}
@@ -1606,14 +1677,23 @@ export default function TourReportForm({
             </div>
 
             {/* Step 1 — 방문·활동·분위기 */}
-            <div className={cn(!mobileStepVisible(1) && 'hidden', blockY)}>
-            <div className={fieldY}>
+            <div className={cn(!mobileStepVisible(1) && 'hidden', 'divide-y divide-gray-200 border-t border-gray-200')}>
+            <div
+              className="space-y-3 py-5 first:pt-1"
+              data-missing={
+                horseshoeIds.some(
+                  (id) => formData.main_stops_visited.includes(id) && !horseshoeBend[id]
+                ) && stepErrors.length > 0
+                  ? 'true'
+                  : undefined
+              }
+            >
               <Label className={cn('flex items-center gap-2', labelMb)}>
                 <MapPin className="h-4 w-4 shrink-0" />
                 {t.fields.mainStopsVisited}
               </Label>
               <p className="text-sm text-muted-foreground">{t.fields.mainStopsHint}</p>
-              {reportPace === 'all_clear' && mainStopOptions.length > 0 && (
+              {reportPace === 'all_clear' && resolvedMainStops.options.length > 0 && (
                 <Button
                   type="button"
                   variant="secondary"
@@ -1621,7 +1701,7 @@ export default function TourReportForm({
                   onClick={() =>
                     setFormData((prev) => ({
                       ...prev,
-                      main_stops_visited: mainStopOptions.map((o) => o.id),
+                      main_stops_visited: resolvedMainStops.options.map((o) => o.id),
                       skipped_stops: {},
                     }))
                   }
@@ -1631,7 +1711,7 @@ export default function TourReportForm({
               )}
               {mainStopsLoading ? (
                 <p className="text-sm text-gray-500">{t.fields.mainStopsLoading}</p>
-              ) : mainStopOptions.length === 0 ? (
+              ) : resolvedMainStops.options.length === 0 ? (
                 <p className="text-sm text-amber-700">{t.fields.mainStopsFromCourseEmpty}</p>
               ) : (
                 <div
@@ -1700,7 +1780,7 @@ export default function TourReportForm({
                                     className="h-auto min-h-[40px] justify-start gap-2 whitespace-normal px-2 py-2 text-left text-xs"
                                   >
                                     <Icon className="h-3.5 w-3.5 shrink-0" />
-                                    {locale === 'en' ? option.en : option.ko}
+                                    {getText(option.ko, option.en)}
                                   </Button>
                                 )
                               })}
@@ -1715,12 +1795,13 @@ export default function TourReportForm({
               {formData.main_stops_visited.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {formData.main_stops_visited.map((stopId) => {
-                    const c = courseById.get(stopId)
+                    const c = resolvedMainStops.byId.get(stopId)
                     const displayText = c ? displayCourseName(c, locale) : stopId
                     const horseshoeLabel = horseshoeBend[stopId]
-                      ? locale === 'en'
-                        ? HORSESHOE_BEND_ACTIVITIES.find((item) => item.value === horseshoeBend[stopId])?.en
-                        : HORSESHOE_BEND_ACTIVITIES.find((item) => item.value === horseshoeBend[stopId])?.ko
+                      ? getText(
+                          HORSESHOE_BEND_ACTIVITIES.find((item) => item.value === horseshoeBend[stopId])?.ko || '',
+                          HORSESHOE_BEND_ACTIVITIES.find((item) => item.value === horseshoeBend[stopId])?.en || ''
+                        ) || null
                       : null
                     return (
                       <Badge key={stopId} variant="secondary">
@@ -1733,8 +1814,8 @@ export default function TourReportForm({
               )}
             </div>
 
-            {mainStopOptions.length > 0 && (
-              <div className={cn(fieldY, 'pt-1')}>
+            {resolvedMainStops.options.length > 0 && (
+              <div className="space-y-3 py-5">
                 <Label className={cn('flex items-center gap-2', labelMb)}>
                   <SkipForward className="h-4 w-4 shrink-0" />
                   {t.fields.skippedStops}
@@ -1754,61 +1835,95 @@ export default function TourReportForm({
             )}
 
             {isGoblinTour && (
-              <div className={cn(fieldY, 'pt-1')}>
-                <Label className={cn('flex items-center gap-2', labelMb)}>
-                  <Sunrise className="h-4 w-4 shrink-0" />
-                  {t.fields.sunriseTitle}
-                </Label>
-                <p className="text-sm text-muted-foreground">{t.fields.sunriseHint}</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {SUNRISE_POINTS.map((point) => {
-                    const selected = sunrisePointKey === point.key
-                    return (
-                      <Button
-                        key={point.key}
-                        type="button"
-                        variant={selected ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => {
-                          setSunrisePointKey(point.key)
-                          const option = mainStopOptions.find(
-                            (row) => sunrisePointKeyFromCourse(row.course) === point.key
-                          )
-                          if (option) toggleMainStopVisited(option.id, true)
-                        }}
-                        className="h-auto min-h-[42px] whitespace-normal px-2 py-2 text-xs"
-                      >
-                        {locale === 'en' ? point.en : point.ko}
-                      </Button>
-                    )
-                  })}
+              <div
+                className="space-y-4 py-5"
+                data-missing={
+                  isGoblinTour && (!sunrisePointKey || !sunriseActivity) && stepErrors.length > 0
+                    ? 'true'
+                    : undefined
+                }
+              >
+                <div>
+                  <Label className={cn('flex items-center gap-2', labelMb)}>
+                    <Sunrise className="h-4 w-4 shrink-0" />
+                    {t.fields.sunriseTitle}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">{t.fields.sunriseHint}</p>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {SUNRISE_ACTIVITIES.map((option) => {
-                    const selected = sunriseActivity === option.value
-                    return (
-                      <Button
-                        key={option.value}
-                        type="button"
-                        variant={selected ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => setSunriseActivity(option.value)}
-                        className="h-auto min-h-[42px] justify-start gap-2 whitespace-normal px-2 py-2 text-left text-xs"
-                      >
-                        {option.value === 'photography' ? (
-                          <Camera className="h-3.5 w-3.5 shrink-0" />
-                        ) : (
-                          <Car className="h-3.5 w-3.5 shrink-0" />
-                        )}
-                        {locale === 'en' ? option.en : option.ko}
-                      </Button>
-                    )
-                  })}
+                <div
+                  className={cn(
+                    'space-y-2 rounded-xl border p-3',
+                    !sunrisePointKey && stepErrors.length > 0 ? 'border-red-300 bg-red-50/60' : 'border-border bg-muted/20'
+                  )}
+                >
+                  <p className="text-sm font-semibold text-foreground">{t.fields.sunrisePointLabel}</p>
+                  <p className="text-xs text-muted-foreground">{t.fields.sunrisePointHint}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {SUNRISE_POINTS.map((point) => {
+                      const selected = sunrisePointKey === point.key
+                      return (
+                        <Button
+                          key={point.key}
+                          type="button"
+                          variant={selected ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => {
+                            setSunrisePointKey(point.key)
+                            setStepErrors((prev) => prev.filter((err) => err !== t.messages.sunrisePointRequired))
+                            const option = resolvedMainStops.options.find(
+                              (row) => sunrisePointKeyFromCourse(row.course) === point.key
+                            )
+                            if (option) toggleMainStopVisited(option.id, true)
+                          }}
+                          className="h-auto min-h-[42px] whitespace-normal px-2 py-2 text-xs"
+                        >
+                          {getText(point.ko, point.en)}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div
+                  className={cn(
+                    'space-y-2 rounded-xl border p-3',
+                    !sunriseActivity && stepErrors.length > 0 ? 'border-red-300 bg-red-50/60' : 'border-border bg-muted/20'
+                  )}
+                >
+                  <p className="text-sm font-semibold text-foreground">{t.fields.sunriseActivityLabel}</p>
+                  <p className="text-xs text-muted-foreground">{t.fields.sunriseActivityHint}</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {SUNRISE_ACTIVITIES.map((option) => {
+                      const selected = sunriseActivity === option.value
+                      return (
+                        <Button
+                          key={option.value}
+                          type="button"
+                          variant={selected ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => {
+                            setSunriseActivity(option.value)
+                            setStepErrors((prev) => prev.filter((err) => err !== t.messages.sunriseActivityRequired))
+                          }}
+                          className="h-auto min-h-[42px] justify-start gap-2 whitespace-normal px-2 py-2 text-left text-xs"
+                        >
+                          {option.value === 'photography' ? (
+                            <Camera className="h-3.5 w-3.5 shrink-0" />
+                          ) : (
+                            <Car className="h-3.5 w-3.5 shrink-0" />
+                          )}
+                          {getText(option.ko, option.en)}
+                        </Button>
+                      )
+                    })}
+                  </div>
                 </div>
               </div>
             )}
 
-            <div className={cn(fieldY, 'pt-1')}>
+            <div
+              className="space-y-3 py-5"
+              data-missing={drivingUnassignedIds.length > 0 && stepErrors.length > 0 ? 'true' : undefined}
+            >
               <Label className={cn('flex items-center gap-2', labelMb)}>
                 <Car className="h-4 w-4 shrink-0" />
                 {t.fields.driving}
@@ -1830,13 +1945,13 @@ export default function TourReportForm({
 
             {/* 전체적인 분위기 */}
             {reportPace === 'has_issues' && (
-            <div className={cn(fieldY, 'pt-1')}>
+            <div className="space-y-3 py-5">
               <Label className={cn('flex items-center gap-2', labelMb)}>
                 <Star className="h-4 w-4 shrink-0" />
                 {t.fields.overallMood}
               </Label>
               <div className={cn('grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5', chipGap)}>
-                {MOOD_OPTIONS.map((option) => (
+                {TOUR_REPORT_MOOD_OPTIONS.map((option) => (
                   <Button
                     key={option.value}
                     type="button"
@@ -1846,7 +1961,7 @@ export default function TourReportForm({
                     className="flex min-h-[42px] items-center gap-1.5 px-2 text-xs md:min-h-0 md:text-sm"
                   >
                     <span className="text-base">{option.icon}</span>
-                    <span className="truncate">{locale === 'en' ? option.en : option.ko}</span>
+                    <span className="truncate">{getText(option.ko, option.en)}</span>
                   </Button>
                 ))}
               </div>
@@ -1855,8 +1970,8 @@ export default function TourReportForm({
             </div>
 
             {/* Step 2 — 고객·이슈 */}
-            <div className={cn((!mobileStepVisible(2) || reportPace === 'all_clear') && 'hidden', blockY)}>
-            <div className={fieldY}>
+            <div className={cn((!mobileStepVisible(2) || reportPace === 'all_clear') && 'hidden', 'divide-y divide-gray-200 border-t border-gray-200')}>
+            <div className="space-y-3 py-5 first:pt-1">
               <Label htmlFor="guest_comments" className={cn('flex items-center gap-2', labelMb)}>
                 <MessageSquare className="h-4 w-4 shrink-0" />
                 {t.fields.guestComments}
@@ -1872,15 +1987,15 @@ export default function TourReportForm({
             </div>
 
             {/* 사고/지연/건강 문제 */}
-            <div className={cn(fieldY, 'pt-1')}>
+            <div className="space-y-3 py-5">
               <Label className={cn('flex items-center gap-2', labelMb)}>
                 <AlertTriangle className="h-4 w-4 shrink-0" />
                 {t.fields.incidentsDelaysHealth}
               </Label>
               <div className={cn('grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3', chipGap)}>
-                {INCIDENTS_OPTIONS.map((incident) => {
-                  const displayText = locale === 'en' ? incident.en : incident.ko
-                  const keyText = locale === 'en' ? incident.en : incident.ko
+                {TOUR_REPORT_INCIDENT_OPTIONS.map((incident) => {
+                  const displayText = getText(incident.ko, incident.en)
+                  const keyText = getText(incident.ko, incident.en)
                   return (
                     <Button
                       key={keyText}
@@ -1910,8 +2025,8 @@ export default function TourReportForm({
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {formData.incidents_delays_health.map((incident) => {
                     // 선택된 값이 한국어인지 영어인지 확인하고 적절한 표시 텍스트 찾기
-                    const option = INCIDENTS_OPTIONS.find(opt => opt.ko === incident || opt.en === incident)
-                    const displayText = option ? (locale === 'en' ? option.en : option.ko) : incident
+                    const option = TOUR_REPORT_INCIDENT_OPTIONS.find(opt => opt.ko === incident || opt.en === incident)
+                    const displayText = option ? getText(option.ko, option.en) : incident
                     return (
                       <Badge key={incident} variant="destructive">
                         {displayText}
@@ -1923,15 +2038,15 @@ export default function TourReportForm({
             </div>
 
             {/* 분실물/손상 */}
-            <div className={cn(fieldY, 'pt-1')}>
+            <div className="space-y-3 py-5">
               <Label className={cn('flex items-center gap-2', labelMb)}>
                 <Package className="h-4 w-4 shrink-0" />
                 {t.fields.lostItemsDamage}
               </Label>
               <div className={cn('grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3', chipGap)}>
-                {LOST_DAMAGE_OPTIONS.map((item) => {
-                  const displayText = locale === 'en' ? item.en : item.ko
-                  const keyText = locale === 'en' ? item.en : item.ko
+                {TOUR_REPORT_LOST_DAMAGE_OPTIONS.map((item) => {
+                  const displayText = getText(item.ko, item.en)
+                  const keyText = getText(item.ko, item.en)
                   return (
                     <Button
                       key={keyText}
@@ -1961,8 +2076,8 @@ export default function TourReportForm({
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {formData.lost_items_damage.map((item) => {
                     // 선택된 값이 한국어인지 영어인지 확인하고 적절한 표시 텍스트 찾기
-                    const option = LOST_DAMAGE_OPTIONS.find(opt => opt.ko === item || opt.en === item)
-                    const displayText = option ? (locale === 'en' ? option.en : option.ko) : item
+                    const option = TOUR_REPORT_LOST_DAMAGE_OPTIONS.find(opt => opt.ko === item || opt.en === item)
+                    const displayText = option ? getText(option.ko, option.en) : item
                     return (
                       <Badge key={item} variant="outline">
                         {displayText}
@@ -1973,7 +2088,7 @@ export default function TourReportForm({
               )}
             </div>
 
-            <div className={cn(fieldY, 'pt-1')}>
+            <div className="space-y-3 py-5">
               <Label className={cn('flex items-center gap-2', labelMb)}>
                 <Camera className="h-4 w-4 shrink-0" />
                 {t.fields.issuePhotos}
@@ -1988,7 +2103,7 @@ export default function TourReportForm({
             </div>
 
             {/* Step 3 — 평가·메모·제출 */}
-            <div className={cn(blockY, !mobileStepVisible(3) && 'hidden')}>
+            <div className={cn(!mobileStepVisible(3) && 'hidden', 'divide-y divide-gray-200 border-t border-gray-200')}>
               {reportPace === 'has_issues' && (
               <>
               <div className={fieldY}>
@@ -2013,7 +2128,7 @@ export default function TourReportForm({
                 {t.fields.communication}
               </Label>
               <div className={cn('grid grid-cols-2 md:grid-cols-4', chipGap)}>
-                {RATING_OPTIONS.map((option) => (
+                {TOUR_REPORT_RATING_OPTIONS.map((option) => (
                   <Button
                     key={option.value}
                     type="button"
@@ -2023,7 +2138,7 @@ export default function TourReportForm({
                     className="flex min-h-[42px] items-center gap-1.5 px-1.5 text-xs md:min-h-0 md:text-sm"
                   >
                     <span className="text-base">{option.icon}</span>
-                    <span className="truncate">{locale === 'en' ? option.en : option.ko}</span>
+                    <span className="truncate">{getText(option.ko, option.en)}</span>
                   </Button>
                 ))}
               </div>
@@ -2036,7 +2151,7 @@ export default function TourReportForm({
                 {t.fields.teamwork}
               </Label>
               <div className={cn('grid grid-cols-2 md:grid-cols-4', chipGap)}>
-                {RATING_OPTIONS.map((option) => (
+                {TOUR_REPORT_RATING_OPTIONS.map((option) => (
                   <Button
                     key={option.value}
                     type="button"
@@ -2046,7 +2161,7 @@ export default function TourReportForm({
                     className="flex min-h-[42px] items-center gap-1.5 px-1.5 text-xs md:min-h-0 md:text-sm"
                   >
                     <span className="text-base">{option.icon}</span>
-                    <span className="truncate">{locale === 'en' ? option.en : option.ko}</span>
+                    <span className="truncate">{getText(option.ko, option.en)}</span>
                   </Button>
                 ))}
               </div>
@@ -2185,7 +2300,18 @@ export default function TourReportForm({
                       key={i}
                       type="button"
                       aria-current={mobileStep === i ? 'step' : undefined}
-                      onClick={() => setMobileStep(i)}
+                      onClick={() => {
+                        if (i > mobileStep) {
+                          const missing = getMissingForWizardStep(mobileStep)
+                          if (missing.length > 0) {
+                            showStepErrors(missing)
+                            return
+                          }
+                        }
+                        setStepErrors([])
+                        setMobileStep(i)
+                        scrollBodyRef.current?.scrollTo({ top: 0 })
+                      }}
                       className={cn(
                         'h-2 rounded-full transition-all',
                         mobileStep === i ? 'w-6 bg-blue-600' : 'w-2 bg-gray-200'
@@ -2199,7 +2325,11 @@ export default function TourReportForm({
                     variant="outline"
                     className="flex-1 h-11 gap-1"
                     disabled={mobileStep <= 0}
-                    onClick={() => setMobileStep((s) => Math.max(0, s - 1))}
+                    onClick={() => {
+                      setStepErrors([])
+                      setMobileStep((s) => Math.max(0, s - 1))
+                      scrollBodyRef.current?.scrollTo({ top: 0 })
+                    }}
                   >
                     <ChevronLeft className="w-4 h-4 shrink-0" />
                     {t.buttons.prev}
@@ -2208,7 +2338,7 @@ export default function TourReportForm({
                     <Button
                       type="button"
                       className="flex-1 h-11 gap-1"
-                      onClick={() => setMobileStep((s) => Math.min(totalSteps - 1, s + 1))}
+                      onClick={goToNextStep}
                     >
                       {t.buttons.next}
                       <ChevronRight className="w-4 h-4 shrink-0" />
@@ -2218,7 +2348,15 @@ export default function TourReportForm({
                       type="button"
                       disabled={loading || !hasSignature}
                       className="flex-1 h-11 font-semibold bg-primary hover:bg-primary/90 text-white shadow-lg shadow-blue-200/80 ring-2 ring-ring/30 focus-visible:ring-blue-400"
-                      onClick={submitReport}
+                      onClick={() => {
+                        const missing = getMissingForWizardStep(mobileStep)
+                        if (missing.length > 0) {
+                          showStepErrors(missing)
+                          return
+                        }
+                        setStepErrors([])
+                        void submitReport()
+                      }}
                     >
                       {loading ? getText('제출 중...', 'Submitting...') : t.buttons.submit}
                     </Button>

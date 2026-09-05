@@ -50,24 +50,23 @@ import {
   parseActivityDetails,
 } from '@/lib/tourReportActivityDetails'
 import { normalizeTourReportEmail } from '@/lib/tourReportMissing'
+import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
 import {
+  displayIncidentLabel,
+  displayLostDamageLabel,
+  displayMoodOption,
+  displayRatingOption,
   displaySkipReasonLabel,
   displayVehicleConditionLabel,
+  displayWeatherOption,
   isTourReportSignatureImage,
   parseIssuePhotoUrls,
   parseSkippedStops,
+  tourReportText,
+  TOUR_REPORT_MOOD_OPTIONS,
+  TOUR_REPORT_WEATHER_OPTIONS,
 } from '@/lib/tourReportExtras'
 import { narrationSkipSummary } from '@/lib/tourReportNarration'
-
-const LOST_DAMAGE_OPTIONS = [
-  { ko: '분실물 없음', en: 'No Lost Items' },
-  { ko: '가방 분실', en: 'Bag Lost' },
-  { ko: '휴대폰 분실', en: 'Phone Lost' },
-  { ko: '카메라 분실', en: 'Camera Lost' },
-  { ko: '차량 손상', en: 'Vehicle Damage' },
-  { ko: '시설 손상', en: 'Facility Damage' },
-  { ko: '기타 손상', en: 'Other Damage' }
-]
 
 interface TourReport {
   id: string
@@ -123,30 +122,6 @@ interface TourReportListProps {
   highlightReportId?: string | null
 }
 
-const WEATHER_LABELS = {
-  sunny: { label: '맑음', icon: '☀️' },
-  cloudy: { label: '흐림', icon: '☁️' },
-  rainy: { label: '비', icon: '🌧️' },
-  snowy: { label: '눈', icon: '❄️' },
-  windy: { label: '바람', icon: '💨' },
-  foggy: { label: '안개', icon: '🌫️' }
-}
-
-const MOOD_LABELS = {
-  excellent: { label: '매우 좋음', icon: '😊' },
-  good: { label: '좋음', icon: '🙂' },
-  average: { label: '보통', icon: '😐' },
-  poor: { label: '나쁨', icon: '😞' },
-  terrible: { label: '매우 나쁨', icon: '😢' }
-}
-
-const RATING_LABELS = {
-  excellent: { label: '매우 좋음', icon: '⭐⭐⭐' },
-  good: { label: '좋음', icon: '⭐⭐' },
-  average: { label: '보통', icon: '⭐' },
-  poor: { label: '나쁨', icon: '👎' }
-}
-
 export default function TourReportList({ 
   tourId, 
   showTourInfo = true, 
@@ -156,6 +131,7 @@ export default function TourReportList({
   highlightReportId = null,
 }: TourReportListProps) {
   const { user } = useAuth()
+  const getText = (ko: string, en: string) => tourReportText(locale, ko, en)
   const [reports, setReports] = useState<TourReport[]>([])
   const [stopCourseById, setStopCourseById] = useState<Map<string, CourseForMainStops>>(new Map())
   const [guideNameByEmail, setGuideNameByEmail] = useState<Map<string, string>>(new Map())
@@ -220,7 +196,7 @@ export default function TourReportList({
       void loadGuideNames(rows)
     } catch (error) {
       console.error('Error fetching tour reports:', error)
-      toast.error('리포트를 불러오는 중 오류가 발생했습니다.')
+      toast.error(getText('리포트를 불러오는 중 오류가 발생했습니다.', 'Could not load reports.'))
     } finally {
       setLoading(false)
     }
@@ -280,10 +256,7 @@ export default function TourReportList({
       const map = new Map<string, string>()
       for (const row of data ?? []) {
         const email = String(row.email || '').trim().toLowerCase()
-        const name =
-          String(row.nick_name || '').trim() ||
-          String(row.name_ko || '').trim() ||
-          String(row.name_en || '').trim()
+        const name = teamMemberNameForLocale(row, locale)
         if (!email || !name || isOpaqueRecordId(name)) continue
         map.set(email, name)
       }
@@ -294,7 +267,7 @@ export default function TourReportList({
   }
 
   const handleDelete = async (reportId: string) => {
-    if (!confirm('정말로 이 리포트를 삭제하시겠습니까?')) return
+    if (!confirm(getText('정말로 이 리포트를 삭제하시겠습니까?', 'Delete this report?'))) return
 
     try {
       const { error } = await supabase
@@ -304,7 +277,7 @@ export default function TourReportList({
 
       if (error) throw error
 
-      toast.success('리포트가 삭제되었습니다.')
+      toast.success(getText('리포트가 삭제되었습니다.', 'Report deleted.'))
       fetchReports()
       onDelete?.(reportId)
     } catch (error) {
@@ -317,9 +290,14 @@ export default function TourReportList({
           ? (error as { message: string }).message
           : ''
       if (msg.toLowerCase().includes('row-level security') || msg.toLowerCase().includes('permission')) {
-        toast.error('삭제 권한이 없거나 삭제 가능 기간(투어 다음날까지)이 지났습니다.')
+        toast.error(
+          getText(
+            '삭제 권한이 없거나 삭제 가능 기간(투어 다음날까지)이 지났습니다.',
+            'You cannot delete this report, or the edit window (until the day after the tour) has passed.'
+          )
+        )
       } else {
-        toast.error('리포트 삭제 중 오류가 발생했습니다.')
+        toast.error(getText('리포트 삭제 중 오류가 발생했습니다.', 'Could not delete the report.'))
       }
     }
   }
@@ -340,7 +318,7 @@ export default function TourReportList({
     : reports
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('ko-KR', {
+    return new Date(dateString).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -354,7 +332,7 @@ export default function TourReportList({
       <div className="flex items-center justify-center p-8">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p>리포트를 불러오는 중...</p>
+          <p>{getText('리포트를 불러오는 중...', 'Loading reports...')}</p>
         </div>
       </div>
     )
@@ -368,17 +346,17 @@ export default function TourReportList({
           <CardHeader className="p-4 md:p-6">
             <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
               <FileText className="w-5 h-5" />
-              투어 리포트 목록
+              {getText('투어 리포트 목록', 'Tour Reports')}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4 md:p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-2">검색</label>
+                <label className="block text-sm font-medium mb-2">{getText('검색', 'Search')}</label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input type="search"
-                    placeholder="이메일, 상품명으로 검색..."
+                    placeholder={getText('이메일, 상품명으로 검색...', 'Search by email or product...')}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-10"
@@ -386,32 +364,32 @@ export default function TourReportList({
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">날씨</label>
+                <label className="block text-sm font-medium mb-2">{getText('날씨', 'Weather')}</label>
                 <Select value={weatherFilter} onValueChange={setWeatherFilter}>
                   <SelectTrigger>
-                    <SelectValue placeholder="날씨 선택" />
+                    <SelectValue placeholder={getText('날씨 선택', 'Select weather')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">전체</SelectItem>
-                    {Object.entries(WEATHER_LABELS).map(([value, { label, icon }]) => (
-                      <SelectItem key={value} value={value}>
-                        {icon} {label}
+                    <SelectItem value="all">{getText('전체', 'All')}</SelectItem>
+                    {TOUR_REPORT_WEATHER_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.icon} {getText(option.ko, option.en)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">분위기</label>
+                <label className="block text-sm font-medium mb-2">{getText('분위기', 'Mood')}</label>
                 <Select value={moodFilter} onValueChange={setMoodFilter}>
                   <SelectTrigger>
-                    <SelectValue placeholder="분위기 선택" />
+                    <SelectValue placeholder={getText('분위기 선택', 'Select mood')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">전체</SelectItem>
-                    {Object.entries(MOOD_LABELS).map(([value, { label, icon }]) => (
-                      <SelectItem key={value} value={value}>
-                        {icon} {label}
+                    <SelectItem value="all">{getText('전체', 'All')}</SelectItem>
+                    {TOUR_REPORT_MOOD_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.icon} {getText(option.ko, option.en)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -420,7 +398,7 @@ export default function TourReportList({
               <div className="flex items-end">
                 <Button onClick={fetchReports} variant="outline" className="w-full h-10">
                   <Filter className="w-4 h-4 mr-2" />
-                  새로고침
+                  {getText('새로고침', 'Refresh')}
                 </Button>
               </div>
             </div>
@@ -434,7 +412,7 @@ export default function TourReportList({
           <Card>
             <CardContent className="text-center py-8">
               <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500">리포트가 없습니다.</p>
+              <p className="text-gray-500">{getText('리포트가 없습니다.', 'No reports.')}</p>
             </CardContent>
           </Card>
         ) : (
@@ -453,6 +431,10 @@ export default function TourReportList({
               .filter((other) => other.tour_id === report.tour_id && other.id !== report.id)
               .flatMap((other) => parseActivityDetails(other.activity_details).drivingRoster?.claims ?? [])
               .filter((claim) => claim.fromEmail === myEmail)
+            const weather = displayWeatherOption(report.weather, locale)
+            const mood = displayMoodOption(report.overall_mood, locale)
+            const communication = displayRatingOption(report.communication, locale)
+            const teamwork = displayRatingOption(report.teamwork, locale)
             return (
             <Card
               key={report.id}
@@ -467,11 +449,12 @@ export default function TourReportList({
                     <div className="flex flex-wrap items-center gap-2">
                       <CardTitle className="text-base md:text-lg">
                         {showTourInfo && report.tours?.products ? (
-                          `${report.tours.products.name_ko} (${report.tours.products.name_en})`
-                        ) : locale === 'en' ? (
-                          'Tour Report'
+                          getText(
+                            `${report.tours.products.name_ko} (${report.tours.products.name_en})`,
+                            report.tours.products.name_en || report.tours.products.name_ko
+                          )
                         ) : (
-                          '투어 리포트'
+                          getText('투어 리포트', 'Tour Report')
                         )}
                       </CardTitle>
                       {guideName ? (
@@ -514,35 +497,35 @@ export default function TourReportList({
                   {report.end_mileage && (
                     <div className="flex items-center gap-2 rounded-md bg-gray-50 px-3 py-2">
                       <MapPin className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                      <span className="text-sm">마일리지: {report.end_mileage.toLocaleString()}</span>
+                      <span className="text-sm">{getText('마일리지', 'Mileage')}: {report.end_mileage.toLocaleString()}</span>
                     </div>
                   )}
                   {report.cash_balance !== null && (
                     <div className="flex items-center gap-2 rounded-md bg-gray-50 px-3 py-2">
                       <DollarSign className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                      <span className="text-sm">잔액: ${report.cash_balance.toFixed(2)}</span>
+                      <span className="text-sm">{getText('잔액', 'Balance')}: ${report.cash_balance.toFixed(2)}</span>
                     </div>
                   )}
                   {report.customer_count != null && (
                     <div className="flex min-w-[240px] flex-[1.6] items-center gap-2 rounded-md bg-gray-50 px-3 py-2 sm:min-w-[280px]">
                       <Users className="w-4 h-4 text-gray-500 flex-shrink-0" />
                       <span className="text-sm whitespace-nowrap">
-                        {locale === 'en' ? 'On board' : '탑승'}: {report.customer_count}
-                        {locale === 'en' ? '' : '명'}
+                        {getText('탑승', 'On board')}: {report.customer_count}
+                        {getText('명', '')}
                         {report.booked_customer_count != null
-                          ? locale === 'en'
-                            ? ` / booked ${report.booked_customer_count}`
-                            : ` / 예약 ${report.booked_customer_count}명`
+                          ? getText(
+                              ` / 예약 ${report.booked_customer_count}명`,
+                              ` / booked ${report.booked_customer_count}`
+                            )
                           : ''}
                       </span>
                     </div>
                   )}
-                  {report.weather && (
+                  {weather && (
                     <div className="flex items-center gap-2 rounded-md bg-gray-50 px-3 py-2">
                       <Cloud className="w-4 h-4 text-gray-500 flex-shrink-0" />
                       <span className="text-sm">
-                        {WEATHER_LABELS[report.weather as keyof typeof WEATHER_LABELS]?.icon} 
-                        {WEATHER_LABELS[report.weather as keyof typeof WEATHER_LABELS]?.label}
+                        {weather.icon} {weather.label}
                       </span>
                     </div>
                   )}
@@ -559,7 +542,7 @@ export default function TourReportList({
                     <div className="mb-4">
                       <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
                         <Wrench className="h-4 w-4 text-gray-500" />
-                        {locale === 'en' ? 'Vehicle condition:' : '차량 상태:'}
+                        {getText('차량 상태:', 'Vehicle condition:')}
                       </p>
                       <div className="flex flex-wrap gap-1">
                         {tags.map((tag) => (
@@ -586,39 +569,35 @@ export default function TourReportList({
                 })()}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  {report.overall_mood && (
+                  {mood && (
                     <div className="flex items-center gap-2">
                       <Star className="w-4 h-4 text-gray-500" />
                       <span className="text-sm">
-                        분위기: {MOOD_LABELS[report.overall_mood as keyof typeof MOOD_LABELS]?.icon} 
-                        {MOOD_LABELS[report.overall_mood as keyof typeof MOOD_LABELS]?.label}
+                        {getText('분위기', 'Mood')}: {mood.icon} {mood.label}
                       </span>
                     </div>
                   )}
-                  {report.communication && (
+                  {communication && (
                     <div className="flex items-center gap-2">
                       <MessageCircle className="w-4 h-4 text-gray-500" />
                       <span className="text-sm">
-                        커뮤니케이션: {RATING_LABELS[report.communication as keyof typeof RATING_LABELS]?.icon}
-                        {RATING_LABELS[report.communication as keyof typeof RATING_LABELS]?.label}
+                        {getText('커뮤니케이션', 'Communication')}: {communication.icon} {communication.label}
                       </span>
                     </div>
                   )}
-                  {report.teamwork && (
+                  {teamwork && (
                     <div className="flex items-center gap-2">
                       <Handshake className="w-4 h-4 text-gray-500" />
                       <span className="text-sm">
-                        팀워크: {RATING_LABELS[report.teamwork as keyof typeof RATING_LABELS]?.icon}
-                        {RATING_LABELS[report.teamwork as keyof typeof RATING_LABELS]?.label}
+                        {getText('팀워크', 'Teamwork')}: {teamwork.icon} {teamwork.label}
                       </span>
                     </div>
                   )}
                 </div>
 
-                {/* 주요 정류장 */}
                 {visibleStops.length > 0 && (
                   <div className="mb-4">
-                    <p className="text-sm font-medium mb-2">주요 정류장:</p>
+                    <p className="text-sm font-medium mb-2">{getText('주요 정류장:', 'Main stops:')}</p>
                     <div className="flex flex-wrap gap-1">
                       {visibleStops.map(({ stop, label }) => {
                         const activity = details.horseshoeBend?.[stop]
@@ -637,7 +616,7 @@ export default function TourReportList({
                   <div className="mb-4 rounded-lg border border-amber-200/80 bg-amber-50/60 px-3 py-2">
                     <p className="flex items-center gap-1.5 text-sm font-medium text-amber-950">
                       <Sunrise className="h-4 w-4" />
-                      {locale === 'en' ? 'Sunrise' : '일출'}
+                      {getText('일출', 'Sunrise')}
                     </p>
                     <p className="mt-1 text-sm text-amber-900">
                       {displaySunrisePoint(details.sunrise.pointKey, locale)}
@@ -652,7 +631,7 @@ export default function TourReportList({
                     <p className="text-sm font-medium mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="inline-flex items-center gap-1.5">
                         <Car className="h-4 w-4 text-gray-500" />
-                        {locale === 'en' ? 'Driving:' : 'Driving:'}
+                        {getText('Driving:', 'Driving:')}
                       </span>
                       {approxDrivingMinutes > 0 ? (
                         <span className="inline-flex items-center gap-1 text-xs font-normal text-gray-500">
@@ -671,9 +650,10 @@ export default function TourReportList({
                           <Badge key={segId} variant="outline" className="text-xs">
                             {label}
                             {claim
-                              ? locale === 'en'
-                                ? ` · claimed from ${claim.fromName}`
-                                : ` · ${claim.fromName} 제출 클레임`
+                              ? getText(
+                                  ` · ${claim.fromName} 제출 클레임`,
+                                  ` · claimed from ${claim.fromName}`
+                                )
                               : ''}
                           </Badge>
                         )
@@ -681,19 +661,20 @@ export default function TourReportList({
                     </div>
                     {claimedFromMe.length > 0 ? (
                       <p className="mt-2 text-xs text-amber-800">
-                        {locale === 'en'
-                          ? `Claimed by partner: ${claimedFromMe
+                        {getText(
+                          `파트너 클레임: ${claimedFromMe
+                              .map((claim) => {
+                                const seg = drivingById.get(claim.segmentId)
+                                return seg ? displayDrivingSegmentLabel(seg, locale) : claim.segmentId
+                              })
+                              .join(', ')}`,
+                          `Claimed by partner: ${claimedFromMe
                               .map((claim) => {
                                 const seg = drivingById.get(claim.segmentId)
                                 return seg ? displayDrivingSegmentLabel(seg, locale) : claim.segmentId
                               })
                               .join(', ')}`
-                          : `파트너 클레임: ${claimedFromMe
-                              .map((claim) => {
-                                const seg = drivingById.get(claim.segmentId)
-                                return seg ? displayDrivingSegmentLabel(seg, locale) : claim.segmentId
-                              })
-                              .join(', ')}`}
+                        )}
                       </p>
                     ) : null}
                   </div>
@@ -721,7 +702,7 @@ export default function TourReportList({
                     <div className="mb-4">
                       <p className="text-sm font-medium mb-2 flex items-center gap-1.5 text-amber-800">
                         <SkipForward className="h-4 w-4" />
-                        {locale === 'en' ? 'Skipped stops:' : '스킵한 포인트:'}
+                        {getText('스킵한 포인트:', 'Skipped stops:')}
                       </p>
                       <ul className="space-y-1 text-sm text-gray-700">
                         {skippedIds.map((cid) => {
@@ -753,7 +734,7 @@ export default function TourReportList({
                   return (
                     <div className="mb-4">
                       <p className="text-sm font-medium mb-2 text-amber-800">
-                        {locale === 'en' ? 'Alternative stops / notes:' : '대체 방문·메모:'}
+                        {getText('대체 방문·메모:', 'Alternative stops / notes:')}
                       </p>
                       <ul className="space-y-1 text-sm text-gray-700">
                         {Object.entries(report.main_stop_substitutions).map(([cid, note]) => {
@@ -774,11 +755,11 @@ export default function TourReportList({
                 {/* 문제사항 */}
                 {report.incidents_delays_health.length > 0 && (
                   <div className="mb-4">
-                    <p className="text-sm font-medium mb-2 text-red-600">문제사항:</p>
+                    <p className="text-sm font-medium mb-2 text-red-600">{getText('문제사항:', 'Incidents:')}</p>
                     <div className="flex flex-wrap gap-1">
                       {report.incidents_delays_health.map((incident) => (
                         <Badge key={incident} variant="destructive" className="text-xs">
-                          {incident}
+                          {displayIncidentLabel(incident, locale)}
                         </Badge>
                       ))}
                     </div>
@@ -788,12 +769,10 @@ export default function TourReportList({
                 {/* 분실물/손상 */}
                 {report.lost_items_damage.length > 0 && (
                   <div className="mb-4">
-                    <p className="text-sm font-medium mb-2 text-orange-600">{locale === 'en' ? 'Lost Items/Damage:' : '분실물/손상:'}</p>
+                    <p className="text-sm font-medium mb-2 text-orange-600">{getText('분실물/손상:', 'Lost Items/Damage:')}</p>
                     <div className="flex flex-wrap gap-1">
                       {report.lost_items_damage.map((item) => {
-                        // 선택된 값이 한국어인지 영어인지 확인하고 적절한 표시 텍스트 찾기
-                        const option = LOST_DAMAGE_OPTIONS.find(opt => opt.ko === item || opt.en === item)
-                        const displayText = option ? (locale === 'en' ? option.en : option.ko) : item
+                        const displayText = displayLostDamageLabel(item, locale)
                         return (
                           <Badge key={item} variant="outline" className="text-xs text-orange-600">
                             {displayText}
@@ -811,7 +790,7 @@ export default function TourReportList({
                     <div className="mb-4">
                       <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
                         <Camera className="h-4 w-4 text-gray-500" />
-                        {locale === 'en' ? 'Issue photos:' : '이슈 사진:'}
+                        {getText('이슈 사진:', 'Issue photos:')}
                       </p>
                       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                         {photos.map((url) => (
@@ -825,7 +804,7 @@ export default function TourReportList({
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={url}
-                              alt={locale === 'en' ? 'Issue photo' : '이슈 사진'}
+                              alt={getText('이슈 사진', 'Issue photo')}
                               className="h-full w-full object-cover"
                             />
                           </a>
@@ -839,19 +818,19 @@ export default function TourReportList({
                 <div className="space-y-2">
                   {report.guest_comments && (
                     <div>
-                      <p className="text-sm font-medium text-primary mb-1">고객 코멘트:</p>
+                      <p className="text-sm font-medium text-primary mb-1">{getText('고객 코멘트:', 'Guest comments:')}</p>
                       <p className="text-sm text-gray-700 bg-primary/5 p-2 rounded">{report.guest_comments}</p>
                     </div>
                   )}
                   {report.suggestions_followup && (
                     <div>
-                      <p className="text-sm font-medium text-green-600 mb-1">제안사항:</p>
+                      <p className="text-sm font-medium text-green-600 mb-1">{getText('제안사항:', 'Suggestions:')}</p>
                       <p className="text-sm text-gray-700 bg-green-50 p-2 rounded">{report.suggestions_followup}</p>
                     </div>
                   )}
                   {report.comments && (
                     <div>
-                      <p className="text-sm font-medium text-gray-600 mb-1">기타 코멘트:</p>
+                      <p className="text-sm font-medium text-gray-600 mb-1">{getText('기타 코멘트:', 'Other comments:')}</p>
                       <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded">{report.comments}</p>
                     </div>
                   )}
@@ -859,7 +838,7 @@ export default function TourReportList({
                     <div>
                       <p className="text-sm font-medium text-amber-800 mb-1 flex items-center gap-1.5">
                         <NotebookPen className="h-4 w-4" />
-                        {locale === 'en' ? 'Handoff for next team:' : '다음 팀 인수인계:'}
+                        {getText('다음 팀 인수인계:', 'Handoff for next team:')}
                       </p>
                       <p className="text-sm text-gray-800 bg-amber-50 p-2 rounded border border-amber-200/80">
                         {report.handoff_note}
@@ -868,7 +847,7 @@ export default function TourReportList({
                   )}
                   {report.office_note && (
                     <div>
-                      <p className="text-sm font-medium text-purple-600 mb-1">사무실 메모:</p>
+                      <p className="text-sm font-medium text-purple-600 mb-1">{getText('사무실 메모:', 'Office note:')}</p>
                       <p className="text-sm text-gray-700 bg-purple-50 p-2 rounded">{report.office_note}</p>
                     </div>
                   )}
@@ -876,14 +855,14 @@ export default function TourReportList({
                     <div>
                       <p className="text-sm font-medium mb-1 flex items-center gap-1.5">
                         <PenLine className="h-4 w-4 text-gray-500" />
-                        {locale === 'en' ? 'Signature:' : '서명:'}
+                        {getText('서명:', 'Signature:')}
                       </p>
                       {isTourReportSignatureImage(report.sign) ? (
                         <div className="overflow-hidden rounded-xl border border-border bg-white">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={report.sign}
-                            alt={locale === 'en' ? 'Guide signature' : '가이드 서명'}
+                            alt={getText('가이드 서명', 'Guide signature')}
                             className="h-[100px] w-full max-w-md object-contain object-left bg-white"
                           />
                         </div>

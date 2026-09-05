@@ -39,6 +39,24 @@ export function isOpaqueRecordId(value: string | null | undefined): boolean {
   return hex.length === 32 && /^[0-9a-f]{32}$/i.test(hex)
 }
 
+/** 코스에 없을 때 Main Stops에 넣는 나바호 포인트 */
+export const NAVAJO_POINT_MAIN_STOP_ID = 'tour-report-stop:navajo-point'
+
+export function navajoPointMainStopCourse(): CourseForMainStops {
+  return {
+    id: NAVAJO_POINT_MAIN_STOP_ID,
+    parent_id: null,
+    name_ko: '나바호 포인트',
+    name_en: 'Navajo Point',
+    customer_name_ko: '나바호 포인트',
+    customer_name_en: 'Navajo Point',
+    category: 'tour point',
+    category_id: null,
+    path: null,
+    sort_order: 10_000,
+  }
+}
+
 /** byId 키는 DB가 준 id(단일 형식)만 둔다고 가정하고, 요청 id의 후보로 조회 */
 export function getCourseFromByIdMap(
   byId: Map<string, CourseForMainStops>,
@@ -108,12 +126,12 @@ export function isTourPointCategory(course: CourseForMainStops): boolean {
 }
 
 export function displayCourseName(course: CourseForMainStops, locale: string): string {
-  if (locale === 'en') {
-    const v = (course.customer_name_en || course.name_en || '').trim()
-    return v || course.name_en
+  const en = (course.customer_name_en || course.name_en || '').trim()
+  const ko = (course.customer_name_ko || course.name_ko || '').trim()
+  if (locale === 'en' || locale.startsWith('en')) {
+    return en || ko
   }
-  const v = (course.customer_name_ko || course.name_ko || '').trim()
-  return v || course.name_ko
+  return ko || en
 }
 
 /** 정류장 표시명. UUID만 있으면 숨기기 위해 null */
@@ -122,6 +140,9 @@ export function displayMainStopLabel(
   byId: Map<string, CourseForMainStops>,
   locale: string
 ): string | null {
+  if (stopId === NAVAJO_POINT_MAIN_STOP_ID) {
+    return locale === 'en' || locale.startsWith('en') ? 'Navajo Point' : '나바호 포인트'
+  }
   const course = getCourseFromByIdMap(byId, stopId)
   if (course) {
     const name = displayCourseName(course, locale).trim()

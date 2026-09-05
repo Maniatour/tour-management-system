@@ -3,12 +3,13 @@
 import { useEffect, useState } from 'react'
 import { Headphones } from 'lucide-react'
 import { fetchTourNarrationPlays, type TourNarrationPlay } from '@/lib/tourNarrationPlays'
+import { isEnglishTourReportLocale } from '@/lib/tourReportExtras'
 
 function formatDuration(totalSeconds: number, locale: string): string {
   const seconds = Math.max(0, Math.round(totalSeconds))
   const minutes = Math.floor(seconds / 60)
   const rest = seconds % 60
-  if (locale === 'en') {
+  if (isEnglishTourReportLocale(locale)) {
     if (minutes <= 0) return `${rest}s`
     return rest > 0 ? `${minutes}m ${rest}s` : `${minutes}m`
   }
@@ -17,7 +18,7 @@ function formatDuration(totalSeconds: number, locale: string): string {
 }
 
 function roleLabel(role: TourNarrationPlay['played_as'], locale: string): string {
-  if (locale === 'en') {
+  if (isEnglishTourReportLocale(locale)) {
     if (role === 'assistant') return 'Assistant'
     if (role === 'driver') return 'Driver'
     return 'Guide'
@@ -30,7 +31,7 @@ function roleLabel(role: TourNarrationPlay['played_as'], locale: string): string
 function formatWhen(value: string, locale: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString(locale === 'en' ? 'en-US' : 'ko-KR', {
+  return date.toLocaleString(isEnglishTourReportLocale(locale) ? 'en-US' : 'ko-KR', {
     timeZone: 'America/Los_Angeles',
     month: 'short',
     day: 'numeric',
@@ -76,11 +77,11 @@ export default function TourNarrationPlayLog({
         {!hideTitle ? (
           <p className="flex items-center gap-1.5 text-sm font-medium text-gray-800">
             <Headphones className="h-4 w-4 text-gray-500" />
-            {locale === 'en' ? 'Narration playback' : '나레이션 재생 기록'}
+            {isEnglishTourReportLocale(locale) ? 'Narration playback' : '나레이션 재생 기록'}
           </p>
         ) : null}
         <p className={hideTitle ? 'text-xs text-gray-500' : 'mt-1 text-xs text-gray-500'}>
-          {locale === 'en'
+          {isEnglishTourReportLocale(locale)
             ? 'No narration was played on this tour yet.'
             : '이 투어에서 아직 재생된 나레이션이 없습니다.'}
         </p>
@@ -93,7 +94,7 @@ export default function TourNarrationPlayLog({
       {!hideTitle ? (
         <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-gray-900">
           <Headphones className="h-4 w-4 text-gray-500" />
-          {locale === 'en' ? 'Narration playback' : '나레이션 재생 기록'}
+          {isEnglishTourReportLocale(locale) ? 'Narration playback' : '나레이션 재생 기록'}
         </p>
       ) : null}
       <ul className="space-y-2">
@@ -105,7 +106,7 @@ export default function TourNarrationPlayLog({
             <div className="font-medium text-gray-900">{play.material_title}</div>
             <div className="mt-0.5 text-xs text-gray-500">
               {play.played_by_name || play.played_by_email} · {roleLabel(play.played_as, locale)} ·{' '}
-              {locale === 'en' ? `${play.play_count} time(s)` : `${play.play_count}회`} ·{' '}
+              {isEnglishTourReportLocale(locale) ? `${play.play_count} time(s)` : `${play.play_count}회`} ·{' '}
               {formatDuration(play.play_seconds, locale)}
             </div>
             <div className="text-xs text-gray-400">

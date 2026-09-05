@@ -111,7 +111,7 @@ export const BUILTIN_RESIDENT_INQUIRY_EMAIL_BODY_HTML: Record<ResidentInquiryEma
     <p style="margin:0 0 20px;font-size:14px;color:#475569;"><strong>Booking:</strong> {{PRODUCT_NAME}}<br/><strong>Tour date:</strong> {{TOUR_DATE}}<br/><strong>Reference:</strong> {{CHANNEL_RN}}</p>
 
     <h2 style="font-size:16px;margin:24px 0 10px;">Complete online (required)</h2>
-    <p style="margin:0 0 12px;">Please use the secure page below to confirm residency, upload an Annual Pass photo if applicable, upload ID/proof, agree to the terms, and pay any balance by card if you choose card payment.</p>
+    <p style="margin:0 0 12px;">Please use the secure page below to confirm residency. U.S. residents upload ID to prove residency. Non-residents who already have an America the Beautiful pass upload the pass photo only (no ID). If you do not have a pass, pay the non-resident fee.</p>
     {{FLOW_LINK_BLOCK}}
     <p style="margin:16px 0 0;font-size:13px;color:#64748b;">This link is valid for <strong>14 days</strong>. After you finish, the page becomes read-only. If you need a new link, please contact us.</p>
     <p style="margin:16px 0 0;font-size:14px;color:#475569;">You may still reply to this email if you have questions.</p>
@@ -124,7 +124,7 @@ export const BUILTIN_RESIDENT_INQUIRY_EMAIL_BODY_HTML: Record<ResidentInquiryEma
     <p style="margin:0 0 20px;font-size:14px;color:#475569;"><strong>상품:</strong> {{PRODUCT_NAME}}<br/><strong>투어일:</strong> {{TOUR_DATE}}<br/><strong>예약 번호(RN):</strong> {{CHANNEL_RN}}</p>
 
     <h2 style="font-size:16px;margin:24px 0 10px;">온라인으로 완료 (필수)</h2>
-    <p style="margin:0 0 12px;">아래 보안 페이지에서 거주 여부 확인, 해당 시 연간 패스 사진·신분/증빙 업로드, 동의, 카드 결제 선택 시 잔액 결제를 진행해 주세요.</p>
+    <p style="margin:0 0 12px;">아래 보안 페이지에서 거주 여부를 확인해 주세요. 미국 거주자는 거주 증빙 신분증을 올리고, 이미 구매한 비거주자용 America the Beautiful 패스가 있으면 패스 사진만 올려 주세요(신분증 불필요). 패스가 없으면 비거주자 입장료를 결제합니다.</p>
     {{FLOW_LINK_BLOCK}}
     <p style="margin:16px 0 0;font-size:13px;color:#64748b;">링크 유효기간은 발송일 기준 <strong>14일</strong>입니다. 완료 후에는 읽기 전용으로 표시됩니다. 링크가 필요하시면 연락 주세요.</p>
     <p style="margin:16px 0 0;font-size:14px;color:#475569;">문의 사항은 본 메일 회신도 가능합니다.</p>
@@ -157,7 +157,7 @@ export const BUILTIN_RESIDENT_INQUIRY_EMAIL_BODY_HTML_MULTI_DAY: Record<Resident
     <p style="margin:0 0 20px;font-size:14px;color:#475569;"><strong>Booking:</strong> {{PRODUCT_NAME}}<br/><strong>Tour date:</strong> {{TOUR_DATE}}<br/><strong>Reference:</strong> {{CHANNEL_RN}}</p>
 
     <h2 style="font-size:16px;margin:24px 0 10px;">Complete online (required)</h2>
-    <p style="margin:0 0 12px;">Please use the secure page below to confirm residency, upload an Annual Pass photo if applicable, upload ID/proof, agree to the terms, and pay any balance by card if you choose card payment.</p>
+    <p style="margin:0 0 12px;">Please use the secure page below to confirm residency. U.S. residents upload ID to prove residency. Non-residents who already have an America the Beautiful pass upload the pass photo only (no ID). If you do not have a pass, pay the non-resident fee.</p>
     {{FLOW_LINK_BLOCK}}
     <p style="margin:16px 0 0;font-size:13px;color:#64748b;">This link is valid for <strong>14 days</strong>. After you finish, the page becomes read-only. If you need a new link, please contact us.</p>
     <p style="margin:16px 0 0;font-size:14px;color:#475569;">You may still reply to this email if you have questions.</p>
@@ -185,7 +185,7 @@ export const BUILTIN_RESIDENT_INQUIRY_EMAIL_BODY_HTML_MULTI_DAY: Record<Resident
     <p style="margin:0 0 20px;font-size:14px;color:#475569;"><strong>상품:</strong> {{PRODUCT_NAME}}<br/><strong>투어일:</strong> {{TOUR_DATE}}<br/><strong>예약 번호(RN):</strong> {{CHANNEL_RN}}</p>
 
     <h2 style="font-size:16px;margin:24px 0 10px;">온라인으로 완료 (필수)</h2>
-    <p style="margin:0 0 12px;">아래 보안 페이지에서 거주 여부 확인, 해당 시 연간 패스 사진·신분/증빙 업로드, 동의, 카드 결제 선택 시 잔액 결제를 진행해 주세요.</p>
+    <p style="margin:0 0 12px;">아래 보안 페이지에서 거주 여부를 확인해 주세요. 미국 거주자는 거주 증빙 신분증을 올리고, 이미 구매한 비거주자용 America the Beautiful 패스가 있으면 패스 사진만 올려 주세요(신분증 불필요). 패스가 없으면 비거주자 입장료를 결제합니다.</p>
     {{FLOW_LINK_BLOCK}}
     <p style="margin:16px 0 0;font-size:13px;color:#64748b;">링크 유효기간은 발송일 기준 <strong>14일</strong>입니다. 완료 후에는 읽기 전용으로 표시됩니다. 링크가 필요하시면 연락 주세요.</p>
     <p style="margin:16px 0 0;font-size:14px;color:#475569;">문의 사항은 본 메일 회신도 가능합니다.</p>

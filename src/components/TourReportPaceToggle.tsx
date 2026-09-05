@@ -2,6 +2,7 @@
 
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { isEnglishTourReportLocale } from '@/lib/tourReportExtras'
 
 export type TourReportPace = 'all_clear' | 'has_issues'
 
@@ -14,7 +15,7 @@ export default function TourReportPaceToggle({
   onChange: (next: TourReportPace) => void
   locale?: string
 }) {
-  const isEn = locale === 'en'
+  const isEn = isEnglishTourReportLocale(locale)
 
   return (
     <div className="space-y-2">

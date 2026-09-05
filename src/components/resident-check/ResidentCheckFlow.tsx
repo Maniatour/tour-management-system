@@ -25,6 +25,9 @@ import { Button } from '@/components/ui/button'
 import {
   residentCheckCanPayByCard,
   residentCheckFinalizeBlockers,
+  residentCheckRequiresIdProof,
+  residentCheckRequiresPassPhoto,
+  residentCheckUploadStepDone,
 } from '@/lib/residentCheckFinalize'
 import {
   hasResidentCheckProof,
@@ -190,16 +193,16 @@ function ReadOnlySummary({
               </dd>
             </div>
           )}
-          <div>
-            <dt className="text-muted-foreground">{t('idProof')}</dt>
-            <dd className="font-medium">
-              {hasResidentCheckProof(submission.id_proof_url)
-                ? t('uploadedCount', {
-                    count: parseResidentCheckProofUrls(submission.id_proof_url).length,
-                  })
-                : '—'}
-            </dd>
-          </div>
+          {hasResidentCheckProof(submission.id_proof_url) && (
+            <div>
+              <dt className="text-muted-foreground">{t('idProof')}</dt>
+              <dd className="font-medium">
+                {t('uploadedCount', {
+                  count: parseResidentCheckProofUrls(submission.id_proof_url).length,
+                })}
+              </dd>
+            </div>
+          )}
           {hasResidentCheckProof(submission.pass_photo_url) && (
             <div>
               <dt className="text-muted-foreground">{t('passPhoto')}</dt>
@@ -418,13 +421,7 @@ export default function ResidentCheckFlow() {
   )
 
   const step1Done = Boolean(submission)
-  const step2Done =
-    hasResidentCheckProof(submission?.id_proof_url) &&
-    !(
-      submission?.residency === 'non_resident' &&
-      submission?.has_annual_pass === true &&
-      !hasResidentCheckProof(submission?.pass_photo_url)
-    )
+  const step2Done = residentCheckUploadStepDone(submission)
   const step3Done =
     canPayByCard ||
     (Boolean(submission) && blockers.length === 0 && (submission?.total_charge_usd_cents ?? 0) === 0)
@@ -435,7 +432,7 @@ export default function ResidentCheckFlow() {
     setActionMsg(null)
     try {
       const nextPayment =
-        residency === 'us_resident'
+        residency === 'us_resident' || (residency === 'non_resident' && hasAnnualPass)
           ? null
           : (override?.paymentMethod !== undefined ? override.paymentMethod : paymentMethod) ||
             null
@@ -626,6 +623,18 @@ export default function ResidentCheckFlow() {
     (Number(r.adults) || 0) + (Number(r.child) || 0) + (Number(r.infant) || 0)
   const idProofUrls = parseResidentCheckProofUrls(submission?.id_proof_url)
   const passPhotoUrls = parseResidentCheckProofUrls(submission?.pass_photo_url)
+  const needsIdProof = residentCheckRequiresIdProof(residency)
+  const needsPassPhoto = residentCheckRequiresPassPhoto(residency, hasAnnualPass)
+  const showIdUpload = needsIdProof || idProofUrls.length > 0
+  const showPassUpload = needsPassPhoto || passPhotoUrls.length > 0
+  const showUploadSection = Boolean(submission) && (showIdUpload || showPassUpload)
+  const showPaymentMethod =
+    residency !== 'us_resident' && !(residency === 'non_resident' && hasAnnualPass)
+  const uploadHintText = needsPassPhoto
+    ? t('uploadHintPass')
+    : residency === 'mixed'
+      ? t('uploadHintMixed')
+      : t('uploadHint')
 
   return shell(
     <div className="space-y-6">
@@ -762,7 +771,7 @@ export default function ResidentCheckFlow() {
           {t('passAssistance')}
         </label>
 
-        {residency !== 'us_resident' && (
+        {showPaymentMethod && (
           <div>
             <p className="mb-3 text-sm font-medium text-foreground">{t('paymentMethod')}</p>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -819,33 +828,46 @@ export default function ResidentCheckFlow() {
         </Button>
       </div>
 
-      {submission && (
+      {submission && residency === 'non_resident' && !hasAnnualPass && (
+        <div className="rounded-2xl border border-border/60 bg-card p-6 shadow-sm">
+          <p className="text-sm leading-relaxed text-muted-foreground">{t('nonResidentPayHint')}</p>
+        </div>
+      )}
+
+      {showUploadSection && (
         <div className="rounded-2xl border border-border/60 bg-card p-6 shadow-sm space-y-4">
           <div className="flex items-center gap-2">
             <FileUp className="h-5 w-5 text-primary" />
             <h2 className="text-lg font-semibold text-foreground">{t('uploadProof')}</h2>
           </div>
-          <p className="text-sm text-muted-foreground">{t('uploadHint')}</p>
-          {partySize > 0 ? (
+          <p className="text-sm text-muted-foreground">{uploadHintText}</p>
+          {needsIdProof && partySize > 0 ? (
             <p className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-foreground">
               {t('uploadPerGuestHint', { count: partySize })}
             </p>
           ) : null}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <ProofUploadField
-              kind="id"
-              title={t('idProof')}
-              urls={idProofUrls}
-              uploading={uploadingKind === 'id'}
-              removingUrl={removingUrl}
-              chooseLabel={t('chooseFiles')}
-              addMoreLabel={t('addMoreFiles')}
-              uploadedCountLabel={t('uploadedCount', { count: idProofUrls.length })}
-              removeLabel={t('removeFile')}
-              onSelect={(files) => void uploadFiles('id', files)}
-              onRemove={(url) => void removeUploadedFile('id', url)}
-            />
-            {((residency === 'non_resident' && hasAnnualPass) || passPhotoUrls.length > 0) && (
+          {needsPassPhoto ? (
+            <p className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-foreground">
+              {t('uploadPassHint')}
+            </p>
+          ) : null}
+          <div className={`grid gap-4 ${showIdUpload && showPassUpload ? 'sm:grid-cols-2' : ''}`}>
+            {showIdUpload && (
+              <ProofUploadField
+                kind="id"
+                title={t('idProof')}
+                urls={idProofUrls}
+                uploading={uploadingKind === 'id'}
+                removingUrl={removingUrl}
+                chooseLabel={t('chooseFiles')}
+                addMoreLabel={t('addMoreFiles')}
+                uploadedCountLabel={t('uploadedCount', { count: idProofUrls.length })}
+                removeLabel={t('removeFile')}
+                onSelect={(files) => void uploadFiles('id', files)}
+                onRemove={(url) => void removeUploadedFile('id', url)}
+              />
+            )}
+            {showPassUpload && (
               <ProofUploadField
                 kind="pass"
                 title={t('passPhoto')}
@@ -986,7 +1008,7 @@ export default function ResidentCheckFlow() {
           <p className="mb-4 text-sm text-muted-foreground">
             {t('cardPayAmountHint', { amount: formatUsd(total) })}
           </p>
-          {!hasResidentCheckProof(submission.id_proof_url) ? (
+          {needsIdProof && !hasResidentCheckProof(submission.id_proof_url) ? (
             <p className="mb-4 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
               {t('cardPayUploadOptional')}
             </p>
