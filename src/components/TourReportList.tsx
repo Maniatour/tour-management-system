@@ -12,6 +12,7 @@ import {
   Filter, 
   MapPin, 
   Users, 
+  User,
   DollarSign, 
   Cloud, 
   Star, 
@@ -20,6 +21,8 @@ import {
   Edit,
   Trash2,
   Car,
+  Clock,
+  Sunrise,
   Wrench,
   Camera,
   NotebookPen,
@@ -28,11 +31,25 @@ import {
 } from 'lucide-react'
 import TourNarrationPlayLog from '@/components/tour/TourNarrationPlayLog'
 import { toast } from 'sonner'
-import { displayCourseName, type CourseForMainStops } from '@/lib/tourReportMainStops'
+import {
+  displayMainStopLabel,
+  expandManyDbKeyCandidates,
+  isOpaqueRecordId,
+  type CourseForMainStops,
+} from '@/lib/tourReportMainStops'
 import {
   displayDrivingSegmentLabel,
+  formatApproxDrivingDuration,
+  sumApproxDrivingMinutes,
   type TourReportDrivingSegment,
 } from '@/lib/tourReportDrivingSegments'
+import {
+  displayHorseshoeBendActivity,
+  displaySunriseActivity,
+  displaySunrisePoint,
+  parseActivityDetails,
+} from '@/lib/tourReportActivityDetails'
+import { normalizeTourReportEmail } from '@/lib/tourReportMissing'
 import {
   displaySkipReasonLabel,
   displayVehicleConditionLabel,
@@ -62,6 +79,7 @@ interface TourReport {
   weather: string | null
   main_stops_visited: string[]
   driving_segment_ids?: string[] | null
+  activity_details?: unknown
   skipped_stops?: unknown
   vehicle_condition_tags?: string[] | null
   vehicle_condition_note?: string | null
@@ -139,7 +157,8 @@ export default function TourReportList({
 }: TourReportListProps) {
   const { user } = useAuth()
   const [reports, setReports] = useState<TourReport[]>([])
-  const [stopCourseById] = useState<Map<string, CourseForMainStops>>(new Map())
+  const [stopCourseById, setStopCourseById] = useState<Map<string, CourseForMainStops>>(new Map())
+  const [guideNameByEmail, setGuideNameByEmail] = useState<Map<string, string>>(new Map())
   const [drivingById, setDrivingById] = useState<Map<string, TourReportDrivingSegment>>(new Map())
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -195,12 +214,82 @@ export default function TourReportList({
       const { data, error } = await query
 
       if (error) throw error
-      setReports((data ?? []) as TourReport[])
+      const rows = (data ?? []) as TourReport[]
+      setReports(rows)
+      void loadStopCourses(rows)
+      void loadGuideNames(rows)
     } catch (error) {
       console.error('Error fetching tour reports:', error)
       toast.error('리포트를 불러오는 중 오류가 발생했습니다.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadStopCourses = async (rows: TourReport[]) => {
+    const ids = [
+      ...new Set(
+        rows.flatMap((report) => [
+          ...(Array.isArray(report.main_stops_visited) ? report.main_stops_visited : []),
+          ...Object.keys(parseSkippedStops(report.skipped_stops)),
+          ...Object.keys(report.main_stop_substitutions || {}),
+        ])
+      ),
+    ].filter(Boolean)
+    if (ids.length === 0) {
+      setStopCourseById(new Map())
+      return
+    }
+    try {
+      const expanded = expandManyDbKeyCandidates(ids).filter((id) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+      )
+      if (expanded.length === 0) {
+        setStopCourseById(new Map())
+        return
+      }
+      const { data, error } = await supabase
+        .from('tour_courses')
+        .select(
+          'id, parent_id, name_ko, name_en, customer_name_ko, customer_name_en, category, category_id, path, sort_order'
+        )
+        .in('id', expanded)
+      if (error) throw error
+      const map = new Map<string, CourseForMainStops>()
+      for (const row of (data ?? []) as CourseForMainStops[]) {
+        map.set(row.id, row)
+      }
+      setStopCourseById(map)
+    } catch (e) {
+      console.error('Error fetching tour report stop names:', e)
+    }
+  }
+
+  const loadGuideNames = async (rows: TourReport[]) => {
+    const emails = [...new Set(rows.map((report) => report.user_email?.trim()).filter(Boolean))]
+    if (emails.length === 0) {
+      setGuideNameByEmail(new Map())
+      return
+    }
+    try {
+      const { data, error } = await supabase
+        .from('team')
+        .select('email, name_ko, name_en, nick_name')
+        .in('email', emails)
+      if (error) throw error
+      const map = new Map<string, string>()
+      for (const row of data ?? []) {
+        const email = String(row.email || '').trim().toLowerCase()
+        const name =
+          String(row.nick_name || '').trim() ||
+          String(row.name_ko || '').trim() ||
+          String(row.name_en || '').trim()
+        if (!email || !name || isOpaqueRecordId(name)) continue
+        map.set(email, name)
+      }
+      setGuideNameByEmail(map)
+    } catch (e) {
+      console.error('Error fetching tour report guide names:', e)
     }
   }
 
@@ -349,7 +438,22 @@ export default function TourReportList({
             </CardContent>
           </Card>
         ) : (
-          filteredReports.map((report) => (
+          filteredReports.map((report) => {
+            const guideName = guideNameByEmail.get(report.user_email.trim().toLowerCase())
+            const details = parseActivityDetails(report.activity_details)
+            const visibleStops = (report.main_stops_visited || [])
+              .map((stop) => ({ stop, label: displayMainStopLabel(stop, stopCourseById, locale) }))
+              .filter((item): item is { stop: string; label: string } => Boolean(item.label))
+            const drivingIds = Array.isArray(report.driving_segment_ids)
+              ? report.driving_segment_ids
+              : []
+            const approxDrivingMinutes = sumApproxDrivingMinutes(drivingIds, drivingById)
+            const myEmail = normalizeTourReportEmail(report.user_email)
+            const claimedFromMe = filteredReports
+              .filter((other) => other.tour_id === report.tour_id && other.id !== report.id)
+              .flatMap((other) => parseActivityDetails(other.activity_details).drivingRoster?.claims ?? [])
+              .filter((claim) => claim.fromEmail === myEmail)
+            return (
             <Card
               key={report.id}
               id={`tour-report-card-${report.id}`}
@@ -360,13 +464,23 @@ export default function TourReportList({
               <CardHeader className="p-4 md:p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex-1">
-                    <CardTitle className="text-base md:text-lg">
-                      {showTourInfo && report.tours?.products ? (
-                        `${report.tours.products.name_ko} (${report.tours.products.name_en})`
-                      ) : (
-                        `투어 리포트 #${report.id.slice(-8)}`
-                      )}
-                    </CardTitle>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <CardTitle className="text-base md:text-lg">
+                        {showTourInfo && report.tours?.products ? (
+                          `${report.tours.products.name_ko} (${report.tours.products.name_en})`
+                        ) : locale === 'en' ? (
+                          'Tour Report'
+                        ) : (
+                          '투어 리포트'
+                        )}
+                      </CardTitle>
+                      {guideName ? (
+                        <Badge variant="secondary" className="gap-1 text-xs font-medium">
+                          <User className="h-3 w-3" />
+                          {guideName}
+                        </Badge>
+                      ) : null}
+                    </div>
                     <p className="text-sm text-gray-500 mt-1">
                       {report.user_email} • {formatDate(report.submitted_on)}
                     </p>
@@ -396,34 +510,35 @@ export default function TourReportList({
                 </div>
               </CardHeader>
               <CardContent className="p-4 md:p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                <div className="mb-4 flex flex-wrap gap-3">
                   {report.end_mileage && (
-                    <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-md">
+                    <div className="flex items-center gap-2 rounded-md bg-gray-50 px-3 py-2">
                       <MapPin className="w-4 h-4 text-gray-500 flex-shrink-0" />
                       <span className="text-sm">마일리지: {report.end_mileage.toLocaleString()}</span>
                     </div>
                   )}
                   {report.cash_balance !== null && (
-                    <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-md">
+                    <div className="flex items-center gap-2 rounded-md bg-gray-50 px-3 py-2">
                       <DollarSign className="w-4 h-4 text-gray-500 flex-shrink-0" />
                       <span className="text-sm">잔액: ${report.cash_balance.toFixed(2)}</span>
                     </div>
                   )}
                   {report.customer_count != null && (
-                    <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-md">
+                    <div className="flex min-w-[240px] flex-[1.6] items-center gap-2 rounded-md bg-gray-50 px-3 py-2 sm:min-w-[280px]">
                       <Users className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                      <span className="text-sm">
-                        {locale === 'en' ? 'On board' : '탑승'}: {report.customer_count}명
+                      <span className="text-sm whitespace-nowrap">
+                        {locale === 'en' ? 'On board' : '탑승'}: {report.customer_count}
+                        {locale === 'en' ? '' : '명'}
                         {report.booked_customer_count != null
                           ? locale === 'en'
                             ? ` / booked ${report.booked_customer_count}`
-                            : ` / 예약 ${report.booked_customer_count}`
+                            : ` / 예약 ${report.booked_customer_count}명`
                           : ''}
                       </span>
                     </div>
                   )}
                   {report.weather && (
-                    <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-md">
+                    <div className="flex items-center gap-2 rounded-md bg-gray-50 px-3 py-2">
                       <Cloud className="w-4 h-4 text-gray-500 flex-shrink-0" />
                       <span className="text-sm">
                         {WEATHER_LABELS[report.weather as keyof typeof WEATHER_LABELS]?.icon} 
@@ -501,16 +616,16 @@ export default function TourReportList({
                 </div>
 
                 {/* 주요 정류장 */}
-                {report.main_stops_visited.length > 0 && (
+                {visibleStops.length > 0 && (
                   <div className="mb-4">
                     <p className="text-sm font-medium mb-2">주요 정류장:</p>
                     <div className="flex flex-wrap gap-1">
-                      {report.main_stops_visited.map((stop) => {
-                        const c = stopCourseById.get(stop)
-                        const label = c ? displayCourseName(c, locale) : stop
+                      {visibleStops.map(({ stop, label }) => {
+                        const activity = details.horseshoeBend?.[stop]
                         return (
                           <Badge key={stop} variant="secondary" className="text-xs">
                             {label}
+                            {activity ? ` · ${displayHorseshoeBendActivity(activity, locale)}` : ''}
                           </Badge>
                         )
                       })}
@@ -518,23 +633,69 @@ export default function TourReportList({
                   </div>
                 )}
 
-                {Array.isArray(report.driving_segment_ids) && report.driving_segment_ids.length > 0 && (
+                {details.sunrise ? (
+                  <div className="mb-4 rounded-lg border border-amber-200/80 bg-amber-50/60 px-3 py-2">
+                    <p className="flex items-center gap-1.5 text-sm font-medium text-amber-950">
+                      <Sunrise className="h-4 w-4" />
+                      {locale === 'en' ? 'Sunrise' : '일출'}
+                    </p>
+                    <p className="mt-1 text-sm text-amber-900">
+                      {displaySunrisePoint(details.sunrise.pointKey, locale)}
+                      {' · '}
+                      {displaySunriseActivity(details.sunrise.activity, locale)}
+                    </p>
+                  </div>
+                ) : null}
+
+                {drivingIds.length > 0 && (
                   <div className="mb-4">
-                    <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
-                      <Car className="h-4 w-4 text-gray-500" />
-                      {locale === 'en' ? 'Driving:' : 'Driving:'}
+                    <p className="text-sm font-medium mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Car className="h-4 w-4 text-gray-500" />
+                        {locale === 'en' ? 'Driving:' : 'Driving:'}
+                      </span>
+                      {approxDrivingMinutes > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-normal text-gray-500">
+                          <Clock className="h-3.5 w-3.5" />
+                          {formatApproxDrivingDuration(approxDrivingMinutes, locale)}
+                        </span>
+                      ) : null}
                     </p>
                     <div className="flex flex-wrap gap-1">
-                      {report.driving_segment_ids.map((segId) => {
+                      {drivingIds.map((segId) => {
                         const seg = drivingById.get(segId)
-                        const label = seg ? displayDrivingSegmentLabel(seg, locale) : segId
+                        const label = seg ? displayDrivingSegmentLabel(seg, locale) : ''
+                        if (!label || isOpaqueRecordId(label)) return null
+                        const claim = (details.drivingRoster?.claims ?? []).find((item) => item.segmentId === segId)
                         return (
                           <Badge key={segId} variant="outline" className="text-xs">
                             {label}
+                            {claim
+                              ? locale === 'en'
+                                ? ` · claimed from ${claim.fromName}`
+                                : ` · ${claim.fromName} 제출 클레임`
+                              : ''}
                           </Badge>
                         )
                       })}
                     </div>
+                    {claimedFromMe.length > 0 ? (
+                      <p className="mt-2 text-xs text-amber-800">
+                        {locale === 'en'
+                          ? `Claimed by partner: ${claimedFromMe
+                              .map((claim) => {
+                                const seg = drivingById.get(claim.segmentId)
+                                return seg ? displayDrivingSegmentLabel(seg, locale) : claim.segmentId
+                              })
+                              .join(', ')}`
+                          : `파트너 클레임: ${claimedFromMe
+                              .map((claim) => {
+                                const seg = drivingById.get(claim.segmentId)
+                                return seg ? displayDrivingSegmentLabel(seg, locale) : claim.segmentId
+                              })
+                              .join(', ')}`}
+                      </p>
+                    ) : null}
                   </div>
                 )}
 
@@ -565,8 +726,8 @@ export default function TourReportList({
                       <ul className="space-y-1 text-sm text-gray-700">
                         {skippedIds.map((cid) => {
                           const entry = skipped[cid]
-                          const c = stopCourseById.get(cid)
-                          const point = c ? displayCourseName(c, locale) : cid
+                          const point = displayMainStopLabel(cid, stopCourseById, locale)
+                          if (!point) return null
                           const reason = entry.reason
                             ? displaySkipReasonLabel(entry.reason, locale)
                             : ''
@@ -597,8 +758,8 @@ export default function TourReportList({
                       <ul className="space-y-1 text-sm text-gray-700">
                         {Object.entries(report.main_stop_substitutions).map(([cid, note]) => {
                           if (!note?.trim()) return null
-                          const c = stopCourseById.get(cid)
-                          const point = c ? displayCourseName(c, locale) : cid
+                          const point = displayMainStopLabel(cid, stopCourseById, locale)
+                          if (!point) return null
                           return (
                             <li key={cid} className="rounded bg-amber-50/80 px-2 py-1">
                               <span className="font-medium">{point}</span>: {note}
@@ -734,7 +895,8 @@ export default function TourReportList({
                 </div>
               </CardContent>
             </Card>
-          ))
+            )
+          })
         )}
       </div>
     </div>

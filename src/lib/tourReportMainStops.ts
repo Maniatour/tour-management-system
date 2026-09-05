@@ -27,6 +27,18 @@ export function expandManyDbKeyCandidates(ids: string[]): string[] {
   return [...u]
 }
 
+/** UUID(하이픈 유무)처럼 사람 눈에 보이면 안 되는 저장용 키 */
+export function isOpaqueRecordId(value: string | null | undefined): boolean {
+  if (value == null) return false
+  const t = String(value).trim()
+  if (!t) return false
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t)) {
+    return true
+  }
+  const hex = t.replace(/-/g, '')
+  return hex.length === 32 && /^[0-9a-f]{32}$/i.test(hex)
+}
+
 /** byId 키는 DB가 준 id(단일 형식)만 둔다고 가정하고, 요청 id의 후보로 조회 */
 export function getCourseFromByIdMap(
   byId: Map<string, CourseForMainStops>,
@@ -102,6 +114,22 @@ export function displayCourseName(course: CourseForMainStops, locale: string): s
   }
   const v = (course.customer_name_ko || course.name_ko || '').trim()
   return v || course.name_ko
+}
+
+/** 정류장 표시명. UUID만 있으면 숨기기 위해 null */
+export function displayMainStopLabel(
+  stopId: string,
+  byId: Map<string, CourseForMainStops>,
+  locale: string
+): string | null {
+  const course = getCourseFromByIdMap(byId, stopId)
+  if (course) {
+    const name = displayCourseName(course, locale).trim()
+    if (name && !isOpaqueRecordId(name)) return name
+  }
+  const raw = String(stopId || '').trim()
+  if (!raw || isOpaqueRecordId(raw)) return null
+  return raw
 }
 
 export function hasChildInMap(courseId: string, byId: Map<string, CourseForMainStops>): boolean {

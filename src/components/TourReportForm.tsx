@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { MapPin, Users, DollarSign, Cloud, Star, MessageSquare, AlertTriangle, Package, Lightbulb, MessageCircle, Handshake, FileText, ChevronLeft, ChevronRight, Car, Wrench, Camera, NotebookPen, SkipForward, PenLine } from 'lucide-react'
+import { MapPin, Users, DollarSign, Cloud, Star, MessageSquare, AlertTriangle, Package, Lightbulb, MessageCircle, Handshake, FileText, ChevronLeft, ChevronRight, Car, Wrench, Camera, NotebookPen, SkipForward, PenLine, Sunrise, Footprints, CircleParking, ClipboardCheck } from 'lucide-react'
 import WaiverSignaturePad from '@/components/waiver/WaiverSignaturePad'
 import TourReportNarrationSection from '@/components/tour/TourReportNarrationSection'
 import TourReportNumberStepper from '@/components/TourReportNumberStepper'
@@ -20,6 +20,30 @@ import {
   displayDrivingSegmentLabel,
   type TourReportDrivingSegment,
 } from '@/lib/tourReportDrivingSegments'
+import TourReportDrivingRoster from '@/components/TourReportDrivingRoster'
+import {
+  HORSESHOE_BEND_ACTIVITIES,
+  SUNRISE_ACTIVITIES,
+  SUNRISE_POINTS,
+  assignmentFromRoster,
+  flippedAssignmentFromPartner,
+  isHorseshoeBendCourse,
+  parseActivityDetails,
+  partnerAssignedToMeSegmentIds,
+  partnerSelfSegmentIds,
+  rosterFromAssignment,
+  sunriseCourseIdForKey,
+  sunrisePointKeyFromCourse,
+  unassignedDrivingIds,
+  type DrivingClaim,
+  type DrivingSeat,
+  type HorseshoeBendActivity,
+  type PartnerDrivingReport,
+  type SunriseActivity,
+  type SunrisePointKey,
+  type TourReportActivityDetails,
+} from '@/lib/tourReportActivityDetails'
+import { normalizeTourReportEmail } from '@/lib/tourReportMissing'
 import {
   VEHICLE_CONDITION_OPTIONS,
   parseIssuePhotoUrls,
@@ -233,8 +257,16 @@ export default function TourReportForm({
       officeNote: getText('사무실 메모', 'Office Note'),
       driving: getText('Driving', 'Driving'),
       drivingHint: getText(
-        '오늘 자신이 운전한 구간을 모두 선택해 주세요.',
-        'Select every segment you drove today.'
+        '코스별로 자신 또는 파트너가 운전했는지 체크하세요.',
+        'For each segment, check whether you or your partner drove.'
+      ),
+      drivingMe: getText('자신', 'Me'),
+      drivingPartner: getText('파트너', 'Partner'),
+      horseshoeOptions: getText('홀스슈밴드에서 한 일', 'What you did at Horseshoe Bend'),
+      sunriseTitle: getText('일출 포인트', 'Sunrise viewpoint'),
+      sunriseHint: getText(
+        '오늘 일출을 본 포인트와, 차량 대기인지 사진 촬영인지 선택해 주세요.',
+        'Choose the sunrise viewpoint and whether you waited in the vehicle or took photos.'
       ),
       drivingLoading: getText('운전 구간 불러오는 중…', 'Loading driving segments…'),
       drivingEmpty: getText('등록된 운전 구간이 없습니다.', 'No driving segments are set up yet.'),
@@ -307,6 +339,23 @@ export default function TourReportForm({
         '나레이션 재생 기록이 없습니다. 재생하지 않았다면 사유를 적거나, 충분한 설명을 했음을 체크해 주세요.',
         'No narration playback was recorded. If it was not played, write a reason or check that you explained it sufficiently.'
       ),
+      horseshoeRequired: getText(
+        '홀스슈밴드를 방문했다면 하이킹 / 주차장 대기 / 앤텔롭캐년 체크인 중 하나를 선택해 주세요.',
+        'If you visited Horseshoe Bend, choose hiking, parking wait, or Antelope Canyon check-in.'
+      ),
+      sunriseRequired: getText(
+        '밤도깨비 투어는 일출 포인트와 차량 대기/사진 촬영을 선택해 주세요.',
+        'For goblin tours, choose the sunrise viewpoint and vehicle wait or photography.'
+      ),
+      drivingGapsRequired: getText(
+        '드라이빙 구간을 빠짐없이 자신 또는 파트너에게 나눠 주세요.',
+        'Assign every driving segment to you or your partner. No gaps.'
+      ),
+      drivingClaimConfirm: (partnerName: string, label: string) =>
+        getText(
+          `${partnerName}이(가) 「${label}」를 운전했다고 제출했습니다.\n본인이 운전했다면 클레임하고 수정합니다.`,
+          `${partnerName} submitted “${label}” as their driving.\nIf you drove it, claim it and correct the report.`
+        ),
     },
     placeholders: {
       endMileage: getText('종료 주행거리를 입력하세요', 'Enter end mileage'),
@@ -340,6 +389,17 @@ export default function TourReportForm({
   const [bookedCustomerCount, setBookedCustomerCount] = useState<number | null>(null)
   const [drivingSegments, setDrivingSegments] = useState<TourReportDrivingSegment[]>([])
   const [drivingSegmentsLoading, setDrivingSegmentsLoading] = useState(false)
+  const [horseshoeBend, setHorseshoeBend] = useState<Record<string, HorseshoeBendActivity>>({})
+  const [sunrisePointKey, setSunrisePointKey] = useState<SunrisePointKey | null>(null)
+  const [sunriseActivity, setSunriseActivity] = useState<SunriseActivity | null>(null)
+  const [drivingAssignment, setDrivingAssignment] = useState<Record<string, DrivingSeat>>({})
+  const [partnerReports, setPartnerReports] = useState<PartnerDrivingReport[]>([])
+  const [myDisplayName, setMyDisplayName] = useState('')
+  const [assignedPartnerName, setAssignedPartnerName] = useState('')
+  const [assignedPartnerEmail, setAssignedPartnerEmail] = useState('')
+  const originalPartnerSelfIdsRef = useRef<string[]>([])
+  const previousDrivingClaimsRef = useRef<DrivingClaim[]>([])
+  const drivingHydratedKeyRef = useRef('')
   const [reportPace, setReportPace] = useState<TourReportPace>(() =>
     inferTourReportHasIssues(initialData) ? 'has_issues' : 'all_clear'
   )
@@ -411,6 +471,13 @@ export default function TourReportForm({
         : prev.lost_items_damage,
       ...parseNarrationSkip(initialData),
     }))
+    const details = parseActivityDetails(
+      (initialData as { activity_details?: unknown }).activity_details
+    )
+    setHorseshoeBend(details.horseshoeBend ?? {})
+    setSunrisePointKey(details.sunrise?.pointKey ?? null)
+    setSunriseActivity(details.sunrise?.activity ?? null)
+    previousDrivingClaimsRef.current = details.drivingRoster?.claims ?? []
   }, [initialData, reportId, tourId])
 
   useEffect(() => {
@@ -575,6 +642,145 @@ export default function TourReportForm({
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadPartnerReports() {
+      if (!tourId || !user?.email) {
+        setPartnerReports([])
+        setMyDisplayName('')
+        return
+      }
+      try {
+        const myEmail = normalizeTourReportEmail(user.email)
+        const { data, error } = await supabase
+          .from('tour_reports')
+          .select('id, user_email, driving_segment_ids, activity_details, submitted_on, updated_at')
+          .eq('tour_id', tourId)
+        if (error) throw error
+        const rows = (data ?? []) as Array<{
+          id: string
+          user_email: string
+          driving_segment_ids: string[] | null
+          activity_details: unknown
+          submitted_on: string | null
+          updated_at: string | null
+        }>
+        const emails = [...new Set(rows.map((row) => row.user_email).filter(Boolean))]
+        if (!emails.includes(user.email)) emails.push(user.email)
+
+        const { data: tourStaff } = await supabase
+          .from('tours')
+          .select('tour_guide_id, assistant_id')
+          .eq('id', tourId)
+          .maybeSingle()
+        const assignedEmails = [tourStaff?.tour_guide_id, tourStaff?.assistant_id]
+          .map((value) => normalizeTourReportEmail(String(value || '')))
+          .filter(Boolean)
+        for (const email of assignedEmails) {
+          if (!emails.some((item) => normalizeTourReportEmail(item) === email)) emails.push(email)
+        }
+        const { data: teamRows } = emails.length
+          ? await supabase.from('team').select('email, nick_name, name_ko, name_en').in('email', emails)
+          : { data: [] as Array<{ email: string; nick_name: string | null; name_ko: string | null; name_en: string | null }> }
+        const nameByEmail = new Map<string, string>()
+        for (const member of teamRows ?? []) {
+          const email = normalizeTourReportEmail(member.email)
+          const name =
+            String(member.nick_name || '').trim() ||
+            String(member.name_ko || '').trim() ||
+            String(member.name_en || '').trim()
+          if (email && name) nameByEmail.set(email, name)
+        }
+        if (!cancelled) {
+          setMyDisplayName(nameByEmail.get(myEmail) || user.email.split('@')[0] || getText('자신', 'Me'))
+          const assignedPartnerEmail = assignedEmails.find((email) => email && email !== myEmail) || ''
+          setAssignedPartnerEmail(assignedPartnerEmail)
+          setAssignedPartnerName(
+            assignedPartnerEmail
+              ? nameByEmail.get(assignedPartnerEmail) || assignedPartnerEmail.split('@')[0] || getText('파트너', 'Partner')
+              : ''
+          )
+          setPartnerReports(
+            rows
+              .filter((row) => {
+                if (reportId && row.id === reportId) return false
+                return normalizeTourReportEmail(row.user_email) !== myEmail
+              })
+              .map((row) => {
+                const email = normalizeTourReportEmail(row.user_email)
+                return {
+                  id: row.id,
+                  user_email: email,
+                  userName: nameByEmail.get(email) || row.user_email.split('@')[0] || email,
+                  driving_segment_ids: Array.isArray(row.driving_segment_ids) ? row.driving_segment_ids : [],
+                  activity_details: parseActivityDetails(row.activity_details),
+                  submitted_on: row.submitted_on,
+                  updated_at: row.updated_at,
+                } satisfies PartnerDrivingReport
+              })
+          )
+        }
+      } catch (e) {
+        console.error('Tour report partner load error:', e)
+        if (!cancelled) {
+          setPartnerReports([])
+          setAssignedPartnerEmail('')
+          setAssignedPartnerName('')
+        }
+      }
+    }
+    void loadPartnerReports()
+    return () => {
+      cancelled = true
+    }
+  }, [tourId, reportId, user?.email, locale])
+
+  useEffect(() => {
+    drivingHydratedKeyRef.current = ''
+  }, [tourId, reportId])
+
+  useEffect(() => {
+    if (drivingSegmentsLoading) return
+    const scheduleIds = drivingSegments
+      .filter((seg) => seg.is_active)
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((seg) => seg.id)
+    if (scheduleIds.length === 0) return
+    const key = `${tourId}:${reportId || 'new'}:${scheduleIds.join(',')}:${partnerReports.map((row) => row.id).join(',')}`
+    if (drivingHydratedKeyRef.current === key) return
+    const details = parseActivityDetails(
+      initialData ? (initialData as { activity_details?: unknown }).activity_details : {}
+    )
+    const partner = partnerReports[0]
+    originalPartnerSelfIdsRef.current = partnerSelfSegmentIds(partner)
+    setDrivingAssignment((prev) => {
+      const next = details.drivingRoster
+        ? assignmentFromRoster(
+            scheduleIds,
+            details.drivingRoster,
+            Array.isArray(initialData?.driving_segment_ids)
+              ? initialData.driving_segment_ids
+              : formData.driving_segment_ids,
+            details.drivingRoster.partnerSegmentIds
+          )
+        : flippedAssignmentFromPartner(scheduleIds, partner)
+      if (!drivingHydratedKeyRef.current) return next
+      for (const id of scheduleIds) {
+        if (prev[id] === 'me') next[id] = 'me'
+      }
+      return next
+    })
+    drivingHydratedKeyRef.current = key
+  }, [
+    drivingSegments,
+    drivingSegmentsLoading,
+    partnerReports,
+    tourId,
+    reportId,
+    initialData,
+    formData.driving_segment_ids,
+  ])
 
   useEffect(() => {
     let cancelled = false
@@ -987,6 +1193,14 @@ export default function TourReportForm({
         main_stops_visited: prev.main_stops_visited.filter((id) => id !== courseId),
       }
     })
+    if (!visited) {
+      setHorseshoeBend((prev) => {
+        if (!(courseId in prev)) return prev
+        const next = { ...prev }
+        delete next[courseId]
+        return next
+      })
+    }
   }
 
   const toggleVehicleCondition = (value: string) => {
@@ -1005,11 +1219,44 @@ export default function TourReportForm({
 
   const visibleDrivingSegments = useMemo(
     () =>
-      drivingSegments.filter(
-        (seg) => seg.is_active || formData.driving_segment_ids.includes(seg.id)
-      ),
-    [drivingSegments, formData.driving_segment_ids]
+      drivingSegments
+        .filter((seg) => seg.is_active || (drivingAssignment[seg.id] && drivingAssignment[seg.id] !== 'none'))
+        .sort((a, b) => a.sort_order - b.sort_order),
+    [drivingSegments, drivingAssignment]
   )
+
+  const partnerSubmitted = partnerReports.length > 0
+  const partnerName =
+    partnerReports[0]?.userName || assignedPartnerName || t.fields.drivingPartner
+  const partnerEmail = partnerReports[0]?.user_email || assignedPartnerEmail
+  const suggestedMineIds = new Set(partnerAssignedToMeSegmentIds(partnerReports[0]))
+  const drivingUnassignedIds = unassignedDrivingIds(
+    visibleDrivingSegments.map((seg) => seg.id),
+    drivingAssignment
+  )
+  const claimedDrivingIds = new Set(
+    rosterFromAssignment(
+      drivingAssignment,
+      originalPartnerSelfIdsRef.current,
+      partnerEmail,
+      partnerName,
+      previousDrivingClaimsRef.current
+    ).claims.map((claim) => claim.segmentId)
+  )
+
+  const toggleDrivingSeat = (segmentId: string, seat: 'me' | 'partner') => {
+    const current = drivingAssignment[segmentId] || 'none'
+    if (current === seat) {
+      setDrivingAssignment((prev) => ({ ...prev, [segmentId]: 'none' }))
+      return
+    }
+    if (seat === 'me' && current === 'partner' && originalPartnerSelfIdsRef.current.includes(segmentId)) {
+      const seg = drivingSegments.find((row) => row.id === segmentId)
+      const label = seg ? displayDrivingSegmentLabel(seg, locale) : segmentId
+      if (!window.confirm(t.messages.drivingClaimConfirm(partnerName, label))) return
+    }
+    setDrivingAssignment((prev) => ({ ...prev, [segmentId]: seat }))
+  }
 
   const mainStopsIndented = useMemo(
     () => sortMainStopsIndented(courseById, mainStopOptions),
@@ -1053,6 +1300,54 @@ export default function TourReportForm({
         }
       }
 
+      const horseshoeIds = mainStopOptions
+        .filter((row) => isHorseshoeBendCourse(row.course))
+        .map((row) => row.id)
+      const visitedHorseshoe = horseshoeIds.filter((id) => formData.main_stops_visited.includes(id))
+      if (visitedHorseshoe.some((id) => !horseshoeBend[id])) {
+        toast.error(t.messages.horseshoeRequired)
+        if (useMobileWizard) setMobileStep(1)
+        return
+      }
+
+      if (isGoblinTour && (!sunrisePointKey || !sunriseActivity)) {
+        toast.error(t.messages.sunriseRequired)
+        if (useMobileWizard) setMobileStep(1)
+        return
+      }
+
+      if (drivingUnassignedIds.length > 0) {
+        toast.error(t.messages.drivingGapsRequired)
+        if (useMobileWizard) setMobileStep(1)
+        return
+      }
+
+      const drivingRoster = rosterFromAssignment(
+        drivingAssignment,
+        originalPartnerSelfIdsRef.current,
+        partnerEmail,
+        partnerName,
+        previousDrivingClaimsRef.current
+      )
+      const activityDetails: TourReportActivityDetails = {
+        horseshoeBend: Object.fromEntries(
+          visitedHorseshoe
+            .map((id) => [id, horseshoeBend[id]] as const)
+            .filter((entry): entry is readonly [string, HorseshoeBendActivity] => Boolean(entry[1]))
+        ),
+        drivingRoster,
+      }
+      if (isGoblinTour && sunrisePointKey && sunriseActivity) {
+        activityDetails.sunrise = {
+          pointKey: sunrisePointKey,
+          courseId: sunriseCourseIdForKey(
+            sunrisePointKey,
+            mainStopOptions.map((row) => row.course)
+          ),
+          activity: sunriseActivity,
+        }
+      }
+
       const narrationSkip = serializeNarrationSkip(formData)
 
       const payload = {
@@ -1062,7 +1357,8 @@ export default function TourReportForm({
         booked_customer_count: bookedCustomerCount ?? formData.booked_customer_count,
         weather: formData.weather,
         main_stops_visited: formData.main_stops_visited,
-        driving_segment_ids: formData.driving_segment_ids,
+        driving_segment_ids: drivingRoster.selfSegmentIds,
+        activity_details: activityDetails,
         skipped_stops: Object.fromEntries(
           Object.entries(formData.skipped_stops).filter(
             ([id]) => !formData.main_stops_visited.includes(id)
@@ -1348,6 +1644,12 @@ export default function TourReportForm({
                     const visited = formData.main_stops_visited.includes(id)
                     const label = displayCourseName(course, locale)
                     const indentPx = Math.min(depth, 12) * 14
+                    const horseshoe = isHorseshoeBendCourse(course)
+                    const horseshoeIcon = (value: HorseshoeBendActivity) => {
+                      if (value === 'hiking') return Footprints
+                      if (value === 'parking_wait') return CircleParking
+                      return ClipboardCheck
+                    }
                     return (
                       <div
                         key={id}
@@ -1379,6 +1681,32 @@ export default function TourReportForm({
                           </span>
                           <span className="whitespace-normal text-left font-medium leading-snug">{label}</span>
                         </Button>
+                        {horseshoe && visited ? (
+                          <div className="mb-2 ml-6 space-y-1.5">
+                            <p className="text-xs font-medium text-muted-foreground">{t.fields.horseshoeOptions}</p>
+                            <div className="grid gap-1.5">
+                              {HORSESHOE_BEND_ACTIVITIES.map((option) => {
+                                const selected = horseshoeBend[id] === option.value
+                                const Icon = horseshoeIcon(option.value)
+                                return (
+                                  <Button
+                                    key={option.value}
+                                    type="button"
+                                    variant={selected ? 'default' : 'outline'}
+                                    size="sm"
+                                    onClick={() =>
+                                      setHorseshoeBend((prev) => ({ ...prev, [id]: option.value }))
+                                    }
+                                    className="h-auto min-h-[40px] justify-start gap-2 whitespace-normal px-2 py-2 text-left text-xs"
+                                  >
+                                    <Icon className="h-3.5 w-3.5 shrink-0" />
+                                    {locale === 'en' ? option.en : option.ko}
+                                  </Button>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     )
                   })}
@@ -1389,9 +1717,15 @@ export default function TourReportForm({
                   {formData.main_stops_visited.map((stopId) => {
                     const c = courseById.get(stopId)
                     const displayText = c ? displayCourseName(c, locale) : stopId
+                    const horseshoeLabel = horseshoeBend[stopId]
+                      ? locale === 'en'
+                        ? HORSESHOE_BEND_ACTIVITIES.find((item) => item.value === horseshoeBend[stopId])?.en
+                        : HORSESHOE_BEND_ACTIVITIES.find((item) => item.value === horseshoeBend[stopId])?.ko
+                      : null
                     return (
                       <Badge key={stopId} variant="secondary">
                         {displayText}
+                        {horseshoeLabel ? ` · ${horseshoeLabel}` : ''}
                       </Badge>
                     )
                   })}
@@ -1419,73 +1753,79 @@ export default function TourReportForm({
               </div>
             )}
 
+            {isGoblinTour && (
+              <div className={cn(fieldY, 'pt-1')}>
+                <Label className={cn('flex items-center gap-2', labelMb)}>
+                  <Sunrise className="h-4 w-4 shrink-0" />
+                  {t.fields.sunriseTitle}
+                </Label>
+                <p className="text-sm text-muted-foreground">{t.fields.sunriseHint}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {SUNRISE_POINTS.map((point) => {
+                    const selected = sunrisePointKey === point.key
+                    return (
+                      <Button
+                        key={point.key}
+                        type="button"
+                        variant={selected ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => {
+                          setSunrisePointKey(point.key)
+                          const option = mainStopOptions.find(
+                            (row) => sunrisePointKeyFromCourse(row.course) === point.key
+                          )
+                          if (option) toggleMainStopVisited(option.id, true)
+                        }}
+                        className="h-auto min-h-[42px] whitespace-normal px-2 py-2 text-xs"
+                      >
+                        {locale === 'en' ? point.en : point.ko}
+                      </Button>
+                    )
+                  })}
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {SUNRISE_ACTIVITIES.map((option) => {
+                    const selected = sunriseActivity === option.value
+                    return (
+                      <Button
+                        key={option.value}
+                        type="button"
+                        variant={selected ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setSunriseActivity(option.value)}
+                        className="h-auto min-h-[42px] justify-start gap-2 whitespace-normal px-2 py-2 text-left text-xs"
+                      >
+                        {option.value === 'photography' ? (
+                          <Camera className="h-3.5 w-3.5 shrink-0" />
+                        ) : (
+                          <Car className="h-3.5 w-3.5 shrink-0" />
+                        )}
+                        {locale === 'en' ? option.en : option.ko}
+                      </Button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className={cn(fieldY, 'pt-1')}>
               <Label className={cn('flex items-center gap-2', labelMb)}>
                 <Car className="h-4 w-4 shrink-0" />
                 {t.fields.driving}
               </Label>
-              <p className="text-sm text-muted-foreground">{t.fields.drivingHint}</p>
-              {drivingSegmentsLoading ? (
-                <p className="text-sm text-gray-500">{t.fields.drivingLoading}</p>
-              ) : visibleDrivingSegments.length === 0 ? (
-                <p className="text-sm text-amber-700">{t.fields.drivingEmpty}</p>
-              ) : (
-                <div
-                  className={cn(
-                    'rounded-lg border border-gray-200 bg-gray-50/60',
-                    variant === 'modal' ? 'px-1 py-2' : 'px-2 py-2'
-                  )}
-                >
-                  {visibleDrivingSegments.map((segment) => {
-                    const selected = formData.driving_segment_ids.includes(segment.id)
-                    const label = displayDrivingSegmentLabel(segment, locale)
-                    return (
-                      <div key={segment.id} className="border-b border-gray-100/90 last:border-b-0">
-                        <Button
-                          type="button"
-                          variant={selected ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() =>
-                            handleArrayChange('driving_segment_ids', segment.id, !selected)
-                          }
-                          className="my-1 flex min-h-[42px] w-full max-w-full items-center justify-start gap-2 px-2 text-xs md:min-h-[38px] md:text-sm"
-                        >
-                          <span
-                            className={cn(
-                              'flex h-4 w-4 shrink-0 items-center justify-center rounded border-2',
-                              selected ? 'border-primary bg-blue-600' : 'border-gray-300'
-                            )}
-                          >
-                            {selected && (
-                              <svg className="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                <path
-                                  fillRule="evenodd"
-                                  d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                  clipRule="evenodd"
-                                />
-                              </svg>
-                            )}
-                          </span>
-                          <span className="whitespace-normal text-left font-medium leading-snug">{label}</span>
-                        </Button>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-              {formData.driving_segment_ids.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {formData.driving_segment_ids.map((segId) => {
-                    const seg = drivingSegments.find((s) => s.id === segId)
-                    const displayText = seg ? displayDrivingSegmentLabel(seg, locale) : segId
-                    return (
-                      <Badge key={segId} variant="secondary">
-                        {displayText}
-                      </Badge>
-                    )
-                  })}
-                </div>
-              )}
+              <TourReportDrivingRoster
+                locale={locale}
+                segments={visibleDrivingSegments}
+                loading={drivingSegmentsLoading}
+                myName={myDisplayName || t.fields.drivingMe}
+                partnerName={partnerName}
+                partnerSubmitted={partnerSubmitted}
+                suggestedMineIds={suggestedMineIds}
+                assignment={drivingAssignment}
+                claimedIds={claimedDrivingIds}
+                unassignedIds={drivingUnassignedIds}
+                onToggle={toggleDrivingSeat}
+              />
             </div>
 
             {/* 전체적인 분위기 */}

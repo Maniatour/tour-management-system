@@ -7,10 +7,14 @@ import type {
   DailyReportTodoMatrixStatus,
   DailyReportActivityActionKind,
   DailyReportActivityHistoryGroup,
+  DailyReportTourReportEntry,
+  DailyReportTourReportStaffRole,
+  DailyReportTourReportSummary,
 } from '@/lib/dailyReport/types'
 import { formatReportDateLabel, formatReportDateRangeLabel, isSingleDayReport } from '@/lib/dailyReport/dateUtils'
 import { formatUsd } from '@/lib/dailyReport/moneyUtils'
 import { getStatusColor, getStatusText } from '@/utils/tourStatusUtils'
+import { displaySkipReasonLabel, displayVehicleConditionLabel } from '@/lib/tourReportExtras'
 import {
   Dialog,
   DialogContent,
@@ -25,6 +29,7 @@ import {
   ChevronDown,
   ClipboardList,
   DollarSign,
+  FileText,
   History,
   Users,
   Wallet,
@@ -865,6 +870,278 @@ function FinancialCategoryBlock({
   )
 }
 
+const WEATHER_LABELS: Record<string, { ko: string; en: string }> = {
+  sunny: { ko: '맑음', en: 'Sunny' },
+  cloudy: { ko: '흐림', en: 'Cloudy' },
+  rainy: { ko: '비', en: 'Rain' },
+  snowy: { ko: '눈', en: 'Snow' },
+  windy: { ko: '바람', en: 'Windy' },
+  foggy: { ko: '안개', en: 'Fog' },
+}
+
+const MOOD_LABELS: Record<string, { ko: string; en: string }> = {
+  excellent: { ko: '매우 좋음', en: 'Excellent' },
+  good: { ko: '좋음', en: 'Good' },
+  average: { ko: '보통', en: 'Average' },
+  poor: { ko: '나쁨', en: 'Poor' },
+  terrible: { ko: '매우 나쁨', en: 'Terrible' },
+}
+
+function weatherLabel(code: string | null, isKo: boolean): string | null {
+  if (!code) return null
+  const row = WEATHER_LABELS[code]
+  if (!row) return code
+  return isKo ? row.ko : row.en
+}
+
+function moodLabel(code: string | null, isKo: boolean): string | null {
+  if (!code) return null
+  const row = MOOD_LABELS[code]
+  if (!row) return code
+  return isKo ? row.ko : row.en
+}
+
+function staffRoleLabel(role: DailyReportTourReportStaffRole, isKo: boolean): string {
+  if (role === 'assistant') return isKo ? '어시' : 'Asst'
+  if (role === 'guide') return isKo ? '가이드' : 'Guide'
+  return isKo ? '기타' : 'Staff'
+}
+
+function tourReportStatusMeta(tour: DailyReportTourReportSummary['tours'][number], isKo: boolean) {
+  if (!tour.allSubmitted) {
+    return {
+      label: isKo ? '미제출' : 'Missing',
+      className: 'bg-amber-50 text-amber-800 border-amber-200',
+    }
+  }
+  if (tour.reports.some((report) => report.hasIssues)) {
+    return {
+      label: isKo ? '이슈' : 'Issues',
+      className: 'bg-red-50 text-red-700 border-red-200',
+    }
+  }
+  return {
+    label: isKo ? '제출' : 'Submitted',
+    className: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  }
+}
+
+function TourReportEntrySummary({
+  report,
+  isKo,
+  locale,
+}: {
+  report: DailyReportTourReportEntry
+  isKo: boolean
+  locale: string
+}) {
+  const weather = weatherLabel(report.weather, isKo)
+  const mood = moodLabel(report.overallMood, isKo)
+  const vehicleIssueTags = report.vehicleTags.filter((tag) => tag !== 'ok')
+  const meta: string[] = []
+  if (weather) meta.push(weather)
+  if (mood) meta.push(mood)
+  if (report.customerCount != null) {
+    const booked =
+      report.bookedCustomerCount != null
+        ? isKo
+          ? ` / 예약 ${report.bookedCustomerCount}`
+          : ` / booked ${report.bookedCustomerCount}`
+        : ''
+    meta.push(
+      isKo ? `탑승 ${report.customerCount}${booked}` : `On board ${report.customerCount}${booked}`
+    )
+  }
+
+  const notes = [
+    report.guestComments,
+    report.handoffNote,
+    report.comments,
+    report.suggestions,
+  ].filter(Boolean) as string[]
+
+  return (
+    <div className="mt-1.5 space-y-1">
+      <p className="text-[10px] text-muted-foreground sm:text-xs">
+        <span className="font-medium text-foreground">
+          {staffRoleLabel(report.role, isKo)} {report.staffName}
+        </span>
+        {meta.length > 0 ? ` · ${meta.join(' · ')}` : ''}
+      </p>
+      {report.hasIssues ? (
+        <ul className="space-y-0.5 text-[10px] text-red-800 sm:text-xs">
+          {report.incidents.map((item) => (
+            <li key={`inc-${item}`}>
+              {isKo ? '문제' : 'Issue'}: {item}
+            </li>
+          ))}
+          {report.lostItems.map((item) => (
+            <li key={`lost-${item}`}>
+              {isKo ? '분실/손상' : 'Lost/damage'}: {item}
+            </li>
+          ))}
+          {vehicleIssueTags.map((tag) => (
+            <li key={`veh-${tag}`}>
+              {isKo ? '차량' : 'Vehicle'}: {displayVehicleConditionLabel(tag, locale)}
+            </li>
+          ))}
+          {report.vehicleNote ? (
+            <li>
+              {isKo ? '차량 메모' : 'Vehicle note'}: {report.vehicleNote}
+            </li>
+          ) : null}
+          {report.skippedStops.length > 0 ? (
+            <li>
+              {isKo ? '스킵' : 'Skipped'}:{' '}
+              {report.skippedStops
+                .map((stop) =>
+                  [stop.reason ? displaySkipReasonLabel(stop.reason, locale) : null, stop.note]
+                    .filter(Boolean)
+                    .join(' — ')
+                )
+                .join(' · ')}
+            </li>
+          ) : null}
+          {report.narrationSkipTitleKo ? (
+            <li>
+              {isKo ? report.narrationSkipTitleKo : report.narrationSkipTitleEn || report.narrationSkipTitleKo}
+              {report.narrationSkipDetail ? ` — ${report.narrationSkipDetail}` : ''}
+            </li>
+          ) : null}
+          {report.photoCount > 0 ? (
+            <li>
+              {isKo ? `이슈 사진 ${report.photoCount}장` : `${report.photoCount} issue photo(s)`}
+            </li>
+          ) : null}
+          {notes.map((note, idx) => (
+            <li key={`note-${idx}`} className="whitespace-pre-wrap text-foreground/80">
+              {note}
+            </li>
+          ))}
+        </ul>
+      ) : notes.length > 0 ? (
+        <ul className="space-y-0.5 text-[10px] text-muted-foreground sm:text-xs">
+          {notes.map((note, idx) => (
+            <li key={`note-${idx}`} className="whitespace-pre-wrap">
+              {note}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
+function TourReportStatusSection({
+  summary,
+  isKo,
+  locale,
+  singleDay,
+}: {
+  summary: DailyReportTourReportSummary
+  isKo: boolean
+  locale: string
+  singleDay: boolean
+}) {
+  return (
+    <section>
+      <SectionTitle icon={<FileText className="h-4 w-4 text-sky-700 sm:h-5 sm:w-5" />}>
+        {singleDay
+          ? isKo
+            ? '투어 리포트 현황'
+            : 'Tour reports'
+          : isKo
+            ? '기간 투어 리포트 현황'
+            : 'Tour reports (period)'}
+      </SectionTitle>
+      <div className="mb-2 grid grid-cols-2 gap-1.5 sm:mb-3 sm:grid-cols-4 sm:gap-3">
+        <StatCard
+          label={isKo ? '배정 투어' : 'Assigned'}
+          value={summary.assignedTourCount}
+        />
+        <StatCard
+          label={isKo ? '제출 완료' : 'Complete'}
+          value={summary.completeTourCount}
+          accent="text-emerald-600"
+        />
+        <StatCard
+          label={isKo ? '미제출' : 'Missing'}
+          value={summary.missingTourCount}
+          accent={summary.missingTourCount > 0 ? 'text-amber-700' : 'text-muted-foreground'}
+        />
+        <StatCard
+          label={isKo ? '현장 이슈' : 'Issues'}
+          value={summary.issueReportCount}
+          accent={summary.issueReportCount > 0 ? 'text-red-600' : 'text-muted-foreground'}
+        />
+      </div>
+      {summary.tours.length > 0 ? (
+        <div className="overflow-hidden rounded-lg border border-border/60 sm:rounded-xl">
+          <ul className="divide-y divide-border/50">
+            {summary.tours.map((tour) => {
+              const status = tourReportStatusMeta(tour, isKo)
+              return (
+                <li key={tour.tourId} className="px-2.5 py-2 sm:px-3 sm:py-2.5">
+                  <div className="flex min-w-0 items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-[11px] font-semibold leading-tight sm:text-sm">
+                        {tour.productName}
+                      </p>
+                      <p className="mt-0.5 text-[10px] text-muted-foreground sm:text-xs">
+                        {!singleDay ? `${formatReportDateLabel(tour.tourDate, locale)} · ` : ''}
+                        {tour.staff.length > 0
+                          ? tour.staff
+                              .map(
+                                (person) =>
+                                  `${staffRoleLabel(person.role, isKo)} ${person.name}${
+                                    person.submitted ? '' : isKo ? ' (미제출)' : ' (missing)'
+                                  }`
+                              )
+                              .join(' · ')
+                          : isKo
+                            ? '담당자 없음'
+                            : 'No assigned staff'}
+                      </p>
+                    </div>
+                    <span
+                      className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold sm:px-2 sm:text-xs ${status.className}`}
+                    >
+                      {status.label}
+                    </span>
+                  </div>
+                  {tour.missingNames.length > 0 ? (
+                    <p className="mt-1 text-[10px] font-medium text-amber-800 sm:text-xs">
+                      {isKo ? '미제출' : 'Missing'}: {tour.missingNames.join(', ')}
+                    </p>
+                  ) : null}
+                  {tour.reports.map((report) => (
+                    <TourReportEntrySummary
+                      key={report.id}
+                      report={report}
+                      isKo={isKo}
+                      locale={locale}
+                    />
+                  ))}
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground sm:text-sm">
+          {singleDay
+            ? isKo
+              ? '오늘 가이드 배정 투어가 없습니다.'
+              : 'No assigned tours today.'
+            : isKo
+              ? '해당 기간 가이드 배정 투어가 없습니다.'
+              : 'No assigned tours in this period.'}
+        </p>
+      )}
+    </section>
+  )
+}
+
 export function DailyReportDocument({ data, locale = 'ko' }: DailyReportDocumentProps) {
   const isKo = locale.startsWith('ko')
   const endDate = data.reportEndDate ?? data.reportDate
@@ -1028,6 +1305,15 @@ export function DailyReportDocument({ data, locale = 'ko' }: DailyReportDocument
           )}
           {ts.notes.trim() ? <NoteBox>{ts.notes}</NoteBox> : null}
         </section>
+
+        {data.tourReportSummary ? (
+          <TourReportStatusSection
+            summary={data.tourReportSummary}
+            isKo={isKo}
+            locale={locale}
+            singleDay={singleDay}
+          />
+        ) : null}
 
         {data.financialReport ? (
           <section>

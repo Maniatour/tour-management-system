@@ -86,6 +86,64 @@ export type DailyReportTourSummary = {
   notes: string
 }
 
+export type DailyReportTourReportStaffRole = 'guide' | 'assistant' | 'other'
+
+export type DailyReportTourReportStaff = {
+  name: string
+  role: DailyReportTourReportStaffRole
+  submitted: boolean
+}
+
+export type DailyReportTourReportSkippedStop = {
+  reason: string
+  note: string
+}
+
+export type DailyReportTourReportEntry = {
+  id: string
+  staffName: string
+  role: DailyReportTourReportStaffRole
+  submittedOn: string | null
+  weather: string | null
+  overallMood: string | null
+  customerCount: number | null
+  bookedCustomerCount: number | null
+  hasIssues: boolean
+  incidents: string[]
+  lostItems: string[]
+  vehicleTags: string[]
+  vehicleNote: string | null
+  skippedStops: DailyReportTourReportSkippedStop[]
+  guestComments: string | null
+  handoffNote: string | null
+  comments: string | null
+  suggestions: string | null
+  narrationSkipTitleKo: string | null
+  narrationSkipTitleEn: string | null
+  narrationSkipDetail: string | null
+  photoCount: number
+}
+
+export type DailyReportTourReportTour = {
+  tourId: string
+  tourDate: string
+  productName: string
+  staff: DailyReportTourReportStaff[]
+  missingNames: string[]
+  allSubmitted: boolean
+  reports: DailyReportTourReportEntry[]
+}
+
+export type DailyReportTourReportSummary = {
+  assignedTourCount: number
+  completeTourCount: number
+  missingTourCount: number
+  submittedReportCount: number
+  issueReportCount: number
+  tours: DailyReportTourReportTour[]
+  highlights: string[]
+}
+
 export type DailyReportTodoUserActivity = {
   userEmail: string
   userName: string | null
@@ -240,6 +298,8 @@ export type DailyReportData = {
   submittedByEmail?: string | null
   reservationSummary: DailyReportReservationSummary
   tourSummary: DailyReportTourSummary
+  /** 해당일(기간) 투어 리포트 제출 현황·현장 요약 */
+  tourReportSummary?: DailyReportTourReportSummary
   financialReport: DailyReportFinancialReport
   todoSummary: DailyReportTodoSummary
   /** 직원 활동 히스토리 (단일일·기간 공통) */
@@ -271,6 +331,7 @@ export type OfficeDailyReportRow = {
 export const DAILY_REPORT_TRAVEL_AGENCY_RECOMMENDATIONS = [
   '당일 신규·취소·순예약 (건수·인원)',
   '채널별·상품별 예약 실적',
+  '당일 투어 리포트 제출 현황 및 현장 이슈 요약',
   '투어별 수익·지출·순이익 및 일일 합계',
   '현금 입금·미수금(잔액) 현황',
   '내일 투어 배차·가이드·차량 배정 상태',

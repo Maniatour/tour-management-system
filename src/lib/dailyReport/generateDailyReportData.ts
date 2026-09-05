@@ -10,6 +10,7 @@ import {
 } from '@/lib/dailyReport/dateUtils'
 import { buildTourFinancialSummary } from '@/lib/dailyReport/buildTourFinancials'
 import { buildFinancialReport } from '@/lib/dailyReport/buildFinancialReport'
+import { buildDailyReportTourReportSummary } from '@/lib/dailyReport/buildDailyReportTourReports'
 import { fetchReservationStatusTransitionsByTimeRange } from '@/lib/reservationStatusEventsFetch'
 import { statusFromReservationAuditJson } from '@/lib/reservationStatusAudit'
 import {
@@ -529,7 +530,10 @@ export async function generateDailyReportData(
   const memberNameFn = (email: string | null | undefined) =>
     memberName(email ? teamByEmail.get(email) : undefined)
 
-  const tourFinancials = await buildTourFinancialSummary(client, todayTours, memberNameFn)
+  const [tourFinancials, tourReportSummary] = await Promise.all([
+    buildTourFinancialSummary(client, todayTours, memberNameFn),
+    buildDailyReportTourReportSummary(client, operatorId, reportDate, endDate),
+  ])
   const financialReport = await buildFinancialReport(
     client,
     operatorId,
@@ -901,6 +905,7 @@ export async function generateDailyReportData(
       highlights: tourHighlights,
       notes: options?.preserveNotes?.tourNotes ?? '',
     },
+    tourReportSummary,
     financialReport,
     todoSummary: {
       completedCount,

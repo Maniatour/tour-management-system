@@ -1,7 +1,8 @@
-import type { DailyReportData } from '@/lib/dailyReport/types'
+import type { DailyReportData, DailyReportTourReportEntry, DailyReportTourReportStaffRole } from '@/lib/dailyReport/types'
 import { formatReportDateLabel, formatReportDateRangeLabel, isSingleDayReport } from '@/lib/dailyReport/dateUtils'
 import { formatUsd } from '@/lib/dailyReport/moneyUtils'
 import { getStatusText } from '@/utils/tourStatusUtils'
+import { displaySkipReasonLabel, displayVehicleConditionLabel } from '@/lib/tourReportExtras'
 
 function esc(s: string): string {
   return s
@@ -49,6 +50,82 @@ function sectionNotes(notes: string): string {
 
 function sectionBlock(title: string, body: string): string {
   return `<div style="margin-bottom:24px;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;"><div style="background:#0f172a;color:#ffffff;padding:14px 18px;font-size:16px;font-weight:600;">${esc(title)}</div><div style="padding:18px;">${body}</div></div>`
+}
+
+const WEATHER_KO: Record<string, string> = {
+  sunny: '맑음',
+  cloudy: '흐림',
+  rainy: '비',
+  snowy: '눈',
+  windy: '바람',
+  foggy: '안개',
+}
+
+const MOOD_KO: Record<string, string> = {
+  excellent: '매우 좋음',
+  good: '좋음',
+  average: '보통',
+  poor: '나쁨',
+  terrible: '매우 나쁨',
+}
+
+function staffRoleKo(role: DailyReportTourReportStaffRole): string {
+  if (role === 'assistant') return '어시'
+  if (role === 'guide') return '가이드'
+  return '기타'
+}
+
+function tourReportEntryHtml(report: DailyReportTourReportEntry): string {
+  const weather = report.weather ? WEATHER_KO[report.weather] || report.weather : null
+  const mood = report.overallMood ? MOOD_KO[report.overallMood] || report.overallMood : null
+  const meta: string[] = []
+  if (weather) meta.push(weather)
+  if (mood) meta.push(mood)
+  if (report.customerCount != null) {
+    const booked =
+      report.bookedCustomerCount != null ? ` / 예약 ${report.bookedCustomerCount}` : ''
+    meta.push(`탑승 ${report.customerCount}${booked}`)
+  }
+  const vehicleIssueTags = report.vehicleTags.filter((tag) => tag !== 'ok')
+  const issueLines: string[] = [
+    ...report.incidents.map((item) => `문제: ${item}`),
+    ...report.lostItems.map((item) => `분실/손상: ${item}`),
+    ...vehicleIssueTags.map((tag) => `차량: ${displayVehicleConditionLabel(tag, 'ko')}`),
+  ]
+  if (report.vehicleNote) issueLines.push(`차량 메모: ${report.vehicleNote}`)
+  if (report.skippedStops.length > 0) {
+    issueLines.push(
+      `스킵: ${report.skippedStops
+        .map((stop) =>
+          [stop.reason ? displaySkipReasonLabel(stop.reason, 'ko') : null, stop.note]
+            .filter(Boolean)
+            .join(' — ')
+        )
+        .join(' · ')}`
+    )
+  }
+  if (report.narrationSkipTitleKo) {
+    issueLines.push(
+      `${report.narrationSkipTitleKo}${report.narrationSkipDetail ? ` — ${report.narrationSkipDetail}` : ''}`
+    )
+  }
+  if (report.photoCount > 0) issueLines.push(`이슈 사진 ${report.photoCount}장`)
+  const notes = [report.guestComments, report.handoffNote, report.comments, report.suggestions].filter(
+    Boolean
+  ) as string[]
+
+  const details =
+    issueLines.length || notes.length
+      ? `<ul style="margin:6px 0 0;padding-left:18px;color:${report.hasIssues ? '#991b1b' : '#6b7280'};font-size:12px;">
+          ${[...issueLines, ...notes].map((line) => `<li style="margin:2px 0;white-space:pre-wrap;">${esc(line)}</li>`).join('')}
+        </ul>`
+      : ''
+
+  return `<div style="margin-top:6px;font-size:12px;color:#4b5563;">
+    <strong style="color:#111827;">${esc(`${staffRoleKo(report.role)} ${report.staffName}`)}</strong>
+    ${meta.length ? ` · ${esc(meta.join(' · '))}` : ''}
+    ${details}
+  </div>`
 }
 
 export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko'): string {
@@ -117,6 +194,59 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
     </tr></thead><tbody>${tourFinRows}${tourTotalRow}</tbody></table>` : `<p>${singleDay ? '오늘 투어 없음' : '해당 기간 투어 없음'}</p>`}
     ${sectionNotes(ts.notes)}
   `
+
+  const trs = data.tourReportSummary
+  const tourReportStatusColor = (allSubmitted: boolean, hasIssues: boolean) => {
+    if (!allSubmitted) return { label: '미제출', color: '#b45309', bg: '#fffbeb', border: '#fde68a' }
+    if (hasIssues) return { label: '이슈', color: '#b91c1c', bg: '#fef2f2', border: '#fecaca' }
+    return { label: '제출', color: '#047857', bg: '#ecfdf5', border: '#a7f3d0' }
+  }
+  const tourReportRows = trs?.tours.length
+    ? trs.tours
+        .map((tour) => {
+          const status = tourReportStatusColor(
+            tour.allSubmitted,
+            tour.reports.some((report) => report.hasIssues)
+          )
+          const staffLine = tour.staff.length
+            ? tour.staff
+                .map(
+                  (person) =>
+                    `${staffRoleKo(person.role)} ${person.name}${person.submitted ? '' : ' (미제출)'}`
+                )
+                .join(' · ')
+            : '담당자 없음'
+          const datePrefix = singleDay ? '' : `${formatReportDateLabel(tour.tourDate, 'ko')} · `
+          return `<div style="padding:10px 0;border-bottom:1px solid #f3f4f6;">
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+              <div>
+                <div style="font-size:13px;font-weight:600;">${esc(tour.productName)}</div>
+                <div style="font-size:12px;color:#6b7280;margin-top:2px;">${esc(datePrefix + staffLine)}</div>
+              </div>
+              <span style="flex-shrink:0;padding:2px 8px;border-radius:999px;border:1px solid ${status.border};background:${status.bg};color:${status.color};font-size:11px;font-weight:600;">${status.label}</span>
+            </div>
+            ${
+              tour.missingNames.length
+                ? `<div style="margin-top:4px;font-size:12px;color:#b45309;font-weight:600;">미제출: ${esc(tour.missingNames.join(', '))}</div>`
+                : ''
+            }
+            ${tour.reports.map((report) => tourReportEntryHtml(report)).join('')}
+          </div>`
+        })
+        .join('')
+    : `<p>${singleDay ? '오늘 가이드 배정 투어가 없습니다.' : '해당 기간 가이드 배정 투어가 없습니다.'}</p>`
+
+  const tourReportBody = trs
+    ? `
+    <table style="width:100%;border-collapse:collapse;margin-bottom:12px;">
+      ${statRow('배정 투어', trs.assignedTourCount)}
+      ${statRow('제출 완료', trs.completeTourCount)}
+      ${statRow('미제출', trs.missingTourCount)}
+      ${statRow('현장 이슈', trs.issueReportCount)}
+    </table>
+    ${tourReportRows}
+  `
+    : ''
 
   const fr = data.financialReport
   const financialBlocks = fr
@@ -389,6 +519,7 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
     <div style="background:#f9fafb;padding:20px 16px;border-radius:0 0 16px 16px;">
       ${sectionBlock('예약 관리 요약', reservationBody)}
       ${sectionBlock('투어 관리 요약 (재무)', tourBody)}
+      ${tourReportBody ? sectionBlock('투어 리포트 현황', tourReportBody) : ''}
       ${financialBody ? sectionBlock('재무 보고', financialBody) : ''}
       ${singleDay ? sectionBlock('TODO 처리 현황 (사용자별)', todoBody) : ''}
       ${sectionBlock('활동 히스토리', activityBody)}

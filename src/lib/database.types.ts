@@ -10475,6 +10475,7 @@ export type Database = {
           overall_mood: string | null
           sign: string | null
           skipped_stops: Json
+          activity_details: Json
           submitted_on: string | null
           suggestions_followup: string | null
           teamwork: string | null
@@ -10509,6 +10510,7 @@ export type Database = {
           overall_mood?: string | null
           sign?: string | null
           skipped_stops?: Json
+          activity_details?: Json
           submitted_on?: string | null
           suggestions_followup?: string | null
           teamwork?: string | null
@@ -10543,6 +10545,7 @@ export type Database = {
           overall_mood?: string | null
           sign?: string | null
           skipped_stops?: Json
+          activity_details?: Json
           submitted_on?: string | null
           suggestions_followup?: string | null
           teamwork?: string | null
