@@ -10,12 +10,13 @@ import { AudioPlayerProvider } from '@/contexts/AudioPlayerContext'
 import GlobalAudioPlayer from '@/components/GlobalAudioPlayer'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, usePathname, useParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
-import { Calendar, MessageSquare, FileText, BookOpen, Home, Star } from 'lucide-react'
-import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { useEffect, useRef, useState } from 'react'
+import { Calendar, MessageSquare, FileText, Home, Star, Camera } from 'lucide-react'
+import { fetchApiWithAuthWhenReady } from '@/lib/api-client-bearer'
 import { useTranslations } from 'next-intl'
 import TourPhotoUploadModal from '@/components/TourPhotoUploadModal'
 import TourPhotoUploadProgressOverlay from '@/components/TourPhotoUploadProgressOverlay'
+import GuideQuickPhotoSheet, { type GuideQuickPhotoSheetHandle } from '@/components/guide/GuideQuickPhotoSheet'
 import TourReportModal from '@/components/TourReportModal'
 import TourReceiptModal from '@/components/TourReceiptModal'
 import MedicalReportWarningModal from '@/components/MedicalReportWarningModal'
@@ -57,6 +58,8 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
   const paramsObj = useParams()
   const locale = paramsObj.locale as string
   const [showPhotoModal, setShowPhotoModal] = useState(false)
+  const [showQuickPhoto, setShowQuickPhoto] = useState(false)
+  const quickPhotoRef = useRef<GuideQuickPhotoSheetHandle>(null)
   const [showReportModal, setShowReportModal] = useState(false)
   const [reportReminderRefresh, setReportReminderRefresh] = useState(0)
   const [showReceiptModal, setShowReceiptModal] = useState(false)
@@ -361,7 +364,11 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
         headers['x-simulated-user-email'] = simulatedUser.email
       }
 
-      const res = await fetchApiWithAuth('/api/guide/reviews', { headers })
+      const res = await fetchApiWithAuthWhenReady('/api/guide/reviews', { headers })
+      if (!res) {
+        setUnreadReviewCount(0)
+        return
+      }
       const data = (await res.json()) as {
         ok?: boolean
         summary?: { unreadCount?: number }
@@ -526,6 +533,18 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
         {/* 전역 오디오 플레이어 */}
         <GlobalAudioPlayer />
 
+        <button
+          type="button"
+          onClick={() => {
+            setShowQuickPhoto(true)
+            quickPhotoRef.current?.openCamera()
+          }}
+          className="fixed bottom-6 right-6 z-40 hidden h-14 w-14 items-center justify-center rounded-full bg-emerald-600 text-white shadow-md hover:bg-emerald-700 lg:flex"
+          aria-label={t('footer.photo')}
+        >
+          <Camera className="h-6 w-6" />
+        </button>
+
         {/* 모바일 푸터 네비게이션 */}
         <footer
           className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-200 bg-white lg:hidden"
@@ -584,20 +603,18 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
               </span>
             )}
           </button>
-          
+
           <button
+            type="button"
             onClick={() => {
-              const currentLocale = pathname.split('/')[1] || 'ko'
-              router.push(`/${currentLocale}/guide/operations-hub`)
+              setShowQuickPhoto(true)
+              quickPhotoRef.current?.openCamera()
             }}
-            className={`flex flex-col items-center py-1 px-0.5 transition-colors ${
-              pathname.includes('/guide/operations-hub')
-                ? 'text-indigo-600'
-                : 'text-gray-600 hover:text-indigo-600'
-            }`}
+            className="flex flex-col items-center py-1 px-0.5 text-emerald-600 transition-colors hover:text-emerald-700"
+            aria-label={t('footer.photo')}
           >
-            <BookOpen className="w-5 h-5 mb-1" />
-            <span className="text-[10px] sm:text-xs">{t('footer.manual')}</span>
+            <Camera className="mb-1 h-5 w-5" />
+            <span className="text-[10px] sm:text-xs">{t('footer.photo')}</span>
           </button>
 
           <button
@@ -642,6 +659,12 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
         isOpen={showPhotoModal}
         onClose={() => setShowPhotoModal(false)}
         locale={locale}
+      />
+      <GuideQuickPhotoSheet
+        ref={quickPhotoRef}
+        open={showQuickPhoto}
+        onClose={() => setShowQuickPhoto(false)}
+        locale={locale === 'en' ? 'en' : 'ko'}
       />
 
       {/* 리포트 작성 모달 */}

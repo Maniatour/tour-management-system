@@ -7,7 +7,7 @@ import GuideReviewSummaryCard, {
   matchesGuideReviewRatingFilter,
   type GuideReviewRatingFilter,
 } from '@/components/guide/GuideReviewSummaryCard'
-import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { fetchApiWithAuthWhenReady } from '@/lib/api-client-bearer'
 import type { GuideLinkedReviewRow, GuideReviewSummary } from '@/lib/guideReviews'
 import { formatLasVegasDate } from '@/lib/dailyReport/dateUtils'
 import { getReviewSourceLabel, isReviewSource } from '@/lib/reviewSources'
@@ -60,7 +60,7 @@ function buildPageNumbers(current: number, total: number): Array<number | 'ellip
 export default function GuideReviewsSection({ locale, refreshKey = 0 }: Props) {
   const isKo = locale === 'ko'
   const t = useTranslations('guide.reviews')
-  const { isSimulating, simulatedUser } = useAuth()
+  const { isInitialized, isSimulating, simulatedUser } = useAuth()
   const [summary, setSummary] = useState<GuideReviewSummary>(EMPTY_SUMMARY)
   const [reviews, setReviews] = useState<GuideLinkedReviewRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -69,6 +69,7 @@ export default function GuideReviewsSection({ locale, refreshKey = 0 }: Props) {
   const [ratingFilter, setRatingFilter] = useState<GuideReviewRatingFilter | null>(null)
 
   const loadReviews = useCallback(async () => {
+    if (!isInitialized) return
     setLoading(true)
     setError(null)
     try {
@@ -77,8 +78,20 @@ export default function GuideReviewsSection({ locale, refreshKey = 0 }: Props) {
         headers['x-simulated-user-email'] = simulatedUser.email
       }
 
-      const res = await fetchApiWithAuth('/api/guide/reviews', { headers })
+      const res = await fetchApiWithAuthWhenReady('/api/guide/reviews', { headers })
+      if (!res) {
+        setSummary(EMPTY_SUMMARY)
+        setReviews([])
+        setError(null)
+        return
+      }
       const data = (await res.json()) as ApiResponse
+      if (res.status === 401) {
+        setSummary(EMPTY_SUMMARY)
+        setReviews([])
+        setError(null)
+        return
+      }
       if (!res.ok || !data.ok) {
         throw new Error(data.error || 'load_failed')
       }
@@ -93,7 +106,7 @@ export default function GuideReviewsSection({ locale, refreshKey = 0 }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [isSimulating, simulatedUser?.email])
+  }, [isInitialized, isSimulating, simulatedUser?.email])
 
   useEffect(() => {
     void loadReviews()

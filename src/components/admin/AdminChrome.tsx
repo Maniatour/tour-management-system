@@ -1,11 +1,10 @@
 'use client'
 
 import React, { useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { usePathname } from 'next/navigation'
 import AdminSidebarAndHeader from '@/components/AdminSidebarAndHeader'
 import AdminPwaInstallFab from '@/components/admin/AdminPwaInstallFab'
-import AdminTodoRoot from '@/components/admin/todo/AdminTodoRoot'
-import AdminWorkRoot from '@/components/admin/work/AdminWorkRoot'
 import { StaffSiteAlertPopupLayer } from '@/components/admin/staff-site-alert/StaffSiteAlertPopupLayer'
 import { useAuth } from '@/contexts/AuthContext'
 import { TeamBoardManualProvider } from '@/contexts/TeamBoardManualContext'
@@ -14,6 +13,15 @@ import MobileFooter from '@/components/MobileFooter'
 import GlobalAudioPlayer from '@/components/GlobalAudioPlayer'
 import AdminPageTitle from '@/components/admin/AdminPageTitle'
 import { SiteAccessMatrixPatchProvider } from '@/contexts/SiteAccessMatrixPatchContext'
+
+const AdminTodoRoot = dynamic(() => import('@/components/admin/todo/AdminTodoRoot'), {
+  ssr: false,
+  loading: () => null,
+})
+const AdminWorkRoot = dynamic(() => import('@/components/admin/work/AdminWorkRoot'), {
+  ssr: false,
+  loading: () => null,
+})
 
 type AdminChromeProps = {
   locale: string

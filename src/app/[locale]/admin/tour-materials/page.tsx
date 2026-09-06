@@ -409,6 +409,9 @@ export default function TourMaterialsManagementPage() {
                                     playTrack({
                                       src: getFileUrl(material.file_path),
                                       title: material.title,
+                                      filePath: material.file_path,
+                                      fileName: material.file_name,
+                                      language: material.language ?? null,
                                       ...(typeof material.duration === 'number'
                                         ? { duration: material.duration }
                                         : {})

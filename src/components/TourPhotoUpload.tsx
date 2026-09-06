@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { Upload, Camera, Image as ImageIcon, Share2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
@@ -44,13 +44,22 @@ interface TourPhotoUploadProps {
   reservationId?: string
   uploadedBy: string
   onPhotosUpdated?: () => void
+  /** Parent title-row actions call the handle instead of duplicating this toolbar. */
+  hideToolbar?: boolean
 }
 
-export default function TourPhotoUpload({ 
+export type TourPhotoUploadHandle = {
+  openGallery: () => void
+  openCamera: () => void
+  shareAll: () => void
+}
+
+const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(function TourPhotoUpload({
   tourId, 
   uploadedBy, 
-  onPhotosUpdated 
-}: TourPhotoUploadProps) {
+  onPhotosUpdated,
+  hideToolbar = false,
+}, ref) {
   const { user, userRole, hasPermission } = useAuth()
   const t = useTranslations('tours.tourPhoto')
   const chrome = useTourDetailSectionChrome()
@@ -62,6 +71,23 @@ export default function TourPhotoUpload({
   const [showModal, setShowModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+
+  const shareAll = useCallback(() => {
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '')
+    const shareUrl = `${baseUrl}/photos/${tourId}`
+    void navigator.clipboard.writeText(shareUrl)
+    alert(t('shareLinkCopied'))
+  }, [tourId, t])
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      openGallery: () => fileInputRef.current?.click(),
+      openCamera: () => cameraInputRef.current?.click(),
+      shareAll,
+    }),
+    [shareAll]
+  )
   
   // Hook으로 폴더 자동 관리
   const { folderStatus, isReady, retry } = useTourPhotoFolder(tourId)
@@ -748,65 +774,46 @@ export default function TourPhotoUpload({
         </div>
       )}
 
-      <div className="flex items-center justify-end">
-        <div className="flex space-x-2">
-          {/* 투어 전체 사진 공유 링크 */}
-          {photos.length > 0 && (
+      {!hideToolbar && (
+        <div className="flex items-center justify-end">
+          <div className="flex space-x-2">
+            {photos.length > 0 && (
+              <button
+                onClick={shareAll}
+                className={`flex items-center justify-center ${chrome.compact ? 'px-2 h-8 text-xs' : 'px-3 h-10 text-sm'} bg-purple-600 text-white rounded-lg hover:bg-purple-700`}
+                title={t('shareAllTitle')}
+              >
+                <Share2 size={chrome.uploadIconSize} className="mr-1" />
+                {t('shareAll')}
+              </button>
+            )}
             <button
-              onClick={() => {
-                // 환경 변수가 있으면 사용하고, 없으면 현재 origin 사용 (배포 환경에서는 자동으로 올바른 도메인 사용)
-                const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '')
-                // 로케일 없는 경로 사용
-                const shareUrl = `${baseUrl}/photos/${tourId}`
-                navigator.clipboard.writeText(shareUrl)
-                alert(t('shareLinkCopied'))
-              }}
-              className={`flex items-center justify-center ${chrome.compact ? 'px-2 h-8 text-xs' : 'px-3 h-10 text-sm'} bg-purple-600 text-white rounded-lg hover:bg-purple-700`}
-              title={t('shareAllTitle')}
-            >
-              <Share2 size={chrome.uploadIconSize} className="mr-1" />
-              {t('shareAll')}
-            </button>
-          )}
-          
-          {/* 갤러리에서 선택 */}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading || bucketStatus !== 'exists'}
-            className={`flex items-center justify-center ${chrome.uploadIconButton} bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50`}
-            title={
-              bucketStatus !== 'exists' 
-                ? t('bucketNotCreated') 
-                : uploading ? t('uploading') : t('selectFromGallery')
-            }
-          >
-            <ImageIcon size={chrome.uploadIconSize} />
-          </button>
-          
-          {/* 카메라로 직접 촬영 */}
-          <button
-            onClick={() => {
-              console.log('Camera button clicked')
-              console.log('Camera input ref:', cameraInputRef.current)
-              if (cameraInputRef.current) {
-                console.log('Triggering camera input click')
-                cameraInputRef.current.click()
-              } else {
-                console.error('Camera input ref is null')
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || bucketStatus !== 'exists'}
+              className={`flex items-center justify-center ${chrome.uploadIconButton} rounded-lg disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90`}
+              title={
+                bucketStatus !== 'exists' 
+                  ? t('bucketNotCreated') 
+                  : uploading ? t('uploading') : t('selectFromGallery')
               }
-            }}
-            disabled={uploading || bucketStatus !== 'exists'}
-            className={`flex items-center justify-center ${chrome.uploadIconButton} bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50`}
-            title={
-              bucketStatus !== 'exists' 
-                ? t('bucketNotCreated') 
-                : t('takePhoto')
-            }
-          >
-            <Camera size={chrome.uploadIconSize} />
-          </button>
+            >
+              <ImageIcon size={chrome.uploadIconSize} />
+            </button>
+            <button
+              onClick={() => cameraInputRef.current?.click()}
+              disabled={uploading || bucketStatus !== 'exists'}
+              className={`flex items-center justify-center ${chrome.uploadIconButton} rounded-lg disabled:opacity-50 bg-green-600 text-white hover:bg-green-700`}
+              title={
+                bucketStatus !== 'exists' 
+                  ? t('bucketNotCreated') 
+                  : t('takePhoto')
+              }
+            >
+              <Camera size={chrome.uploadIconSize} />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 업로드 영역 */}
       <div
@@ -1196,4 +1203,6 @@ SELECT 'tour-photos bucket created successfully!' as status;`}
       )}
     </div>
   )
-}
+})
+
+export default TourPhotoUpload

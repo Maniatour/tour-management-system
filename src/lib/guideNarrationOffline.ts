@@ -85,6 +85,13 @@ function replaceObjectUrl(filePath: string, blob: Blob): string {
   return objectUrlFor(filePath, blob)
 }
 
+function isAuthSessionError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const e = error as { status?: number; code?: string; message?: string }
+  if (e.status === 401 || e.code === 'PGRST301' || e.code === '42501') return true
+  return /jwt|not authenticated|unauthorized|invalid claim/i.test(e.message || '')
+}
+
 async function fetchAudioMaterials(): Promise<GuideNarrationMaterial[]> {
   const { data, error } = await supabase
     .from('tour_materials')
@@ -193,7 +200,9 @@ export async function syncGuideNarrationOffline(): Promise<void> {
       await Promise.all(workers)
       await refreshCachedCount(materials.length)
     } catch (error) {
-      console.warn('[guide narration] sync failed', error)
+      if (!isAuthSessionError(error)) {
+        console.warn('[guide narration] sync failed', error)
+      }
       const paths = await listGuideMediaPaths()
       setStatus({
         status: paths.length > 0 ? 'partial' : 'error',

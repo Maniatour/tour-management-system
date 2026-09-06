@@ -25,6 +25,12 @@ import {
 import {
   buildDailyReportActivityHistory,
 } from '@/lib/dailyReport/buildActivityHistory'
+import {
+  buildDailyReportTodoClickIndex,
+  isTodoHandledInPeriod,
+  latestIso,
+  resolveDailyReportTodoMatrixStatus,
+} from '@/lib/dailyReport/todoMatrixStatus'
 import { fetchAdminRegCancelYtdWeekdayAvg } from '@/lib/adminRegCancelYtdWeekdayAvg'
 import { resolveProductInternalName } from '@/utils/reservationUtils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
@@ -353,9 +359,11 @@ export async function generateDailyReportData(
     client
       .from('todo_click_logs')
       .select('todo_id, user_email, action, timestamp')
-      .eq('action', 'completed')
+      .in('action', ['completed', 'uncompleted'])
       .gte('timestamp', start)
-      .lte('timestamp', end),
+      .lte('timestamp', end)
+      .order('timestamp', { ascending: true })
+      .limit(5000),
     client.from('team').select('email, name_ko, nick_name, display_name'),
     client.from('vehicles').select('id, vehicle_number, nick'),
     client
@@ -579,45 +587,33 @@ export async function generateDailyReportData(
     )
   }
 
-  const completerByTodo = new Map<string, string>()
-  const completersByTodo = new Map<string, Set<string>>()
-  /** todoId → email → 완료 시각(ISO). 동일 유저는 가장 이른 completed 로그 시각 사용 */
-  const completedAtByTodoEmail = new Map<string, Map<string, string>>()
-  for (const log of todoLogs) {
-    const email = (log.user_email || '').trim().toLowerCase()
-    if (!email) continue
-    completerByTodo.set(log.todo_id, log.user_email)
-    const set = completersByTodo.get(log.todo_id) ?? new Set<string>()
-    set.add(email)
-    completersByTodo.set(log.todo_id, set)
-    const at = log.timestamp
-    if (at) {
-      const byEmail = completedAtByTodoEmail.get(log.todo_id) ?? new Map<string, string>()
-      const prev = byEmail.get(email)
-      if (!prev || at < prev) byEmail.set(email, at)
-      completedAtByTodoEmail.set(log.todo_id, byEmail)
-    }
-  }
+  const clickIndex = buildDailyReportTodoClickIndex(todoLogs)
+  const { lastActionByTodo, completersByTodo, completedAtByTodoEmail } = clickIndex
 
   /** 전체 Todo (고정 패널 연동 포함) — 출근 직원 매트릭스 */
-  const isCompletedToday = (t: OpTodoRow) =>
-    Boolean(
-      t.completed && t.completed_at && t.completed_at >= start && t.completed_at <= end
-    )
+  const isHandledInPeriod = (t: OpTodoRow) =>
+    isTodoHandledInPeriod({
+      todoId: t.id,
+      lastActionByTodo,
+      currentlyCompleted: t.completed,
+      completedAt: t.completed_at,
+      rangeStartIso: start,
+      rangeEndIso: end,
+    })
 
-  const resolveTodoStatus = (t: OpTodoRow): DailyReportTodoMatrixStatus => {
-    if (!isQueuePanelLinkedOpTodo(t)) return 'na'
-    if (t.completed) return 'completed'
-    if (t.on_hold) return 'on_hold'
-    return 'pending'
-  }
+  const resolveTodoStatus = (t: OpTodoRow): DailyReportTodoMatrixStatus =>
+    resolveDailyReportTodoMatrixStatus({
+      hasQueue: isQueuePanelLinkedOpTodo(t),
+      handledInPeriod: isHandledInPeriod(t),
+      onHold: t.on_hold,
+    })
 
-  const todosCompletedToday = opTodos.filter((t) => isCompletedToday(t) && isQueuePanelLinkedOpTodo(t))
+  const todosCompletedToday = opTodos.filter((t) => isHandledInPeriod(t))
   const todosPending = opTodos.filter(
-    (t) => !t.completed && !t.on_hold && isQueuePanelLinkedOpTodo(t)
+    (t) => !isHandledInPeriod(t) && !t.on_hold && isQueuePanelLinkedOpTodo(t)
   )
   const todosOnHold = opTodos.filter(
-    (t) => !t.completed && t.on_hold && isQueuePanelLinkedOpTodo(t)
+    (t) => !isHandledInPeriod(t) && t.on_hold && isQueuePanelLinkedOpTodo(t)
   )
 
   const userActivityMap = new Map<
@@ -646,12 +642,22 @@ export async function generateDailyReportData(
   }
 
   for (const t of todosCompletedToday) {
-    const email = completerByTodo.get(t.id) || t.assigned_to || t.created_by
-    ensureUser(email).completed.push({
-      id: t.id,
-      title: t.title,
-      completedAt: t.completed_at,
-    })
+    const emails = [...(completersByTodo.get(t.id) ?? [])]
+    if (emails.length === 0) {
+      const fallback = (t.assigned_to || t.created_by || '').trim().toLowerCase()
+      if (fallback) emails.push(fallback)
+    }
+    const doneAt = latestIso(
+      t.completed_at && t.completed_at >= start && t.completed_at <= end ? t.completed_at : null,
+      ...(completedAtByTodoEmail.get(t.id)?.values() ?? [])
+    )
+    for (const email of emails) {
+      ensureUser(email).completed.push({
+        id: t.id,
+        title: t.title,
+        completedAt: doneAt,
+      })
+    }
   }
 
   for (const t of todosPending) {
@@ -688,7 +694,12 @@ export async function generateDailyReportData(
     )
   }
 
-  const staffColumns: DailyReportTodoStaffColumn[] = [...checkedInEmails]
+  const staffEmails = new Set(checkedInEmails)
+  for (const emails of completersByTodo.values()) {
+    for (const email of emails) staffEmails.add(email)
+  }
+
+  const staffColumns: DailyReportTodoStaffColumn[] = [...staffEmails]
     .map((email) => ({
       email,
       name: staffNameForEmail(email) || email,
@@ -697,10 +708,8 @@ export async function generateDailyReportData(
 
   const collectCompleterEmails = (t: OpTodoRow): string[] => {
     const emails = new Set(completersByTodo.get(t.id) ?? [])
-    if (emails.size === 0 && t.completed) {
-      const fallback = (completerByTodo.get(t.id) || t.assigned_to || t.created_by || '')
-        .trim()
-        .toLowerCase()
+    if (emails.size === 0 && isHandledInPeriod(t)) {
+      const fallback = (t.assigned_to || t.created_by || '').trim().toLowerCase()
       if (fallback) emails.add(fallback)
     }
     return [...emails]
@@ -710,7 +719,9 @@ export async function generateDailyReportData(
     const fromLogs = completedAtByTodoEmail.get(t.id)
     const out: Record<string, string | null> = {}
     for (const email of emails) {
-      out[email] = fromLogs?.get(email) ?? (t.completed ? t.completed_at : null)
+      const inRangeCompletedAt =
+        t.completed_at && t.completed_at >= start && t.completed_at <= end ? t.completed_at : null
+      out[email] = fromLogs?.get(email) ?? inRangeCompletedAt
     }
     return out
   }
@@ -723,7 +734,7 @@ export async function generateDailyReportData(
     for (const [email, at] of Object.entries(b)) {
       const prev = out[email]
       if (!prev) out[email] = at
-      else if (at && at < prev) out[email] = at
+      else if (at && at > prev) out[email] = at
     }
     return out
   }
@@ -747,10 +758,13 @@ export async function generateDailyReportData(
   const toMatrixRow = (t: OpTodoRow): DailyReportTodoMatrixRow => {
     const status = resolveTodoStatus(t)
     const completedByEmails = collectCompleterEmails(t)
+    const completedAtByEmail = collectCompletedAtByEmail(t, completedByEmails)
     const assigned = (t.assigned_to || '').trim().toLowerCase() || null
     const activityItems: DailyReportTodoActivityItem[] = isCustomerInfoReviewTodoTitle(t.title)
       ? customerInfoActivityItems
       : []
+    const inRangeCompletedAt =
+      t.completed_at && t.completed_at >= start && t.completed_at <= end ? t.completed_at : null
     return {
       id: t.id,
       title: t.title,
@@ -760,10 +774,10 @@ export async function generateDailyReportData(
       completedByNames: completedByEmails
         .map((e) => staffNameForEmail(e) || e)
         .filter(Boolean),
-      completedAtByEmail: collectCompletedAtByEmail(t, completedByEmails),
+      completedAtByEmail,
       assignedToEmail: assigned,
       assignedToName: assigned ? staffNameForEmail(assigned) : null,
-      completedAt: t.completed_at,
+      completedAt: latestIso(inRangeCompletedAt, ...Object.values(completedAtByEmail)),
       department: t.department || null,
       activityItems,
     }
@@ -779,8 +793,8 @@ export async function generateDailyReportData(
   const dedupedByTitle = new Map<string, DailyReportTodoMatrixRow>()
   for (const t of opTodos) {
     const hasQueue = isQueuePanelLinkedOpTodo(t)
-    // 과거 완료된 큐 패널은 당일 보고에서 제외 (당일 완료·미완료·비큐만 표시)
-    if (t.completed && hasQueue && !isCompletedToday(t)) continue
+    // 과거 완료된 큐 패널은 당일 보고에서 제외 (당일 처리·미처리·비큐만 표시)
+    if (t.completed && hasQueue && !isHandledInPeriod(t)) continue
 
     const row = toMatrixRow(t)
     const key = todoMatrixDedupeKey(row.title)
@@ -793,14 +807,28 @@ export async function generateDailyReportData(
     const base = preferNew ? row : existing
     const other = preferNew ? existing : row
     const mergedEmails = [...new Set([...base.completedByEmails, ...other.completedByEmails])]
+    const mergedCompletedAtByEmail = mergeCompletedAtByEmail(
+      base.completedAtByEmail,
+      other.completedAtByEmail
+    )
+    const mergedHandled =
+      mergedEmails.length > 0 ||
+      Object.values(mergedCompletedAtByEmail).some(Boolean) ||
+      base.status === 'completed' ||
+      other.status === 'completed'
     const mergedActivity =
       base.activityItems.length >= other.activityItems.length ? base.activityItems : other.activityItems
     dedupedByTitle.set(key, {
       ...base,
+      status: mergedHandled
+        ? 'completed'
+        : statusRank[base.status] <= statusRank[other.status]
+          ? base.status
+          : other.status,
       completedByEmails: mergedEmails,
       completedByNames: mergedEmails.map((e) => staffNameForEmail(e) || e),
-      completedAtByEmail: mergeCompletedAtByEmail(base.completedAtByEmail, other.completedAtByEmail),
-      completedAt: base.completedAt || other.completedAt,
+      completedAtByEmail: mergedCompletedAtByEmail,
+      completedAt: latestIso(base.completedAt, other.completedAt, ...Object.values(mergedCompletedAtByEmail)),
       assignedToEmail: base.assignedToEmail || other.assignedToEmail,
       assignedToName: base.assignedToName || other.assignedToName,
       activityItems: mergedActivity,

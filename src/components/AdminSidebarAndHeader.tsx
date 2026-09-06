@@ -54,9 +54,19 @@ import {
   readAdminHeaderBadgeCache,
   writeAdminHeaderBadgeCache,
 } from '@/lib/adminHeaderBadgeCache'
-import SimulationModal from './SimulationModal'
-import CustomerSimulationModal from './CustomerSimulationModal'
-import { QuickPaymentRequestModal } from '@/components/customer/QuickPaymentRequestForm'
+const SimulationModal = dynamic(() => import('./SimulationModal'), {
+  ssr: false,
+  loading: () => null,
+})
+const CustomerSimulationModal = dynamic(() => import('./CustomerSimulationModal'), {
+  ssr: false,
+  loading: () => null,
+})
+const QuickPaymentRequestModal = dynamic(
+  () =>
+    import('@/components/customer/QuickPaymentRequestForm').then((m) => m.QuickPaymentRequestModal),
+  { ssr: false, loading: () => null }
+)
 
 const AdminWeatherWidget = dynamic(() => import('./AdminWeatherWidget'), { ssr: false, loading: () => null })
 const OperatorSwitcher = dynamic(() => import('./admin/OperatorSwitcher'), {
@@ -1334,23 +1344,27 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         }}
       />
 
-      <QuickPaymentRequestModal
-        open={quickPaymentModalOpen}
-        onClose={() => setQuickPaymentModalOpen(false)}
-        locale={locale.startsWith('ko') ? 'ko' : 'en'}
-      />
+      {quickPaymentModalOpen ? (
+        <QuickPaymentRequestModal
+          open={quickPaymentModalOpen}
+          onClose={() => setQuickPaymentModalOpen(false)}
+          locale={locale.startsWith('ko') ? 'ko' : 'en'}
+        />
+      ) : null}
 
-      {/* 시뮬레이션 모달 */}
-      <SimulationModal
-        isOpen={showSimulationModal}
-        onClose={() => setShowSimulationModal(false)}
-      />
-      
-      {/* 고객 시뮬레이션 모달 */}
-      <CustomerSimulationModal
-        isOpen={showCustomerSimulationModal}
-        onClose={() => setShowCustomerSimulationModal(false)}
-      />
+      {showSimulationModal ? (
+        <SimulationModal
+          isOpen={showSimulationModal}
+          onClose={() => setShowSimulationModal(false)}
+        />
+      ) : null}
+
+      {showCustomerSimulationModal ? (
+        <CustomerSimulationModal
+          isOpen={showCustomerSimulationModal}
+          onClose={() => setShowCustomerSimulationModal(false)}
+        />
+      ) : null}
 
       <AdminWeatherReminderModal locale={locale} />
       <AdminGoblinNarrationReminderModal locale={locale} />

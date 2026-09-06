@@ -55,6 +55,8 @@ interface TourScheduleSectionProps {
   currentUserEmail?: string | null // 현재 사용자 이메일 (필터링용)
   tourGuideId?: string | null // 투어 가이드 ID
   assistantId?: string | null // 어시스턴트/드라이버 ID
+  guideName?: string | null
+  assistantName?: string | null
   variant?: 'default' | 'customer-itinerary'
   selectedDate?: string
   product?: {
@@ -74,6 +76,8 @@ export default function TourScheduleSection({
   currentUserEmail,
   tourGuideId,
   assistantId,
+  guideName,
+  assistantName,
   variant = 'default',
   selectedDate = '',
   product = {},
@@ -281,28 +285,31 @@ export default function TourScheduleSection({
 
   const getResponsibleLabels = (schedule: ScheduleItem): LabelInfo[] => {
     const labels: LabelInfo[] = []
+    const guideLabel = (guideName || '').trim() || getText('가이드', 'Guide')
+    const assistantLabel = (assistantName || '').trim() || (
+      teamType === 'guide+driver' ? getText('드라이버', 'Driver') : getText('어시스턴트', 'Assistant')
+    )
     
-    // teamType에 따른 라벨 표시
     if (teamType === '2guide' && schedule.two_guide_schedule) {
-      const label = schedule.two_guide_schedule === 'guide' ? getText('가이드', 'Guide') : 
-                   schedule.two_guide_schedule === 'assistant' ? getText('어시스턴트', 'Assistant') : 
-                   schedule.two_guide_schedule
-      // guide = 빨간색, assistant = 파란색
-      const color = schedule.two_guide_schedule === 'guide' ? 'bg-red-100 text-red-800' : 
-                   schedule.two_guide_schedule === 'assistant' ? 'bg-primary/10 text-primary' : 
+      const role = schedule.two_guide_schedule
+      const text = role === 'guide' ? guideLabel :
+                   role === 'assistant' ? assistantLabel :
+                   role
+      const color = role === 'guide' ? 'bg-red-100 text-red-800' : 
+                   role === 'assistant' ? 'bg-primary/10 text-primary' : 
                    'bg-gray-100 text-gray-800'
-      labels.push({ text: label, color })
+      labels.push({ text, color })
     }
     
     if (teamType === 'guide+driver' && schedule.guide_driver_schedule) {
-      const label = schedule.guide_driver_schedule === 'guide' ? getText('가이드', 'Guide') : 
-                   schedule.guide_driver_schedule === 'assistant' ? getText('드라이버', 'Driver') : 
-                   schedule.guide_driver_schedule
-      // guide = 빨간색, assistant (드라이버) = 파란색
-      const color = schedule.guide_driver_schedule === 'guide' ? 'bg-red-100 text-red-800' : 
-                   schedule.guide_driver_schedule === 'assistant' ? 'bg-primary/10 text-primary' : 
+      const role = schedule.guide_driver_schedule
+      const text = role === 'guide' ? guideLabel :
+                   role === 'assistant' ? assistantLabel :
+                   role
+      const color = role === 'guide' ? 'bg-red-100 text-red-800' : 
+                   role === 'assistant' ? 'bg-primary/10 text-primary' : 
                    'bg-gray-100 text-gray-800'
-      labels.push({ text: label, color })
+      labels.push({ text, color })
     }
     
     return labels
@@ -633,12 +640,6 @@ export default function TourScheduleSection({
                                   {schedule.duration_minutes} {getText('분', 'min')}
                                 </span>
                               )}
-                              {/* 드라이버/가이드 뱃지 - 소요시간 오른쪽 */}
-                              {getResponsibleLabels(schedule).map((label, index) => (
-                                <span key={index} className={`px-2 sm:px-2.5 py-1 sm:py-1.5 text-xs font-semibold rounded-lg ${label.color} whitespace-nowrap shadow-sm border`}>
-                                  {label.text}
-                                </span>
-                              ))}
                             </div>
                             {/* 오른쪽 버튼들 */}
                             <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
@@ -670,10 +671,17 @@ export default function TourScheduleSection({
                             </div>
                           </div>
                           
-                          {/* 제목 - 별도 줄 */}
-                          <h5 className="font-semibold text-gray-900 text-base sm:text-lg mb-3 break-words">
-                            {getLocalizedScheduleField(schedule, 'title')}
-                          </h5>
+                          {/* 제목 - 별도 줄, 담당 닉네임은 제목 왼쪽 */}
+                          <div className="mb-3 flex min-w-0 items-center gap-2">
+                            {getResponsibleLabels(schedule).map((label, index) => (
+                              <span key={index} className={`shrink-0 px-2 py-0.5 text-xs font-semibold rounded-md ${label.color} whitespace-nowrap shadow-sm border`}>
+                                {label.text}
+                              </span>
+                            ))}
+                            <h5 className="min-w-0 font-semibold text-gray-900 text-base sm:text-lg break-words">
+                              {getLocalizedScheduleField(schedule, 'title')}
+                            </h5>
+                          </div>
                           
                           {/* 다음 목적지 표시 (자신의 일정 보기 모드일 때만) */}
                           {showOnlyMySchedules && nextDestination && (

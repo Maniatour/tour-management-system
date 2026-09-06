@@ -1,9 +1,18 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import { Play, Pause, SkipBack, SkipForward, RotateCcw, Volume2, VolumeX, GripVertical, X } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, RotateCcw, Volume2, VolumeX, GripVertical, X, Download, Loader2 } from 'lucide-react'
 import { useAudioPlayer } from '@/contexts/AudioPlayerContext'
 import ReactCountryFlag from 'react-country-flag'
+import { useLocale } from 'next-intl'
+import { toast } from 'sonner'
+import { getGuideMedia } from '@/lib/guideOfflineStore'
+
+function downloadFileName(title: string, fileName?: string, filePath?: string): string {
+  const fromPath = filePath?.split('/').pop()?.trim()
+  const raw = (fileName || fromPath || `${title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'narration'}.mp3`).trim()
+  return raw || 'narration.mp3'
+}
 
 export default function GlobalAudioPlayer() {
   const {
@@ -23,55 +32,73 @@ export default function GlobalAudioPlayer() {
     skipForward,
     resetToStart
   } = useAudioPlayer()
+  const locale = useLocale()
 
-  const [position, setPosition] = useState({ x: 0, y: -80 })
+  const [customPos, setCustomPos] = useState<{ left: number; bottom: number } | null>(null)
   const [isDragging, setIsDragging] = useState(false)
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0, left: 0, bottom: 0 })
+  const [downloading, setDownloading] = useState(false)
   const playerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
+    if (!currentTrack) {
+      setCustomPos(null)
+    }
+  }, [currentTrack])
+
+  useEffect(() => {
+    const handlePointerMove = (e: PointerEvent) => {
       if (!isDragging) return
-      
-      const newX = e.clientX - dragStart.x
-      const newY = e.clientY - dragStart.y
-      
-      // 화면 경계 내에서만 이동 가능
-      const maxX = window.innerWidth - (playerRef.current?.offsetWidth || 400)
-      const maxY = window.innerHeight - (playerRef.current?.offsetHeight || 100)
-      
-      setPosition({
-        x: Math.max(0, Math.min(maxX, newX)),
-        y: Math.max(-maxY, Math.min(0, newY))
+
+      const el = playerRef.current
+      const width = el?.offsetWidth || 400
+      const height = el?.offsetHeight || 100
+      const maxLeft = Math.max(8, window.innerWidth - width - 8)
+      const maxBottom = Math.max(8, window.innerHeight - height - 8)
+      const nextLeft = dragStart.left + (e.clientX - dragStart.x)
+      const nextBottom = dragStart.bottom - (e.clientY - dragStart.y)
+
+      setCustomPos({
+        left: Math.max(8, Math.min(maxLeft, nextLeft)),
+        bottom: Math.max(8, Math.min(maxBottom, nextBottom)),
       })
     }
 
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
       setIsDragging(false)
     }
 
     if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove)
-      document.addEventListener('mouseup', handleMouseUp)
+      document.addEventListener('pointermove', handlePointerMove)
+      document.addEventListener('pointerup', handlePointerUp)
     }
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
+      document.removeEventListener('pointermove', handlePointerMove)
+      document.removeEventListener('pointerup', handlePointerUp)
     }
   }, [isDragging, dragStart])
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    // 드래그 핸들 영역에서만 드래그 허용
+  const handleDragStart = (e: React.PointerEvent) => {
     if (!e.target || !(e.target as HTMLElement).closest('.drag-handle')) {
       return
     }
-    
+
+    const el = playerRef.current
+    if (!el) return
+
     e.preventDefault()
+    const rect = el.getBoundingClientRect()
     setIsDragging(true)
     setDragStart({
-      x: e.clientX - position.x,
-      y: e.clientY - position.y
+      x: e.clientX,
+      y: e.clientY,
+      left: rect.left,
+      bottom: window.innerHeight - rect.bottom,
+    })
+    setCustomPos({
+      left: rect.left,
+      bottom: window.innerHeight - rect.bottom,
     })
   }
 
@@ -85,52 +112,75 @@ export default function GlobalAudioPlayer() {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`
   }
 
-  // 언어를 국기 아이콘으로 표시
-  const getLanguageFlag = (language: string | null) => {
-    switch (language?.toLowerCase()) {
-      case 'ko':
-        return 'KR'
-      case 'en':
-        return 'US'
-      case 'ja':
-        return 'JP'
-      case 'zh':
-        return 'CN'
-      default:
-        return 'KR'
-    }
+  const getLanguageFlag = (language: string | null | undefined) => {
+    const raw = (language || '').trim().toLowerCase()
+    if (raw.startsWith('en')) return 'US'
+    if (raw.startsWith('ja')) return 'JP'
+    if (raw.startsWith('zh') || raw === 'cn') return 'CN'
+    if (raw.startsWith('ko') || raw === 'kr' || !raw) return 'KR'
+    return 'US'
   }
 
   const progressPercentage = duration > 0 ? (currentTime / duration) * 100 : 0
+  const downloadLabel = locale === 'en' ? 'Download' : '다운로드'
+  const downloadErrorLabel = locale === 'en' ? 'Could not download this file.' : '파일을 다운로드하지 못했습니다.'
+  const closeLabel = locale === 'en' ? 'Close' : '닫기'
+
+  const handleDownload = async () => {
+    if (downloading) return
+    setDownloading(true)
+    try {
+      let blob: Blob | null = null
+      if (currentTrack.filePath) {
+        const cached = await getGuideMedia(currentTrack.filePath)
+        if (cached?.blob) blob = cached.blob
+      }
+      if (!blob) {
+        const response = await fetch(currentTrack.src)
+        if (!response.ok) throw new Error('download_failed')
+        blob = await response.blob()
+      }
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = downloadFileName(currentTrack.title, currentTrack.fileName, currentTrack.filePath)
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('narration download failed', error)
+      toast.error(downloadErrorLabel)
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   return (
-    <div 
+    <div
       ref={playerRef}
-      className="fixed bg-white border border-gray-200 shadow-lg z-40 rounded-lg select-none"
-      style={{
-        left: position.x,
-        bottom: Math.abs(position.y),
-        width: '400px',
-        maxWidth: '90vw'
-      }}
+      className={`fixed z-[60] w-[min(22.5rem,calc(100vw-1.5rem))] rounded-2xl border border-gray-200 bg-white shadow-lg select-none ${
+        customPos
+          ? ''
+          : 'left-1/2 -translate-x-1/2 bottom-[calc(var(--footer-height)+env(safe-area-inset-bottom,0px)+0.75rem)] lg:bottom-6'
+      }`}
+      style={customPos ? { left: customPos.left, bottom: customPos.bottom } : undefined}
     >
       <div className="px-3 py-2">
-        {/* 드래그 핸들 */}
-        <div 
-          className="drag-handle flex items-center justify-center mb-1 pb-1 border-b border-gray-100 cursor-move hover:bg-gray-50 rounded-t-lg"
-          onMouseDown={handleMouseDown}
+        <div
+          className="drag-handle mb-1 flex cursor-move items-center justify-center rounded-t-lg border-b border-gray-100 pb-1 hover:bg-gray-50"
+          onPointerDown={handleDragStart}
         >
-          <GripVertical className="w-3 h-3 text-gray-400" />
+          <GripVertical className="h-3 w-3 text-gray-400" />
         </div>
 
-        {/* 첫 번째 줄: 제목, 국기 아이콘, 닫기 버튼 */}
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center space-x-2 flex-1 min-w-0">
-            <h3 className="text-sm font-medium text-gray-900 truncate">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="flex min-w-0 flex-1 items-center space-x-2">
+            <h3 className="truncate text-sm font-medium text-gray-900">
               {currentTrack.title}
             </h3>
             <ReactCountryFlag
-              countryCode={getLanguageFlag(null)} // 기본값으로 KR 사용
+              countryCode={getLanguageFlag(currentTrack.language)}
               svg
               style={{
                 width: '16px',
@@ -139,67 +189,77 @@ export default function GlobalAudioPlayer() {
               }}
             />
           </div>
-          <button
-            onClick={stopTrack}
-            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
-            title="닫기"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="ml-2 flex shrink-0 items-center">
+            <button
+              type="button"
+              onClick={() => void handleDownload()}
+              disabled={downloading}
+              className="flex h-9 w-9 items-center justify-center rounded text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
+              title={downloadLabel}
+              aria-label={downloadLabel}
+            >
+              {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            </button>
+            <button
+              type="button"
+              onClick={stopTrack}
+              className="flex h-9 w-9 items-center justify-center rounded text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+              title={closeLabel}
+              aria-label={closeLabel}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
-        {/* 두 번째 줄: 플레이어 컨트롤 */}
         <div className="flex items-center space-x-3">
-          {/* 컨트롤 버튼들 */}
           <div className="flex items-center space-x-1">
             <button
               onClick={resetToStart}
-              className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+              className="rounded p-1.5 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
               title="처음으로"
             >
               <RotateCcw size={14} />
             </button>
-            
+
             <button
               onClick={skipBackward}
-              className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+              className="rounded p-1.5 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
               title="10초 뒤로"
             >
               <SkipBack size={14} />
             </button>
-            
+
             <button
               onClick={isPlaying ? pauseTrack : resumeTrack}
-              className="p-2 bg-primary text-primary-foreground rounded-full hover:bg-primary/90 transition-colors"
+              className="rounded-full bg-primary p-2 text-primary-foreground transition-colors hover:bg-primary/90"
               title={isPlaying ? '일시정지' : '재생'}
             >
               {isPlaying ? <Pause size={16} /> : <Play size={16} />}
             </button>
-            
+
             <button
               onClick={skipForward}
-              className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+              className="rounded p-1.5 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
               title="10초 앞으로"
             >
               <SkipForward size={14} />
             </button>
           </div>
 
-          {/* 시간 표시 */}
           <div className="text-xs text-gray-500">
             {formatTime(currentTime)} / {formatTime(duration)}
           </div>
 
-          {/* 볼륨 컨트롤 */}
           <div className="flex items-center space-x-1">
             <button
               onClick={toggleMute}
-              className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+              className="rounded p-1.5 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
               title={isMuted ? '음소거 해제' : '음소거'}
             >
               {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
             </button>
-            
+
             <input
               type="range"
               min="0"
@@ -207,15 +267,14 @@ export default function GlobalAudioPlayer() {
               step="0.1"
               value={isMuted ? 0 : volume}
               onChange={(e) => setVolume(parseFloat(e.target.value))}
-              className="w-16 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+              className="slider h-1 w-16 cursor-pointer appearance-none rounded-lg bg-gray-200"
               title="볼륨 조절"
             />
           </div>
         </div>
 
-        {/* 진행 바 */}
         <div className="mt-1">
-          <div className="w-full bg-gray-200 rounded-full h-1 cursor-pointer" onClick={(e) => {
+          <div className="h-1 w-full cursor-pointer rounded-full bg-gray-200" onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect()
             const clickX = e.clientX - rect.left
             const percentage = clickX / rect.width
@@ -223,7 +282,7 @@ export default function GlobalAudioPlayer() {
             seekTo(newTime)
           }}>
             <div
-              className="bg-blue-600 h-1 rounded-full transition-all duration-100"
+              className="h-1 rounded-full bg-blue-600 transition-all duration-100"
               style={{ width: `${progressPercentage}%` }}
             />
           </div>

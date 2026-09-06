@@ -2002,15 +2002,18 @@ function TourCard({
       }`}
     >
       <div className="space-y-2">
-        {/* 첫번째 줄: 투어명 */}
-        <div>
-          <h3 className="font-semibold text-gray-900 text-sm sm:text-base">
+        {/* 첫번째 줄: 투어명 + 배정 상태 */}
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="min-w-0 flex-1 font-semibold text-gray-900 text-sm sm:text-base">
             {getTourDisplayName(tour, locale)}
           </h3>
+          <div className="shrink-0">
+            <GuideAssignmentStatusBadge status={assignmentStatus} locale={locale} />
+          </div>
         </div>
 
-        {/* 두번째 줄: 날짜, 인원, status */}
-        <div className="flex flex-wrap gap-1 justify-between items-center">
+        {/* 두번째 줄: 날짜, 인원 */}
+        <div className="flex flex-wrap gap-1 items-center">
           <div className="flex flex-wrap gap-1">
             {/* 날짜 배지 */}
             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
@@ -2061,9 +2064,6 @@ function TourCard({
             {isBackupTour && <GuideBackupTourBadge />}
 
           </div>
-
-          {/* 배정 상태 배지 - 오른쪽 끝 정렬 (투어 상태 대신 배정 상태 표시) */}
-          <GuideAssignmentStatusBadge status={assignmentStatus} locale={locale} />
         </div>
 
         {isBackupTour && (

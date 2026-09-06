@@ -115,7 +115,7 @@ export function UncompletedTourReportReminderModal({
           <button
             type="button"
             onClick={onWriteNow}
-            className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+            className="inline-flex h-12 min-h-12 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 sm:flex-1"
           >
             <FileText className="h-4 w-4" />
             {isEn ? 'Write report now' : '지금 작성하기'}
@@ -123,7 +123,7 @@ export function UncompletedTourReportReminderModal({
           <button
             type="button"
             onClick={onDismiss}
-            className="h-12 rounded-xl border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-white sm:min-w-[7rem]"
+            className="inline-flex h-12 min-h-12 w-full shrink-0 items-center justify-center rounded-xl border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-white sm:min-w-[7rem] sm:flex-none"
           >
             {isEn ? 'Later' : '나중에'}
           </button>

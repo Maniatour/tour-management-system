@@ -2,68 +2,26 @@
 
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useTranslations } from 'next-intl'
-import { Sun, Sunset, Cloud, Thermometer, Droplets, Wind, RefreshCw, CloudRain, CloudSnow, CloudLightning, Eye, ChevronDown, ChevronUp, CloudSun, CloudDrizzle, CloudFog } from 'lucide-react'
+import { Sun, Sunset, Cloud, Thermometer, Droplets, Wind, RefreshCw, Eye, ChevronDown, ChevronUp } from 'lucide-react'
 import { getGoblinTourWeatherData, normalizeDate, type LocationWeather } from '@/lib/weatherApi'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { useTourDetailSectionChrome } from '@/components/tour/TourDetailModalChromeContext'
+import { WeatherConditionIcon } from '@/components/WeatherConditionIcon'
+import { resolveWeatherIconKind } from '@/lib/weatherConditionIcon'
+import { getTourLocalToday } from '@/lib/tourWeatherDates'
 
 interface TourWeatherProps {
   tourDate?: string
   productId?: string
 }
 
-// 날씨 상태에 따른 Lucide 아이콘 반환 함수 (헤더용)
-const getWeatherIconComponent = (weatherMain: string, weatherDescription: string) => {
-  const main = weatherMain?.toLowerCase() || ''
-  const description = weatherDescription?.toLowerCase() || ''
-  
-  // 구체적인 날씨 상태별 아이콘
-  if (description.includes('thunderstorm') || description.includes('storm')) {
-    return <CloudLightning className="w-6 h-6 text-purple-600" />
-  }
-  if (description.includes('snow') || description.includes('blizzard')) {
-    return <CloudSnow className="w-6 h-6 text-blue-400" />
-  }
-  if (description.includes('rain') || description.includes('shower')) {
-    return <CloudRain className="w-6 h-6 text-primary" />
-  }
-  if (description.includes('drizzle')) {
-    return <CloudDrizzle className="w-6 h-6 text-blue-400" />
-  }
-  if (description.includes('fog') || description.includes('mist') || description.includes('haze')) {
-    return <CloudFog className="w-6 h-6 text-gray-500" />
-  }
-  if (description.includes('clear') || description.includes('sunny')) {
-    return <Sun className="w-6 h-6 text-yellow-500" />
-  }
-  if (description.includes('clouds') && description.includes('partly')) {
-    return <CloudSun className="w-6 h-6 text-orange-400" />
-  }
-  if (description.includes('clouds')) {
-    return <Cloud className="w-6 h-6 text-gray-500" />
-  }
-  
-  // 기본 날씨 상태별 아이콘
-  switch (main) {
-    case 'thunderstorm':
-      return <CloudLightning className="w-6 h-6 text-purple-600" />
-    case 'drizzle':
-      return <CloudDrizzle className="w-6 h-6 text-blue-400" />
-    case 'rain':
-      return <CloudRain className="w-6 h-6 text-primary" />
-    case 'snow':
-      return <CloudSnow className="w-6 h-6 text-blue-400" />
-    case 'clear':
-      return <Sun className="w-6 h-6 text-yellow-500" />
-    case 'clouds':
-      return <CloudSun className="w-6 h-6 text-orange-400" />
-    case 'mist':
-    case 'fog':
-    case 'haze':
-      return <CloudFog className="w-6 h-6 text-gray-500" />
-    default:
-      return <Cloud className="w-6 h-6 text-gray-500" />
-  }
+function getWeatherIconComponent(weatherMain: string, weatherDescription: string) {
+  return (
+    <WeatherConditionIcon
+      kind={resolveWeatherIconKind(weatherMain, weatherDescription)}
+      sizeClass="w-6 h-6"
+    />
+  )
 }
 
 // 가시거리 기준 반환 함수
@@ -218,7 +176,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
       setLoading(true)
       setError(null)
       
-      const targetDate = normalizeDate(tourDate || new Date().toISOString().split('T')[0])
+      const targetDate = normalizeDate(tourDate || getTourLocalToday())
       const data = await getGoblinTourWeatherData(targetDate)
       setWeatherData(data)
       
@@ -267,7 +225,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
       setError(null)
       
       // 오늘 날짜 데이터를 수집 (날씨와 일출/일몰 모두)
-      const today = new Date().toISOString().split('T')[0]
+      const today = getTourLocalToday()
       const response = await fetchApiWithAuth('/api/weather-collector', {
         method: 'POST',
         headers: {
@@ -546,7 +504,6 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
                 {hasData ? lastUpdated : 'N/A'}
               </span>
             </div>
-            {t('subtitle') && t('subtitle').trim() !== '' && <p className="text-xs text-purple-600">{t('subtitle')}</p>}
           </div>
         </div>
         <button

@@ -247,13 +247,18 @@ async function voidOpenStripeInvoice(stripe: Stripe, stripeInvoiceId: string | n
   }
 }
 
+function fieldOnsiteStripeEmail(reservationId: string): string {
+  const compact = reservationId.replace(/-/g, '').slice(0, 24)
+  return `onsite.${compact}@noreply.maniatour.com`
+}
+
 /**
  * DB invoices 행으로부터 Stripe Hosted Invoice를 생성(또는 갱신)하고 URL을 저장합니다.
  */
 export async function createOrRefreshStripePayableInvoice(
   admin: AdminClient,
   invoiceId: string,
-  options?: { locale?: string; forceNew?: boolean }
+  options?: { locale?: string; forceNew?: boolean; stripeEmailOverride?: string }
 ): Promise<{
   invoiceId: string
   invoiceNumber: string
@@ -317,7 +322,7 @@ export async function createOrRefreshStripePayableInvoice(
     }
   }
 
-  let customerEmail = ''
+  let customerEmail = parseRecipientEmail(options?.stripeEmailOverride || '')
   let customerName = ''
   if (invoice.customer_id) {
     const { data: customer } = await admin
@@ -325,8 +330,10 @@ export async function createOrRefreshStripePayableInvoice(
       .select('id, name, email')
       .eq('id', invoice.customer_id)
       .maybeSingle()
-    customerEmail = parseRecipientEmail(customer?.email || '')
     customerName = (customer?.name || '').trim()
+    if (!customerEmail) {
+      customerEmail = parseRecipientEmail(customer?.email || '')
+    }
   }
 
   if (!customerEmail) {
@@ -949,6 +956,8 @@ export async function createQuickPayableInvoice(
     createdBy?: string | null
     reservationId?: string | null
     openAmount?: boolean
+    /** 가이드 현장 청구: 예약 고객에 고정 연결하고 OTA 이메일을 덮어쓰지 않습니다. */
+    preserveReservationCustomer?: boolean
   }
 ): Promise<{
   invoiceId: string
@@ -970,21 +979,27 @@ export async function createQuickPayableInvoice(
   openAmount: boolean
 }> {
   const locale = params.locale === 'ko' ? 'ko' : 'en'
+  const reservationId = (params.reservationId || '').trim() || null
+  const preserveReservationCustomer = Boolean(params.preserveReservationCustomer && reservationId)
   const email = parseRecipientEmail(params.email)
   const description = params.description.trim().slice(0, 450)
   const openAmount = Boolean(params.openAmount)
   const amountUsd = openAmount ? 0 : roundMoney(Number(params.amountUsd))
-  const recipientName = (params.recipientName || '').trim() || email.split('@')[0] || 'Guest'
+  let recipientName = (params.recipientName || '').trim() || email.split('@')[0] || 'Guest'
+  let stripeEmailOverride: string | undefined
+  let resultEmail = email
 
-  if (!email) {
-    throw new Error(locale === 'ko' ? '유효한 이메일이 필요합니다.' : 'A valid email is required.')
-  }
-  if (isGetYourGuideReplyEmail(email)) {
-    throw new Error(
-      locale === 'ko'
-        ? 'GetYourGuide 임시 이메일(@reply.getyourguide.com)로는 금액 청구를 보낼 수 없습니다. 고객의 실제 이메일을 입력해 주세요.'
-        : 'GetYourGuide relay addresses (@reply.getyourguide.com) cannot receive payment requests. Enter the guest\'s real email.'
-    )
+  if (!preserveReservationCustomer) {
+    if (!email) {
+      throw new Error(locale === 'ko' ? '유효한 이메일이 필요합니다.' : 'A valid email is required.')
+    }
+    if (isGetYourGuideReplyEmail(email)) {
+      throw new Error(
+        locale === 'ko'
+          ? 'GetYourGuide 임시 이메일(@reply.getyourguide.com)로는 금액 청구를 보낼 수 없습니다. 고객의 실제 이메일을 입력해 주세요.'
+          : 'GetYourGuide relay addresses (@reply.getyourguide.com) cannot receive payment requests. Enter the guest\'s real email.'
+      )
+    }
   }
   if (!description) {
     throw new Error(locale === 'ko' ? '청구 내용을 입력해 주세요.' : 'Description is required.')
@@ -999,7 +1014,6 @@ export async function createQuickPayableInvoice(
   }
 
   const operatorId = resolveOperatorId(params.operatorId)
-  const reservationId = (params.reservationId || '').trim() || null
 
   let customerId: string | null = null
   let customerCreated = false
@@ -1007,7 +1021,47 @@ export async function createQuickPayableInvoice(
   let previousEmail: string | null = null
   let specialRequests: string | null = null
 
-  if (reservationId) {
+  if (preserveReservationCustomer && reservationId) {
+    const { data: reservation } = await admin
+      .from('reservations')
+      .select('id, customer_id')
+      .eq('id', reservationId)
+      .maybeSingle()
+
+    if (!reservation?.customer_id) {
+      throw new Error(
+        locale === 'ko'
+          ? '예약에 연결된 고객을 찾을 수 없습니다.'
+          : 'This reservation has no linked customer.'
+      )
+    }
+
+    const { data: reservationCustomer } = await admin
+      .from('customers')
+      .select('id, name, email, special_requests')
+      .eq('id', reservation.customer_id)
+      .maybeSingle()
+
+    if (!reservationCustomer?.id) {
+      throw new Error(
+        locale === 'ko'
+          ? '예약에 연결된 고객을 찾을 수 없습니다.'
+          : 'This reservation has no linked customer.'
+      )
+    }
+
+    customerId = reservationCustomer.id
+    specialRequests = reservationCustomer.special_requests || null
+    if (!params.recipientName?.trim()) {
+      recipientName = (reservationCustomer.name || '').trim() || 'Guest'
+    }
+    const storedEmail = parseRecipientEmail(reservationCustomer.email)
+    resultEmail = storedEmail || fieldOnsiteStripeEmail(reservationId)
+    if (!storedEmail || isGetYourGuideReplyEmail(storedEmail)) {
+      stripeEmailOverride = fieldOnsiteStripeEmail(reservationId)
+      resultEmail = stripeEmailOverride
+    }
+  } else if (reservationId) {
     const replaced = await replaceGetYourGuideRelayCustomerEmail(admin, {
       reservationId,
       newEmail: email,
@@ -1051,6 +1105,9 @@ export async function createQuickPayableInvoice(
   }
 
   if (!customerId) {
+    if (!email) {
+      throw new Error(locale === 'ko' ? '유효한 이메일이 필요합니다.' : 'A valid email is required.')
+    }
     const { data: existingCustomer } = await admin
       .from('customers')
       .select('id, name, email')
@@ -1196,14 +1253,17 @@ export async function createQuickPayableInvoice(
       sitePayUrl: buildInvoiceSitePayUrl(paymentToken, 'en'),
       amountUsd,
       description,
-      email,
+      email: resultEmail,
       recipientName,
       reservationId,
       openAmount: true,
     }
   }
 
-  const pay = await createOrRefreshStripePayableInvoice(admin, invoice.id, { locale })
+  const pay = await createOrRefreshStripePayableInvoice(admin, invoice.id, {
+    locale,
+    ...(stripeEmailOverride ? { stripeEmailOverride } : {}),
+  })
 
   return {
     invoiceId: pay.invoiceId,
@@ -1219,7 +1279,7 @@ export async function createQuickPayableInvoice(
     sitePayUrl: pay.sitePayUrl,
     amountUsd,
     description,
-    email,
+    email: resultEmail,
     recipientName,
     reservationId,
     openAmount: false,

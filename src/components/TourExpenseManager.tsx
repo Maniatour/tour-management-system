@@ -179,6 +179,7 @@ export type TourExpenseManagerHandle = {
   openOptionManagement: () => void
   openAddExpense: () => void
   toggleDriveImporter: () => void
+  openReceiptOnlyUpload: () => void
 }
 
 const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManagerProps>(function TourExpenseManager({
@@ -2388,6 +2389,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
       openOptionManagement: () => setShowOptionManagement(true),
       openAddExpense: openAddExpenseForm,
       toggleDriveImporter: () => setShowDriveImporter((prev) => !prev),
+      openReceiptOnlyUpload: () => receiptOnlyInputRef.current?.click(),
     }),
     [openAddExpenseForm]
   )
@@ -2401,37 +2403,37 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
     <div className="space-y-4">
       {!embedSingleExpenseId ? (
       <>
+      {allowReceiptOnlyUpload && (
+        <input
+          ref={receiptOnlyInputRef}
+          type="file"
+          accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp"
+          multiple
+          onChange={(e) => {
+            const input = e.currentTarget
+            void (async () => {
+              const files = await snapshotInputFiles(input.files)
+              input.value = ''
+              await handleReceiptOnlyUpload(files)
+            })()
+          }}
+          className="hidden"
+        />
+      )}
       {!hideTitle ? (
       <div className="flex items-center justify-between">
         <h3 className={pageTitleClass}>{t('title')}</h3>
         <div className="flex items-center space-x-1.5">
           {allowReceiptOnlyUpload && (
-            <div className="flex items-center gap-1">
-              <input
-                ref={receiptOnlyInputRef}
-                type="file"
-                accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp"
-                multiple
-                onChange={(e) => {
-                  const input = e.currentTarget
-                  void (async () => {
-                    const files = await snapshotInputFiles(input.files)
-                    input.value = ''
-                    await handleReceiptOnlyUpload(files)
-                  })()
-                }}
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={() => receiptOnlyInputRef.current?.click()}
-                disabled={uploading}
-                className={`${toolbarIconBtnClass} bg-emerald-600 text-white hover:bg-emerald-700`}
-                title={t('receiptOnlyUpload')}
-              >
-                <Receipt size={toolbarIconSize} />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => receiptOnlyInputRef.current?.click()}
+              disabled={uploading}
+              className={`${toolbarIconBtnClass} bg-emerald-600 text-white hover:bg-emerald-700`}
+              title={t('receiptOnlyUpload')}
+            >
+              <Receipt size={toolbarIconSize} />
+            </button>
           )}
           {!allowReceiptOnlyUpload && (
           <button

@@ -1,6 +1,7 @@
 import { createClientSupabase, supabaseAdmin } from '@/lib/supabase'
 import { computeSunriseSunsetArizona } from '@/lib/sunriseSunsetFetch'
 import { addTourLocalCalendarDays, getTourLocalToday } from '@/lib/tourWeatherDates'
+import { weatherFromDayForecasts, type OpenWeatherForecastItem } from '@/lib/weatherForecastPick'
 
 function dbForWeatherJob() {
   return typeof window === 'undefined' && supabaseAdmin ? supabaseAdmin : createClientSupabase()
@@ -87,7 +88,7 @@ export async function collectSunriseSunsetComputedYear(
   }
 }
 
-async function getWeatherData(lat: number, lng: number, date?: string) {
+async function getWeatherData(lat: number, lng: number, date?: string, locationName?: string) {
   const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY
   if (!apiKey) {
     console.error('OpenWeatherMap API key not found')
@@ -105,25 +106,12 @@ async function getWeatherData(lat: number, lng: number, date?: string) {
       )
       const data = await response.json()
       if (String(data.cod) === '200' && Array.isArray(data.list)) {
-        const targetForecasts = data.list.filter((item: { dt_txt: string }) =>
-          item.dt_txt.startsWith(targetDate)
+        const picked = weatherFromDayForecasts(
+          data.list as OpenWeatherForecastItem[],
+          locationName || '',
+          targetDate
         )
-        if (targetForecasts.length > 0) {
-          const temperatures = targetForecasts.map((item: { main: { temp: number } }) => item.main.temp)
-          const temp_max = Math.max(...temperatures)
-          const temp_min = Math.min(...temperatures)
-          const currentForecast = targetForecasts[targetForecasts.length - 1]
-          return {
-            temperature: currentForecast.main.temp,
-            temp_max,
-            temp_min,
-            humidity: currentForecast.main.humidity,
-            weather_main: currentForecast.weather[0].main,
-            weather_description: currentForecast.weather[0].description,
-            wind_speed: currentForecast.wind.speed,
-            visibility: currentForecast.visibility,
-          }
-        }
+        if (picked) return picked
       }
     }
     console.warn(`Weather data not available for ${targetDate}, using default values`)
@@ -166,7 +154,7 @@ export async function collectDataForDate(date: string, weatherOnly: boolean = fa
           console.error(`Error upserting sunrise data for ${location.name}:`, sunriseError)
         }
       }
-      const weatherData = await getWeatherData(location.lat, location.lng, date)
+      const weatherData = await getWeatherData(location.lat, location.lng, date, location.name)
       if (weatherData) {
         const { error: weatherError } = await supabase.from('weather_data').upsert(
           {

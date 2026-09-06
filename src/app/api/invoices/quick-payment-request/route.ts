@@ -168,10 +168,47 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url)
   const locale = searchParams.get('locale') === 'ko' ? 'ko' : 'en'
+  const invoiceId = (searchParams.get('invoiceId') || '').trim()
   const limitRaw = Number(searchParams.get('limit') || 50)
   const limit = Number.isFinite(limitRaw) ? limitRaw : 50
 
   try {
+    if (invoiceId) {
+      const { data: row, error } = await supabaseAdmin
+        .from('invoices')
+        .select(
+          'id, status, stripe_invoice_status, paid_at, payment_token, hosted_invoice_url, notes, total'
+        )
+        .eq('id', invoiceId)
+        .maybeSingle()
+      if (error) {
+        throw new Error(error.message)
+      }
+      if (!row || !isQuickPaymentInvoiceNotes((row as { notes?: string | null }).notes)) {
+        return NextResponse.json(
+          {
+            error:
+              locale === 'ko' ? '빠른 금액 청구 내역을 찾을 수 없습니다.' : 'Payment request not found.',
+          },
+          { status: 404 }
+        )
+      }
+      const paymentToken = String((row as { payment_token?: string | null }).payment_token || '').trim()
+      const status = String((row as { status?: string }).status || '')
+      const stripeStatus = String((row as { stripe_invoice_status?: string | null }).stripe_invoice_status || '')
+      const paid = status === 'paid' || stripeStatus === 'paid'
+      return NextResponse.json({
+        success: true,
+        invoiceId: row.id,
+        status,
+        stripeInvoiceStatus: stripeStatus || null,
+        paid,
+        paidAt: (row as { paid_at?: string | null }).paid_at ?? null,
+        total: Number((row as { total?: number }).total) || 0,
+        sitePayUrl: paymentToken ? buildInvoiceSitePayUrl(paymentToken, locale) : null,
+      })
+    }
+
     const items = await listQuickPaymentInvoices(supabaseAdmin, { locale, limit })
     return NextResponse.json({ success: true, items })
   } catch (err) {
@@ -212,7 +249,8 @@ export async function POST(request: NextRequest) {
     body.requestKind === 'tip_open_amount'
   // 고객 발송(이메일·결제 링크) 기본 영문. 한글은 body.locale === 'ko'일 때만.
   const locale = body.locale === 'ko' ? 'ko' : 'en'
-  const sendEmail = body.sendEmail !== false
+  const fieldCharge = body.fieldCharge === true || body.preserveReservationCustomer === true
+  const sendEmail = fieldCharge ? body.sendEmail === true : body.sendEmail !== false
   const sendSms = body.sendSms === true
   const sendSmsOnly = body.sendSmsOnly === true
   const sendEmailOnly = body.sendEmailOnly === true
@@ -417,23 +455,38 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (fieldCharge && !reservationId.trim()) {
+    return NextResponse.json(
+      {
+        error:
+          locale === 'ko'
+            ? '현장 청구는 예약이 필요합니다.'
+            : 'On-site charge requires a reservation.',
+      },
+      { status: 400 }
+    )
+  }
+
   try {
     const result = await createQuickPayableInvoice(supabaseAdmin, {
       email,
-      amountUsd: openAmount ? 0 : amountUsd,
-      description: description.trim() || (openAmount ? 'Guide Tip' : ''),
+      amountUsd: fieldCharge || !openAmount ? amountUsd : 0,
+      description:
+        description.trim() ||
+        (openAmount && !fieldCharge ? 'Guide Tip' : fieldCharge ? 'On-site balance' : ''),
       recipientName,
       locale,
       createdBy: auth.userEmail,
-      openAmount,
+      openAmount: fieldCharge ? false : openAmount,
       ...(reservationId.trim() ? { reservationId: reservationId.trim() } : {}),
+      ...(fieldCharge ? { preserveReservationCustomer: true } : {}),
     })
 
     let emailId: string | null = null
     let emailSent = false
     let emailError: string | null = null
 
-    if (sendEmail) {
+    if (sendEmail && !/@noreply\.maniatour\.com$/i.test(result.email)) {
       const sent = await sendQuickPaymentEmail({
         to: result.email,
         recipientName: result.recipientName,

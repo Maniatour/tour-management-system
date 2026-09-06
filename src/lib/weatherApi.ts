@@ -1,5 +1,7 @@
 import { createClientSupabase } from './supabase'
 import { getSunriseSunsetForLocation } from '@/lib/sunriseSunsetFetch'
+import { addTourLocalCalendarDays, getTourLocalToday } from '@/lib/tourWeatherDates'
+import { weatherFromDayForecasts, type OpenWeatherForecastItem } from '@/lib/weatherForecastPick'
 
 // Goblin tour locations
 const GOBLIN_TOUR_LOCATIONS = [
@@ -148,8 +150,14 @@ export function normalizeDate(dateStr: string): string {
   return trimmed
 }
 
-// Fallback: Get weather data from API (only if cache miss). date는 YYYY-MM-DD.
-async function getWeatherDataFromAPI(lat: number, lng: number, date: string) {
+function isWithinOpenWeatherForecastWindow(date: string): boolean {
+  const today = getTourLocalToday()
+  const forecastEnd = addTourLocalCalendarDays(today, 4)
+  return date >= today && date <= forecastEnd
+}
+
+// Fallback: Get weather data from API. date는 YYYY-MM-DD.
+async function getWeatherDataFromAPI(lat: number, lng: number, date: string, locationName: string) {
   const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY
   if (!apiKey) {
     console.warn('OpenWeatherMap API key not found')
@@ -179,36 +187,19 @@ async function getWeatherDataFromAPI(lat: number, lng: number, date: string) {
     
     const data = await response.json()
 
-    if (data.cod === '200') {
-      const targetDate = normalizeDate(date)
-      const dayForecasts = data.list.filter((item: any) => 
-        item.dt_txt.startsWith(targetDate)
+    if (String(data.cod) === '200' && Array.isArray(data.list)) {
+      return weatherFromDayForecasts(
+        data.list as OpenWeatherForecastItem[],
+        locationName,
+        normalizeDate(date)
       )
-      
-      if (dayForecasts.length > 0) {
-        const temperatures = dayForecasts.map((item: any) => item.main.temp)
-        const temp_max = Math.max(...temperatures)
-        const temp_min = Math.min(...temperatures)
-        const currentForecast = dayForecasts[dayForecasts.length - 1]
-        
-        return {
-          temperature: currentForecast.main.temp,
-          temp_max: temp_max,
-          temp_min: temp_min,
-          humidity: currentForecast.main.humidity,
-          weather_main: currentForecast.weather[0].main,
-          weather_description: currentForecast.weather[0].description,
-          wind_speed: currentForecast.wind.speed,
-          visibility: currentForecast.visibility
-        }
-      }
     }
     return null
-  } catch (error: any) {
-    // 네트워크 오류는 조용히 처리 (fallback 사용)
-    if (error.name === 'AbortError') {
+  } catch (error: unknown) {
+    const err = error as { name?: string; message?: string }
+    if (err.name === 'AbortError') {
       console.warn('Weather API request timed out')
-    } else if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+    } else if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
       console.warn('Weather API request failed (network error)')
     } else {
       console.error('Error fetching weather data from API:', error)
@@ -246,18 +237,24 @@ export async function getSunriseSunsetData(locationName: string, date: string) {
   }
 }
 
-// Get weather data (cached first, API fallback). date는 YYYY-MM-DD로 통일해 사용.
+// Get weather data. Upcoming dates use the live 3-hour slot nearest tour time
+// so afternoon monsoon rain is not shown as the day's icon.
 export async function getWeatherData(locationName: string, date: string) {
   const normalizedDate = normalizeDate(date)
   try {
+    const location = GOBLIN_TOUR_LOCATIONS.find(loc => loc.name === locationName)
+    if (location && isWithinOpenWeatherForecastWindow(normalizedDate)) {
+      const apiData = await getWeatherDataFromAPI(location.lat, location.lng, normalizedDate, location.name)
+      if (apiData) return apiData
+    }
+
     const cachedData = await getCachedWeatherData(locationName, normalizedDate)
     if (cachedData) {
       return cachedData
     }
     
-    const location = GOBLIN_TOUR_LOCATIONS.find(loc => loc.name === locationName)
     if (location) {
-      return await getWeatherDataFromAPI(location.lat, location.lng, normalizedDate)
+      return await getWeatherDataFromAPI(location.lat, location.lng, normalizedDate, location.name)
     }
     
     // Return default values if everything fails
@@ -322,66 +319,28 @@ export async function get7DayWeatherForecast(locationName: string): Promise<Loca
     
     const data = await response.json()
     
-    if (data.cod === '200') {
+    if (String(data.cod) === '200' && Array.isArray(data.list)) {
       const forecasts: LocationWeather[] = []
-      const today = new Date()
-      
-      // Group forecasts by date
-      const forecastsByDate: { [key: string]: any[] } = {}
-      
-      data.list.forEach((item: any) => {
-        const date = item.dt_txt.split(' ')[0]
-        if (!forecastsByDate[date]) {
-          forecastsByDate[date] = []
-        }
-        forecastsByDate[date].push(item)
-      })
-      
-      // Get 7 days of forecasts
+      const list = data.list as OpenWeatherForecastItem[]
+
       for (let i = 0; i < 7; i++) {
-        const date = new Date(today)
-        date.setDate(today.getDate() + i)
-        const dateString = date.toISOString().split('T')[0]
-        
-        if (forecastsByDate[dateString]) {
-          const dayForecasts = forecastsByDate[dateString]
-          
-          // Calculate min/max temperatures for the day
-          const temperatures = dayForecasts.map((item: any) => item.main.temp)
-          const temp_max = Math.max(...temperatures)
-          const temp_min = Math.min(...temperatures)
-          
-          // Use midday forecast for current conditions
-          const middayForecast = dayForecasts.find((item: any) => {
-            const hour = new Date(item.dt_txt).getHours()
-            return hour >= 12 && hour <= 14
-          }) || dayForecasts[Math.floor(dayForecasts.length / 2)]
-          
-          // 연속 일출/일몰 API 호출로 429가 나기 쉬워 날짜마다 짧게 간격을 둠
-          if (i > 0) {
-            await new Promise((r) => setTimeout(r, 400))
-          }
-          // Get sunrise/sunset data
-          const sunriseSunsetData = await getSunriseSunsetData(locationName, dateString)
-          
-          forecasts.push({
-            location: locationName,
-            sunrise: sunriseSunsetData?.sunrise || '06:00',
-            sunset: sunriseSunsetData?.sunset || '18:00',
-            weather: {
-              temperature: middayForecast.main.temp,
-              temp_max: temp_max,
-              temp_min: temp_min,
-              humidity: middayForecast.main.humidity,
-              weather_main: middayForecast.weather[0].main,
-              weather_description: middayForecast.weather[0].description,
-              wind_speed: middayForecast.wind.speed,
-              visibility: middayForecast.visibility
-            }
-          })
+        const dateString = addTourLocalCalendarDays(getTourLocalToday(), i)
+        const dayWeather = weatherFromDayForecasts(list, locationName, dateString)
+        if (!dayWeather) continue
+
+        if (i > 0) {
+          await new Promise((r) => setTimeout(r, 400))
         }
+        const sunriseSunsetData = await getSunriseSunsetData(locationName, dateString)
+
+        forecasts.push({
+          location: locationName,
+          sunrise: sunriseSunsetData?.sunrise || '06:00',
+          sunset: sunriseSunsetData?.sunset || '18:00',
+          weather: dayWeather,
+        })
       }
-      
+
       return forecasts
     }
     

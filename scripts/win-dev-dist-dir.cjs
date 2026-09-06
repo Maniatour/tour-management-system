@@ -4,13 +4,21 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
+function bundlerTag() {
+  const bundler = String(process.env.NEXT_DEV_BUNDLER || '').toLowerCase()
+  if (bundler === 'turbo' || bundler === 'turbopack') return '-turbo'
+  return ''
+}
+
 function devDistDirBaseName() {
   if (process.env.NEXT_DEV_DIST_DIR?.trim()) {
     return null
   }
   const port = String(process.env.PORT || '3000').trim() || '3000'
-  // 기본 3000은 기존 경로 유지. 다른 포트는 캐시·HMR 간섭 방지용으로 분리.
-  return port === '3000' ? 'tms-next-dev' : `tms-next-dev-${port}`
+  const tag = bundlerTag()
+  // webpack/turbo 캐시를 분리해 번들러 전환 시 매니페스트 충돌을 막는다.
+  // 기본 3000 webpack은 기존 경로 유지. 다른 포트는 캐시·HMR 간섭 방지용으로 분리.
+  return port === '3000' ? `tms-next-dev${tag}` : `tms-next-dev-${port}${tag}`
 }
 
 function resolveWinDevDistDirAbs() {

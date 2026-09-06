@@ -47,6 +47,14 @@ const withSerwist = withSerwistInit({
 const nextConfig = {
 	...(useWinDevDistDir ? { distDir: WIN_DEV_DIST_DIR } : {}),
 
+	// Turbopack CSS resolver는 package exports의 "style" 조건만 있는 tw-animate-css를 못 찾음.
+	// webpack(prod/dev)은 기존 @import "tw-animate-css"를 그대로 쓰므로 배포 빌드와 무관.
+	turbopack: {
+		resolveAlias: {
+			'tw-animate-css': './node_modules/tw-animate-css/dist/tw-animate.css',
+		},
+	},
+
 	productionBrowserSourceMaps: false,
 
 	// type-check·lint는 별도 스크립트/CI에서 실행 (next build 프로세스 메모리 피크 완화)
@@ -211,9 +219,9 @@ const nextConfig = {
 				1,
 				parseInt(process.env.NEXT_DEV_WEBPACK_PARALLELISM ?? '2', 10) || 2
 			)
+			const usePolling = process.env.NEXT_DEV_POLLING !== '0'
 			config.watchOptions = {
 				...config.watchOptions,
-				poll: 1000,
 				aggregateTimeout: 600,
 				ignored: [
 					'**/node_modules/**',
@@ -222,6 +230,7 @@ const nextConfig = {
 					'**/.cache/tms-next-dev*/**',
 					'**/node_modules/.cache/tms-next-dev*/**',
 				],
+				...(usePolling ? { poll: 1000 } : {}),
 			}
 			// emit 후 대기: 기본 0ms(페이지 이동 속도). open -4094 재발 시 NEXT_DEV_WIN_EMIT_SETTLE_MS=2500
 			const emitSettleMs = Math.max(

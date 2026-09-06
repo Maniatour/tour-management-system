@@ -1,4 +1,7 @@
 {
+  "npm.autoDetect": "off",
+  "npm.exclude": "**/node_modules/**",
+  "task.autoDetect": "off",
   "files.encoding": "utf8",
   "files.autoGuessEncoding": false,
   "files.eol": "\n",

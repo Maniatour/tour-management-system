@@ -37,6 +37,8 @@ export type TourPhotoUploadQueueParams = {
   tourId: string
   uploadedBy: string
   labels: TourPhotoUploadQueueLabels
+  /** 전역 업로드 오버레이를 쓰지 않고 호출측에서 상태를 표시할 때 */
+  quiet?: boolean
 }
 
 export type TourPhotoUploadQueueResult = {
@@ -66,7 +68,8 @@ function interpolate(template: string, values: Record<string, string | number>):
 export async function runTourPhotoUploadQueue(
   params: TourPhotoUploadQueueParams
 ): Promise<TourPhotoUploadQueueResult> {
-  const { files, tourId, uploadedBy, labels } = params
+  const { files, tourId, uploadedBy, labels, quiet } = params
+  const useSession = !quiet
 
   const empty: TourPhotoUploadQueueResult = {
     totalSuccessful: 0,
@@ -77,7 +80,7 @@ export async function runTourPhotoUploadQueue(
   }
 
   if (!files.length) {
-    endTourPhotoUploadSession()
+    if (useSession) endTourPhotoUploadSession()
     return { ...empty, userMessages: [labels.noFiles] }
   }
 
@@ -124,7 +127,7 @@ export async function runTourPhotoUploadQueue(
     }
 
     if (toUpload.length === 0) {
-      endTourPhotoUploadSession()
+      if (useSession) endTourPhotoUploadSession()
       const parts: string[] = []
       if (skippedDuplicateContent > 0) {
         parts.push(interpolate(labels.duplicateInSelection, { count: skippedDuplicateContent }))
@@ -142,7 +145,7 @@ export async function runTourPhotoUploadQueue(
 
     let completed = 0
 
-    startTourPhotoUploadSession(tourId, toUpload.length)
+    if (useSession) startTourPhotoUploadSession(tourId, toUpload.length)
 
     const onBeforeRetry = async () => {
       await ensureFreshAuthSessionForUpload().catch(() => {})
@@ -239,11 +242,11 @@ export async function runTourPhotoUploadQueue(
         totalFailed += 1
       } finally {
         completed += 1
-        updateTourPhotoUploadProgress(completed, toUpload.length)
+        if (useSession) updateTourPhotoUploadProgress(completed, toUpload.length)
       }
       })
     } finally {
-      endTourPhotoUploadSession()
+      if (useSession) endTourPhotoUploadSession()
     }
 
     if (totalSuccessful > 0) {
@@ -258,7 +261,7 @@ export async function runTourPhotoUploadQueue(
       skippedAlreadyUploaded,
     }
   } catch (error) {
-    endTourPhotoUploadSession()
+    if (useSession) endTourPhotoUploadSession()
     throw error
   }
 }

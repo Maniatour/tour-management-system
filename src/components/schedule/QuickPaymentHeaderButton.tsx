@@ -1,8 +1,14 @@
 'use client'
 
 import { useState } from 'react'
+import dynamic from 'next/dynamic'
 import { Send } from 'lucide-react'
-import { QuickPaymentRequestModal } from '@/components/customer/QuickPaymentRequestForm'
+
+const QuickPaymentRequestModal = dynamic(
+  () =>
+    import('@/components/customer/QuickPaymentRequestForm').then((m) => m.QuickPaymentRequestModal),
+  { ssr: false, loading: () => null }
+)
 
 type QuickPaymentHeaderButtonProps = {
   locale: string
@@ -27,11 +33,13 @@ export default function QuickPaymentHeaderButton({
       >
         <Send size={16} aria-hidden />
       </button>
-      <QuickPaymentRequestModal
-        open={open}
-        onClose={() => setOpen(false)}
-        locale={isKo ? 'ko' : 'en'}
-      />
+      {open ? (
+        <QuickPaymentRequestModal
+          open={open}
+          onClose={() => setOpen(false)}
+          locale={isKo ? 'ko' : 'en'}
+        />
+      ) : null}
     </>
   )
 }

@@ -8,6 +8,8 @@ interface AudioTrack {
   title: string
   duration?: number
   filePath?: string
+  fileName?: string
+  language?: string | null
 }
 
 interface AudioPlayerContextType {

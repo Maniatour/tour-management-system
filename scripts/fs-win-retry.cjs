@@ -36,9 +36,55 @@ function withRetrySync(fn, args, maxAttempts = 60) {
   throw lastErr
 }
 
+function missingFileStats() {
+  const epoch = new Date(0)
+  return {
+    isFile: () => false,
+    isDirectory: () => false,
+    isBlockDevice: () => false,
+    isCharacterDevice: () => false,
+    isSymbolicLink: () => false,
+    isFIFO: () => false,
+    isSocket: () => false,
+    dev: 0,
+    ino: 0,
+    mode: 0,
+    nlink: 0,
+    uid: 0,
+    gid: 0,
+    rdev: 0,
+    size: 0,
+    blksize: 0,
+    blocks: 0,
+    atimeMs: Number.NEGATIVE_INFINITY,
+    mtimeMs: Number.NEGATIVE_INFINITY,
+    ctimeMs: Number.NEGATIVE_INFINITY,
+    birthtimeMs: Number.NEGATIVE_INFINITY,
+    atime: epoch,
+    mtime: epoch,
+    ctime: epoch,
+    birthtime: epoch,
+  }
+}
+
 function patchSync(name) {
   const original = fs[name].bind(fs)
   fs[name] = (...args) => withRetrySync(original, args)
+}
+
+function patchStatSync() {
+  const original = fs.statSync.bind(fs)
+  fs.statSync = (...args) => {
+    try {
+      return withRetrySync(original, args)
+    } catch (err) {
+      // Tailwind content glob can list a file that Windows already deleted.
+      if (err && err.code === 'ENOENT') {
+        return missingFileStats()
+      }
+      throw err
+    }
+  }
 }
 
 function isEmptyRead(content) {
@@ -71,7 +117,7 @@ function patchReadFileSync() {
 patchSync('openSync')
 patchReadFileSync()
 patchSync('readSync')
-patchSync('statSync')
+patchStatSync()
 patchSync('accessSync')
 patchSync('copyFileSync')
 

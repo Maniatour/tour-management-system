@@ -10,16 +10,19 @@ import {
   Clock,
   Users,
   Camera,
+  Image as ImageIcon,
   MessageSquare,
   FileText,
   Calculator,
-  ListChecks,
   ChevronDown,
   ChevronUp,
-  Calendar,
   Phone,
   Mail,
   Car,
+  User,
+  Plus,
+  Receipt,
+  Share2,
   type LucideIcon,
 } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
@@ -28,13 +31,14 @@ import type { Database } from '@/lib/supabase'
 import { isBrowserOffline, loadGuideSnapshot, saveGuideSnapshot } from '@/lib/guideOfflineStore'
 import { chunkStrings } from '@/lib/supabaseInChunks'
 import { useAuth } from '@/contexts/AuthContext'
-import TourPhotoUpload from '@/components/TourPhotoUpload'
+import TourPhotoUpload, { type TourPhotoUploadHandle } from '@/components/TourPhotoUpload'
+import { ChoiceOptionBadges, type ChoiceOptionBadgeItem } from '@/components/reservation/ChoiceOptionBadges'
 import TourChatRoom from '@/components/TourChatRoom'
-import TourExpenseManager from '@/components/TourExpenseManager'
+import TourChatModal from '@/components/TourChatModal'
+import TourExpenseManager, { type TourExpenseManagerHandle } from '@/components/TourExpenseManager'
 import TourReportSection from '@/components/TourReportSection'
 import TourReportForm from '@/components/TourReportForm'
 import { UncompletedTourReportReminderModal } from '@/components/guide/UncompletedTourReportReminderLayer'
-import TourSopChecklistSection from '@/components/sop/TourSopChecklistSection'
 import TourWeather from '@/components/TourWeather'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
 import { formatCustomerNameEnhanced } from '@/utils/koreanTransliteration'
@@ -53,7 +57,7 @@ import {
 } from '@/utils/tourUtils'
 import { fetchReservationOptionLinesBatch } from '@/lib/reservationOptionsForEmail'
 import { resolveReservationChoicesBatch } from '@/lib/resolveReservationChoices'
-import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
+import { teamMemberNameForLocale, teamMemberNickDisplayName } from '@/lib/teamMemberDisplayName'
 import {
   adjustOptionTotalExcludingLegacyNonResident,
   getBalanceAmountForDisplay,
@@ -72,6 +76,10 @@ import {
 } from '@/lib/guideToursVisibleUntil'
 import { GuideBackupTourBadge } from '@/components/guide/GuideBackupTourBadge'
 import { isGuideBackupTour } from '@/lib/guideBackupTour'
+import GuidePickupChargeModal, {
+  GuidePickupChargeButton,
+  type GuidePickupChargeTarget,
+} from '@/components/guide/GuidePickupChargeModal'
 import { TOUR_REPORT_REQUIRED_FROM } from '@/lib/tourReportExtras'
 
 // 타입 정의 (DB 스키마 기반) — 픽업 잔액 헬퍼보다 먼저 두어 타입 순서 유지
@@ -88,6 +96,7 @@ type TeamMember = {
   email: string
   name_ko: string | null
   name_en: string | null
+  nick_name?: string | null
   phone?: string | null
 }
 
@@ -100,10 +109,9 @@ type GuidePickupBalanceBreakdown = {
   detailLines: string[]
 }
 
-/** 픽업 카드·Balance 봉투: 고객 언어가 한국어가 아니면 라벨·합계를 영어로 */
-function guidePickupUseEnvelopeEnglish(lang: string | null | undefined): boolean {
-  if (!lang) return true
-  const l = lang.toString().toLowerCase()
+/** 픽업 카드 잔금 라벨: 가이드 화면 로케일 기준 (봉투 인쇄는 고객 언어 유지) */
+function guidePickupUseEnvelopeEnglish(pageLocale: string | null | undefined): boolean {
+  const l = (pageLocale || '').toString().toLowerCase()
   return !(l === 'ko' || l.startsWith('ko-') || l === 'korean' || l === 'kr')
 }
 
@@ -116,7 +124,7 @@ async function computeGuidePickupBalanceBreakdowns(
   supabaseClient: typeof supabase,
   reservationIds: string[],
   reservations: ReservationRow[],
-  customers: CustomerRow[]
+  useEnglish: boolean
 ): Promise<Record<string, GuidePickupBalanceBreakdown>> {
   const ids = [...new Set(reservationIds.map((id) => String(id ?? '').trim()).filter(Boolean))]
   const out: Record<string, GuidePickupBalanceBreakdown> = {}
@@ -200,11 +208,6 @@ async function computeGuidePickupBalanceBreakdowns(
     paymentsByResId.set(row.reservation_id, list)
   }
 
-  const customerLangById = new Map<string, string | null>()
-  for (const c of customers) {
-    customerLangById.set(c.id, c.language ?? null)
-  }
-
   const rezById = new Map<string, ReservationRow>()
   for (const r of reservations) rezById.set(r.id, r)
 
@@ -272,10 +275,6 @@ async function computeGuidePickupBalanceBreakdowns(
         ? String((pricing as { currency: string }).currency || 'USD')
         : 'USD'
 
-    const customerId = (rez as { customer_id?: string | null }).customer_id
-    const lang = customerId ? customerLangById.get(customerId) ?? null : null
-    const useEnglish = guidePickupUseEnvelopeEnglish(lang)
-
     const p = pricing as { not_included_price?: unknown; pricing_adults?: unknown } | null
     const pricingAdultsRaw = p?.pricing_adults
     const pricingAdults =
@@ -336,19 +335,7 @@ type GuideTourDetailSnapshot = {
     prepayment_tip: number
     currency: string
   }>
-  reservationChoicesEntries: Array<
-    [
-      string,
-      Array<{
-        choice_id: string
-        option_id: string
-        quantity: number
-        option_name: string
-        option_name_ko: string
-        choice_group_ko: string
-      }>,
-    ]
-  >
+  reservationChoicesEntries: Array<[string, ChoiceOptionBadgeItem[]]>
   residentStatusSummary: {
     usResident: number
     nonResident: number
@@ -424,6 +411,52 @@ function groupReservationsByPickupHotel(reservations: ReservationRow[]) {
   )
 }
 
+/** 21시 이후 픽업은 투어일 전날로 본다. */
+function pickupInstantMs(tourDate: string, pickupTime: string | null | undefined): number | null {
+  if (!pickupTime) return null
+  const time = String(pickupTime).substring(0, 5)
+  const [hStr, mStr] = time.split(':')
+  const hour = parseInt(hStr, 10)
+  const minute = parseInt(mStr, 10)
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null
+  const [y, mo, d] = tourDate.split('-').map(Number)
+  if (!y || !mo || !d) return null
+  const dt = new Date(y, mo - 1, d, hour, minute, 0, 0)
+  if (hour >= 21) {
+    dt.setDate(dt.getDate() - 1)
+  }
+  return dt.getTime()
+}
+
+/** 첫 픽업 시각 ~ 18시간 30분 */
+function getGuideTourWindowFromPickups(
+  tourDate: string,
+  pickupTimes: Array<string | null | undefined>
+): { start: Date; end: Date } | null {
+  const instants = pickupTimes
+    .map((time) => pickupInstantMs(tourDate, time))
+    .filter((n): n is number => n != null)
+  if (instants.length === 0) return null
+  const start = new Date(Math.min(...instants))
+  const end = new Date(start.getTime() + (18 * 60 + 30) * 60 * 1000)
+  return { start, end }
+}
+
+function formatGuideLocalDateTime(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const year = date.getFullYear()
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${month}/${day}/${year} ${hours}:${minutes}`
+}
+
+function formatTourCalendarDate(tourDate: string): string {
+  const [y, mo, d] = tourDate.split('-').map(Number)
+  if (!y || !mo || !d) return tourDate
+  return `${String(mo).padStart(2, '0')}/${String(d).padStart(2, '0')}/${y}`
+}
+
 export default function GuideTourDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -458,14 +491,7 @@ export default function GuideTourDetailPage() {
     guide_amount: number
     assistant_amount: number
   } | null>(null)
-  const [reservationChoicesMap, setReservationChoicesMap] = useState<Map<string, Array<{
-    choice_id: string
-    option_id: string
-    quantity: number
-    option_name: string
-    option_name_ko: string
-    choice_group_ko: string
-  }>>>(new Map())
+  const [reservationChoicesMap, setReservationChoicesMap] = useState<Map<string, ChoiceOptionBadgeItem[]>>(new Map())
   const [loading, setLoading] = useState(true)
   const [onlineRefreshTick, setOnlineRefreshTick] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -478,13 +504,15 @@ export default function GuideTourDetailPage() {
   const [pickupBalanceBreakdownByReservationId, setPickupBalanceBreakdownByReservationId] = useState<
     Record<string, GuidePickupBalanceBreakdown>
   >({})
+  const [fieldChargeTarget, setFieldChargeTarget] = useState<GuidePickupChargeTarget | null>(null)
 
   // 모바일 최적화를 위한 상태
   const [activeTab, setActiveTab] = useState<'overview' | 'schedule' | 'bookings' | 'photos' | 'chat' | 'expenses' | 'report'>('overview')
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['tour-info', 'pickup-schedule', 'sop-checklist', 'chat']))
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['tour-info', 'pickup-schedule', 'chat']))
   /** 가이드 모바일(lg 미만): 부킹·사진·정산·리포트 섹션은 항상 펼침 */
   const [isGuideMobileLayout, setIsGuideMobileLayout] = useState(false)
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
+  const [chatModalOpen, setChatModalOpen] = useState(false)
   const [showMissingReportReminder, setShowMissingReportReminder] = useState(false)
   const reportReminderShownForTourRef = useRef<string | null>(null)
   const [calculatedTourTimes, setCalculatedTourTimes] = useState<{
@@ -493,6 +521,8 @@ export default function GuideTourDetailPage() {
     sunriseTime: string;
   } | null>(null)
   const assignmentActionRef = useRef<HTMLDivElement | null>(null)
+  const expenseManagerRef = useRef<TourExpenseManagerHandle>(null)
+  const photoUploadRef = useRef<TourPhotoUploadHandle>(null)
 
   useEffect(() => {
     if (searchParams.get('assignment') !== '1') return
@@ -593,7 +623,7 @@ export default function GuideTourDetailPage() {
         return
       }
 
-      const snapshotKey = `guide-tour-detail-${tourId}-${currentUserEmail ?? 'anon'}-${userRole}-${isSimulating && simulatedUser?.email ? simulatedUser.email : 'live'}`
+      const snapshotKey = `guide-tour-detail-${tourId}-${currentUserEmail ?? 'anon'}-${userRole}-${locale}-${isSimulating && simulatedUser?.email ? simulatedUser.email : 'live'}`
 
       if (isBrowserOffline()) {
         const raw = await loadGuideSnapshot(snapshotKey)
@@ -834,14 +864,7 @@ export default function GuideTourDetailPage() {
           snapForPersist.pickupBalanceBreakdownByReservation = {}
         }
 
-        const choicesMap = new Map<string, Array<{
-          choice_id: string
-          option_id: string
-          quantity: number
-          option_name: string
-          option_name_ko: string
-          choice_group_ko: string
-        }>>()
+        const choicesMap = new Map<string, ChoiceOptionBadgeItem[]>()
 
         if (guideActiveReservationIds.length > 0) {
           try {
@@ -858,6 +881,14 @@ export default function GuideTourDetailPage() {
                   option_name: choice.choice_options?.option_name || '',
                   option_name_ko:
                     choice.choice_options?.option_name_ko || choice.choice_options?.option_name || '',
+                  option_key:
+                    choice.option_key ||
+                    choice.canonical_option_key ||
+                    choice.canyon_key ||
+                    choice.choice_options?.option_key ||
+                    '',
+                  internal_name: choice.choice_options?.internal_name || '',
+                  badge_icon_url: choice.choice_options?.badge_icon_url || '',
                   choice_group_ko: choice.product_choices?.choice_group_ko || '',
                 }))
               )
@@ -921,7 +952,7 @@ export default function GuideTourDetailPage() {
               supabase,
               guideActiveReservationIds,
               sortedReservations,
-              loadedCustomers
+              guidePickupUseEnvelopeEnglish(locale)
             )
             setPickupBalanceBreakdownByReservationId(breakdown)
             snapForPersist.pickupBalanceBreakdownByReservation = breakdown
@@ -958,7 +989,7 @@ export default function GuideTourDetailPage() {
       // 팀 멤버 정보 가져오기 (가이드와 어시스턴트 이름 표시용)
       const { data: teamData } = await supabase
         .from('team')
-        .select('email, name_ko, name_en, phone');
+        .select('email, name_ko, name_en, nick_name, phone');
       setTeamMembers(teamData || [])
       snapForPersist.teamMembers = (teamData || []) as TeamMember[]
 
@@ -998,7 +1029,10 @@ export default function GuideTourDetailPage() {
           reservationCustomers.forEach((rc: any) => {
             if (rc.resident_status === 'us_resident') {
               usResidentCount++
-            } else if (rc.resident_status === 'non_resident') {
+            } else if (
+              rc.resident_status === 'non_resident' ||
+              rc.resident_status === 'non_resident_under_16'
+            ) {
               nonResidentCount++
             } else if (rc.resident_status === 'non_resident_with_pass') {
               nonResidentWithPassCount++
@@ -1142,19 +1176,6 @@ export default function GuideTourDetailPage() {
     setExpandedSections(newExpanded)
   }
   
-  // 가이드 구성 타입 판단 함수
-  const getGuideConfiguration = () => {
-    if (!tour?.tour_guide_id) return { type: 'none', label: t('guideConfig.unassigned'), color: 'text-gray-500' }
-    
-    if (tour.assistant_id) {
-      // 두 명의 가이드가 있는 경우
-      return { type: 'two-guides', label: t('guideConfig.twoGuides'), color: 'text-primary' }
-    } else {
-      // 가이드 1명만 있는 경우 (가이드 + 드라이버)
-      return { type: 'guide-driver', label: t('guideConfig.oneGuideDriver'), color: 'text-green-600' }
-    }
-  }
-  
   // 가이드/어시스턴트 이름 가져오기 함수
   const getTeamMemberName = (email: string | null) => {
     if (!email) return t('unassigned')
@@ -1172,6 +1193,12 @@ export default function GuideTourDetailPage() {
     
     const member = teamMembers.find(m => m.email === email)
     return member?.phone || null
+  }
+
+  const getTeamMemberNick = (email: string | null) => {
+    if (!email) return null
+    const member = teamMembers.find(m => m.email === email)
+    return teamMemberNickDisplayName(member) || teamMemberNameForLocale(member, locale) || email.split('@')[0]
   }
 
   
@@ -1348,46 +1375,34 @@ export default function GuideTourDetailPage() {
   
   // 탭 변경 함수
   const handleTabChange = (tab: typeof activeTab) => {
-    setActiveTab(tab)
-    // 탭 변경 시에는 섹션 상태를 강제로 변경하지 않음
-    // 사용자가 collapse한 섹션은 그대로 유지
-  }
-
-  const chatFillMode = isGuideMobileLayout && activeTab === 'chat'
-
-  useEffect(() => {
-    if (!chatFillMode) return
-    const html = document.documentElement
-    const body = document.body
-    const prevHtmlOverflow = html.style.overflow
-    const prevBodyOverflow = body.style.overflow
-    html.style.overflow = 'hidden'
-    body.style.overflow = 'hidden'
-    return () => {
-      html.style.overflow = prevHtmlOverflow
-      body.style.overflow = prevBodyOverflow
+    if (tab === 'chat') {
+      setChatModalOpen(true)
+      return
     }
-  }, [chatFillMode])
+    setChatModalOpen(false)
+    setActiveTab(tab)
+  }
 
   const mobileNavTabs: Array<{
     id: typeof activeTab
     label: string
     icon: LucideIcon
     activeTile: string
+    idleTile: string
   }> = [
-    { id: 'overview', label: t('overview'), icon: Clock, activeTile: 'bg-primary' },
-    { id: 'schedule', label: t('schedule'), icon: MapPin, activeTile: 'bg-green-500' },
-    { id: 'bookings', label: t('booking'), icon: Hotel, activeTile: 'bg-purple-500' },
-    { id: 'photos', label: t('photos'), icon: Camera, activeTile: 'bg-orange-500' },
-    { id: 'chat', label: t('chat'), icon: MessageSquare, activeTile: 'bg-teal-500' },
-    { id: 'expenses', label: t('expenses'), icon: Calculator, activeTile: 'bg-yellow-500' },
-    { id: 'report', label: t('report'), icon: FileText, activeTile: 'bg-red-500' },
+    { id: 'overview', label: t('overview'), icon: Clock, activeTile: 'bg-primary text-white', idleTile: 'bg-primary/10 text-primary' },
+    { id: 'schedule', label: t('schedule'), icon: MapPin, activeTile: 'bg-green-500 text-white', idleTile: 'bg-green-100 text-green-700' },
+    { id: 'bookings', label: t('booking'), icon: Hotel, activeTile: 'bg-purple-500 text-white', idleTile: 'bg-purple-100 text-purple-700' },
+    { id: 'photos', label: t('photos'), icon: Camera, activeTile: 'bg-orange-500 text-white', idleTile: 'bg-orange-100 text-orange-700' },
+    { id: 'chat', label: t('chat'), icon: MessageSquare, activeTile: 'bg-teal-500 text-white', idleTile: 'bg-teal-100 text-teal-700' },
+    { id: 'expenses', label: t('expenses'), icon: Calculator, activeTile: 'bg-amber-500 text-white', idleTile: 'bg-amber-100 text-amber-700' },
+    { id: 'report', label: t('report'), icon: FileText, activeTile: 'bg-rose-500 text-white', idleTile: 'bg-rose-100 text-rose-700' },
   ]
   
   // 아코디언 섹션 컴포넌트
   const guidePanelShell = isGuideMobileLayout
-    ? 'bg-white rounded-none shadow-none border-b border-gray-200 mb-0'
-    : 'bg-white rounded-lg shadow mb-3 sm:mb-4'
+    ? 'bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden'
+    : 'bg-white rounded-xl border border-gray-200 shadow-sm'
   const guideContentInset = isGuideMobileLayout ? 'px-3' : ''
 
   const AccordionSection = ({ 
@@ -1397,6 +1412,8 @@ export default function GuideTourDetailPage() {
     children,
     headerButton,
     alwaysExpanded = false,
+    iconWrapClass = 'bg-gray-100 text-gray-600',
+    flush = false,
   }: { 
     id: string
     title: string
@@ -1405,6 +1422,8 @@ export default function GuideTourDetailPage() {
     headerButton?: React.ReactNode
     /** 모바일 가이드 전용: 접기 없이 항상 본문 표시 */
     alwaysExpanded?: boolean
+    iconWrapClass?: string
+    flush?: boolean
   }) => {
     const isExpanded = alwaysExpanded || expandedSections.has(id)
     const handleToggle = () => {
@@ -1413,26 +1432,32 @@ export default function GuideTourDetailPage() {
     }
     
     return (
-      <div className={guidePanelShell}>
-        <div className={`flex items-center justify-between p-3 sm:p-4 ${guideContentInset}`}>
+      <div className={flush ? '' : guidePanelShell}>
+        <div className={`flex items-center justify-between gap-2 ${
+          flush
+            ? 'px-0 py-0 mb-3'
+            : `border-b border-gray-100 bg-gray-50/90 px-3 py-3 sm:px-4 ${guideContentInset}`
+        }`}>
           <button
             type="button"
             onClick={handleToggle}
             disabled={alwaysExpanded}
-            className={`flex items-center flex-1 text-left rounded -ml-3 sm:-ml-4 px-3 sm:px-4 py-2 -my-2 ${
-              alwaysExpanded ? 'cursor-default' : 'hover:bg-gray-50 transition-colors'
+            className={`flex min-w-0 flex-1 items-center text-left rounded-lg ${
+              alwaysExpanded ? 'cursor-default' : 'hover:bg-white/80 transition-colors'
             }`}
           >
-            <Icon className="w-5 h-5 text-gray-400 mr-3" />
-            <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+            <span className={`mr-3 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconWrapClass}`}>
+              <Icon className="h-4 w-4" />
+            </span>
+            <h2 className="truncate text-base font-semibold text-gray-900">{title}</h2>
           </button>
-          <div className="flex items-center space-x-2">
+          <div className="flex shrink-0 items-center space-x-2">
             {headerButton}
             {!alwaysExpanded && (
               <button
                 type="button"
                 onClick={handleToggle}
-                className="p-1 hover:bg-gray-50 rounded transition-colors"
+                className="p-1 hover:bg-white rounded-lg transition-colors"
               >
                 {isExpanded ? (
                   <ChevronUp className="w-5 h-5 text-gray-400" />
@@ -1444,7 +1469,7 @@ export default function GuideTourDetailPage() {
           </div>
         </div>
         {isExpanded && (
-          <div className="px-3 sm:px-4 pb-3 sm:pb-4">
+          <div className={flush ? 'px-0 py-0' : 'px-3 sm:px-4 py-3 sm:pb-4'}>
             {children}
           </div>
         )}
@@ -1497,15 +1522,10 @@ export default function GuideTourDetailPage() {
   }
 
   return (
-    <div
-      className={
-        chatFillMode
-          ? 'flex h-[calc(100dvh-var(--header-height)-var(--footer-height)-env(safe-area-inset-bottom,0px))] w-full flex-col overflow-hidden'
-          : 'w-full'
-      }
-    >
+    <div className="w-full bg-gray-50 min-h-screen lg:bg-transparent">
+      <div className="bg-white border-b border-gray-200 lg:border-0 lg:bg-transparent">
       {/* 헤더 - 모바일 최적화 */}
-      <div className={`shrink-0 ${chatFillMode ? `py-2 ${guideContentInset}` : `mb-4 sm:mb-6 ${guideContentInset}`}`}>
+      <div className={`px-3 pt-3 pb-2 sm:mb-4 lg:px-0 lg:pt-0 ${guideContentInset}`}>
         <button
           onClick={() => router.push(`/${locale}/guide/tours`)}
           className="flex items-center text-gray-600 hover:text-gray-900 text-sm sm:text-base"
@@ -1515,32 +1535,29 @@ export default function GuideTourDetailPage() {
         </button>
       </div>
 
-      {/* 모바일 탭 네비게이션 — 아이콘 타일 + 외부 라벨 */}
-      <div className={`lg:hidden shrink-0 ${chatFillMode ? 'mb-0' : 'mb-0 lg:mb-4'}`}>
-        <div className={`${guidePanelShell} ${chatFillMode ? 'border-b-0' : ''} px-2 py-2`}>
-          <div className="flex items-end justify-between gap-1 overflow-x-auto pb-0.5">
+      {/* 모바일 탭 네비게이션 — 색 타일로 탭 구분 */}
+      <div className="lg:hidden">
+        <div className="flex items-end justify-between gap-1 px-2 pb-2">
             {mobileNavTabs.map((tab) => {
               const Icon = tab.icon
-              const isActive = activeTab === tab.id
+              const isActive = tab.id === 'chat' ? chatModalOpen : activeTab === tab.id && !chatModalOpen
               return (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => handleTabChange(tab.id)}
-                  className="flex min-w-0 flex-1 flex-col items-center gap-1 active:scale-95 transition-transform"
+                  className="flex min-w-0 flex-1 flex-col items-center gap-1.5"
                 >
                   <span
-                    className={`flex h-10 w-10 items-center justify-center rounded-xl shadow-md ring-1 ring-black/5 sm:h-11 sm:w-11 ${
-                      isActive
-                        ? `${tab.activeTile} text-white`
-                        : 'bg-gray-100 text-gray-600'
+                    className={`flex h-10 w-10 items-center justify-center rounded-xl sm:h-11 sm:w-11 ${
+                      isActive ? `${tab.activeTile} shadow-md` : tab.idleTile
                     }`}
                   >
-                    <Icon className="h-5 w-5" strokeWidth={1.75} />
+                    <Icon className="h-5 w-5" strokeWidth={isActive ? 2 : 1.75} />
                   </span>
                   <span
-                    className={`w-full truncate px-0.5 text-center text-[9px] font-medium leading-none sm:text-[10px] ${
-                      isActive ? 'text-gray-900' : 'text-gray-600'
+                    className={`w-full truncate px-0.5 text-center text-[10px] leading-none ${
+                      isActive ? 'font-semibold text-gray-900' : 'font-medium text-gray-600'
                     }`}
                   >
                     {tab.label}
@@ -1548,26 +1565,33 @@ export default function GuideTourDetailPage() {
                 </button>
               )
             })}
-          </div>
         </div>
+      </div>
       </div>
 
       {/* 모바일 최적화된 아코디언 레이아웃 */}
-      <div className={chatFillMode ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'space-y-0 lg:space-y-4'}>
-        {/* 투어 기본 정보 - 개요 탭에만 표시 */}
+      <div className={`${
+        activeTab === 'overview' ? 'space-y-0 px-0 py-0' : 'space-y-3 px-3 py-3'
+      } lg:space-y-4 lg:px-0 lg:py-4`}>
+        {/* 투어 정보 · 날씨 · 픽업 — 가로줄 + 교차 배경 */}
         <div className={`${activeTab === 'overview' ? 'block' : 'hidden'} lg:block`}>
-          <div className={guidePanelShell}>
-            <div className={`flex items-center justify-between p-3 sm:p-4 ${guideContentInset}`}>
-              <button
-                onClick={() => toggleSection('tour-info')}
-                className="flex items-center flex-1 text-left hover:bg-gray-50 transition-colors rounded -ml-3 sm:-ml-4 px-3 sm:px-4 py-2 -my-2"
-              >
-                <Calendar className="w-5 h-5 text-gray-400 mr-3" />
-                <h2 className="text-lg font-semibold text-gray-900">{t('tourInfo')}</h2>
-              </button>
-              <div className="flex items-center space-x-2">
+          <div className="bg-white border-b border-gray-200 px-3 py-4">
+            <div className="flex items-center justify-between gap-2 pb-3">
+              <div className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                <span className="shrink-0 whitespace-nowrap text-base font-semibold leading-snug text-gray-900">
+                  {formatTourCalendarDate(tour.tour_date)}
+                </span>
+                <h2 className="min-w-0 truncate text-base font-semibold leading-snug text-gray-900">
+                  {getProductName()}
+                </h2>
+                <span className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-gray-900">
+                  <Users className="h-4 w-4 text-gray-500" />
+                  {totalPeople}
+                </span>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
                 {isBackupTour && <GuideBackupTourBadge />}
-                <span className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${
+                <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
                   (tour as TourRow & { assignment_status?: string }).assignment_status === 'confirmed' ? 'bg-green-100 text-green-800' :
                   (tour as TourRow & { assignment_status?: string }).assignment_status === 'assigned' ? 'bg-primary/10 text-primary' :
                   (tour as TourRow & { assignment_status?: string }).assignment_status === 'rejected' ? 'bg-red-100 text-red-800' :
@@ -1585,117 +1609,133 @@ export default function GuideTourDetailPage() {
                     return status || t('assignmentStatus')
                   })()}
                 </span>
-                {/* 배정 확인/거절 버튼 (assignment_status가 'assigned'이고 현재 사용자가 아직 응답하지 않은 경우) */}
-                {(tour as TourRow & { assignment_status?: string }).assignment_status === 'assigned' &&
-                 !assignmentPersonallyResponded &&
-                 (String(tour.tour_guide_id || '').toLowerCase() === String(currentUserEmail || '').toLowerCase() ||
-                   String(tour.assistant_id || '').toLowerCase() === String(currentUserEmail || '').toLowerCase()) && (
-                  <div ref={assignmentActionRef} className="flex items-center space-x-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        if (confirm(locale === 'ko' ? '배정을 확인하시겠습니까?' : 'Confirm assignment?')) {
-                          handleAssignmentResponse('confirmed')
-                        }
-                      }}
-                      className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
-                    >
-                      {locale === 'ko' ? '확인' : 'Confirm'}
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        if (confirm(locale === 'ko' ? '배정을 거절하시겠습니까?' : 'Reject assignment?')) {
-                          handleAssignmentResponse('rejected')
-                        }
-                      }}
-                      className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors"
-                    >
-                      {locale === 'ko' ? '거절' : 'Reject'}
-                    </button>
-                  </div>
-                )}
-                <button
-                  onClick={() => toggleSection('tour-info')}
-                  className="p-1 hover:bg-gray-50 rounded transition-colors"
-                >
-                  {expandedSections.has('tour-info') ? (
-                    <ChevronUp className="w-5 h-5 text-gray-400" />
-                  ) : (
-                    <ChevronDown className="w-5 h-5 text-gray-400" />
-                  )}
-                </button>
               </div>
             </div>
-            {expandedSections.has('tour-info') && (
-              <div className="px-3 sm:px-4 pb-3 sm:pb-4">
-                <div className="space-y-2">
-                  {/* 투어 제목과 총 balance */}
-                  <div className="flex items-center justify-between">
-                    <div className="text-lg font-semibold text-gray-900">
-                      {getProductName()}
+            <div className="space-y-3">
+                  {(tour as TourRow & { assignment_status?: string }).assignment_status === 'assigned' &&
+                   !assignmentPersonallyResponded &&
+                   (String(tour.tour_guide_id || '').toLowerCase() === String(currentUserEmail || '').toLowerCase() ||
+                     String(tour.assistant_id || '').toLowerCase() === String(currentUserEmail || '').toLowerCase()) && (
+                    <div ref={assignmentActionRef} className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (confirm(locale === 'ko' ? '배정을 확인하시겠습니까?' : 'Confirm assignment?')) {
+                            handleAssignmentResponse('confirmed')
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors"
+                      >
+                        {locale === 'ko' ? '확인' : 'Confirm'}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (confirm(locale === 'ko' ? '배정을 거절하시겠습니까?' : 'Reject assignment?')) {
+                            handleAssignmentResponse('rejected')
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors"
+                      >
+                        {locale === 'ko' ? '거절' : 'Reject'}
+                      </button>
                     </div>
-                    <div className="text-right">
-                      <div className="text-sm text-gray-600">{tCommon('totalBalance')}</div>
-                      <div className="text-lg font-bold text-green-600">
-                        ${getTotalBalance().toLocaleString()}
-                      </div>
-                    </div>
+                  )}
+
+                  <div className="rounded-xl bg-gray-50 px-3 py-2.5 flex items-baseline justify-between gap-3">
+                    <span className="text-xs font-medium text-gray-500">{tCommon('totalBalance')}</span>
+                    <span className="text-lg font-bold tabular-nums text-emerald-600">
+                      ${getTotalBalance().toLocaleString()}
+                    </span>
                   </div>
             
             {isBackupTour && (
               <GuideBackupTourBadge variant="banner" />
             )}
 
-            {/* 날짜, 인원, 차량 - 뱃지 스타일 */}
-            <div className="flex flex-wrap gap-2">
-              <span className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-primary/10 text-primary">
-                📅 {tour.tour_date}
-              </span>
-              <span className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-green-100 text-green-800">
-                👥 {totalPeople}{locale === 'ko' ? t('people') : ' people'}
-              </span>
-              <span className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-purple-100 text-purple-800">
-                🚗 {(vehicle?.nick?.trim() || vehicle?.vehicle_number) || t('unassigned')}
-              </span>
-            </div>
-            
-            {/* 가이드 정보 - 뱃지 스타일 */}
-            <div className="flex flex-wrap gap-2">
+            <div className="rounded-lg border border-gray-200 bg-white px-2.5 py-2">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <div className="text-[11px] font-medium text-gray-500">
+                  {locale === 'ko' ? '가이드 & 차량' : 'Guides & Vehicle'}
+                </div>
+                <span className="inline-flex shrink-0 items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                  {getGuideConfigurationLabel()}
+                </span>
+              </div>
+              <div className="space-y-1.5 text-sm text-gray-700">
               {getTeamMemberPhone(tour.tour_guide_id) ? (
                   <a 
                     href={`tel:${getTeamMemberPhone(tour.tour_guide_id) || ''}`}
-                    className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-orange-100 text-orange-800 hover:bg-orange-200 transition-colors cursor-pointer"
+                    className="flex items-center gap-1.5 hover:text-primary transition-colors"
                   >
-                  👨‍💼 {getTeamMemberName(tour.tour_guide_id)}
+                  <User className="h-4 w-4 text-gray-400" />
+                  {getTeamMemberName(tour.tour_guide_id)}
                 </a>
               ) : (
-                <span className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-orange-100 text-orange-800">
-                  👨‍💼 {getTeamMemberName(tour.tour_guide_id)}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <User className="h-4 w-4 text-gray-400" />
+                  {getTeamMemberName(tour.tour_guide_id)}
+                </div>
               )}
               {tour.assistant_id && (
                 getTeamMemberPhone(tour.assistant_id) ? (
                   <a 
                     href={`tel:${getTeamMemberPhone(tour.assistant_id) || ''}`}
-                    className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-teal-100 text-teal-800 hover:bg-teal-200 transition-colors cursor-pointer"
+                    className="flex items-center gap-1.5 hover:text-primary transition-colors"
                   >
-                    👨‍💼 {getTeamMemberName(tour.assistant_id)}
+                    <User className="h-4 w-4 text-gray-400" />
+                    {getTeamMemberName(tour.assistant_id)}
                   </a>
                 ) : (
-                  <span className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-teal-100 text-teal-800">
-                    👨‍💼 {getTeamMemberName(tour.assistant_id)}
+                  <span className="flex items-center gap-1.5">
+                    <User className="h-4 w-4 text-gray-400" />
+                    {getTeamMemberName(tour.assistant_id)}
                   </span>
                 )
               )}
-              <span className={`inline-flex items-center px-2 py-1 rounded-md text-sm font-medium ${
-                getGuideConfiguration().type === 'two-guides' ? 'bg-primary/10 text-primary' :
-                getGuideConfiguration().type === 'guide-driver' ? 'bg-green-100 text-green-800' :
-                'bg-gray-100 text-gray-800'
-              }`}>
-                👥 {getGuideConfigurationLabel()}
-              </span>
+                <div className="flex items-center gap-1.5 pt-0.5">
+                  <Car className="h-4 w-4 text-gray-400" />
+                  {(vehicle?.nick?.trim() || vehicle?.vehicle_number) || t('unassigned')}
+                </div>
+              </div>
             </div>
+            
+                  <div className="rounded-lg border border-gray-200 bg-white px-2.5 py-2">
+                    <div className="mb-1 flex items-center gap-1 text-[11px] text-gray-500">
+                      <Clock className="h-3.5 w-3.5" />
+                      {locale === 'ko' ? '운행 시간' : 'Tour time'}
+                    </div>
+                    <div className="text-sm text-gray-900">
+                    {(() => {
+                      const windowTimes = tour.tour_date
+                        ? getGuideTourWindowFromPickups(
+                            tour.tour_date,
+                            reservations.map((r) => r.pickup_time)
+                          )
+                        : null
+                      const startLabel = windowTimes
+                        ? formatGuideLocalDateTime(windowTimes.start)
+                        : formatDateTime(tour.tour_start_datetime)
+                      const endLabel = windowTimes
+                        ? formatGuideLocalDateTime(windowTimes.end)
+                        : formatDateTime(tour.tour_end_datetime)
+                      return (
+                        <>
+                          <div className="flex items-center whitespace-nowrap tabular-nums">
+                            <span className="min-w-0 flex-1">{startLabel}</span>
+                            <span className="px-1.5 text-gray-400">~</span>
+                            <span className="min-w-0 flex-1 text-right">{endLabel}</span>
+                          </div>
+                          {windowTimes && calculatedTourTimes?.sunriseTime ? (
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              {locale === 'ko' ? '일출 시간' : 'Sunrise time'}: {calculatedTourTimes.sunriseTime}
+                            </div>
+                          ) : null}
+                        </>
+                      )
+                    })()}
+                    </div>
+                  </div>
             
             {/* 티켓 부킹 정보 - 회사별 요약 + 건별 시간·RN# */}
             {ticketBookings.length > 0 && (() => {
@@ -1720,16 +1760,17 @@ export default function GuideTourDetailPage() {
               })
 
               return (
-                <div className="space-y-2">
-                  <hr className="border-gray-200" />
+                <div className="rounded-xl border border-gray-200 p-3 space-y-2">
+                  <div className="text-xs font-semibold text-gray-500">{t('ticketBooking')}</div>
                   {Array.from(companyMap.entries())
                     .sort(([companyA], [companyB]) => companyA.localeCompare(companyB))
                     .map(([company, { totalEa, rows }]) => (
                       <div key={company} className="text-sm">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-gray-700 font-medium">{company}</span>
-                          <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-green-100 text-green-800">
-                            👥 {totalEa}
+                          <span className="text-gray-900 font-medium">{company}</span>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                            <Users className="h-3.5 w-3.5 text-gray-400" />
+                            {totalEa}
                           </span>
                         </div>
                         <ul className="mt-1 ml-1 text-xs text-gray-600 space-y-0.5 list-disc list-inside">
@@ -1750,104 +1791,79 @@ export default function GuideTourDetailPage() {
             
                   {/* 거주 상태별 인원 수 합산 */}
                   {productShowsResidentStatusSectionByCode(product?.product_code) && reservations.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-gray-200">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <div className="rounded-xl border border-gray-200 p-3">
+                      <div className="text-xs font-semibold text-gray-500 mb-2">
                         {tCommon('residentStatusByCount')}
-                      </label>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <span className="w-3 h-3 rounded-full bg-green-600"></span>
-                            <span className="text-xs font-medium text-green-900">{tCommon('statusUsResident')}</span>
-                          </div>
-                          <div className="text-lg font-semibold text-green-900">
+                      </div>
+                      {(() => {
+                        const undeterminedPeople = Math.max(
+                          0,
+                          totalPeople -
+                            residentStatusSummary.usResident -
+                            residentStatusSummary.nonResident -
+                            residentStatusSummary.passCoveredCount
+                        )
+                        return (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-lg bg-gray-50 p-2.5">
+                          <div className="text-xs font-medium text-gray-500 mb-1">{tCommon('statusUsResident')}</div>
+                          <div className="text-lg font-semibold text-gray-900">
                             {residentStatusSummary.usResident}{locale === 'ko' ? '명' : ''}
                           </div>
                         </div>
-                        <div className="bg-muted/50 border border-border rounded-lg p-3">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <span className="w-3 h-3 rounded-full bg-blue-600"></span>
-                            <span className="text-xs font-medium text-foreground">{tCommon('statusNonResident')}</span>
-                          </div>
-                          <div className="text-lg font-semibold text-foreground">
+                        <div className="rounded-lg bg-gray-50 p-2.5">
+                          <div className="text-xs font-medium text-gray-500 mb-1">{tCommon('statusNonResident')}</div>
+                          <div className="text-lg font-semibold text-gray-900">
                             {residentStatusSummary.nonResident}{locale === 'ko' ? '명' : ''}
                           </div>
                         </div>
-                        <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <span className="w-3 h-3 rounded-full bg-purple-600"></span>
-                            <span className="text-xs font-medium text-purple-900">{locale === 'ko' ? '패스 커버' : 'Pass Covered'}</span>
+                        <div className="rounded-lg bg-gray-50 p-2.5">
+                          <div className="text-xs font-medium text-gray-500 mb-1">
+                            {locale === 'ko' ? '패스 장수' : 'Pass Count'}
                           </div>
-                          <div className="text-lg font-semibold text-purple-900">
-                            {residentStatusSummary.passCoveredCount}{locale === 'ko' ? '명' : ''}
+                          <div className="text-lg font-semibold text-gray-900">
+                            {residentStatusSummary.nonResidentWithPass}
+                            {locale === 'ko' ? '장' : ''}
+                            <span className="ml-1 text-sm font-medium text-gray-500">
+                              {locale === 'ko'
+                                ? `(${residentStatusSummary.passCoveredCount}명 커버)`
+                                : `(${residentStatusSummary.passCoveredCount} ppl covers)`}
+                            </span>
                           </div>
                         </div>
-                        <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <span className="w-3 h-3 rounded-full bg-purple-600"></span>
-                            <span className="text-xs font-medium text-purple-900">{locale === 'ko' ? '패스 장수' : 'Pass Count'}</span>
+                        <div className="rounded-lg bg-gray-50 p-2.5">
+                          <div className="text-xs font-medium text-gray-500 mb-1">
+                            {locale === 'ko' ? '미정' : 'Undetermined'}
                           </div>
-                          <div className="text-lg font-semibold text-purple-900">
-                            {residentStatusSummary.nonResidentWithPass}{locale === 'ko' ? '장' : ''}
+                          <div className="text-lg font-semibold text-gray-900">
+                            {undeterminedPeople}{locale === 'ko' ? '명' : ''}
                           </div>
                         </div>
                       </div>
+                        )
+                      })()}
                       <div className="mt-2 text-xs text-gray-600">
-                        {tCommon('total')}: {residentStatusSummary.usResident + residentStatusSummary.nonResident + residentStatusSummary.passCoveredCount}{locale === 'ko' ? '명' : ` ${tCommon('people')}`}
+                        {tCommon('total')}: {totalPeople}{locale === 'ko' ? '명' : ` ${tCommon('people')}`}
                       </div>
                     </div>
                   )}
-                  
-                  {/* 출발 - 종료 시간 */}
-                  <div className="text-gray-700">
-                    {calculatedTourTimes ? (
-                      <>
-                        {formatDateTime(calculatedTourTimes.startTime)} - {formatDateTime(calculatedTourTimes.endTime)}
-                        <div className="text-xs text-gray-500 mt-1">
-{locale === 'ko' ? '일출 시간' : 'Sunrise time'}: {calculatedTourTimes.sunriseTime}
-                        </div>
-                      </>
-                    ) : (
-                      `${formatDateTime(tour.tour_start_datetime)} - ${formatDateTime(tour.tour_end_datetime)}`
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-                </div>
-              </div>
+            </div>
+          </div>
 
-        {/* 밤도깨비 투어 특별 정보 - 개요 탭에만 표시 */}
-        <div className={`${activeTab === 'overview' ? 'block' : 'hidden'} lg:block ${guideContentInset || 'px-3 sm:px-4'} py-2`}>
-          <TourWeather 
-            tourDate={tour.tour_date} 
-            productId={(tour as TourRow & { product_id?: string }).product_id} 
-          />
-        </div>
-
-        {/* SOP 체크리스트 — 개요 탭 */}
-        <div className={`${activeTab === 'overview' ? 'block' : 'hidden'} lg:block`}>
-          <AccordionSection
-            id="sop-checklist"
-            title={locale === 'en' ? 'SOP checklist' : 'SOP 체크리스트'}
-            icon={ListChecks}
-          >
-            <TourSopChecklistSection
-              tourId={tour.id}
-              productId={tour.product_id}
-              tourDate={tour.tour_date}
-              locale={locale}
+          <div className="bg-gray-100 border-b border-gray-200 px-3 py-4">
+            <TourWeather 
+              tourDate={tour.tour_date} 
+              productId={(tour as TourRow & { product_id?: string }).product_id} 
             />
-          </AccordionSection>
-        </div>
+          </div>
 
-
-        {/* 픽업 스케줄 - 오버뷰 탭에 표시 */}
-        <div className={`${activeTab === 'overview' ? 'block' : 'hidden'} lg:block`}>
+          <div className="bg-white px-3 py-4">
           <AccordionSection 
             id="pickup-schedule" 
             title={t('pickupSchedule')} 
             icon={Clock}
+            iconWrapClass="bg-green-100 text-green-700"
+            flush
             headerButton={(() => {
               const groupedByHotel = groupReservationsByPickupHotel(reservations)
 
@@ -1912,7 +1928,7 @@ export default function GuideTourDetailPage() {
               return null
             })()}
           >
-            <div className="space-y-4">
+            <div className="space-y-3">
               {(() => {
                 const groupedByHotel = groupReservationsByPickupHotel(reservations)
 
@@ -1961,12 +1977,13 @@ export default function GuideTourDetailPage() {
                   })
 
                   return (
-                    <div key={hotelId} className="space-y-4">
-                      {/* 구분선 - 픽업 시간 위에 */}
-                      <div className="border-t border-gray-200"></div>
-                      
+                    <div key={hotelId} className={`space-y-3 rounded-xl border p-3 ${
+                      isUnassignedHotel
+                        ? 'border-amber-200 bg-amber-50/80'
+                        : 'border-gray-200 bg-gray-50'
+                    }`}>
                       {/* 호텔 정보 헤더 - 3줄 구조 */}
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         {/* 1줄: 픽업 시간 - 더 크게 */}
                         <div className="text-primary font-bold text-lg">
                           {(() => {
@@ -2033,11 +2050,10 @@ export default function GuideTourDetailPage() {
                         {sortedReservations.map((reservation: ReservationRow) => {
                           const customer = getCustomerInfo(reservation.customer_id || '')
                           return (
-                            <div key={reservation.id}>
-                              <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+                            <div key={reservation.id} className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
                                 {/* 상단: 언어·채널·이름·인원(왼쪽) / 선불 팁(오른쪽, 픽업 달력일 기준 당일·과거만) */}
                                 <div className="flex items-center justify-between gap-2 mb-2">
-                                  <div className="flex items-center space-x-2 min-w-0">
+                                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     {/* 언어별 국기 아이콘 */}
                                     {customer?.language && (
                                       <ReactCountryFlag
@@ -2123,31 +2139,32 @@ export default function GuideTourDetailPage() {
 
                                 {/* 중단: 초이스와 연락처 아이콘 */}
                                 <div className="flex items-center justify-between mb-2 gap-2">
-                                  <div className="text-sm text-gray-600 min-w-0 pr-2">
+                                  <div className="min-w-0 flex-1 pr-2">
                                     {(() => {
-                                      // reservation_choices 테이블에서 가져온 초이스 데이터 사용 (예약 페이지와 동일)
                                       const choices = reservationChoicesMap.get(reservation.id)
-                                      
                                       if (!choices || choices.length === 0) {
-                                        return t('noOptions')
+                                        return <span className="text-sm text-gray-500">{t('noOptions')}</span>
                                       }
-                                      
-                                      // 선택된 옵션 이름들을 표시
-                                      const optionNames = choices.map((choice) => {
-                                        // 로케일에 따라 한국어 또는 영어 이름 표시
-                                        return locale === 'ko' 
-                                          ? (choice.option_name_ko || choice.option_name)
-                                          : (choice.option_name || choice.option_name_ko)
-                                      }).filter(Boolean)
-                                      
-                                      if (optionNames.length === 0) {
-                                        return t('noOptions')
-                                      }
-                                      
-                                      return optionNames.join(', ')
+                                      return <ChoiceOptionBadges items={choices} compact />
                                     })()}
                                   </div>
                                   <div className="flex items-center space-x-3 shrink-0">
+                                    <GuidePickupChargeButton
+                                      ariaLabel={t('fieldCharge.buttonAria')}
+                                      onClick={() => {
+                                        const recorded = getReservationBalance(reservation.id)
+                                        setFieldChargeTarget({
+                                          reservationId: reservation.id,
+                                          customerName: formatCustomerNameEnhanced(customer as any, locale),
+                                          recordedBalanceUsd: Number.isFinite(recorded) ? recorded : 0,
+                                          tourDate: tour?.tour_date ?? null,
+                                          productName:
+                                            locale === 'en'
+                                              ? product?.name_en || product?.name_ko || product?.name || null
+                                              : product?.name_ko || product?.name_en || product?.name || null,
+                                        })
+                                      }}
+                                    />
                                     {customer?.phone && (
                                       <a 
                                         href={`tel:${customer.phone}`}
@@ -2175,7 +2192,7 @@ export default function GuideTourDetailPage() {
                                   const bal = getReservationBalance(reservation.id)
                                   const currency = bd?.currency ?? 'USD'
                                   const detailLines = bd?.detailLines ?? []
-                                  const useEn = guidePickupUseEnvelopeEnglish(customer?.language ?? null)
+                                  const useEn = guidePickupUseEnvelopeEnglish(locale)
                                   const showLines = detailLines.length > 0 && bal > 0.005
 
                                   return (
@@ -2224,7 +2241,6 @@ export default function GuideTourDetailPage() {
                                     {(reservation as ReservationRow & { event_note: string }).event_note}
                                   </div>
                                 )}
-                              </div>
                             </div>
                           )
                         })}
@@ -2238,12 +2254,12 @@ export default function GuideTourDetailPage() {
               )}
             </div>
           </AccordionSection>
+          </div>
         </div>
 
         {/* 투어 스케줄 - 스케줄 탭에만 표시 */}
         {tour.product_id && (
           <div className={`${activeTab === 'schedule' ? 'block' : 'hidden'} lg:block`}>
-            <div className={`${guidePanelShell} p-3 sm:p-4`}>
               <TourScheduleSection 
                 productId={tour.product_id} 
                 teamType={tour.team_type as 'guide+driver' | '2guide' | null}
@@ -2252,27 +2268,26 @@ export default function GuideTourDetailPage() {
                 currentUserEmail={currentUserEmail ?? null}
                 tourGuideId={tour.tour_guide_id}
                 assistantId={tour.assistant_id}
+                guideName={getTeamMemberNick(tour.tour_guide_id)}
+                assistantName={getTeamMemberNick(tour.assistant_id)}
               />
-            </div>
           </div>
         )}
 
         {/* 투어 메모 - 개요 탭에만 표시 */}
         {(tour as { tour_info?: string }).tour_info && (
           <div className={`${activeTab === 'overview' ? 'block' : 'hidden'} lg:block`}>
-            <AccordionSection id="tour-memo" title={t('tourMemo')} icon={FileText}>
+            <AccordionSection id="tour-memo" title={t('tourMemo')} icon={FileText} iconWrapClass="bg-slate-100 text-slate-700">
               <p className="text-gray-700 whitespace-pre-wrap">{(tour as unknown as { tour_info: string }).tour_info}</p>
             </AccordionSection>
           </div>
         )}
-      </div>
 
-      {/* 추가 섹션들 - 아코디언 형태 */}
-      <div className="mt-0 lg:mt-6 space-y-0 lg:space-y-4">
+        {/* 추가 섹션들 - 아코디언 형태 */}
 
         {/* 부킹 관리 - 부킹 탭에만 표시 */}
         <div className={`${activeTab === 'bookings' ? 'block' : 'hidden'} lg:block`}>
-        <AccordionSection id="bookings" title={t('bookingManagement')} icon={Hotel} alwaysExpanded={isGuideMobileLayout}>
+        <AccordionSection id="bookings" title={t('bookingManagement')} icon={Hotel} alwaysExpanded={isGuideMobileLayout} iconWrapClass="bg-purple-100 text-purple-700" flush>
           {/* 호텔 부킹 */}
           {tourHotelBookings.length > 0 && (
             <div className="mb-6">
@@ -2405,31 +2420,55 @@ export default function GuideTourDetailPage() {
 
         {/* 투어 사진 - 사진 탭에만 표시 */}
         <div className={`${activeTab === 'photos' ? 'block' : 'hidden'} lg:block`}>
-          <AccordionSection id="photos" title={t('tourPhotos')} icon={Camera} alwaysExpanded={isGuideMobileLayout}>
-          <TourPhotoUpload tourId={tour.id} uploadedBy={currentUserEmail || ''} />
+          <AccordionSection
+            id="photos"
+            title={t('tourPhotos')}
+            icon={Camera}
+            alwaysExpanded={isGuideMobileLayout}
+            iconWrapClass="bg-orange-100 text-orange-700"
+            flush
+            headerButton={
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => photoUploadRef.current?.shareAll()}
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple-600 text-white hover:bg-purple-700"
+                  title={locale === 'ko' ? '공유 링크 복사' : 'Copy share link'}
+                >
+                  <Share2 className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => photoUploadRef.current?.openGallery()}
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+                  title={locale === 'ko' ? '갤러리에서 선택' : 'Select from gallery'}
+                >
+                  <ImageIcon className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => photoUploadRef.current?.openCamera()}
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-green-600 text-white hover:bg-green-700"
+                  title={locale === 'ko' ? '사진 촬영' : 'Take photo'}
+                >
+                  <Camera className="h-4 w-4" />
+                </button>
+              </div>
+            }
+          >
+          <TourPhotoUpload
+            ref={photoUploadRef}
+            tourId={tour.id}
+            uploadedBy={currentUserEmail || ''}
+            hideToolbar
+          />
           </AccordionSection>
         </div>
 
-        {/* 채팅 - 채팅 탭에만 표시 */}
-        <div
-          className={
-            activeTab === 'chat'
-              ? chatFillMode
-                ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
-                : 'block lg:block'
-              : 'hidden lg:block'
-          }
-        >
-          {tour && tour.tour_date && currentUserEmail ? (
-            <div
-              className={`overflow-hidden bg-white ${
-                chatFillMode
-                  ? 'flex h-full min-h-0 flex-1 flex-col border-t border-gray-200'
-                  : isGuideMobileLayout
-                    ? 'h-[600px] border-y border-gray-200 rounded-none'
-                    : 'h-[600px] border border-gray-200 rounded-lg'
-              }`}
-            >
+        {/* 채팅 - 데스크톱은 페이지에 표시, 모바일은 전체 화면 모달 */}
+        <div className="hidden lg:block">
+          {tour.tour_date && currentUserEmail ? (
+            <div className="h-[600px] overflow-hidden rounded-lg border border-gray-200 bg-white">
               <TourChatRoom
                 tourId={tour.id}
                 guideEmail={currentUserEmail}
@@ -2458,8 +2497,36 @@ export default function GuideTourDetailPage() {
 
         {/* 정산 관리 - 정산 탭에만 표시 */}
         <div className={`${activeTab === 'expenses' ? 'block' : 'hidden'} lg:block`}>
-          <AccordionSection id="expenses" title={t('expenseManagement')} icon={Calculator} alwaysExpanded={isGuideMobileLayout}>
+          <AccordionSection
+            id="expenses"
+            title={t('expenseManagement')}
+            icon={Calculator}
+            alwaysExpanded={isGuideMobileLayout}
+            iconWrapClass="bg-amber-100 text-amber-700"
+            flush
+            headerButton={
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => expenseManagerRef.current?.openReceiptOnlyUpload()}
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+                  title={locale === 'ko' ? '영수증만 첨부' : 'Attach receipt'}
+                >
+                  <Receipt className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => expenseManagerRef.current?.openAddExpense()}
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+                  title={locale === 'ko' ? '지출 추가' : 'Add expense'}
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
+            }
+          >
           <TourExpenseManager
+            ref={expenseManagerRef}
             tourId={tour.id}
             tourDate={tour.tour_date}
             productId={tour.product_id}
@@ -2467,6 +2534,7 @@ export default function GuideTourDetailPage() {
             reservationIds={tour.reservation_ids || []}
             userRole={userRole || 'team_member'}
             allowReceiptOnlyUpload
+            hideTitle
             tourGuideFee={isTourCancelled(tour.tour_status) ? 0 : tour.guide_fee}
             tourAssistantFee={isTourCancelled(tour.tour_status) ? 0 : tour.assistant_fee}
             tourStatus={tour.tour_status}
@@ -2476,20 +2544,23 @@ export default function GuideTourDetailPage() {
 
         {/* 투어 리포트 - 리포트 탭에만 표시 */}
         <div className={`${activeTab === 'report' ? 'block' : 'hidden'} lg:block`}>
-          <AccordionSection id="report" title={t('tourReport')} icon={FileText} alwaysExpanded={isGuideMobileLayout}>
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-medium text-gray-900">{t('reportManagement')}</h3>
+          <AccordionSection
+            id="report"
+            title={t('tourReport')}
+            icon={FileText}
+            alwaysExpanded={isGuideMobileLayout}
+            iconWrapClass="bg-rose-100 text-rose-700"
+            flush
+            headerButton={
               <button 
                 onClick={() => setIsReportModalOpen(true)}
-                className="inline-flex items-center justify-center w-10 h-10 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
                 title={t('addTourReport')}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
+                <Plus className="h-4 w-4" />
               </button>
-            </div>
+            }
+          >
           <TourReportSection
             tourId={tour.id}
             productId={tour.product_id}
@@ -2500,7 +2571,6 @@ export default function GuideTourDetailPage() {
                 : product?.name_ko || product?.name_en || product?.name || ''
             }
           />
-          </div>
           </AccordionSection>
         </div>
       </div>
@@ -2565,6 +2635,45 @@ export default function GuideTourDetailPage() {
           </div>
         </div>
       )}
+
+      <GuidePickupChargeModal
+        open={fieldChargeTarget != null}
+        onClose={() => setFieldChargeTarget(null)}
+        locale={locale}
+        target={fieldChargeTarget}
+        onPaid={() => {
+          const ids = reservations.map((r) => r.id)
+          if (ids.length === 0) return
+          void computeGuidePickupBalanceBreakdowns(
+            supabase,
+            ids,
+            reservations,
+            guidePickupUseEnvelopeEnglish(locale)
+          ).then(setPickupBalanceBreakdownByReservationId)
+        }}
+      />
+
+      {tour.tour_date && currentUserEmail ? (
+        <TourChatModal
+          isOpen={chatModalOpen}
+          onClose={() => setChatModalOpen(false)}
+          tourId={tour.id}
+          guideEmail={currentUserEmail}
+          tourDate={tour.tour_date}
+          title={t('chat')}
+          closeLabel={t('closeChat')}
+          customerLanguage={locale === 'ko' ? 'ko' : 'en'}
+          productNames={
+            product
+              ? {
+                  name: product.name,
+                  name_ko: product.name_ko ?? product.name,
+                  name_en: product.name_en,
+                }
+              : null
+          }
+        />
+      ) : null}
 
     </div>
   )

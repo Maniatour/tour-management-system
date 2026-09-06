@@ -412,7 +412,7 @@ export function renderDailyReportEmailHtml(data: DailyReportData, locale = 'ko')
       ${statRow('미처리', `${data.todoSummary.pendingCount}건`)}
       ${statRow('보류', `${data.todoSummary.onHoldCount}건`)}
     </table>
-    <p style="font-size:11px;color:#6b7280;margin:0 0 8px;">큐 없는 항목은 N/A · 완료 시각은 제목 옆 뱃지(HH:mm) · 고객 정보 검수 등은 변경 상세 포함</p>
+    <p style="font-size:11px;color:#6b7280;margin:0 0 8px;">당일 처리 로그가 있으면 완료 · 큐 없는 미처리 항목은 N/A · 완료 시각은 제목 옆 뱃지(HH:mm) · 고객 정보 검수 등은 변경 상세 포함</p>
     ${
       matrixRows.length
         ? `<table style="width:100%;border-collapse:collapse;"><thead>${todoMatrixHeader}</thead><tbody>${todoMatrixBody}</tbody></table>`

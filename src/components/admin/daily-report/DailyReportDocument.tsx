@@ -246,6 +246,21 @@ function TodoStatusSection({
   const rows = data.todoSummary.matrixRows ?? []
   const staffColumns = data.todoSummary.staffColumns ?? []
   const colSpan = 2 + staffColumns.length
+  const completedCount = data.todoSummary.completedCount
+  const pendingCount = data.todoSummary.pendingCount
+  const onHoldCount = data.todoSummary.onHoldCount
+  const trackedCount = completedCount + pendingCount + onHoldCount
+  const staffHandled = staffColumns
+    .map((s) => {
+      const emailKey = s.email.toLowerCase()
+      const count = rows.filter((row) => {
+        if (row.status !== 'completed') return false
+        const at = row.completedAtByEmail?.[emailKey]
+        return Boolean(at) || row.completedByEmails.some((e) => e.toLowerCase() === emailKey)
+      }).length
+      return { name: s.name, count }
+    })
+    .filter((s) => s.count > 0)
 
   const toggleRow = (id: string) => {
     setExpandedId((prev) => (prev === id ? null : id))
@@ -259,20 +274,34 @@ function TodoStatusSection({
       <div className="mb-2 grid grid-cols-3 gap-1.5 sm:mb-3 sm:gap-3">
         <StatCard
           label={isKo ? '완료' : 'Done'}
-          value={data.todoSummary.completedCount}
+          value={completedCount}
+          {...(trackedCount > 0
+            ? {
+                sub: isKo
+                  ? `처리 ${completedCount}/${trackedCount}`
+                  : `${completedCount} of ${trackedCount}`,
+              }
+            : {})}
           accent="text-emerald-600"
         />
         <StatCard
           label={isKo ? '미처리' : 'Pending'}
-          value={data.todoSummary.pendingCount}
+          value={pendingCount}
+          sub={isKo ? '큐 미완료' : 'Queue open'}
           accent="text-amber-600"
         />
-        <StatCard label={isKo ? '보류' : 'Hold'} value={data.todoSummary.onHoldCount} />
+        <StatCard label={isKo ? '보류' : 'Hold'} value={onHoldCount} />
       </div>
+      {staffHandled.length > 0 ? (
+        <p className="mb-1.5 text-[10px] text-foreground/80 sm:text-xs">
+          {isKo ? '직원별 처리 ' : 'Handled by '}
+          {staffHandled.map((s) => `${s.name} ${s.count}${isKo ? '건' : ''}`).join(' · ')}
+        </p>
+      ) : null}
       <p className="mb-1.5 text-[10px] text-muted-foreground sm:text-xs">
         {isKo
-          ? '큐 없는 항목은 N/A · 완료 시각은 제목 옆 뱃지 · 행 클릭 시 변경 상세'
-          : 'No-queue → N/A · done time as title badge · click row for details'}
+          ? '당일 처리 로그가 있으면 완료 · 큐 없는 미처리 항목은 N/A · 완료 시각은 제목 옆 뱃지 · 행 클릭 시 변경 상세'
+          : 'Done if handled today · no-queue open items stay N/A · time badge by title · click row for details'}
       </p>
       {rows.length > 0 ? (
         <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-border/60 sm:rounded-xl">

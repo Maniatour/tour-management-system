@@ -12,7 +12,8 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $paths = @(
   $root,
-  (Join-Path $root 'node_modules\.cache\tms-next-dev')
+  (Join-Path $root 'node_modules\.cache\tms-next-dev'),
+  (Join-Path $root 'node_modules\.cache\tms-next-dev-turbo')
 )
 
 function Write-ManualUiHelp {

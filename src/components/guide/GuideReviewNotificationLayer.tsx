@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Bell, Check, ChevronLeft, ChevronRight, Loader2, Star } from 'lucide-react'
 import GoogleReviewCommentPreview from '@/components/admin/google-reviews/GoogleReviewCommentPreview'
-import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { fetchApiWithAuth, fetchApiWithAuthWhenReady } from '@/lib/api-client-bearer'
 import type { GuideLinkedReviewRow, GuideReviewSummary } from '@/lib/guideReviews'
 import { getReviewSourceLabel, isReviewSource } from '@/lib/reviewSources'
 import { formatLasVegasDate, todayInLasVegas, toLasVegasDateKey } from '@/lib/dailyReport/dateUtils'
@@ -78,9 +78,10 @@ export function GuideReviewNotificationLayer({
         headers['x-simulated-user-email'] = simulatedUser.email
       }
 
-      const res = await fetchApiWithAuth('/api/guide/reviews', { headers })
+      const res = await fetchApiWithAuthWhenReady('/api/guide/reviews', { headers })
+      if (!res) return
       const data = (await res.json()) as ApiResponse
-      if (!res.ok || !data.ok) return
+      if (res.status === 401 || !res.ok || !data.ok) return
 
       // 오늘(LV) 이후 업로드된 미확인 리뷰만 알림 모달 대상
       const todayYmd = todayInLasVegas()

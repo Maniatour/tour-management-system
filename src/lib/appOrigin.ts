@@ -1,4 +1,14 @@
 const OAUTH_CALLBACK_LOCALE_KEY = 'oauth_callback_locale'
+const OAUTH_CALLBACK_NEXT_PATH_KEY = 'oauth_callback_next_path'
+
+function isSafeAppPath(path: string | null | undefined): path is string {
+  return Boolean(
+    path &&
+      path.startsWith('/') &&
+      !path.includes('undefined') &&
+      !path.includes('/auth')
+  )
+}
 
 /**
  * OAuth redirectTo·비밀번호 재설정 등에 쓸 앱 origin.
@@ -25,25 +35,15 @@ export function getAppOrigin(): string {
 }
 
 /**
- * Supabase Redirect URLs와 맞추기: /auth/callback (locale은 query).
- * README·대시보드에 등록된 `https://<도메인>/auth/callback`과 일치시킨다.
- * `/auth/callback` 페이지가 `/{locale}/auth/callback`으로 넘기며 code·hash를 유지한다.
+ * Supabase Additional Redirect URLs와 맞추기: `/auth/callback`만 사용한다.
+ * `?locale=` 같은 쿼리를 붙이면 대시보드의 정확 일치 URL과 안 맞아
+ * Site URL(프로덕션)로 떨어진다. locale·다음 경로는 sessionStorage에 둔다.
  */
 export function getOAuthCallbackRedirectUrl(
-  locale: string,
-  postAuthPath?: string | null
+  _locale?: string,
+  _postAuthPath?: string | null
 ): string {
-  const loc = locale === 'en' || locale === 'ko' ? locale : 'ko'
-  const params = new URLSearchParams({ locale: loc })
-  if (
-    postAuthPath &&
-    postAuthPath.startsWith('/') &&
-    !postAuthPath.includes('undefined') &&
-    !postAuthPath.includes('/auth')
-  ) {
-    params.set('redirectTo', postAuthPath)
-  }
-  return `${getAppOrigin()}/auth/callback?${params.toString()}`
+  return `${getAppOrigin()}/auth/callback`
 }
 
 export function stashOAuthCallbackLocale(locale: string): void {
@@ -51,6 +51,28 @@ export function stashOAuthCallbackLocale(locale: string): void {
   if (locale === 'ko' || locale === 'en') {
     sessionStorage.setItem(OAUTH_CALLBACK_LOCALE_KEY, locale)
   }
+}
+
+export function stashOAuthCallbackNextPath(path?: string | null): void {
+  if (typeof window === 'undefined') return
+  if (isSafeAppPath(path)) {
+    sessionStorage.setItem(OAUTH_CALLBACK_NEXT_PATH_KEY, path)
+    return
+  }
+  sessionStorage.removeItem(OAUTH_CALLBACK_NEXT_PATH_KEY)
+}
+
+export function resolveOAuthCallbackNextPath(
+  queryPath: string | null | undefined,
+  fallback: string
+): string {
+  if (isSafeAppPath(queryPath)) return queryPath
+  if (typeof window !== 'undefined') {
+    const stashed = sessionStorage.getItem(OAUTH_CALLBACK_NEXT_PATH_KEY)
+    sessionStorage.removeItem(OAUTH_CALLBACK_NEXT_PATH_KEY)
+    if (isSafeAppPath(stashed)) return stashed
+  }
+  return fallback
 }
 
 export function resolveOAuthCallbackLocale(localeFromQuery: string | null | undefined): string {

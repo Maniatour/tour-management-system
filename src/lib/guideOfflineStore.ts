@@ -27,10 +27,25 @@ export interface PendingNarrationPlayRecord {
   createdAt: number
 }
 
+export interface PendingTourPhotoRecord {
+  id: string
+  tourId: string
+  uploadedBy: string
+  fileName: string
+  mimeType: string
+  blob: Blob
+  createdAt: number
+  lastError?: string
+  uploadKind?: 'photo' | 'receipt'
+  tourDate?: string
+  productId?: string | null
+}
+
 class GuideOfflineDexie extends Dexie {
   snapshots!: Table<GuideSnapshotRecord, string>
   media!: Table<GuideMediaRecord, string>
   pendingNarrationPlays!: Table<PendingNarrationPlayRecord, string>
+  pendingTourPhotos!: Table<PendingTourPhotoRecord, string>
 
   constructor() {
     super('maniatur_guide_offline')
@@ -45,6 +60,12 @@ class GuideOfflineDexie extends Dexie {
       snapshots: 'cacheKey, updatedAt',
       media: 'filePath, cachedAt',
       pendingNarrationPlays: 'id, createdAt',
+    })
+    this.version(4).stores({
+      snapshots: 'cacheKey, updatedAt',
+      media: 'filePath, cachedAt',
+      pendingNarrationPlays: 'id, createdAt',
+      pendingTourPhotos: 'id, tourId, createdAt',
     })
   }
 }
@@ -112,4 +133,19 @@ export async function listPendingNarrationPlays(): Promise<PendingNarrationPlayR
 export async function deletePendingNarrationPlay(id: string): Promise<void> {
   if (!db) return
   await db.pendingNarrationPlays.delete(id)
+}
+
+export async function enqueuePendingTourPhoto(record: PendingTourPhotoRecord): Promise<void> {
+  if (!db) return
+  await db.pendingTourPhotos.put(record)
+}
+
+export async function listPendingTourPhotos(): Promise<PendingTourPhotoRecord[]> {
+  if (!db) return []
+  return db.pendingTourPhotos.orderBy('createdAt').toArray()
+}
+
+export async function deletePendingTourPhoto(id: string): Promise<void> {
+  if (!db) return
+  await db.pendingTourPhotos.delete(id)
 }

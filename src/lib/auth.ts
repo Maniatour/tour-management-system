@@ -2,6 +2,7 @@ import {
   getAppOrigin,
   getOAuthCallbackRedirectUrl,
   stashOAuthCallbackLocale,
+  stashOAuthCallbackNextPath,
 } from './appOrigin'
 import { createClientSupabase } from './supabase'
 import type { User } from '@supabase/supabase-js'
@@ -102,8 +103,10 @@ export async function signInWithGoogle(
       }
     }
 
-    // Supabase Redirect URLs: /auth/callback (locale은 query). 목록에 없으면 Site URL(localhost)로 감.
+    // locale·다음 경로는 sessionStorage. redirectTo에 쿼리를 붙이면
+    // Supabase 허용 목록 정확 일치에 실패하고 Site URL(kovegas.com)로 떨어진다.
     stashOAuthCallbackLocale(locale)
+    stashOAuthCallbackNextPath(postAuthPath)
     const redirectTo = getOAuthCallbackRedirectUrl(locale, postAuthPath)
 
     console.log('Starting Google sign in...', {

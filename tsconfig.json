@@ -49,6 +49,8 @@
     "src/**/*.tsx",
     "node_modules/.cache/tms-next-dev/types/**/*.ts",
     "node_modules/.cache/tms-next-dev/dev/types/**/*.ts",
+    "node_modules/.cache/tms-next-dev-turbo/types/**/*.ts",
+    "node_modules/.cache/tms-next-dev-turbo/dev/types/**/*.ts",
     "../.cache/tms-next-dev/types/**/*.ts",
     "../.cache/tms-next-dev/dev/types/**/*.ts",
     ".next/types/**/*.ts",

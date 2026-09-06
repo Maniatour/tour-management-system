@@ -2,14 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { 
-  Sun, 
   Cloud, 
   CloudRain, 
-  CloudSnow, 
-  CloudLightning, 
-  CloudSun, 
-  CloudDrizzle, 
-  CloudFog,
   MapPin,
   ChevronDown,
   ChevronUp,
@@ -19,61 +13,21 @@ import {
 } from 'lucide-react'
 import { getGoblinTourWeatherData, get7DayWeatherForecast, type LocationWeather } from '@/lib/weatherApi'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { WeatherConditionIcon } from '@/components/WeatherConditionIcon'
+import { resolveWeatherIconKind } from '@/lib/weatherConditionIcon'
+import { getTourLocalToday } from '@/lib/tourWeatherDates'
 
 interface AdminWeatherWidgetProps {
   className?: string
 }
 
-// 날씨 상태에 따른 아이콘 반환 함수
 const getWeatherIcon = (weatherMain: string, weatherDescription: string) => {
-  const main = weatherMain?.toLowerCase() || ''
-  const description = weatherDescription?.toLowerCase() || ''
-  
-  if (description.includes('thunderstorm') || description.includes('storm')) {
-    return <CloudLightning className="w-4 h-4 text-purple-600" />
-  }
-  if (description.includes('snow') || description.includes('blizzard')) {
-    return <CloudSnow className="w-4 h-4 text-blue-400" />
-  }
-  if (description.includes('rain') || description.includes('shower')) {
-    return <CloudRain className="w-4 h-4 text-primary" />
-  }
-  if (description.includes('drizzle')) {
-    return <CloudDrizzle className="w-4 h-4 text-blue-400" />
-  }
-  if (description.includes('fog') || description.includes('mist') || description.includes('haze')) {
-    return <CloudFog className="w-4 h-4 text-gray-500" />
-  }
-  if (description.includes('clear') || description.includes('sunny')) {
-    return <Sun className="w-4 h-4 text-yellow-500" />
-  }
-  if (description.includes('clouds') && description.includes('partly')) {
-    return <CloudSun className="w-4 h-4 text-orange-400" />
-  }
-  if (description.includes('clouds')) {
-    return <Cloud className="w-4 h-4 text-gray-500" />
-  }
-  
-  switch (main) {
-    case 'thunderstorm':
-      return <CloudLightning className="w-4 h-4 text-purple-600" />
-    case 'drizzle':
-      return <CloudDrizzle className="w-4 h-4 text-blue-400" />
-    case 'rain':
-      return <CloudRain className="w-4 h-4 text-primary" />
-    case 'snow':
-      return <CloudSnow className="w-4 h-4 text-blue-400" />
-    case 'clear':
-      return <Sun className="w-4 h-4 text-yellow-500" />
-    case 'clouds':
-      return <CloudSun className="w-4 h-4 text-orange-400" />
-    case 'mist':
-    case 'fog':
-    case 'haze':
-      return <CloudFog className="w-4 h-4 text-gray-500" />
-    default:
-      return <Cloud className="w-4 h-4 text-gray-500" />
-  }
+  return (
+    <WeatherConditionIcon
+      kind={resolveWeatherIconKind(weatherMain, weatherDescription)}
+      sizeClass="w-4 h-4"
+    />
+  )
 }
 
 // 위치명을 간단하게 표시
@@ -131,7 +85,7 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
       setLoading(true)
       setError(null)
       
-      const today = new Date().toISOString().split('T')[0]
+      const today = getTourLocalToday()
       const data = await getGoblinTourWeatherData(today)
       setWeatherData(data)
       
@@ -173,7 +127,7 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
       setUpdating(true)
       setError(null)
       
-      const today = new Date().toISOString().split('T')[0]
+      const today = getTourLocalToday()
       const response = await fetchApiWithAuth('/api/weather-collector', {
         method: 'POST',
         headers: {

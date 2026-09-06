@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
 import { completeOAuthCallback } from '@/lib/authCallback'
+import { resolveOAuthCallbackNextPath } from '@/lib/appOrigin'
 
 const CALLBACK_FAILSAFE_MS = 18_000
 
@@ -28,19 +29,14 @@ function AuthCallbackContent() {
   const finishedRef = useRef(false)
   const startedRef = useRef(false)
 
-  const redirectTo = (() => {
-    const raw = searchParams?.get('redirectTo')
-    if (raw && raw.startsWith('/') && !raw.includes('undefined') && !raw.includes('/auth')) {
-      return raw
-    }
-    return `/${validLocale}`
-  })()
+  const queryRedirectTo = searchParams?.get('redirectTo')
 
   useEffect(() => {
     if (typeof window === 'undefined' || startedRef.current) return
     startedRef.current = true
 
     let cancelled = false
+    const redirectTo = resolveOAuthCallbackNextPath(queryRedirectTo, `/${validLocale}`)
 
     const finish = (path: string) => {
       if (cancelled || finishedRef.current) return

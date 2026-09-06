@@ -13,6 +13,7 @@ const ROUTES = [
   '/ko/admin',
   '/ko/admin/customer-pages',
   '/ko/admin/reservations',
+  '/ko/admin/tours',
   '/api/weather-status',
   '/api/messenger-contact-settings',
 ]

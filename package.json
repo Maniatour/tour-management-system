@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/dev-win.cjs",
-    "dev:webpack": "node scripts/dev-win.cjs",
+    "dev:turbo": "node scripts/dev-win.cjs --turbo",
+    "dev:webpack": "node scripts/dev-win.cjs --webpack",
     "build": "npm run type-check && next build --webpack",
     "build:win": "node scripts/build-win.cjs",
     "vercel-build": "next build --webpack",

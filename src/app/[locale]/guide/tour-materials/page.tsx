@@ -1,20 +1,15 @@
 'use client'
 import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { createClientSupabase } from '@/lib/supabase'
-import { 
+import {
   Search,
-  MapPin,
-  Tag,
   FileText,
-  ChevronDown,
-  ChevronUp,
-  Play,
   Pause,
   CheckCircle2,
-  DownloadCloud
+  DownloadCloud,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAudioPlayer } from '@/contexts/AudioPlayerContext'
@@ -29,15 +24,109 @@ import {
   type GuideNarrationMaterial,
 } from '@/lib/guideNarrationOffline'
 
+const LANGUAGE_TAB_ORDER = ['en', 'ko', 'ja', 'zh'] as const
+
+function normalizeNarrationLanguage(language: string | null | undefined): string {
+  const raw = (language || '').trim().toLowerCase()
+  if (!raw) return 'ko'
+  if (raw.startsWith('en')) return 'en'
+  if (raw.startsWith('ko') || raw === 'kr') return 'ko'
+  if (raw.startsWith('ja')) return 'ja'
+  if (raw.startsWith('zh') || raw === 'cn') return 'zh'
+  return raw
+}
+
+function languageFlagCode(language: string): string {
+  switch (language) {
+    case 'ko':
+      return 'KR'
+    case 'en':
+      return 'US'
+    case 'ja':
+      return 'JP'
+    case 'zh':
+      return 'CN'
+    default:
+      return 'US'
+  }
+}
+
+function languageTabLabel(language: string): string {
+  switch (language) {
+    case 'en':
+      return 'English'
+    case 'ko':
+      return '한국어'
+    case 'ja':
+      return '日本語'
+    case 'zh':
+      return '中文'
+    default:
+      return language.toUpperCase()
+  }
+}
+
+function preferredLanguageFromLocale(locale: string): string {
+  if (locale === 'en') return 'en'
+  if (locale === 'ja') return 'ja'
+  if (locale.startsWith('zh')) return 'zh'
+  return 'ko'
+}
+
+function splitTitleLines(title: string): [string, string | null] {
+  const trimmed = title.trim()
+  const words = trimmed.split(/\s+/).filter(Boolean)
+  if (words.length <= 1) return [trimmed, null]
+  if (words.length === 2) return [words[0] ?? trimmed, words[1] ?? null]
+  let bestIndex = 1
+  let bestScore = Number.POSITIVE_INFINITY
+  for (let i = 1; i < words.length; i++) {
+    const left = words.slice(0, i).join(' ')
+    const right = words.slice(i).join(' ')
+    const score = Math.abs(left.length - right.length)
+    if (score < bestScore) {
+      bestScore = score
+      bestIndex = i
+    }
+  }
+  return [words.slice(0, bestIndex).join(' '), words.slice(bestIndex).join(' ')]
+}
+
+function formatDurationClock(duration: number | null | undefined): string | null {
+  if (duration == null || duration <= 0) return null
+  const minutes = Math.floor(duration / 60)
+  const seconds = Math.round(duration % 60)
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+const NARRATION_TILE_COLORS = [
+  '#2563EB',
+  '#0F766E',
+  '#C2410C',
+  '#7C3AED',
+  '#BE123C',
+  '#0369A1',
+  '#B45309',
+  '#15803D',
+  '#DB2777',
+  '#1D4ED8',
+  '#0E7490',
+  '#9A3412',
+  '#6D28D9',
+  '#B91C1C',
+  '#3F6212',
+  '#4338CA',
+] as const
+
 export default function GuideTourMaterialsPage() {
   const t = useTranslations('guide')
   const locale = useLocale()
   const supabase = createClientSupabase()
   const { playTrack, primeAudioForGesture, currentTrack, isPlaying } = useAudioPlayer()
   const narrationStatus = useNarrationOfflineStatus()
-  
+
   const [searchTerm, setSearchTerm] = useState('')
-  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
+  const [langTab, setLangTab] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     const { data, error } = await supabase
@@ -64,39 +153,18 @@ export default function GuideTourMaterialsPage() {
     defaultToEmptyArray: true,
   })
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes'
-    const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-  }
-
-  const getLanguageFlag = (language: string | null) => {
-    switch (language?.toLowerCase()) {
-      case 'ko':
-        return 'KR'
-      case 'en':
-        return 'US'
-      case 'ja':
-        return 'JP'
-      case 'zh':
-        return 'CN'
-      default:
-        return 'KR'
-    }
-  }
-
   const handlePlay = async (material: GuideNarrationMaterial) => {
     primeAudioForGesture()
     if (currentTrack?.id === material.id) {
-    playTrack({
-      id: material.id,
-      src: currentTrack.src,
-      title: material.title,
-      filePath: material.file_path,
-      ...(material.duration != null ? { duration: material.duration } : {}),
-    })
+      playTrack({
+        id: material.id,
+        src: currentTrack.src,
+        title: material.title,
+        filePath: material.file_path,
+        fileName: material.file_name,
+        language: material.language ?? null,
+        ...(material.duration != null ? { duration: material.duration } : {}),
+      })
       return
     }
 
@@ -111,27 +179,52 @@ export default function GuideTourMaterialsPage() {
       src,
       title: material.title,
       filePath: material.file_path,
+      fileName: material.file_name,
+      language: material.language ?? null,
       ...(material.duration != null ? { duration: material.duration } : {}),
     })
   }
 
-  const toggleAccordion = (materialId: string) => {
-    setExpandedCards(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(materialId)) {
-        newSet.delete(materialId)
-      } else {
-        newSet.add(materialId)
-      }
-      return newSet
-    })
-  }
+  const languageTabs = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const material of materials || []) {
+      if (material.file_type !== 'audio') continue
+      const code = normalizeNarrationLanguage(material.language)
+      counts.set(code, (counts.get(code) || 0) + 1)
+    }
+    const known = LANGUAGE_TAB_ORDER.filter((code) => counts.has(code))
+    const extra = [...counts.keys()].filter((code) => !(LANGUAGE_TAB_ORDER as readonly string[]).includes(code))
+    extra.sort()
+    return [...known, ...extra].map((code) => ({
+      code,
+      count: counts.get(code) || 0,
+      label: languageTabLabel(code),
+      flag: languageFlagCode(code),
+    }))
+  }, [materials])
 
-  const filteredMaterials = (materials || []).filter(material => {
-    const matchesSearch = material.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         material.description?.toLowerCase().includes(searchTerm.toLowerCase())
-    return matchesSearch && material.file_type === 'audio'
-  })
+  const preferredLang = preferredLanguageFromLocale(locale)
+  const activeLang =
+    langTab && languageTabs.some((tab) => tab.code === langTab)
+      ? langTab
+      : (languageTabs.find((tab) => tab.code === preferredLang)?.code ?? languageTabs[0]?.code ?? 'en')
+
+  const filteredMaterials = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase()
+    return (materials || []).filter((material) => {
+      if (material.file_type !== 'audio') return false
+      if (normalizeNarrationLanguage(material.language) !== activeLang) return false
+      if (!query) return true
+      return (
+        material.title.toLowerCase().includes(query) ||
+        Boolean(material.description?.toLowerCase().includes(query))
+      )
+    })
+  }, [materials, activeLang, searchTerm])
+
+  const handleSelectLang = (code: string) => {
+    setLangTab(code)
+  }
 
   if (loading) {
     return (
@@ -147,11 +240,13 @@ export default function GuideTourMaterialsPage() {
   return (
     <div className="space-y-0 lg:space-y-4">
       <div className="bg-white rounded-none shadow-none border-b border-gray-200 p-3 sm:p-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <h1 className="text-lg font-bold text-gray-900">{t('tourMaterialsTitle')}</h1>
-          <div className="relative w-32">
+          <div className="relative w-32 shrink-0">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
+            <input
+              {...BROWSER_AUTOFILL_OFF_PROPS}
+              type="search"
               placeholder={t('searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -182,118 +277,100 @@ export default function GuideTourMaterialsPage() {
       </div>
 
       <div className="bg-white rounded-none shadow-none">
-        <div className="px-3 py-6">
-          <div className="space-y-4">
-            {filteredMaterials.length === 0 ? (
-              <div className="text-center py-12">
-                <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">{t('noTourMaterials')}</h3>
-                <p className="text-gray-600">{t('noTourMaterials')}</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {filteredMaterials.map(material => {
-                  const isCurrent = currentTrack?.id === material.id
-                  return (
-                  <div key={material.id}>
-                    {material.file_type === 'audio' && (
-                      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-                        <div 
-                          className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
-                          onClick={() => toggleAccordion(material.id)}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2 flex-1 min-w-0">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  void handlePlay(material)
-                                }}
-                                className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
-                                  isCurrent && isPlaying
-                                    ? 'bg-red-600 text-white hover:bg-red-700'
-                                    : 'bg-primary text-primary-foreground hover:bg-primary/90'
-                                }`}
-                                title={isCurrent && isPlaying ? t('narrationPause') : t('narrationPlay')}
-                              >
-                                {isCurrent && isPlaying ? (
-                                  <Pause className="w-4 h-4" />
-                                ) : (
-                                  <Play className="w-4 h-4" />
-                                )}
-                              </button>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center space-x-2">
-                                  <h3 className="font-medium text-gray-900 text-sm truncate">{material.title}</h3>
-                                  <ReactCountryFlag
-                                    countryCode={getLanguageFlag(material.language)}
-                                    svg
-                                    style={{
-                                      width: '16px',
-                                      height: '12px',
-                                      borderRadius: '2px'
-                                    }}
-                                  />
-                                  {material.duration && (
-                                    <span className="text-xs text-gray-500">
-                                      {Math.floor(material.duration / 60)}:{(material.duration % 60).toString().padStart(2, '0')}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="ml-2">
-                              {expandedCards.has(material.id) ? (
-                                <ChevronUp className="w-4 h-4 text-gray-400" />
-                              ) : (
-                                <ChevronDown className="w-4 h-4 text-gray-400" />
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {expandedCards.has(material.id) && (
-                          <div className="px-3 pb-3 border-t border-gray-100">
-                            <div className="pt-3 space-y-2">
-                              <div className="flex items-center space-x-3 text-xs text-gray-500">
-                                <span className="flex items-center space-x-1">
-                                  <MapPin className="w-3 h-3" />
-                                  <span className="truncate">{material.tour_attractions?.name_ko || t('noAttraction')}</span>
-                                </span>
-                                <span className="flex items-center space-x-1">
-                                  <Tag className="w-3 h-3" />
-                                  <span className="truncate">{material.tour_material_categories?.name_ko || t('noCategory')}</span>
-                                </span>
-                                <span>{formatFileSize(material.file_size)}</span>
-                              </div>
-                              
-                              {material.description && (
-                                <div>
-                                  <p className="text-xs text-gray-600 leading-relaxed">{material.description}</p>
-                                </div>
-                              )}
-                              
-                              {material.tags && material.tags.length > 0 && (
-                                <div className="flex flex-wrap gap-1">
-                                  {material.tags.map((tag, index) => (
-                                    <span 
-                                      key={index}
-                                      className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full"
-                                    >
-                                      {tag}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )})}
-              </div>
-            )}
+        <div className="px-3 py-4 sm:px-4 sm:py-6">
+          <div className="mx-auto max-w-md">
+          {languageTabs.length > 0 && (
+            <div
+              className="mb-4 flex justify-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              role="tablist"
+              aria-label={t('narrationLanguageTabs')}
+            >
+              {languageTabs.map((tab) => {
+                const active = tab.code === activeLang
+                return (
+                  <button
+                    key={tab.code}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    aria-label={tab.label}
+                    onClick={() => handleSelectLang(tab.code)}
+                    className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                      active
+                        ? 'border-primary bg-primary shadow-sm'
+                        : 'border-border/60 bg-muted/50 hover:bg-muted'
+                    }`}
+                  >
+                    <ReactCountryFlag
+                      countryCode={tab.flag}
+                      svg
+                      style={{ width: '22px', height: '16px', borderRadius: '3px' }}
+                    />
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {filteredMaterials.length === 0 ? (
+            <div className="text-center py-12">
+              <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">{t('noTourMaterials')}</h3>
+              <p className="text-gray-600">{t('noTourMaterials')}</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2.5 pb-28 sm:gap-3">
+              {filteredMaterials.map((material, index) => {
+                const isCurrent = currentTrack?.id === material.id
+                const playing = isCurrent && isPlaying
+                const [line1, line2] = splitTitleLines(material.title)
+                const duration = formatDurationClock(material.duration)
+                const tileColor =
+                  NARRATION_TILE_COLORS[index % NARRATION_TILE_COLORS.length] ?? NARRATION_TILE_COLORS[0]
+                return (
+                  <button
+                    key={material.id}
+                    type="button"
+                    onClick={() => void handlePlay(material)}
+                    aria-pressed={playing}
+                    aria-label={`${playing ? t('narrationPause') : t('narrationPlay')}: ${material.title}`}
+                    style={{
+                      backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(0,0,0,0.18) 100%)',
+                      backgroundColor: tileColor,
+                    }}
+                    className={`relative flex aspect-square w-full touch-manipulation select-none flex-col items-center justify-center overflow-hidden rounded-2xl border px-1.5 text-white shadow-sm transition duration-200 ease-out active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                      playing
+                        ? 'border-white ring-2 ring-red-500 ring-offset-2 ring-offset-white shadow-md'
+                        : isCurrent
+                          ? 'border-white/80 ring-2 ring-white ring-offset-2 ring-offset-white shadow-md'
+                          : 'border-white/10 hover:brightness-110'
+                    }`}
+                  >
+                    {playing ? (
+                      <span className="pointer-events-none absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-black/25">
+                        <Pause className="h-3 w-3" />
+                      </span>
+                    ) : null}
+                    <span className="flex min-h-0 w-full flex-col items-center justify-center text-center">
+                      <span className="max-w-full break-words text-[12px] font-semibold leading-[1.15] tracking-tight min-[400px]:text-[13px] sm:text-sm">
+                        {line1}
+                      </span>
+                      {line2 ? (
+                        <span className="max-w-full break-words text-[12px] font-semibold leading-[1.15] tracking-tight min-[400px]:text-[13px] sm:text-sm">
+                          {line2}
+                        </span>
+                      ) : null}
+                    </span>
+                    {duration ? (
+                      <span className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-[10px] font-medium tabular-nums opacity-80">
+                        {duration}
+                      </span>
+                    ) : null}
+                  </button>
+                )
+              })}
+            </div>
+          )}
           </div>
         </div>
       </div>

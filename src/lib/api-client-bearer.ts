@@ -55,3 +55,16 @@ export async function fetchApiWithAuth(
     headers,
   })
 }
+
+/**
+ * JWT가 아직 없으면 네트워크 요청을 보내지 않습니다.
+ * 세션 복구 전에 /api/guide/* 를 치면 브라우저에 401이 반복 출력됩니다.
+ */
+export async function fetchApiWithAuthWhenReady(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response | null> {
+  const token = await resolveAccessTokenForApi()
+  if (!token) return null
+  return fetchApiWithAuth(input, init)
+}
