@@ -1,0 +1,14 @@
+---
+description: Non-negotiable product safety for Kovegas
+alwaysApply: true
+---
+
+Never remove existing functionality.
+
+Never change booking, payment, availability, cancellation, or API contracts unless explicitly requested.
+
+Never change Supabase queries unless explicitly requested.
+
+UI-only work unless the user asks for logic, data, or API changes.
+
+Respond in Korean.

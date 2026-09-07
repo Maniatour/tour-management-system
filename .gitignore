@@ -62,3 +62,10 @@ public/swe-worker-*.js.map
 bundle-analyzer-report.html
 
 .vercel
+
+# local scratch / i18n agent artifacts
+/tmp-*
+/tmp_*
+/tmp-mdgc-i18n/
+/scripts/tmp-*
+/scripts/tmp_*

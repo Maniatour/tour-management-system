@@ -2,15 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Calendar, FileText, Loader2 } from 'lucide-react'
-import { createClientSupabase } from '@/lib/supabase'
+import { fetchApiWithAuthWhenReady } from '@/lib/api-client-bearer'
 import { useAuth } from '@/contexts/AuthContext'
-import { tourReportRequiredDateRange } from '@/lib/tourReportExtras'
+import type { GuideUncompletedTourReportItem } from '@/lib/guideUncompletedTourReports'
 
-export type UncompletedTourReportItem = {
-  id: string
-  tourDate: string
-  name: string
-}
+export type UncompletedTourReportItem = GuideUncompletedTourReportItem
 
 function dismissStorageKey(email: string) {
   return `uncompleted-tour-reports:${email.toLowerCase()}`
@@ -146,7 +142,7 @@ export function UncompletedTourReportReminderLayer({
   refreshKey?: number
   onWriteNow: () => void
 }) {
-  const { isInitialized } = useAuth()
+  const { isInitialized, isSimulating, simulatedUser } = useAuth()
   const [items, setItems] = useState<UncompletedTourReportItem[]>([])
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
@@ -161,76 +157,22 @@ export function UncompletedTourReportReminderLayer({
     }
     setLoading(true)
     try {
-      const supabase = createClientSupabase()
-      const range = tourReportRequiredDateRange()
-      if (!range) {
+      const headers: Record<string, string> = {}
+      if (isSimulating && simulatedUser?.email) {
+        headers['x-simulated-user-email'] = simulatedUser.email
+      }
+      const localeParam = locale.startsWith('en') ? 'en' : 'ko'
+      const res = await fetchApiWithAuthWhenReady(
+        `/api/guide/uncompleted-tour-reports?locale=${localeParam}`,
+        { headers }
+      )
+      if (!res || !res.ok) {
         setItems([])
         setOpen(false)
         return
       }
-
-      const { data: toursData, error } = await supabase
-        .from('tours')
-        .select('id, tour_date, product_id')
-        .or(`tour_guide_id.eq.${emailRaw},assistant_id.eq.${emailRaw}`)
-        .gte('tour_date', range.from)
-        .lte('tour_date', range.to)
-        .order('tour_date', { ascending: false })
-        .limit(100)
-
-      if (error) throw error
-      const tours = toursData || []
-      if (tours.length === 0) {
-        setItems([])
-        setOpen(false)
-        return
-      }
-
-      const tourIds = tours.map((t) => t.id)
-      const { data: reportsData, error: reportsError } = await supabase
-        .from('tour_reports')
-        .select('tour_id')
-        .in('tour_id', tourIds)
-        .eq('user_email', emailRaw)
-
-      if (reportsError) throw reportsError
-      const done = new Set((reportsData || []).map((r) => r.tour_id))
-      const pending = tours.filter((t) => !done.has(t.id))
-      if (pending.length === 0) {
-        setItems([])
-        setOpen(false)
-        return
-      }
-
-      const productIds = [
-        ...new Set(pending.map((t) => t.product_id).filter((id): id is string => !!id)),
-      ]
-      let nameById = new Map<string, { ko: string; en: string }>()
-      if (productIds.length > 0) {
-        const { data: products } = await supabase
-          .from('products')
-          .select('id, name_ko, name_en, name')
-          .in('id', productIds)
-        nameById = new Map(
-          (products || []).map((p) => [
-            p.id,
-            {
-              ko: p.name_ko || p.name_en || p.name || p.id,
-              en: p.name_en || p.name_ko || p.name || p.id,
-            },
-          ])
-        )
-      }
-
-      const isEn = locale.startsWith('en')
-      const next: UncompletedTourReportItem[] = pending.map((t) => {
-        const names = t.product_id ? nameById.get(t.product_id) : undefined
-        return {
-          id: t.id,
-          tourDate: t.tour_date,
-          name: names ? (isEn ? names.en : names.ko) : t.product_id || t.id,
-        }
-      })
+      const payload = (await res.json()) as { items?: UncompletedTourReportItem[] }
+      const next = Array.isArray(payload.items) ? payload.items : []
       setItems(next)
 
       let dismissedCount = -1
@@ -240,12 +182,13 @@ export function UncompletedTourReportReminderLayer({
         dismissedCount = -1
       }
       setOpen(next.length > 0 && next.length !== dismissedCount)
-    } catch (e) {
-      console.error('UncompletedTourReportReminderLayer', e)
+    } catch {
+      setItems([])
+      setOpen(false)
     } finally {
       setLoading(false)
     }
-  }, [emailRaw, emailKey, isInitialized, locale])
+  }, [emailKey, isInitialized, isSimulating, simulatedUser?.email, locale])
 
   useEffect(() => {
     void loadPending()

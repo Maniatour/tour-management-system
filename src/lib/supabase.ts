@@ -276,7 +276,7 @@ const fetchWithRetry = async (
         headers.set('Connection', 'keep-alive')
       }
 
-      if (!headers.has('Accept')) {
+      if (!headers.has('Accept') && !requestUrlString(url).includes('/storage/v1/')) {
         headers.set('Accept', 'application/json, application/vnd.pgjson.object+json, application/vnd.pgjson.array+json')
       }
 

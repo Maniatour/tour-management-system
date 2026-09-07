@@ -1,437 +1,58 @@
 ---
-description: Kovegas customer-facing visual design and UX standards
-alwaysApply: true
+description: Kovegas customer-facing UI, CRO, and component standards. Apply for public tour, home, booking, and marketing pages. Skip admin, guide, API, scripts, and infra.
+globs: src/app/*/page.tsx,src/app/*/products/**/*.tsx,src/app/*/booking/**/*.tsx,src/app/*/travel-guide/**/*.tsx,src/app/*/reviews/**/*.tsx,src/components/home/**/*.tsx,src/components/product/**/*.tsx,src/components/booking/**/*.tsx,src/components/ui/**/*.tsx
+alwaysApply: false
 ---
 
+# Kovegas customer UI
 
-# KOVEGAS VISUAL DESIGN SYSTEM
+Premium local tour operator (Las Vegas Mania Tour). Feel: Apple / Airbnb Experiences / GetYourGuide. Not a SaaS dashboard, coupon site, or casino neon page.
 
-You are designing a premium customer-facing travel website for Kovegas.com, operated by Las Vegas Mania Tour.
+**Scope:** public customer pages only. Do not add marketing CTAs, sticky Book Now bars, or hero CRO to admin, guide, or internal tools.
 
-The website sells Las Vegas, Grand Canyon, Antelope Canyon, Zion, Bryce Canyon, and Southwest USA tours.
+**Do not change:** booking, payment, availability, cancellation, APIs, or Supabase queries. Improve layout, copy visibility, and usability only.
 
-The interface must feel premium, trustworthy, modern, visually rich, and easy to book.
+## Visual
 
-Do not create a generic SaaS dashboard design.
+- Tokens only: `--background` `--foreground` `--card` `--muted` `--primary` `--secondary` `--accent` `--border` `--input` `--ring` `--success` `--warning` `--danger`
+- Navy/near-black, warm sand, sunset/coral booking accent, white/gray. Green only for confirmation/availability
+- next/font. One sans (Inter/Geist/Manrope/Plus Jakarta). Max 3 weights. Avoid unnecessary uppercase
+- Display `text-4xl md:text-6xl lg:text-7xl font-semibold tracking-tight`. Page `text-3xl md:text-5xl`. Section `text-2xl md:text-4xl`. Body `text-base md:text-lg leading-7 text-muted-foreground`
+- Container: `max-w-7xl mx-auto px-4 sm:px-6 lg:px-8`. Sections `py-16 md:py-24`. Compact `py-10 md:py-16`
+- Alternate white / muted / photography / dark highlight. Do not wrap every section in a card
+- Radius: buttons/inputs `rounded-lg` or `rounded-xl`; cards `rounded-xl`; feature images `rounded-2xl`. Pills only for filters/tags
+- Cards: `border border-border/60 shadow-sm`. Interactive: `hover:shadow-lg duration-300`. No heavy shadows
+- Primary CTA: shared Button, high contrast, `h-11` desktop / `h-12` mobile booking. Max 2 primary buttons per viewport
+- next/image, real photography, alt text. Hero 16:9, cards 4:3. Overlay `from-black/70 via-black/20 to-transparent`. No long text on images
+- lucide-react only. 16px meta, 18–20px controls, 24px features. No emoji icons
+- Motion: 200–300ms ease-out fade/hover/accordion only. Respect prefers-reduced-motion
 
-Do not create an overly playful travel blog design.
+## CRO (customer pages)
 
-The visual direction should combine:
+- Clear booking CTA above the fold. Repeat after highlights, itinerary, reviews, FAQ
+- Mobile sticky bottom bar: price + Book Now / Check Availability
+- Price near CTA: `From $199 / person`. Show inclusions. Do not hide fees
+- 3–5 trust items near CTA (Free Cancellation, Hotel Pickup, Small Group, Licensed Operator)
+- Honest urgency only when data supports it
+- Reviews before FAQ. Rating near hero CTA
+- 3–6 short highlight cards early
+- Desktop sticky booking panel: price, date, guests, CTA, trust, cancellation, contact (ghost, not competing)
+- Short benefit-first copy. No fake scarcity
 
-- Premium travel editorial design
-- Modern hospitality website
-- Clean Apple-inspired spacing
-- High-quality destination photography
-- Strong booking conversion UX
-- Subtle Las Vegas personality
+## Components
 
---------------------------------------------------
-BRAND PERSONALITY
---------------------------------------------------
+Search existing components before creating new ones. Reuse or extend variants. Keep files under 200 lines when practical.
 
-The brand must communicate:
+Prefer: Container, Section, SectionHeader, Button, TourCard, TourGrid, PriceDisplay, ReviewSummary, TrustBadge, FeatureList, PickupInfo, IncludedList, ItineraryTimeline, TourGallery, BookingCard, StickyBookingBar, FAQSection, RelatedTours, EmptyState, LoadingSkeleton
 
-- Professional local tour operator
-- Safe and reliable
-- Experienced local guides
-- Premium but approachable
-- Small-group expertise
-- Clear and transparent pricing
-- Multilingual customer service
+Tour card: image, badge, title, rating, duration, location, price, Book Now. Whole card clickable.
 
-Avoid:
+Included: check / minus icon lists. Itinerary: timeline. FAQ: accordion, one panel open by default.
 
-- Cheap coupon website styling
-- Excessive gradients
-- Neon colors across the entire page
-- Oversized rounded cards everywhere
-- Excessive glassmorphism
-- Excessive animations
-- Generic AI-generated layouts
-- Dashboard-like UI
-- Too many different card designs
-- Dense walls of text
+Mobile-first. Tap targets ≥ 44px. No horizontal scroll. Tables → cards on mobile.
 
---------------------------------------------------
-DESIGN TOKENS
---------------------------------------------------
+## Quality
 
-Use semantic design tokens instead of arbitrary color values.
+Hover, focus, loading, empty, error states. Semantic HTML, visible labels, keyboard access, visible focus. Do not communicate status by color alone.
 
-Create and consistently use:
-
---background
---foreground
---card
---card-foreground
---muted
---muted-foreground
---primary
---primary-foreground
---secondary
---secondary-foreground
---accent
---accent-foreground
---border
---input
---ring
---success
---warning
---danger
-
-Primary brand direction:
-
-- Deep navy or near-black for trust and premium appearance
-- Warm desert sand for neutral backgrounds
-- Sunset orange or coral as the booking accent
-- White and soft gray for clarity
-- Green only for confirmation, availability, and trust indicators
-
-Do not introduce new colors unless they are added to the global theme tokens.
-
---------------------------------------------------
-TYPOGRAPHY
---------------------------------------------------
-
-Use next/font.
-
-Use one modern sans-serif font family for the primary UI.
-
-Recommended direction:
-
-- Inter
-- Geist
-- Manrope
-- Plus Jakarta Sans
-
-Use a display font only when it is subtle and limited to editorial headings.
-
-Typography hierarchy:
-
-Display:
-text-4xl md:text-6xl lg:text-7xl
-font-semibold or font-bold
-tracking-tight
-leading-[1.05]
-
-Page title:
-text-3xl md:text-5xl
-font-semibold
-tracking-tight
-
-Section title:
-text-2xl md:text-4xl
-font-semibold
-tracking-tight
-
-Card title:
-text-lg md:text-xl
-font-semibold
-
-Body:
-text-base md:text-lg
-leading-7
-text-muted-foreground
-
-Small labels:
-text-xs or text-sm
-font-medium
-tracking-wide
-
-Do not use more than three font weights on one page.
-
-Avoid unnecessary uppercase text.
-
---------------------------------------------------
-LAYOUT
---------------------------------------------------
-
-All customer-facing pages must use a consistent container.
-
-Use:
-
-max-w-7xl
-mx-auto
-px-4 sm:px-6 lg:px-8
-
-Standard section spacing:
-
-py-16 md:py-24 lg:py-28
-
-Compact sections:
-
-py-10 md:py-16
-
-Hero sections may use:
-
-min-h-[70vh]
-or
-py-20 md:py-28 lg:py-36
-
-Use generous whitespace.
-
-Do not place every section inside a bordered card.
-
-Alternate between:
-
-- White background
-- Soft neutral background
-- Full-width photography
-- Dark premium highlight section
-
-Use asymmetrical editorial layouts when appropriate.
-
---------------------------------------------------
-BORDER RADIUS
---------------------------------------------------
-
-Use a controlled radius system.
-
-- Buttons: rounded-lg or rounded-xl
-- Inputs: rounded-lg
-- Standard cards: rounded-xl
-- Feature image cards: rounded-2xl
-- Large editorial sections: rounded-2xl or rounded-3xl
-
-Do not use rounded-3xl on every component.
-
-Do not make all buttons pill-shaped.
-
-Pill buttons should only be used for filters, tags, and compact status controls.
-
---------------------------------------------------
-SHADOWS AND BORDERS
---------------------------------------------------
-
-Use shadows sparingly.
-
-Default cards:
-
-border border-border/60
-shadow-sm
-
-Elevated interactive cards:
-
-shadow-md
-hover:shadow-lg
-
-Do not use heavy dark shadows.
-
-Prefer subtle borders, spacing, and background contrast over excessive shadows.
-
---------------------------------------------------
-BUTTON SYSTEM
---------------------------------------------------
-
-Use shared Button components.
-
-Primary button:
-
-- Strong brand accent
-- High visual contrast
-- Used for Book Now, Check Availability, Continue, and Reserve
-
-Secondary button:
-
-- Neutral or outlined
-- Used for View Details and secondary actions
-
-Ghost button:
-
-- Navigation and low-priority actions only
-
-Minimum button height:
-
-h-11 on desktop
-h-12 on mobile booking actions
-
-Main booking buttons should be easy to tap and visually obvious.
-
-Do not place more than two competing primary buttons in one viewport.
-
---------------------------------------------------
-IMAGES
---------------------------------------------------
-
-Travel photography is a primary part of the interface.
-
-Use next/image for customer-facing images.
-
-Every major page should use:
-
-- One strong hero image
-- Destination photography
-- Real tour experience images when available
-- Consistent aspect ratios
-- Proper image overlays for text readability
-
-Preferred aspect ratios:
-
-- Hero: 16:9 or wide cinematic
-- Tour cards: 4:3
-- Gallery: mixed editorial grid
-- Mobile cards: 4:3 or 3:2
-
-Always provide meaningful alt text.
-
-Do not stretch images.
-
-Do not use low-quality placeholder gradients when destination images are available.
-
-Use overlays carefully:
-
-bg-gradient-to-t from-black/70 via-black/20 to-transparent
-
-Do not place long paragraphs over images.
-
---------------------------------------------------
-ICONS
---------------------------------------------------
-
-Use lucide-react icons.
-
-Do not use emojis as functional UI icons.
-
-Use consistent sizing:
-
-- 16px for small metadata
-- 18–20px for controls
-- 24px for feature icons
-
-Icons should support the text, not replace important labels.
-
---------------------------------------------------
-ANIMATION
---------------------------------------------------
-
-Animations must be subtle and purposeful.
-
-Allowed:
-
-- Small fade and vertical entrance
-- Card image zoom on hover
-- Button micro-interactions
-- Accordion transitions
-- Sticky booking panel transitions
-- Loading skeletons
-
-Typical motion:
-
-duration-200 or duration-300
-ease-out
-
-Do not animate every element.
-
-Do not use large parallax effects that reduce performance.
-
-Respect prefers-reduced-motion.
-
---------------------------------------------------
-RESPONSIVE DESIGN
---------------------------------------------------
-
-Design mobile-first.
-
-Test at minimum:
-
-- 375px
-- 430px
-- 768px
-- 1024px
-- 1440px
-
-Mobile priorities:
-
-- Tour name
-- Price
-- Review score
-- Duration
-- Pickup information
-- Availability
-- Booking button
-
-On mobile:
-
-- Use a sticky bottom booking bar
-- Avoid wide tables
-- Convert comparison tables into cards or accordions
-- Keep key actions reachable with one hand
-- Avoid excessive horizontal scrolling
-- Keep tap targets at least 44px high
-
-Do not simply shrink the desktop design.
-
---------------------------------------------------
-ACCESSIBILITY
---------------------------------------------------
-
-Use semantic HTML.
-
-Every input must have a visible label.
-
-Maintain sufficient color contrast.
-
-All interactive elements must support keyboard navigation.
-
-Use aria-label only when visible text is insufficient.
-
-Do not communicate status through color alone.
-
-Provide visible focus states.
-
---------------------------------------------------
-COMPONENT CONSISTENCY
---------------------------------------------------
-
-Before creating a new component:
-
-1. Search the existing components.
-2. Reuse an existing component when possible.
-3. Extend an existing component through variants.
-4. Only create a new component when no reusable component exists.
-
-Shared components should include:
-
-- Container
-- Section
-- SectionHeader
-- Button
-- TourCard
-- TourGrid
-- PriceDisplay
-- ReviewSummary
-- TrustBadge
-- FeatureList
-- IconText
-- PickupInfo
-- IncludedList
-- ItineraryTimeline
-- TourGallery
-- BookingCard
-- StickyBookingBar
-- FAQSection
-- RelatedTours
-- EmptyState
-- LoadingSkeleton
-
-Do not duplicate component markup between pages.
-
---------------------------------------------------
-QUALITY CHECK
---------------------------------------------------
-
-Before completing any UI task, verify:
-
-- Is the page visually consistent with the rest of the site?
-- Does it look like a premium tour operator rather than a generic template?
-- Is the booking action obvious?
-- Is pricing easy to understand?
-- Does mobile feel intentionally designed?
-- Are repeated patterns componentized?
-- Are all text and image states handled?
-- Are hover, focus, loading, empty, and error states included?
-- Are Supabase queries separated from presentation components?
-- Are TypeScript errors avoided?
-- Does the page preserve existing business logic?
-
-Never declare the task complete until these checks are satisfied.
+Before finishing UI: premium and consistent, booking action obvious, price clear, mobile intentional, logic unchanged. Verify the changed customer flow in the browser when browser tools are available.

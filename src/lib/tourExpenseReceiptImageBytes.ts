@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { normalizeTourExpenseStoragePath } from '@/lib/tourExpenseImageUrl'
 
 /**
  * 투어 지출 영수증 이미지 바이트 로드 (공개 URL 우선, 실패 시 tour-expenses Storage).
@@ -23,7 +24,7 @@ export async function loadTourExpenseReceiptImageBytes(
     }
   }
 
-  const fp = params.filePath?.trim()
+  const fp = normalizeTourExpenseStoragePath(params.filePath)
   if (fp) {
     const { data, error } = await supabase.storage.from('tour-expenses').download(fp)
     if (!error && data && data.size > 0) {

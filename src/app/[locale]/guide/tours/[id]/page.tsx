@@ -2364,7 +2364,6 @@ export default function GuideTourDetailPage() {
           {/* 티켓 부킹 — 건별 시간·RN#·EA (가이드 확인용) */}
           {ticketBookings.length > 0 && (
             <div>
-              <h3 className="text-lg font-medium text-gray-800 mb-3">{t('ticketBooking')}</h3>
               <div className="space-y-3">
                 {[...ticketBookings]
                   .sort((a, b) => {

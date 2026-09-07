@@ -1,0 +1,17 @@
+# Scratch / generated — keep out of Agent index and context
+tmp-*
+tmp_*
+tmp-mdgc-i18n/
+**/*.log
+scripts/tmp-*
+scripts/tmp_*
+coverage/
+analyze/
+.tms-next-dev/
+.next/
+node_modules/
+out/
+build/
+.vercel/
+bundle-analyzer-report.html
+*.tsbuildinfo

@@ -1271,8 +1271,10 @@ export default function AllTourExpensesManager() {
                     alt={`${t('receiptLabel')} ${viewingReceipt.paidFor}`}
                     className="max-w-full h-auto rounded-lg shadow-lg"
                     onError={(e) => {
-                      const target = e.target as HTMLImageElement
-                      target.src = '/placeholder-receipt.png'
+                      const target = e.currentTarget
+                      target.onerror = null
+                      target.removeAttribute('src')
+                      target.style.display = 'none'
                       target.alt = t('receiptImageError')
                     }}
                   />

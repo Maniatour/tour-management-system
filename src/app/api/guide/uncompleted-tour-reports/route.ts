@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { resolveGuideApiAuth } from '@/lib/guideApiAuth'
 import { getSupabaseForApiRoute } from '@/lib/api-route-supabase'
 import { supabaseAdmin } from '@/lib/supabase'
-import { resolveTodayPhotoTourForGuide } from '@/lib/guideTodayPhotoTour'
+import { listUncompletedTourReportsForGuide } from '@/lib/guideUncompletedTourReports'
 
 function localeFromRequest(request: NextRequest): string {
   const fromQuery = request.nextUrl.searchParams.get('locale')?.trim().toLowerCase()
@@ -11,9 +11,9 @@ function localeFromRequest(request: NextRequest): string {
 }
 
 /**
- * GET /api/guide/today-photo-tour
- * 로그인한 가이드(또는 시뮬레이션 대상)의 오늘(라스베가스) 진행 투어를 서버에서 결정한다.
- * 당일 투어뿐 아니라 1박2일 2일차처럼 오늘이 진행 구간에 들어가는 숙박 투어도 포함한다.
+ * GET /api/guide/uncompleted-tour-reports
+ * 가이드(또는 시뮬레이션 대상)의 미작성 투어 리포트.
+ * 브라우저에서 tour_reports를 직접 읽으면 is_staff() 42501이 날 수 있어 서버에서 조회한다.
  */
 export async function GET(request: NextRequest) {
   const auth = await resolveGuideApiAuth(request)
@@ -26,11 +26,11 @@ export async function GET(request: NextRequest) {
   const locale = localeFromRequest(request)
 
   try {
-    const payload = await resolveTodayPhotoTourForGuide(db, auth.ctx.actingEmail, locale)
-    return NextResponse.json({ ok: true, ...payload })
+    const items = await listUncompletedTourReportsForGuide(db, auth.ctx.actingEmail, locale)
+    return NextResponse.json({ ok: true, items })
   } catch (error) {
-    console.error('[api/guide/today-photo-tour]', error)
-    const message = error instanceof Error ? error.message : 'today_photo_tour_failed'
-    return NextResponse.json({ ok: false, error: message }, { status: 500 })
+    console.error('[api/guide/uncompleted-tour-reports]', error)
+    const message = error instanceof Error ? error.message : 'uncompleted_tour_reports_failed'
+    return NextResponse.json({ ok: false, error: message, items: [] }, { status: 500 })
   }
 }

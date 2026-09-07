@@ -9,11 +9,19 @@
     "**/.next/**": true,
     "**/node_modules/**": true,
     "**/node_modules/.cache/tms-next-dev*/**": true,
-    "**/.tms-next-dev/**": true
+    "**/.tms-next-dev/**": true,
+    "**/tmp-*": true,
+    "**/tmp_*": true,
+    "**/tmp-mdgc-i18n/**": true,
+    "**/*.log": true
   },
   "search.exclude": {
     "**/.next": true,
-    "**/node_modules/.cache/tms-next-dev*": true
+    "**/node_modules/.cache/tms-next-dev*": true,
+    "**/tmp-*": true,
+    "**/tmp_*": true,
+    "**/tmp-mdgc-i18n": true,
+    "**/*.log": true
   },
   "deno.enablePaths": [
     "supabase/functions"

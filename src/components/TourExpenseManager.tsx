@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Plus, Upload, X, DollarSign, ChevronDown, ChevronRight, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Package, ZoomIn, ZoomOut, ListOrdered, RotateCcw, RotateCw, Sparkles, type LucideIcon } from 'lucide-react'
 import ExpenseVendorManagerModal from '@/components/expense/ExpenseVendorManagerModal'
 import { supabase } from '@/lib/supabase'
+import { normalizeTourExpenseStoragePath } from '@/lib/tourExpenseImageUrl'
 import { useLocale, useTranslations } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
@@ -180,6 +181,116 @@ export type TourExpenseManagerHandle = {
   openAddExpense: () => void
   toggleDriveImporter: () => void
   openReceiptOnlyUpload: () => void
+}
+
+function ReceiptSafeImage({
+  src,
+  alt,
+  errorLabel,
+  className,
+  style,
+  filePath,
+}: {
+  src: string
+  alt: string
+  errorLabel: string
+  className?: string
+  style?: React.CSSProperties
+  filePath?: string | null
+}) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+  const blobUrlRef = useRef<string | null>(null)
+  const srcRef = useRef(src)
+
+  useEffect(() => {
+    srcRef.current = src
+    setFailed(false)
+    if (blobUrlRef.current?.startsWith('blob:')) {
+      URL.revokeObjectURL(blobUrlRef.current)
+    }
+    blobUrlRef.current = null
+    setBlobUrl(null)
+  }, [src, filePath])
+
+  useEffect(() => {
+    return () => {
+      if (blobUrlRef.current?.startsWith('blob:')) {
+        URL.revokeObjectURL(blobUrlRef.current)
+      }
+    }
+  }, [])
+
+  const displaySrc = blobUrl || src
+
+  const handleError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget
+    if (!img.isConnected) return
+    if (img.naturalWidth > 0) return
+    if (blobUrlRef.current && img.currentSrc === blobUrlRef.current) {
+      setFailed(true)
+      return
+    }
+
+    const path =
+      normalizeTourExpenseStoragePath(filePath) || normalizeTourExpenseStoragePath(src)
+    if (!path) {
+      setFailed(true)
+      return
+    }
+
+    void (async () => {
+      const requestedSrc = srcRef.current
+      const signed = await supabase.storage.from('tour-expenses').createSignedUrl(path, 60 * 60)
+      if (srcRef.current !== requestedSrc) return
+      if (!signed.error && signed.data?.signedUrl) {
+        blobUrlRef.current = signed.data.signedUrl
+        setBlobUrl(signed.data.signedUrl)
+        setFailed(false)
+        return
+      }
+
+      const { data, error } = await supabase.storage.from('tour-expenses').download(path)
+      if (srcRef.current !== requestedSrc) return
+      if (error || !data || data.size <= 0) {
+        setFailed(true)
+        return
+      }
+      if (blobUrlRef.current?.startsWith('blob:')) URL.revokeObjectURL(blobUrlRef.current)
+      const next = URL.createObjectURL(data)
+      blobUrlRef.current = next
+      setBlobUrl(next)
+      setFailed(false)
+    })()
+  }
+
+  if (!displaySrc) {
+    return (
+      <div className="flex min-h-[180px] w-full flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-white px-4 py-8 text-center">
+        <ImageIcon className="mb-2 h-8 w-8 text-gray-400" />
+        <p className="text-sm text-gray-600">{errorLabel}</p>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <img
+        src={displaySrc}
+        alt={alt}
+        className={failed ? 'hidden' : className}
+        style={style}
+        onLoad={() => setFailed(false)}
+        onError={handleError}
+      />
+      {failed ? (
+        <div className="flex min-h-[180px] w-full flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-white px-4 py-8 text-center">
+          <ImageIcon className="mb-2 h-8 w-8 text-gray-400" />
+          <p className="text-sm text-gray-600">{errorLabel}</p>
+        </div>
+      ) : null}
+    </>
+  )
 }
 
 const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManagerProps>(function TourExpenseManager({
@@ -547,7 +658,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
         /* Storage 폴백 */
       }
 
-      const fp = expense.file_path?.trim()
+      const fp = normalizeTourExpenseStoragePath(expense.file_path)
       if (fp) {
         const { data, error } = await supabase.storage.from('tour-expenses').download(fp)
         if (!error && data && data.size > 0) {
@@ -1470,42 +1581,23 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
 
   // 이미지 삭제 핸들러
   const handleImageRemove = async () => {
-    if (!formData.image_url || !formData.file_path) {
-      // 파일이 없으면 그냥 formData만 초기화
-      setFormData(prev => ({
-        ...prev,
-        image_url: '',
-        file_path: ''
-      }))
-      return
-    }
+    if (!formData.image_url && !formData.file_path) return
+    if (!window.confirm(t('removeImageConfirm'))) return
 
-    try {
-      // Storage에서 파일 삭제 시도 (실패해도 계속 진행)
-      if (formData.file_path) {
-        try {
-          await supabase.storage
-            .from('tour-expenses')
-            .remove([formData.file_path])
-        } catch (error) {
-          console.warn('Storage 파일 삭제 실패 (무시):', error)
-        }
+    const uploadedPath = formData.file_path
+    setFormData((prev) => ({
+      ...prev,
+      image_url: '',
+      file_path: '',
+    }))
+
+    // 이미 저장된 지출은 취소하면 원본이 돌아와야 하므로 Storage는 저장 시에만 삭제
+    if (!editingExpense && uploadedPath) {
+      try {
+        await supabase.storage.from('tour-expenses').remove([uploadedPath])
+      } catch (error) {
+        console.warn('Storage 파일 삭제 실패 (무시):', error)
       }
-
-      // formData에서 이미지 정보 제거
-      setFormData(prev => ({
-        ...prev,
-        image_url: '',
-        file_path: ''
-      }))
-    } catch (error) {
-      console.error('이미지 삭제 오류:', error)
-      // 오류가 발생해도 formData는 초기화
-      setFormData(prev => ({
-        ...prev,
-        image_url: '',
-        file_path: ''
-      }))
     }
   }
 
@@ -1950,6 +2042,16 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
         throw new Error(t('expenseUpdatePermissionDenied'))
       }
 
+      const previousPath = editingExpense.file_path?.trim() || ''
+      const nextPath = String(payload.file_path || '').trim()
+      if (previousPath && previousPath !== nextPath) {
+        try {
+          await supabase.storage.from('tour-expenses').remove([previousPath])
+        } catch (storageError) {
+          console.warn('이전 영수증 Storage 삭제 실패 (무시):', storageError)
+        }
+      }
+
       const amountNum = payload.amount as number
       const finalPaidTo = payload.paid_to as string | null
       const reimbPayload = {
@@ -1968,8 +2070,8 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                 amount: amountNum,
                 payment_method: payload.payment_method as string | null,
                 note: payload.note as string | null,
-                image_url: (payload.image_url as string | null) ?? expense.image_url,
-                file_path: (payload.file_path as string | null) ?? expense.file_path,
+                image_url: (payload.image_url as string | null) ?? null,
+                file_path: (payload.file_path as string | null) ?? null,
                 ...reimbPayload,
               }
             : expense
@@ -2018,6 +2120,16 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
       if (error) throw error
       if (!data?.id) {
         throw new Error(t('expenseUpdatePermissionDenied'))
+      }
+
+      const previousPath = editingExpense.file_path?.trim() || ''
+      const nextPath = String(payload.file_path || '').trim()
+      if (previousPath && previousPath !== nextPath) {
+        try {
+          await supabase.storage.from('tour-expenses').remove([previousPath])
+        } catch (storageError) {
+          console.warn('이전 영수증 Storage 삭제 실패 (무시):', storageError)
+        }
       }
 
       onExpenseUpdated?.()
@@ -2988,9 +3100,11 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                     </a>
                   </div>
                   <div className="flex-1 min-h-0 overflow-auto overscroll-contain p-3 bg-slate-100/90">
-                    <img
+                    <ReceiptSafeImage
                       src={viewingReceipt.imageUrl}
+                      filePath={expenseForViewingReceipt?.file_path ?? null}
                       alt={`${viewingReceipt.paidFor} receipt`}
+                      errorLabel={t('receiptImageLoadErrorAlt')}
                       style={{
                         width: `${100 * receiptViewerZoom}%`,
                         maxWidth: 'none',
@@ -2999,11 +3113,6 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                         transformOrigin: 'center center',
                       }}
                       className="rounded-lg shadow-md block"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement
-                        target.src = '/placeholder-receipt.png'
-                        target.alt = t('receiptImageLoadErrorAlt')
-                      }}
                     />
                   </div>
                 </div>
@@ -3630,7 +3739,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
         showAddForm &&
         createPortal(
         <div 
-          className={`fixed inset-0 bg-black/75 flex items-center justify-center p-2 sm:p-4 ${TOUR_EXPENSE_MODAL_PORTAL_Z} ${TOUR_EXPENSE_MODAL_PORTAL_INTERACTION}`}
+          className={`fixed inset-0 bg-black/75 flex items-stretch sm:items-center justify-center p-0 sm:p-4 ${TOUR_EXPENSE_MODAL_PORTAL_Z} ${TOUR_EXPENSE_MODAL_PORTAL_INTERACTION}`}
           onClick={(e) => {
             // 모달 배경 클릭 시에만 닫기 (모달 내부 클릭은 무시)
             if (Date.now() < expenseModalBackdropSuppressedUntilRef.current) return
@@ -3646,7 +3755,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
           }}
         >
           <div 
-            className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden"
+            className="bg-white rounded-none sm:rounded-lg shadow-xl w-full max-w-6xl h-[100dvh] max-h-[100dvh] sm:h-auto sm:max-h-[92vh] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3 p-3 sm:p-4 border-b shrink-0">
@@ -3656,7 +3765,8 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                   <h3 className="text-lg font-semibold text-gray-900">
                     {editingExpense ? '지출 수정' : t('addExpense')}
                   </h3>
-                  <p className="text-sm text-gray-500 mt-0.5">{t('expenseFormLayoutHint')}</p>
+                  <p className="text-sm text-gray-500 mt-0.5 hidden lg:block">{t('expenseFormLayoutHint')}</p>
+                  <p className="text-sm text-gray-500 mt-0.5 lg:hidden">{t('expenseFormLayoutHintMobile')}</p>
                 </div>
               </div>
               <button
@@ -3681,29 +3791,35 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
             <form onSubmit={handleAddExpense} className="flex flex-1 min-h-0 flex-col">
               <div className="flex flex-1 min-h-0 flex-col lg:flex-row">
                 {/* 왼쪽: 영수증 크게 보기 + 업로드 */}
-                <div className="flex flex-col flex-1 min-w-0 min-h-[30vh] lg:min-h-0 border-b lg:border-b-0 lg:border-r border-gray-200">
-                  <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-100 bg-slate-50 shrink-0">
+                <div className="flex flex-col min-w-0 shrink-0 lg:h-auto lg:min-h-0 lg:flex-1 lg:shrink border-b lg:border-b-0 lg:border-r border-gray-200">
+                  <div className="flex items-center gap-1.5 sm:flex-wrap sm:gap-2 px-2 sm:px-3 py-2 border-b border-gray-100 bg-slate-50 shrink-0">
                     <button
                       type="button"
                       onClick={() =>
                         setFormReceiptZoom((z) => Math.max(0.25, Math.round((z - 0.25) * 100) / 100))
                       }
                       disabled={!formData.image_url}
-                      className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40"
+                      className="inline-flex items-center justify-center h-11 w-11 sm:h-9 sm:w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40"
                       title={t('receiptViewerZoomOut')}
                     >
                       <ZoomOut className="w-4 h-4" />
                     </button>
-                    <span className="text-xs text-gray-600 tabular-nums min-w-[3rem] text-center">
+                    <button
+                      type="button"
+                      onClick={() => setFormReceiptZoom(1)}
+                      disabled={!formData.image_url}
+                      className="h-11 min-w-[3rem] px-1 text-xs text-gray-600 tabular-nums rounded-lg hover:bg-white disabled:opacity-40 sm:h-auto sm:pointer-events-none sm:hover:bg-transparent"
+                      title={t('receiptViewerZoomReset')}
+                    >
                       {Math.round(formReceiptZoom * 100)}%
-                    </span>
+                    </button>
                     <button
                       type="button"
                       onClick={() =>
                         setFormReceiptZoom((z) => Math.min(4, Math.round((z + 0.25) * 100) / 100))
                       }
                       disabled={!formData.image_url}
-                      className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40"
+                      className="inline-flex items-center justify-center h-11 w-11 sm:h-9 sm:w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40"
                       title={t('receiptViewerZoomIn')}
                     >
                       <ZoomIn className="w-4 h-4" />
@@ -3712,7 +3828,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                       type="button"
                       onClick={() => setFormReceiptZoom(1)}
                       disabled={!formData.image_url}
-                      className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 disabled:opacity-40"
+                      className="hidden sm:inline-flex px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 disabled:opacity-40"
                     >
                       {t('receiptViewerZoomReset')}
                     </button>
@@ -3725,7 +3841,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                               (r) => ((r + 270) % 360) as ReceiptOcrRotationDegrees
                             )
                           }
-                          className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+                          className="inline-flex items-center justify-center h-11 w-11 sm:h-9 sm:w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
                           title={t('receiptOcrRotateLeft')}
                         >
                           <RotateCcw className="w-4 h-4" />
@@ -3737,7 +3853,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                               (r) => ((r + 90) % 360) as ReceiptOcrRotationDegrees
                             )
                           }
-                          className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+                          className="inline-flex items-center justify-center h-11 w-11 sm:h-9 sm:w-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
                           title={t('receiptOcrRotateRight')}
                         >
                           <RotateCw className="w-4 h-4" />
@@ -3746,16 +3862,16 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                           type="button"
                           onClick={() => handleRunFormReceiptOcr(false)}
                           disabled={ocrLoadingExpenseId === '__draft__'}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
+                          className="inline-flex items-center justify-center h-11 px-2.5 sm:h-auto sm:px-3 sm:py-1.5 text-xs font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
                           title={t('receiptOcrAction')}
                         >
-                          {ocrLoadingExpenseId === '__draft__' ? '…' : t('receiptOcrFormRunAction')}
+                          {ocrLoadingExpenseId === '__draft__' ? '…' : 'OCR'}
                         </button>
                         <button
                           type="button"
                           onClick={() => handleRunFormReceiptOcr(true)}
                           disabled={ocrLoadingExpenseId === '__draft__'}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-purple-300 bg-purple-50 text-purple-800 hover:bg-purple-100 disabled:opacity-50"
+                          className="hidden sm:inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-purple-300 bg-purple-50 text-purple-800 hover:bg-purple-100 disabled:opacity-50"
                           title={t('receiptOcrEnhancedAction')}
                         >
                           <Sparkles className="w-3.5 h-3.5" />
@@ -3768,17 +3884,17 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                         href={formData.image_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 ml-auto px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+                        className="hidden sm:inline-flex items-center justify-center gap-1.5 ml-auto px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
                       >
                         <ImageIcon className="w-3.5 h-3.5" />
                         {t('openInNewWindow')}
                       </a>
                     ) : (
-                      <span className="ml-auto text-xs text-gray-500">{t('receiptPhoto')}</span>
+                      <span className="hidden sm:inline ml-auto text-xs text-gray-500">{t('receiptPhoto')}</span>
                     )}
                   </div>
                   <div
-                    className={`flex-1 min-h-0 overflow-auto p-3 bg-slate-100/90 ${
+                    className={`h-[38dvh] min-h-[240px] overflow-auto p-3 bg-slate-100/90 lg:h-auto lg:flex-1 lg:min-h-0 ${
                       dragOver ? 'ring-2 ring-inset ring-primary' : ''
                     }`}
                     onDragOver={(e) => {
@@ -3799,10 +3915,12 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                     onClick={(e) => e.stopPropagation()}
                   >
                     {formData.image_url ? (
-                      <div className="relative flex items-center justify-center min-h-[180px]">
-                        <img
+                      <div className="relative flex h-full min-h-[240px] items-center justify-center">
+                        <ReceiptSafeImage
                           src={formData.image_url}
+                          filePath={formData.file_path}
                           alt={t('receipt')}
+                          errorLabel={t('receiptImageLoadErrorAlt')}
                           style={{
                             width: `${100 * formReceiptZoom}%`,
                             maxWidth: 'none',
@@ -3811,19 +3929,15 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                             transformOrigin: 'center center',
                           }}
                           className="rounded-lg shadow-md block"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement
-                            target.src = '/placeholder-receipt.png'
-                            target.alt = t('receiptImageLoadErrorAlt')
-                          }}
                         />
                         <button
                           type="button"
                           onClick={handleImageRemove}
-                          className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 transition-colors shadow"
+                          className="absolute top-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 transition-colors"
                           title={t('removeImage') || '이미지 삭제'}
+                          aria-label={t('removeImage') || '이미지 삭제'}
                         >
-                          <X size={16} />
+                          <Trash2 className="h-4 w-4" />
                         </button>
                         {ocrLoadingExpenseId === '__draft__' && (
                           <p className="mt-2 text-xs text-purple-600">{t('receiptOcrAnalyzingAfterUpload')}</p>
@@ -3888,7 +4002,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                         }
                       }}
                       disabled={uploading}
-                      className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-1 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <ImageIcon size={16} />
                       {t('camera')}
@@ -3901,7 +4015,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                         fileInputRef.current?.click()
                       }}
                       disabled={uploading}
-                      className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-1 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-gray-100 px-4 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <Upload size={16} />
                       {t('file')}
@@ -3910,7 +4024,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                 </div>
 
                 {/* 오른쪽: 지출 입력 폼 */}
-                <div className="flex flex-col flex-1 min-w-0 min-h-[36vh] lg:max-h-[calc(92vh-5.5rem)] bg-white">
+                <div className="flex flex-col flex-1 min-w-0 min-h-0 lg:max-h-[calc(92vh-5.5rem)] bg-white">
                   <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-4 min-h-0">
               {formInlineOcrOpen && ocrReview && showAddForm ? (
                 <div className="rounded-xl border border-purple-200 bg-purple-50/60 p-4 space-y-3">
@@ -4453,13 +4567,13 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
               )}
                   </div>
 
-                  <div className="flex flex-col gap-2 p-4 border-t border-gray-100 bg-white shrink-0 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-col gap-2 p-3 sm:p-4 border-t border-gray-100 bg-white shrink-0 sm:flex-row sm:items-center sm:justify-between">
                     {editingExpense ? (
                       <button
                         type="button"
                         onClick={() => void handleDeleteEditingExpense()}
                         disabled={uploading}
-                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                        className="inline-flex h-12 w-full sm:h-auto sm:w-auto items-center justify-center gap-1.5 rounded-xl border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
                       >
                         <Trash2 className="h-4 w-4" />
                         {locale === 'ko' ? '삭제' : 'Delete'}
@@ -4467,7 +4581,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                     ) : (
                       <span />
                     )}
-                    <div className="flex flex-wrap gap-2 sm:justify-end">
+                    <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
                       <button
                         type="button"
                         onClick={editingExpense ? handleCancelEdit : () => {
@@ -4475,7 +4589,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                           setShowMoreCategories(false)
                           setPaymentMethodTab('own')
                         }}
-                        className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 sm:flex-none"
+                        className="inline-flex h-12 items-center justify-center rounded-xl px-4 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 sm:h-auto sm:flex-none"
                       >
                         {t('cancel')}
                       </button>
@@ -4484,7 +4598,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                           type="button"
                           disabled={uploading}
                           onClick={() => void handleRejectEditingExpense()}
-                          className="flex-1 px-4 py-2 rounded-lg border border-red-200 bg-red-50 text-red-800 hover:bg-red-100 disabled:opacity-50 sm:flex-none"
+                          className="inline-flex h-12 items-center justify-center rounded-xl px-4 text-sm font-medium border border-red-200 bg-red-50 text-red-800 hover:bg-red-100 disabled:opacity-50 sm:h-auto sm:flex-none"
                         >
                           {locale === 'ko' ? '반려' : 'Reject'}
                         </button>
@@ -4492,7 +4606,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                       <button
                         type="submit"
                         disabled={uploading}
-                        className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 sm:flex-none"
+                        className="inline-flex h-12 items-center justify-center rounded-xl px-4 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 sm:h-auto sm:flex-none"
                       >
                         {uploading
                           ? (editingExpense ? '수정 중...' : t('buttons.registering'))
@@ -4503,7 +4617,7 @@ const TourExpenseManager = forwardRef<TourExpenseManagerHandle, TourExpenseManag
                           type="button"
                           disabled={uploading}
                           onClick={() => void handleSaveAndApproveExpense()}
-                          className="flex-1 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 sm:flex-none"
+                          className="inline-flex h-12 items-center justify-center rounded-xl px-4 text-sm font-medium whitespace-nowrap bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 sm:h-auto sm:flex-none"
                         >
                           {locale === 'ko' ? '저장 후 승인' : 'Save & approve'}
                         </button>

@@ -12,6 +12,7 @@ import {
   RefreshCw,
   X,
 } from 'lucide-react'
+import QrCodeSvg from '@/components/QrCodeSvg'
 import { fetchApiWithAuthWhenReady } from '@/lib/api-client-bearer'
 import { DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
 
@@ -46,10 +47,6 @@ function parseUsdAmount(raw: string): number {
 
 function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`
-}
-
-function qrImageUrl(data: string): string {
-  return `https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=8&data=${encodeURIComponent(data)}`
 }
 
 export default function GuidePickupChargeModal({
@@ -263,13 +260,10 @@ export default function GuidePickupChargeModal({
 
             <div className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-white p-4">
               <p className="text-sm font-semibold text-foreground">{t('qrTitle')}</p>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={qrImageUrl(result.sitePayUrl)}
-                alt={t('qrTitle')}
-                width={280}
-                height={280}
-                className="h-[240px] w-[240px] rounded-xl bg-white sm:h-[280px] sm:w-[280px]"
+              <QrCodeSvg
+                value={result.sitePayUrl}
+                label={t('qrTitle')}
+                missingLabel={t('qrMissing')}
               />
               <p className="text-center text-xs leading-5 text-muted-foreground">{t('qrHint')}</p>
             </div>

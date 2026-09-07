@@ -1,9 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
+import dayjs from 'dayjs'
 import { todayInLasVegas } from '@/lib/dailyReport/dateUtils'
 import { isGuideBackupTour } from '@/lib/guideBackupTour'
+import { tourCoversCalendarDate } from '@/lib/scheduleVehicleOilMaintenance'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { normalizeReservationIds, parseTourAssignmentEmails } from '@/utils/tourUtils'
+
+/** MNGC3N 최대 4일. 시작일이 이 구간 안인 투어만 조회한다. */
+export const PHOTO_TOUR_MAX_SPAN_DAYS = 4
 
 export type TodayPhotoTourRow = {
   id: string
@@ -13,6 +18,7 @@ export type TodayPhotoTourRow = {
   tour_guide_id: string | null
   assistant_id: string | null
   tour_start_datetime: string | null
+  tour_end_datetime?: string | null
   reservation_ids: unknown
   product_id: string | null
   products?: unknown
@@ -97,6 +103,15 @@ export function pickTodayPhotoTour(
   return pool[0]
 }
 
+export function photoTourLookbackStart(todayYmd: string): string {
+  return dayjs(todayYmd).subtract(PHOTO_TOUR_MAX_SPAN_DAYS - 1, 'day').format('YYYY-MM-DD')
+}
+
+/** 당일 투어 + 1박2일 2일차처럼 오늘이 진행 구간에 들어가는 투어 */
+export function toursCoveringDate(tours: TodayPhotoTourRow[], dateYmd: string): TodayPhotoTourRow[] {
+  return tours.filter((tour) => tourCoversCalendarDate(tour, dateYmd))
+}
+
 function unwrapProduct(products: unknown): {
   name?: string | null
   name_ko?: string | null
@@ -138,20 +153,22 @@ export async function resolveTodayPhotoTourForGuide(
   const needle = email.toLowerCase().trim()
   if (!needle) return empty
 
+  const lookbackStart = photoTourLookbackStart(today)
   const { data, error } = await db
     .from('tours')
     .select(
-      'id, tour_date, tour_status, assignment_status, tour_guide_id, assistant_id, tour_start_datetime, reservation_ids, product_id, products(name, name_ko, name_en)'
+      'id, tour_date, tour_status, assignment_status, tour_guide_id, assistant_id, tour_start_datetime, tour_end_datetime, reservation_ids, product_id, products(name, name_ko, name_en)'
     )
-    .eq('tour_date', today)
+    .gte('tour_date', lookbackStart)
+    .lte('tour_date', today)
 
   if (error) throw error
 
-  const rows = (data || []) as TodayPhotoTourRow[]
-  const picked = pickTodayPhotoTour(rows, needle, nowMs)
+  const covering = toursCoveringDate((data || []) as TodayPhotoTourRow[], today)
+  const picked = pickTodayPhotoTour(covering, needle, nowMs)
   if (!picked) return empty
 
-  const candidateCount = rows.filter(
+  const candidateCount = covering.filter(
     (tour) => isGuideAssignedToTour(needle, tour) && !isTourCancelled(tour.tour_status)
   ).length
 
