@@ -1095,6 +1095,11 @@ export default function AdminReservations() {
   const [reservationIdsWithPayments, setReservationIdsWithPayments] = useState<Set<string>>(new Set())
   const [paymentRecordsByReservationIdForActionBadge, setPaymentRecordsByReservationIdForActionBadge] =
     useState<Map<string, PaymentRecordLike[]>>(() => new Map())
+  /** 예약 카드 2번째 줄 잔금 — 잔금 수령 반영용 입금 내역 */
+  const [paymentRecordsByReservationIdForCards, setPaymentRecordsByReservationIdForCards] =
+    useState<Map<string, PaymentRecordLike[]>>(() => new Map())
+  /** 입금 내역 재조회 — 잔금 수령 후 카드 뱃지가 최초 잔금을 유지하지 않도록 */
+  const [paymentRecordsRefreshNonce, setPaymentRecordsRefreshNonce] = useState(0)
   /** 운영 큐 배지용 payment_records 조회가 끝난 id 집합 시그니처 */
   const [operationalPaymentsReadyKey, setOperationalPaymentsReadyKey] = useState<string | null>(null)
 
@@ -1633,6 +1638,19 @@ export default function AdminReservations() {
     return [...idSet].sort().join(',')
   }, [operationalMetricsSnapshot])
 
+  const cardPaymentScopeKey = useMemo(
+    () => [...new Set(reservations.map((r) => String(r.id ?? '').trim()).filter(Boolean))].sort().join(','),
+    [reservations]
+  )
+
+  const paymentRecordsByReservationIdForCardBalance = useMemo(() => {
+    const merged = new Map(paymentRecordsByReservationIdForActionBadge)
+    paymentRecordsByReservationIdForCards.forEach((records, id) => {
+      merged.set(id, records)
+    })
+    return merged
+  }, [paymentRecordsByReservationIdForActionBadge, paymentRecordsByReservationIdForCards])
+
   // 운영 큐 배지(처리 필요) — payment_records는 스냅샷 id만 대상으로 조회
   useEffect(() => {
     if (!operationalPaymentScopeKey) {
@@ -1679,6 +1697,47 @@ export default function AdminReservations() {
       cancelled = true
     }
   }, [operationalPaymentScopeKey])
+
+  // 예약 카드 잔금 — 현재 목록 id의 입금 내역(잔금 수령 반영)
+  useEffect(() => {
+    if (!cardPaymentScopeKey) {
+      setPaymentRecordsByReservationIdForCards(new Map())
+      return
+    }
+    let cancelled = false
+    const ids = cardPaymentScopeKey.split(',').filter(Boolean)
+    const load = async () => {
+      const byRes = new Map<string, PaymentRecordLike[]>()
+      const chunkSize = 200
+      for (let i = 0; i < ids.length; i += chunkSize) {
+        const chunk = ids.slice(i, i + chunkSize)
+        const { data } = await supabase
+          .from('payment_records')
+          .select('reservation_id, payment_status, amount')
+          .in('reservation_id', chunk)
+        if (cancelled) return
+        if (data) {
+          data.forEach((row) => {
+            const rid = String((row as { reservation_id: string }).reservation_id ?? '').trim()
+            if (!rid) return
+            const rec: PaymentRecordLike = {
+              payment_status: String((row as { payment_status?: string | null }).payment_status ?? ''),
+              amount: Number((row as { amount?: unknown }).amount) || 0,
+            }
+            const arr = byRes.get(rid) ?? []
+            arr.push(rec)
+            byRes.set(rid, arr)
+          })
+        }
+      }
+      if (cancelled) return
+      setPaymentRecordsByReservationIdForCards(byRes)
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [cardPaymentScopeKey, paymentRecordsRefreshNonce])
 
   /**
    * 예약 ID → 투어 ID: tours.reservation_ids에 실제로 포함된 투어만 반영.
@@ -3612,6 +3671,7 @@ export default function AdminReservations() {
     invalidateAdminReservationViewCaches()
     setOperationalQueueSnapshot(null)
     clearOperationalBadgeSnapshot()
+    setPaymentRecordsRefreshNonce((n) => n + 1)
     operationalQueueFetchGenRef.current += 1
     operationalQueueInFlightRef.current = false
     await Promise.all([
@@ -5313,9 +5373,14 @@ export default function AdminReservations() {
 
   // ?????? ?? ??? - useCallback??? ????????
   const handleClosePricingModal = useCallback(() => {
+    const id = pricingModalReservation?.id
     setShowPricingModal(false)
     setPricingModalReservation(null)
-  }, [])
+    if (id) {
+      void refreshReservationPricingForActionRequired([id])
+    }
+    setPaymentRecordsRefreshNonce((n) => n + 1)
+  }, [pricingModalReservation?.id, refreshReservationPricingForActionRequired])
   const getTourDetailModalTitle = useCallback(
     (tourId: string) => {
       const tourMeta = tourInfoMap.get(tourId)
@@ -6106,6 +6171,7 @@ export default function AdminReservations() {
           optionChoices={(optionChoices as Array<{ id: string; name: string }>) || []}
           tourInfoMap={tourInfoMap}
           reservationPricingMap={reservationPricingMap}
+          paymentRecordsByReservationId={paymentRecordsByReservationIdForCardBalance}
           locale={locale}
           onPricingInfoClick={handlePricingInfoClick}
           onCreateTour={handleCreateTour}
@@ -6161,6 +6227,7 @@ export default function AdminReservations() {
       optionChoices,
       tourInfoMap,
       reservationPricingMap,
+      paymentRecordsByReservationIdForCardBalance,
       locale,
       handlePricingInfoClick,
       handleCreateTour,
@@ -7051,6 +7118,7 @@ export default function AdminReservations() {
                 onClick={() => {
                   setShowPaymentRecords(false)
                   setSelectedReservationForPayment(null)
+                  setPaymentRecordsRefreshNonce((n) => n + 1)
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -7186,6 +7254,7 @@ export default function AdminReservations() {
             optionChoices={(optionChoices as Array<{ id: string; name: string }>) || []}
             tourInfoMap={tourInfoMap}
             reservationPricingMap={reservationPricingMap}
+            paymentRecordsByReservationId={paymentRecordsByReservationIdForCardBalance}
             locale={locale}
             onPricingInfoClick={handlePricingInfoClick}
             onCreateTour={handleCreateTour}
@@ -7269,6 +7338,7 @@ export default function AdminReservations() {
             optionChoices={(optionChoices as Array<{ id: string; name: string }>) || []}
             tourInfoMap={tourInfoMap}
             reservationPricingMap={reservationPricingMap}
+            paymentRecordsByReservationId={paymentRecordsByReservationIdForCardBalance}
             locale={locale}
             onPricingInfoClick={handlePricingInfoClick}
             onCreateTour={handleCreateTour}
@@ -7555,6 +7625,7 @@ export default function AdminReservations() {
             optionChoices={(optionChoices as Array<{ id: string; name: string }>) || []}
             tourInfoMap={tourInfoMap}
             reservationPricingMap={reservationPricingMap}
+            paymentRecordsByReservationId={paymentRecordsByReservationIdForCardBalance}
             locale={locale}
             onPricingInfoClick={handlePricingInfoClick}
             onCreateTour={handleCreateTour}

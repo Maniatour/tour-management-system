@@ -5040,7 +5040,7 @@ export default function ReservationForm({
             String(fd.commission_base_price) !== ''
               ? Number(fd.commission_base_price)
               : onlinePaymentForCompute ||
-                Math.max(0, productTotalForSettlement - toN(fd.couponDiscount) - toN(fd.additionalDiscount))
+                Math.max(0, productTotalForSettlement - toN(fd.couponDiscount))
           const adjustedBase = Math.max(0, basePrice)
           commissionAmt = computeChannelCommissionAmountUsd(adjustedBase, pct)
         }

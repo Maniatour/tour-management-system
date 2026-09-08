@@ -42,7 +42,9 @@ import { QuickPaymentRequestModal } from '@/components/customer/QuickPaymentRequ
 import {
   getBalanceAmountForDisplay,
   residentFeesUsdFromCustomerRows,
+  resolvePaymentRecordsForReservation,
   withNormalizedBalanceAmountForDisplay,
+  type PaymentRecordLike,
 } from '@/utils/reservationPricingBalance'
 
 function getLanguageFlagCountryCode(language: string | undefined | null): string {
@@ -214,6 +216,8 @@ interface ReservationCardItemProps {
     not_included_price?: number
     currency?: string
   }>
+  /** 입금 내역 — 잔금 뱃지를 가격 탭과 같이 잔금 수령 반영값으로 표시 */
+  paymentRecordsByReservationId?: Map<string, PaymentRecordLike[]>
   locale: string
   onPricingInfoClick: (reservation: Reservation) => void
   onCreateTour: (reservation: Reservation) => void
@@ -401,6 +405,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   optionChoices: _optionChoices,
   tourInfoMap,
   reservationPricingMap,
+  paymentRecordsByReservationId,
   locale,
   onPricingInfoClick,
   onCreateTour,
@@ -526,6 +531,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   const customerBalanceDue = useMemo(() => {
     const pricing = reservationPricingMap.get(reservation.id)
     if (!pricing) return 0
+    const paymentRecords = resolvePaymentRecordsForReservation(
+      paymentRecordsByReservationId,
+      reservation.id
+    )
     return getBalanceAmountForDisplay(
       withNormalizedBalanceAmountForDisplay(pricing),
       null,
@@ -537,10 +546,12 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
       {
         reservationStatus: reservation.status,
         residentFeeUsd: residentFeesUsdFromCustomerRows(prefetchedResidentCustomerRows ?? []),
+        ...(paymentRecords.length > 0 ? { paymentRecords } : {}),
       }
     )
   }, [
     reservationPricingMap,
+    paymentRecordsByReservationId,
     reservation.id,
     reservation.adults,
     reservation.child,

@@ -5,6 +5,8 @@ import {
   channelPaymentLooksLikeNotIncludedDoubleSubtract,
   computeChannelSettlementAmount,
   computeOtaChannelPaymentFromDiscountedProduct,
+  otaPricingFormExtrasForCompanyRevenue,
+  splitOtaAdditionalDiscountAgainstRemaining,
 } from '@/utils/channelSettlement'
 
 test('channelIsOtaForPricingSection recognizes Klook by id and name', () => {
@@ -14,6 +16,84 @@ test('channelIsOtaForPricingSection recognizes Klook by id and name', () => {
     true
   )
   assert.equal(channelIsOtaForPricingSection({ id: 'homepage', name: 'Homepage' }), false)
+})
+
+test('OTA channel payment subtracts coupon only, not additional discount', () => {
+  assert.equal(
+    computeOtaChannelPaymentFromDiscountedProduct({
+      productPriceTotal: 440,
+      couponDiscount: 40,
+      additionalDiscount: 50,
+    }),
+    400
+  )
+  assert.equal(
+    computeOtaChannelPaymentFromDiscountedProduct({
+      productPriceTotal: 440,
+      couponDiscount: 0,
+      additionalDiscount: 50,
+    }),
+    440
+  )
+})
+
+test('OTA additional discount reduces remaining first, then refund', () => {
+  assert.deepEqual(
+    splitOtaAdditionalDiscountAgainstRemaining({
+      additionalDiscount: 50,
+      customerDueAfterDiscount: 580,
+      amountPaidTowardDue: 440,
+    }),
+    {
+      remainingAfterDiscount: 140,
+      remainingBeforeDiscount: 190,
+      appliedToRemaining: 50,
+      refundNeeded: 0,
+    }
+  )
+  assert.deepEqual(
+    splitOtaAdditionalDiscountAgainstRemaining({
+      additionalDiscount: 50,
+      customerDueAfterDiscount: 390,
+      amountPaidTowardDue: 440,
+    }),
+    {
+      remainingAfterDiscount: 0,
+      remainingBeforeDiscount: 0,
+      appliedToRemaining: 0,
+      refundNeeded: 50,
+    }
+  )
+  assert.deepEqual(
+    splitOtaAdditionalDiscountAgainstRemaining({
+      additionalDiscount: 50,
+      customerDueAfterDiscount: 420,
+      amountPaidTowardDue: 440,
+    }),
+    {
+      remainingAfterDiscount: 0,
+      remainingBeforeDiscount: 30,
+      appliedToRemaining: 30,
+      refundNeeded: 20,
+    }
+  )
+})
+
+test('OTA company extras always include additional discount even when omit extras', () => {
+  const extras = otaPricingFormExtrasForCompanyRevenue({
+    isOTAChannel: true,
+    omitOtaExtras: true,
+    additionalDiscount: 50,
+    additionalCost: 0,
+    tax: 0,
+    cardFee: 0,
+    prepaymentCost: 0,
+    customerPaymentNet: 390,
+    channelPaymentNet: 440,
+    notIncludedTotalUsd: 0,
+    reservationOptionsTotalPrice: 0,
+  })
+  assert.equal(extras.additionalDiscount, 50)
 })
 
 test('OTA channel payment is sale × pax, not sale minus not-included', () => {

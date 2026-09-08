@@ -68,12 +68,10 @@ export default function SchedulePastMissingReceiptsModal({
         alert(isKo ? `저장 실패: ${error}` : `Save failed: ${error}`)
         return
       }
-      setVisibleRows((prev) => {
-        const next = prev.filter((r) => r.id !== tour.id)
-        onCountsChangeRef.current?.(next.length)
-        return next
-      })
+      const nextVisible = visibleRows.filter((r) => r.id !== tour.id)
+      setVisibleRows(nextVisible)
       setHiddenRows((prev) => [tour, ...prev.filter((r) => r.id !== tour.id)])
+      onCountsChangeRef.current?.(nextVisible.length)
     } finally {
       setSavingId(null)
     }
@@ -88,11 +86,9 @@ export default function SchedulePastMissingReceiptsModal({
         return
       }
       setHiddenRows((prev) => prev.filter((r) => r.id !== tour.id))
-      setVisibleRows((prev) => {
-        const next = [tour, ...prev.filter((r) => r.id !== tour.id)]
-        onCountsChangeRef.current?.(next.length)
-        return next
-      })
+      const nextVisible = [tour, ...visibleRows.filter((r) => r.id !== tour.id)]
+      setVisibleRows(nextVisible)
+      onCountsChangeRef.current?.(nextVisible.length)
     } finally {
       setSavingId(null)
     }

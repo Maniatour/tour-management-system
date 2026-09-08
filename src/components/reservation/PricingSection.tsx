@@ -46,6 +46,7 @@ import {
   shouldOmitOtaExtrasFromCompanyRevenueSum,
   otaReservationOptionsForCompanyRevenue,
   otaPricingFormExtrasForCompanyRevenue,
+  splitOtaAdditionalDiscountAgainstRemaining,
 } from '@/utils/channelSettlement'
 import { computePrepaymentTipOperatingDeduction } from '@/utils/storedCompanyRevenue'
 import {
@@ -1161,6 +1162,7 @@ export default function PricingSection({
     pricingAdults: number
     child: number
     infant: number
+    additionalDiscount: number
   }
   const prevBalanceDepsRef = useRef<BalanceDeps | null>(null)
 
@@ -1195,6 +1197,7 @@ export default function PricingSection({
       pricingAdults: formData.pricingAdults,
       child: formData.child,
       infant: formData.infant,
+      additionalDiscount: Math.abs(Number(formData.additionalDiscount) || 0),
     }
 
     const prev = prevBalanceDepsRef.current
@@ -1210,7 +1213,8 @@ export default function PricingSection({
       Math.abs(prev.residentFeesUsd - currentDeps.residentFeesUsd) > 0.01 ||
       prev.pricingAdults !== currentDeps.pricingAdults ||
       prev.child !== currentDeps.child ||
-      prev.infant !== currentDeps.infant
+      prev.infant !== currentDeps.infant ||
+      Math.abs(prev.additionalDiscount - currentDeps.additionalDiscount) > 0.01
 
     if (!depsChanged) return
 
@@ -1231,7 +1235,12 @@ export default function PricingSection({
       balanceDifference > 0.01
 
     const manualRefundAmount = Math.max(0, Number(formData.refundAmount) || 0)
-    const preserveExistingPositiveBalance = calculatedBalance === 0 && currentBalance > 0.01 && manualRefundAmount <= 0
+    const additionalDiscMag = Math.abs(Number(formData.additionalDiscount) || 0)
+    const preserveExistingPositiveBalance =
+      calculatedBalance === 0 &&
+      currentBalance > 0.01 &&
+      manualRefundAmount <= 0 &&
+      additionalDiscMag <= 0.005
 
     if (shouldWrite && !preserveExistingPositiveBalance) {
       setFormData((prevForm: typeof formData) => ({
@@ -1253,6 +1262,7 @@ export default function PricingSection({
     formData.child,
     formData.infant,
     formData.refundAmount,
+    formData.additionalDiscount,
     formData.totalPrice,
     (formData as { status?: string }).status,
     notIncludedBreakdown.totalUsd,
@@ -1335,14 +1345,15 @@ export default function PricingSection({
       : 0
     
     if (formData.productPriceTotal > 0) {
-      // 할인 후 상품가 계산 (불포함 가격 제외) = 채널 결제 금액 기준
+      // 할인 후 상품가 계산 (불포함 가격 제외). OTA ③은 쿠폰만, 자체 채널 보증금은 쿠폰+추가할인.
+      const additionalDiscMag = Math.abs(Number(formData.additionalDiscount) || 0)
       const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
       
-      if (discountedPrice > 0) {
+      if (discountedPrice > 0 || (isOTAChannel && formData.productPriceTotal - formData.couponDiscount > 0)) {
         const currentDeposit = formData.depositAmount || 0
         const priceDifference = Math.abs(currentDeposit - discountedPrice)
         
-        // OTA 채널: depositAmount = 고객 총 결제(불포함 제외)·잔액 반영 가능. 채널 결제 금액(③)=할인 후 상품가 기준 자동 설정.
+        // OTA 채널: depositAmount = 채널이 받은 금액(쿠폰만 반영). 추가할인은 잔금/환불.
         // 단, 입금 내역이 있거나 DB에서 불러온 deposit_amount가 있으면 고객 실제 지불액(보증금)을 덮어쓰지 않음
         if (isOTAChannel) {
           const reservationCancelled = isCancelledReservationStatus(formData.status)
@@ -1370,18 +1381,18 @@ export default function PricingSection({
           }
 
           const totalCustomerPayment = effectiveTotalCustomerPayment()
-          /** 채널 결제 금액(③) = 할인 후 상품가 (추가 할인·쿠폰 모두 반영, 불포함 제외) */
+          /** 채널 결제 금액(③) = 판매가×인원 − 쿠폰만 (추가할인은 ④·잔금/환불) */
           const salePriceTimesPax = computeOtaChannelPaymentFromDiscountedProduct({
             productPriceTotal: canonicalOtaProductTotal,
             couponDiscount: formData.couponDiscount,
-            additionalDiscount: formData.additionalDiscount,
           })
-          /** 불포함(현장/추가 결제) 금액이 있으면 고객 총 결제 = 판매·옵션 등 + 불포함. 보증금(실제 지불액)은 불포함을 제외한 금액, 잔액(투어 당일) = 불포함 합. */
+          /** 불포함(현장/추가 결제) 금액이 있으면 고객 총 결제 = 판매·옵션 등 + 불포함. 보증금은 채널 수령액(추가할인 제외). */
           const notIncludedTotal = notIncludedBreakdown.totalUsd
+          const totalForOtaDeposit = roundUsd2(totalCustomerPayment + additionalDiscMag)
           const depositPortion =
             notIncludedTotal > 0
-              ? Math.max(0, totalCustomerPayment - notIncludedTotal)
-              : totalCustomerPayment
+              ? Math.max(0, totalForOtaDeposit - notIncludedTotal)
+              : totalForOtaDeposit
           const depositFromDb = isExistingPricingLoaded && (formData.depositAmount ?? 0) > 0 && Math.abs((formData.depositAmount ?? 0) - depositPortion) > 0.01
           if (hasPaymentRecordsRef.current || depositFromDb) {
             // 입금 내역 합 또는 DB 저장값 유지; depositAmount는 건드리지 않음. 채널 결제 금액만 판매가×인원으로 설정 가능
@@ -1511,6 +1522,48 @@ export default function PricingSection({
   const isOTAChannel = channelIsOtaForPricingSection(selectedChannel)
   const isHomepageBooking = isHomepageBookingChannel(formData.channelId, channels)
 
+  const otaAdditionalDiscountSplit = useMemo(() => {
+    const disc = Math.abs(Number(formData.additionalDiscount) || 0)
+    const prepTip = Math.max(0, Number(formData.prepaymentTip) || 0)
+    const dueAfter = roundUsd2(Math.max(0, effectiveTotalCustomerPayment() - prepTip))
+    const hasRecords = paymentRecordsNormalized.length > 0
+    let paid: number
+    if (hasRecords) {
+      paid = roundUsd2(
+        depositNetForBalanceSettlement(calculatedDepositTotalNet, prepTip) +
+          calculatedBalanceReceivedTotal
+      )
+    } else {
+      const depositForDue = depositAmountNetOfPartnerReturnedOverlap(
+        dueAfter,
+        depositNetForBalanceSettlement(formData.depositAmount, prepTip)
+      )
+      paid = computeEffectiveCustomerPaidTowardDue(
+        dueAfter,
+        depositForDue,
+        calculatedBalanceReceivedTotal,
+        refundedAmount,
+        Math.max(0, Number(formData.refundAmount) || 0)
+      )
+    }
+    return splitOtaAdditionalDiscountAgainstRemaining({
+      additionalDiscount: disc,
+      customerDueAfterDiscount: dueAfter,
+      amountPaidTowardDue: paid,
+    })
+  }, [
+    formData.additionalDiscount,
+    formData.prepaymentTip,
+    formData.depositAmount,
+    formData.refundAmount,
+    effectiveTotalCustomerPayment,
+    paymentRecordsNormalized.length,
+    calculatedDepositTotalNet,
+    calculatedBalanceReceivedTotal,
+    refundedAmount,
+    depositAmountNetOfPartnerReturnedOverlap,
+  ])
+
   const hasDbReservationPricingRow = Boolean(reservationPricingId)
 
   /** 채널·홈페이지 쿠폰 규칙으로 목록 구성 + 현재 선택 코드는 항상 포함(DB에만 있는 코드는 맨 위 placeholder) */
@@ -1630,14 +1683,13 @@ export default function PricingSection({
     tourRefundCreditedByPartnerReturn,
   ])
 
-  // 할인 후 상품가 = 상품가격 - 쿠폰할인 - 추가할인 (정산·채널 결제 UI에서 공통)
+  // 할인 후 상품가 = 상품가격 - 쿠폰할인 - 추가할인 (① 고객 결제)
   const discountedProductPrice =
     formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
-  /** OTA ③: 단가×인원 − 할인. 폼 productPriceTotal이 불포함을 포함한 고객 총액이어도 판매가×인원을 씀 */
+  /** OTA ③: 단가×인원 − 쿠폰만. 추가할인은 채널 결제에 넣지 않음 */
   const otaChannelProductPaymentGross = computeOtaChannelPaymentFromDiscountedProduct({
     productPriceTotal: canonicalOtaProductTotal,
     couponDiscount: formData.couponDiscount,
-    additionalDiscount: formData.additionalDiscount,
   })
 
   /**
@@ -1755,7 +1807,7 @@ export default function PricingSection({
       cbRaw !== undefined && cbRaw !== null && String(cbRaw) !== '' && Number.isFinite(Number(cbRaw))
     const cb = hasCommissionBase ? Number(cbRaw) : NaN
     /**
-     * OTA: 채널 결제 = 판매가×인원(할인 후 상품가). 불포함(현장권)은 채널이 받지 않음.
+     * OTA: 채널 결제 = 판매가×인원 − 쿠폰. 추가할인·불포함(현장권)은 채널이 받지 않음.
      * 저장된 값이 고객 총액($630)이거나 불포함 이중 차감($250)이어도 판매가×인원을 표시.
      * 사용자가 이 칸을 직접 입력한 경우에만 아래 저장값 경로를 씀.
      */
@@ -2265,7 +2317,35 @@ export default function PricingSection({
     })
 
     if (formExtras.additionalDiscount > 0.005 && !isHomepageBooking) {
-      lines.push({ sign: '-', labelKo: '추가할인', labelEn: 'Additional discount', amount: formExtras.additionalDiscount })
+      if (
+        isOTAChannel &&
+        (otaAdditionalDiscountSplit.appliedToRemaining > 0.005 ||
+          otaAdditionalDiscountSplit.refundNeeded > 0.005)
+      ) {
+        if (otaAdditionalDiscountSplit.appliedToRemaining > 0.005) {
+          lines.push({
+            sign: '-',
+            labelKo: '추가할인 (잔금 차감)',
+            labelEn: 'Additional discount (from balance)',
+            amount: otaAdditionalDiscountSplit.appliedToRemaining,
+          })
+        }
+        if (otaAdditionalDiscountSplit.refundNeeded > 0.005) {
+          lines.push({
+            sign: '-',
+            labelKo: '추가할인 (환불)',
+            labelEn: 'Additional discount (refund)',
+            amount: otaAdditionalDiscountSplit.refundNeeded,
+          })
+        }
+      } else {
+        lines.push({
+          sign: '-',
+          labelKo: '추가할인',
+          labelEn: 'Additional discount',
+          amount: formExtras.additionalDiscount,
+        })
+      }
       tr -= formExtras.additionalDiscount
     }
     if (formExtras.additionalCost > 0.005 && !isHomepageBooking) {
@@ -2351,6 +2431,7 @@ export default function PricingSection({
     effectiveTotalCustomerPayment,
     selfCompanyRevenuePaymentBase,
     channelPaymentAmountAfterReturn,
+    otaAdditionalDiscountSplit,
   ])
 
   const pricingEngineContext = useMemo(
@@ -3846,6 +3927,17 @@ export default function PricingSection({
                       step="0.01"
                     />
                   </div>
+                  {isOTAChannel && (formData.additionalDiscount || 0) > 0.005 ? (
+                    <p className="mt-1 text-[10px] leading-snug text-amber-800">
+                      {otaAdditionalDiscountSplit.refundNeeded > 0.005
+                        ? isKorean
+                          ? `잔금 $${otaAdditionalDiscountSplit.appliedToRemaining.toFixed(2)} 차감, 환불 $${otaAdditionalDiscountSplit.refundNeeded.toFixed(2)} (채널 결제는 쿠폰만 반영)`
+                          : `$${otaAdditionalDiscountSplit.appliedToRemaining.toFixed(2)} off remaining, $${otaAdditionalDiscountSplit.refundNeeded.toFixed(2)} refund (channel payment stays coupon-only)`
+                        : isKorean
+                          ? '잔금에서 차감됩니다. 채널 결제 금액(③)은 쿠폰 할인만 반영합니다.'
+                          : 'Deducted from remaining balance. Channel payment (③) applies coupon only.'}
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">추가비용</label>
@@ -4503,6 +4595,13 @@ export default function PricingSection({
                   />
                 </div>
               </div>
+              {isOTAChannel && otaAdditionalDiscountSplit.refundNeeded > 0.005 ? (
+                <p className="mb-1.5 text-[10px] leading-snug text-amber-800">
+                  {isKorean
+                    ? `잔금이 부족하여 추가할인 중 $${otaAdditionalDiscountSplit.refundNeeded.toFixed(2)}는 환불 처리됩니다. 채널 결제 금액은 변경되지 않습니다.`
+                    : `Remaining balance is insufficient, so $${otaAdditionalDiscountSplit.refundNeeded.toFixed(2)} of the additional discount is treated as a refund. Channel payment does not change.`}
+                </p>
+              ) : null}
             </div>
 
             {/* 3️⃣ 채널 정산 기준 (Channel / OTA View) */}
@@ -4577,7 +4676,6 @@ export default function PricingSection({
                             const discountedPrice =
                               formData.productPriceTotal -
                               formData.couponDiscount -
-                              formData.additionalDiscount -
                               notIncludedPrice
                             return discountedPrice > 0 ? discountedPrice : 0
                           })()) -

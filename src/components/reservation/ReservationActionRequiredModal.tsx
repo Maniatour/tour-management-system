@@ -1595,6 +1595,7 @@ export default function ReservationActionRequiredModal({
                       optionChoices={optionChoices}
                       tourInfoMap={tourInfoMap}
                       reservationPricingMap={reservationPricingMap}
+                      paymentRecordsByReservationId={paymentRecordsByReservationId}
                       locale={locale}
                       onPricingInfoClick={onPricingInfoClick}
                       onCreateTour={onCreateTour}

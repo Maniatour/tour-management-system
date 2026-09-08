@@ -144,8 +144,9 @@ export type OtaPricingFormExtrasAmounts = {
 
 /**
  * OTA ④ 총매출에 반영할 추가할인·추가비용·세금·카드수수료·선결제지출.
- * omitOtaExtras=true(채널정산+수수료=채널결제)여도 고객 총 결제가 채널 결제를 초과하면
- * 불포함·예약옵션 제외 잔액(pool)만큼 폼 항목을 가산한다.
+ * - 추가할인: 채널 결제(③)가 아니라 회사 매출(④)에서 항상 차감 (쿠폰만 ③에 반영).
+ * - omitOtaExtras=true여도 고객 총 결제(추가할인 전)가 채널 결제를 초과하면
+ *   불포함·예약옵션 제외 잔액(pool)만큼 가산 항목(추가비용·세 등)을 넣는다.
  */
 export function otaPricingFormExtrasForCompanyRevenue(inp: {
   isOTAChannel: boolean
@@ -160,14 +161,6 @@ export function otaPricingFormExtrasForCompanyRevenue(inp: {
   notIncludedTotalUsd?: number
   reservationOptionsTotalPrice?: number
 }): OtaPricingFormExtrasAmounts {
-  const zero: OtaPricingFormExtrasAmounts = {
-    additionalDiscount: 0,
-    additionalCost: 0,
-    tax: 0,
-    cardFee: 0,
-    prepaymentCost: 0,
-  }
-
   const disc = Math.max(0, Number(inp.additionalDiscount) || 0)
   const cost = Math.max(0, Number(inp.additionalCost) || 0)
   const tax = Math.max(0, Number(inp.tax) || 0)
@@ -194,19 +187,60 @@ export function otaPricingFormExtrasForCompanyRevenue(inp: {
     customerPaymentNet: cust,
     channelPaymentNet: chPay,
   })
-  const pool = roundUsd2(Math.max(0, cust - chPay - notInc - opts))
-  const netFormExtras = roundUsd2(cost + tax + cardFee + prepCost - disc)
+  /** ①은 추가할인을 이미 뺐으므로, pool은 할인 전 총액 기준으로 가산 항목만 본다 */
+  const custBeforeAdditionalDiscount = roundUsd2(cust + disc)
+  const pool = roundUsd2(Math.max(0, custBeforeAdditionalDiscount - chPay - notInc - opts))
+  const addableExtras = roundUsd2(cost + tax + cardFee + prepCost)
 
-  if (pool <= PAY_LINE_EPS || netFormExtras <= PAY_LINE_EPS) return zero
-  if (pool >= netFormExtras - OTA_REVENUE_MATCH_EPS) return full
+  const withFullDiscount = (
+    partial: Omit<OtaPricingFormExtrasAmounts, 'additionalDiscount'>
+  ): OtaPricingFormExtrasAmounts => ({
+    additionalDiscount: roundUsd2(disc),
+    ...partial,
+  })
 
-  const ratio = pool / netFormExtras
+  if (addableExtras <= PAY_LINE_EPS || pool <= PAY_LINE_EPS) {
+    return withFullDiscount({ additionalCost: 0, tax: 0, cardFee: 0, prepaymentCost: 0 })
+  }
+  if (pool >= addableExtras - OTA_REVENUE_MATCH_EPS) return full
+
+  const ratio = pool / addableExtras
   return {
-    additionalDiscount: roundUsd2(disc * ratio),
+    additionalDiscount: roundUsd2(disc),
     additionalCost: roundUsd2(cost * ratio),
     tax: roundUsd2(tax * ratio),
     cardFee: roundUsd2(cardFee * ratio),
     prepaymentCost: roundUsd2(prepCost * ratio),
+  }
+}
+
+/**
+ * OTA 추가할인: 잔금에서 먼저 차감하고, 잔금이 부족하면 나머지는 회사 쪽 환불.
+ * 채널 결제(③)는 바꾸지 않는다.
+ */
+export function splitOtaAdditionalDiscountAgainstRemaining(input: {
+  additionalDiscount: number
+  customerDueAfterDiscount: number
+  amountPaidTowardDue: number
+}): {
+  remainingAfterDiscount: number
+  remainingBeforeDiscount: number
+  appliedToRemaining: number
+  refundNeeded: number
+} {
+  const disc = roundUsd2(Math.max(0, discountMagnitudeForSettlement(input.additionalDiscount)))
+  const dueAfter = roundUsd2(Math.max(0, toN(input.customerDueAfterDiscount)))
+  const paid = roundUsd2(Math.max(0, toN(input.amountPaidTowardDue)))
+  const dueBefore = roundUsd2(dueAfter + disc)
+  const remainingBeforeDiscount = roundUsd2(Math.max(0, dueBefore - paid))
+  const remainingAfterDiscount = roundUsd2(Math.max(0, dueAfter - paid))
+  const appliedToRemaining = roundUsd2(Math.min(disc, remainingBeforeDiscount))
+  const refundNeeded = roundUsd2(Math.max(0, disc - appliedToRemaining))
+  return {
+    remainingAfterDiscount,
+    remainingBeforeDiscount,
+    appliedToRemaining,
+    refundNeeded,
   }
 }
 
@@ -261,9 +295,8 @@ export function computeChannelPaymentGrossBeforeReturn(inp: ChannelSettlementCom
   const prepaymentTip = toN(inp.prepaymentTip)
   const onSiteBalanceAmount = toN(inp.onSiteBalanceAmount)
 
-  const discountedProductPrice = productPriceTotal - couponDiscount - additionalDiscount
-  const otaChannelProductPaymentGross =
-    couponDiscount > 0 ? Math.max(0, discountedProductPrice) : productPriceTotal
+  /** OTA ③: 쿠폰만 채널 결제에서 차감. 추가할인은 ④·잔금/환불 */
+  const otaChannelProductPaymentGross = Math.max(0, productPriceTotal - couponDiscount)
 
   if (depositAmount > 0 && inp.isOTAChannel) {
     return Math.max(0, onlinePaymentAmount || depositAmount)
@@ -312,7 +345,7 @@ function roundUsd2(n: number): number {
 
 /**
  * PricingSection「4. 최종 매출 & 운영 이익」의 총 매출(Total Revenue)과 동일한 산식.
- * - OTA: 기준 `channelSettlementBase`(③ 채널 정산) + 옵션·불포함·부가 + 진행 예약 시 폼 카드수수료·선결제 팁(총매출 항목) + 추가할인/추가비용(③에 없을 때 omit 무시)
+ * - OTA: 기준 `channelSettlementBase`(③ 채널 정산) + 옵션·불포함·부가 + 진행 예약 시 폼 카드수수료·선결제 팁(총매출 항목) + 추가할인(③ 쿠폰만, ④에서 항상 차감)/추가비용
  * - Self(`revenueFromCustomerPaymentTotal`): 기준 `channelSettlementBase` = ① 고객 총 결제(넷) — 옵션·불포함·추가비용·환불은 이미 포함되어 이중 가산·차감하지 않음
  * - 자체(홈페이지) OTA 경로: `excludeHomepageAdditionalCostFromCompanyTotals` — ③ 정산 베이스 경로에서만 추가비용 가산 후 말미 차감
  */
@@ -566,19 +599,21 @@ export function channelIsOtaForPricingSection(
 }
 
 /**
- * ③ 채널 결제 금액(OTA) = 할인 후 상품가.
+ * ③ 채널 결제 금액(OTA) = 판매가×인원 − 쿠폰할인.
+ * 추가할인은 채널이 이미 받은 금액을 바꾸면 파트너 수령과 어긋나므로 여기 넣지 않는다.
  * `productPriceTotal`은 이미 판매가×인원이며 불포함(현장권)은 포함하지 않는다.
  * 판매가에서 불포함을 한 번 더 빼면 예: ($220 − $95) × 2 = $250 로 잘못된다.
  */
 export function computeOtaChannelPaymentFromDiscountedProduct(input: {
   productPriceTotal: number
   couponDiscount?: number | undefined
+  /** 호환용. OTA 채널 결제에는 반영하지 않음(④·잔금/환불). */
   additionalDiscount?: number | undefined
 }): number {
+  void input.additionalDiscount
   const ppt = toN(input.productPriceTotal)
   const coupon = discountMagnitudeForSettlement(input.couponDiscount)
-  const extra = discountMagnitudeForSettlement(input.additionalDiscount)
-  return Math.max(0, roundUsd2(ppt - coupon - extra))
+  return Math.max(0, roundUsd2(ppt - coupon))
 }
 
 /**

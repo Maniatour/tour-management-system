@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { X, Users, User, Car, HelpCircle, ArrowRightCircle } from 'lucide-react'
+import { X, Users, User, Car, HelpCircle, ArrowRightCircle, ArrowLeftRight } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import { isCanyonKey } from '@/lib/canyonChoice'
@@ -216,6 +216,7 @@ export default function AutoAssignModal({
   const [pickupHotels, setPickupHotels] = useState<PickupHotelRow[]>([])
   const [manualOverrides, setManualOverrides] = useState<Map<string, string>>(new Map())
   const [openMoveDropdownRid, setOpenMoveDropdownRid] = useState<string | null>(null)
+  const [openTeamSwapTourId, setOpenTeamSwapTourId] = useState<string | null>(null)
   const [channelNameById, setChannelNameById] = useState<Map<string, string>>(new Map())
   const [priorityOrder, setPriorityOrder] = useState<PriorityKey[]>(DEFAULT_PRIORITY_ORDER)
   const initialToursSetRef = useRef<{ done: boolean; inactiveTourIdsToClear: string[] }>({
@@ -224,13 +225,15 @@ export default function AutoAssignModal({
   })
 
   useEffect(() => {
-    if (!openMoveDropdownRid) return
+    if (!openMoveDropdownRid && !openTeamSwapTourId) return
     const close = (e: MouseEvent) => {
-      if ((e.target as HTMLElement).closest?.('[data-move-dropdown]') == null) setOpenMoveDropdownRid(null)
+      const el = e.target as HTMLElement
+      if (el.closest?.('[data-move-dropdown]') == null) setOpenMoveDropdownRid(null)
+      if (el.closest?.('[data-team-swap-dropdown]') == null) setOpenTeamSwapTourId(null)
     }
     document.addEventListener('mousedown', close)
     return () => document.removeEventListener('mousedown', close)
-  }, [openMoveDropdownRid])
+  }, [openMoveDropdownRid, openTeamSwapTourId])
 
   const vehicleById = useCallback((id: string) => vehicles.find(v => v.id === id), [vehicles])
   const teamByEmail = useCallback((email: string) => teamMembers.find(m => m.email === email), [teamMembers])
@@ -241,6 +244,12 @@ export default function AutoAssignModal({
     const m = teamByEmail(email)
     return m ? (m.nick_name || m.name_ko || email) : email
   }, [teamByEmail])
+
+  const getTourTeamLabel = useCallback((tour: TourRow) => {
+    const guide = getTeamDisplayName(tour.tour_guide_id)
+    const asst = tour.assistant_id ? getTeamDisplayName(tour.assistant_id) : null
+    return asst ? `${guide}, ${asst}` : guide
+  }, [getTeamDisplayName])
 
   const getVehicleDisplayName = useCallback((vehicleId: string | null) => {
     if (!vehicleId) return '미배정'
@@ -675,6 +684,22 @@ export default function AutoAssignModal({
     setOpenMoveDropdownRid(null)
   }, [])
 
+  const swapTourCustomers = useCallback((tourIdA: string, tourIdB: string) => {
+    if (tourIdA === tourIdB) return
+    const tourA = displayTours.find(t => t.id === tourIdA)
+    const tourB = displayTours.find(t => t.id === tourIdB)
+    if (!tourA || !tourB) return
+    const idsA = [...(tourA.reservation_ids || [])]
+    const idsB = [...(tourB.reservation_ids || [])]
+    setManualOverrides(prev => {
+      const next = new Map(prev)
+      for (const rid of idsA) next.set(rid, tourIdB)
+      for (const rid of idsB) next.set(rid, tourIdA)
+      return next
+    })
+    setOpenTeamSwapTourId(null)
+  }, [displayTours])
+
   const handlePriorityChange = useCallback((index: number, nextKey: PriorityKey) => {
     setPriorityOrder(prev => {
       if (prev[index] === nextKey) return prev
@@ -699,6 +724,7 @@ export default function AutoAssignModal({
       setShowPriorityHelp(false)
       setManualOverrides(new Map())
       setOpenMoveDropdownRid(null)
+      setOpenTeamSwapTourId(null)
       setChannelNameById(new Map())
     }
   }, [isOpen])
@@ -1110,6 +1136,49 @@ export default function AutoAssignModal({
                           <div className="flex items-center gap-1.5"><User className="w-3.5 h-3.5" /> 어시스턴트: {assistantName}</div>
                           <div className="flex items-center gap-1.5"><Car className="w-3.5 h-3.5" /> 차량: {vehicleName}</div>
                         </div>
+                        {otherTours.length > 0 && (
+                          <div className="relative mb-2" data-team-swap-dropdown>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenMoveDropdownRid(null)
+                                setOpenTeamSwapTourId(openTeamSwapTourId === tour.id ? null : tour.id)
+                              }}
+                              className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-border bg-white text-xs font-medium text-gray-800 hover:bg-muted/50 hover:shadow-sm transition duration-300"
+                              title="이 팀에 배정된 모든 고객을 다른 팀과 맞바꿉니다"
+                            >
+                              <ArrowLeftRight className="w-3.5 h-3.5" />
+                              팀 변경
+                            </button>
+                            {openTeamSwapTourId === tour.id && (
+                              <div className="absolute top-full left-0 mt-1 z-10 min-w-[220px] py-1 bg-white border border-gray-200 rounded-xl shadow-lg">
+                                <p className="px-3 py-1.5 text-gray-500 text-[10px]">
+                                  이 팀의 모든 고객을 아래 팀과 맞바꿉니다
+                                </p>
+                                {otherTours.map(t => {
+                                  const otherPeople = (t.reservation_ids || []).reduce(
+                                    (sum, rid) => sum + peopleCount(reservations.find(r => r.id === rid)),
+                                    0
+                                  )
+                                  return (
+                                    <button
+                                      key={t.id}
+                                      type="button"
+                                      onClick={() => swapTourCustomers(tour.id, t.id)}
+                                      className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center justify-between gap-2"
+                                    >
+                                      <span className="font-medium text-gray-900">{getTourTeamLabel(t)}</span>
+                                      <span className="flex items-center gap-0.5 text-gray-500 shrink-0">
+                                        <Users size={10} />
+                                        {otherPeople}명
+                                      </span>
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <div className="space-y-1.5">
                           {ids.map((rid, idx) => {
                             const res = reservations.find(r => r.id === rid)
@@ -1138,7 +1207,10 @@ export default function AutoAssignModal({
                                     <div className="ml-auto relative" data-move-dropdown>
                                       <button
                                         type="button"
-                                        onClick={() => setOpenMoveDropdownRid(isDropdownOpen ? null : rid)}
+                                        onClick={() => {
+                                          setOpenTeamSwapTourId(null)
+                                          setOpenMoveDropdownRid(isDropdownOpen ? null : rid)
+                                        }}
                                         className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-primary hover:bg-muted/50 text-xs"
                                         title="다른 투어로 이동"
                                       >
