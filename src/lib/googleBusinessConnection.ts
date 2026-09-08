@@ -128,6 +128,25 @@ export async function getGoogleBusinessConnectionStatus(
   return mapConnectionStatus((data as ConnectionRow | null) ?? null)
 }
 
+export async function listGoogleBusinessOperatorIdsWithLocation(): Promise<string[]> {
+  if (!supabaseAdmin) return []
+
+  const { data, error } = await fromUntypedTable(supabaseAdmin, 'google_business_connections')
+    .select('operator_id, google_location_name')
+
+  if (error) {
+    console.error('[googleBusinessConnection] list for cron failed', error.message)
+    return []
+  }
+
+  const ids = new Set<string>()
+  for (const row of (data ?? []) as Array<{ operator_id?: string | null; google_location_name?: string | null }>) {
+    const operatorId = String(row.operator_id ?? '').trim()
+    if (operatorId && String(row.google_location_name ?? '').trim()) ids.add(operatorId)
+  }
+  return [...ids]
+}
+
 export async function upsertGoogleBusinessConnection(input: {
   operatorId: string
   connectedEmail: string

@@ -189,6 +189,10 @@ export default function AdminGoogleReviewsPage() {
     const tab = searchParams.get('tab')
     if (tab && isReviewSource(tab)) {
       setActiveSource(tab)
+      return
+    }
+    if (searchParams.get('unclassified') === '1') {
+      setActiveSource('google')
     }
   }, [searchParams])
 
@@ -796,6 +800,7 @@ export default function AdminGoogleReviewsPage() {
         refreshKey={refreshKey}
         onReviewSourceChange={setActiveSource}
         onSourceReviewCount={handleSourceReviewCount}
+        initialUnclassifiedOnly={isGoogleTab && searchParams.get('unclassified') === '1'}
       />
     </div>
   )

@@ -29,6 +29,14 @@
     {
       "path": "/api/cron/advance-guide-tours-visible-until",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/gmail-reservation-import",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/google-reviews-import",
+      "schedule": "0 4,5 * * *"
     }
   ]
 }

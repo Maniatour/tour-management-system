@@ -13,9 +13,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireGoogleBusinessAdminAuth(request)
   if (!auth.ok) return auth.response
 
-  let body: { pageToken?: string | null } = {}
+  let body: { pageToken?: string | null; incremental?: boolean } = {}
   try {
-    body = (await request.json()) as { pageToken?: string | null }
+    body = (await request.json()) as { pageToken?: string | null; incremental?: boolean }
   } catch {
     // empty body is fine for first page
   }
@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
       operatorId: auth.operatorId,
       pageToken: body.pageToken ?? null,
       classifiedBy: auth.userEmail,
+      incremental: body.incremental === true,
     })
 
     return NextResponse.json({ ok: true, ...result })

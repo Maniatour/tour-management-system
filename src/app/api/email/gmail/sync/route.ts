@@ -53,22 +53,30 @@ type FullMsg = {
 export async function POST(request: Request) {
   let forceFullSync = false
   let afterDays: number | null = null
+  /** Cron: History만 보고, 새 메일이 없으면 3일 수신함 전수 대조를 건너뜀 */
+  let incrementalOnly = false
   try {
     const url = new URL(request.url)
     if (url.searchParams.get('full') === '1') forceFullSync = true
+    if (url.searchParams.get('incremental') === '1') incrementalOnly = true
   } catch {
     /* ignore */
   }
   try {
-    const body = (await request.json().catch(() => ({}))) as { fullSync?: boolean; afterDays?: number }
+    const body = (await request.json().catch(() => ({}))) as {
+      fullSync?: boolean
+      afterDays?: number
+      incremental?: boolean
+    }
     if (body?.fullSync === true) forceFullSync = true
+    if (body?.incremental === true) incrementalOnly = true
     if (typeof body?.afterDays === 'number' && Number.isFinite(body.afterDays)) {
       afterDays = Math.min(GMAIL_AFTER_DAYS_MAX, Math.max(1, Math.round(body.afterDays)))
     }
   } catch {
     /* ignore */
   }
-  const lookbackDays = afterDays ?? (forceFullSync ? 7 : 3)
+  const lookbackDays = afterDays ?? (forceFullSync ? 7 : incrementalOnly ? 1 : 3)
   const skipHistory = lookbackDays > 7
 
   const client = supabaseAdmin ?? (await import('@/lib/supabase')).supabase
@@ -333,6 +341,14 @@ export async function POST(request: Request) {
     // History에 messageAdded가 없어도 Gmail이 일부 변경을 누락할 수 있음 → 아래 messages.list 로 보정
     if (newHistoryId) {
       await updateHistoryId(newHistoryId)
+    }
+    if (incrementalOnly && newHistoryId) {
+      return NextResponse.json({
+        imported: 0,
+        total: 0,
+        remaining: 0,
+        mode: 'history-idle',
+      })
     }
   }
 

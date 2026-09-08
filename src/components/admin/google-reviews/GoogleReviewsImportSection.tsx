@@ -51,14 +51,22 @@ export default function GoogleReviewsImportSection({
 
   const canImport = Boolean(status?.connected && status.googleLocationName)
 
-  const runImport = useCallback(async () => {
+  const runImport = useCallback(async (incremental: boolean) => {
     if (!canImport) {
       onMessage(isKo ? '먼저 Google 위치를 선택하세요.' : 'Select a Google location first.')
       return
     }
 
     setImporting(true)
-    setImportProgress(isKo ? '가져오기 시작…' : 'Starting import…')
+    setImportProgress(
+      incremental
+        ? isKo
+          ? '마지막 동기화 이후 리뷰 확인 중…'
+          : 'Checking reviews since last sync…'
+        : isKo
+          ? '전체 가져오기 시작…'
+          : 'Starting full import…'
+    )
 
     let pageToken: string | null = null
     let totalImported = 0
@@ -73,7 +81,7 @@ export default function GoogleReviewsImportSection({
         const res = await fetchApiWithAuth('/api/admin/google-business/reviews/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pageToken }),
+          body: JSON.stringify({ pageToken, incremental }),
         })
         const data = (await res.json()) as ImportPageResult
         if (!res.ok || !data.ok) {
@@ -96,9 +104,13 @@ export default function GoogleReviewsImportSection({
       } while (pageToken)
 
       onMessage(
-        isKo
-          ? `가져오기 완료: 신규 ${totalImported}건, 갱신 ${totalUpdated}건, 자동 분류 ${totalClassified}건, 5★ 자동 승인 ${totalAutoApproved}건`
-          : `Import complete: ${totalImported} new, ${totalUpdated} updated, ${totalClassified} classified, ${totalAutoApproved} five-star auto-approved`
+        incremental
+          ? isKo
+            ? `최근 리뷰 가져오기 완료: 신규 ${totalImported}건, 갱신 ${totalUpdated}건, 자동 분류 ${totalClassified}건, 5★ 자동 승인 ${totalAutoApproved}건`
+            : `Recent import complete: ${totalImported} new, ${totalUpdated} updated, ${totalClassified} classified, ${totalAutoApproved} five-star auto-approved`
+          : isKo
+            ? `전체 가져오기 완료: 신규 ${totalImported}건, 갱신 ${totalUpdated}건, 자동 분류 ${totalClassified}건, 5★ 자동 승인 ${totalAutoApproved}건`
+            : `Full import complete: ${totalImported} new, ${totalUpdated} updated, ${totalClassified} classified, ${totalAutoApproved} five-star auto-approved`
       )
       await onRefresh()
     } catch (error) {
@@ -185,8 +197,8 @@ export default function GoogleReviewsImportSection({
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
           {isKo
-            ? 'Google Business Profile에서 리뷰를 페이지 단위로 가져옵니다. 중복은 자동으로 건너뜁니다.'
-            : 'Pull reviews from Google Business Profile in pages. Duplicates are skipped automatically.'}
+            ? '지금 리뷰 가져오기는 마지막 동기화 이후 변경분만 가져옵니다. 전체가 필요할 때만 「전체 가져오기」를 사용하세요. 매일 라스베이거스 오후 9시에 자동으로도 가져옵니다.'
+            : '“Get reviews now” pulls only changes since the last sync. Use “Import all” only when you need a full refresh. Reviews also import automatically at 9 PM Las Vegas time.'}
         </p>
       </div>
 
@@ -239,15 +251,24 @@ export default function GoogleReviewsImportSection({
         {!canImport ? (
           <p className="w-full text-xs text-muted-foreground">
             {isKo
-              ? '위치를 선택한 뒤 「선택 저장」을 눌러야 전체 가져오기가 활성화됩니다.'
+              ? '위치를 선택한 뒤 「선택 저장」을 눌러야 가져오기가 활성화됩니다.'
               : 'Select a location and click “Save selection” to enable import.'}
           </p>
         ) : null}
         <button
           type="button"
-          onClick={() => void runImport()}
+          onClick={() => void runImport(true)}
           disabled={!canImport || importing}
           className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 disabled:opacity-50"
+        >
+          {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          {isKo ? '지금 리뷰 가져오기' : 'Get reviews now'}
+        </button>
+        <button
+          type="button"
+          onClick={() => void runImport(false)}
+          disabled={!canImport || importing}
+          className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl border border-border bg-background text-sm font-medium hover:bg-muted/50 disabled:opacity-50"
         >
           {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           {isKo ? '전체 가져오기' : 'Import all reviews'}

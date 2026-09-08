@@ -5,7 +5,6 @@ import {
   extractReservationFromEmail,
   isCancellationRequestEmailSubject,
   extractChannelRnForCancellationLookup,
-  isKlookBookingConfirmedReservationEmail,
   isKlookOrderEmailSubjectForReservation,
   isZoomZoomTourNewBookingEmailSubject,
   isNolTripleNewBookingEmailSubject,
@@ -271,43 +270,158 @@ function extractedDataMatchesCustomerIdentity(
   return false
 }
 
-/** 삭제되지 않은 예약의 고객(name+phone) 조합 키 집합 (페이지네이션으로 전부 적재) */
-async function fetchReservationCustomerIdentityKeys(client: SupabaseClient<Database>): Promise<Set<string>> {
-  const keys = new Set<string>()
-  const pageSize = 1000
-  let offset = 0
-  for (;;) {
-    const { data, error } = await fromUntypedTable(client, 'reservations')
-      .select('customer_name, customer_email, customer_phone, customer:customers(name, phone, email)')
-      .not('status', 'eq', 'deleted')
-      .range(offset, offset + pageSize - 1)
+const IN_FILTER_CHUNK = 120
+const LAST4_OR_CHUNK = 40
 
-    if (error) {
-      console.error('[reservation-imports] customer identity keys:', error.message)
-      break
-    }
-    const rows = (data ?? []) as Array<{
-      customer_name?: string | null
-      customer_email?: string | null
-      customer_phone?: string | null
-      customer: { name?: string; phone?: string | null; email?: string | null } | null
-    }>
-    for (const row of rows) {
-      const c = row.customer
-      if (c) {
-        for (const k of expandCustomerIdentityKeys(c.name, c.phone, c.email)) {
-          keys.add(k)
-        }
-      }
-      for (const k of expandCustomerIdentityKeys(row.customer_name, row.customer_phone, row.customer_email)) {
-        keys.add(k)
-      }
-    }
-    if (rows.length < pageSize) break
-    offset += pageSize
-    if (offset > 200000) break
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+
+async function runInWaves<T>(items: T[], waveSize: number, worker: (item: T) => Promise<void>): Promise<void> {
+  for (let i = 0; i < items.length; i += waveSize) {
+    await Promise.all(items.slice(i, i + waveSize).map(worker))
   }
+}
+
+type CustomerIdentityRow = {
+  customer_name?: string | null
+  customer_email?: string | null
+  customer_phone?: string | null
+  customer?: { name?: string; phone?: string | null; email?: string | null } | null
+}
+
+function addIdentityKeysFromReservationRow(keys: Set<string>, row: CustomerIdentityRow) {
+  const c = row.customer
+  if (c) {
+    for (const k of expandCustomerIdentityKeys(c.name, c.phone, c.email)) keys.add(k)
+  }
+  for (const k of expandCustomerIdentityKeys(row.customer_name, row.customer_phone, row.customer_email)) {
+    keys.add(k)
+  }
+}
+
+/** 목록 행에 있는 이메일·전화만으로 기존 예약/고객을 조회 (전 예약 테이블 스캔 대신) */
+async function fetchReservationCustomerIdentityKeysForImports(
+  client: SupabaseClient<Database>,
+  list: Array<{ extracted_data?: Json | null }>
+): Promise<Set<string>> {
+  const keys = new Set<string>()
+  const emails = new Set<string>()
+  const last4s = new Set<string>()
+  const phoneDigits = new Set<string>()
+
+  for (const r of list) {
+    const ext = parseExtractedData(r.extracted_data)
+    if (!ext) continue
+    const n = normalizeCustomerNameFromImport(String(ext.customer_name ?? ''))
+    if (!n) continue
+    const em = String(ext.customer_email ?? '').trim().toLowerCase()
+    if (em.includes('@')) emails.add(em)
+    const d = String(ext.customer_phone ?? '').replace(/\D/g, '')
+    if (d.length >= 4) last4s.add(d.slice(-4))
+    if (d.length >= 8) phoneDigits.add(d)
+  }
+
+  if (emails.size === 0 && last4s.size === 0 && phoneDigits.size === 0) return keys
+
+  const reservationSelect =
+    'customer_name, customer_email, customer_phone, customer:customers(name, phone, email)' as const
+
+  const ingestReservations = (data: unknown) => {
+    for (const row of (data ?? []) as CustomerIdentityRow[]) addIdentityKeysFromReservationRow(keys, row)
+  }
+  const ingestCustomers = (data: unknown) => {
+    for (const c of (data ?? []) as Array<{ name?: string; phone?: string | null; email?: string | null }>) {
+      for (const k of expandCustomerIdentityKeys(c.name, c.phone, c.email)) keys.add(k)
+    }
+  }
+
+  const jobs: Array<() => Promise<void>> = []
+
+  for (const emailChunk of chunkArray([...emails], IN_FILTER_CHUNK)) {
+    jobs.push(async () => {
+      const { data, error } = await fromUntypedTable(client, 'reservations')
+        .select(reservationSelect)
+        .in('customer_email', emailChunk)
+        .not('status', 'eq', 'deleted')
+        .limit(1000)
+      if (error) {
+        console.error('[reservation-imports] customer identity by email:', error.message)
+        return
+      }
+      ingestReservations(data)
+    })
+    jobs.push(async () => {
+      const { data, error } = await client.from('customers').select('name, phone, email').in('email', emailChunk)
+      if (error) {
+        console.error('[reservation-imports] customers by email:', error.message)
+        return
+      }
+      ingestCustomers(data)
+    })
+  }
+
+  const phoneVariants = new Set<string>()
+  for (const d of phoneDigits) {
+    phoneVariants.add(d)
+    if (d.length === 11 && d.startsWith('1')) phoneVariants.add(d.slice(1))
+    if (d.length === 10) phoneVariants.add(`1${d}`)
+  }
+  for (const phoneChunk of chunkArray([...phoneVariants], IN_FILTER_CHUNK)) {
+    jobs.push(async () => {
+      const { data, error } = await fromUntypedTable(client, 'reservations')
+        .select(reservationSelect)
+        .in('customer_phone', phoneChunk)
+        .not('status', 'eq', 'deleted')
+        .limit(1000)
+      if (error) {
+        console.error('[reservation-imports] customer identity by phone:', error.message)
+        return
+      }
+      ingestReservations(data)
+    })
+  }
+
+  for (const last4Chunk of chunkArray([...last4s], LAST4_OR_CHUNK)) {
+    const orFilter = last4Chunk.map((d) => `phone.like.*${d}`).join(',')
+    jobs.push(async () => {
+      const { data, error } = await client.from('customers').select('name, phone, email').or(orFilter)
+      if (error) {
+        console.error('[reservation-imports] customers by phone last4:', error.message)
+        return
+      }
+      ingestCustomers(data)
+    })
+  }
+
+  await runInWaves(jobs, 6, (job) => job())
   return keys
+}
+
+async function fetchExistingChannelRnSet(
+  client: SupabaseClient<Database>,
+  lookupChannelRns: string[]
+): Promise<Set<string>> {
+  const existingChannelRns = new Set<string>()
+  const unique = [...new Set(lookupChannelRns.map((v) => v.trim()).filter(Boolean))]
+  if (unique.length === 0) return existingChannelRns
+
+  await runInWaves(chunkArray(unique, IN_FILTER_CHUNK), 4, async (chunk) => {
+    const { data: resRows } = await client
+      .from('reservations')
+      .select('channel_rn')
+      .in('channel_rn', chunk)
+      .not('channel_rn', 'is', null)
+    if (!resRows?.length) return
+    for (const r of resRows as Array<{ channel_rn?: string | null }>) {
+      const cr = r.channel_rn?.trim()
+      if (!cr) continue
+      expandChannelRnMatchVariants(cr).forEach((v) => existingChannelRns.add(v))
+    }
+  })
+  return existingChannelRns
 }
 
 /**
@@ -326,10 +440,11 @@ export async function GET(request: NextRequest) {
   const toDate = searchParams.get('to_date')
 
   const client = supabaseAdmin ?? (await import('@/lib/supabase')).supabase
+  const db = client as SupabaseClient<Database>
   let query = client
     .from('reservation_imports')
     .select(
-      'id, message_id, source_email, platform_key, subject, received_at, extracted_data, status, reservation_id, created_at, raw_body_text, raw_body_html'
+      'id, message_id, source_email, platform_key, subject, received_at, extracted_data, status, reservation_id, created_at'
     )
 
   if (status === 'active') {
@@ -389,22 +504,40 @@ export async function GET(request: NextRequest) {
   }
 
   const allCancelVariants = [...new Set(cancellationMetaList.flatMap((m) => [...m.variantSet]))]
-  if (allCancelVariants.length > 0) {
-    const { data: cancelResRows } = await client
-      .from('reservations')
-      .select('channel_rn, status')
-      .in('channel_rn', allCancelVariants)
-      .not('channel_rn', 'is', null)
+  const channelRns = list
+    .map((r) => parseExtractedData(r.extracted_data)?.channel_rn)
+    .filter((rn): rn is string => typeof rn === 'string' && rn.trim().length > 0)
+  const lookupChannelRns = [...new Set(channelRns.flatMap(expandChannelRnMatchVariants))]
 
-    const resList = (cancelResRows ?? []) as Array<{ channel_rn: string | null; status: string | null }>
+  const fetchCancelReservationRows = async () => {
+    const resList: Array<{ channel_rn: string | null; status: string | null }> = []
+    if (allCancelVariants.length === 0) return resList
+    await runInWaves(chunkArray(allCancelVariants, IN_FILTER_CHUNK), 4, async (chunk) => {
+      const { data: cancelResRows } = await client
+        .from('reservations')
+        .select('channel_rn, status')
+        .in('channel_rn', chunk)
+        .not('channel_rn', 'is', null)
+      if (cancelResRows?.length) {
+        resList.push(...(cancelResRows as Array<{ channel_rn: string | null; status: string | null }>))
+      }
+    })
+    return resList
+  }
 
+  const [cancelResList, existingChannelRns] = await Promise.all([
+    fetchCancelReservationRows(),
+    fetchExistingChannelRnSet(db, lookupChannelRns),
+  ])
+
+  if (cancellationMetaList.length > 0) {
     const resMatchesImportVariants = (resRn: string | null, variantSet: Set<string>): boolean => {
       if (!resRn?.trim()) return false
       return expandChannelRnMatchVariants(resRn.trim()).some((v) => variantSet.has(v))
     }
 
     for (const m of cancellationMetaList) {
-      const matched = resList.filter((row) => resMatchesImportVariants(row.channel_rn, m.variantSet))
+      const matched = cancelResList.filter((row) => resMatchesImportVariants(row.channel_rn, m.variantSet))
       if (matched.length === 0) {
         cancellationBadgeByImportId.set(m.id, 'needed')
       } else {
@@ -417,30 +550,10 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const channelRns = list
-    .map((r) => parseExtractedData(r.extracted_data)?.channel_rn)
-    .filter((rn): rn is string => typeof rn === 'string' && rn.trim().length > 0)
-  const uniqueChannelRns = [...new Set(channelRns)]
-  const lookupChannelRns = [...new Set(uniqueChannelRns.flatMap(expandChannelRnMatchVariants))]
-
-  let existingChannelRns = new Set<string>()
-  if (lookupChannelRns.length > 0) {
-    const { data: resRows } = await client
-      .from('reservations')
-      .select('channel_rn')
-      .in('channel_rn', lookupChannelRns)
-      .not('channel_rn', 'is', null)
-    if (resRows?.length) {
-      resRows.forEach((r: { channel_rn?: string | null }) => {
-        const cr = r.channel_rn?.trim()
-        if (!cr) return
-        expandChannelRnMatchVariants(cr).forEach((v) => existingChannelRns.add(v))
-      })
-    }
-  }
-
-  const listNeedsCustomerMatch = list.some((r) => {
+  const unmatchedForCustomerMatch = list.filter((r) => {
     const ext = parseExtractedData(r.extracted_data)
+    const channelRn = ext?.channel_rn?.trim()
+    if (channelRnMatchesExistingSet(channelRn, existingChannelRns)) return false
     const n = normalizeCustomerNameFromImport(String(ext?.customer_name ?? ''))
     if (n.length === 0) return false
     const d = String(ext?.customer_phone ?? '').replace(/\D/g, '')
@@ -449,10 +562,10 @@ export async function GET(request: NextRequest) {
     return em.length >= 2
   })
 
-  let existingCustomerIdentityKeys = new Set<string>()
-  if (listNeedsCustomerMatch) {
-    existingCustomerIdentityKeys = await fetchReservationCustomerIdentityKeys(client as SupabaseClient<Database>)
-  }
+  const existingCustomerIdentityKeys =
+    unmatchedForCustomerMatch.length > 0
+      ? await fetchReservationCustomerIdentityKeysForImports(db, unmatchedForCustomerMatch)
+      : new Set<string>()
 
   const data = list.map((r) => {
       let extracted_data = parseExtractedData(r.extracted_data) ?? undefined
@@ -460,16 +573,8 @@ export async function GET(request: NextRequest) {
         r.platform_key === 'klook' || isKlookOrderEmailSubjectForReservation(r.subject)
       if (looksKlook) {
         const ext = extracted_data ?? ({} as ExtractedReservationData)
-        if (ext.is_booking_confirmed !== true) {
-          if (
-            isKlookBookingConfirmedReservationEmail(
-              r.subject ?? '',
-              r.raw_body_text ?? '',
-              r.raw_body_html ?? null
-            )
-          ) {
-            extracted_data = { ...ext, is_booking_confirmed: true }
-          }
+        if (ext.is_booking_confirmed !== true && isKlookOrderEmailSubjectForReservation(r.subject)) {
+          extracted_data = { ...ext, is_booking_confirmed: true }
         }
       }
       const looksZoomZoom = isZoomZoomTourNewBookingEmailSubject(r.subject)
@@ -486,9 +591,6 @@ export async function GET(request: NextRequest) {
           extracted_data = { ...ext, is_booking_confirmed: true }
         }
       }
-      const { raw_body_text: _rawOmit, raw_body_html: _htmlOmit, ...rest } = r
-      void _rawOmit
-      void _htmlOmit
       const channelRn = (extracted_data ?? parseExtractedData(r.extracted_data))?.channel_rn?.trim()
       const existsByChannelRn = channelRnMatchesExistingSet(channelRn, existingChannelRns)
       const existsByCustomerMatch = extractedDataMatchesCustomerIdentity(
@@ -499,9 +601,9 @@ export async function GET(request: NextRequest) {
         ? (cancellationBadgeByImportId.get(r.id) ?? 'needed')
         : null
       return {
-        ...rest,
+        ...r,
         platform_key:
-          rest.platform_key ??
+          r.platform_key ??
           (isKlookOrderEmailSubjectForReservation(r.subject) ? 'klook' : null) ??
           (looksZoomZoom ? 'zoomzoom' : null) ??
           (looksNolTriple ? 'nol' : null),

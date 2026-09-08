@@ -31,6 +31,7 @@ type Props = {
   refreshKey: number
   onReviewSourceChange?: (source: ReviewSource) => void
   onSourceReviewCount?: (source: ReviewSource, total: number) => void
+  initialUnclassifiedOnly?: boolean
 }
 
 const STATUS_FILTERS = ['all', 'pending', 'approved', 'rejected', 'hidden'] as const
@@ -45,11 +46,14 @@ export default function GoogleReviewsManageSection({
   refreshKey,
   onReviewSourceChange,
   onSourceReviewCount,
+  initialUnclassifiedOnly = false,
 }: Props) {
   const isKo = locale === 'ko'
   const sourceLabel = getReviewSourceLabel(reviewSource, locale)
-  const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>('pending')
-  const [unclassifiedOnly, setUnclassifiedOnly] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>(
+    initialUnclassifiedOnly ? 'all' : 'pending'
+  )
+  const [unclassifiedOnly, setUnclassifiedOnly] = useState(initialUnclassifiedOnly)
   const [sortBy, setSortBy] = useState<AdminGoogleReviewListSort>(() =>
     defaultAdminGoogleReviewListSort(reviewSource)
   )
@@ -66,6 +70,13 @@ export default function GoogleReviewsManageSection({
   const [pinnedReview, setPinnedReview] = useState<AdminGoogleReviewListItem | null>(null)
   const [highlightedReviewId, setHighlightedReviewId] = useState<string | null>(null)
   const [openingReviewId, setOpeningReviewId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!initialUnclassifiedOnly) return
+    setUnclassifiedOnly(true)
+    setStatusFilter('all')
+    setPage(1)
+  }, [initialUnclassifiedOnly])
 
   const bumpHistoryRefresh = () => setHistoryRefreshKey((key) => key + 1)
 

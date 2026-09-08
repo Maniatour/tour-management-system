@@ -4,7 +4,7 @@ import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
-import { Mail, ChevronLeft, ChevronRight, Loader2, FileText, CheckCircle, XCircle, RefreshCw, GripVertical, Inbox, Search, Filter, Ban } from 'lucide-react'
+import { Mail, ChevronLeft, ChevronRight, Loader2, FileText, RefreshCw, GripVertical, Inbox, Search, Filter, Ban } from 'lucide-react'
 import {
   isManiatourHomepageBookingEmail,
   isCancellationRequestEmailSubject,
@@ -33,7 +33,6 @@ import { ReservationCancellationImportModal } from '@/components/reservation/Res
 import {
   GMAIL_RESERVATION_SYNC_COMPLETE,
   GMAIL_RESERVATION_SYNC_UNAUTHORIZED,
-  gmailLookbackDaysSinceYearStartLA,
   useGmailReservationImportSync,
   type GmailReservationImportSyncDetail,
 } from '@/contexts/GmailReservationImportSyncContext'
@@ -150,29 +149,6 @@ const normalizeGmailStatus = (data: unknown) =>
     ? (data as { connected: boolean; email: string | null; updated_at: string | null })
     : emptyGmailStatus
 
-/** 오늘 날짜 YYYY-MM-DD (로컬) */
-function todayLocal(): string {
-  return new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
-}
-/** 날짜 문자열에 일수 더하기 */
-function addDays(ymd: string, days: number): string {
-  const d = new Date(ymd + 'T12:00:00')
-  d.setDate(d.getDate() + days)
-  return d.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
-}
-/** YYYY-MM-DD(로컬 기준 날짜) → 해당일 00:00 로컬 시각의 UTC ISO 문자열 */
-function localDateToUtcStart(ymd: string): string {
-  const [y, m, d] = ymd.split('-').map(Number)
-  const start = new Date(y, m - 1, d, 0, 0, 0, 0)
-  return start.toISOString()
-}
-/** YYYY-MM-DD(로컬 기준 날짜) → 해당일 23:59:59.999 로컬 시각의 UTC ISO 문자열 */
-function localDateToUtcEnd(ymd: string): string {
-  const [y, m, d] = ymd.split('-').map(Number)
-  const end = new Date(y, m - 1, d, 23, 59, 59, 999)
-  return end.toISOString()
-}
-
 /** GetYourGuide 예약 접수 제목: "Booking - …" 또는 "Urgent : New Booking received - …" */
 function isGyGReservationSubject(subject: string | null | undefined): boolean {
   const t = (subject ?? '').trimStart()
@@ -215,8 +191,6 @@ const RESERVATION_IMPORTS_UI_DEFAULT = {
   /** API: active = pending + confirmed (예약 저장 후에도 목록에 유지) */
   statusFilter: 'active',
   activeTab: 'all' as ReservationImportListTab,
-  dateEnd: todayLocal(),
-  noDateFilter: false,
   searchQuery: '',
   platformFilter: '',
   /** 탭(전체 / 예약 접수 / 취소 관련)마다 이메일 목록 페이지 — 1부터 */
@@ -231,11 +205,13 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const { products: productsList = [] } = useReservationData({
     disableReservationsAutoLoad: true,
     customersByReservationIds: true,
+    productsSelectLite: true,
+    deferFormCatalogs: true,
   })
   const [items, setItems] = useState<ImportItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [listUi, setListUi] = useRoutePersistedState('reservation-imports-v2', RESERVATION_IMPORTS_UI_DEFAULT)
-  const { statusFilter, activeTab, dateEnd, noDateFilter, searchQuery, platformFilter, listPageByTab: listPageByTabStored } = listUi
+  const [listUi, setListUi] = useRoutePersistedState('reservation-imports-v3', RESERVATION_IMPORTS_UI_DEFAULT)
+  const { statusFilter, activeTab, searchQuery, platformFilter, listPageByTab: listPageByTabStored } = listUi
   const listPageByTab = { ...DEFAULT_LIST_PAGE_BY_TAB, ...(listPageByTabStored ?? {}) }
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [patchingId, setPatchingId] = useState<string | null>(null)
@@ -267,25 +243,24 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     return parts.length ? parts.join(' · ') : '-'
   }
 
-  const dateStart = addDays(dateEnd, -6)
-
-  const loadList = useCallback(
-    (opts?: { skipDateFilter?: boolean }) => {
-      setLoading(true)
-      const params = new URLSearchParams({ status: statusFilter })
-      const omitDates = noDateFilter || opts?.skipDateFilter === true
-      if (!omitDates) {
-        params.set('from_utc', localDateToUtcStart(dateStart))
-        params.set('to_utc', localDateToUtcEnd(dateEnd))
-      }
-      fetchApiWithAuth(`/api/reservation-imports?${params}`)
-        .then((res) => res.json())
-        .then((json) => setItems(json.data ?? []))
-        .catch(() => setItems([]))
-        .finally(() => setLoading(false))
-    },
-    [statusFilter, dateStart, dateEnd, noDateFilter]
-  )
+  const loadList = useCallback((signal?: AbortSignal) => {
+    setLoading(true)
+    const params = new URLSearchParams({ status: statusFilter })
+    fetchApiWithAuth(`/api/reservation-imports?${params}`, signal ? { signal } : undefined)
+      .then((res) => res.json())
+      .then((json) => {
+        if (signal?.aborted) return
+        setItems(json.data ?? [])
+      })
+      .catch((err: unknown) => {
+        if (signal?.aborted) return
+        if (err && typeof err === 'object' && 'name' in err && (err as { name?: string }).name === 'AbortError') return
+        setItems([])
+      })
+      .finally(() => {
+        if (!signal?.aborted) setLoading(false)
+      })
+  }, [statusFilter])
 
   useEffect(() => {
     if (!cancellationImportFromUrl) return
@@ -574,7 +549,9 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   }, [])
 
   useEffect(() => {
-    loadList()
+    const ac = new AbortController()
+    loadList(ac.signal)
+    return () => ac.abort()
   }, [loadList])
 
   useEffect(() => {
@@ -613,9 +590,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
             ? `전체 재동기화 완료: ${d.queryUsed ?? 'after:날짜'} 검색, ${d.total ?? 0}건 중 새로 추가 ${d.imported ?? 0}건.`
             : `동기화 완료: 새 메일 ${d.imported ?? 0}건이 예약 가져오기 목록에 추가되었습니다.`
       )
-      // 새 행이 생겼을 때 날짜 창 밖이면 목록에 안 보일 수 있음 → 한 번은 날짜 없이 최신 1000건으로 갱신
-      const added = d.imported ?? 0
-      loadList(added > 0 ? { skipDateFilter: true } : undefined)
+      loadList()
     }
     const onUnauthorized = () => {
       setOptimisticConnected(false)
@@ -631,10 +606,17 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
 
   const gmailStartAuthUrl = `/api/email/gmail/start?locale=${locale}`
 
-  const handleGmailSync = (fullSync = false, afterDays?: number) => {
+  const handleGmailSync = () => {
     setGmailMessage(null)
-    startGmailImportSync(fullSync, afterDays)
+    startGmailImportSync(false)
   }
+
+  const gmailConnected = Boolean(gmailStatus?.connected || optimisticConnected)
+  const lastConnectedLabel = gmailStatus?.updated_at
+    ? `마지막 연결: ${new Date(gmailStatus.updated_at).toLocaleString('ko-KR')}`
+    : gmailConnected
+      ? '마지막 연결: 확인 중…'
+      : 'Gmail이 연결되지 않았습니다.'
 
   const handlePasteSubmit = async () => {
     if (!pasteSubject.trim() && !pasteBody.trim()) {
@@ -681,108 +663,99 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
 
   return (
     <div className="space-y-4 px-1 sm:px-0">
-      {/* 이메일 연동 (Gmail) 섹션 */}
-      <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
-        <h2 className="text-sm font-semibold text-gray-900 mb-1">이메일 연동 (Gmail)</h2>
-        <p className="text-xs text-gray-600 mb-4">
-          Gmail 받은편지함의 예약 알림 메일을 자동으로 읽어와 아래 목록에 넣습니다. 연결 후 &quot;지금 동기화&quot; 또는 Cron으로 주기 실행할 수 있습니다.
-        </p>
-        {gmailMessage && (
-          <div className={`rounded-lg border p-3 text-sm mb-4 ${gmailMessage.startsWith('연결 실패') || gmailMessage.startsWith('동기화 실패') ? 'border-red-200 bg-red-50 text-red-800' : 'border-green-200 bg-green-50 text-green-800'}`}>
-            {gmailMessage}
-          </div>
-        )}
-        {gmailStatus?.connected || optimisticConnected ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 text-gray-700">
-              <CheckCircle className="w-5 h-5 text-green-600 shrink-0" />
-              <span className="text-sm">연결됨: <strong>{gmailStatus?.email ?? '확인 중…'}</strong></span>
-            </div>
-            {gmailStatus?.updated_at && (
-              <span className="text-xs text-gray-500">
-                마지막 연결: {new Date(gmailStatus.updated_at).toLocaleString('ko-KR')}
-              </span>
-            )}
-            <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <h1 className="text-lg sm:text-xl font-bold text-gray-900 shrink-0">예약 가져오기</h1>
+            {gmailConnected ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleGmailSync}
+                  disabled={gmailSyncing}
+                  className="inline-flex items-center gap-1.5 min-h-[44px] px-3.5 py-2 bg-primary text-primary-foreground text-sm rounded-xl hover:bg-primary/90 disabled:opacity-50 touch-manipulation"
+                >
+                  {gmailSyncing ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <Mail className="w-4 h-4 shrink-0" />}
+                  지금 동기화
+                </button>
+                <a
+                  href={gmailStartAuthUrl}
+                  className="inline-flex items-center gap-1.5 min-h-[44px] px-3.5 py-2 text-sm border border-gray-300 bg-white rounded-xl hover:bg-gray-50 touch-manipulation"
+                >
+                  <RefreshCw className="w-4 h-4 shrink-0" />
+                  다시 연결
+                </a>
+              </>
+            ) : (
               <a
                 href={gmailStartAuthUrl}
-                className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 touch-manipulation"
+                className="inline-flex items-center gap-1.5 min-h-[44px] px-3.5 py-2 bg-primary text-primary-foreground text-sm rounded-xl hover:bg-primary/90 touch-manipulation"
               >
-                <RefreshCw className="w-4 h-4 shrink-0" />
-                다시 연결
+                <Mail className="w-4 h-4 shrink-0" />
+                Gmail 연결
               </a>
-              <button
-                type="button"
-                onClick={() => handleGmailSync(false)}
-                disabled={gmailSyncing}
-                className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-primary text-primary-foreground text-sm rounded-lg hover:bg-primary/90 disabled:opacity-50 touch-manipulation"
+            )}
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 lg:max-w-xl w-full lg:w-auto lg:flex-1 lg:justify-end min-w-0">
+            <div className="relative flex-1 min-w-0 sm:min-w-[220px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" aria-hidden />
+              <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
+                value={searchQuery}
+                onChange={(e) => setListUi((prev) => ({ ...prev, searchQuery: e.target.value }))}
+                placeholder="제목, 발신자, 고객명·날짜 등 검색..."
+                className="w-full min-h-[44px] pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-xl bg-white focus:ring-2 focus:ring-ring focus:border-ring"
+                aria-label="이메일 목록 검색"
+              />
+            </div>
+            <div className="flex items-center gap-2 sm:w-[200px] shrink-0">
+              <Filter className="w-4 h-4 text-gray-400 shrink-0" aria-hidden />
+              <select
+                value={platformFilter}
+                onChange={(e) => setListUi((prev) => ({ ...prev, platformFilter: e.target.value }))}
+                className="w-full min-h-[44px] px-3 py-2 text-sm border border-gray-300 rounded-xl bg-white focus:ring-2 focus:ring-ring focus:border-ring"
+                aria-label="플랫폼 필터"
               >
-                {gmailSyncing ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <Mail className="w-4 h-4 shrink-0" />}
-                지금 동기화
-              </button>
-              <button
-                type="button"
-                onClick={() => handleGmailSync(true)}
-                disabled={gmailSyncing}
-                title="최근 7일 수신함 메일을 검색해 DB와 비교 후 누락분만 추가합니다. History API만으로는 안 잡히는 메일도 포함합니다."
-                className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 disabled:opacity-50 touch-manipulation"
-              >
-                {gmailSyncing ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <RefreshCw className="w-4 h-4 shrink-0" />}
-                전체 재동기화 (최근 7일)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleGmailSync(true, gmailLookbackDaysSinceYearStartLA())}
-                disabled={gmailSyncing}
-                title="올해 1월 1일부터의 수신함 메일을 검색합니다. 최근 7일보다 오래된 누락 메일만 가져옵니다."
-                className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-sky-600 text-white text-sm rounded-lg hover:bg-sky-700 disabled:opacity-50 touch-manipulation"
-              >
-                {gmailSyncing ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <Mail className="w-4 h-4 shrink-0" />}
-                올해 메일 가져오기
-              </button>
+                {PLATFORM_FILTER_OPTIONS.map((opt) => (
+                  <option key={opt.value || 'all'} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 text-gray-600">
-              <XCircle className="w-5 h-5 text-gray-400 shrink-0" />
-              <span className="text-sm">Gmail이 연결되지 않았습니다.</span>
-            </div>
-            <a
-              href={gmailStartAuthUrl}
-              className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-primary text-primary-foreground text-sm rounded-lg hover:bg-primary/90 touch-manipulation"
-            >
-              <Mail className="w-4 h-4 shrink-0" />
-              Gmail 연결
-            </a>
-          </div>
-        )}
-      </section>
+        </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <h1 className="text-lg sm:text-xl font-bold text-gray-900">예약 가져오기</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setPasteOpen(true)}
-            className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-primary text-primary-foreground text-sm rounded-lg hover:bg-primary/90 active:bg-blue-800 touch-manipulation"
-          >
-            <FileText className="w-4 h-4 shrink-0" />
-            이메일 붙여넣기
-          </button>
-          <span className="text-sm text-gray-600">상태:</span>
-          <select
-            value={statusFilter}
-            onChange={(e) => setListUi((prev) => ({ ...prev, statusFilter: e.target.value }))}
-            className="min-h-[44px] border border-gray-300 rounded-lg px-3 py-2 text-sm touch-manipulation"
-          >
-            <option value="active">대기 + 예약 생성됨</option>
-            <option value="pending">대기 중만</option>
-            <option value="confirmed">예약 생성됨만</option>
-            <option value="rejected">무시됨</option>
-          </select>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <p className="text-sm text-gray-600">{lastConnectedLabel}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPasteOpen(true)}
+              className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-primary text-primary-foreground text-sm rounded-xl hover:bg-primary/90 active:bg-blue-800 touch-manipulation"
+            >
+              <FileText className="w-4 h-4 shrink-0" />
+              이메일 붙여넣기
+            </button>
+            <span className="text-sm text-gray-600">상태:</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setListUi((prev) => ({ ...prev, statusFilter: e.target.value }))}
+              className="min-h-[44px] border border-gray-300 rounded-xl px-3 py-2 text-sm bg-white touch-manipulation"
+            >
+              <option value="active">대기 + 예약 생성됨</option>
+              <option value="pending">대기 중만</option>
+              <option value="confirmed">예약 생성됨만</option>
+              <option value="rejected">무시됨</option>
+            </select>
+          </div>
         </div>
       </div>
+
+      {gmailMessage && (
+        <div className={`rounded-xl border p-3 text-sm ${gmailMessage.startsWith('연결 실패') || gmailMessage.startsWith('동기화 실패') ? 'border-red-200 bg-red-50 text-red-800' : 'border-green-200 bg-green-50 text-green-800'}`}>
+          {gmailMessage}
+        </div>
+      )}
 
       {pasteOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -845,10 +818,6 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
         </div>
       )}
 
-      <p className="text-sm text-gray-600">
-        플랫폼에서 수신된 이메일로 자동 추출된 예약 후보입니다. 항목을 클릭해 정보를 보완한 뒤 예약으로 생성하세요.
-      </p>
-
       {/* 탭: 전체 / 예약 접수 / 취소 관련 */}
       <div className="flex flex-wrap gap-1 border-b border-gray-200">
         <button
@@ -896,97 +865,11 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           <span className="text-gray-500 font-normal">({cancellationCount})</span>
         </button>
       </div>
-      <p className="text-xs text-gray-500 mt-1">
-        &quot;예약 접수&quot;는 접수 메일만, &quot;취소 관련&quot;은 취소 알림만 표시합니다. 예약 접수 분류는 전체·예약 접수 탭 사이에 행을 드래그해 설정할 수 있습니다.
-      </p>
-
-      {/* 검색 + 플랫폼 필터 */}
-      <div className="flex flex-col sm:flex-row gap-3 py-3 border-b border-gray-100">
-        <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" aria-hidden />
-          <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
-            value={searchQuery}
-            onChange={(e) => setListUi((prev) => ({ ...prev, searchQuery: e.target.value }))}
-            placeholder="제목, 발신자, 고객명·날짜 등 검색..."
-            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
-            aria-label="이메일 목록 검색"
-          />
-        </div>
-        <div className="flex items-center gap-2 min-w-0 sm:min-w-[200px]">
-          <Filter className="w-4 h-4 text-gray-400 shrink-0" aria-hidden />
-          <select
-            value={platformFilter}
-            onChange={(e) => setListUi((prev) => ({ ...prev, platformFilter: e.target.value }))}
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-ring focus:border-ring"
-            aria-label="플랫폼 필터"
-          >
-            {PLATFORM_FILTER_OPTIONS.map((opt) => (
-              <option key={opt.value || 'all'} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
       {(searchQuery.trim() || platformFilter) && (
-        <p className="text-xs text-gray-500 mt-1">
+        <p className="text-xs text-gray-500">
           검색·필터 결과 <strong>{searchedAndFilteredItems.length}</strong>건
         </p>
       )}
-
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-3">
-        <div className="flex items-center justify-between sm:justify-start gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setListUi((prev) => ({
-                ...prev,
-                noDateFilter: false,
-                dateEnd: addDays(addDays(prev.dateEnd, -6), -1)
-              }))
-            }}
-            disabled={noDateFilter}
-            className="min-h-[44px] inline-flex items-center gap-1 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 disabled:opacity-50 touch-manipulation"
-          >
-            ◀ 이전
-          </button>
-          <span className="text-sm text-gray-600 font-medium flex-1 text-center shrink-0">
-            {noDateFilter ? '날짜 필터 없음 (최신순 최대 1000건)' : `${dateStart} ~ ${dateEnd}`}
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              setListUi((prev) => ({
-                ...prev,
-                noDateFilter: false,
-                dateEnd: addDays(prev.dateEnd, 7)
-              }))
-            }}
-            disabled={noDateFilter || dateEnd >= todayLocal()}
-            className="min-h-[44px] inline-flex items-center gap-1 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
-          >
-            다음 ▶
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => { setListUi((prev) => ({ ...prev, noDateFilter: true })) }}
-            className="min-h-[44px] text-sm text-amber-600 hover:underline py-2 touch-manipulation font-medium"
-          >
-            최신순 전체
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setListUi((prev) => ({ ...prev, noDateFilter: false, dateEnd: todayLocal() }))
-            }}
-            className="min-h-[44px] text-sm text-primary hover:underline py-2 touch-manipulation"
-          >
-            오늘 기준으로
-          </button>
-        </div>
-      </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
@@ -1004,8 +887,8 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
             {activeTab === 'booking'
               ? '예약 접수로 분류된 메일이 없습니다. 목록에서 항목을 드래그해 이 탭에 놓아 보관하세요.'
               : activeTab === 'cancellation'
-                ? '이 기간에 취소 관련 제목(cancelled/canceled) 메일이 없습니다.'
-                : '해당 기간 항목이 없습니다.'}
+                ? '취소 관련 제목(cancelled/canceled) 메일이 없습니다.'
+                : '표시할 항목이 없습니다.'}
           </p>
         </div>
       ) : searchedAndFilteredItems.length === 0 ? (
