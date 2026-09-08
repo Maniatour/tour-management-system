@@ -63,7 +63,7 @@ export default function ReservationImportNotificationListener({ locale }: { loca
       if (cancelled || !sessionData?.session) return
       const { data } = await supabase
         .from('reservation_imports')
-        .select('id, subject, platform_key, received_at, created_at, extracted_data')
+        .select('id, subject, platform_key, source_email, received_at, created_at, extracted_data')
         .gt('created_at', sinceIsoRef.current)
         .order('created_at', { ascending: true })
         .limit(20)
@@ -179,7 +179,7 @@ export default function ReservationImportNotificationListener({ locale }: { loca
           <p className="text-sm text-gray-600">
             {isCancel
               ? '취소 관련 메일이 예약 가져오기 목록에 추가되었습니다.'
-              : '예약 관련 메일이 예약 가져오기 목록에 추가되었습니다.'}
+              : '예약 접수 메일이 예약 가져오기 목록에 추가되었습니다.'}
           </p>
           <div className="flex justify-end gap-2">
             <button

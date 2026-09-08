@@ -1129,6 +1129,7 @@ export default function TourReportForm({
 
   const totalSteps = reportPace === 'all_clear' ? 3 : 4
   const visibleStepTitles = reportPace === 'all_clear' ? t.stepTitlesAllClear : t.stepTitles
+  const nestedBodyScroll = variant === 'modal'
 
   const mobileStepVisible = (section: 0 | 1 | 2 | 3) => {
     if (!useMobileWizard) return true
@@ -1469,20 +1470,18 @@ export default function TourReportForm({
   return (
     <div
       className={cn(
-        variant === 'modal' && useMobileWizard
+        variant === 'modal'
           ? 'mx-0 w-full max-w-none py-0'
           : 'mx-auto max-w-4xl py-2 md:py-4',
-        useMobileWizard && 'flex min-h-0 flex-col',
-        useMobileWizard && variant === 'modal' && 'h-full min-h-0 flex-1',
-        useMobileWizard &&
-          variant === 'inline' &&
-          '[min-height:min(70vh,520px)] lg:min-h-0'
+        (useMobileWizard || nestedBodyScroll) && 'flex min-h-0 flex-col',
+        nestedBodyScroll && 'h-full min-h-0 flex-1 overflow-hidden'
       )}
     >
       <Card
         className={cn(
-          useMobileWizard &&
-            'flex min-h-0 flex-1 flex-col border-0 shadow-none sm:border sm:shadow-sm'
+          (useMobileWizard || nestedBodyScroll) &&
+            'flex min-h-0 flex-col border-0 shadow-none sm:border sm:shadow-sm',
+          nestedBodyScroll && 'h-full min-h-0 flex-1 overflow-hidden'
         )}
       >
         <CardHeader
@@ -1499,15 +1498,17 @@ export default function TourReportForm({
         <CardContent
           className={cn(
             variant === 'modal' && useMobileWizard ? 'px-0 py-2' : 'px-0 py-3 md:px-6 md:py-6',
-            useMobileWizard && 'flex min-h-0 flex-1 flex-col lg:max-h-none lg:min-h-0'
+            (useMobileWizard || nestedBodyScroll) && 'flex min-h-0 flex-col',
+            nestedBodyScroll && 'min-h-0 flex-1 overflow-hidden'
           )}
         >
           <form
             onSubmit={handleSubmit}
             className={cn(
-              useMobileWizard && variant === 'modal' ? blockYModal : blockY,
               shellPad,
-              useMobileWizard && 'flex min-h-0 flex-1 flex-col pb-1'
+              nestedBodyScroll
+                ? 'flex h-full min-h-0 flex-1 flex-col gap-4 overflow-hidden pb-1'
+                : cn(blockY, useMobileWizard && 'flex min-h-0 flex-col pb-1')
             )}
           >
             {useMobileWizard && (
@@ -1523,9 +1524,10 @@ export default function TourReportForm({
             <div
               ref={scrollBodyRef}
               className={cn(
-                useMobileWizard && variant === 'modal' ? blockYModal : blockY,
-                useMobileWizard &&
-                  'min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y pb-8 [-webkit-overflow-scrolling:touch]'
+                nestedBodyScroll ? blockYModal : blockY,
+                (useMobileWizard || nestedBodyScroll) && 'pb-8',
+                nestedBodyScroll &&
+                  'min-h-0 h-0 flex-1 overflow-auto overscroll-y-auto [-webkit-overflow-scrolling:touch]'
               )}
             >
             {stepErrors.length > 0 && (
@@ -1549,6 +1551,28 @@ export default function TourReportForm({
                 locale={locale}
               />
             </div>
+            {reportPace === 'has_issues' && (
+              <div className="space-y-3 py-5">
+                <Label htmlFor="comments" className={cn('flex items-center gap-2', labelMb)}>
+                  <MessageSquare className="h-4 w-4 shrink-0" />
+                  {t.fields.comments}
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  {getText(
+                    '사고, 차량, 분실, 전달사항 등 리포트에 남길 내용을 적어 주세요.',
+                    'Write incidents, vehicle issues, lost items, or anything else to report.'
+                  )}
+                </p>
+                <Textarea
+                  id="comments"
+                  value={formData.comments || ''}
+                  onChange={(e) => handleInputChange('comments', e.target.value)}
+                  placeholder={t.placeholders.comments}
+                  rows={4}
+                  className="min-h-[120px] resize-y md:min-h-[120px]"
+                />
+              </div>
+            )}
 
             {/* Step 0 — 기본 정보 */}
             <div className="space-y-3 py-5">
@@ -2165,22 +2189,6 @@ export default function TourReportForm({
                   </Button>
                 ))}
               </div>
-            </div>
-
-            {/* 기타 코멘트 */}
-            <div className={cn(fieldY, 'pt-1')}>
-              <Label htmlFor="comments" className={cn('flex items-center gap-2', labelMb)}>
-                <MessageSquare className="h-4 w-4 shrink-0" />
-                {t.fields.comments}
-              </Label>
-              <Textarea
-                id="comments"
-                value={formData.comments || ''}
-                onChange={(e) => handleInputChange('comments', e.target.value)}
-                placeholder={t.placeholders.comments}
-                rows={3}
-                className="min-h-[100px] resize-y md:min-h-0"
-              />
             </div>
 
             <div className={cn(fieldY, 'pt-1')}>

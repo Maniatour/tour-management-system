@@ -274,8 +274,8 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="flex shrink-0 items-center justify-between p-6 border-b">
           <h3 className="text-xl font-semibold text-gray-900 flex items-center">
             <FileText className="w-6 h-6 mr-2 text-red-500" />
             {getText('투어 리포트 작성', 'Tour Report')}
@@ -288,7 +288,13 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+        <div
+          className={
+            showReportForm
+              ? 'flex min-h-0 flex-1 flex-col overflow-hidden p-4 sm:p-6'
+              : 'min-h-0 flex-1 overflow-y-auto p-6'
+          }
+        >
           {!showReportForm ? (
             // 투어 선택 단계
             <div className="space-y-4">
@@ -473,8 +479,8 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
             </div>
           ) : (
             // 리포트 작성 폼 (기존 TourReportForm 컴포넌트 사용)
-            <div className="space-y-4">
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+              <div className="shrink-0 bg-green-50 border border-green-200 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="font-semibold text-green-900">
                     리포트 작성 중: {locale === 'en' ? (currentEditingTour?.product_name_en || currentEditingTour?.product_name || currentEditingTour?.product_id) : (currentEditingTour?.product_name || currentEditingTour?.product_id)}
@@ -500,14 +506,16 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
               
               {/* 실제 리포트 폼 컴포넌트 */}
               {currentEditingTour && (
-                <TourReportForm
-                  tourId={currentEditingTour.id}
-                  productId={currentEditingTour.product_id ?? null}
-                  variant="modal"
-                  onSuccess={handleReportFormSuccess}
-                  onCancel={handleReportFormCancel}
-                  locale={locale}
-                />
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <TourReportForm
+                    tourId={currentEditingTour.id}
+                    productId={currentEditingTour.product_id ?? null}
+                    variant="modal"
+                    onSuccess={handleReportFormSuccess}
+                    onCancel={handleReportFormCancel}
+                    locale={locale}
+                  />
+                </div>
               )}
             </div>
           )}
