@@ -19,7 +19,13 @@ export type ReservationImportNotifyRow = {
   source_email?: string | null
   received_at: string | null
   created_at: string | null
-  extracted_data?: { is_booking_confirmed?: boolean } | null
+  extracted_data?: {
+    is_booking_confirmed?: boolean
+    product_id?: string
+    product_name?: string
+    tour_date?: string
+    customer_name?: string
+  } | null
 }
 
 function isKKdayBookingSubject(subject: string | null | undefined): boolean {

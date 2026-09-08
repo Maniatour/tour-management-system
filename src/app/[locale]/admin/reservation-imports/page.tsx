@@ -37,6 +37,13 @@ import {
   type GmailReservationImportSyncDetail,
 } from '@/contexts/GmailReservationImportSyncContext'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { ImportTourDayStatusLine } from '@/components/reservation/ImportTourDayStatusLine'
+import { useImportTourDayStatusMap } from '@/hooks/useImportTourDayStatusMap'
+import {
+  importTourDayStatusKey,
+  parseImportTourDate,
+  resolveImportProductId,
+} from '@/lib/importTourDayStatus'
 
 interface ImportItem {
   id: string
@@ -455,6 +462,25 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     const start = (listPageClamped - 1) * LIST_PAGE_SIZE
     return searchedAndFilteredItems.slice(start, start + LIST_PAGE_SIZE)
   }, [searchedAndFilteredItems, listPageClamped])
+
+  const tourDayStatusKeys = useMemo(
+    () =>
+      paginatedItems.flatMap((row) => {
+        const productId = resolveImportProductId(row.extracted_data || {}, productsList ?? [])
+        const tourDate = parseImportTourDate(row.extracted_data?.tour_date)
+        if (!productId || !tourDate) return []
+        return [{ productId, tourDate }]
+      }),
+    [paginatedItems, productsList]
+  )
+  const { byKey: tourDayStatusByKey, loading: tourDayStatusLoading } = useImportTourDayStatusMap(tourDayStatusKeys)
+
+  const tourDayStatusForRow = (row: ImportItem) => {
+    const productId = resolveImportProductId(row.extracted_data || {}, productsList ?? [])
+    const tourDate = parseImportTourDate(row.extracted_data?.tour_date)
+    if (!productId || !tourDate) return null
+    return tourDayStatusByKey.get(importTourDayStatusKey(productId, tourDate)) ?? null
+  }
 
   const listRangeStart = listTotal === 0 ? 0 : (listPageClamped - 1) * LIST_PAGE_SIZE + 1
   const listRangeEnd = Math.min(listPageClamped * LIST_PAGE_SIZE, listTotal)
@@ -928,6 +954,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                   <th className="px-4 py-2 min-w-[320px] text-left text-xs font-medium text-gray-500 uppercase">제목</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">플랫폼</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">추출 요약</th>
+                  <th className="px-4 py-2 min-w-[240px] text-left text-xs font-medium text-gray-500 uppercase">해당일 투어 현황</th>
                   <th className="px-4 py-2 w-10" />
                 </tr>
               </thead>
@@ -975,6 +1002,12 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                       <td className="px-4 py-3 text-sm text-gray-600">{renderPlatform(row)}</td>
                       <td className="px-4 py-3 text-sm text-gray-700 max-w-[280px] truncate" title={summary(row.extracted_data)}>
                         {summary(row.extracted_data)}
+                      </td>
+                      <td className="px-4 py-3 whitespace-normal max-w-[320px]">
+                        <ImportTourDayStatusLine
+                          status={tourDayStatusForRow(row)}
+                          loading={tourDayStatusLoading}
+                        />
                       </td>
                       <td className="px-4 py-3">
                         {isPatching ? <Loader2 className="w-4 h-4 animate-spin text-primary" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
@@ -1027,6 +1060,12 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                           <span className="truncate">{summary(row.extracted_data)}</span>
                         </p>
                       )}
+                      <div className="mt-2">
+                        <ImportTourDayStatusLine
+                          status={tourDayStatusForRow(row)}
+                          loading={tourDayStatusLoading}
+                        />
+                      </div>
                     </div>
                     <div className="shrink-0 pt-1">
                       {isPatching ? <Loader2 className="w-5 h-5 animate-spin text-primary" /> : <ChevronRight className="w-5 h-5 text-gray-400" />}

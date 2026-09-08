@@ -1,15 +1,24 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Mail, ExternalLink, X } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { isCancellationRequestEmailSubject } from '@/lib/emailReservationParser'
 import {
   isReservationRelatedImportNotifyRow,
   type ReservationImportNotifyRow,
 } from '@/lib/reservationImportNotify'
+import { ImportTourDayStatusLine } from '@/components/reservation/ImportTourDayStatusLine'
+import { fetchImportTourDayStatusMap } from '@/lib/fetchImportTourDayStatus'
+import {
+  importTourDayStatusKey,
+  parseImportTourDate,
+  resolveImportProductId,
+  type ImportTourDayStatusSummary,
+} from '@/lib/importTourDayStatus'
+import { normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
 
 const DISMISSED_KEY = 'tms-reservation-import-notify-dismissed'
 const POLL_MS = 30_000
@@ -40,6 +49,8 @@ export default function ReservationImportNotificationListener({ locale }: { loca
   const sinceIsoRef = useRef(new Date().toISOString())
   const dismissedRef = useRef<Set<string>>(new Set())
   const notification = queue[0] ?? null
+  const [tourStatus, setTourStatus] = useState<ImportTourDayStatusSummary | null>(null)
+  const [tourStatusLoading, setTourStatusLoading] = useState(false)
 
   const enqueue = useCallback((next: ReservationImportNotifyRow) => {
     if (!next?.id || dismissedRef.current.has(next.id)) return
@@ -107,6 +118,66 @@ export default function ReservationImportNotificationListener({ locale }: { loca
     }
   }, [enabled, enqueue])
 
+  useEffect(() => {
+    if (!notification) {
+      setTourStatus(null)
+      setTourStatusLoading(false)
+      return
+    }
+
+    let cancelled = false
+    const extracted = notification.extracted_data
+    const tourDate = parseImportTourDate(extracted?.tour_date)
+
+    const load = async () => {
+      setTourStatusLoading(true)
+      setTourStatus(null)
+      try {
+        let productId = String(extracted?.product_id ?? '').trim()
+        if (!productId && extracted?.product_name) {
+          const { data: products } = await supabase.from('products').select('id, name, name_ko, name_en')
+          if (cancelled) return
+          productId =
+            resolveImportProductId(extracted, (products || []) as Array<{
+              id: string
+              name?: string | null
+              name_ko?: string | null
+              name_en?: string | null
+            }>) || ''
+        }
+        if (!productId || !tourDate) {
+          if (!cancelled) setTourStatus(null)
+          return
+        }
+        const map = await fetchImportTourDayStatusMap([{ productId, tourDate }])
+        if (cancelled) return
+        setTourStatus(map.get(importTourDayStatusKey(productId, tourDate)) ?? null)
+      } catch (err) {
+        if (cancelled || isAbortLikeError(err)) return
+        console.error('예약 메일 알림: 해당일 투어 현황 조회 실패', err)
+        if (!cancelled) setTourStatus(null)
+      } finally {
+        if (!cancelled) setTourStatusLoading(false)
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [notification])
+
+  const extractedMeta = useMemo(() => {
+    if (!notification?.extracted_data) return null
+    const tourDate = parseImportTourDate(notification.extracted_data.tour_date)
+    const productName = String(notification.extracted_data.product_name ?? '').trim()
+    const customerName =
+      normalizeCustomerNameFromImport(notification.extracted_data.customer_name) ||
+      String(notification.extracted_data.customer_name ?? '').trim()
+    if (!tourDate && !productName && !customerName) return null
+    return { tourDate, productName, customerName }
+  }, [notification])
+
   const handleClose = () => {
     const current = notification
     if (current?.id) {
@@ -133,6 +204,9 @@ export default function ReservationImportNotificationListener({ locale }: { loca
   const isCancel = isCancellationRequestEmailSubject(notification.subject)
   const title = isCancel ? '취소 메일 접수' : '예약 메일 접수'
   const platform = notification.platform_key && notification.platform_key !== '-' ? notification.platform_key : null
+  const canShowTourStatus = Boolean(
+    parseImportTourDate(notification.extracted_data?.tour_date) || notification.extracted_data?.product_id || notification.extracted_data?.product_name
+  )
 
   return (
     <div className="fixed inset-0 z-[10050] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[1px]">
@@ -140,7 +214,7 @@ export default function ReservationImportNotificationListener({ locale }: { loca
         role="dialog"
         aria-modal="true"
         aria-labelledby="reservation-import-notify-title"
-        className="w-full max-w-md overflow-hidden rounded-2xl border border-border/60 bg-white shadow-2xl"
+        className="w-full max-w-lg overflow-hidden rounded-2xl border border-border/60 bg-white shadow-2xl"
       >
         <div
           className={`flex items-start justify-between gap-3 border-b p-4 ${
@@ -176,11 +250,26 @@ export default function ReservationImportNotificationListener({ locale }: { loca
           <p className="text-sm font-medium text-gray-900 leading-snug">
             {notification.subject?.trim() || '(제목 없음)'}
           </p>
+          {extractedMeta ? (
+            <p className="text-xs text-gray-600 leading-relaxed">
+              {[extractedMeta.tourDate, extractedMeta.productName, extractedMeta.customerName]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          ) : null}
           <p className="text-sm text-gray-600">
             {isCancel
               ? '취소 관련 메일이 예약 가져오기 목록에 추가되었습니다.'
               : '예약 접수 메일이 예약 가져오기 목록에 추가되었습니다.'}
           </p>
+          {canShowTourStatus || tourStatusLoading ? (
+            <div>
+              <p className="mb-1.5 text-xs font-medium text-gray-700">해당일 투어 현황</p>
+              <ImportTourDayStatusLine status={tourStatus} loading={tourStatusLoading} compact={false} />
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">상품·날짜가 추출되지 않아 해당일 투어 현황을 표시할 수 없습니다.</p>
+          )}
           <div className="flex justify-end gap-2">
             <button
               type="button"
