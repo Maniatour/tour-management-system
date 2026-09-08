@@ -5816,6 +5816,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         ticketPeopleMismatch: [] as Array<{
           tourId: string
           tourDate: string
+          productId: string
           productName: string
           people: number
           ticketEa: number
@@ -5899,13 +5900,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       tbByTour.get(k)!.push(tb)
     }
 
-    const ticketPeopleMismatch: Array<{
-      tourId: string
-      tourDate: string
-      productName: string
-      people: number
-      ticketEa: number
-    }> = []
+    const ticketPeopleByProductDate = new Map<
+      string,
+      {
+        tourId: string
+        tourDate: string
+        productId: string
+        productName: string
+        people: number
+        ticketEa: number
+      }
+    >()
     const stLower = (s: string | null | undefined) => String(s || '').toLowerCase()
     for (const tour of wt) {
       if (isTourCancelled(tour.tour_status)) continue
@@ -5922,6 +5927,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       if (!touchesFour) continue
       const tourDateStr = String(tour.tour_date || '').slice(0, 10)
       const mismatchDateStr = antelopeYmd || tourDateStr
+      const productId = String(tour.product_id || '')
       const dayReservations = resList.filter((r) => {
         const rd = String(r.tour_date || '').slice(0, 10)
         return (
@@ -5944,23 +5950,30 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         if (!isActiveTicketBookingStatusForHealth(tb)) continue
         ticketEa += Number(tb.ea) || 0
       }
-      if (assignedPeople !== ticketEa) {
-        ticketPeopleMismatch.push({
-          tourId: tour.id,
+      const productName = (
+        (tour as { products?: { name?: string } }).products?.name ||
+        tour.product_id ||
+        '—'
+      ).toString()
+      const groupKey = `${productId}|${mismatchDateStr}`
+      const existing = ticketPeopleByProductDate.get(groupKey)
+      if (existing) {
+        existing.people += assignedPeople
+        existing.ticketEa += ticketEa
+      } else {
+        ticketPeopleByProductDate.set(groupKey, {
+          tourId: String(tour.id),
           tourDate: mismatchDateStr,
-          productName: (
-            (tour as { products?: { name?: string } }).products?.name ||
-            tour.product_id ||
-            '—'
-          ).toString(),
+          productId,
+          productName,
           people: assignedPeople,
           ticketEa,
         })
       }
     }
-    ticketPeopleMismatch.sort(
-      (a, b) => a.tourDate.localeCompare(b.tourDate) || a.productName.localeCompare(b.productName),
-    )
+    const ticketPeopleMismatch = [...ticketPeopleByProductDate.values()]
+      .filter((row) => row.people !== row.ticketEa)
+      .sort((a, b) => a.tourDate.localeCompare(b.tourDate) || a.productName.localeCompare(b.productName))
 
     const resById = new Map(resList.map((r) => [String(r.id), r]))
     const unconfirmedToursWithPendingOrConfirmedRes: Array<{
@@ -6077,7 +6090,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
   useEffect(() => {
     if (!scheduleHealthFetchedLoaded) return
-    if (scheduleHealthIssueCount === 0) return
+    if (scheduleHealthIssueCount === 0) {
+      setScheduleHealthModalOpen(false)
+      return
+    }
     if (typeof window !== 'undefined' && sessionStorage.getItem(SCHEDULE_HEALTH_SUMMARY_SESSION_KEY) === '1') {
       return
     }
@@ -7229,7 +7245,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               </div>
               <button
                 type="button"
-                onClick={() => setScheduleHealthModalOpen(true)}
+                onClick={() => {
+                  if (scheduleHealthIssueCount === 0) return
+                  setScheduleHealthModalOpen(true)
+                }}
                 className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg ring-2 ring-amber-200 hover:brightness-105 focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-400"
                 title={locale === 'ko' ? '스케줄 점검 요약' : 'Schedule health summary'}
                 aria-label={locale === 'ko' ? '스케줄 점검 요약 열기' : 'Open schedule health summary'}
@@ -7367,7 +7386,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
               <button
                 type="button"
-                onClick={() => setScheduleHealthModalOpen(true)}
+                onClick={() => {
+                  if (scheduleHealthIssueCount === 0) return
+                  setScheduleHealthModalOpen(true)
+                }}
                 className="relative flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-sm hover:brightness-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
                 title={locale === 'ko' ? '스케줄 점검 요약' : 'Schedule health summary'}
                 aria-label={locale === 'ko' ? '스케줄 점검 요약' : 'Schedule health summary'}
@@ -9281,7 +9303,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       {/* 날짜 노트 모달 */}
       {/* 스케줄 종합 알림: 정원 초과 · 차량-투어 건수 · 미배정 · 입장권-인원 */}
       <Dialog
-        open={scheduleHealthModalOpen}
+        open={scheduleHealthModalOpen && scheduleHealthIssueCount > 0}
         onOpenChange={(open) => {
           if (!open) {
             setScheduleHealthModalOpen(false)
@@ -9447,12 +9469,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               <h4 className="text-sm font-bold text-sky-900">
                 4.{' '}
                 {locale === 'ko'
-                  ? '4일 이내 · 투어 인원 ≠ 입장권 합(EA)'
-                  : 'Within 4 days — tour pax ≠ ticket EA sum'}
+                  ? '4일 이내 · 해당일 투어 인원 합 ≠ 입장권 합(EA)'
+                  : 'Within 4 days — day tour pax sum ≠ ticket EA sum'}
               </h4>
+              <p className="mt-1 text-xs text-gray-600">
+                {locale === 'ko'
+                  ? '같은 상품·같은 앤텔롭 체크인일의 투어 인원 합과 입장권 매수 합을 비교합니다. 팀에 나눠 연결해도 합이 같으면 해당 없음입니다.'
+                  : 'Compares total assigned pax vs ticket EA for the same product on the same Antelope check-in date. Tickets linked to one team still match if the day totals are equal.'}
+              </p>
                 <ul className="mt-2 max-h-40 space-y-1.5 overflow-y-auto pr-1 text-sm">
                   {scheduleHealthFromFetch.ticketPeopleMismatch.map((row) => (
-                    <li key={row.tourId}>
+                    <li key={`${row.productId}|${row.tourDate}`}>
                       <button
                         type="button"
                         className="w-full rounded-md border border-sky-100 bg-white/90 px-2 py-1.5 text-left hover:bg-sky-100/60"
