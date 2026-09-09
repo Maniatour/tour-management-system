@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { FileText } from 'lucide-react'
 import ReservationEvidenceUpload from '@/components/reservation/ReservationEvidenceUpload'
 import ResidentCheckSubmissionModal from '@/components/reservation/ResidentCheckSubmissionModal'
@@ -93,6 +94,25 @@ export default function ParticipantsSection({
   const [showGuestForm, setShowGuestForm] = useState(false)
   const isKo = locale === 'ko'
   const showGuestResidentFormButton = isGuestResidentCheckFilledByCustomer(guestResidentCheck)
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
+  const openedFromQueryRef = useRef(false)
+
+  useEffect(() => {
+    if (openedFromQueryRef.current) return
+    if (searchParams.get('guestResidentCheck') !== '1') return
+    if (!showGuestResidentFormButton) return
+    openedFromQueryRef.current = true
+    setShowGuestForm(true)
+    const next = new URLSearchParams(searchParams.toString())
+    next.delete('guestResidentCheck')
+    const qs = next.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+    window.requestAnimationFrame(() => {
+      document.getElementById('participants-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }, [pathname, router, searchParams, showGuestResidentFormButton])
   const apply = (patch: Record<string, unknown>) => {
     if (applyResidentParticipantPatch) {
       applyResidentParticipantPatch(patch)
