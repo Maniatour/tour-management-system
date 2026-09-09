@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import WaiverDocumentView from '@/components/waiver/WaiverDocumentView'
 import WaiverSignaturePad from '@/components/waiver/WaiverSignaturePad'
 import { WAIVER_LOCALE_LABELS } from '@/lib/waiver/locales'
-import { getWaiverUi } from '@/lib/waiver/ui'
+import { getWaiverUi, waiverAcceptLabel, waiverLanguageNotice } from '@/lib/waiver/ui'
 import { WAIVER_LOCALES, type WaiverLocale } from '@/lib/waiver/types'
 
 type RequiredDoc = {
@@ -431,7 +431,7 @@ export default function WaiverSigningClient({
                       <div className="mt-4 max-h-[70vh] overflow-y-auto pr-1">
                         <WaiverDocumentView
                           content={doc.content}
-                          languageNotice={doc.code === 'ANTELOPE_CANYON_X' ? ui.languageNoticeCanyonX : ui.languageNoticeMania}
+                          languageNotice={waiverLanguageNotice(ui, doc.code)}
                           showGoverningNotice={lang !== 'en'}
                         />
                       </div>
@@ -446,7 +446,7 @@ export default function WaiverSigningClient({
                         }}
                       />
                       <span>
-                        {doc.code === 'ANTELOPE_CANYON_X' ? ui.acceptCanyonX : ui.acceptMania}
+                        {waiverAcceptLabel(ui, doc.code)}
                         {!viewedDocs[doc.code] ? (
                           <span className="mt-1 block text-muted-foreground">{ui.viewBeforeAccept}</span>
                         ) : null}

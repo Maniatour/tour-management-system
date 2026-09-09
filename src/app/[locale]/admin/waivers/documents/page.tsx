@@ -76,10 +76,10 @@ export default function AdminWaiverDocumentsPage() {
       <div className="mt-8">
         <Button asChild variant="outline" className="h-11 rounded-xl">
           <Link
-            href={`/${locale}/admin/waivers/documents/preview?source=live&docs=LAS_VEGAS_MANIA,ANTELOPE_CANYON_X`}
+            href={`/${locale}/admin/waivers/documents/preview?source=live&docs=LAS_VEGAS_MANIA,ANTELOPE_CANYON_X,LOWER_ANTELOPE`}
             target="_blank"
           >
-            {isKo ? 'Mania + Canyon X 고객 화면' : 'Preview Mania + Canyon X'}
+            {isKo ? 'Mania + Canyon 고객 화면' : 'Preview Mania + canyon waivers'}
           </Link>
         </Button>
       </div>

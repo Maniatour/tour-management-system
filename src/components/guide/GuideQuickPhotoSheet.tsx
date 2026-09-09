@@ -1,11 +1,12 @@
 'use client'
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { Camera, Check, Loader2, Receipt, RefreshCw, X, WifiOff } from 'lucide-react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ChangeEvent } from 'react'
+import { Camera, Check, Image as ImageIcon, Loader2, Receipt, RefreshCw, X, WifiOff } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
 import { fetchApiWithAuthWhenReady } from '@/lib/api-client-bearer'
 import { DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
+import GuideLiveCameraOverlay from '@/components/guide/GuideLiveCameraOverlay'
 import { prepareGuideQuickPhoto } from '@/lib/guideQuickPhotoProcess'
 import { classifyGuideQuickCapture, type GuideQuickCaptureKind } from '@/lib/guideQuickPhotoClassify'
 import { uploadGuideQuickReceipt } from '@/lib/guideQuickReceiptUpload'
@@ -60,9 +61,13 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
   const { user, simulatedUser, isSimulating } = useAuth()
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
   const previewUrlsRef = useRef<string[]>([])
   const tourRef = useRef<TodayPhotoTourMatch | null>(null)
   const loadingTourRef = useRef(false)
+  const liveStreamRef = useRef<MediaStream | null>(null)
+  const cameraRequestIdRef = useRef(0)
+  const liveCameraOpenRef = useRef(false)
 
   const [loadingTour, setLoadingTour] = useState(false)
   const [tour, setTour] = useState<TodayPhotoTourMatch | null>(null)
@@ -72,6 +77,8 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
   const [tourError, setTourError] = useState<string | null>(null)
   const [shots, setShots] = useState<LocalShot[]>([])
   const [offline, setOffline] = useState(false)
+  const [liveCameraOpen, setLiveCameraOpen] = useState(false)
+  const [liveStream, setLiveStream] = useState<MediaStream | null>(null)
 
   const rememberPreview = (url: string) => {
     previewUrlsRef.current.push(url)
@@ -372,12 +379,62 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
     loadingTourRef.current = loadingTour
   }, [loadingTour])
 
+  const stopLiveCamera = useCallback(() => {
+    cameraRequestIdRef.current += 1
+    liveCameraOpenRef.current = false
+    liveStreamRef.current?.getTracks().forEach((track) => track.stop())
+    liveStreamRef.current = null
+    setLiveStream(null)
+    setLiveCameraOpen(false)
+  }, [])
+
   const takePhoto = useCallback(() => {
     if (!tourRef.current) {
       if (!loadingTourRef.current) setTourError(t('noTour'))
       return false
     }
-    cameraInputRef.current?.click()
+    if (liveCameraOpenRef.current) return true
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      cameraInputRef.current?.click()
+      return true
+    }
+
+    const requestId = cameraRequestIdRef.current + 1
+    cameraRequestIdRef.current = requestId
+    liveCameraOpenRef.current = true
+    setLiveCameraOpen(true)
+
+    navigator.mediaDevices
+      .getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      })
+      .catch(() =>
+        navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' },
+          audio: false,
+        })
+      )
+      .catch(() => navigator.mediaDevices.getUserMedia({ video: true, audio: false }))
+      .then((stream) => {
+        if (cameraRequestIdRef.current !== requestId) {
+          stream.getTracks().forEach((track) => track.stop())
+          return
+        }
+        liveStreamRef.current = stream
+        setLiveStream(stream)
+      })
+      .catch(() => {
+        if (cameraRequestIdRef.current !== requestId) return
+        liveCameraOpenRef.current = false
+        setLiveCameraOpen(false)
+        cameraInputRef.current?.click()
+      })
+
     return true
   }, [t])
 
@@ -385,10 +442,22 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
 
   useEffect(() => {
     return () => {
+      cameraRequestIdRef.current += 1
+      liveStreamRef.current?.getTracks().forEach((track) => track.stop())
+      liveStreamRef.current = null
       previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
       previewUrlsRef.current = []
     }
   }, [])
+
+  const onFilePicked = (event: ChangeEvent<HTMLInputElement>) => {
+    const target = event.target
+    const file = target.files?.[0]
+    if (file) void handleCapturedFile(file)
+    requestAnimationFrame(() => {
+      target.value = ''
+    })
+  }
 
   const cameraInput = (
     <input
@@ -397,20 +466,32 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
       accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp"
       capture={isMobileCameraDevice() ? 'environment' : undefined}
       className="hidden"
-      onChange={(event) => {
-        const target = event.target as HTMLInputElement
-        const file = target.files?.[0]
-        if (file) void handleCapturedFile(file)
-        requestAnimationFrame(() => {
-          target.value = ''
-        })
-      }}
+      onChange={onFilePicked}
+    />
+  )
+
+  const galleryInput = (
+    <input
+      ref={galleryInputRef}
+      type="file"
+      accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp"
+      className="hidden"
+      onChange={onFilePicked}
     />
   )
 
   return (
     <>
       {cameraInput}
+      {galleryInput}
+      <GuideLiveCameraOverlay
+        open={liveCameraOpen}
+        stream={liveStream}
+        lastPreviewUrl={shots[0]?.previewUrl}
+        capturedCount={shots.length}
+        onClose={stopLiveCamera}
+        onCapture={(file) => void handleCapturedFile(file)}
+      />
       {open ? (
       <div className="fixed inset-0 flex items-end justify-center sm:items-center sm:p-4" style={{ zIndex: DIALOG_Z_INDEX.default }}>
         <button type="button" className="absolute inset-0 bg-black/50" aria-label={t('close')} onClick={onClose} />
@@ -452,6 +533,15 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
             >
               <Camera className="h-5 w-5" />
               {t('takePhoto')}
+            </button>
+            <button
+              type="button"
+              onClick={() => galleryInputRef.current?.click()}
+              disabled={!tour || loadingTour}
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-border bg-white text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <ImageIcon className="h-4 w-4" />
+              {t('chooseFromAlbum')}
             </button>
             <p className="text-center text-xs text-muted-foreground">{isMobileCameraDevice() ? t('cameraHint') : t('desktopHint')}</p>
             <p className="text-center text-xs text-muted-foreground">{t('customerHiddenNote')}</p>

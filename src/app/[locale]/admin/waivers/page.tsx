@@ -83,7 +83,7 @@ export default function AdminWaiversPage() {
           <Link href={`/${locale}/admin/waivers/documents`}>{isKo ? '문서 수정' : 'Edit documents'}</Link>
         </Button>
         <Button asChild variant="outline" className="h-11 rounded-xl">
-          <Link href={`/${locale}/admin/waivers/documents/preview?source=live&docs=LAS_VEGAS_MANIA,ANTELOPE_CANYON_X`} target="_blank">
+          <Link href={`/${locale}/admin/waivers/documents/preview?source=live&docs=LAS_VEGAS_MANIA,ANTELOPE_CANYON_X,LOWER_ANTELOPE`} target="_blank">
             {isKo ? '고객 화면 미리보기' : 'Preview customer page'}
           </Link>
         </Button>

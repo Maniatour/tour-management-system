@@ -11,14 +11,19 @@ export function emptyWaiverSection(number = '1'): WaiverSection {
   return { number, title: '', paragraphs: [''], bullets: [] }
 }
 
+function defaultLanguageNotice(code: WaiverDocumentCode, locale: WaiverLocale): string {
+  if (locale !== 'en') return ''
+  if (code === 'ANTELOPE_CANYON_X') {
+    return 'This translation is provided to assist you in understanding the original Taadidiin Tours waiver. The official operator document is the English version.'
+  }
+  if (code === 'LOWER_ANTELOPE') {
+    return "This translation is provided to assist you in understanding the original Dixie's Lower Antelope Canyon Tours waiver. The official operator document is the English version."
+  }
+  return 'This translation is provided for convenience. To the extent permitted by applicable law, if there is any inconsistency between this translation and the English version, the English version shall control.'
+}
+
 export function emptyWaiverContent(code: WaiverDocumentCode, locale: WaiverLocale): WaiverDocumentContent {
   const def = WAIVER_DOCUMENT_CATALOG[code]
-  const notice =
-    locale === 'en'
-      ? def.code === 'ANTELOPE_CANYON_X'
-        ? 'This translation is provided to assist you in understanding the original Taadidiin Tours waiver. The official operator document is the English version.'
-        : 'This translation is provided for convenience. To the extent permitted by applicable law, if there is any inconsistency between this translation and the English version, the English version shall control.'
-      : ''
   return {
     code,
     version: '',
@@ -29,7 +34,7 @@ export function emptyWaiverContent(code: WaiverDocumentCode, locale: WaiverLocal
     intro: [''],
     sections: [emptyWaiverSection('1')],
     closing: [''],
-    languageNotice: notice,
+    languageNotice: defaultLanguageNotice(code, locale),
     governingLanguage: 'en',
   }
 }

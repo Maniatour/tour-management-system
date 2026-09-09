@@ -38,6 +38,7 @@ export type WaiverUiCopy = {
   acceptDocument: string
   acceptMania: string
   acceptCanyonX: string
+  acceptLowerAntelope: string
   acknowledgmentsTitle: string
   ackRead: string
   ackRisks: string
@@ -58,6 +59,7 @@ export type WaiverUiCopy = {
   notConfiguredBody: string
   languageNoticeMania: string
   languageNoticeCanyonX: string
+  languageNoticeLowerAntelope: string
   progress: string
   saving: string
   errorGeneric: string
@@ -112,6 +114,7 @@ const EN: WaiverUiCopy = {
   acceptDocument: 'I have read and agree to this document.',
   acceptMania: 'I have read and agree to the LAS VEGAS MANIA TOUR Waiver.',
   acceptCanyonX: 'I have read and agree to the Taadidiin Tours / Antelope Canyon X Waiver.',
+  acceptLowerAntelope: "I have read and agree to the Dixie's Lower Antelope Canyon Waiver.",
   acknowledgmentsTitle: 'Required acknowledgments',
   ackRead: 'I have read the applicable Waiver and Release Agreement(s).',
   ackRisks:
@@ -139,6 +142,8 @@ const EN: WaiverUiCopy = {
     'This translation is provided for convenience. To the extent permitted by applicable law, if there is any inconsistency between this translation and the English version, the English version shall control.',
   languageNoticeCanyonX:
     'This translation is provided to assist you in understanding the original Taadidiin Tours waiver. The official operator document is the English version.',
+  languageNoticeLowerAntelope:
+    "This translation is provided to assist you in understanding the original Dixie's Lower Antelope Canyon Tours waiver. The official operator document is the English version.",
   progress: 'Progress',
   saving: 'Saving…',
   errorGeneric: 'Something went wrong. Please try again.',
@@ -195,6 +200,7 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     acceptDocument: '본 문서를 읽었으며 이에 동의합니다.',
     acceptMania: 'LAS VEGAS MANIA TOUR 면책 동의서를 읽었으며 이에 동의합니다.',
     acceptCanyonX: 'Taadidiin Tours / Antelope Canyon X 면책 동의서를 읽었으며 이에 동의합니다.',
+    acceptLowerAntelope: "Dixie's Lower Antelope Canyon 면책 동의서를 읽었으며 이에 동의합니다.",
     acknowledgmentsTitle: '필수 확인 사항',
     ackRead: '해당 면책 및 책임 면제 약정을 읽었습니다.',
     ackRisks:
@@ -220,6 +226,8 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
       '이 번역은 편의를 위해 제공됩니다. 적용 법령이 허용하는 범위 내에서, 이 번역과 영어 버전 사이에 불일치가 있는 경우 영어 버전이 우선합니다.',
     languageNoticeCanyonX:
       '이 번역은 원본 Taadidiin Tours 면책 동의서를 이해하는 데 도움을 드리기 위해 제공됩니다. 공식 운영자 문서는 영어 버전입니다.',
+    languageNoticeLowerAntelope:
+      "이 번역은 원본 Dixie's Lower Antelope Canyon Tours 면책 동의서를 이해하는 데 도움을 드리기 위해 제공됩니다. 공식 운영자 문서는 영어 버전입니다.",
     progress: '진행 상황',
     saving: '저장 중…',
     errorGeneric: '문제가 발생했습니다. 다시 시도해 주세요.',
@@ -271,6 +279,7 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     viewBeforeAccept: '同意する前に、この文書を開いて読んでください。',
     acceptMania: 'LAS VEGAS MANIA TOUR の免責同意書を読み、これに同意します。',
     acceptCanyonX: 'Taadidiin Tours / Antelope Canyon X の免責同意書を読み、これに同意します。',
+    acceptLowerAntelope: "Dixie's Lower Antelope Canyon の免責同意書を読み、これに同意します。",
     acknowledgmentsTitle: '必要な確認事項',
     ackRead: '該当する免責および責任免除合意を読みました。',
     ackRisks:
@@ -296,6 +305,8 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
       'この翻訳は便宜のために提供されます。適用法が認める範囲で、この翻訳と英語版との間に不一致がある場合、英語版が優先します。',
     languageNoticeCanyonX:
       'この翻訳は、原本である Taadidiin Tours の免責同意書を理解する助けとして提供されます。公式の運営者文書は英語版です。',
+    languageNoticeLowerAntelope:
+      "この翻訳は、原本である Dixie's Lower Antelope Canyon Tours の免責同意書を理解する助けとして提供されます。公式の運営者文書は英語版です。",
     progress: '進捗',
     saving: '保存中…',
     errorGeneric: '問題が発生しました。もう一度お試しください。',
@@ -347,6 +358,7 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     viewBeforeAccept: '同意前请先打开并阅读本文件。',
     acceptMania: '本人已阅读并同意 LAS VEGAS MANIA TOUR 弃权书。',
     acceptCanyonX: '本人已阅读并同意 Taadidiin Tours / Antelope Canyon X 弃权书。',
+    acceptLowerAntelope: "本人已阅读并同意 Dixie's Lower Antelope Canyon 弃权书。",
     acknowledgmentsTitle: '必要确认事项',
     ackRead: '本人已阅读适用的弃权及责任免除协议。',
     ackRisks: '本人理解参加涉及步行、徒步、户外条件、自然危害及交通相关活动等固有风险。',
@@ -370,6 +382,8 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
       '本译本仅为便利而提供。在适用法律允许的范围内，如本译本与英文版本存在任何不一致，应以英文版本为准。',
     languageNoticeCanyonX:
       '本译本旨在帮助您理解原始的 Taadidiin Tours 弃权书。官方运营商文件为英文版本。',
+    languageNoticeLowerAntelope:
+      "本译本旨在帮助您理解原始的 Dixie's Lower Antelope Canyon Tours 弃权书。官方运营商文件为英文版本。",
     progress: '进度',
     saving: '保存中…',
     errorGeneric: '出现问题，请重试。',
@@ -421,6 +435,7 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     viewBeforeAccept: 'Abra y lea este documento antes de poder aceptar.',
     acceptMania: 'He leído y acepto la exención de LAS VEGAS MANIA TOUR.',
     acceptCanyonX: 'He leído y acepto la exención de Taadidiin Tours / Antelope Canyon X.',
+    acceptLowerAntelope: "He leído y acepto la exención de Dixie's Lower Antelope Canyon.",
     acknowledgmentsTitle: 'Reconocimientos requeridos',
     ackRead: 'He leído el o los Acuerdos de exención y liberación aplicables.',
     ackRisks:
@@ -449,6 +464,8 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
       'Esta traducción se proporciona por conveniencia. En la medida permitida por la ley aplicable, si existe alguna inconsistencia entre esta traducción y la versión en inglés, prevalecerá la versión en inglés.',
     languageNoticeCanyonX:
       'Esta traducción se proporciona para ayudarle a comprender la exención original de Taadidiin Tours. El documento oficial del operador es la versión en inglés.',
+    languageNoticeLowerAntelope:
+      "Esta traducción se proporciona para ayudarle a comprender la exención original de Dixie's Lower Antelope Canyon Tours. El documento oficial del operador es la versión en inglés.",
     progress: 'Progreso',
     saving: 'Guardando…',
     errorGeneric: 'Algo salió mal. Inténtelo de nuevo.',
@@ -500,6 +517,7 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     viewBeforeAccept: 'Ouvrez et lisez ce document avant de pouvoir accepter.',
     acceptMania: 'J’ai lu et j’accepte la décharge de LAS VEGAS MANIA TOUR.',
     acceptCanyonX: 'J’ai lu et j’accepte la décharge Taadidiin Tours / Antelope Canyon X.',
+    acceptLowerAntelope: "J’ai lu et j’accepte la décharge Dixie's Lower Antelope Canyon.",
     acknowledgmentsTitle: 'Accusés de réception requis',
     ackRead: 'J’ai lu le ou les accords de décharge et de libération applicables.',
     ackRisks:
@@ -528,6 +546,8 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
       'Cette traduction est fournie pour des raisons de commodité. Dans la mesure permise par le droit applicable, en cas d’incohérence entre cette traduction et la version anglaise, la version anglaise prévaut.',
     languageNoticeCanyonX:
       'Cette traduction est fournie pour vous aider à comprendre la décharge originale de Taadidiin Tours. Le document officiel de l’exploitant est la version anglaise.',
+    languageNoticeLowerAntelope:
+      "Cette traduction est fournie pour vous aider à comprendre la décharge originale de Dixie's Lower Antelope Canyon Tours. Le document officiel de l’exploitant est la version anglaise.",
     progress: 'Progression',
     saving: 'Enregistrement…',
     errorGeneric: 'Une erreur s’est produite. Veuillez réessayer.',
@@ -579,6 +599,7 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     viewBeforeAccept: 'Öffnen und lesen Sie dieses Dokument, bevor Sie zustimmen können.',
     acceptMania: 'Ich habe den Haftungsausschluss von LAS VEGAS MANIA TOUR gelesen und stimme ihm zu.',
     acceptCanyonX: 'Ich habe den Haftungsausschluss von Taadidiin Tours / Antelope Canyon X gelesen und stimme ihm zu.',
+    acceptLowerAntelope: "Ich habe den Haftungsausschluss von Dixie's Lower Antelope Canyon gelesen und stimme ihm zu.",
     acknowledgmentsTitle: 'Erforderliche Bestätigungen',
     ackRead: 'Ich habe die geltende(n) Haftungsausschluss- und Freistellungsvereinbarung(en) gelesen.',
     ackRisks:
@@ -607,6 +628,8 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
       'Diese Übersetzung wird zur Erleichterung bereitgestellt. Soweit nach geltendem Recht zulässig, gilt bei Unstimmigkeiten zwischen dieser Übersetzung und der englischen Fassung die englische Fassung.',
     languageNoticeCanyonX:
       'Diese Übersetzung wird bereitgestellt, um Ihnen das Verständnis des ursprünglichen Taadidiin-Tours-Haftungsausschlusses zu erleichtern. Das offizielle Betreiberdokument ist die englische Fassung.',
+    languageNoticeLowerAntelope:
+      "Diese Übersetzung wird bereitgestellt, um Ihnen das Verständnis des ursprünglichen Haftungsausschlusses von Dixie's Lower Antelope Canyon Tours zu erleichtern. Das offizielle Betreiberdokument ist die englische Fassung.",
     progress: 'Fortschritt',
     saving: 'Speichern…',
     errorGeneric: 'Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.',
@@ -625,4 +648,16 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
 
 export function getWaiverUi(locale: WaiverLocale): WaiverUiCopy {
   return WAIVER_UI[locale] ?? WAIVER_UI.en
+}
+
+export function waiverAcceptLabel(ui: WaiverUiCopy, code: string): string {
+  if (code === 'ANTELOPE_CANYON_X') return ui.acceptCanyonX
+  if (code === 'LOWER_ANTELOPE') return ui.acceptLowerAntelope
+  return ui.acceptMania
+}
+
+export function waiverLanguageNotice(ui: WaiverUiCopy, code: string): string {
+  if (code === 'ANTELOPE_CANYON_X') return ui.languageNoticeCanyonX
+  if (code === 'LOWER_ANTELOPE') return ui.languageNoticeLowerAntelope
+  return ui.languageNoticeMania
 }

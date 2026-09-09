@@ -49,7 +49,8 @@ export function canyonChoiceToWaiverCode(choice: string | null | undefined): Wai
 /**
  * Product defaults + this booking's canyon choice.
  * LAS_VEGAS_MANIA is always required.
- * LOWER_ANTELOPE is recognized but not required for signing while NOT_CONFIGURED.
+ * Canyon X and Lower Antelope operator waivers are required when those
+ * documents are ACTIVE.
  */
 export function resolveRequiredWaivers(input: ResolveRequiredWaiversInput): RequiredWaiverResolution[] {
   const codes = new Set<WaiverDocumentCode>(['LAS_VEGAS_MANIA'])

@@ -85,6 +85,7 @@ export type RequiredWaiverResolution = {
 
 export const LAS_VEGAS_MANIA_WAIVER_VERSION = '2026-08-30-v1'
 export const ANTELOPE_CANYON_X_WAIVER_VERSION = '2026-08-30-v1'
+export const LOWER_ANTELOPE_WAIVER_VERSION = '2026-09-08-v1'
 
 export function isConfiguredWaiverCode(code: string): code is WaiverDocumentCode {
   return (WAIVER_DOCUMENT_CODES as readonly string[]).includes(code)

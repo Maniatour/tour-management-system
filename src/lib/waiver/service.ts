@@ -80,12 +80,21 @@ export async function ensureCurrentWaiverVersions(): Promise<void> {
     await fromUntypedTable(db(), 'waiver_document_versions').insert({
       document_code: def.code,
       version: def.currentVersion,
-      effective_date: '2026-08-30',
+      effective_date: def.currentVersion.slice(0, 10),
       governing_text: serializeWaiverSnapshot(governing),
       governing_text_hash: hashWaiverContent(governing),
       translations,
       is_current: true,
     })
+    await fromUntypedTable(db(), 'waiver_documents')
+      .update({
+        operator_name: def.operatorName,
+        display_name: def.displayName,
+        status: 'ACTIVE',
+        signature_mode: def.signatureMode,
+        original_form_template: def.originalFormTemplate,
+      })
+      .eq('code', def.code)
   }
 }
 
@@ -239,6 +248,7 @@ export async function buildPublicSession(invitation: {
   id: string
   reservation_id: string
 }): Promise<PublicWaiverSession | null> {
+  await ensureCurrentWaiverVersions()
   const { data: reservation } = await fromUntypedTable(db(), 'reservations')
     .select('id, channel_rn, tour_date, product_id, canyon_choice, total_people, adults, child, infant, customer_id')
     .eq('id', invitation.reservation_id)

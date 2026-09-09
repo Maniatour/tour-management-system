@@ -9,6 +9,7 @@ import { LAS_VEGAS_MANIA_WAIVER_ES } from '@/lib/waiver/documents/lasVegasMania/
 import { LAS_VEGAS_MANIA_WAIVER_FR } from '@/lib/waiver/documents/lasVegasMania/fr'
 import { LAS_VEGAS_MANIA_WAIVER_DE } from '@/lib/waiver/documents/lasVegasMania/de'
 import { ANTELOPE_CANYON_X_WAIVER_EN } from '@/lib/waiver/documents/antelopeCanyonX/en'
+import { LOWER_ANTELOPE_WAIVER_EN } from '@/lib/waiver/documents/lowerAntelope/en'
 import { WAIVER_DOCUMENT_CATALOG } from '@/lib/waiver/documents/catalog'
 import { resolveRequiredWaivers, signingRequiredCodes } from '@/lib/waiver/requiredWaivers'
 import { generateWaiverRawToken, hashWaiverToken, isPlausibleWaiverToken, waiverTokensEqual } from '@/lib/waiver/tokens'
@@ -58,16 +59,26 @@ test('Canyon X operator names are preserved', () => {
   assert.equal(WAIVER_DOCUMENT_CATALOG.ANTELOPE_CANYON_X.sourceType, 'OFFICIAL_OPERATOR_FORM')
 })
 
-test('Lower Antelope is recognized but not configured', () => {
-  assert.equal(WAIVER_DOCUMENT_CATALOG.LOWER_ANTELOPE.status, 'NOT_CONFIGURED')
-  assert.equal(WAIVER_DOCUMENT_CATALOG.LOWER_ANTELOPE.contents.en, undefined)
+test('Lower Antelope operator waiver is configured', () => {
+  assert.equal(LOWER_ANTELOPE_WAIVER_EN.operatorName, "Dixie's Lower Antelope Canyon Tours")
+  assert.match(LOWER_ANTELOPE_WAIVER_EN.title, /Lower Antelope Canyon/)
+  assert.equal(LOWER_ANTELOPE_WAIVER_EN.sections.length, 8)
+  assert.equal(LOWER_ANTELOPE_WAIVER_EN.version, '2026-09-08-v1')
+  assert.equal(WAIVER_DOCUMENT_CATALOG.LOWER_ANTELOPE.sourceType, 'OFFICIAL_OPERATOR_FORM')
+  assert.equal(WAIVER_DOCUMENT_CATALOG.LOWER_ANTELOPE.status, 'ACTIVE')
+})
+
+test('Lower Antelope tour requires Mania + Lower Antelope', () => {
   const resolved = resolveRequiredWaivers({
     productRequiredCodes: ['LAS_VEGAS_MANIA', 'LOWER_ANTELOPE'],
     canyonChoice: 'L',
   })
   const lower = resolved.find((r) => r.code === 'LOWER_ANTELOPE')
-  assert.equal(lower?.requiredForSigning, false)
-  assert.deepEqual(signingRequiredCodes(resolved), ['LAS_VEGAS_MANIA'])
+  assert.equal(lower?.requiredForSigning, true)
+  assert.deepEqual(
+    signingRequiredCodes(resolved).sort(),
+    ['LAS_VEGAS_MANIA', 'LOWER_ANTELOPE']
+  )
 })
 
 test('Canyon X tour requires Mania + Canyon X', () => {

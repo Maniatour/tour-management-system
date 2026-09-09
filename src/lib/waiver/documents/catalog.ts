@@ -16,6 +16,17 @@ import {
   ANTELOPE_CANYON_X_WAIVER_ES,
   ANTELOPE_CANYON_X_WAIVER_FR,
 } from '@/lib/waiver/documents/antelopeCanyonX/translations.es-fr-de'
+import { LOWER_ANTELOPE_WAIVER_EN } from '@/lib/waiver/documents/lowerAntelope/en'
+import {
+  LOWER_ANTELOPE_WAIVER_JA,
+  LOWER_ANTELOPE_WAIVER_KO,
+  LOWER_ANTELOPE_WAIVER_ZH,
+} from '@/lib/waiver/documents/lowerAntelope/translations.ko-ja-zh'
+import {
+  LOWER_ANTELOPE_WAIVER_DE,
+  LOWER_ANTELOPE_WAIVER_ES,
+  LOWER_ANTELOPE_WAIVER_FR,
+} from '@/lib/waiver/documents/lowerAntelope/translations.es-fr-de'
 import type {
   WaiverDocumentCode,
   WaiverDocumentContent,
@@ -68,16 +79,24 @@ export const WAIVER_DOCUMENT_CATALOG: Record<WaiverDocumentCode, WaiverDocumentD
   },
   LOWER_ANTELOPE: {
     code: 'LOWER_ANTELOPE',
-    operatorName: '',
-    displayName: 'Lower Antelope Canyon Waiver',
+    operatorName: "Dixie's Lower Antelope Canyon Tours",
+    displayName: "Dixie's Lower Antelope Canyon Waiver",
     governingLanguage: 'en',
     sourceType: 'OFFICIAL_OPERATOR_FORM',
-    status: 'NOT_CONFIGURED',
-    signatureMode: 'SEPARATE_SIGNATURE_REQUIRED',
+    status: 'ACTIVE',
+    signatureMode: 'SHARED_SESSION_SIGNATURE',
     requiresPrintedCopy: true,
-    originalFormTemplate: null,
-    currentVersion: null,
-    contents: {},
+    originalFormTemplate: 'dixies_lower_antelope',
+    currentVersion: LOWER_ANTELOPE_WAIVER_EN.version,
+    contents: {
+      en: LOWER_ANTELOPE_WAIVER_EN,
+      ko: LOWER_ANTELOPE_WAIVER_KO,
+      ja: LOWER_ANTELOPE_WAIVER_JA,
+      zh: LOWER_ANTELOPE_WAIVER_ZH,
+      es: LOWER_ANTELOPE_WAIVER_ES,
+      fr: LOWER_ANTELOPE_WAIVER_FR,
+      de: LOWER_ANTELOPE_WAIVER_DE,
+    },
   },
 }
 
