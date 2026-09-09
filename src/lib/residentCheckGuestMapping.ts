@@ -124,3 +124,20 @@ export function leftoverUndecidedResidentCount(totalPeople: number, assigned: nu
   const used = Math.max(0, Math.floor(Number(assigned) || 0))
   return Math.max(0, total - used)
 }
+
+/** 고객이 거주 확인 폼을 실제로 작성했는지 (토큰만 있고 미작성인 경우 제외) */
+export function isGuestResidentCheckFilledByCustomer(
+  record:
+    | {
+        completedAt?: string | null
+        submission?: { residency?: string | null; agreed?: boolean | null } | null
+      }
+    | null
+    | undefined
+): boolean {
+  if (!record) return false
+  if (record.completedAt) return true
+  if (record.submission?.agreed) return true
+  const residency = String(record.submission?.residency || '')
+  return residency === 'us_resident' || residency === 'non_resident' || residency === 'mixed'
+}

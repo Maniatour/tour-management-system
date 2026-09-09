@@ -4,7 +4,10 @@ import { useState } from 'react'
 import { FileText } from 'lucide-react'
 import ReservationEvidenceUpload from '@/components/reservation/ReservationEvidenceUpload'
 import ResidentCheckSubmissionModal from '@/components/reservation/ResidentCheckSubmissionModal'
-import type { ResidentCheckGuestRecord } from '@/lib/residentCheckReservationSync'
+import {
+  isGuestResidentCheckFilledByCustomer,
+  type ResidentCheckGuestRecord,
+} from '@/lib/residentCheckReservationSync'
 import {
   computePassCoveredCount,
   emptyResidentStatusAmounts,
@@ -89,6 +92,7 @@ export default function ParticipantsSection({
 }: ParticipantsSectionProps) {
   const [showGuestForm, setShowGuestForm] = useState(false)
   const isKo = locale === 'ko'
+  const showGuestResidentFormButton = isGuestResidentCheckFilledByCustomer(guestResidentCheck)
   const apply = (patch: Record<string, unknown>) => {
     if (applyResidentParticipantPatch) {
       applyResidentParticipantPatch(patch)
@@ -289,7 +293,7 @@ export default function ParticipantsSection({
             <span className="block mt-1 text-orange-600">⚠️ 인원 수가 일치하지 않습니다</span>
           )}
         </div>
-        {guestResidentCheck ? (
+        {showGuestResidentFormButton ? (
           <div className="mt-3">
             <button
               type="button"
@@ -320,7 +324,7 @@ export default function ParticipantsSection({
           placeholder={t('form.eventNotePlaceholder')}
         />
       </div>
-      {showGuestForm && guestResidentCheck ? (
+      {showGuestForm && showGuestResidentFormButton && guestResidentCheck ? (
         <ResidentCheckSubmissionModal
           record={guestResidentCheck}
           guestName={guestName || ''}

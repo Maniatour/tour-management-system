@@ -5,6 +5,7 @@ import {
   guestResidentCountsToFormPatch,
   leftoverUndecidedResidentCount,
   residentStatusCountsFromGuestSubmission,
+  isGuestResidentCheckFilledByCustomer,
 } from '@/lib/residentCheckGuestMapping'
 
 test('entire non-resident party maps 16+ count to 비거주자 and remainder to under 16', () => {
@@ -100,4 +101,29 @@ test('leftover undecided is zero once assigned people cover the party', () => {
   assert.equal(leftoverUndecidedResidentCount(1, 1), 0)
   assert.equal(leftoverUndecidedResidentCount(1, 2), 0)
   assert.equal(leftoverUndecidedResidentCount(3, 1), 2)
+})
+
+test('guest form icon only appears after the customer filled residency', () => {
+  assert.equal(isGuestResidentCheckFilledByCustomer(null), false)
+  assert.equal(
+    isGuestResidentCheckFilledByCustomer({
+      completedAt: null,
+      submission: { residency: '', agreed: false } as never,
+    }),
+    false
+  )
+  assert.equal(
+    isGuestResidentCheckFilledByCustomer({
+      completedAt: null,
+      submission: { residency: 'us_resident', agreed: false } as never,
+    }),
+    true
+  )
+  assert.equal(
+    isGuestResidentCheckFilledByCustomer({
+      completedAt: '2026-09-08T00:00:00.000Z',
+      submission: { residency: '', agreed: false } as never,
+    }),
+    true
+  )
 })

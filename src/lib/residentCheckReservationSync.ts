@@ -8,6 +8,7 @@ export {
   guestResidentCountsToFormPatch,
   leftoverUndecidedResidentCount,
   residentStatusCountsFromGuestSubmission,
+  isGuestResidentCheckFilledByCustomer,
 } from '@/lib/residentCheckGuestMapping'
 
 export type ResidentCheckGuestRecord = {
