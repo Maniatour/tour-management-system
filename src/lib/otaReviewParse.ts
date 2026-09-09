@@ -301,6 +301,64 @@ function isLikelyKlookBookingRef(value: string): boolean {
   return false
 }
 
+function isKlookDateCell(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed || isKlookRatingToken(trimmed)) return false
+  if (/^\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/.test(trimmed)) return true
+  if (trimmed.length >= 40 || /^\d{1,2}$/.test(trimmed)) return false
+  return parseDate(trimmed) !== null
+}
+
+function isKlookRatingToken(value: string): boolean {
+  return /^[1-5]$/.test(value.trim())
+}
+
+function isLikelyKlookProductTitle(value: string): boolean {
+  const trimmed = value.trim()
+  if (trimmed.length < 10 || trimmed.length > 180) return false
+  if (/[.!?。！？]/.test(trimmed)) return false
+  return /ツアー|tour|canyon|キャニオン|グランド|antelope|アンテロープ|horseshoe|vegas|ラスベガス|그랜드|앤텔로프/i.test(
+    trimmed
+  )
+}
+
+function klookNonEmptyCells(line: string): string[] {
+  return line
+    .split('\t')
+    .map((cell) => cell.trim())
+    .filter((cell) => cell.length > 0)
+}
+
+function assignKlookRatingCell(current: string[], rating: string) {
+  const lastIdx = current.length - 1
+  if (lastIdx >= 0 && current[lastIdx].trim() === '') {
+    current[lastIdx] = rating
+    return
+  }
+  if (lastIdx >= 0 && isKlookRatingToken(current[lastIdx])) return
+  current.push(rating)
+}
+
+function appendKlookCommentCell(current: string[], text: string) {
+  const trimmed = text.trim()
+  if (!trimmed) return
+  const lastIdx = current.length - 1
+  if (lastIdx < 0) {
+    current.push(trimmed)
+    return
+  }
+  const last = current[lastIdx] ?? ''
+  if (last.trim() === '') {
+    current[lastIdx] = trimmed
+    return
+  }
+  if (isKlookRatingToken(last) || isKlookDateCell(last) || isLikelyKlookBookingRef(last)) {
+    current.push(trimmed)
+    return
+  }
+  current[lastIdx] = [last, trimmed].filter(Boolean).join('\n')
+}
+
 function mapKlookHeaders(headers: string[]): Partial<Record<ColumnKey, number>> | null {
   const normalized = headers.map(normalizeHeader)
   const findIndex = (predicate: (header: string) => boolean) =>
@@ -383,8 +441,17 @@ function buildKlookRecordsFromPaste(text: string): string[][] {
     }
 
     if (current) {
-      const lastIdx = Math.max(current.length - 1, 0)
-      current[lastIdx] = [current[lastIdx], line.trim()].filter(Boolean).join('\n')
+      const nonEmpty = klookNonEmptyCells(line)
+      if (nonEmpty.length === 1 && isKlookRatingToken(nonEmpty[0] ?? '')) {
+        assignKlookRatingCell(current, nonEmpty[0] ?? '')
+        continue
+      }
+      if (nonEmpty.length >= 2 && isKlookRatingToken(nonEmpty[0] ?? '')) {
+        assignKlookRatingCell(current, nonEmpty[0] ?? '')
+        appendKlookCommentCell(current, nonEmpty.slice(1).join('\n'))
+        continue
+      }
+      appendKlookCommentCell(current, line.trim())
       continue
     }
 
@@ -425,6 +492,7 @@ function mergeKlookRow(
       heuristic.productHint ||
       null,
     reservationNumber: heuristic.reservationNumber ?? mapped?.reservationNumber ?? null,
+    tourDate: heuristic.tourDate ?? mapped?.tourDate ?? null,
     lineNumber,
   }
 }
@@ -458,15 +526,37 @@ export function isKlookTableText(text: string): boolean {
       refCount += 1
     }
   }
-  return refCount >= 2
+  if (refCount >= 2) return true
+  return refCount >= 1 && /\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2})/.test(sample)
+}
+
+function parseKlookRawYmd(value: string): string | null {
+  const match = value.trim().match(/^(\d{4}-\d{2}-\d{2})/)
+  return match?.[1] ?? null
 }
 
 function parseKlookDataRow(cells: string[]): ParsedOtaReviewRow | null {
   let reservationNumber: string | null = null
-  let reviewCreatedAt: string | null = null
   let rating: number | null = null
   let comment: string | null = null
+  let productHint: string | null = null
+  const dateIsos: string[] = []
+  const dateYmds: string[] = []
   let longestText = ''
+
+  const considerComment = (value: string) => {
+    const trimmed = value.trim()
+    if (!trimmed) return
+    if (isLikelyKlookProductTitle(trimmed)) {
+      if (!productHint || trimmed.length > productHint.length) {
+        productHint = trimmed
+      }
+      return
+    }
+    if (trimmed.length > longestText.length) {
+      longestText = trimmed
+    }
+  }
 
   for (const raw of cells) {
     const trimmed = raw.trim()
@@ -476,24 +566,35 @@ function parseKlookDataRow(cells: string[]): ParsedOtaReviewRow | null {
       reservationNumber = trimmed.toUpperCase()
       continue
     }
-    if (
-      !reviewCreatedAt &&
-      ( /^\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/.test(trimmed) ||
-        (trimmed.length < 40 && parseDate(trimmed)))
-    ) {
-      reviewCreatedAt = parseDate(trimmed)
+
+    const leadingRating = trimmed.match(/^([1-5])\s*\n+([\s\S]+)$/)
+    if (leadingRating) {
+      if (rating === null) {
+        rating = Number.parseInt(leadingRating[1] ?? '', 10)
+      }
+      considerComment(leadingRating[2] ?? '')
       continue
     }
-    if (rating === null && /^[1-5]$/.test(trimmed)) {
+
+    if (isKlookDateCell(trimmed)) {
+      const iso = parseDate(trimmed)
+      if (iso) dateIsos.push(iso)
+      const ymd = parseKlookRawYmd(trimmed)
+      if (ymd) dateYmds.push(ymd)
+      continue
+    }
+
+    if (rating === null && isKlookRatingToken(trimmed)) {
       rating = Number.parseInt(trimmed, 10)
       continue
     }
-    if (trimmed.length > longestText.length) {
-      longestText = trimmed
-    }
+
+    considerComment(trimmed)
   }
 
   comment = longestText || null
+  const reviewCreatedAt = dateIsos.length >= 2 ? dateIsos[dateIsos.length - 1] ?? null : dateIsos[0] ?? null
+  const tourDate = dateYmds.length >= 2 ? dateYmds[0] ?? null : null
 
   if (!reservationNumber && rating === null && !comment) {
     return null
@@ -504,8 +605,9 @@ function parseKlookDataRow(cells: string[]): ParsedOtaReviewRow | null {
     rating,
     comment,
     reviewCreatedAt,
-    productHint: null,
+    productHint,
     reservationNumber,
+    tourDate,
   }
 }
 

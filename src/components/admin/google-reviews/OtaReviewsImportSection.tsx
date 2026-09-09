@@ -5,12 +5,12 @@ import { ClipboardPaste, FileUp, Loader2, Sparkles, Upload } from 'lucide-react'
 import OtaReviewImportPreviewCard, {
   type LinkedTourPreview,
 } from '@/components/admin/google-reviews/OtaReviewImportPreviewCard'
+import OtaKlookTablePastePanel from '@/components/admin/google-reviews/OtaKlookTablePastePanel'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import {
   OTA_CSV_TEMPLATE_HINTS,
   isGetYourGuideScrapedText,
   isKkdayScrapedText,
-  isKlookTableText,
   isViatorScrapedText,
   parseOtaReviewCsv,
   parseOtaReviewText,
@@ -412,8 +412,8 @@ export default function OtaReviewsImportSection({
     }
   }, [isKo, onMessage, onRefresh, resetSingleForm, singleValidation.valid, source])
 
-  const runBulkPasteImport = useCallback(async () => {
-    if (bulkPasteValidation.valid.length === 0) {
+  const runBulkPasteImport = useCallback(async (rows: ParsedOtaReviewRow[]) => {
+    if (rows.length === 0) {
       onMessage(
         isKo
           ? 'Klook 리뷰 테이블을 붙여넣고 Booking reference·Stars·Reviews가 파싱되는지 확인하세요.'
@@ -430,7 +430,7 @@ export default function OtaReviewsImportSection({
         body: JSON.stringify({
           source,
           mode: 'rows',
-          rows: bulkPasteValidation.valid,
+          rows,
         }),
       })
       const data = (await res.json()) as ImportResult
@@ -454,7 +454,7 @@ export default function OtaReviewsImportSection({
     } finally {
       setImporting(false)
     }
-  }, [bulkPasteValidation.valid, isKo, onMessage, onRefresh, source])
+  }, [isKo, onMessage, onRefresh, source])
 
   const runCsvImport = useCallback(async () => {
     if (csvValidation.valid.length === 0) {
@@ -576,8 +576,8 @@ export default function OtaReviewsImportSection({
                   : 'Paste GetYourGuide review page text — RN#, rating, review, guest, product, and tour are handled automatically.'
             : isBulkTablePaste
               ? isKo
-                ? 'Klook 리뷰 표(엑셀/시트)를 통째로 붙여넣으면 예약번호로 투어를 연결해 저장합니다.'
-                : 'Paste the full Klook review table from Excel/sheet — tours are linked via booking reference.'
+                ? 'Klook 리뷰 표를 붙여넣으면 예약번호로 상품·투어가 자동 선택되고, 아래 리뷰 카드와 같은 미리보기가 표시됩니다.'
+                : 'Paste the Klook review table — product and tour are selected from the booking reference and shown as review cards.'
               : isKo
                 ? '1건씩 등록하거나 CSV로 일괄 업로드할 수 있습니다.'
                 : 'Add one review at a time or bulk upload via CSV.'}
@@ -614,49 +614,17 @@ export default function OtaReviewsImportSection({
       {mode === 'paste' ? (
         <div className="space-y-5">
           {isBulkTablePaste ? (
-            <>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  {isKo ? 'Klook 리뷰 테이블 붙여넣기' : 'Paste Klook review table'}
-                </label>
-                <textarea
-                  value={pasteText}
-                  onChange={(e) => setPasteText(e.target.value)}
-                  rows={16}
-                  placeholder={
-                    isKo
-                      ? 'Booking reference ID · Reviewed date · Stars · Reviews 열이 포함된 표를 엑셀/시트에서 복사해 붙여넣으세요.\n\n예약번호(channel_rn)로 투어가 자동 연결됩니다.'
-                      : 'Copy the table with Booking reference ID, Reviewed date, Stars, and Reviews from Excel/sheet and paste here.\n\nTours are auto-linked via booking reference (channel_rn).'
-                  }
-                  className="w-full min-h-[320px] rounded-xl border border-input bg-background px-4 py-3 text-sm leading-relaxed font-mono"
-                />
-                {pasteText.trim() && !isKlookTableText(pasteText) ? (
-                  <p className="text-xs text-warning">
-                    {isKo
-                      ? 'Klook 표 형식이 아닐 수 있습니다. Booking reference ID·Reviewed date·Stars·Reviews 열이 있는지 확인하세요.'
-                      : 'This may not be a Klook table. Ensure Booking reference ID, Reviewed date, Stars, and Reviews columns are included.'}
-                  </p>
-                ) : null}
-              </div>
-
-              <p className="text-xs text-muted-foreground">
-                {isKo
-                  ? `파싱 ${bulkPasteRows.length}건 · 유효 ${bulkPasteValidation.valid.length}건 · 무효 ${bulkPasteValidation.invalid.length}건 · 예약번호 ${bulkPasteValidation.valid.filter((row) => row.reservationNumber).length}건`
-                  : `Parsed ${bulkPasteRows.length} · valid ${bulkPasteValidation.valid.length} · invalid ${bulkPasteValidation.invalid.length} · with booking ref ${bulkPasteValidation.valid.filter((row) => row.reservationNumber).length}`}
-              </p>
-
-              <button
-                type="button"
-                onClick={() => void runBulkPasteImport()}
-                disabled={importing || bulkPasteValidation.valid.length === 0}
-                className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 disabled:opacity-50"
-              >
-                {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                {isKo
-                  ? `${bulkPasteValidation.valid.length}건 가져오기`
-                  : `Import ${bulkPasteValidation.valid.length}`}
-              </button>
-            </>
+            <OtaKlookTablePastePanel
+              locale={locale}
+              source={source}
+              pasteText={pasteText}
+              onPasteTextChange={setPasteText}
+              parsedCount={bulkPasteRows.length}
+              validRows={bulkPasteValidation.valid}
+              invalidCount={bulkPasteValidation.invalid.length}
+              importing={importing}
+              onImport={(rows) => void runBulkPasteImport(rows)}
+            />
           ) : (
             <>
           <div className="grid gap-4 lg:grid-cols-2">

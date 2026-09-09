@@ -36,6 +36,7 @@ type Props = {
   ratingEditable?: boolean
   productEditable?: boolean
   tourEditable?: boolean
+  showHeading?: boolean
   onRatingChange?: (rating: number) => void
   onProductChange?: (productId: string | undefined, productName?: string | null) => void
   onTourChange?: (
@@ -107,6 +108,7 @@ export default function OtaReviewImportPreviewCard({
   ratingEditable = false,
   productEditable = false,
   tourEditable = false,
+  showHeading = true,
   onRatingChange,
   onProductChange,
   onTourChange,
@@ -116,9 +118,11 @@ export default function OtaReviewImportPreviewCard({
   if (!draft) {
     return (
       <div className="space-y-2">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          {isKo ? '등록 후 표시 미리보기' : 'Preview after save'}
-        </p>
+        {showHeading ? (
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            {isKo ? '등록 후 표시 미리보기' : 'Preview after save'}
+          </p>
+        ) : null}
         <article className="rounded-xl border border-dashed border-border/70 bg-muted/20 p-6 min-h-[320px] flex items-center justify-center text-center">
           <p className="text-sm text-muted-foreground">
             {isKo
@@ -131,9 +135,9 @@ export default function OtaReviewImportPreviewCard({
   }
 
   const authorName = reservation?.customerName || draft.authorName || (isKo ? '고객명 미확인' : 'Guest unknown')
-  const productId = reservation?.productId || draft.productId || undefined
-  const productName = reservation?.productName || draft.productHint || undefined
-  const tourId = linkedTour?.id || reservation?.tourId || draft.tourId || null
+  const productId = draft.productId || reservation?.productId || undefined
+  const productName = draft.productHint || reservation?.productName || undefined
+  const tourId = linkedTour?.id || draft.tourId || reservation?.tourId || null
   const tourDateLabel = linkedTour?.tourDate || reservation?.tourDate || draft.tourDate || null
   const tourSelectedLabel = linkedTour
     ? formatTourSelectedLabel(linkedTour, isKo)
@@ -151,9 +155,11 @@ export default function OtaReviewImportPreviewCard({
 
   return (
     <div className="space-y-2">
-      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-        {isKo ? '등록 후 표시 미리보기' : 'Preview after save'}
-      </p>
+      {showHeading ? (
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          {isKo ? '등록 후 표시 미리보기' : 'Preview after save'}
+        </p>
+      ) : null}
       {alreadyImported ? (
         <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
           <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden />
@@ -192,6 +198,11 @@ export default function OtaReviewImportPreviewCard({
             <div className="flex items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2 min-w-0">
                 <p className="font-medium text-foreground">{authorName}</p>
+                {draft.reservationNumber ? (
+                  <span className="text-xs text-muted-foreground font-mono tabular-nums">
+                    {draft.reservationNumber}
+                  </span>
+                ) : null}
                 {draft.reviewCreatedAt ? (
                   <span className="text-xs text-muted-foreground tabular-nums">
                     {formatLasVegasDate(draft.reviewCreatedAt, locale)}
