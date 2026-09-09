@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl'
 import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetailBookingSidebar'
 import ProductDetailQuantityChoiceGroup from '@/components/product/ProductDetailQuantityChoiceGroup'
 import { usesQuantitySelection } from '@/lib/choiceOptionCapacity'
+import ChoiceProcessingFeeNote from '@/components/product/ChoiceProcessingFeeNote'
 import { useCustomerPageLayoutMode } from '@/hooks/useCustomerPageLayoutMode'
 
 type ProductDetailAirbnbOptionsSectionProps = {
@@ -264,11 +265,14 @@ export default function ProductDetailAirbnbOptionsSection({
 
         return (
           <div key={group.choice_id} className="mb-6 last:mb-0">
-            <h3 className="mb-3 text-base font-semibold text-[#1a2b49]">
-              {isEnglish
-                ? group.choice_name || group.choice_name_ko
-                : group.choice_name_ko || group.choice_name}
-            </h3>
+            <div className="mb-3">
+              <h3 className="text-base font-semibold text-[#1a2b49]">
+                {isEnglish
+                  ? group.choice_name || group.choice_name_ko
+                  : group.choice_name_ko || group.choice_name}
+              </h3>
+              <ChoiceProcessingFeeNote apply={group.apply_processing_fee} />
+            </div>
             {isQuantityGroup && onQuantityChange ? (
               group.options.length === 0 ? (
                 <p className="text-sm text-[#6b7280]">{t('noRoomsForPartySize')}</p>

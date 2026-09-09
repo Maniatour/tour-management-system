@@ -89,6 +89,8 @@ export type ProductChoice = {
    * per_unit: 차량/선택 단위 고정가 × 수량
    */
   pricing_unit?: 'per_person' | 'per_unit' | string | null
+  /** 카드 결제 시 이 그룹 금액에 5% processing fee 적용 */
+  apply_processing_fee?: boolean | null
   choice_description: string | null
   option_id: string
   option_key?: string | null

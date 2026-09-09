@@ -48,6 +48,7 @@ import { describeError, serializeError } from '@/lib/errorSerialization'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
 import { useAdminNavAccessFlags } from '@/hooks/useAdminNavAccessFlags'
 import { useAdminTourChatUnreadCount } from '@/hooks/useAdminTourChatUnreadCount'
+import { usePendingReservationImportCount } from '@/hooks/usePendingReservationImportCount'
 import { useTranslations } from 'next-intl'
 import { scheduleDeferredWork } from '@/lib/scheduleDeferredWork'
 import {
@@ -162,9 +163,9 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const [expiringDocumentsCount, setExpiringDocumentsCount] = useState(0)
   // AuthContext에서 팀 채팅 안읽은 메시지 수 가져오기
   const { patchMap, loading: siteAccessPatchesLoading } = useSiteAccessMatrixPatchContext()
-  const tourChatUnreadCount = useAdminTourChatUnreadCount(
-    Boolean(authUser?.email && userRole && userRole !== 'customer')
-  )
+  const staffNavEnabled = Boolean(authUser?.email && userRole && userRole !== 'customer')
+  const tourChatUnreadCount = useAdminTourChatUnreadCount(staffNavEnabled)
+  const pendingReservationImportCount = usePendingReservationImportCount(staffNavEnabled)
   const { isSuper, canAccessReservationStatistics } = useAdminNavAccessFlags()
 
   // 출퇴근 동기화 훅 사용
@@ -600,6 +601,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
     const isTeamChat = item.href.includes('/admin/team-chat')
     const isDocuments = item.href.includes('/admin/documents')
+    const isReservationImports = item.id === 'reservation-imports'
     const itemClassName = `relative mb-1 flex items-center rounded-lg text-sm font-medium transition-colors ${
       opts.collapsed ? 'justify-center px-2 py-2' : 'w-full px-2.5 py-1.5'
     } ${
@@ -618,6 +620,14 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 {teamChatUnreadCount > 99 ? '99+' : teamChatUnreadCount}
               </span>
             )}
+            {isReservationImports && pendingReservationImportCount > 0 && (
+              <span
+                className="ml-2 shrink-0 bg-red-500 px-2 py-0.5 text-center text-xs font-medium text-white rounded-full min-w-[20px]"
+                aria-label={`예약 접수 미처리 ${pendingReservationImportCount}건`}
+              >
+                {pendingReservationImportCount > 99 ? '99+' : pendingReservationImportCount}
+              </span>
+            )}
             {isDocuments && expiringDocumentsCount > 0 && (
               <span className="ml-2 shrink-0 bg-orange-500 px-2 py-0.5 text-center text-xs font-medium text-white rounded-full min-w-[20px]">
                 {expiringDocumentsCount > 99 ? '99+' : expiringDocumentsCount}
@@ -628,6 +638,14 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         {opts.collapsed && isTeamChat && teamChatUnreadCount > 0 && (
           <span className="absolute right-0.5 top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
             {teamChatUnreadCount > 9 ? '9+' : teamChatUnreadCount}
+          </span>
+        )}
+        {opts.collapsed && isReservationImports && pendingReservationImportCount > 0 && (
+          <span
+            className="absolute right-0.5 top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white"
+            aria-label={`예약 접수 미처리 ${pendingReservationImportCount}건`}
+          >
+            {pendingReservationImportCount > 9 ? '9+' : pendingReservationImportCount}
           </span>
         )}
         {opts.collapsed && isDocuments && expiringDocumentsCount > 0 && (

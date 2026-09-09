@@ -9,6 +9,7 @@ import {
   markResidentCheckTokenCompleted,
   syncCustomerFromResidentCheckSubmission,
 } from '@/lib/residentCheckSyncCustomer'
+import { syncReservationFromResidentCheckSubmission } from '@/lib/residentCheckReservationSync'
 import { syncResidentCheckProofsToReservationEvidence } from '@/lib/syncResidentCheckProofsToReservationEvidence'
 
 /**
@@ -71,6 +72,14 @@ export async function POST(request: NextRequest) {
 
     const customerId = (reservation as { customer_id?: string | null } | null)?.customer_id ?? null
     await syncCustomerFromResidentCheckSubmission({ customerId, submission })
+    const residentSync = await syncReservationFromResidentCheckSubmission(supabaseAdmin, {
+      reservationId: token.reservation_id,
+      customerId,
+      submission,
+    })
+    if (!residentSync.ok) {
+      console.warn('resident-check/finalize-zero reservation sync', residentSync.error)
+    }
     await syncResidentCheckProofsToReservationEvidence(token.reservation_id)
     await markResidentCheckTokenCompleted(token.id)
 

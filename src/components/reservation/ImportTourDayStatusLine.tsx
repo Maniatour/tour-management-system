@@ -83,10 +83,10 @@ export function ImportTourDayStatusLine({
   const badges = (
     <div className="flex flex-wrap items-center gap-1.5" title={line}>
       <span className={`inline-flex items-center rounded-full border border-gray-200 bg-white font-medium text-gray-700 ${summaryPad}`}>
-        {status.tourCount} 투어
+        투어 X {status.tourCount}
       </span>
       <span className={`inline-flex items-center rounded-full border font-medium ${summaryPad} ${remainingTone(status.totalSpotsLeft)}`}>
-        {status.totalSpotsLeft} 잔여좌석
+        잔여 좌석 X {status.totalSpotsLeft}
       </span>
       {status.teams.map((team) => (
         <TourTeamBadge key={team.index} team={team} size={size} />

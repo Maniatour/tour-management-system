@@ -17,6 +17,7 @@ import {
   applyDetailContentLibraryOverlay,
   fetchProductDetailContentLinks,
 } from '@/lib/reusableContentLibrary'
+import { withChoiceProcessingFee } from '@/lib/choiceProcessingFee'
 
 export type {
   Product,
@@ -306,6 +307,7 @@ export async function fetchProductPageData(
           content_i18n,
           choice_type,
           pricing_unit,
+          apply_processing_fee,
           sort_order,
           options:choice_options (
             id,
@@ -350,6 +352,7 @@ export async function fetchProductPageData(
           const choiceType = choice.choice_type || 'single'
           const pricingUnit =
             choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person'
+          const applyProcessingFee = choice.apply_processing_fee === true
           const choiceSortOrder = choice.sort_order ?? 0
           const options = (Array.isArray(choice.options) ? choice.options : [])
             .filter((opt: any) => opt.is_active !== false)
@@ -365,6 +368,7 @@ export async function fetchProductPageData(
             choice_name_en: choiceNameEn,
             choice_type: choiceType,
             pricing_unit: pricingUnit,
+            apply_processing_fee: applyProcessingFee,
             choice_description: choice.description_en || null,
             choice_description_ko: choice.description_ko || null,
             choice_description_en: choice.description_en || null,
@@ -376,9 +380,9 @@ export async function fetchProductPageData(
             option_key: option.option_key ?? null,
             option_name: option.option_name || option.option_key || '',
             option_name_ko: option.option_name_ko || null,
-            option_price: option.adult_price ?? null,
-            option_child_price: option.child_price ?? null,
-            option_infant_price: option.infant_price ?? null,
+            option_price: withChoiceProcessingFee(option.adult_price, applyProcessingFee),
+            option_child_price: withChoiceProcessingFee(option.child_price, applyProcessingFee),
+            option_infant_price: withChoiceProcessingFee(option.infant_price, applyProcessingFee),
             capacity: option.capacity ?? null,
             is_default: option.is_default ?? null,
             option_image_url: option.image_url || null,

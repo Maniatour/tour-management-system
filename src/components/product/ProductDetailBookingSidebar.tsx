@@ -9,6 +9,7 @@ export type ProductDetailChoiceGroup = {
   choice_name_ko: string | null
   choice_name_en?: string | null
   choice_type: string
+  apply_processing_fee?: boolean | null
   choice_description: string | null
   options: Array<{
     option_id: string

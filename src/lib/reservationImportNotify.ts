@@ -48,6 +48,46 @@ export function isReservationRelatedImportNotifyRow(row: ReservationImportNotify
   const platform = (row.platform_key || '').toLowerCase()
   if (platform === ZELLE_PAYMENT_PLATFORM_KEY || platform === WELLS_FARGO_ATM_PLATFORM_KEY) return false
   if (isCancellationRequestEmailSubject(row.subject)) return true
+  return isBookingReceiptImportNotifyRow(row)
+}
+
+/** 사이드바 뱃지·목록 빨강 행: 예약 접수인데 아직 예약으로 처리되지 않은 건 */
+export type UnprocessedBookingImportListRow = ReservationImportNotifyRow & {
+  status?: string | null
+  reservation_id?: string | null
+  reservation_exists_by_channel_rn?: boolean | null
+  reservation_exists_by_customer_match?: boolean | null
+}
+
+export function isUnprocessedBookingImportListRow(row: UnprocessedBookingImportListRow): boolean {
+  const status = String(row.status ?? '').toLowerCase()
+  if (status === 'confirmed' || status === 'rejected') return false
+  if (row.reservation_id) return false
+  if (row.reservation_exists_by_channel_rn || row.reservation_exists_by_customer_match) return false
+  return isBookingReceiptImportNotifyRow(row)
+}
+
+/** 사이드바 뱃지: 최근 N일 이내 수신 메일만 센다 */
+export const UNPROCESSED_BOOKING_IMPORT_BADGE_DAYS = 3
+
+export function isReservationImportWithinRecentDays(
+  receivedAt: string | null | undefined,
+  createdAt: string | null | undefined,
+  days = UNPROCESSED_BOOKING_IMPORT_BADGE_DAYS,
+  nowMs = Date.now()
+): boolean {
+  const raw = String(receivedAt || createdAt || '').trim()
+  if (!raw) return false
+  const t = Date.parse(raw)
+  if (!Number.isFinite(t)) return false
+  return t >= nowMs - days * 24 * 60 * 60 * 1000 && t <= nowMs + 60_000
+}
+
+/** 예약 가져오기 「예약 접수」탭에 해당하는 메일 (취소 제외) */
+export function isBookingReceiptImportNotifyRow(row: ReservationImportNotifyRow): boolean {
+  const platform = (row.platform_key || '').toLowerCase()
+  if (platform === ZELLE_PAYMENT_PLATFORM_KEY || platform === WELLS_FARGO_ATM_PLATFORM_KEY) return false
+  if (isCancellationRequestEmailSubject(row.subject)) return false
   if (row.extracted_data?.is_booking_confirmed === true) return true
   if (isKlookOrderEmailSubjectForReservation(row.subject)) return true
   if (isKKdayBookingSubject(row.subject)) return true

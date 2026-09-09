@@ -1022,6 +1022,7 @@ export function withNormalizedBalanceAmountForDisplay(
  * 잔액 표시: 입금이 있으면 가격 정보 탭 `displayedOnSiteBalance`와 같은 식.
  * DB `balance_amount`와 계산값이 0.01 초과로 다르면 계산값 우선
  * (비거주자 비용 반영 후 DB 미동기화·구버전 sync 보정).
+ * 계산이 0인데 DB에 잔액이 있으면 DB를 쓴다 (카드 배치가 비거주 비용을 놓친 경우).
  */
 function resolveBalanceDisplayAmount(
   storedNum: number,
@@ -1034,10 +1035,13 @@ function resolveBalanceDisplayAmount(
   if (storedNum < -0.005) {
     return roundUsd2(storedNum)
   }
-  if (Math.abs(defaultBalance - storedNum) > 0.01) {
-    return defaultBalance
+  if (Math.abs(defaultBalance) < 0.005 && Math.abs(storedNum) > 0.01) {
+    return roundUsd2(storedNum)
   }
   if (Math.abs(storedNum) < 0.005 && Math.abs(defaultBalance) > 0.01) {
+    return defaultBalance
+  }
+  if (Math.abs(defaultBalance - storedNum) > 0.01) {
     return defaultBalance
   }
   return roundUsd2(storedNum)

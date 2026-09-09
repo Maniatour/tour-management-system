@@ -12,6 +12,7 @@ import ProductDetailQuantityChoiceGroup from '@/components/product/ProductDetail
 import { cn } from '@/lib/utils'
 import { usesQuantitySelection } from '@/lib/choiceOptionCapacity'
 import type { ProductDetailChoiceGroup } from '@/components/product/ProductDetailBookingSidebar'
+import ChoiceProcessingFeeNote from '@/components/product/ChoiceProcessingFeeNote'
 
 type ProductDetailBookingPanelContentProps = {
   basePrice: number | null
@@ -183,6 +184,7 @@ export default function ProductDetailBookingPanelContent({
                     className="mb-2 block text-sm font-medium text-slate-700"
                   >
                     {group.choice_name}
+                    <ChoiceProcessingFeeNote apply={group.apply_processing_fee} />
                   </label>
                   {isQuantityGroup && onQuantityChange ? (
                     group.options.length === 0 ? (

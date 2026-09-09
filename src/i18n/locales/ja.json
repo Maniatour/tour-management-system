@@ -1973,6 +1973,7 @@
     "requiredSelection": "必須の選択",
     "compareOptions": "オプションを比較する",
     "choiceDescriptionShowMore": "もっと見る",
+    "choiceCardProcessingFee": "カード決済時に5%のprocessing feeを含みます",
     "choiceDescriptionShowLess": "表示を少なくする",
     "defaultOption": "（デフォルト）",
     "bookNow": "今すぐ予約する",

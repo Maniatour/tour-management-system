@@ -17,6 +17,7 @@ import CustomerPageZoneLayoutRenderer from '@/components/product/CustomerPageZon
 import BookingFlowSelectionSummary from '@/components/booking/BookingFlowSelectionSummary'
 import BookingFlowGuestDetailsSection from '@/components/booking/BookingFlowGuestDetailsSection'
 import BookingFlowAlertModal from '@/components/booking/BookingFlowAlertModal'
+import ChoiceProcessingFeeNote from '@/components/product/ChoiceProcessingFeeNote'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import {
   findResidentsOptionId,
@@ -146,6 +147,7 @@ interface ChoiceGroup {
   choice_name_en?: string | null
   choice_type: string
   pricing_unit?: string | null
+  apply_processing_fee?: boolean | null
   choice_description: string | null
   choice_description_ko?: string | null
   choice_description_en?: string | null
@@ -164,6 +166,7 @@ interface ProductChoice {
   choice_name_ko: string | null
   choice_type: string
   pricing_unit?: string | null
+  apply_processing_fee?: boolean | null
   choice_description: string | null
   choice_description_ko?: string | null
   choice_description_en?: string | null
@@ -1361,6 +1364,7 @@ export default function BookingFlow({
         choice_name_en: (choice as any).choice_name_en || null,
         choice_type: choice.choice_type,
         pricing_unit: choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person',
+        apply_processing_fee: choice.apply_processing_fee === true,
         choice_description: choiceWithDescription.choice_description || null,
         choice_description_ko: choiceWithDescription.choice_description_ko || null,
         choice_description_en: choiceWithDescription.choice_description_en || null,
@@ -2956,9 +2960,12 @@ export default function BookingFlow({
                     return (
                     <div key={group.choice_id} className="mb-6">
                       {!options?.hideHeader ? (
-                      <h4 className="text-base font-semibold text-gray-900 mb-3 flex items-center">
-                        <span className="text-primary mr-1">*</span>
-                        {getChoiceGroupLabel(group)}
+                      <h4 className="mb-3 flex flex-col items-start text-base font-semibold text-gray-900">
+                        <span className="flex items-center">
+                          <span className="text-primary mr-1">*</span>
+                          {getChoiceGroupLabel(group)}
+                        </span>
+                        <ChoiceProcessingFeeNote apply={group.apply_processing_fee} />
                       </h4>
                       ) : null}
                       {hasDescription && (

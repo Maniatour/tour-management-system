@@ -208,6 +208,15 @@ import {
   computeStoredCompanyRevenueFields,
 } from '@/utils/storedCompanyRevenue'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
+import { useGuestResidentCheckSync } from '@/components/reservation/useGuestResidentCheckSync'
+import {
+  assignedResidentPeopleFromForm,
+  fetchLatestResidentCheckGuestRecord,
+  guestResidentCountsToFormPatch,
+  leftoverUndecidedResidentCount,
+  residentStatusCountsFromGuestSubmission,
+} from '@/lib/residentCheckReservationSync'
+import { saveResidentStatusWithPricing } from '@/lib/saveResidentStatusWithPricing'
 import { getCountryFromPhone } from '@/utils/phoneUtils'
 import type { 
   Customer, 
@@ -1183,27 +1192,50 @@ export default function ReservationForm({
         nonResidentPurchasePassCount: prev.nonResidentPurchasePassCount || 0,
         residentStatusAmounts: { ...emptyResidentStatusAmounts(), ...(prev.residentStatusAmounts || {}) },
       }
-      if (residentLineStateEquals(cur, parsed)) return prev
+      const parsedAssigned =
+        parsed.usResidentCount +
+        parsed.nonResidentCount +
+        parsed.nonResidentUnder16Count +
+        parsed.nonResidentWithPassCount +
+        parsed.nonResidentPurchasePassCount
+      const formAssigned = assignedResidentPeopleFromForm(prev)
+      // 초이스가 아직 미정이거나 수량이 비어도, 게스트 폼·reservation_customers로 이미 배정된 인원은 덮지 않음
+      const keepFormAssigned = formAssigned > 0 && parsedAssigned < formAssigned
+      const source = keepFormAssigned ? cur : parsed
+      const assigned = assignedResidentPeopleFromForm(source)
       const passCovered = computePassCoveredCount(
-        parsed.nonResidentWithPassCount,
-        parsed.usResidentCount,
-        parsed.nonResidentCount,
-        parsed.nonResidentUnder16Count,
+        source.nonResidentWithPassCount,
+        source.usResidentCount,
+        source.nonResidentCount,
+        source.nonResidentUnder16Count,
         prev.totalPeople
       )
-      return {
-        ...prev,
-        undecidedResidentCount: parsed.undecidedResidentCount,
-        usResidentCount: parsed.usResidentCount,
-        nonResidentCount: parsed.nonResidentCount,
-        nonResidentUnder16Count: parsed.nonResidentUnder16Count,
-        nonResidentWithPassCount: parsed.nonResidentWithPassCount,
-        nonResidentPurchasePassCount: parsed.nonResidentPurchasePassCount,
-        residentStatusAmounts: parsed.residentStatusAmounts,
-        passCoveredCount: passCovered,
+      const nextUndecided = leftoverUndecidedResidentCount(prev.totalPeople || 0, assigned)
+      const next: ResidentLineState = {
+        ...source,
+        undecidedResidentCount: nextUndecided,
       }
+      const needsChoiceSync = parsed.undecidedResidentCount > nextUndecided
+      if (
+        residentLineStateEquals(cur, next) &&
+        (prev.passCoveredCount || 0) === passCovered &&
+        !needsChoiceSync
+      ) {
+        return prev
+      }
+      return syncResidentChoicesInFormState({
+        ...prev,
+        undecidedResidentCount: nextUndecided,
+        usResidentCount: next.usResidentCount,
+        nonResidentCount: next.nonResidentCount,
+        nonResidentUnder16Count: next.nonResidentUnder16Count,
+        nonResidentWithPassCount: next.nonResidentWithPassCount,
+        nonResidentPurchasePassCount: next.nonResidentPurchasePassCount,
+        residentStatusAmounts: next.residentStatusAmounts,
+        passCoveredCount: passCovered,
+      })
     })
-  }, [formData.selectedChoices, formData.productChoices, setFormData])
+  }, [formData.selectedChoices, formData.productChoices, setFormData, syncResidentChoicesInFormState])
 
   useEffect(() => {
     setFormData((prev) => {
@@ -1368,6 +1400,25 @@ export default function ReservationForm({
       ),
     [products, formData.productId]
   )
+
+  const syncResidentChoicesFromCurrentCounts = useCallback(() => {
+    setFormData((prev) => syncResidentChoicesInFormState(prev))
+  }, [setFormData, syncResidentChoicesInFormState])
+
+  const guestResidentCheck = useGuestResidentCheckSync({
+    reservationId: effectiveReservationId ?? null,
+    customerId: formData.customerId || null,
+    enabled: Boolean(effectiveReservationId) && showResidentStatusSection,
+    productChoicesReady: (formData.productChoices?.length || 0) > 0,
+    totalPeople: formData.totalPeople || 0,
+    applyResidentParticipantPatch,
+    syncResidentChoicesFromCurrentCounts,
+    formDataRef,
+    onSynced: () => {
+      const id = effectiveReservationId
+      if (id) void Promise.resolve(onPricingSaved?.(id))
+    },
+  })
 
   // 데이터베이스에서 불러온 commission_amount 값을 추적 (자동 계산에 의해 덮어쓰이지 않도록)
   const loadedCommissionAmount = useRef<number | null>(null)
@@ -1666,7 +1717,7 @@ export default function ReservationForm({
         // reservations 테이블에서 customer_id 등 정보 조회
         const { data: reservationData, error: reservationError } = await (supabase as any)
           .from('reservations')
-          .select('id, customer_id, product_id, status, choices')
+          .select('id, customer_id, product_id, status, choices, adults, child, infant, total_people')
           .eq('id', reservation.id)
           .single()
 
@@ -1729,6 +1780,63 @@ export default function ReservationForm({
               console.error('ReservationForm: reservation_customers 조회 오류:', rcError)
             }
           }
+
+          const rcAssigned =
+            usResidentCount +
+            nonResidentCount +
+            nonResidentUnder16Count +
+            nonResidentWithPassCount +
+            nonResidentPurchasePassCount
+          const rez = reservation as {
+            adults?: number | null
+            child?: number | null
+            infant?: number | null
+            total_people?: number | null
+          }
+          const partySum =
+            (Number(reservationData.adults) || 0) +
+            (Number(reservationData.child) || 0) +
+            (Number(reservationData.infant) || 0)
+          const loadedTotalPeople =
+            partySum > 0
+              ? partySum
+              : Number(reservationData.total_people) ||
+                Number(formDataRef.current.totalPeople) ||
+                (Number(rez.adults) || 0) + (Number(rez.child) || 0) + (Number(rez.infant) || 0) ||
+                Number(rez.total_people) ||
+                0
+          let guestResidentPatch: Record<string, unknown> | null = null
+          if (rcAssigned === 0) {
+            try {
+              const guestRecord = await fetchLatestResidentCheckGuestRecord(supabase, reservation.id)
+              const totalPeople = loadedTotalPeople
+              const counts = guestRecord
+                ? residentStatusCountsFromGuestSubmission(guestRecord.submission, totalPeople)
+                : null
+              if (counts) {
+                usResidentCount = counts.usResident
+                nonResidentCount = counts.nonResident
+                nonResidentUnder16Count = counts.nonResidentUnder16
+                nonResidentWithPassCount = counts.nonResidentWithPass
+                nonResidentPurchasePassCount = 0
+                guestResidentPatch = guestResidentCountsToFormPatch(counts, totalPeople)
+                passCoveredCount = Number(guestResidentPatch.passCoveredCount) || 0
+                void saveResidentStatusWithPricing(
+                  supabase,
+                  reservation.id,
+                  reservationData.customer_id || null,
+                  totalPeople,
+                  counts
+                ).then((result) => {
+                  if (result.ok) void Promise.resolve(onPricingSaved?.(reservation.id))
+                })
+              }
+            } catch (guestErr) {
+              if (!isAbortLikeError(guestErr)) {
+                console.error('ReservationForm: 게스트 거주 확인 폼 동기화 오류:', guestErr)
+              }
+            }
+          }
           
           // customer_id로 customers 테이블에서 고객 정보 조회
           if (reservationData.customer_id) {
@@ -1752,18 +1860,37 @@ export default function ReservationForm({
               console.log('ReservationForm: 고객 데이터 조회 성공:', customerData)
               
               // formData 업데이트 (고객 연락처 포함 — customers prop 캐시와 무관하게 DB 최신값 반영)
-              setFormData(prev => ({
+              setFormData(prev => {
+                const incomingAssigned =
+                  usResidentCount +
+                  nonResidentCount +
+                  nonResidentUnder16Count +
+                  nonResidentWithPassCount +
+                  nonResidentPurchasePassCount
+                const prevAssigned = assignedResidentPeopleFromForm(prev)
+                const keepPrevResident = incomingAssigned === 0 && prevAssigned > 0
+                return {
                 ...prev,
                 ...customerRowToFormFields(customerData as CustomerFormFieldSource),
                 productId: reservationData.product_id || '',
                 status: reservationData.status || 'pending',
-                usResidentCount,
-                nonResidentCount,
-                nonResidentWithPassCount,
-                nonResidentUnder16Count,
-                nonResidentPurchasePassCount,
-                passCoveredCount
-              }))
+                ...(keepPrevResident
+                  ? {}
+                  : {
+                      usResidentCount,
+                      nonResidentCount,
+                      nonResidentWithPassCount,
+                      nonResidentUnder16Count,
+                      nonResidentPurchasePassCount,
+                      passCoveredCount,
+                      undecidedResidentCount: leftoverUndecidedResidentCount(
+                        loadedTotalPeople,
+                        incomingAssigned
+                      ),
+                      ...(guestResidentPatch || {}),
+                    }),
+              }
+              })
               
               // 상품 ID가 설정된 후 초이스 로드 (편집 모드에서는 loadReservationChoicesFromNewTable이 이미 처리했을 수 있으므로 스킵)
               // loadReservationChoicesFromNewTable이 이미 productChoices를 로드했으면 스킵
@@ -7548,6 +7675,9 @@ export default function ReservationForm({
                     t={t}
                     reservationId={effectiveReservationId ?? null}
                     locale={locale}
+                    guestResidentCheck={guestResidentCheck}
+                    guestName={formData.customerName || formData.customerSearch}
+                    tourDate={formData.tourDate}
                   />
                 </div>
               </div>

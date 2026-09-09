@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { getLowestChoiceAddonTotal } from '@/lib/productChoiceGrouping'
+import { withChoiceProcessingFee } from '@/lib/choiceProcessingFee'
 
 type ChoiceOptionRow = {
   adult_price?: number | string | null
@@ -9,6 +10,7 @@ type ChoiceOptionRow = {
 type ProductChoiceRow = {
   product_id: string
   id: string
+  apply_processing_fee?: boolean | null
   options?: ChoiceOptionRow[] | null
 }
 
@@ -34,6 +36,7 @@ export async function fetchLowestChoicePricesByProductIds(
       `
       product_id,
       id,
+      apply_processing_fee,
       options:choice_options (
         adult_price,
         is_active
@@ -62,7 +65,10 @@ export async function fetchLowestChoicePricesByProductIds(
       if (option.is_active === false) continue
       list.push({
         choice_id: row.id,
-        option_price: parseOptionPrice(option.adult_price),
+        option_price: withChoiceProcessingFee(
+          parseOptionPrice(option.adult_price),
+          row.apply_processing_fee === true
+        ),
       })
     }
 

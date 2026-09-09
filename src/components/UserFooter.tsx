@@ -189,7 +189,7 @@ export default function UserFooter({ locale }: UserFooterProps) {
       name: t('products'),
       href: `/${locale}/products`,
       icon: Package,
-      showForAll: true,
+      showForAll: false,
     },
     {
       name: t('reservationCheck'),
@@ -253,9 +253,12 @@ export default function UserFooter({ locale }: UserFooterProps) {
     isCustomerFacingPath(pathname) &&
     (pathname === `/${currentLocale}` || pathname === `/${currentLocale}/`)
 
+  const isResidentCheckPage = Boolean(pathname?.includes('/resident-check'))
+
   // 가이드·고객 공개 페이지는 자체 크롬을 씀 — 스태프 하단 네비와 겹치지 않게 숨김
   if (
     isCustomerHome ||
+    isResidentCheckPage ||
     pathname.includes('/guide') ||
     pathname.includes('/reviews')
   ) {

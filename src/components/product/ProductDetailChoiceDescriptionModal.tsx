@@ -11,6 +11,7 @@ export type ProductChoiceGroup = {
   choice_type: string
   /** per_person | per_unit */
   pricing_unit?: string | null
+  apply_processing_fee?: boolean | null
   choice_description: string | null
   choice_description_ko?: string | null
   choice_description_en?: string | null

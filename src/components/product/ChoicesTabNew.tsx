@@ -71,6 +71,7 @@ interface ProductChoiceData {
   choice_type: 'single' | 'multiple' | 'quantity'
   /** per_person: 인당 / per_unit: 차량·선택 단위 고정가 */
   pricing_unit?: 'per_person' | 'per_unit'
+  apply_processing_fee?: boolean
   is_required: boolean
   min_selections: number
   max_selections: number
@@ -146,6 +147,7 @@ interface ProductChoice {
   choice_type: 'single' | 'multiple' | 'quantity'
   /** per_person: 인당 / per_unit: 차량·선택 단위 고정가 */
   pricing_unit: 'per_person' | 'per_unit'
+  apply_processing_fee: boolean
   is_required: boolean
   min_selections: number
   max_selections: number
@@ -265,6 +267,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
         content_i18n: groupContentI18n,
         choice_type: choiceType as 'single' | 'multiple' | 'quantity',
         pricing_unit: 'per_person',
+        apply_processing_fee: false,
         is_required: isRequired,
         min_selections: minSelections,
         max_selections: maxSelections,
@@ -378,6 +381,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           content_i18n,
           choice_type,
           pricing_unit,
+          apply_processing_fee,
           is_required,
           min_selections,
           max_selections,
@@ -425,6 +429,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           sort_order: choice.sort_order ?? choiceIndex,
           choice_type: choice.choice_type as 'single' | 'multiple' | 'quantity',
           pricing_unit: choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person',
+          apply_processing_fee: choice.apply_processing_fee === true,
           options: [...(choice.options || [])]
             .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
             .map((option, optionIndex) => ({
@@ -468,6 +473,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           content_i18n,
           choice_type,
           pricing_unit,
+          apply_processing_fee,
           is_required,
           min_selections,
           max_selections,
@@ -502,6 +508,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           ...choice,
           choice_type: choice.choice_type as 'single' | 'multiple' | 'quantity',
           pricing_unit: choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person',
+          apply_processing_fee: choice.apply_processing_fee === true,
           options: (choice.options || []).map(option => ({
             ...option,
             image_url: option.image_url || undefined,
@@ -635,6 +642,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           content_i18n: trimChoiceContentI18n(choice.content_i18n),
           choice_type: choice.choice_type,
           pricing_unit: choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person',
+          apply_processing_fee: choice.apply_processing_fee === true,
           is_required: choice.is_required,
           min_selections: choice.min_selections,
           max_selections: choice.max_selections,
@@ -834,6 +842,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
       content_i18n: {},
       choice_type: 'single',
       pricing_unit: 'per_person',
+      apply_processing_fee: false,
       is_required: true,
       min_selections: 1,
       max_selections: 1,
@@ -1106,6 +1115,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           choice_group_ko,
           choice_type,
           pricing_unit,
+          apply_processing_fee,
           is_required,
           min_selections,
           max_selections,
@@ -1137,6 +1147,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           ...(choice.description_en !== undefined && { description_en: choice.description_en }),
           choice_type: choice.choice_type as 'single' | 'multiple' | 'quantity',
           pricing_unit: choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person',
+          apply_processing_fee: choice.apply_processing_fee === true,
           is_required: choice.is_required,
           min_selections: choice.min_selections,
           max_selections: choice.max_selections,
@@ -1186,6 +1197,7 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
           description_en: choice.description_en || '',
           choice_type: (choice.choice_type || 'single') as 'single' | 'multiple' | 'quantity',
           pricing_unit: choice.pricing_unit === 'per_unit' ? 'per_unit' : 'per_person',
+          apply_processing_fee: choice.apply_processing_fee === true,
           is_required: choice.is_required !== false,
           min_selections: choice.min_selections || 1,
           max_selections: choice.max_selections || 1,
@@ -1550,6 +1562,19 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                       />
                       <span className="ml-1.5 text-xs sm:text-sm font-medium text-gray-700">필수</span>
                     </label>
+                    <label className="flex items-center cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={choice.apply_processing_fee === true}
+                        onChange={(e) =>
+                          updateChoiceGroup(groupIndex, 'apply_processing_fee', e.target.checked)
+                        }
+                        className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring"
+                      />
+                      <span className="ml-1.5 text-xs sm:text-sm font-medium text-gray-700">
+                        카드 수수료 5%
+                      </span>
+                    </label>
                     <button
                       onClick={() => removeChoiceGroup(groupIndex)}
                       className="p-1.5 text-red-500 hover:bg-red-50 rounded-md transition-colors"
@@ -1625,6 +1650,11 @@ export default function ChoicesTab({ productId, isNewProduct, embedded = false }
                       {choice.pricing_unit === 'per_unit' ? (
                         <p className="mt-1 text-[11px] text-muted-foreground leading-snug">
                           예: 미니밴 $80 · 3명이어도 1대면 $80 (수용 인원 이내)
+                        </p>
+                      ) : null}
+                      {choice.apply_processing_fee ? (
+                        <p className="mt-1 text-[11px] text-amber-800 leading-snug">
+                          고객 카드 결제 시 이 그룹 금액에 5% processing fee가 붙습니다.
                         </p>
                       ) : null}
                     </div>
@@ -2444,6 +2474,11 @@ function ExportTemplateModal({ onExport, onClose, productChoices, selectedChoice
                         초이스 {choice.options?.length || 0}개
                         {choice.is_required && (
                           <span className="ml-2 px-2 py-0.5 bg-primary/10 text-primary text-xs rounded">필수</span>
+                        )}
+                        {choice.apply_processing_fee && (
+                          <span className="ml-2 px-2 py-0.5 bg-amber-50 text-amber-800 text-xs rounded">
+                            카드 수수료 5%
+                          </span>
                         )}
                       </div>
                     </div>

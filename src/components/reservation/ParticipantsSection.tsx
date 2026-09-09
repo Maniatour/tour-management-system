@@ -1,6 +1,10 @@
 'use client'
 
+import { useState } from 'react'
+import { FileText } from 'lucide-react'
 import ReservationEvidenceUpload from '@/components/reservation/ReservationEvidenceUpload'
+import ResidentCheckSubmissionModal from '@/components/reservation/ResidentCheckSubmissionModal'
+import type { ResidentCheckGuestRecord } from '@/lib/residentCheckReservationSync'
 import {
   computePassCoveredCount,
   emptyResidentStatusAmounts,
@@ -35,6 +39,9 @@ interface ParticipantsSectionProps {
   t: (key: string) => string
   reservationId?: string | null
   locale?: string
+  guestResidentCheck?: ResidentCheckGuestRecord | null
+  guestName?: string
+  tourDate?: string
 }
 
 const RESIDENT_ROWS: {
@@ -76,7 +83,12 @@ export default function ParticipantsSection({
   t,
   reservationId,
   locale = 'ko',
+  guestResidentCheck = null,
+  guestName,
+  tourDate,
 }: ParticipantsSectionProps) {
+  const [showGuestForm, setShowGuestForm] = useState(false)
+  const isKo = locale === 'ko'
   const apply = (patch: Record<string, unknown>) => {
     if (applyResidentParticipantPatch) {
       applyResidentParticipantPatch(patch)
@@ -277,6 +289,18 @@ export default function ParticipantsSection({
             <span className="block mt-1 text-orange-600">⚠️ 인원 수가 일치하지 않습니다</span>
           )}
         </div>
+        {guestResidentCheck ? (
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => setShowGuestForm(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              {isKo ? '게스트 거주 확인 폼 보기' : 'View guest residency form'}
+            </button>
+          </div>
+        ) : null}
         <ReservationEvidenceUpload
           reservationId={reservationId}
           compact
@@ -296,6 +320,15 @@ export default function ParticipantsSection({
           placeholder={t('form.eventNotePlaceholder')}
         />
       </div>
+      {showGuestForm && guestResidentCheck ? (
+        <ResidentCheckSubmissionModal
+          record={guestResidentCheck}
+          guestName={guestName || ''}
+          tourDate={tourDate || ''}
+          locale={locale}
+          onClose={() => setShowGuestForm(false)}
+        />
+      ) : null}
     </>
   )
 }

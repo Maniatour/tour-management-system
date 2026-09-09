@@ -5114,6 +5114,7 @@ export type Database = {
           id: string
           is_active: boolean | null
           is_required: boolean | null
+          apply_processing_fee: boolean
           max_selections: number | null
           min_selections: number | null
           operator_id: string
@@ -5134,6 +5135,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           is_required?: boolean | null
+          apply_processing_fee?: boolean
           max_selections?: number | null
           min_selections?: number | null
           operator_id?: string
@@ -5154,6 +5156,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           is_required?: boolean | null
+          apply_processing_fee?: boolean
           max_selections?: number | null
           min_selections?: number | null
           operator_id?: string

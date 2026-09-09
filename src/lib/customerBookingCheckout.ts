@@ -30,6 +30,7 @@ import {
   isPerUnitPricing,
   parseChoicePricingUnit,
 } from '@/lib/choicePricingUnit'
+import { choiceProcessingFeeAmount, parseApplyProcessingFee } from '@/lib/choiceProcessingFee'
 import { notifyStaffOfCustomerPayment } from '@/lib/customerPaymentNotifications'
 
 /** @deprecated Prefer KOVEgAS_DIRECT_CHANNEL_ID — kept for existing imports */
@@ -530,6 +531,93 @@ async function applyPerUnitChoicesAdjustment(
   }
 }
 
+/**
+ * 초이스 그룹 apply_processing_fee=true 이면 해당 라인 금액의 5%를 초이스 합계에 더합니다.
+ */
+async function applyChoiceProcessingFeeAdjustment(
+  admin: AdminClient,
+  line: CustomerBookingLineInput,
+  choiceOptionIds: string[],
+  current: {
+    basePrice: number
+    choicesPrice: number
+    additionalOptionsPrice: number
+    subtotal: number
+  }
+): Promise<{
+  basePrice: number
+  choicesPrice: number
+  additionalOptionsPrice: number
+  subtotal: number
+  adjusted: boolean
+}> {
+  if (choiceOptionIds.length === 0) {
+    return { ...current, adjusted: false }
+  }
+
+  const { data: choiceOptions } = await admin
+    .from('choice_options')
+    .select('id, choice_id, adult_price, child_price, infant_price')
+    .in('id', choiceOptionIds)
+
+  if (!choiceOptions?.length) {
+    return { ...current, adjusted: false }
+  }
+
+  const choiceIds = [
+    ...new Set(
+      choiceOptions
+        .map((o) => o.choice_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    ),
+  ]
+  const { data: choiceRows } = await admin
+    .from('product_choices')
+    .select('id, pricing_unit, apply_processing_fee')
+    .in('id', choiceIds)
+
+  const feeByChoiceId = new Map<string, { apply: boolean; pricingUnit: string }>()
+  for (const row of choiceRows || []) {
+    feeByChoiceId.set(row.id, {
+      apply: parseApplyProcessingFee(row.apply_processing_fee),
+      pricingUnit: parseChoicePricingUnit(row.pricing_unit),
+    })
+  }
+
+  let fee = 0
+  for (const option of choiceOptions) {
+    const choiceId = option.choice_id
+    if (typeof choiceId !== 'string') continue
+    const meta = feeByChoiceId.get(choiceId)
+    if (!meta?.apply) continue
+    const quantity = line.optionQuantities?.[option.id] ?? 1
+    const lineTotal = calculateChoiceLineTotal({
+      pricingUnit: meta.pricingUnit,
+      adultPrice: Number(option.adult_price) || 0,
+      childPrice: Number(option.child_price) || 0,
+      infantPrice: Number(option.infant_price) || 0,
+      adults: line.adults,
+      children: line.child,
+      infants: line.infant,
+      quantity,
+    })
+    fee += choiceProcessingFeeAmount(lineTotal)
+  }
+
+  fee = roundMoney(fee)
+  if (fee <= 0) {
+    return { ...current, adjusted: false }
+  }
+
+  return {
+    basePrice: current.basePrice,
+    choicesPrice: roundMoney(current.choicesPrice + fee),
+    additionalOptionsPrice: current.additionalOptionsPrice,
+    subtotal: roundMoney(current.subtotal + fee),
+    adjusted: true,
+  }
+}
+
 export async function calculateServerBookingPrice(
   admin: AdminClient,
   line: CustomerBookingLineInput,
@@ -661,6 +749,20 @@ export async function calculateServerBookingPrice(
     additionalOptionsPrice = adjusted.additionalOptionsPrice
     subtotal = adjusted.subtotal
     calculationMethod = `${calculationMethod}+per_unit`
+  }
+
+  const withFee = await applyChoiceProcessingFeeAdjustment(admin, line, choiceOptionIds, {
+    basePrice,
+    choicesPrice,
+    additionalOptionsPrice,
+    subtotal,
+  })
+  if (withFee.adjusted) {
+    basePrice = withFee.basePrice
+    choicesPrice = withFee.choicesPrice
+    additionalOptionsPrice = withFee.additionalOptionsPrice
+    subtotal = withFee.subtotal
+    calculationMethod = `${calculationMethod}+processing_fee`
   }
 
   if (subtotal <= 0) {

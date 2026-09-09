@@ -30,7 +30,7 @@ test('해당일 투어 현황 한 줄 형식을 만든다', () => {
       { index: 2, staffLabel: 'Dez/Sean', assigned: 9, max: 12, spotsLeft: 3 },
     ],
   })
-  assert.equal(line, '2 투어 5 잔여좌석 (1. 마틴/해롤드 10/12 , 2. Dez/Sean 9/12)')
+  assert.equal(line, '투어 X 2, 잔여 좌석 X 5 (1. 마틴/해롤드 10/12 , 2. Dez/Sean 9/12)')
 })
 
 test('취소·삭제 투어는 제외하고 배정 인원과 차량 정원을 팀별로 집계한다', () => {
@@ -95,7 +95,7 @@ test('취소·삭제 투어는 제외하고 배정 인원과 차량 정원을 �
 
   assert.equal(summary.tourCount, 2)
   assert.equal(summary.totalSpotsLeft, 5)
-  assert.equal(formatImportTourDayStatusLine(summary), '2 투어 5 잔여좌석 (1. 마틴/해롤드 10/12 , 2. Dez/Sean 9/12)')
+  assert.equal(formatImportTourDayStatusLine(summary), '투어 X 2, 잔여 좌석 X 5 (1. 마틴/해롤드 10/12 , 2. Dez/Sean 9/12)')
 })
 
 test('추출 상품명으로 상품 ID를 찾는다', () => {

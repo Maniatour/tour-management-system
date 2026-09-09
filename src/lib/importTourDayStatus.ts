@@ -141,7 +141,7 @@ export function formatImportTourDayStatusLine(summary: ImportTourDayStatusSummar
   const teams = summary.teams
     .map((team) => `${team.index}. ${team.staffLabel} ${team.assigned}/${team.max}`)
     .join(' , ')
-  return `${summary.tourCount} 투어 ${summary.totalSpotsLeft} 잔여좌석 (${teams})`
+  return `투어 X ${summary.tourCount}, 잔여 좌석 X ${summary.totalSpotsLeft} (${teams})`
 }
 
 export function buildImportTourDayStatusSummary(

@@ -6954,6 +6954,7 @@ export default function AdminReservations() {
           }}
           onRefreshCustomers={refreshCustomers}
           onDelete={handleDeleteReservation}
+          onPricingSaved={refreshReservations}
           layout="modal"
           allowPastDateEdit={isSuper}
           useServerCustomerInsert

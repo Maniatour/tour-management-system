@@ -21,6 +21,7 @@ import { getPickupHotelPrimaryName } from '@/utils/pickupHotelUtils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { isRebookingCancellationReason } from '@/lib/reservationCancellationReason'
 import { ResidentStatusIcon } from '@/components/reservation/ResidentStatusIcon'
+import GuestResidentCheckCardButton from '@/components/reservation/GuestResidentCheckCardButton'
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { ChoicesDisplay } from '@/components/reservation/ChoicesDisplay'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
@@ -355,7 +356,7 @@ function PickupHotelHintIcon({
 }) {
   return (
     <span
-      className="group/pickupHotel relative ml-auto inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded hover:bg-teal-50"
+      className="group/pickupHotel relative inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded hover:bg-teal-50"
       tabIndex={0}
       aria-label={hotelName}
     >
@@ -463,6 +464,14 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   const showResidentStatusUi = productShowsResidentStatusSectionByCode(
     reservationProduct?.product_code ?? null
   )
+  const guestResidentFormButton = showResidentStatusUi ? (
+    <GuestResidentCheckCardButton
+      reservationId={reservation.id}
+      guestName={getCustomerName(reservation.customerId, customers || [])}
+      tourDate={formatTourDateMmDdYyyy(reservation.tourDate)}
+      locale={locale}
+    />
+  ) : null
 
   const normalizeTourId = (raw: string | null | undefined) => {
     const s = (raw || '').trim()
@@ -1006,7 +1015,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                       {cancelReasonBadge}
                     </span>
                   ) : null}
-                  <PickupHotelHintIcon hotelName={pickupHotelName} hasHotel={hasPickupHotel} />
+                  <div className="ml-auto inline-flex shrink-0 items-center gap-0.5">
+                    {guestResidentFormButton}
+                    <PickupHotelHintIcon hotelName={pickupHotelName} hasHotel={hasPickupHotel} />
+                  </div>
                 </div>
               )
             }
@@ -1067,7 +1079,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                     {simpleCardTourStatusGlyph(tourStatusLabel)}
                   </span>
                 </div>
-                <PickupHotelHintIcon hotelName={pickupHotelName} hasHotel={hasPickupHotel} />
+                <div className="ml-auto inline-flex shrink-0 items-center gap-0.5">
+                  {guestResidentFormButton}
+                  <PickupHotelHintIcon hotelName={pickupHotelName} hasHotel={hasPickupHotel} />
+                </div>
               </div>
             )
           })()}

@@ -9,6 +9,7 @@ import {
   markResidentCheckTokenCompleted,
   syncCustomerFromResidentCheckSubmission,
 } from '@/lib/residentCheckSyncCustomer'
+import { syncReservationFromResidentCheckSubmission } from '@/lib/residentCheckReservationSync'
 import { syncResidentCheckProofsToReservationEvidence } from '@/lib/syncResidentCheckProofsToReservationEvidence'
 
 /**
@@ -71,10 +72,19 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     const customerId = (reservation as { customer_id?: string | null } | null)?.customer_id ?? null
+    const completedSubmission = { ...submission, stripe_payment_status: 'cash_on_site' }
     await syncCustomerFromResidentCheckSubmission({
       customerId,
-      submission: { ...submission, stripe_payment_status: 'cash_on_site' },
+      submission: completedSubmission,
     })
+    const residentSync = await syncReservationFromResidentCheckSubmission(supabaseAdmin, {
+      reservationId: token.reservation_id,
+      customerId,
+      submission: completedSubmission,
+    })
+    if (!residentSync.ok) {
+      console.warn('resident-check/complete-cash reservation sync', residentSync.error)
+    }
     await syncResidentCheckProofsToReservationEvidence(token.reservation_id)
     await markResidentCheckTokenCompleted(token.id)
 
