@@ -260,7 +260,8 @@ export default function UserFooter({ locale }: UserFooterProps) {
     isCustomerHome ||
     isResidentCheckPage ||
     pathname.includes('/guide') ||
-    pathname.includes('/reviews')
+    pathname.includes('/reviews') ||
+    pathname.includes('/pay/')
   ) {
     return null
   }

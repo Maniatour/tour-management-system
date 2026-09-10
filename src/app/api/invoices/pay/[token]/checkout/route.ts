@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
-import { createPublicInvoicePaySession } from '@/lib/payableInvoice'
+import { createPublicInvoicePaySession, invoicePayPathLocale } from '@/lib/payableInvoice'
 
 export const runtime = 'nodejs'
 
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     body = {}
   }
 
-  const locale = body.locale === 'ko' ? 'ko' : 'en'
+  const locale = invoicePayPathLocale(typeof body.locale === 'string' ? body.locale : 'en')
   const tipRaw = body.tipUsd ?? body.tip
   const amountRaw = body.amountUsd ?? body.amount
   const tipUsd = typeof tipRaw === 'number' ? tipRaw : Number(tipRaw || 0)

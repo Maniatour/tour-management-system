@@ -139,7 +139,7 @@ export default function CustomerSiteHeader({ brandName }: CustomerSiteHeaderProp
       ? `/${locale}/admin`
       : `/${locale}/dashboard`
     : `/${locale}/auth`
-  const cartLabel = locale === 'en' ? 'Cart' : '장바구니'
+  const cartLabel = t('cart')
   const accountLabel = !loading && currentUser ? t('profile') : t('login')
 
   const navLinks = isHome

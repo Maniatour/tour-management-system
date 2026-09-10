@@ -63,6 +63,7 @@ const ALL_LOCALE_NAMESPACE_KEYS = [
   'customerSiteFooter',
   'legalPages',
   'writeReview',
+  'invoicePay',
 ] as const
 
 type LocaleNamespace = (typeof ALL_LOCALE_NAMESPACE_KEYS)[number]
@@ -187,6 +188,10 @@ const ROUTE_NAMESPACE_RULES: RouteNamespaceRule[] = [
   {
     test: (p) => /\/resident-check/.test(p),
     namespaces: ['residentCheck', 'customerSiteFooter', 'legalPages'],
+  },
+  {
+    test: (p) => /\/pay(\/|$)/.test(p),
+    namespaces: ['invoicePay', 'customerSiteFooter', 'legalPages'],
   },
   {
     test: (p) => /\/dashboard/.test(p),

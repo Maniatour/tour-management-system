@@ -40,6 +40,7 @@ const Sidebar = () => {
       pathname.startsWith(`/${locale}/photos/`) ||
       pathname.startsWith(`/${locale}/reservation-check`) ||
       pathname.startsWith(`/${locale}/resident-check`) ||
+      pathname.startsWith(`/${locale}/pay`) ||
       pathname.startsWith(`/${locale}/travel-guide`) ||
       isLegalPagePath(pathname) ||
       pathname === `/${locale}` ||

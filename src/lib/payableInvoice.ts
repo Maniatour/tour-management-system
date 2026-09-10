@@ -13,6 +13,7 @@ import {
   isGetYourGuideReplyEmail,
 } from '@/lib/otaDirectCustomerEmail'
 import { parseRecipientEmail } from '@/lib/quickPaymentRequestMessage'
+import { isSiteLocale, type SiteLocale } from '@/lib/siteLocales'
 
 export const STAFF_PAYABLE_INVOICE_PURPOSE = 'staff_payable_invoice'
 export const STAFF_PAYABLE_CHECKOUT_PURPOSE = 'staff_payable_invoice_checkout'
@@ -184,8 +185,35 @@ function siteOrigin(): string {
 }
 
 export function buildInvoiceSitePayUrl(paymentToken: string, locale: string = 'en'): string {
-  const loc = locale === 'ko' || locale === 'en' ? locale : 'en'
+  const loc = locale === 'ko' ? 'ko' : 'en'
   return `${siteOrigin()}/${loc}/pay/invoice/${paymentToken}`
+}
+
+export function invoicePayPathLocale(locale: string | null | undefined): SiteLocale {
+  return isSiteLocale(locale) ? locale : 'en'
+}
+
+export function stripeCheckoutLocale(
+  locale: string | null | undefined
+): Stripe.Checkout.SessionCreateParams.Locale {
+  switch (invoicePayPathLocale(locale)) {
+    case 'ko':
+      return 'ko'
+    case 'ja':
+      return 'ja'
+    case 'zh-CN':
+      return 'zh'
+    case 'zh-TW':
+      return 'zh-TW'
+    case 'es':
+      return 'es'
+    case 'fr':
+      return 'fr'
+    case 'de':
+      return 'de'
+    default:
+      return 'en'
+  }
 }
 
 function lineDescription(item: InvoiceItemRow, locale: string): string {
@@ -1533,12 +1561,13 @@ export async function createPublicInvoicePaySession(
   admin: AdminClient,
   token: string,
   params: {
-    locale?: 'ko' | 'en'
+    locale?: string
     tipUsd?: number
     amountUsd?: number
   }
 ): Promise<{ url: string; mode: 'hosted_invoice' | 'checkout' }> {
-  const locale = params.locale === 'ko' ? 'ko' : 'en'
+  const pathLocale = invoicePayPathLocale(params.locale)
+  const locale = pathLocale === 'ko' ? 'ko' : 'en'
   const stripe = getStripeClient()
 
   const { data: invoice, error } = await admin
@@ -1666,8 +1695,9 @@ export async function createPublicInvoicePaySession(
   const sessionParams: Stripe.Checkout.SessionCreateParams = {
     mode: 'payment',
     line_items: lineItems,
-    success_url: `${origin}/${locale}/pay/invoice/${token}?paid=1&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${origin}/${locale}/pay/invoice/${token}?canceled=1`,
+    locale: stripeCheckoutLocale(pathLocale),
+    success_url: `${origin}/${pathLocale}/pay/invoice/${token}?paid=1&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}/${pathLocale}/pay/invoice/${token}?canceled=1`,
     metadata,
     payment_intent_data: {
       metadata,

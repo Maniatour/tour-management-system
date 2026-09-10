@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { getTranslations } from 'next-intl/server'
 import { AlertCircle, CheckCircle2, CreditCard } from 'lucide-react'
 import { supabaseAdmin } from '@/lib/supabase'
 import { getStripeClient } from '@/lib/customerBookingCheckout'
@@ -8,6 +9,7 @@ import {
 } from '@/lib/payableInvoice'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
 import InvoicePayWithTipForm from '@/components/customer/InvoicePayWithTipForm'
+import { normalizeSiteLocale } from '@/lib/siteLocales'
 
 type PageProps = {
   params: Promise<{ locale: string; token: string }>
@@ -23,8 +25,8 @@ function descriptionFromItems(items: unknown): string {
 export default async function PayInvoicePage({ params, searchParams }: PageProps) {
   const { locale: rawLocale, token } = await params
   const query = await searchParams
-  const locale = rawLocale === 'en' ? 'en' : 'ko'
-  const isKo = locale === 'ko'
+  const locale = normalizeSiteLocale(rawLocale, 'en')
+  const t = await getTranslations({ locale, namespace: 'invoicePay' })
   const canceled = query.canceled === '1'
   const sessionId = typeof query.session_id === 'string' ? query.session_id.trim() : ''
 
@@ -34,8 +36,9 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
         <PayState
           locale={locale}
           kind="error"
-          title={isKo ? '잘못된 결제 링크' : 'Invalid payment link'}
-          body={isKo ? '링크가 올바르지 않습니다. 고객센터로 문의해 주세요.' : 'This payment link is invalid. Please contact support.'}
+          title={t('invalidLinkTitle')}
+          body={t('invalidLinkBody')}
+          backHomeLabel={t('backHome')}
         />
       </CustomerPageShell>
     )
@@ -47,8 +50,9 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
         <PayState
           locale={locale}
           kind="error"
-          title={isKo ? '일시적 오류' : 'Temporary error'}
-          body={isKo ? '결제 서비스를 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.' : 'Payment service is unavailable. Please try again shortly.'}
+          title={t('tempErrorTitle')}
+          body={t('tempErrorBody')}
+          backHomeLabel={t('backHome')}
         />
       </CustomerPageShell>
     )
@@ -66,8 +70,9 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
         <PayState
           locale={locale}
           kind="error"
-          title={isKo ? '인보이스를 찾을 수 없습니다' : 'Invoice not found'}
-          body={isKo ? '만료되었거나 잘못된 링크일 수 있습니다.' : 'This link may be expired or incorrect.'}
+          title={t('notFoundTitle')}
+          body={t('notFoundBody')}
+          backHomeLabel={t('backHome')}
         />
       </CustomerPageShell>
     )
@@ -101,12 +106,9 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
         <PayState
           locale={locale}
           kind="success"
-          title={isKo ? '결제가 완료되었습니다' : 'Payment complete'}
-          body={
-            isKo
-              ? `인보이스 ${current.invoice_number} 결제가 확인되었습니다. 감사합니다.`
-              : `Invoice ${current.invoice_number} has been paid. Thank you.`
-          }
+          title={t('paidTitle')}
+          body={t('paidBody', { number: current.invoice_number })}
+          backHomeLabel={t('backHome')}
         />
       </CustomerPageShell>
     )
@@ -118,8 +120,9 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
         <PayState
           locale={locale}
           kind="error"
-          title={isKo ? '취소된 인보이스' : 'Invoice cancelled'}
-          body={isKo ? '이 인보이스는 취소되어 결제할 수 없습니다.' : 'This invoice was cancelled and cannot be paid.'}
+          title={t('cancelledTitle')}
+          body={t('cancelledBody')}
+          backHomeLabel={t('backHome')}
         />
       </CustomerPageShell>
     )
@@ -134,13 +137,11 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
         <PayState
           locale={locale}
           kind="pending"
-          title={isKo ? '결제 링크 준비 중' : 'Payment link not ready'}
-          body={
-            isKo
-              ? '아직 결제 페이지가 연결되지 않았습니다. 발송 메일의 안내를 확인하거나 고객센터로 문의해 주세요.'
-              : 'The payment page is not ready yet. Please check your invoice email or contact support.'
-          }
+          title={t('pendingTitle')}
+          body={t('pendingBody')}
           invoiceNumber={current.invoice_number}
+          invoiceNumberLabel={t('invoiceNumberLabel')}
+          backHomeLabel={t('backHome')}
         />
       </CustomerPageShell>
     )
@@ -167,12 +168,16 @@ function PayState({
   title,
   body,
   invoiceNumber,
+  invoiceNumberLabel,
+  backHomeLabel,
 }: {
   locale: string
   kind: 'success' | 'error' | 'pending'
   title: string
   body: string
   invoiceNumber?: string
+  invoiceNumberLabel?: string
+  backHomeLabel: string
 }) {
   const homeHref = `/${locale}`
   return (
@@ -200,14 +205,14 @@ function PayState({
           <p className="mt-3 text-base leading-7 text-muted-foreground">{body}</p>
           {invoiceNumber ? (
             <p className="mt-4 text-sm text-muted-foreground">
-              {locale === 'ko' ? '인보이스 번호' : 'Invoice #'}: {invoiceNumber}
+              {invoiceNumberLabel}: {invoiceNumber}
             </p>
           ) : null}
           <Link
             href={homeHref}
             className="mt-8 inline-flex h-11 items-center justify-center rounded-xl bg-primary px-6 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"
           >
-            {locale === 'ko' ? '홈으로' : 'Back to home'}
+            {backHomeLabel}
           </Link>
         </div>
       </div>
