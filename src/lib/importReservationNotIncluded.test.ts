@@ -25,6 +25,36 @@ Not included:
   })
   assert.equal(extracted_data.amount_excluded, undefined)
   assert.equal(extracted_data.channel_variant_key, 'all_inclusive')
+  assert.deepEqual(extracted_data.import_choice_option_names, ['Lower Antelope Canyon'])
+})
+
+test('Klook Package Antelope Canyon X는 엑스 앤텔롭으로 파싱한다', () => {
+  const { extracted_data } = extractReservationFromEmail({
+    subject: 'Klook has confirmed an order for Grand Canyon Sunrise, Antelope Canyon and Horseshoe Highlights Tour',
+    sourceEmail: 'noreply@klook.com',
+    text: `
+Hey there Wooyong Shim,
+Klook has confirmed an order for Grand Canyon Sunrise, Antelope Canyon and Horseshoe Highlights Tour - Antelope Canyon X and issued a voucher to the participant. See order details below for your record.
+
+Grand Canyon Sunrise, Antelope Canyon and Horseshoe Highlights Tour
+Package:   Antelope Canyon X
+
+Booking reference ID: SNS713484
+Date Request: 2026-09-10
+Time Request: NA
+Lead participant: ()Cholticha Trakulsirichoke
+Country/region of passport: United States
+Lead person email: jao6344jun@gmail.com
+Lead person mobile: 1-6177333553
+Participant: 1 x Person
+Activity URL: https://www.klook.com/en-US/activity/113386
+`,
+  })
+  assert.deepEqual(extracted_data.import_choice_option_names, [
+    'X Antelope Canyon',
+    'Antelope X Canyon',
+  ])
+  assert.equal(extracted_data.product_id, 'MDGCSUNRISE')
 })
 
 test('Klook Amount not included 칸의 $95만 불포함 금액으로 인정한다', () => {

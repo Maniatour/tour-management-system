@@ -1261,13 +1261,23 @@ function inferKlookChannelVariant(amountExcluded: string | undefined): { key: st
   return { key: 'all_inclusive', label: 'All Inclusive' }
 }
 
+/** Klook Package: "Antelope Canyon X" / "Antelope X Canyon" 등 → 엑스 앤텔롭 */
+function klookPackageLooksLikeAntelopeX(packageRaw: string): boolean {
+  return (
+    /\bantelope\s+canyon\s+x\b/i.test(packageRaw) ||
+    /\bantelope\s*x(?:\s*canyon)?\b/i.test(packageRaw) ||
+    /\bx\s*[-–]?\s*antelope(?:\s+canyon)?\b/i.test(packageRaw) ||
+    /엑스\s*앤텔롭|앤텔롭\s*x/i.test(packageRaw)
+  )
+}
+
 /** Klook 본문 Package 줄 → canyon_choice 매칭용 option_name (DB choice_options와 동일) */
 function klookPackageToImportChoiceOptionNames(packageRaw: string | undefined): string[] | undefined {
   const s = packageRaw?.trim()
   if (!s) return undefined
-  // 엑스 앤텔롭 / Antelope X (Lower 보다 먼저 분기할 필요는 없으나 X 패턴을 우선)
-  if (/\bantelope\s*x\b|antelope\s+x\s+canyon|x\s*[-–]?\s*antelope|엑스\s*앤텔롭/i.test(s)) {
-    return ['Antelope X Canyon']
+  // Klook 표기는 "Antelope Canyon X". "Antelope X"만 보면 놓치고 기본 로어로 떨어짐.
+  if (klookPackageLooksLikeAntelopeX(s)) {
+    return ['X Antelope Canyon', 'Antelope X Canyon']
   }
   if (/lower\s*antelope|로어\s*앤텔롭/i.test(s)) {
     return ['Lower Antelope Canyon']

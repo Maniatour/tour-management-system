@@ -19,7 +19,14 @@ const HOMEPAGE_CHANNEL_IDS = new Set(['M00001'])
 const CANYON_ALIASES: Array<{ canon: string; aliases: string[] }> = [
   {
     canon: 'antelope x canyon',
-    aliases: ['x antelope canyon', 'antelope x', 'x antelope', '엑스 앤텔롭', '앤텔롭 x'],
+    aliases: [
+      'x antelope canyon',
+      'antelope canyon x',
+      'antelope x',
+      'x antelope',
+      '엑스 앤텔롭',
+      '앤텔롭 x',
+    ],
   },
   {
     canon: 'lower antelope canyon',
