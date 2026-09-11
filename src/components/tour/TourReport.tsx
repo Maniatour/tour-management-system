@@ -1,8 +1,8 @@
-import React from 'react'
+import React, { useRef } from 'react'
 import { Plus, Eye } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
-import TourReportSection from '@/components/TourReportSection'
+import TourReportSection, { type TourReportSectionHandle } from '@/components/TourReportSection'
 import { useTourDetailSectionChrome } from './TourDetailModalChromeContext'
 
 interface TourReportProps {
@@ -27,21 +27,14 @@ export const TourReport: React.FC<TourReportProps> = ({
   const chrome = useTourDetailSectionChrome()
   const t = useTranslations('tours.tourReport')
   const productName = params.locale === 'ko' ? product?.name_ko : product?.name_en
-  
+  const sectionRef = useRef<TourReportSectionHandle>(null)
+
   const handleCreateReport = () => {
-    const reportSection = document.querySelector('[data-tour-report-section]')
-    if (reportSection) {
-      const createButton = reportSection.querySelector('[data-create-report]') as HTMLButtonElement
-      if (createButton) createButton.click()
-    }
+    sectionRef.current?.createReport()
   }
 
   const handleViewReports = () => {
-    const reportSection = document.querySelector('[data-tour-report-section]')
-    if (reportSection) {
-      const viewButton = reportSection.querySelector('[data-view-reports]') as HTMLButtonElement
-      if (viewButton) viewButton.click()
-    }
+    sectionRef.current?.viewReports()
   }
 
   return (
@@ -98,6 +91,7 @@ export const TourReport: React.FC<TourReportProps> = ({
         </div>
         <div data-tour-report-section>
           <TourReportSection
+            ref={sectionRef}
             tourId={tour.id}
             productId={tour.product_id ?? product?.id}
             tourName={productName || ''}

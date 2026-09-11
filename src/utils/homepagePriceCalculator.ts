@@ -3,6 +3,8 @@
  * PriceCalculator.tsx와 DynamicPricingManager.tsx에서 공통으로 사용
  */
 
+import { findBookingTimeChoicePricingFromCombination } from '@/lib/bookingTimeChoicePricing'
+
 interface HomepagePricingConfig {
   markup_amount?: number;
   markup_percent?: number;
@@ -88,6 +90,14 @@ export function findHomepageChoiceData(
     
     if (matchingKey) {
       return choicesPricing[matchingKey];
+    }
+
+    const bookingTimeMatch = findBookingTimeChoicePricingFromCombination(
+      combination,
+      choicesPricing
+    )
+    if (bookingTimeMatch?.data) {
+      return bookingTimeMatch.data
     }
   }
 

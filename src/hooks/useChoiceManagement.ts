@@ -1,10 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { findChoicePricingData } from '@/utils/choicePricingMatcher';
-import {
-  filterBookingTimeChoiceGroups,
-  usesBookingTimeChoiceCatalog,
-} from '@/lib/bookingTimeChoicePricing';
+import { filterBookingTimeChoiceGroups } from '@/lib/bookingTimeChoicePricing';
 
 interface ChoiceOption {
   id: string;
@@ -220,12 +217,10 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
         };
         
         generateCombinations(
-          usesBookingTimeChoiceCatalog(selectedChannelId)
-            ? filterBookingTimeChoiceGroups(choicesData as Array<{
-                choice_group?: string | null
-                choice_group_ko?: string | null
-              }>)
-            : choicesData
+          filterBookingTimeChoiceGroups(choicesData as Array<{
+            choice_group?: string | null
+            choice_group_ko?: string | null
+          }>)
         );
         
         // 동적 가격에서 기존 가격 찾아서 적용 (초이스 변경 시에도 기존 가격 유지)
@@ -569,9 +564,7 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
           })
         }
 
-        const catalogLegacyGroups = usesBookingTimeChoiceCatalog(selectedChannelId)
-          ? filterBookingTimeChoiceGroups(legacyChoices.required)
-          : legacyChoices.required
+        const catalogLegacyGroups = filterBookingTimeChoiceGroups(legacyChoices.required)
         const allCombinations = generateAllCombinations(catalogLegacyGroups)
         console.log('상품에서 생성된 모든 초이스 조합:', allCombinations)
         setChoiceCombinations(allCombinations as ChoiceCombination[])
@@ -642,11 +635,7 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
           .filter((group) => group.options.length > 0);
 
         if (groupsFromTable.length > 0) {
-          setChoiceGroups(
-            usesBookingTimeChoiceCatalog(selectedChannelId)
-              ? filterBookingTimeChoiceGroups(groupsFromTable)
-              : groupsFromTable
-          );
+          setChoiceGroups(filterBookingTimeChoiceGroups(groupsFromTable));
           return;
         }
       }
@@ -673,11 +662,7 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
       const choiceGroupsFromJson: ChoiceGroup[] = productChoices.required || [];
 
       console.log('로드된 초이스 그룹:', choiceGroupsFromJson);
-      setChoiceGroups(
-        usesBookingTimeChoiceCatalog(selectedChannelId)
-          ? filterBookingTimeChoiceGroups(choiceGroupsFromJson)
-          : choiceGroupsFromJson
-      );
+      setChoiceGroups(filterBookingTimeChoiceGroups(choiceGroupsFromJson));
     } catch (error) {
       console.error('초이스 그룹 로드 실패:', error);
       setChoiceGroups([]);

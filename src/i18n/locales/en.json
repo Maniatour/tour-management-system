@@ -2037,7 +2037,7 @@
       "choiceUnitPriceHint": "Enter a unit price for each option in a choice group (e.g. US resident, Lower Antelope, room). On save, combination prices are calculated as the sum of selected options.",
       "noChoiceOptionsForUnitPrice": "No choice options available.",
       "choicePricingSection": "Choice Pricing",
-      "otaBookingTimePricingHint": "This channel stores prices only for choices known at booking. US resident classification and other admission fees are entered later in the reservation details.",
+      "otaBookingTimePricingHint": "Stores prices only for choices known at booking, such as Lower or X Antelope Canyon. US resident classification and other admission fees are entered later in the reservation details.",
       "choiceGroupResidencyShort": "Residency",
       "choicePricingCalcMode": "Pricing calculation mode",
       "choicePricingModeAbsolute": "Per-choice absolute price",

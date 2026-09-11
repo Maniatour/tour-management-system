@@ -1,14 +1,16 @@
 import { matchesUsResidentClassificationGroup, UNDECIDED_OPTION_ID } from '@/utils/usResidentChoiceSync'
 
-/** 홈페이지만 거주자·입장료까지 포함한 초이스 곱으로 가격을 저장한다. */
 export function isHomepagePricingChannel(channelId?: string | null): boolean {
   const id = String(channelId || '').trim().toLowerCase()
   return id === 'm00001' || id === 'homepage'
 }
 
-export function usesBookingTimeChoiceCatalog(channelId?: string | null): boolean {
-  if (!channelId || !String(channelId).trim()) return false
-  return !isHomepagePricingChannel(channelId)
+/**
+ * 모든 채널(홈페이지 포함): 예약 때 확정된 초이스만 가격 카탈로그에 넣는다.
+ * 미국 거주자 구분·기타 입장료는 조합 키에 넣지 않는다.
+ */
+export function usesBookingTimeChoiceCatalog(_channelId?: string | null): boolean {
+  return true
 }
 
 export function isDeferredAtBookingChoiceGroup(
@@ -212,6 +214,57 @@ export function combinationKeyFromSelectedChoices(
     .filter(Boolean)
     .sort()
     .join('+')
+}
+
+type CatalogCombination = {
+  id?: string
+  combination_key?: string
+  combination_details?: Array<{
+    optionId?: string
+    optionKey?: string
+    groupId?: string
+  }>
+}
+
+/**
+ * 저장용: 거주자·입장료가 섞인 구키를 버리고, 현재 카탈로그 조합(로어/엑스 등) 키만 남긴다.
+ */
+export function restrictChoicesPricingToCatalogCombinations(
+  choicesPricing: Record<string, Record<string, unknown>>,
+  combinations: CatalogCombination[]
+): Record<string, Record<string, unknown>> {
+  if (!choicesPricing || typeof choicesPricing !== 'object') return {}
+
+  const noChoice =
+    choicesPricing.no_choice || choicesPricing['no-choice']
+  if (!combinations.length) {
+    return { ...choicesPricing }
+  }
+
+  const next: Record<string, Record<string, unknown>> = {}
+  if (noChoice && typeof noChoice === 'object') {
+    next.no_choice = { ...noChoice }
+  }
+
+  for (const combo of combinations) {
+    const comboId = String(combo.id || combo.combination_key || '').trim()
+    if (!comboId) continue
+    const direct = choicesPricing[comboId]
+    const byKey =
+      combo.combination_key && combo.combination_key !== comboId
+        ? choicesPricing[combo.combination_key]
+        : undefined
+    const matched = findBookingTimeChoicePricingFromCombination(combo, choicesPricing)
+    const data =
+      (direct && typeof direct === 'object' ? direct : undefined) ||
+      (byKey && typeof byKey === 'object' ? byKey : undefined) ||
+      (matched?.data as Record<string, unknown> | undefined)
+    if (data && Object.keys(data).length > 0) {
+      next[comboId] = { ...data }
+    }
+  }
+
+  return next
 }
 
 export function findBookingTimeChoicePricingFromCombination(

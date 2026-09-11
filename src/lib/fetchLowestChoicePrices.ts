@@ -14,6 +14,28 @@ type ProductChoiceRow = {
   options?: ChoiceOptionRow[] | null
 }
 
+const CHOICE_PRICE_SELECT: string = `
+      product_id,
+      id,
+      apply_processing_fee,
+      options:choice_options (
+        adult_price,
+        is_active
+      )
+    `
+
+const CHOICE_PRICE_SELECT_WITHOUT_FEE: string = `
+      product_id,
+      id,
+      options:choice_options (
+        adult_price,
+        is_active
+      )
+    `
+
+/** 원격 DB에 apply_processing_fee가 아직 없을 때, 같은 세션에서 반복 400을 피함 */
+let omitApplyProcessingFeeColumn = false
+
 function parseOptionPrice(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string' && value.trim()) {
@@ -23,6 +45,29 @@ function parseOptionPrice(value: unknown): number | null {
   return null
 }
 
+function formatChoicePriceQueryError(error: unknown): string {
+  if (!error || typeof error !== 'object') return String(error)
+  const e = error as { message?: string; details?: string; hint?: string; code?: string }
+  const parts = [e.message, e.details, e.hint, e.code].filter(
+    (part): part is string => typeof part === 'string' && part.trim().length > 0
+  )
+  return parts.join(' · ') || 'unknown'
+}
+
+function isMissingApplyProcessingFeeColumn(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const e = error as { code?: string; message?: string }
+  const msg = String(e.message ?? '').toLowerCase()
+  return (
+    msg.includes('apply_processing_fee') &&
+    (e.code === 'PGRST204' ||
+      e.code === '42703' ||
+      msg.includes('does not exist') ||
+      msg.includes('could not find') ||
+      msg.includes('schema cache'))
+  )
+}
+
 /** 상품별 초이스 최저 시작가(그룹별 최저 옵션가 합) 맵 */
 export async function fetchLowestChoicePricesByProductIds(
   productIds: string[]
@@ -30,23 +75,24 @@ export async function fetchLowestChoicePricesByProductIds(
   const ids = [...new Set(productIds.filter(Boolean))]
   if (ids.length === 0) return {}
 
-  const { data, error } = await supabase
-    .from('product_choices')
-    .select(
-      `
-      product_id,
-      id,
-      apply_processing_fee,
-      options:choice_options (
-        adult_price,
-        is_active
-      )
-    `
-    )
-    .in('product_id', ids)
+  const query = (includeFee: boolean) =>
+    supabase
+      .from('product_choices')
+      .select(includeFee ? CHOICE_PRICE_SELECT : CHOICE_PRICE_SELECT_WITHOUT_FEE)
+      .in('product_id', ids)
+
+  let includeFee = !omitApplyProcessingFeeColumn
+  let { data, error } = await query(includeFee)
+
+  if (error && includeFee && isMissingApplyProcessingFeeColumn(error)) {
+    omitApplyProcessingFeeColumn = true
+    const retry = await query(false)
+    data = retry.data
+    error = retry.error
+  }
 
   if (error) {
-    console.error('초이스 최저가 조회 오류:', error)
+    console.error('초이스 최저가 조회 오류:', formatChoicePriceQueryError(error))
     return {}
   }
 
@@ -55,7 +101,7 @@ export async function fetchLowestChoicePricesByProductIds(
     Array<{ choice_id: string; option_price: number | null }>
   >()
 
-  for (const row of (data ?? []) as ProductChoiceRow[]) {
+  for (const row of (data ?? []) as unknown as ProductChoiceRow[]) {
     const productId = row.product_id
     if (!productId) continue
     const options = Array.isArray(row.options) ? row.options : []

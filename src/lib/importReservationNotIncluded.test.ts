@@ -3,7 +3,9 @@ import test from 'node:test'
 import { extractReservationFromEmail } from '@/lib/emailReservationParser'
 import {
   findBookingTimeChoicePricing,
+  restrictChoicesPricingToCatalogCombinations,
   toOtaAndNotIncluded,
+  usesBookingTimeChoiceCatalog,
 } from '@/lib/bookingTimeChoicePricing'
 import { pickImportDynamicPricingOta, resolveOtaFromChoicesPricing } from '@/lib/importReservationPriceResolve'
 
@@ -118,4 +120,27 @@ test('올인클루시브 행의 행단위 불포함 $250을 초이스 매칭 결
   assert.ok(picked)
   assert.equal(picked.ota, 199)
   assert.equal(picked.notIncluded, 0)
+})
+
+test('홈페이지 포함 모든 채널은 예약 시점 초이스 카탈로그를 쓴다', () => {
+  assert.equal(usesBookingTimeChoiceCatalog('M00001'), true)
+  assert.equal(usesBookingTimeChoiceCatalog('homepage'), true)
+  assert.equal(usesBookingTimeChoiceCatalog('KLOOK'), true)
+})
+
+test('초이스 가격 저장 시 거주자 조합 키를 로어/엑스 키로만 남긴다', () => {
+  const restricted = restrictChoicesPricingToCatalogCombinations(
+    {
+      'canyon+lower+resident+us': { ota_sale_price: 199, not_included_price: 0 },
+      'canyon+lower+resident+non': { ota_sale_price: 199, not_included_price: 100 },
+      'canyon+x+resident+us': { ota_sale_price: 219, not_included_price: 0 },
+    },
+    [
+      { id: 'canyon+lower', combination_key: 'canyon+lower' },
+      { id: 'canyon+x', combination_key: 'canyon+x' },
+    ]
+  )
+  assert.deepEqual(Object.keys(restricted).sort(), ['canyon+lower', 'canyon+x'])
+  assert.equal(restricted['canyon+lower']?.ota_sale_price, 199)
+  assert.equal(restricted['canyon+x']?.ota_sale_price, 219)
 })

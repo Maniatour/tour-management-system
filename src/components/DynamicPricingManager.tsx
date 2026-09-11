@@ -30,7 +30,7 @@ import { getOtaSalePriceWithFallback } from '@/utils/choicePricingMatcher';
 import { pickLatestPricingRule } from '@/lib/pricingRuleResolver';
 import {
   isDeferredAtBookingChoiceGroup,
-  usesBookingTimeChoiceCatalog,
+  restrictChoicesPricingToCatalogCombinations,
 } from '@/lib/bookingTimeChoicePricing';
 import {
   type ChoicePricingMode,
@@ -262,10 +262,7 @@ export default function DynamicPricingManager({
 
     const fromGroups = (choiceGroups || [])
       .filter((group) => Array.isArray(group.options) && group.options.length > 0)
-      .filter((group) => {
-        if (!usesBookingTimeChoiceCatalog(selectedChannel)) return true
-        return !isDeferredAtBookingChoiceGroup(group.name_ko, group.name)
-      })
+      .filter((group) => !isDeferredAtBookingChoiceGroup(group.name_ko, group.name))
       .map((group, index) => {
         const nameKo = group.name_ko || group.name || '';
         const nameEn = group.name || group.name_ko || '';
@@ -281,10 +278,7 @@ export default function DynamicPricingManager({
     const firstDetails = choiceCombinations[0]?.combination_details;
     if (firstDetails && firstDetails.length > 0) {
       return firstDetails
-        .filter((detail) => {
-          if (!usesBookingTimeChoiceCatalog(selectedChannel)) return true
-          return !isDeferredAtBookingChoiceGroup(detail.groupNameKo, detail.groupName)
-        })
+        .filter((detail) => !isDeferredAtBookingChoiceGroup(detail.groupNameKo, detail.groupName))
         .map((detail, index) => {
         const nameKo = detail.groupNameKo || detail.groupName || '';
         const nameEn = detail.groupName || detail.groupNameKo || '';
@@ -297,7 +291,7 @@ export default function DynamicPricingManager({
     }
 
     return [];
-  }, [choiceGroups, choiceCombinations, t, isKoUi, selectedChannel]);
+  }, [choiceGroups, choiceCombinations, t, isKoUi]);
 
   const {
     pricingConfig,
@@ -1851,8 +1845,12 @@ export default function DynamicPricingManager({
           choicesForNormalize = mergedExpanded;
         }
 
-        const normalizedChoicesPricing = normalizeChoicesPricingForMode(
+        const catalogChoicesPricing = restrictChoicesPricingToCatalogCombinations(
           choicesForNormalize,
+          choiceCombinations
+        )
+        const normalizedChoicesPricing = normalizeChoicesPricingForMode(
+          catalogChoicesPricing,
           choicePricingMode,
           channelBaseForSave,
           isSinglePriceForSave
@@ -3015,9 +3013,7 @@ export default function DynamicPricingManager({
                 </div>
                 ) : null}
               </div>
-              {usesBookingTimeChoiceCatalog(selectedChannel) ? (
-                <p className="text-xs text-muted-foreground mb-3">{t('otaBookingTimePricingHint')}</p>
-              ) : null}
+              <p className="text-xs text-muted-foreground mb-3">{t('otaBookingTimePricingHint')}</p>
 
               {choicePricingMode === 'base_plus' ? (
                 <ChoiceOptionUnitPricingPanel

@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react'
 import { Button } from '@/components/ui/button'
-import TourReportForm from './TourReportForm'
 import TourReportList from './TourReportList'
-import { FileText, Eye } from 'lucide-react'
+import TourReportWriteModal from './TourReportWriteModal'
+import { FileText, Eye, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
@@ -11,6 +11,11 @@ import { isTourReportEditWindowClosed, tourReportText } from '@/lib/tourReportEx
 import { normalizeTourReportEmail } from '@/lib/tourReportMissing'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTourDetailSectionChrome } from '@/components/tour/TourDetailModalChromeContext'
+
+export type TourReportSectionHandle = {
+  createReport: () => void
+  viewReports: () => void
+}
 
 interface TourReportSectionProps {
   tourId: string
@@ -24,17 +29,21 @@ interface TourReportSectionProps {
   highlightReportId?: string | null
 }
 
-export default function TourReportSection({
-  tourId,
-  productId,
-  tourName,
-  tourDate,
-  canCreateReport: _canCreateReport = true,
-  canEditReport = true,
-  canDeleteReport = true,
-  showHeader = true,
-  highlightReportId = null,
-}: TourReportSectionProps) {
+const TourReportSection = forwardRef<TourReportSectionHandle, TourReportSectionProps>(
+  function TourReportSection(
+    {
+      tourId,
+      productId,
+      tourName: _tourName,
+      tourDate,
+      canCreateReport = true,
+      canEditReport = true,
+      canDeleteReport = true,
+      showHeader: _showHeader = true,
+      highlightReportId = null,
+    },
+    ref
+  ) {
   const t = useTranslations('tours.tourReport')
   const locale = useLocale()
   const chrome = useTourDetailSectionChrome()
@@ -45,6 +54,7 @@ export default function TourReportSection({
   const [hasReports, setHasReports] = useState(false)
   const [loading, setLoading] = useState(true)
   const [editingReport, setEditingReport] = useState<any | null>(null)
+  const [listNonce, setListNonce] = useState(0)
 
   useEffect(() => {
     checkForReports()
@@ -62,9 +72,7 @@ export default function TourReportSection({
       const has = !!(data && data.length > 0)
       setHasReports(has)
       if (has) {
-        // 작성된 리포트가 있으면 목록을 바로 표시
         setShowList(true)
-        setShowForm(false)
       }
     } catch (error) {
       console.error('Error checking for reports:', error)
@@ -73,22 +81,33 @@ export default function TourReportSection({
     }
   }
 
-  const handleViewReports = () => {
+  const handleViewReports = useCallback(() => {
     setShowList(true)
     setShowForm(false)
-  }
+  }, [])
+
+  const handleCreateReport = useCallback(() => {
+    setEditingReport(null)
+    setShowForm(true)
+  }, [])
+
+  useImperativeHandle(ref, () => ({
+    createReport: handleCreateReport,
+    viewReports: handleViewReports,
+  }))
 
   const handleFormSuccess = () => {
     setShowForm(false)
+    setEditingReport(null)
     setShowList(true)
     setHasReports(true)
-    toast.success(t('reportSubmitted'))
+    setListNonce((n) => n + 1)
   }
 
-  const handleFormCancel = () => {
+  const handleFormCancel = useCallback(() => {
     setEditingReport(null)
     setShowForm(false)
-  }
+  }, [])
 
   const handleEditReport = async (report: any) => {
     const myEmail = normalizeTourReportEmail(currentUserEmail)
@@ -126,48 +145,31 @@ export default function TourReportSection({
 
     setEditingReport(report)
     setShowForm(true)
-    setShowList(false)
   }
 
   const handleDeleteReport = (_reportId: string) => {
     toast.success(t('reportDeleted'))
   }
 
-  if (showForm) {
-    return (
-      <div className="space-y-4">
-        {showHeader && (
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">{t('writeReport')}</h3>
-              {tourName && tourDate && (
-                <p className="text-sm text-gray-600">
-                  {tourName} - {new Date(tourDate).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}
-                </p>
-              )}
-            </div>
-            <Button onClick={handleFormCancel} variant="outline" size="sm">
-              {t('backToList')}
-            </Button>
-          </div>
-        )}
-        <TourReportForm
-          tourId={tourId}
-                  productId={productId ?? null}
-                  {...(editingReport?.id ? { reportId: editingReport.id } : {})}
-                  {...(editingReport ? { initialData: editingReport } : {})}
-          onSuccess={handleFormSuccess}
-          onCancel={handleFormCancel}
-          locale={locale}
-        />
-      </div>
-    )
-  }
+  const writeModal = (
+    <TourReportWriteModal
+      open={showForm}
+      onClose={handleFormCancel}
+      tourId={tourId}
+      productId={productId ?? null}
+      locale={locale}
+      {...(editingReport?.id ? { reportId: editingReport.id as string } : {})}
+      {...(editingReport ? { initialData: editingReport } : {})}
+      onSuccess={handleFormSuccess}
+    />
+  )
 
+  let body: React.ReactNode
   if (showList) {
-    return (
+    body = (
       <div className="space-y-4">
         <TourReportList
+          key={`${tourId}-${listNonce}`}
           tourId={tourId}
           showTourInfo={false}
           {...(canEditReport ? { onEdit: handleEditReport } : {})}
@@ -177,19 +179,15 @@ export default function TourReportSection({
         />
       </div>
     )
-  }
-
-  if (loading) {
-    return (
+  } else if (loading) {
+    body = (
       <div className={`text-center ${chrome.emptyStatePadding}`}>
         <div className={`animate-spin rounded-full border-b-2 border-primary mx-auto mb-2 ${chrome.compact ? 'h-6 w-6' : 'h-8 w-8'}`} />
         <p className={chrome.emptyStateTitle}>Loading...</p>
       </div>
     )
-  }
-
-  if (hasReports) {
-    return (
+  } else if (hasReports) {
+    body = (
       <div className={`text-center space-y-2 ${chrome.compact ? 'py-4' : 'py-6'}`}>
         <FileText className={`${chrome.compact ? 'w-8 h-8' : 'w-10 h-10'} text-green-500 mx-auto`} />
         <p className={chrome.compact ? 'text-xs text-gray-700' : 'text-gray-700 text-base'}>{t('hasReports')}</p>
@@ -204,15 +202,38 @@ export default function TourReportSection({
         </div>
       </div>
     )
+  } else {
+    body = (
+      <div className={`text-center ${chrome.emptyStatePadding}`}>
+        <FileText className={`${chrome.emptyStateIconClass} text-gray-400 mx-auto ${chrome.compact ? 'mb-2' : 'mb-4'}`} />
+        <p className={chrome.emptyStateTitle}>{t('noReports')}</p>
+        <p className={chrome.emptyStateSubtext}>
+          {t('reportAfterTour')}
+        </p>
+        {canCreateReport ? (
+          <div className={`flex justify-center ${chrome.compact ? 'mt-2' : 'mt-4'}`}>
+            <Button
+              type="button"
+              onClick={handleCreateReport}
+              size="sm"
+              className={chrome.compact ? 'h-7 px-2 text-xs' : 'px-3'}
+            >
+              <Plus className={`${chrome.compact ? 'w-3 h-3' : 'w-4 h-4'} mr-1`} />
+              {t('writeReport')}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    )
   }
 
   return (
-    <div className={`text-center ${chrome.emptyStatePadding}`}>
-      <FileText className={`${chrome.emptyStateIconClass} text-gray-400 mx-auto ${chrome.compact ? 'mb-2' : 'mb-4'}`} />
-      <p className={chrome.emptyStateTitle}>{t('noReports')}</p>
-      <p className={chrome.emptyStateSubtext}>
-        {t('reportAfterTour')}
-      </p>
-    </div>
+    <>
+      {body}
+      {writeModal}
+    </>
   )
-}
+  }
+)
+
+export default TourReportSection
