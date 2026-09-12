@@ -1,6 +1,7 @@
+import { enhanceTourPhotoPixels } from '@/lib/guideTourPhotoEnhance'
+
 const MAX_EDGE = 1920
 const JPEG_QUALITY = 0.85
-const SKIP_BELOW_BYTES = 350 * 1024
 
 function isHeicLike(file: File): boolean {
   const type = (file.type || '').toLowerCase()
@@ -15,13 +16,12 @@ function isRasterImage(file: File): boolean {
 }
 
 /**
- * 모바일 업로드 전에 브라우저에서 리사이즈·JPEG 압축.
+ * 모바일 업로드 전에 브라우저에서 리사이즈·JPEG 압축·자동 보정.
  * EXIF 방향은 createImageBitmap이 지원하는 브라우저에서 반영한다.
- * HEIC/영상은 원본을 그대로 둔다.
+ * HEIC/영상은 원본을 그대로 둔다. 영수증은 호출하지 않는다.
  */
 export async function prepareGuideQuickPhoto(file: File): Promise<File> {
   if (!isRasterImage(file) || isHeicLike(file)) return file
-  if (file.size > 0 && file.size < SKIP_BELOW_BYTES && /jpe?g$/i.test(file.name)) return file
 
   let bitmap: ImageBitmap
   try {
@@ -45,9 +45,16 @@ export async function prepareGuideQuickPhoto(file: File): Promise<File> {
     const canvas = document.createElement('canvas')
     canvas.width = width
     canvas.height = height
-    const ctx = canvas.getContext('2d')
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
     if (!ctx) return file
     ctx.drawImage(bitmap, 0, 0, width, height)
+    try {
+      const imageData = ctx.getImageData(0, 0, width, height)
+      enhanceTourPhotoPixels(imageData.data)
+      ctx.putImageData(imageData, 0, 0)
+    } catch {
+      // 보정 실패 시 리사이즈된 원본을 그대로 저장
+    }
 
     const blob = await new Promise<Blob | null>((resolve) => {
       canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY)

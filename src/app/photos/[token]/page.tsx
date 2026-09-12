@@ -16,6 +16,7 @@ import {
   tourMediaFileStem,
   tourPhotoMaxBytesForFile,
 } from '@/lib/tourPhotoUploadUtils'
+import { isTourPhotoFileHidden, loadHiddenTourPhotoFileNames } from '@/lib/tourPhotoVisibility'
 // 동적 라우트 설정 (Next.js 15/16)
 // 클라이언트 컴포넌트에서는 revalidate를 export할 수 없음
 // dynamic 설정만 사용하여 모든 경로를 동적으로 처리
@@ -294,6 +295,8 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
         }
       }
 
+      const foundInDatabase = photosData.length > 0
+
       // 데이터베이스에서 조회한 경우에도 썸네일이 없으면 Storage에서 찾아서 매핑
         if (photosData.length > 0 && tourIdToUse) {
         const allStorageFiles = await listAllTourStorageFiles(tourIdToUse).catch(() => [])
@@ -325,7 +328,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
       }
 
       // 2단계: 데이터베이스에서 찾지 못했거나 사진이 없으면 Storage에서 직접 조회
-      if (photosData.length === 0) {
+      if (!foundInDatabase && photosData.length === 0) {
         console.log('No photos found in database, checking Storage...')
         
         const allFiles = await listAllTourStorageFiles(tourIdToUse).catch((storageError) => {
@@ -417,7 +420,14 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
         }
       }
 
-      if (photosData.length === 0) {
+      if (tourIdToUse) {
+        const hiddenNames = await loadHiddenTourPhotoFileNames(tourIdToUse)
+        photosData = photosData.filter(
+          (photo) => !isTourPhotoFileHidden(hiddenNames, photo.file_name, photo.file_path)
+        )
+      }
+
+      if (photosData.length === 0 && !foundInDatabase) {
         setError('Photos not found. The link may have expired or is invalid.')
         return
       }

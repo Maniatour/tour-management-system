@@ -20,10 +20,11 @@ export type GuideQuickReceiptUploadParams = {
   productId?: string | null
   uploadedBy: string
   ocrText?: string
+  note?: string
 }
 
-function receiptNote(ocrText?: string): string {
-  const lines = ['Receipt uploaded from guide camera; hidden from guest photo album.']
+function receiptNote(ocrText?: string, note?: string): string {
+  const lines = [note?.trim() || 'Receipt uploaded from guide camera; hidden from guest photo album.']
   const text = (ocrText || '').trim()
   if (text) {
     const candidates = buildReceiptOcrCandidates(text)
@@ -37,7 +38,7 @@ function receiptNote(ocrText?: string): string {
 }
 
 export async function uploadGuideQuickReceipt(params: GuideQuickReceiptUploadParams): Promise<void> {
-  const { file, tourId, tourDate, productId, uploadedBy, ocrText } = params
+  const { file, tourId, tourDate, productId, uploadedBy, ocrText, note } = params
   if (!isLikelyReceiptImageFile(file) || file.size <= 0) {
     throw new Error(EMPTY_RECEIPT_FILE)
   }
@@ -79,7 +80,7 @@ export async function uploadGuideQuickReceipt(params: GuideQuickReceiptUploadPar
     paid_for: TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR,
     amount,
     payment_method: null,
-    note: receiptNote(ocrText),
+    note: receiptNote(ocrText, note),
     tour_date: tourDate || todayInLasVegas(),
     product_id: productId || null,
     submitted_by: uploadedBy,

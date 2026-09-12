@@ -14,6 +14,7 @@ function localeFromRequest(request: NextRequest): string {
  * GET /api/guide/today-photo-tour
  * 로그인한 가이드(또는 시뮬레이션 대상)의 오늘(라스베가스) 진행 투어를 서버에서 결정한다.
  * 당일 투어뿐 아니라 1박2일 2일차처럼 오늘이 진행 구간에 들어가는 숙박 투어도 포함한다.
+ * 내일 투어는 최초 픽업 30분 전부터 포함한다.
  */
 export async function GET(request: NextRequest) {
   const auth = await resolveGuideApiAuth(request)

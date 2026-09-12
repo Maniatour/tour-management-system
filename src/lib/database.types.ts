@@ -10350,6 +10350,7 @@ export type Database = {
           file_name: string
           file_path: string
           file_size: number
+          hidden_by_admin: boolean
           id: string
           is_public: boolean | null
           mime_type: string
@@ -10366,6 +10367,7 @@ export type Database = {
           file_name: string
           file_path: string
           file_size: number
+          hidden_by_admin?: boolean
           id?: string
           is_public?: boolean | null
           mime_type: string
@@ -10382,6 +10384,7 @@ export type Database = {
           file_name?: string
           file_path?: string
           file_size?: number
+          hidden_by_admin?: boolean
           id?: string
           is_public?: boolean | null
           mime_type?: string

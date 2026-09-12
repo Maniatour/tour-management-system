@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
-import { Upload, Camera, Image as ImageIcon, Share2 } from 'lucide-react'
+import { Upload, Camera, Image as ImageIcon, Share2, EyeOff, Eye, Receipt } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import { createTourPhotosBucket, checkTourPhotosBucket, checkTourFolderExists, createTourFolderMarker, listAllTourStorageFiles } from '@/lib/tourPhotoBucket'
@@ -18,7 +18,10 @@ import {
   tourMediaFileStem,
 } from '@/lib/tourPhotoUploadUtils'
 import { useTourDetailSectionChrome } from '@/components/tour/TourDetailModalChromeContext'
-import { TourPhotoMediaThumb, TourPhotoMediaViewer } from '@/components/tour/TourPhotoMedia'
+import { TourPhotoMediaThumb, TourPhotoMediaViewer, isTourPhotoVideoItem } from '@/components/tour/TourPhotoMedia'
+import { TourPhotoThumbOverflowMenu } from '@/components/tour/TourPhotoThumbOverflowMenu'
+import { setTourPhotoHiddenByAdmin } from '@/lib/tourPhotoVisibility'
+import { moveTourPhotoToReceipt } from '@/lib/moveTourPhotoToReceipt'
 
 interface TourPhoto {
   id: string
@@ -35,6 +38,7 @@ interface TourPhoto {
   uploaded_by: string
   uploaded_by_name?: string | null
   is_hidden?: boolean
+  hidden_by_admin?: boolean
   hide_requested_by?: string | null
   hide_requested_by_name?: string | null
 }
@@ -69,6 +73,7 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
   const [dragOver, setDragOver] = useState(false)
   const [selectedPhoto, setSelectedPhoto] = useState<TourPhoto | null>(null)
   const [showModal, setShowModal] = useState(false)
+  const [actionBusy, setActionBusy] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
 
@@ -104,7 +109,7 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
       // 먼저 데이터베이스에서 썸네일 경로가 있는 사진 조회
       const { data: dbPhotos, error: dbError } = await supabase
         .from('tour_photos')
-        .select('id, file_name, file_path, thumbnail_path, file_size, mime_type, created_at, uploaded_by, share_token')
+        .select('id, file_name, file_path, thumbnail_path, file_size, mime_type, created_at, uploaded_by, share_token, hidden_by_admin')
         .eq('tour_id', tourId)
         .order('created_at', { ascending: false })
 
@@ -125,6 +130,18 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
               customer_id: req.customer_id || '',
               requested_at: req.requested_at || ''
             })
+          }
+        })
+      }
+
+      const adminHiddenNames = new Set<string>()
+      if (dbPhotos && !dbError) {
+        dbPhotos.forEach((photo: { hidden_by_admin?: boolean | null; file_name?: string | null; file_path?: string | null }) => {
+          if (!photo.hidden_by_admin) return
+          if (photo.file_name) adminHiddenNames.add(photo.file_name)
+          if (typeof photo.file_path === 'string' && photo.file_path.length > 0) {
+            const base = photo.file_path.split('/').filter(Boolean).pop()
+            if (base) adminHiddenNames.add(base)
           }
         })
       }
@@ -155,10 +172,10 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
       const photoFiles = files.filter((file) => {
         if (!isTourStorageMediaFileName(file.name)) return false
         
-        // 관리자가 아니면 숨김된 사진 제외
+        // 관리자가 아니면 고객 숨김 요청·관리자 숨김 사진 제외
         if (!isAdmin) {
-          const hideRequest = hideRequestMap.get(file.name)
-          if (hideRequest) return false
+          if (hideRequestMap.get(file.name)) return false
+          if (adminHiddenNames.has(file.name)) return false
         }
         
         return true
@@ -176,7 +193,7 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
       })
 
       // 데이터베이스 행 매핑: file_name -> { id, uploaded_by, share_token, thumbnail_path, created_at }
-      const dbPhotoByFileName = new Map<string, { id: string; uploaded_by: string; share_token?: string; thumbnail_path?: string; created_at?: string }>()
+      const dbPhotoByFileName = new Map<string, { id: string; uploaded_by: string; share_token?: string; thumbnail_path?: string; created_at?: string; hidden_by_admin?: boolean }>()
       const dbThumbnailMap = new Map<string, string>()
       if (dbPhotos && !dbError) {
         dbPhotos.forEach((photo: any) => {
@@ -185,7 +202,8 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
             uploaded_by: photo.uploaded_by || '',
             share_token: photo.share_token,
             thumbnail_path: photo.thumbnail_path,
-            created_at: photo.created_at
+            created_at: photo.created_at,
+            hidden_by_admin: !!photo.hidden_by_admin,
           }
           // Storage 객체 이름은 file_path 마지막 세그먼트와 같고, DB file_name은 업로드 시 원본 파일명일 수 있음 → 둘 다 키로 등록
           const keys = new Set<string>()
@@ -294,6 +312,7 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
           uploaded_by: photoUploadedBy,
           ...(uploadedByName ? { uploaded_by_name: uploadedByName } : {}),
           is_hidden: !!hideRequest,
+          hidden_by_admin: !!dbRow?.hidden_by_admin,
           hide_requested_by: hideRequest?.customer_id || null,
           hide_requested_by_name: hideRequest?.customer_name || null
         }
@@ -303,7 +322,7 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
         total: photos.length,
         withThumbnails: photos.filter(p => p.thumbnail_path).length,
         withoutThumbnails: photos.filter(p => !p.thumbnail_path).length,
-        hidden: photos.filter(p => p.is_hidden).length
+        hidden: photos.filter(p => p.is_hidden || p.hidden_by_admin).length
       })
       setPhotos(photos)
     } catch (error) {
@@ -609,6 +628,105 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
     }
   }
 
+  const adminActor = () => (uploadedBy && uploadedBy.trim()) || user?.email || ''
+
+  const handleHideFromCustomers = async (photo: TourPhoto) => {
+    if (!isAdmin || actionBusy) return
+    if (!confirm(t('hideConfirm', { fileName: photo.file_name }))) return
+
+    setActionBusy(true)
+    try {
+      await setTourPhotoHiddenByAdmin({
+        tourId,
+        photo: {
+          id: photo.id,
+          file_name: photo.file_name,
+          file_path: photo.file_path,
+          file_size: photo.file_size,
+          mime_type: photo.mime_type || photo.file_type || 'image/jpeg',
+          uploaded_by: photo.uploaded_by || adminActor(),
+        },
+        hidden: true,
+        uploadedBy: adminActor(),
+      })
+      await loadPhotos()
+      onPhotosUpdated?.()
+      setSelectedPhoto((current) =>
+        current && current.id === photo.id ? { ...current, hidden_by_admin: true } : current
+      )
+      alert(t('hideSuccess'))
+    } catch (error) {
+      console.error('Error hiding photo:', error)
+      alert(t('hideError'))
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  const handleUnhideAdminPhoto = async (photo: TourPhoto) => {
+    if (!isAdmin || actionBusy) return
+    if (!confirm(t('unhideAdminConfirm', { fileName: photo.file_name }))) return
+
+    setActionBusy(true)
+    try {
+      await setTourPhotoHiddenByAdmin({
+        tourId,
+        photo: {
+          id: photo.id,
+          file_name: photo.file_name,
+          file_path: photo.file_path,
+          uploaded_by: photo.uploaded_by || adminActor(),
+        },
+        hidden: false,
+        uploadedBy: adminActor(),
+      })
+      await loadPhotos()
+      onPhotosUpdated?.()
+      setSelectedPhoto((current) =>
+        current && current.id === photo.id ? { ...current, hidden_by_admin: false } : current
+      )
+      alert(t('unhideAdminSuccess'))
+    } catch (error) {
+      console.error('Error unhiding admin-hidden photo:', error)
+      alert(t('unhideError'))
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  const handleMoveToReceipt = async (photo: TourPhoto) => {
+    if (!isAdmin || actionBusy) return
+    if (isTourPhotoVideoItem(photo.file_name, photo.mime_type || photo.file_type)) {
+      alert(t('moveToReceiptVideoError'))
+      return
+    }
+    if (!confirm(t('moveToReceiptConfirm', { fileName: photo.file_name }))) return
+    const actor = adminActor()
+    if (!actor) {
+      alert(t('moveToReceiptError'))
+      return
+    }
+
+    setActionBusy(true)
+    try {
+      await moveTourPhotoToReceipt({
+        tourId,
+        photo,
+        uploadedBy: actor,
+      })
+      setShowModal(false)
+      setSelectedPhoto(null)
+      await loadPhotos()
+      onPhotosUpdated?.()
+      alert(t('moveToReceiptSuccess'))
+    } catch (error) {
+      console.error('Error moving photo to receipt:', error)
+      alert(t('moveToReceiptError'))
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
   // 사진 삭제
   const handleDeletePhoto = async (photoId: string, filePath: string) => {
     if (!confirm(t('deleteConfirm'))) return
@@ -669,8 +787,8 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
 
   // 사진 모달 닫기
   const closePhotoModal = () => {
-    setShowModal(false)
     setSelectedPhoto(null)
+    setShowModal(false)
   }
 
   // 키보드 네비게이션
@@ -908,7 +1026,7 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
                 className="relative aspect-square rounded-lg bg-gray-100"
                 onClick={() => openPhotoModal(photo)}
               >
-                <div className="absolute inset-0 overflow-hidden rounded-lg">
+                <div className={`absolute inset-0 overflow-hidden rounded-lg ${photo.hidden_by_admin || photo.is_hidden ? 'opacity-60' : ''}`}>
                   <TourPhotoMediaThumb
                     filePath={photo.file_path}
                     fileName={photo.file_name}
@@ -921,24 +1039,50 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
 
                 {photo.uploaded_by_name && (
                   <span
-                    className={`absolute bottom-1.5 left-1.5 z-20 max-w-[calc(100%-0.75rem)] truncate rounded-full bg-black/65 px-1.5 py-0.5 font-medium text-white backdrop-blur-sm ${chrome.compact ? 'text-[10px]' : 'text-xs'}`}
+                    className={`absolute bottom-1.5 left-1.5 z-20 max-w-[calc(100%-2.75rem)] truncate rounded-full bg-black/65 px-1.5 py-0.5 font-medium text-white backdrop-blur-sm ${chrome.compact ? 'text-[10px]' : 'text-xs'}`}
                     title={photo.uploaded_by_name}
                   >
                     {photo.uploaded_by_name}
                   </span>
                 )}
 
-                {isAdmin && photo.is_hidden && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleUnhidePhoto(photo)
+                {isAdmin && (photo.hidden_by_admin || photo.is_hidden) && (
+                  <div className="absolute left-1.5 top-1.5 z-20 flex max-w-[calc(100%-2.75rem)] flex-col items-start gap-1">
+                    {photo.hidden_by_admin && (
+                      <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                        {t('adminHidden')}
+                      </span>
+                    )}
+                    {photo.is_hidden && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void handleUnhidePhoto(photo)
+                        }}
+                        className="cursor-pointer rounded bg-red-500 px-1.5 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-red-600"
+                        title={t('clickToUnhide')}
+                      >
+                        {t('hidden')}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {isAdmin && (
+                  <TourPhotoThumbOverflowMenu
+                    disabled={actionBusy}
+                    canMoveToReceipt={!isTourPhotoVideoItem(photo.file_name, photo.mime_type || photo.file_type)}
+                    hiddenByAdmin={!!photo.hidden_by_admin}
+                    onMoveToReceipt={() => void handleMoveToReceipt(photo)}
+                    onToggleHideFromCustomers={() => {
+                      if (photo.hidden_by_admin) {
+                        void handleUnhideAdminPhoto(photo)
+                      } else {
+                        void handleHideFromCustomers(photo)
+                      }
                     }}
-                    className="absolute right-1.5 top-1.5 z-20 cursor-pointer rounded bg-red-500 px-1.5 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-red-600"
-                    title={t('clickToUnhide')}
-                  >
-                    {t('hidden')}
-                  </button>
+                  />
                 )}
 
                 <div className="pointer-events-none absolute inset-0 z-10 rounded-lg bg-black/0 transition-all duration-200 group-hover:bg-black/55">
@@ -954,6 +1098,11 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
                     {isAdmin && photo.is_hidden && photo.hide_requested_by_name && (
                       <p className={`font-medium text-red-300 ${chrome.compact ? 'text-[10px]' : 'text-xs'}`}>
                         {t('hideRequestedBy', { name: photo.hide_requested_by_name })}
+                      </p>
+                    )}
+                    {isAdmin && photo.hidden_by_admin && (
+                      <p className={`font-medium text-amber-200 ${chrome.compact ? 'text-[10px]' : 'text-xs'}`}>
+                        {t('adminHidden')}
                       </p>
                     )}
                   </div>
@@ -1046,10 +1195,10 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
             </div>
 
             {/* 이미지 정보 */}
-            <div className="absolute bottom-4 left-4 right-4 bg-black bg-opacity-50 text-white p-4 rounded-lg">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h3 className="text-lg font-semibold">{selectedPhoto.file_name}</h3>
+            <div className="absolute bottom-4 left-4 right-4 rounded-lg bg-black/50 p-4 text-white">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <h3 className="truncate text-lg font-semibold">{selectedPhoto.file_name}</h3>
                   <p className="text-sm text-gray-300">
                     {formatFileSize(selectedPhoto.file_size)} • {selectedPhoto.file_type || selectedPhoto.mime_type}
                   </p>
@@ -1059,22 +1208,60 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
                     </span>
                   )}
                 </div>
-                <div className="flex space-x-2">
+                <div className="flex flex-wrap gap-2">
+                  {isAdmin && !isTourPhotoVideoItem(selectedPhoto.file_name, selectedPhoto.mime_type || selectedPhoto.file_type) && (
+                    <button
+                      type="button"
+                      disabled={actionBusy}
+                      onClick={() => void handleMoveToReceipt(selectedPhoto)}
+                      className="inline-flex items-center gap-1.5 rounded bg-amber-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:opacity-60"
+                    >
+                      <Receipt className="h-4 w-4" />
+                      {t('moveToReceipt')}
+                    </button>
+                  )}
+                  {isAdmin && (
+                    selectedPhoto.hidden_by_admin ? (
+                      <button
+                        type="button"
+                        disabled={actionBusy}
+                        onClick={() => void handleUnhideAdminPhoto(selectedPhoto)}
+                        className="inline-flex items-center gap-1.5 rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
+                      >
+                        <Eye className="h-4 w-4" />
+                        {t('showToCustomers')}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={actionBusy}
+                        onClick={() => void handleHideFromCustomers(selectedPhoto)}
+                        className="inline-flex items-center gap-1.5 rounded bg-slate-700 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-600 disabled:opacity-60"
+                      >
+                        <EyeOff className="h-4 w-4" />
+                        {t('hideFromCustomers')}
+                      </button>
+                    )
+                  )}
                   <button
+                    type="button"
                     onClick={() => copyShareLink(selectedPhoto.share_token)}
-                    className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
+                    className="rounded bg-primary px-4 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90"
                   >
                     {t('copyShareLink')}
                   </button>
                   <button
+                    type="button"
                     onClick={() => openPhotoInNewWindow(selectedPhoto)}
-                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                    className="rounded bg-green-600 px-4 py-2 text-sm text-white transition-colors hover:bg-green-700"
                   >
                     {t('viewInNewWindow')}
                   </button>
                   <button
+                    type="button"
+                    disabled={actionBusy}
                     onClick={() => handleDeletePhoto(selectedPhoto.id, selectedPhoto.file_path)}
-                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                    className="rounded bg-red-600 px-4 py-2 text-sm text-white transition-colors hover:bg-red-700 disabled:opacity-60"
                   >
                     {t('deleteShort')}
                   </button>
@@ -1084,7 +1271,7 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
 
             {/* 썸네일 네비게이션 */}
             {photos.length > 1 && (
-              <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2">
+              <div className="absolute bottom-28 left-1/2 hidden -translate-x-1/2 md:block">
                 <div className="flex space-x-2 bg-black bg-opacity-50 p-2 rounded-lg">
                   {photos.map((photo) => (
                     <button

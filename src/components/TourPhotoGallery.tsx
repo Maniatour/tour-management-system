@@ -13,6 +13,7 @@ import {
   tourMediaFileStem,
   tourPhotoMaxBytesForFile,
 } from '@/lib/tourPhotoUploadUtils'
+import { isTourPhotoFileHidden, loadHiddenTourPhotoFileNames } from '@/lib/tourPhotoVisibility'
 
 interface TourPhoto {
   id: string
@@ -171,21 +172,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
         return
       }
 
-      // 표시 중단된 사진 정보 가져오기
-      const { data: hideRequests, error: hideRequestsError } = await supabase
-        .from('tour_photo_hide_requests')
-        .select('file_name, is_hidden')
-        .eq('tour_id', tourId)
-        .eq('is_hidden', true)
-
-      // 테이블이 없거나 에러가 발생해도 계속 진행 (에러 로그만 출력)
-      if (hideRequestsError) {
-        console.warn('Error loading hide requests (table may not exist yet):', hideRequestsError)
-      }
-
-      const hiddenFileNames = new Set(
-        (hideRequests || []).map((req: { file_name: string }) => req.file_name)
-      )
+      const hiddenFileNames = await loadHiddenTourPhotoFileNames(tourId)
 
       // Public URL 사용 (bucket이 public이므로 signed URL 불필요 - 훨씬 빠름)
       // Public URL 형식: https://{project-ref}.supabase.co/storage/v1/object/public/{bucket}/{path}
@@ -210,7 +197,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       
       // 원본 파일만 필터링 (썸네일 제외)
       const originalFiles = allFiles.filter((file) =>
-        isTourStorageMediaFileName(file.name) && !hiddenFileNames.has(file.name)
+        isTourStorageMediaFileName(file.name) && !isTourPhotoFileHidden(hiddenFileNames, file.name)
       )
       
       const photosWithUrls: TourPhoto[] = originalFiles

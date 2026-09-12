@@ -261,15 +261,20 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
       const prepared =
         classified.kind === 'receipt' ? file : await prepareGuideQuickPhoto(file)
       setShots((prev) =>
-        prev.map((shot) =>
-          shot.id === shotId
-            ? {
-                ...shot,
-                kind: classified.kind,
-                ...(classified.ocrText ? { ocrText: classified.ocrText } : {}),
-              }
-            : shot
-        )
+        prev.map((shot) => {
+          if (shot.id !== shotId) return shot
+          const previewUrl =
+            classified.kind !== 'receipt' && prepared !== file
+              ? rememberPreview(URL.createObjectURL(prepared))
+              : shot.previewUrl
+          return {
+            ...shot,
+            previewUrl,
+            file: prepared,
+            kind: classified.kind,
+            ...(classified.ocrText ? { ocrText: classified.ocrText } : {}),
+          }
+        })
       )
       await uploadFile(shotId, prepared, {
         tourId: currentTour.id,

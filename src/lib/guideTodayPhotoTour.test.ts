@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  earliestPickupTime,
+  firstPickupMsFromParts,
+  isTourEligibleForGuidePhotos,
   pickTodayPhotoTour,
+  photoTourLookaheadEnd,
   photoTourLookbackStart,
   toursCoveringDate,
   type TodayPhotoTourRow,
@@ -130,3 +134,60 @@ test('picks overnight day 2 when that is the only covering assigned tour', () =>
   const picked = pickTodayPhotoTour(covering, email, Date.parse('2026-09-06T18:00:00.000Z'))
   assert.equal(picked?.id, 'overnight')
 })
+
+test('lookahead end includes the next Las Vegas calendar day', () => {
+  assert.equal(photoTourLookaheadEnd('2026-09-11'), '2026-09-12')
+})
+
+test('pickup at 23:00 for a Sept 12 tour is on Sept 11 in Las Vegas', () => {
+  assert.equal(firstPickupMsFromParts('2026-09-12', '23:00', null), Date.parse('2026-09-12T06:00:00.000Z'))
+})
+
+test('pickup at 05:00 stays on the tour date', () => {
+  assert.equal(firstPickupMsFromParts('2026-09-12', '05:00', null), Date.parse('2026-09-12T12:00:00.000Z'))
+})
+
+test('earliest pickup is the previous-evening 23:00, not 00:30 the next morning', () => {
+  assert.equal(earliestPickupTime('2026-09-12', ['00:30', '23:00']), '23:00')
+})
+
+test('Sept 12 tour with 23:00 pickup opens 30 minutes before on Sept 11', () => {
+  const nightTour = tour({ id: 'night', tour_date: '2026-09-12', tour_start_datetime: null })
+  assert.equal(
+    isTourEligibleForGuidePhotos(nightTour, '2026-09-11', Date.parse('2026-09-12T05:29:00.000Z'), '23:00'),
+    false
+  )
+  assert.equal(
+    isTourEligibleForGuidePhotos(nightTour, '2026-09-11', Date.parse('2026-09-12T05:31:00.000Z'), '23:00'),
+    true
+  )
+})
+
+test('00:15 pickup on a Sept 12 tour opens at 23:45 on Sept 11', () => {
+  const earlyTour = tour({ id: 'early', tour_date: '2026-09-12', tour_start_datetime: null })
+  assert.equal(
+    isTourEligibleForGuidePhotos(earlyTour, '2026-09-11', Date.parse('2026-09-12T06:46:00.000Z'), '00:15'),
+    true
+  )
+})
+
+test('today covering tour stays available even before the first pickup', () => {
+  const todayTour = tour({
+    id: 'today',
+    tour_date: '2026-09-11',
+    tour_start_datetime: '2026-09-11T18:00:00.000Z',
+  })
+  assert.equal(
+    isTourEligibleForGuidePhotos(todayTour, '2026-09-11', Date.parse('2026-09-11T10:00:00.000Z'), '18:00'),
+    true
+  )
+})
+
+test('Sept 12 5am tour is not open yet at 11:54pm on Sept 11', () => {
+  const morning = tour({ id: 'morning', tour_date: '2026-09-12', tour_start_datetime: null })
+  assert.equal(
+    isTourEligibleForGuidePhotos(morning, '2026-09-11', Date.parse('2026-09-12T06:54:00.000Z'), '05:00'),
+    false
+  )
+})
+

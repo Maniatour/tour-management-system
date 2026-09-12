@@ -1,14 +1,18 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
 import dayjs from 'dayjs'
-import { todayInLasVegas } from '@/lib/dailyReport/dateUtils'
+import { LV_TZ, todayInLasVegas } from '@/lib/dailyReport/dateUtils'
 import { isGuideBackupTour } from '@/lib/guideBackupTour'
+import { calculatePickupDate } from '@/lib/reservationDisplayUtils'
 import { tourCoversCalendarDate } from '@/lib/scheduleVehicleOilMaintenance'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { normalizeReservationIds, parseTourAssignmentEmails } from '@/utils/tourUtils'
 
 /** MNGC3N 최대 4일. 시작일이 이 구간 안인 투어만 조회한다. */
 export const PHOTO_TOUR_MAX_SPAN_DAYS = 4
+/** 내일 투어를 최초 픽업 30분 전부터 찍을 수 있게 하루 앞까지 조회한다. */
+export const PHOTO_TOUR_LOOKAHEAD_DAYS = 1
+export const PHOTO_OPEN_BEFORE_PICKUP_MINUTES = 30
 
 export type TodayPhotoTourRow = {
   id: string
@@ -107,6 +111,95 @@ export function photoTourLookbackStart(todayYmd: string): string {
   return dayjs(todayYmd).subtract(PHOTO_TOUR_MAX_SPAN_DAYS - 1, 'day').format('YYYY-MM-DD')
 }
 
+export function photoTourLookaheadEnd(todayYmd: string): string {
+  return dayjs(todayYmd).add(PHOTO_TOUR_LOOKAHEAD_DAYS, 'day').format('YYYY-MM-DD')
+}
+
+function parsePickupMinutes(time: string): number | null {
+  const matched = time.trim().match(/^(\d{1,2}):(\d{2})/)
+  if (!matched) return null
+  const hours = Number(matched[1])
+  const minutes = Number(matched[2])
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || hours > 23 || minutes > 59) return null
+  return hours * 60 + minutes
+}
+
+export function firstPickupMsFromParts(
+  tourDate: string,
+  pickupTime: string | null | undefined,
+  tourStartDatetime: string | null | undefined
+): number | null {
+  const time = pickupTime?.trim()
+  if (time) {
+    const minutes = parsePickupMinutes(time)
+    if (minutes != null) {
+      const pickupDate = calculatePickupDate(time, tourDate)
+      const hh = String(Math.floor(minutes / 60)).padStart(2, '0')
+      const mm = String(minutes % 60).padStart(2, '0')
+      const parsed = dayjs.tz(`${pickupDate}T${hh}:${mm}:00`, LV_TZ)
+      if (parsed.isValid()) return parsed.valueOf()
+    }
+  }
+  if (tourStartDatetime) {
+    const ms = Date.parse(tourStartDatetime)
+    if (Number.isFinite(ms)) return ms
+  }
+  return null
+}
+
+export function earliestPickupTime(
+  tourDate: string,
+  pickupTimes: Array<string | null | undefined>
+): string | null {
+  let bestTime: string | null = null
+  let bestMs = Number.POSITIVE_INFINITY
+  for (const raw of pickupTimes) {
+    const time = raw?.trim()
+    if (!time) continue
+    const ms = firstPickupMsFromParts(tourDate, time, null)
+    if (ms != null && ms < bestMs) {
+      bestMs = ms
+      bestTime = time
+    }
+  }
+  return bestTime
+}
+
+export function isPhotoShootingOpen(nowMs: number, firstPickupMs: number | null, tourDate: string): boolean {
+  if (firstPickupMs != null) {
+    return nowMs >= firstPickupMs - PHOTO_OPEN_BEFORE_PICKUP_MINUTES * 60 * 1000
+  }
+  const startOfTourDate = dayjs.tz(tourDate, LV_TZ).startOf('day').valueOf()
+  if (!Number.isFinite(startOfTourDate)) return false
+  return nowMs >= startOfTourDate - PHOTO_OPEN_BEFORE_PICKUP_MINUTES * 60 * 1000
+}
+
+/** 오늘 진행 중인 투어, 또는 내일 투어의 최초 픽업 30분 전부터 촬영 가능 */
+export function isTourEligibleForGuidePhotos(
+  tour: TodayPhotoTourRow,
+  todayYmd: string,
+  nowMs: number,
+  pickupTime?: string | null
+): boolean {
+  if (tourCoversCalendarDate(tour, todayYmd)) return true
+  if (tour.tour_date <= todayYmd) return false
+  const firstMs = firstPickupMsFromParts(tour.tour_date, pickupTime, tour.tour_start_datetime)
+  return isPhotoShootingOpen(nowMs, firstMs, tour.tour_date)
+}
+
+export function selectEligiblePhotoTours(
+  tours: TodayPhotoTourRow[],
+  email: string,
+  todayYmd: string,
+  nowMs: number,
+  pickupTimeByTourId: Map<string, string | null>
+): TodayPhotoTourRow[] {
+  return tours.filter((tour) => {
+    if (!isGuideAssignedToTour(email, tour) || isTourCancelled(tour.tour_status)) return false
+    return isTourEligibleForGuidePhotos(tour, todayYmd, nowMs, pickupTimeByTourId.get(tour.id) ?? null)
+  })
+}
+
 /** 당일 투어 + 1박2일 2일차처럼 오늘이 진행 구간에 들어가는 투어 */
 export function toursCoveringDate(tours: TodayPhotoTourRow[], dateYmd: string): TodayPhotoTourRow[] {
   return tours.filter((tour) => tourCoversCalendarDate(tour, dateYmd))
@@ -137,6 +230,52 @@ export function productNameForLocale(products: unknown, locale: string): string 
   return (product.name_ko || product.name || product.name_en || '').trim()
 }
 
+function isInactiveReservationStatus(status: string | null | undefined): boolean {
+  const value = (status || '').toLowerCase()
+  return value.includes('cancel') || value === 'deleted' || value === 'no_show'
+}
+
+async function loadEarliestPickupTimeByTourId(
+  db: SupabaseClient<Database>,
+  tours: TodayPhotoTourRow[]
+): Promise<Map<string, string | null>> {
+  const pickupTimeByTourId = new Map<string, string | null>()
+  const reservationToTours = new Map<string, string[]>()
+  for (const tour of tours) {
+    pickupTimeByTourId.set(tour.id, null)
+    for (const reservationId of normalizeReservationIds(tour.reservation_ids)) {
+      const owners = reservationToTours.get(reservationId) || []
+      owners.push(tour.id)
+      reservationToTours.set(reservationId, owners)
+    }
+  }
+  const reservationIds = [...reservationToTours.keys()]
+  if (reservationIds.length === 0) return pickupTimeByTourId
+
+  const { data, error } = await db
+    .from('reservations')
+    .select('id, pickup_time, status')
+    .in('id', reservationIds)
+  if (error) throw error
+
+  const timesByTour = new Map<string, string[]>()
+  for (const row of data || []) {
+    if (isInactiveReservationStatus(row.status)) continue
+    const time = row.pickup_time?.trim()
+    if (!time) continue
+    for (const tourId of reservationToTours.get(row.id) || []) {
+      const list = timesByTour.get(tourId) || []
+      list.push(time)
+      timesByTour.set(tourId, list)
+    }
+  }
+
+  for (const tour of tours) {
+    pickupTimeByTourId.set(tour.id, earliestPickupTime(tour.tour_date, timesByTour.get(tour.id) || []))
+  }
+  return pickupTimeByTourId
+}
+
 export async function resolveTodayPhotoTourForGuide(
   db: SupabaseClient<Database>,
   email: string,
@@ -154,23 +293,27 @@ export async function resolveTodayPhotoTourForGuide(
   if (!needle) return empty
 
   const lookbackStart = photoTourLookbackStart(today)
+  const lookaheadEnd = photoTourLookaheadEnd(today)
   const { data, error } = await db
     .from('tours')
     .select(
       'id, tour_date, tour_status, assignment_status, tour_guide_id, assistant_id, tour_start_datetime, tour_end_datetime, reservation_ids, product_id, products(name, name_ko, name_en)'
     )
     .gte('tour_date', lookbackStart)
-    .lte('tour_date', today)
+    .lte('tour_date', lookaheadEnd)
 
   if (error) throw error
 
-  const covering = toursCoveringDate((data || []) as TodayPhotoTourRow[], today)
-  const picked = pickTodayPhotoTour(covering, needle, nowMs)
+  const rows = (data || []) as TodayPhotoTourRow[]
+  const assigned = rows.filter(
+    (tour) => isGuideAssignedToTour(needle, tour) && !isTourCancelled(tour.tour_status)
+  )
+  const pickupTimeByTourId = await loadEarliestPickupTimeByTourId(db, assigned)
+  const eligible = selectEligiblePhotoTours(assigned, needle, today, nowMs, pickupTimeByTourId)
+  const picked = pickTodayPhotoTour(eligible, needle, nowMs)
   if (!picked) return empty
 
-  const candidateCount = covering.filter(
-    (tour) => isGuideAssignedToTour(needle, tour) && !isTourCancelled(tour.tour_status)
-  ).length
+  const candidateCount = eligible.length
 
   const { count } = await db
     .from('tour_photos')
