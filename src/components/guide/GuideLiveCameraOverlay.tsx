@@ -6,10 +6,16 @@ import { useTranslations } from 'next-intl'
 import { DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
 import {
   applyTapToFocus,
-  captureGuideLivePhoto,
-  enableContinuousAutofocus,
   mapCoverTapToNormalizedPoint,
 } from '@/lib/guideLiveCameraFocus'
+import {
+  applyCameraPreset,
+  captureWithCameraPreset,
+  readCameraPresetSupport,
+  type CameraPreset,
+  type CameraPresetSupport,
+} from '@/lib/guideLiveCameraPresets'
+import GuideLiveCameraPresetBar from '@/components/guide/GuideLiveCameraPresetBar'
 
 type GuideLiveCameraOverlayProps = {
   open: boolean
@@ -34,10 +40,18 @@ export default function GuideLiveCameraOverlay({
   const videoRef = useRef<HTMLVideoElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
   const lastCaptureAtRef = useRef(0)
+  const capturingRef = useRef(false)
   const flashTimeoutRef = useRef<number | null>(null)
   const focusAbortRef = useRef<AbortController | null>(null)
   const [videoReady, setVideoReady] = useState(false)
   const [flash, setFlash] = useState(false)
+  const [preset, setPreset] = useState<CameraPreset>('auto')
+  const [support, setSupport] = useState<CameraPresetSupport>({
+    hasManualExposure: false,
+    hasManualIso: false,
+    hasInfinityFocus: false,
+  })
+  const [capturing, setCapturing] = useState(false)
   const [reticle, setReticle] = useState<{ x: number; y: number; token: number } | null>(null)
 
   useEffect(() => {
@@ -70,8 +84,6 @@ export default function GuideLiveCameraOverlay({
     const onReady = () => setVideoReady(true)
     video.addEventListener('loadedmetadata', onReady)
     void video.play().catch(() => {})
-    const track = stream.getVideoTracks()[0]
-    if (track) void enableContinuousAutofocus(track)
     return () => {
       video.removeEventListener('loadedmetadata', onReady)
       video.srcObject = null
@@ -81,10 +93,20 @@ export default function GuideLiveCameraOverlay({
     }
   }, [open, stream])
 
+  useEffect(() => {
+    if (!open || !stream || !videoReady) return
+    const track = stream.getVideoTracks()[0]
+    if (!track) return
+    void applyCameraPreset(track, preset).then(() => {
+      setSupport(readCameraPresetSupport(track))
+    })
+  }, [open, stream, videoReady, preset])
+
   if (!open) return null
 
   const handleTapToFocus = (event: PointerEvent<HTMLDivElement>) => {
-    if (!videoReady || !stream) return
+    if (!videoReady || !stream || capturing) return
+    if (preset === 'stars') return
     if (event.pointerType === 'mouse' && event.button !== 0) return
 
     const overlay = overlayRef.current
@@ -109,7 +131,14 @@ export default function GuideLiveCameraOverlay({
     focusAbortRef.current?.abort()
     const controller = new AbortController()
     focusAbortRef.current = controller
-    void applyTapToFocus({ track, point, video, signal: controller.signal })
+    void applyTapToFocus({
+      track,
+      point,
+      video,
+      signal: controller.signal,
+      preserveExposure: preset !== 'auto',
+      skipDistanceSweep: preset !== 'auto',
+    })
 
     if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
       navigator.vibrate(10)
@@ -118,20 +147,33 @@ export default function GuideLiveCameraOverlay({
 
   const handleShutter = () => {
     const video = videoRef.current
-    if (!video || !videoReady) return
+    if (!video || !videoReady || capturingRef.current) return
     const now = Date.now()
-    if (now - lastCaptureAtRef.current < CAPTURE_GAP_MS) return
+    if (preset === 'auto' && now - lastCaptureAtRef.current < CAPTURE_GAP_MS) return
     lastCaptureAtRef.current = now
-    setFlash(true)
-    if (flashTimeoutRef.current != null) window.clearTimeout(flashTimeoutRef.current)
-    flashTimeoutRef.current = window.setTimeout(() => setFlash(false), 80)
+    capturingRef.current = true
+    setCapturing(true)
+    if (preset === 'auto') {
+      setFlash(true)
+      if (flashTimeoutRef.current != null) window.clearTimeout(flashTimeoutRef.current)
+      flashTimeoutRef.current = window.setTimeout(() => setFlash(false), 80)
+    }
     if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
       navigator.vibrate(30)
     }
-    void captureGuideLivePhoto(video, stream).then((file) => {
-      if (file) onCapture(file)
-    })
+    void captureWithCameraPreset(video, stream, preset, support)
+      .then((file) => {
+        if (file) onCapture(file)
+      })
+      .finally(() => {
+        capturingRef.current = false
+        setCapturing(false)
+      })
   }
+
+  const supportHint =
+    preset === 'stars' ? t('presetStarsHint') : preset === 'night' ? t('presetNightHint') : t('presetAutoHint')
+  const captureLabel = preset === 'stars' ? t('presetStarsCapture') : t('presetNightCapture')
 
   return (
     <div
@@ -194,6 +236,13 @@ export default function GuideLiveCameraOverlay({
 
       {flash ? <div className="pointer-events-none absolute inset-0 z-[3] bg-white/75" /> : null}
 
+      {capturing && preset !== 'auto' ? (
+        <div className="pointer-events-none absolute inset-0 z-[5] flex flex-col items-center justify-center gap-3 bg-black/35">
+          <Loader2 className="h-8 w-8 animate-spin text-[#FFB800]" />
+          <p className="text-sm font-medium text-white">{captureLabel}</p>
+        </div>
+      ) : null}
+
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 pt-[max(1rem,env(safe-area-inset-top))]">
         {capturedCount > 0 ? (
           <span className="rounded-full bg-black/50 px-3 py-1 text-sm font-medium text-white">
@@ -213,7 +262,13 @@ export default function GuideLiveCameraOverlay({
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/70 to-transparent px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-16">
-        <p className="mb-5 text-center text-xs text-white/85">{t('keepShootingHint')}</p>
+        <GuideLiveCameraPresetBar
+          preset={preset}
+          disabled={!videoReady || capturing}
+          supportHint={supportHint}
+          labels={{ auto: t('presetAuto'), night: t('presetNight'), stars: t('presetStars') }}
+          onChange={setPreset}
+        />
         <div className="grid grid-cols-3 items-center gap-4">
           <div className="flex justify-start">
             <div className="h-14 w-14 overflow-hidden rounded-xl border border-white/40 bg-white/10">
@@ -227,12 +282,16 @@ export default function GuideLiveCameraOverlay({
             <button
               type="button"
               onClick={handleShutter}
-              disabled={!videoReady}
+              disabled={!videoReady || capturing}
               aria-label={t('shutter')}
               className="pointer-events-auto flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-white/90 shadow-lg transition active:scale-95 disabled:opacity-50"
               style={{ touchAction: 'manipulation' }}
             >
-              <span className="h-16 w-16 rounded-full bg-white" />
+              {capturing && preset !== 'auto' ? (
+                <Loader2 className="h-8 w-8 animate-spin text-gray-800" />
+              ) : (
+                <span className="h-16 w-16 rounded-full bg-white" />
+              )}
             </button>
           </div>
           <div className="flex justify-end">

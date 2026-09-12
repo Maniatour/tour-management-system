@@ -44,6 +44,21 @@ test('pickTapFocusAdvancedConstraints prefers points of interest and single-shot
   assert.deepEqual(advanced[2], { exposureMode: 'continuous' })
 })
 
+test('tap-to-focus can keep a manual night exposure', () => {
+  const advanced = pickTapFocusAdvancedConstraints(
+    {
+      pointsOfInterest: true,
+      focusMode: ['continuous', 'single-shot'],
+      exposureMode: ['continuous'],
+    },
+    { x: 0.25, y: 0.8 },
+    { preserveExposure: true }
+  )
+  assert.deepEqual(advanced[0], { pointsOfInterest: [{ x: 0.25, y: 0.8 }] })
+  assert.deepEqual(advanced[1], { focusMode: 'single-shot' })
+  assert.equal(advanced.some((item) => item.exposureMode), false)
+})
+
 test('sampleFocusDistances returns a short sweep between min and max', () => {
   const distances = sampleFocusDistances(0.1, 1, 0.05)
   assert.ok(distances.length >= 5)

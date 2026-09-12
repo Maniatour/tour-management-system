@@ -5,6 +5,10 @@ export type ImageCaptureConstraintSet = MediaTrackConstraintSet & {
   exposureMode?: string
   pointsOfInterest?: NormalizedPoint[]
   focusDistance?: number
+  exposureTime?: number
+  iso?: number
+  exposureCompensation?: number
+  brightness?: number
 }
 
 type FocusCapabilities = {
@@ -60,7 +64,8 @@ export function mapCoverTapToNormalizedPoint(
 
 export function pickTapFocusAdvancedConstraints(
   capabilities: FocusCapabilities,
-  point: NormalizedPoint
+  point: NormalizedPoint,
+  options?: { preserveExposure?: boolean }
 ): ImageCaptureConstraintSet[] {
   const advanced: ImageCaptureConstraintSet[] = []
   const clamped = { x: clamp01(point.x), y: clamp01(point.y) }
@@ -77,10 +82,12 @@ export function pickTapFocusAdvancedConstraints(
     advanced.push({ focusMode: 'continuous' })
   }
 
-  if (exposureModes.includes('single-shot')) {
-    advanced.push({ exposureMode: 'single-shot' })
-  } else if (exposureModes.includes('continuous')) {
-    advanced.push({ exposureMode: 'continuous' })
+  if (!options?.preserveExposure) {
+    if (exposureModes.includes('single-shot')) {
+      advanced.push({ exposureMode: 'single-shot' })
+    } else if (exposureModes.includes('continuous')) {
+      advanced.push({ exposureMode: 'continuous' })
+    }
   }
 
   return advanced
@@ -121,7 +128,7 @@ function readCapabilities(track: MediaStreamTrack): FocusCapabilities {
   }
 }
 
-async function applyAdvanced(
+export async function applyTrackAdvancedConstraints(
   track: MediaStreamTrack,
   advanced: ImageCaptureConstraintSet[]
 ): Promise<boolean> {
@@ -158,7 +165,7 @@ export async function enableContinuousAutofocus(track: MediaStreamTrack): Promis
   const advanced: ImageCaptureConstraintSet[] = []
   if (focusModes.includes('continuous')) advanced.push({ focusMode: 'continuous' })
   if (exposureModes.includes('continuous')) advanced.push({ exposureMode: 'continuous' })
-  await applyAdvanced(track, advanced)
+  await applyTrackAdvancedConstraints(track, advanced)
 }
 
 function waitAnimationFrames(frames: number, signal?: AbortSignal): Promise<void> {
@@ -222,7 +229,7 @@ async function contrastFocusAtPoint(
 
   for (const distance of distances) {
     if (signal?.aborted) return false
-    const applied = await applyAdvanced(track, [{ focusMode: 'manual', focusDistance: distance }])
+    const applied = await applyTrackAdvancedConstraints(track, [{ focusMode: 'manual', focusDistance: distance }])
     if (!applied) return false
     try {
       await waitAnimationFrames(2, signal)
@@ -238,7 +245,7 @@ async function contrastFocusAtPoint(
     }
   }
 
-  return applyAdvanced(track, [{ focusMode: 'manual', focusDistance: bestDistance }])
+  return applyTrackAdvancedConstraints(track, [{ focusMode: 'manual', focusDistance: bestDistance }])
 }
 
 export async function applyTapToFocus(options: {
@@ -246,13 +253,16 @@ export async function applyTapToFocus(options: {
   point: NormalizedPoint
   video?: HTMLVideoElement | null
   signal?: AbortSignal
+  preserveExposure?: boolean
+  skipDistanceSweep?: boolean
 }): Promise<boolean> {
-  const { track, point, video, signal } = options
+  const { track, point, video, signal, preserveExposure, skipDistanceSweep } = options
   if (signal?.aborted) return false
 
   const caps = readCapabilities(track)
-  const advanced = pickTapFocusAdvancedConstraints(caps, point)
-  const applied = await applyAdvanced(track, advanced)
+  const advanced = pickTapFocusAdvancedConstraints(caps, point, { preserveExposure: Boolean(preserveExposure) })
+  const applied = await applyTrackAdvancedConstraints(track, advanced)
+  if (skipDistanceSweep) return applied
   if (applied && caps.pointsOfInterest) return true
   if (applied && !caps.focusDistance) return true
   if (!video || !caps.focusDistance) return applied
@@ -313,17 +323,20 @@ export function captureVideoFrame(video: HTMLVideoElement, quality = 0.92): Prom
 /** 가능하면 카메라 스틸(takePhoto)을 쓰고, 아니면 미리보기 프레임을 캡처한다. */
 export async function captureGuideLivePhoto(
   video: HTMLVideoElement,
-  stream: MediaStream | null
+  stream: MediaStream | null,
+  options?: { preferPreview?: boolean }
 ): Promise<File | null> {
-  const track = stream?.getVideoTracks()[0]
-  if (track) {
-    const imageCapture = createImageCapture(track)
-    if (imageCapture) {
-      try {
-        const blob = await imageCapture.takePhoto()
-        if (blob && blob.size > 0) return fileFromBlob(blob)
-      } catch {
-        // iOS 등 미지원 환경은 미리보기 프레임으로 대체
+  if (!options?.preferPreview) {
+    const track = stream?.getVideoTracks()[0]
+    if (track) {
+      const imageCapture = createImageCapture(track)
+      if (imageCapture) {
+        try {
+          const blob = await imageCapture.takePhoto()
+          if (blob && blob.size > 0) return fileFromBlob(blob)
+        } catch {
+          // iOS 등 미지원 환경은 미리보기 프레임으로 대체
+        }
       }
     }
   }
