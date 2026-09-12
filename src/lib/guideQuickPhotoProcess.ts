@@ -1,7 +1,5 @@
 import { enhanceTourPhotoPixels } from '@/lib/guideTourPhotoEnhance'
-
-const MAX_EDGE = 1920
-const JPEG_QUALITY = 0.85
+import { GUIDE_CAMERA_JPEG_QUALITY, GUIDE_CAMERA_MAX_EDGE, clampLongEdge } from '@/lib/guideLiveCameraFocus'
 
 function isHeicLike(file: File): boolean {
   const type = (file.type || '').toLowerCase()
@@ -35,18 +33,17 @@ export async function prepareGuideQuickPhoto(file: File): Promise<File> {
     let height = bitmap.height
     if (width < 1 || height < 1) return file
 
-    const longest = Math.max(width, height)
-    if (longest > MAX_EDGE) {
-      const scale = MAX_EDGE / longest
-      width = Math.max(1, Math.round(width * scale))
-      height = Math.max(1, Math.round(height * scale))
-    }
+    const sized = clampLongEdge(width, height, GUIDE_CAMERA_MAX_EDGE)
+    width = sized.width
+    height = sized.height
 
     const canvas = document.createElement('canvas')
     canvas.width = width
     canvas.height = height
     const ctx = canvas.getContext('2d', { willReadFrequently: true })
     if (!ctx) return file
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
     ctx.drawImage(bitmap, 0, 0, width, height)
     try {
       const imageData = ctx.getImageData(0, 0, width, height)
@@ -57,7 +54,7 @@ export async function prepareGuideQuickPhoto(file: File): Promise<File> {
     }
 
     const blob = await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY)
+      canvas.toBlob(resolve, 'image/jpeg', GUIDE_CAMERA_JPEG_QUALITY)
     })
     if (!blob) return file
 

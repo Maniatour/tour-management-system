@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  clampLongEdge,
   mapCoverTapToNormalizedPoint,
   measureRegionContrast,
+  pickStillPhotoSize,
   pickTapFocusAdvancedConstraints,
   sampleFocusDistances,
 } from '@/lib/guideLiveCameraFocus'
@@ -88,3 +90,19 @@ test('measureRegionContrast is higher for an edge than a flat fill', () => {
   }
   assert.ok(measureRegionContrast(edge) > measureRegionContrast(flat) * 4)
 })
+
+test('clampLongEdge keeps 4K under the max and preserves aspect', () => {
+  const sized = clampLongEdge(4032, 3024, 3840)
+  assert.equal(sized.width, 3840)
+  assert.equal(sized.height, 2880)
+  assert.deepEqual(clampLongEdge(1920, 1080, 3840), { width: 1920, height: 1080 })
+})
+
+test('pickStillPhotoSize uses the camera still-image maximum', () => {
+  assert.deepEqual(pickStillPhotoSize({ imageWidth: { max: 4032 }, imageHeight: { max: 3024 } }), {
+    imageWidth: 4032,
+    imageHeight: 3024,
+  })
+  assert.equal(pickStillPhotoSize({}), null)
+})
+

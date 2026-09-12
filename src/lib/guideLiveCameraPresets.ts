@@ -1,7 +1,10 @@
 import {
   applyTrackAdvancedConstraints,
   captureGuideLivePhoto,
+  clampLongEdge,
   enableContinuousAutofocus,
+  GUIDE_CAMERA_JPEG_QUALITY,
+  GUIDE_CAMERA_STACK_MAX_EDGE,
   type ImageCaptureConstraintSet,
 } from '@/lib/guideLiveCameraFocus'
 
@@ -157,21 +160,22 @@ async function captureStackedPreview(
   frameCount: number,
   gain: number
 ): Promise<File | null> {
-  const width = video.videoWidth
-  const height = video.videoHeight
-  if (width < 1 || height < 1) return null
+  if (video.videoWidth < 1 || video.videoHeight < 1) return null
+  const { width, height } = clampLongEdge(video.videoWidth, video.videoHeight, GUIDE_CAMERA_STACK_MAX_EDGE)
 
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
   if (!ctx) return null
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
 
   const acc = new Float32Array(width * height * 4)
   const frames = Math.max(1, frameCount)
 
   for (let i = 0; i < frames; i += 1) {
-    ctx.drawImage(video, 0, 0)
+    ctx.drawImage(video, 0, 0, width, height)
     const pixels = ctx.getImageData(0, 0, width, height).data
     for (let p = 0; p < pixels.length; p += 1) acc[p] += pixels[p]
     if (i < frames - 1) await waitFrames(2)
@@ -185,7 +189,7 @@ async function captureStackedPreview(
   ctx.putImageData(output, 0, 0)
 
   const blob = await new Promise<Blob | null>((resolve) => {
-    canvas.toBlob(resolve, 'image/jpeg', 0.92)
+    canvas.toBlob(resolve, 'image/jpeg', GUIDE_CAMERA_JPEG_QUALITY)
   })
   if (!blob) return null
   return new File([blob], `tour-photo-${Date.now()}.jpg`, {

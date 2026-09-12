@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { fetchApiWithAuthWhenReady } from '@/lib/api-client-bearer'
 import { DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
 import GuideLiveCameraOverlay from '@/components/guide/GuideLiveCameraOverlay'
+import { openGuideLiveCameraStream } from '@/lib/guideLiveCameraFocus'
 import { prepareGuideQuickPhoto } from '@/lib/guideQuickPhotoProcess'
 import { classifyGuideQuickCapture, type GuideQuickCaptureKind } from '@/lib/guideQuickPhotoClassify'
 import { uploadGuideQuickReceipt } from '@/lib/guideQuickReceiptUpload'
@@ -409,27 +410,7 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
     liveCameraOpenRef.current = true
     setLiveCameraOpen(true)
 
-    navigator.mediaDevices
-      .getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          // Image Capture: 연속 오토포커스 (미지원 브라우저는 무시)
-          ...({
-            focusMode: { ideal: 'continuous' },
-            exposureMode: { ideal: 'continuous' },
-          } as MediaTrackConstraints),
-        },
-        audio: false,
-      })
-      .catch(() =>
-        navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
-          audio: false,
-        })
-      )
-      .catch(() => navigator.mediaDevices.getUserMedia({ video: true, audio: false }))
+    void openGuideLiveCameraStream()
       .then((stream) => {
         if (cameraRequestIdRef.current !== requestId) {
           stream.getTracks().forEach((track) => track.stop())

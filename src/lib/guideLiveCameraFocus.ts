@@ -1,5 +1,30 @@
 export type NormalizedPoint = { x: number; y: number }
 
+export const GUIDE_CAMERA_MAX_EDGE = 3840
+export const GUIDE_CAMERA_JPEG_QUALITY = 0.94
+export const GUIDE_CAMERA_STACK_MAX_EDGE = 1920
+
+export function clampLongEdge(width: number, height: number, maxEdge: number): { width: number; height: number } {
+  if (width < 1 || height < 1) return { width: Math.max(1, width), height: Math.max(1, height) }
+  const longest = Math.max(width, height)
+  if (longest <= maxEdge) return { width, height }
+  const scale = maxEdge / longest
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  }
+}
+
+export function pickStillPhotoSize(capabilities: {
+  imageWidth?: { max?: number }
+  imageHeight?: { max?: number }
+}): { imageWidth: number; imageHeight: number } | null {
+  const width = capabilities.imageWidth?.max
+  const height = capabilities.imageHeight?.max
+  if (!width || !height || width < 1 || height < 1) return null
+  return { imageWidth: Math.round(width), imageHeight: Math.round(height) }
+}
+
 export type ImageCaptureConstraintSet = MediaTrackConstraintSet & {
   focusMode?: string
   exposureMode?: string
@@ -150,6 +175,80 @@ export async function applyTrackAdvancedConstraints(
   }
 }
 
+export async function preferMaxCameraResolution(track: MediaStreamTrack): Promise<void> {
+  let capabilities: MediaTrackCapabilities
+  try {
+    capabilities = track.getCapabilities()
+  } catch {
+    return
+  }
+  const next: MediaTrackConstraints = {}
+  if (typeof capabilities.width?.max === 'number' && capabilities.width.max > 0) {
+    next.width = { ideal: Math.min(Math.round(capabilities.width.max), GUIDE_CAMERA_MAX_EDGE) }
+  }
+  if (typeof capabilities.height?.max === 'number' && capabilities.height.max > 0) {
+    next.height = { ideal: Math.min(Math.round(capabilities.height.max), GUIDE_CAMERA_MAX_EDGE) }
+  }
+  if (!next.width && !next.height) return
+  try {
+    await track.applyConstraints(next)
+  } catch {
+    // 기기가 최대 해상도를 거절하면 현재 스트림을 유지
+  }
+}
+
+const GUIDE_CAMERA_STREAM_ATTEMPTS: MediaStreamConstraints[] = [
+  {
+    audio: false,
+    video: {
+      facingMode: { ideal: 'environment' },
+      width: { ideal: 4032 },
+      height: { ideal: 3024 },
+      ...({
+        focusMode: { ideal: 'continuous' },
+        exposureMode: { ideal: 'continuous' },
+        resizeMode: 'none',
+      } as MediaTrackConstraints),
+    },
+  },
+  {
+    audio: false,
+    video: {
+      facingMode: { ideal: 'environment' },
+      width: { ideal: 3840 },
+      height: { ideal: 2160 },
+    },
+  },
+  {
+    audio: false,
+    video: {
+      facingMode: { ideal: 'environment' },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+    },
+  },
+  { audio: false, video: { facingMode: 'environment' } },
+  { audio: false, video: true },
+]
+
+export async function openGuideLiveCameraStream(): Promise<MediaStream> {
+  let lastError: unknown
+  for (const constraints of GUIDE_CAMERA_STREAM_ATTEMPTS) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      const track = stream.getVideoTracks()[0]
+      if (track) {
+        await preferMaxCameraResolution(track)
+        await enableContinuousAutofocus(track)
+      }
+      return stream
+    } catch (error) {
+      lastError = error
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('camera_unavailable')
+}
+
 export async function enableContinuousAutofocus(track: MediaStreamTrack): Promise<void> {
   if ('contentHint' in track) {
     try {
@@ -274,8 +373,14 @@ export async function applyTapToFocus(options: {
   }
 }
 
+type PhotoSizeRange = { min?: number; max?: number }
+type PhotoCapabilitiesLike = {
+  imageWidth?: PhotoSizeRange
+  imageHeight?: PhotoSizeRange
+}
 type ImageCaptureLike = {
-  takePhoto: () => Promise<Blob>
+  takePhoto: (settings?: { imageWidth?: number; imageHeight?: number }) => Promise<Blob>
+  getPhotoCapabilities?: () => Promise<PhotoCapabilitiesLike>
 }
 
 function createImageCapture(track: MediaStreamTrack): ImageCaptureLike | null {
@@ -283,6 +388,30 @@ function createImageCapture(track: MediaStreamTrack): ImageCaptureLike | null {
   if (!ctor) return null
   try {
     return new ctor(track)
+  } catch {
+    return null
+  }
+}
+
+async function takeHighestStillPhoto(track: MediaStreamTrack): Promise<Blob | null> {
+  const imageCapture = createImageCapture(track)
+  if (!imageCapture) return null
+  let size: { imageWidth: number; imageHeight: number } | null = null
+  try {
+    const capabilities = await imageCapture.getPhotoCapabilities?.()
+    if (capabilities) size = pickStillPhotoSize(capabilities)
+  } catch {
+    size = null
+  }
+  try {
+    if (size) {
+      try {
+        return await imageCapture.takePhoto(size)
+      } catch {
+        return await imageCapture.takePhoto()
+      }
+    }
+    return await imageCapture.takePhoto()
   } catch {
     return null
   }
@@ -297,13 +426,15 @@ function fileFromBlob(blob: Blob): File {
   })
 }
 
-export function captureVideoFrame(video: HTMLVideoElement, quality = 0.92): Promise<File | null> {
+export function captureVideoFrame(video: HTMLVideoElement, quality = GUIDE_CAMERA_JPEG_QUALITY): Promise<File | null> {
   if (video.videoWidth < 1 || video.videoHeight < 1) return Promise.resolve(null)
   const canvas = document.createElement('canvas')
   canvas.width = video.videoWidth
   canvas.height = video.videoHeight
   const ctx = canvas.getContext('2d')
   if (!ctx) return Promise.resolve(null)
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(video, 0, 0)
   return new Promise((resolve) => {
     canvas.toBlob(
@@ -329,15 +460,8 @@ export async function captureGuideLivePhoto(
   if (!options?.preferPreview) {
     const track = stream?.getVideoTracks()[0]
     if (track) {
-      const imageCapture = createImageCapture(track)
-      if (imageCapture) {
-        try {
-          const blob = await imageCapture.takePhoto()
-          if (blob && blob.size > 0) return fileFromBlob(blob)
-        } catch {
-          // iOS 등 미지원 환경은 미리보기 프레임으로 대체
-        }
-      }
+      const blob = await takeHighestStillPhoto(track)
+      if (blob && blob.size > 0) return fileFromBlob(blob)
     }
   }
   return captureVideoFrame(video)
