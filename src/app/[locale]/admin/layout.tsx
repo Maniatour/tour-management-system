@@ -11,6 +11,7 @@ import CashWithdrawalNotificationListener from '@/components/admin/CashWithdrawa
 import ReservationImportNotificationListener from '@/components/admin/ReservationImportNotificationListener'
 import GoogleReviewImportNotificationListener from '@/components/admin/GoogleReviewImportNotificationListener'
 import GuestResidentCheckNotificationListener from '@/components/admin/GuestResidentCheckNotificationListener'
+import GuestWaiverSignedNotificationListener from '@/components/admin/GuestWaiverSignedNotificationListener'
 import { AudioPlayerProvider } from '@/contexts/AudioPlayerContext'
 import { GmailReservationImportSyncProvider } from '@/contexts/GmailReservationImportSyncContext'
 import { isSiteLocale } from '@/lib/siteLocales'
@@ -48,6 +49,7 @@ export default async function AdminLayout({ children, params }: AdminLayoutProps
               <ReservationImportNotificationListener locale={locale} />
               <GoogleReviewImportNotificationListener locale={locale} />
               <GuestResidentCheckNotificationListener locale={locale} />
+              <GuestWaiverSignedNotificationListener locale={locale} />
             </AdminChrome>
           </GmailReservationImportSyncProvider>
           </AdminAuthGuard>

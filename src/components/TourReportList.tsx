@@ -28,8 +28,11 @@ import {
   NotebookPen,
   SkipForward,
   PenLine,
+  ArrowRightLeft,
 } from 'lucide-react'
 import TourNarrationPlayLog from '@/components/tour/TourNarrationPlayLog'
+import TourReportMoveRequestModal from '@/components/TourReportMoveRequestModal'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { toast } from 'sonner'
 import {
   displayMainStopLabel,
@@ -67,6 +70,7 @@ import {
   TOUR_REPORT_WEATHER_OPTIONS,
 } from '@/lib/tourReportExtras'
 import { narrationSkipSummary } from '@/lib/tourReportNarration'
+import type { TourReportMoveRequestView } from '@/lib/tourReportMoveRequests'
 
 interface TourReport {
   id: string
@@ -130,7 +134,8 @@ export default function TourReportList({
   locale = 'ko',
   highlightReportId = null,
 }: TourReportListProps) {
-  const { user } = useAuth()
+  const { user, simulatedUser, isSimulating } = useAuth()
+  const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
   const getText = (ko: string, en: string) => tourReportText(locale, ko, en)
   const [reports, setReports] = useState<TourReport[]>([])
   const [stopCourseById, setStopCourseById] = useState<Map<string, CourseForMainStops>>(new Map())
@@ -140,6 +145,9 @@ export default function TourReportList({
   const [searchTerm, setSearchTerm] = useState('')
   const [weatherFilter, setWeatherFilter] = useState<string>('all')
   const [moodFilter, setMoodFilter] = useState<string>('all')
+  const [movingReportId, setMovingReportId] = useState<string | null>(null)
+  const [pendingByReportId, setPendingByReportId] = useState<Map<string, TourReportMoveRequestView>>(new Map())
+  const [cancellingId, setCancellingId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchReports()
@@ -194,6 +202,7 @@ export default function TourReportList({
       setReports(rows)
       void loadStopCourses(rows)
       void loadGuideNames(rows)
+      void loadPendingMoves(rows)
     } catch (error) {
       console.error('Error fetching tour reports:', error)
       toast.error(getText('리포트를 불러오는 중 오류가 발생했습니다.', 'Could not load reports.'))
@@ -263,6 +272,64 @@ export default function TourReportList({
       setGuideNameByEmail(map)
     } catch (e) {
       console.error('Error fetching tour report guide names:', e)
+    }
+  }
+
+  const loadPendingMoves = async (rows: TourReport[]) => {
+    const ids = rows.map((row) => row.id).filter(Boolean)
+    if (!currentUserEmail || ids.length === 0) {
+      setPendingByReportId(new Map())
+      return
+    }
+    try {
+      const headers: Record<string, string> = {}
+      if (isSimulating && simulatedUser?.email) {
+        headers['x-simulated-user-email'] = simulatedUser.email
+      }
+      const localeParam = locale.startsWith('en') ? 'en' : 'ko'
+      const res = await fetchApiWithAuth(
+        `/api/guide/tour-report-move-requests?status=pending&locale=${localeParam}&reportIds=${ids.join(',')}`,
+        { headers }
+      )
+      if (!res.ok) return
+      const json = (await res.json()) as { items?: TourReportMoveRequestView[] }
+      const map = new Map<string, TourReportMoveRequestView>()
+      for (const item of json.items || []) {
+        map.set(item.reportId, item)
+      }
+      setPendingByReportId(map)
+    } catch (e) {
+      console.error('Error fetching tour report move requests:', e)
+    }
+  }
+
+  const handleCancelMoveRequest = async (requestId: string) => {
+    if (!confirm(getText('이동 요청을 취소할까요?', 'Cancel this move request?'))) return
+    setCancellingId(requestId)
+    try {
+      const headers: Record<string, string> = {}
+      if (isSimulating && simulatedUser?.email) {
+        headers['x-simulated-user-email'] = simulatedUser.email
+      }
+      const localeParam = locale.startsWith('en') ? 'en' : 'ko'
+      const res = await fetchApiWithAuth(
+        `/api/guide/tour-report-move-requests/${requestId}/cancel?locale=${localeParam}`,
+        { method: 'POST', headers }
+      )
+      const json = (await res.json()) as { error?: string }
+      if (!res.ok) throw new Error(json.error || getText('취소하지 못했습니다.', 'Could not cancel.'))
+      toast.success(getText('이동 요청을 취소했습니다.', 'Move request cancelled.'))
+      setPendingByReportId((prev) => {
+        const next = new Map(prev)
+        for (const [reportId, item] of next) {
+          if (item.id === requestId) next.delete(reportId)
+        }
+        return next
+      })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : getText('취소하지 못했습니다.', 'Could not cancel.'))
+    } finally {
+      setCancellingId(null)
     }
   }
 
@@ -468,7 +535,47 @@ export default function TourReportList({
                       {report.user_email} • {formatDate(report.submitted_on)}
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(() => {
+                      const isOwn =
+                        normalizeTourReportEmail(currentUserEmail) &&
+                        normalizeTourReportEmail(report.user_email) ===
+                          normalizeTourReportEmail(currentUserEmail)
+                      const pendingMove = pendingByReportId.get(report.id)
+                      if (!isOwn) return null
+                      if (pendingMove) {
+                        return (
+                          <>
+                            <Badge variant="secondary" className="text-xs text-amber-800 bg-amber-50">
+                              {getText('이동 승인 대기', 'Move pending')}
+                            </Badge>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={cancellingId === pendingMove.id}
+                              onClick={() => void handleCancelMoveRequest(pendingMove.id)}
+                              className="h-8 px-2 text-xs"
+                            >
+                              {getText('요청 취소', 'Cancel request')}
+                            </Button>
+                          </>
+                        )
+                      }
+                      return (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setMovingReportId(report.id)}
+                          className="h-8 px-2"
+                          title={getText('다른 투어로 이동 요청', 'Request move to another tour')}
+                        >
+                          <ArrowRightLeft className="w-4 h-4" />
+                          <span className="ml-1 hidden sm:inline">
+                            {getText('이동 요청', 'Move')}
+                          </span>
+                        </Button>
+                      )
+                    })()}
                     {onEdit && (
                       <Button
                         size="sm"
@@ -878,6 +985,25 @@ export default function TourReportList({
           })
         )}
       </div>
+      {movingReportId ? (
+        <TourReportMoveRequestModal
+          open
+          reportId={movingReportId}
+          locale={locale}
+          currentLabel={(() => {
+            const report = reports.find((row) => row.id === movingReportId)
+            if (!report?.tours) return ''
+            const product = locale.startsWith('en')
+              ? report.tours.products?.name_en || report.tours.products?.name_ko
+              : report.tours.products?.name_ko || report.tours.products?.name_en
+            return `${report.tours.tour_date}${product ? ` · ${product}` : ''}`
+          })()}
+          onClose={() => setMovingReportId(null)}
+          onSubmitted={() => {
+            void fetchReports()
+          }}
+        />
+      ) : null}
     </div>
   )
 }

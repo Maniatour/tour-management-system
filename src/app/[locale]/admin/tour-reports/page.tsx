@@ -5,6 +5,7 @@ import { createClientSupabase } from '@/lib/supabase'
 import TourReportList from '@/components/TourReportList'
 import TourReportForm from '@/components/TourReportForm'
 import TourReportDrivingSegmentsAdmin from '@/components/admin/TourReportDrivingSegmentsAdmin'
+import TourReportMoveRequestsPanel from '@/components/admin/TourReportMoveRequestsPanel'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -136,6 +137,12 @@ export default function AdminTourReports({}: AdminTourReportsProps) {
           투어 리포트 관리
         </h1>
       </div>
+
+      <Card>
+        <CardContent className="pt-6">
+          <TourReportMoveRequestsPanel locale={locale} />
+        </CardContent>
+      </Card>
 
       <TourReportDrivingSegmentsAdmin locale={locale} />
 

@@ -10453,6 +10453,73 @@ export type Database = {
         }
         Relationships: []
       }
+      tour_report_move_requests: {
+        Row: {
+          created_at: string
+          from_tour_id: string
+          id: string
+          reason: string | null
+          report_id: string
+          requested_by: string
+          review_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          to_tour_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          from_tour_id: string
+          id?: string
+          reason?: string | null
+          report_id: string
+          requested_by: string
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          to_tour_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          from_tour_id?: string
+          id?: string
+          reason?: string | null
+          report_id?: string
+          requested_by?: string
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          to_tour_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tour_report_move_requests_from_tour_id_fkey"
+            columns: ["from_tour_id"]
+            isOneToOne: false
+            referencedRelation: "tours"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tour_report_move_requests_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: false
+            referencedRelation: "tour_reports"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tour_report_move_requests_to_tour_id_fkey"
+            columns: ["to_tour_id"]
+            isOneToOne: false
+            referencedRelation: "tours"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tour_reports: {
         Row: {
           activities_completed: string[] | null

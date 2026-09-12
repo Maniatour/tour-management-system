@@ -410,6 +410,11 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
           facingMode: { ideal: 'environment' },
           width: { ideal: 1920 },
           height: { ideal: 1080 },
+          // Image Capture: 연속 오토포커스 (미지원 브라우저는 무시)
+          ...({
+            focusMode: { ideal: 'continuous' },
+            exposureMode: { ideal: 'continuous' },
+          } as MediaTrackConstraints),
         },
         audio: false,
       })

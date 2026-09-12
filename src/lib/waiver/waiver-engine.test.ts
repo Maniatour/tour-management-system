@@ -12,9 +12,10 @@ import { ANTELOPE_CANYON_X_WAIVER_EN } from '@/lib/waiver/documents/antelopeCany
 import { LOWER_ANTELOPE_WAIVER_EN } from '@/lib/waiver/documents/lowerAntelope/en'
 import { WAIVER_DOCUMENT_CATALOG } from '@/lib/waiver/documents/catalog'
 import { resolveRequiredWaivers, signingRequiredCodes } from '@/lib/waiver/requiredWaivers'
-import { generateWaiverRawToken, hashWaiverToken, isPlausibleWaiverToken, waiverTokensEqual } from '@/lib/waiver/tokens'
+import { generateWaiverRawToken, hashWaiverToken, isPlausibleWaiverToken, waiverTokensEqual, buildStableWaiverSigningToken, parseStableWaiverSigningToken } from '@/lib/waiver/tokens'
 import { isMinorAgeOnTourDate, parsePngBase64, submitWaiverSchema } from '@/lib/waiver/validation'
 import { emptyWaiverContent, suggestedWaiverVersion, validateGoverningWaiverContent } from '@/lib/waiver/documentEditor'
+import { buildWaiverEmailCtaHtml, isSampleReservationId } from '@/lib/waiver/emailCtaHtml'
 
 test('Mania English source has sections 1-16', () => {
   assert.equal(LAS_VEGAS_MANIA_WAIVER_EN.sections.length, 16)
@@ -109,6 +110,33 @@ test('tokens are non-guessable and hashed', () => {
   const ha = hashWaiverToken(a)
   assert.equal(ha.length, 64)
   assert.equal(waiverTokensEqual(ha, hashWaiverToken(a)), true)
+})
+
+test('stable waiver signing token round-trips invitation id', () => {
+  const invitationId = '11111111-2222-4333-8333-444444444444'
+  const token = buildStableWaiverSigningToken(invitationId)
+  assert.equal(isPlausibleWaiverToken(token), true)
+  assert.equal(parseStableWaiverSigningToken(token), invitationId)
+  assert.equal(parseStableWaiverSigningToken(token.slice(0, 40)), null)
+})
+
+test('waiver email CTA copy differs for request vs reminder', () => {
+  const requestHtml = buildWaiverEmailCtaHtml({
+    isEnglish: true,
+    url: 'https://example.com/waiver/abc',
+    mode: 'request',
+  })
+  const reminderHtml = buildWaiverEmailCtaHtml({
+    isEnglish: true,
+    url: 'https://example.com/waiver/abc',
+    mode: 'reminder',
+  })
+  assert.match(requestHtml, /Please sign the required tour waiver/)
+  assert.match(requestHtml, /Sign the waiver/)
+  assert.match(reminderHtml, /Your waiver is still unsigned/)
+  assert.match(requestHtml, /https:\/\/example.com\/waiver\/abc/)
+  assert.equal(isSampleReservationId('00000000-0000-0000-0000-000000000001'), true)
+  assert.equal(isSampleReservationId('11111111-2222-4333-8333-444444444444'), false)
 })
 
 test('minor age uses tour date', () => {

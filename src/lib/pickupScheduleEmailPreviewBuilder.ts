@@ -14,6 +14,7 @@ import {
   pickCustomerFacingVehiclePhotos,
   simplifyVehiclePhotoUrl,
 } from '@/lib/resolveCustomerVehiclePhotos'
+import { resolveWaiverEmailCta } from '@/lib/waiver/emailEmbed'
 
 export type PickupScheduleEmailPreviewResult = {
   emailContent: {
@@ -625,6 +626,12 @@ export async function buildPickupScheduleEmailPreview(
     preparationInfo = (preparationRow?.preparation_info as string) ?? null
   }
 
+  const waiverCta = await resolveWaiverEmailCta({
+    reservationId,
+    mode: 'reminder',
+    previewPlaceholder: useSamplePickupFallback || reservationId.startsWith('00000000'),
+  })
+
   const emailContent = generatePickupScheduleEmailContent(
     reservation,
     customer,
@@ -639,7 +646,8 @@ export async function buildPickupScheduleEmailPreview(
     tourDayWeather,
     preparationInfo,
     requestedPickupHotel,
-    imageProxyBaseUrl
+    imageProxyBaseUrl,
+    waiverCta
   )
 
   return {

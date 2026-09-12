@@ -20,6 +20,8 @@ import {
   pickCustomerFacingVehiclePhotos,
   simplifyVehiclePhotoUrl,
 } from '@/lib/resolveCustomerVehiclePhotos'
+import { buildWaiverEmailCtaHtml, type WaiverEmailCta } from '@/lib/waiver/emailCtaHtml'
+import { markWaiverInvitationSent, resolveWaiverEmailCta } from '@/lib/waiver/emailEmbed'
 
 const PICKUP_HOTEL_EMAIL_SELECT =
   'id, hotel, pick_up_location, address, link, media, description_ko, description_en, from_inside_hotel_ko, from_inside_hotel_en, from_outside_hotel_ko, from_outside_hotel_en'
@@ -657,6 +659,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 이메일 내용 생성
+    const waiverCta = await resolveWaiverEmailCta({
+      reservationId,
+      mode: 'reminder',
+      createdBy: actorEmail,
+    })
+
     const emailContent = generatePickupScheduleEmailContent(
       reservation,
       customer,
@@ -671,6 +679,8 @@ export async function POST(request: NextRequest) {
       tourDayWeather,
       preparationInfo,
       requestedPickupHotel,
+      null,
+      waiverCta,
     )
 
     // Resend를 사용한 이메일 발송
@@ -816,6 +826,18 @@ export async function POST(request: NextRequest) {
         await markPickupNotificationSentAsActor(reservationId, actorEmail)
       } catch (error) {
         console.error('pickup_notification_sent 업데이트 중 오류:', error)
+      }
+
+      if (waiverCta) {
+        try {
+          await markWaiverInvitationSent({
+            reservationId,
+            via: 'pickup_email',
+            actorId: actorEmail,
+          })
+        } catch (waiverLogError) {
+          console.warn('[send-pickup-schedule-notification] waiver invitation sent log skipped:', waiverLogError)
+        }
       }
 
       // 이메일 발송 기록 저장
@@ -1158,7 +1180,8 @@ export function generatePickupScheduleEmailContent(
   tourDayWeather?: TourDayWeather | null,
   preparationInfo?: string | null,
   requestedPickupHotel?: PickupHotelEmailRow | null,
-  imageProxyBaseUrl?: string | null
+  imageProxyBaseUrl?: string | null,
+  waiverCta?: WaiverEmailCta | null
 ) {
   const pickupRedirected = isPickupHotelRedirectedForEmail(requestedPickupHotel, pickupHotel)
   const imageUrl = (url: string) => {
@@ -1329,6 +1352,10 @@ export function generatePickupScheduleEmailContent(
             </div>
             `}
           </div>
+
+          ${waiverCta?.url
+            ? buildWaiverEmailCtaHtml({ isEnglish, url: waiverCta.url, mode: waiverCta.mode })
+            : ''}
 
           ${pickupHotel && pickupHotel.media && Array.isArray(pickupHotel.media) && pickupHotel.media.length > 0 ? `
           <div class="info-box">

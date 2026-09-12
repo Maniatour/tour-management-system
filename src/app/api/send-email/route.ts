@@ -27,6 +27,8 @@ import {
   fetchReservationOptionLinesForEmail,
   type ReservationOptionLineForEmail,
 } from '@/lib/reservationOptionsForEmail'
+import { buildWaiverEmailCtaHtml, type WaiverEmailCta } from '@/lib/waiver/emailCtaHtml'
+import { markWaiverInvitationSent, resolveWaiverEmailCta } from '@/lib/waiver/emailEmbed'
 /**
  * POST /api/send-email
  * 
@@ -304,6 +306,15 @@ export async function POST(request: NextRequest) {
       isEnglish
     )
 
+    const waiverCta =
+      isDepartureConfirmation
+        ? await resolveWaiverEmailCta({
+            reservationId,
+            mode: 'request',
+            createdBy: sentBy || null,
+          })
+        : null
+
     const emailContent = generateEmailContent(
       reservationData,
       customerData,
@@ -323,6 +334,7 @@ export async function POST(request: NextRequest) {
         productChoices: productChoicesForEmail,
         reservationOptionLines,
         includePriceInfo: includePriceInfo !== false,
+        waiverCta,
       }
     )
     
@@ -391,6 +403,18 @@ export async function POST(request: NextRequest) {
         reservationId,
         emailId: emailResult?.id
       })
+
+      if (isDepartureConfirmation && waiverCta) {
+        try {
+          await markWaiverInvitationSent({
+            reservationId,
+            via: 'departure_email',
+            actorId: sentBy || null,
+          })
+        } catch (waiverLogError) {
+          console.warn('[send-email] waiver invitation sent log skipped:', waiverLogError)
+        }
+      }
 
       // 이메일 발송 기록 저장
       try {
@@ -481,6 +505,8 @@ export type GenerateEmailContentOptions = {
   reservationOptionLines?: ReservationOptionLineForEmail[] | null
   /** false이면 가격 정보(Price Information) 섹션을 이메일에서 제외 (기본 true) */
   includePriceInfo?: boolean
+  /** 투어 확정(voucher) 메일에 면책 서명 CTA */
+  waiverCta?: WaiverEmailCta | null
 }
 
 export function generateEmailContent(
@@ -501,6 +527,14 @@ export function generateEmailContent(
   const pickupHotelRow = options?.pickupHotel ?? null
   const gcSunrise = options?.grandCanyonSunrisePickup ?? null
   const includePriceInfo = options?.includePriceInfo !== false
+  const waiverCtaHtml =
+    isDepartureConfirmation && options?.waiverCta?.url
+      ? buildWaiverEmailCtaHtml({
+          isEnglish,
+          url: options.waiverCta.url,
+          mode: options.waiverCta.mode,
+        })
+      : ''
 
   const escapeEmailText = (s: string | null | undefined): string => {
     if (s == null || s === '') return ''
@@ -1330,6 +1364,7 @@ export function generateEmailContent(
       <div class="email-container">
         <div class="email-content">
           ${isDepartureConfirmation ? departureNotice : receivedNotice}
+          ${waiverCtaHtml ? `<div style="padding: 0 24px;">${waiverCtaHtml}</div>` : ''}
           ${grandCanyonSunrisePickupNotice}
           ${recruitingNotice}
           ${reservationInfoSection}

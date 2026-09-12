@@ -177,30 +177,16 @@ export async function POST(request: NextRequest) {
     const reservationId = String(body.reservationId ?? '').trim()
     if (!reservationId) return NextResponse.json({ error: 'reservationId required' }, { status: 400 })
     const minted = await ensureInvitationForReservation(reservationId, auth.userEmail)
-    if (!minted) return NextResponse.json({ error: 'Could not create invitation' }, { status: 500 })
-    if (!minted.url) {
-      return NextResponse.json({
-        ok: true,
-        invitationId: minted.invitationId,
-        message: 'Invitation exists. A new raw token is only shown when first created.',
-      })
-    }
+    if (!minted?.url) return NextResponse.json({ error: 'Could not create invitation' }, { status: 500 })
     return NextResponse.json({ ok: true, url: minted.url, invitationId: minted.invitationId })
   }
 
   if (action === 'copy-link') {
     const reservationId = String(body.reservationId ?? '').trim()
     if (!reservationId) return NextResponse.json({ error: 'reservationId required' }, { status: 400 })
-    const { fromUntypedTable: t } = await import('@/lib/supabaseUntypedTable')
-    const { data: existing } = await t(supabaseAdmin!, 'waiver_invitations')
-      .select('id')
-      .eq('reservation_id', reservationId)
-      .eq('status', 'active')
-      .maybeSingle()
     const minted = await ensureInvitationForReservation(reservationId, auth.userEmail)
-    if (!existing && minted?.url) return NextResponse.json({ ok: true, url: minted.url, rotated: false })
-    const fresh = await ensureNewRawToken(reservationId, auth.userEmail)
-    return NextResponse.json({ ok: true, url: fresh, rotated: Boolean(existing) })
+    if (!minted?.url) return NextResponse.json({ error: 'Could not create link' }, { status: 500 })
+    return NextResponse.json({ ok: true, url: minted.url, rotated: false })
   }
 
   if (action === 'send-email') {

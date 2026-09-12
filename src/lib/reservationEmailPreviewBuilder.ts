@@ -18,6 +18,7 @@ import {
   isGoblinGrandCanyonSunriseTour,
 } from '@/lib/goblinGrandCanyonSunrisePickup'
 import { fetchReservationOptionLinesForEmail } from '@/lib/reservationOptionsForEmail'
+import { resolveWaiverEmailCta } from '@/lib/waiver/emailEmbed'
 
 export type ReservationEmailPreviewType = 'receipt' | 'voucher' | 'both'
 
@@ -306,6 +307,14 @@ export async function buildReservationEmailPreview(
     )
   }
 
+  const waiverCta = isDepartureConfirmation
+    ? await resolveWaiverEmailCta({
+        reservationId,
+        mode: 'request',
+        previewPlaceholder: !reservationId || reservationId.startsWith('00000000'),
+      })
+    : null
+
   const emailContent = generateEmailContent(
     reservationForEmail,
     customer,
@@ -325,6 +334,7 @@ export async function buildReservationEmailPreview(
       productChoices: productChoicesForEmail,
       reservationOptionLines,
       includePriceInfo: includePriceInfo !== false,
+      waiverCta,
     }
   )
 

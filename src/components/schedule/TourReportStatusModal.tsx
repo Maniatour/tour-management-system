@@ -21,8 +21,9 @@ import { defaultTourReportStatusRange } from '@/lib/tourReportMissing'
 import type { TourReportStatusPayload } from '@/lib/tourReportMissing'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import TourReportList from '@/components/TourReportList'
+import TourReportMoveRequestsPanel from '@/components/admin/TourReportMoveRequestsPanel'
 
-type Tab = 'missing' | 'submitted'
+type Tab = 'missing' | 'submitted' | 'moves'
 
 type RemindResult = {
   email: string
@@ -299,10 +300,23 @@ export default function TourReportStatusModal({
             {isEn ? 'Submitted' : '제출됨'}
             {payload ? ` (${payload.submittedReportCount})` : ''}
           </button>
+          <button
+            type="button"
+            onClick={() => setTab('moves')}
+            className={`rounded-t-lg px-3 py-2 text-sm font-medium ${
+              tab === 'moves'
+                ? 'bg-sky-50 text-sky-900'
+                : 'text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            {isEn ? 'Move requests' : '이동 요청'}
+          </button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          {loading && !payload ? (
+          {tab === 'moves' ? (
+            <TourReportMoveRequestsPanel locale={locale} compact />
+          ) : loading && !payload ? (
             <div className="flex items-center justify-center py-12 text-sm text-gray-500">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               {isEn ? 'Loading…' : '불러오는 중…'}

@@ -15,6 +15,11 @@ let inFlight: Promise<void> | null = null
 
 const CACHE_MS = 60_000
 const CHUNK = 80
+const LIVE_POLL_MS = 30_000
+
+let liveChannel: ReturnType<typeof supabase.channel> | null = null
+let livePollTimer: ReturnType<typeof setInterval> | number | null = null
+let liveVisibilityBound = false
 
 function notify(id: string, row: WaiverCardSummary | null, loaded: boolean) {
   const set = listeners.get(id)
@@ -172,11 +177,58 @@ function enqueue(ids: string[], force = false) {
   if (queue.size) scheduleFlush()
 }
 
+function reservationIdFromChange(payload: { new?: unknown; old?: unknown }): string | null {
+  const rows = [payload.new, payload.old]
+  for (const raw of rows) {
+    if (!raw || typeof raw !== 'object') continue
+    const id = (raw as { reservation_id?: unknown }).reservation_id
+    if (typeof id === 'string' && id.trim()) return id.trim()
+  }
+  return null
+}
+
+function refreshSubscribedCards() {
+  const ids = [...listeners.keys()]
+  if (ids.length) enqueue(ids, true)
+}
+
+function ensureLiveUpdates() {
+  if (typeof window === 'undefined') return
+
+  if (!liveChannel) {
+    liveChannel = supabase
+      .channel('waiver-card-summaries')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'waiver_acceptances' },
+        (change) => {
+          const reservationId = reservationIdFromChange(change)
+          if (reservationId) invalidateWaiverCardSummary(reservationId)
+        }
+      )
+      .subscribe()
+  }
+
+  if (livePollTimer == null) {
+    livePollTimer = setInterval(() => {
+      refreshSubscribedCards()
+    }, LIVE_POLL_MS)
+  }
+
+  if (!liveVisibilityBound) {
+    liveVisibilityBound = true
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') refreshSubscribedCards()
+    })
+  }
+}
+
 export function prefetchWaiverCardSummaries(reservationIds: string[]) {
   enqueue(reservationIds)
 }
 
 export function subscribeWaiverCardSummary(reservationId: string, cb: Listener): () => void {
+  ensureLiveUpdates()
   const cached = cache.get(reservationId)
   if (cached) cb(cached.row, true)
   else cb(null, false)

@@ -6,7 +6,12 @@ import { WAIVER_DOCUMENT_CATALOG, getGoverningWaiverContent } from '@/lib/waiver
 import { getLiveGoverningWaiverContent, getLiveWaiverContent, loadAllDocumentStatusMap } from '@/lib/waiver/liveContent'
 import { hashWaiverContent } from '@/lib/waiver/hash'
 import { serializeWaiverSnapshot } from '@/lib/waiver/snapshot'
-import { generateWaiverRawToken, hashWaiverToken } from '@/lib/waiver/tokens'
+import {
+  buildStableWaiverSigningToken,
+  generateWaiverRawToken,
+  hashWaiverToken,
+  parseStableWaiverSigningToken,
+} from '@/lib/waiver/tokens'
 import { resolveRequiredWaivers, signingRequiredCodes } from '@/lib/waiver/requiredWaivers'
 import type { RequiredWaiverResolution, WaiverDocumentCode, WaiverLocale } from '@/lib/waiver/types'
 import { isMinorAgeOnTourDate, parsePngBase64, submitWaiverSchema } from '@/lib/waiver/validation'
@@ -155,7 +160,7 @@ export async function ensureInvitationForReservation(reservationId: string, crea
   }
 
   await ensureParticipants(reservationId, invitationId!, guestCountFromReservation(reservation), reservation.customer_id)
-  const url = rawToken ? `${getAppOrigin()}/waiver/${rawToken}` : null
+  const url = `${getAppOrigin()}/waiver/${buildStableWaiverSigningToken(invitationId!)}`
   return { invitationId: invitationId!, rawToken, url }
 }
 
@@ -195,14 +200,29 @@ async function ensureParticipants(
   }
 }
 
+function isActiveInvitation(row: { status: string; expires_at: string | null } | null) {
+  if (!row || row.status !== 'active') return false
+  if (row.expires_at && new Date(row.expires_at).getTime() < Date.now()) return false
+  return true
+}
+
 export async function getInvitationByRawToken(rawToken: string) {
   const tokenHash = hashWaiverToken(rawToken)
-  const { data: invitation } = await fromUntypedTable(db(), 'waiver_invitations')
+  const { data: hashed } = await fromUntypedTable(db(), 'waiver_invitations')
     .select('id, reservation_id, status, expires_at')
     .eq('token_hash', tokenHash)
     .maybeSingle()
-  if (!invitation || invitation.status !== 'active') return null
-  if (invitation.expires_at && new Date(invitation.expires_at).getTime() < Date.now()) return null
+  if (isActiveInvitation(hashed)) {
+    return hashed as { id: string; reservation_id: string; status: string; expires_at: string | null }
+  }
+
+  const invitationId = parseStableWaiverSigningToken(rawToken)
+  if (!invitationId) return null
+  const { data: invitation } = await fromUntypedTable(db(), 'waiver_invitations')
+    .select('id, reservation_id, status, expires_at')
+    .eq('id', invitationId)
+    .maybeSingle()
+  if (!isActiveInvitation(invitation)) return null
   return invitation as { id: string; reservation_id: string; status: string; expires_at: string | null }
 }
 
