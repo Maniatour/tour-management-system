@@ -38,3 +38,12 @@ export function isNolTripleChannelName(name: string | null | undefined): boolean
   if (!n) return false
   return /NOL\s*\(\s*트리플\s*\)/i.test(n) || (/NOL/i.test(n) && /트리플/.test(n))
 }
+
+/** channels.name 이 마이리얼트립인지 (My Real Trip / myrealtrip / 마이리얼트립) */
+export function isMyrealtripChannelName(name: string | null | undefined): boolean {
+  const n = (name || '').trim()
+  if (!n) return false
+  if (/마이\s*리얼\s*트립/.test(n) || /마이리얼트립/.test(n)) return true
+  const compact = n.toLowerCase().replace(/[\s\-_.]+/g, '')
+  return compact.includes('myrealtrip')
+}

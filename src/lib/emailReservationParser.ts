@@ -214,14 +214,18 @@ export function isTidesquareNewBookingEmailSubject(subject: string | null | unde
 /**
  * 마이리얼트립 신규·대기 예약 알림 제목
  * 예: [확정대기] 2026-04-21 / 라스베가스 > 그랜드캐년 일출+앤텔롭캐년+…
+ * 예: 새로운 예약이 들어왔어요.
  */
 export function isMyrealtripNewBookingEmailSubject(subject: string | null | undefined): boolean {
-  return /^\[확정대기\]\s*\d{4}-\d{2}-\d{2}\s*\//.test((subject ?? '').trim())
+  const s = (subject ?? '').trim()
+  if (!s) return false
+  return /^\[확정대기\]\s*\d{4}-\d{2}-\d{2}\s*\//.test(s) || /새로운\s*예약이\s*들어왔/.test(s)
 }
 
-/** 발신에 myrealtrip 이 포함되면 마이리얼트립 채널 메일로 간주 */
+/** 발신 표시명·주소에 myrealtrip / 마이리얼트립이 있으면 마이리얼트립 채널 메일로 간주 */
 export function isMyrealtripChannelFromEmail(sourceEmail: string | null | undefined): boolean {
-  return /myrealtrip/i.test(sourceEmail ?? '')
+  const from = sourceEmail ?? ''
+  return /myrealtrip/i.test(from) || /마이리얼트립/.test(from)
 }
 
 /**
@@ -303,7 +307,9 @@ function trimOtaGuestNameCapture(value: string): string {
 function detectPlatform(sourceEmail: string | null, subject: string): string | null {
   if (isManiatourHomepageBookingEmail(sourceEmail, subject)) return 'maniatour'
   if (isTidesquareChannelEmailSubject(subject)) return 'tidesquare'
-  if (isMyrealtripNewBookingEmailSubject(subject)) return 'myrealtrip'
+  if (isMyrealtripNewBookingEmailSubject(subject) || isMyrealtripChannelFromEmail(sourceEmail)) {
+    return 'myrealtrip'
+  }
   if (isZoomZoomTourNewBookingEmailSubject(subject)) return 'zoomzoom'
   if (isNolTripleNewBookingEmailSubject(subject) || isNolTripleChannelFromEmail(sourceEmail)) return 'nol'
   const from = (sourceEmail || '').toLowerCase()
@@ -2125,6 +2131,51 @@ function extractTidesquare(_text: string, subject: string): Partial<ExtractedRes
   return out
 }
 
+/** 마이리얼트립 HTML: 테이블/블록을 줄바꿈으로 바꿔 레이블-값 구분이 되도록 함 */
+function toPlainTextMyrealtrip(html: string): string {
+  let s = html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+  s = s
+    .replace(/<\/(?:tr|td|div|p|th|h[1-6]|li)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+  s = s
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+  return s.replace(/[ \t]+/g, ' ').replace(/\n\s+/g, '\n').replace(/\s+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+const MYREALTRIP_NEXT_FIELD =
+  '예약번호|상품명|옵션명|여행일|여행자|주문정보|예약이|취소하기|확정하기'
+
+/** 마이리얼트립 주문정보 레이블 값. 탭·콜론·공백·다음 줄·한 줄 HTML 모두 허용 */
+function myrealtripLabeledValue(text: string, label: string): string | null {
+  const t = (text || '').replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ')
+  const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const m =
+    t.match(new RegExp(`${esc}\\s*[：:]\\s*([^\\n]+)`)) ||
+    t.match(new RegExp(`${esc}[\\t ]+([^\\n]+)`)) ||
+    t.match(new RegExp(`${esc}\\s*\\n+\\s*([^\\n]+)`))
+  if (!m?.[1]) return null
+  let v = m[1].trim().replace(/\s+/g, ' ')
+  v = v.replace(new RegExp(`\\s+(?:${MYREALTRIP_NEXT_FIELD})\\b.*$`), '').trim()
+  return v || null
+}
+
+function clipMyrealtripTravelerName(raw: string): string {
+  let s = raw.trim().replace(/\s+/g, ' ')
+  s = s.replace(new RegExp(`\\s+(?:${MYREALTRIP_NEXT_FIELD})\\b.*$`), '').trim()
+  const hangul = s.match(/^[가-힣]{2,8}(?:\s+[가-힣]{1,8}){0,3}/)
+  if (hangul) return hangul[0].trim()
+  const latin = s.match(/^[A-Za-z][A-Za-z\s'.-]{1,40}/)
+  if (latin) return latin[0].trim()
+  return s.slice(0, 80).trim()
+}
+
 /** 마이리얼트립 본문/제목에서 상품·고객명 매핑 (상품명 탭 행, 여행자, [확정대기] 제목) */
 function extractMyrealtrip(text: string, subject: string): Partial<ExtractedReservationData> {
   const out: Partial<ExtractedReservationData> = {}
@@ -2148,24 +2199,28 @@ function extractMyrealtrip(text: string, subject: string): Partial<ExtractedRese
     }
   }
 
-  // 본문: "상품명\t…" 또는 "상품명：…"
-  const productM = t.match(/상품명\s*[：:\t]\s*([^\n]+)/)
-  if (productM?.[1]) applySunriseProductFromTitle(productM[1].trim())
+  const productLine = myrealtripLabeledValue(t, '상품명')
+  if (productLine) applySunriseProductFromTitle(productLine)
 
-  // 본문: "여행자\t최윤선" 등 (한글 이름)
-  let travelerLine: string | null = null
-  const travelerM = t.match(/여행자\s*[：:\t]\s*([^\n]+)/)
-  if (travelerM?.[1]) travelerLine = travelerM[1].trim()
-  else {
-    const travelerNext = t.match(/여행자\s*\n+\s*([^\n]+)/)
-    if (travelerNext?.[1]) travelerLine = travelerNext[1].trim()
+  const travelerLine = myrealtripLabeledValue(t, '여행자')
+  if (travelerLine) {
+    const name = clipMyrealtripTravelerName(travelerLine)
+    if (name && !isGarbageImportedCustomerName(name)) out.customer_name = name
   }
-  if (travelerLine && !isGarbageImportedCustomerName(travelerLine)) {
-    out.customer_name = travelerLine.replace(/\s+/g, ' ')
+
+  const rn = myrealtripLabeledValue(t, '예약번호')
+  if (rn) {
+    const token = rn.match(/[A-Za-z0-9][A-Za-z0-9_-]{3,39}/)
+    if (token?.[0]) out.channel_rn = token[0]
   }
 
   const dateM = sub.match(/^\[확정대기\]\s*(\d{4}-\d{2}-\d{2})\s*\//)
   if (dateM?.[1]) out.tour_date = dateM[1]
+  if (!out.tour_date) {
+    const travelDates = myrealtripLabeledValue(t, '여행일')
+    const ymd = travelDates?.match(/\b(20\d{2}-\d{2}-\d{2})\b/)
+    if (ymd?.[1]) out.tour_date = ymd[1]
+  }
 
   // 제목 폴백: 본문에 상품명 없을 때만
   if (!out.product_name && !out.product_id) {
@@ -2529,7 +2584,7 @@ const CHANNEL_PARSERS: Record<string, ChannelParserConfig> = {
     extract: (text, subject) => extractTidesquare(text, subject),
   },
   myrealtrip: {
-    preprocess: toPlainText,
+    preprocess: toPlainTextMyrealtrip,
     extract: (text, subject) => extractMyrealtrip(text, subject),
   },
   tripcom: {
@@ -2624,7 +2679,9 @@ export function extractReservationFromEmail(options: {
         ? ['tour_date']
         : platform_key === 'nol'
           ? ['tour_time', 'customer_email']
-          : []
+          : platform_key === 'myrealtrip'
+            ? ['customer_email', 'customer_phone']
+            : []
   const commonForMerge: Partial<ExtractedReservationData> = omitCommonKeys.length
     ? (Object.fromEntries(
         Object.entries(common).filter(([k]) => !omitCommonKeys.includes(k))
@@ -2705,8 +2762,14 @@ export function extractReservationFromEmail(options: {
   if (platform_key === 'tidesquare' && isTidesquareNewBookingEmailSubject(subject)) {
     merged.is_booking_confirmed = true
   }
-  if (platform_key === 'myrealtrip' && isMyrealtripNewBookingEmailSubject(subject)) {
+  if (
+    platform_key === 'myrealtrip' &&
+    (isMyrealtripNewBookingEmailSubject(subject) || /새로운\s*예약이\s*들어왔/.test(plainText))
+  ) {
     merged.is_booking_confirmed = true
+  }
+  if (platform_key === 'myrealtrip' && merged.customer_email && /@myrealtrip\.com\b/i.test(String(merged.customer_email))) {
+    delete merged.customer_email
   }
   if (platform_key === 'tripcom' && isTripComNewOrderEmailSubject(subject)) {
     merged.is_booking_confirmed = true

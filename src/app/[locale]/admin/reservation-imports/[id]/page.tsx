@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Loader2, Hash, Calendar, Users, User, Mail, Phone, Globe, MapPin, DollarSign, ChevronDown, ChevronUp, FileText, RefreshCw, MessageSquare } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { getChannelIdForPlatform, isNolTripleChannelName } from '@/lib/platformChannelMapping'
+import { getChannelIdForPlatform, isMyrealtripChannelName, isNolTripleChannelName } from '@/lib/platformChannelMapping'
 import {
   isManiatourHomepageBookingEmail,
   isCancellationRequestEmailSubject,
@@ -190,6 +190,7 @@ export default function ReservationImportDetailPage() {
         (effectiveKey === 'nol' &&
           isNolTripleNewBookingEmailSubject(data.subject) &&
           (!ext.product_id || ext.adults == null || !ext.tour_date)) ||
+        (effectiveKey === 'myrealtrip' && (!ext.customer_name || !ext.channel_rn)) ||
         maniatourNeedsPickup ||
         maniatourNeedsIntlPhone ||
         maniatourLowerMisparsedAsX) ||
@@ -226,7 +227,9 @@ export default function ReservationImportDetailPage() {
         ? channelsSafe.find((c: { name?: string }) => /줌줌/.test((c.name || '').trim()))
         : effectiveKeyForChannel === 'nol'
           ? channelsSafe.find((c: { name?: string }) => isNolTripleChannelName(c.name))
-          : null
+          : effectiveKeyForChannel === 'myrealtrip'
+            ? channelsSafe.find((c: { name?: string }) => isMyrealtripChannelName(c.name))
+            : null
     const channelForImport = namedChannelForInitial
       ? namedChannelForInitial
       : mappedChannelId
@@ -236,15 +239,6 @@ export default function ReservationImportDetailPage() {
           : null
     const channelIdFromPlatform = channelForImport ? (channelForImport as { id: string }).id : ''
 
-    const noteParts = [
-      extFinal.note,
-      extFinal.special_requests,
-      extFinal.amount ? `금액: ${extFinal.amount}` : '',
-      extFinal.amount_excluded ? `불포함: ${extFinal.amount_excluded}` : '',
-      extFinal.language ? `언어: ${extFinal.language}` : '',
-      extFinal.product_choices ? `옵션: ${extFinal.product_choices}` : '',
-      extFinal.product_name ? `상품(이메일): ${extFinal.product_name}` : '',
-    ].filter(Boolean)
     setForm((prev) => ({
       ...prev,
       customer_name: normalizeCustomerNameFromImport(extFinal.customer_name) || prev.customer_name,
@@ -259,7 +253,6 @@ export default function ReservationImportDetailPage() {
       channel_id: channelIdFromPlatform || prev.channel_id,
       channel_rn: extFinal.channel_rn ?? prev.channel_rn,
       pickup_hotel: extFinal.pickup_hotel ?? prev.pickup_hotel,
-      event_note: noteParts.join(' · ') || prev.event_note,
       product_id: extFinal.product_id ?? prev.product_id,
     }))
     // channel_id는 channels 목록이 늦게 오는 경우 아래 useEffect에서 보완. channelsList 를 deps에 넣으면
@@ -296,7 +289,9 @@ export default function ReservationImportDetailPage() {
         ? channelsSafe.find((c: { name?: string }) => /줌줌/.test((c.name || '').trim()))
         : effectivePlatformKey === 'nol'
           ? channelsSafe.find((c: { name?: string }) => isNolTripleChannelName(c.name))
-          : undefined
+          : effectivePlatformKey === 'myrealtrip'
+            ? channelsSafe.find((c: { name?: string }) => isMyrealtripChannelName(c.name))
+            : undefined
     const channel = namedChannel
       ? namedChannel
       : mappedId
@@ -919,7 +914,6 @@ export default function ReservationImportDetailPage() {
                 infant: form.infant,
                 total_people: form.total_people || form.adults + form.child + form.infant,
                 pickup_hotel: form.pickup_hotel || undefined,
-                event_note: form.event_note || undefined,
               } as any)
             : null
         }
