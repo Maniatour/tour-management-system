@@ -944,6 +944,13 @@ export default function AdminProducts() {
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
           <Link
+            href={`/${locale}/admin/tag-translations`}
+            className="bg-violet-600 text-white px-3 py-1.5 rounded-md hover:bg-violet-700 flex items-center gap-1.5 text-sm font-medium"
+          >
+            <Tags size={16} />
+            <span>{t('tagTranslationsButton')}</span>
+          </Link>
+          <Link
             href={`/${locale}/admin/products/locale-readiness`}
             className="bg-indigo-600 text-white px-3 py-1.5 rounded-md hover:bg-indigo-700 flex items-center gap-1.5 text-sm font-medium"
           >

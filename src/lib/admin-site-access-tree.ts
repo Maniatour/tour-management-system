@@ -398,6 +398,7 @@ const DOC_SPEC: Record<
   'payment-methods': { readGate: 'canViewAdmin', manage: 'canViewFinance' },
   'expense-payment-method-normalize': { readGate: 'canViewAdmin', manage: 'canViewFinance' },
   'tour-materials': { readGate: 'canViewAdmin', manage: 'canManageTours' },
+  'tour-photos': { readGate: 'canViewAdmin', manage: 'canManageTours' },
   'tour-photo-buckets': { readGate: 'canViewAdmin', manage: 'canManageTours' },
   'data-sync': { readGate: 'canViewAdmin', manage: 'canManageProducts' },
   'weather-records': { readGate: 'canViewAdmin', manage: 'canManageTours' },

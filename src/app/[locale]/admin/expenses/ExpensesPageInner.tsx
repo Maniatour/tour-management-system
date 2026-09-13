@@ -7,7 +7,7 @@ import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import AdminPageContentSkeleton from '@/components/admin/AdminPageContentSkeleton'
 import { useAuth } from '@/contexts/AuthContext'
-import { Receipt, Calendar, Building2, MapPin, Wallet, Settings, Banknote, AlertTriangle, Archive, Package } from 'lucide-react'
+import { Receipt, Calendar, Building2, MapPin, Wallet, Settings, Banknote, AlertTriangle, Archive, Package, Tags, FileSearch, Send } from 'lucide-react'
 
 const PaymentRecordsHistoryTab = dynamic(
   () => import('@/components/expenses/PaymentRecordsHistoryTab'),
@@ -42,6 +42,11 @@ const DeletedUnifiedExpensesModal = dynamic(
   () => import('@/components/reconciliation/DeletedUnifiedExpensesModal'),
   { ssr: false, loading: () => null }
 )
+const QuickPaymentRequestModal = dynamic(
+  () =>
+    import('@/components/customer/QuickPaymentRequestForm').then((m) => m.QuickPaymentRequestModal),
+  { ssr: false, loading: () => null }
+)
 
 type ExpenseTab = 'payments' | 'reservation' | 'options' | 'company' | 'tour' | 'cash'
 
@@ -58,6 +63,7 @@ export default function ExpensesManagementPage() {
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
   const [ledgerDupModalOpen, setLedgerDupModalOpen] = useState(false)
   const [deletedVaultOpen, setDeletedVaultOpen] = useState(false)
+  const [quickPayOpen, setQuickPayOpen] = useState(false)
   const openCompanyLedgerDupRef = useRef<(() => void) | null>(null)
   const registerOpenCompanyLedgerDup = useCallback((fn: (() => void) | null) => {
     openCompanyLedgerDupRef.current = fn
@@ -134,16 +140,30 @@ export default function ExpensesManagementPage() {
             <h1 className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{t('title')}</h1>
           </div>
           <p className="mt-0.5 sm:mt-1 text-xs sm:text-sm text-gray-600 hidden sm:block">{t('subtitle')}</p>
-          <p className="mt-1 text-xs text-gray-500 hidden sm:block">
-            <Link
-              href={`/${locale}/admin/expense-payment-method-normalize`}
-              className="text-primary hover:underline"
-            >
-              {t('linkNormalizePaymentMethods')}
-            </Link>
-          </p>
         </div>
         <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 w-full lg:w-auto min-w-0 max-w-full">
+          <button
+            type="button"
+            onClick={() => setQuickPayOpen(true)}
+            className="flex items-center justify-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-md text-teal-900 text-xs sm:text-sm font-medium"
+          >
+            <Send size={14} className="sm:w-4 sm:h-4 shrink-0" aria-hidden />
+            {t('quickPaymentButton')}
+          </button>
+          <Link
+            href={`/${locale}/admin/company-expense-paid-for-labels`}
+            className="flex items-center justify-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md text-slate-800 text-xs sm:text-sm font-medium"
+          >
+            <Tags size={14} className="sm:w-4 sm:h-4 shrink-0" aria-hidden />
+            {t('paidForLabelsButton')}
+          </Link>
+          <Link
+            href={`/${locale}/admin/receipt-ocr-parse-rules`}
+            className="flex items-center justify-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md text-slate-800 text-xs sm:text-sm font-medium"
+          >
+            <FileSearch size={14} className="sm:w-4 sm:h-4 shrink-0" aria-hidden />
+            {t('ocrRulesButton')}
+          </Link>
           <button
             type="button"
             onClick={openLedgerDuplicateCheck}
@@ -279,6 +299,13 @@ export default function ExpensesManagementPage() {
         createdByEmail={user?.email ?? null}
       />
       <DeletedUnifiedExpensesModal open={deletedVaultOpen} onOpenChange={setDeletedVaultOpen} />
+      {quickPayOpen ? (
+        <QuickPaymentRequestModal
+          open={quickPayOpen}
+          onClose={() => setQuickPayOpen(false)}
+          locale={locale.startsWith('en') ? 'en' : 'ko'}
+        />
+      ) : null}
     </div>
   )
 }

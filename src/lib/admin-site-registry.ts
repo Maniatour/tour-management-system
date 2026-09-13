@@ -19,6 +19,7 @@ import {
   FileSearch,
   Globe,
   History,
+  Images,
   Landmark,
   LayoutGrid,
   LayoutTemplate,
@@ -115,9 +116,13 @@ export type AdminSidebarRegistryEntry = {
   visibility: AdminNavVisibility
   /**
    * 설정 시 최상위 플랫 목록에서 제외되고, 해당 그룹 패널(하위 메뉴)에만 표시.
-   * 예: operator-b
    */
   groupId?: string
+  /**
+   * 사이드바·그룹 패널에서 숨김. 페이지 URL·권한 트리는 유지.
+   * 부모 페이지 버튼/모달로만 진입하는 설정성 도구에 사용.
+   */
+  hiddenFromNav?: boolean
   /** Phase 6a: hide when active operator modules.operations !== true */
   requiresOperationsModule?: boolean
 }
@@ -125,6 +130,8 @@ export type AdminSidebarRegistryEntry = {
 export type AdminSidebarGroupEntry = {
   id: string
   sidebarTranslationKey: string
+  /** `useTranslations('sidebar')` 그룹 패널 안내 문구 */
+  panelHintKey: string
   icon: LucideIcon
   /** 그룹 버튼 자체 노출 조건 (자식 중 하나라도 보이면 표시하는 쪽이 우선) */
   visibility: AdminNavVisibility
@@ -134,11 +141,85 @@ export type AdminSidebarGroupEntry = {
 /** 사이드바 그룹(클릭 시 하위 메뉴 패널) */
 export const ADMIN_SIDEBAR_GROUPS: readonly AdminSidebarGroupEntry[] = [
   {
-    id: 'operator-b',
-    sidebarTranslationKey: 'operatorB',
-    icon: Building2,
-    visibility: { type: 'admin_or_manager' },
-    childIds: ['operator-b-manual', 'operators', 'commerce-ota-mappings'],
+    id: 'products',
+    sidebarTranslationKey: 'groupProducts',
+    panelHintKey: 'groupProductsHint',
+    icon: BookOpen,
+    visibility: { type: 'always' },
+    childIds: ['products', 'options', 'tour-courses', 'content-library', 'customer-pages', 'google-reviews'],
+  },
+  {
+    id: 'sales',
+    sidebarTranslationKey: 'groupSales',
+    panelHintKey: 'groupSalesHint',
+    icon: Share2,
+    visibility: { type: 'always' },
+    childIds: ['channels', 'coupons', 'operator-b-manual', 'operators', 'commerce-ota-mappings'],
+  },
+  {
+    id: 'operations',
+    sidebarTranslationKey: 'groupOperations',
+    panelHintKey: 'groupOperationsHint',
+    icon: ClipboardList,
+    visibility: { type: 'always' },
+    childIds: [
+      'operations-hub',
+      'pickup-hotels',
+      'hotels',
+      'vehicles',
+      'vehicle-maintenance',
+      'waivers',
+      'tour-materials',
+      'tour-photos',
+      'weather-records',
+      'tour-cost-calculator',
+    ],
+  },
+  {
+    id: 'team',
+    sidebarTranslationKey: 'groupTeam',
+    panelHintKey: 'groupTeamHint',
+    icon: Users,
+    visibility: { type: 'always' },
+    childIds: ['team', 'attendance', 'team-chat', 'guide-costs', 'documents', 'sop'],
+  },
+  {
+    id: 'suppliers',
+    sidebarTranslationKey: 'groupSuppliers',
+    panelHintKey: 'groupSuppliersHint',
+    icon: Truck,
+    visibility: { type: 'always' },
+    childIds: ['suppliers', 'suppliers-settlement'],
+  },
+  {
+    id: 'finance',
+    sidebarTranslationKey: 'groupFinance',
+    panelHintKey: 'groupFinanceHint',
+    icon: DollarSign,
+    visibility: { type: 'always' },
+    childIds: [
+      'expenses',
+      'payment-methods',
+      'reservations-statistics',
+      'statement-reconciliation',
+      'partner-funds',
+    ],
+  },
+  {
+    id: 'data',
+    sidebarTranslationKey: 'groupData',
+    panelHintKey: 'groupDataHint',
+    icon: FileSpreadsheet,
+    visibility: { type: 'always' },
+    childIds: ['reservation-imports', 'data-sync', 'data-review', 'audit-logs'],
+  },
+  {
+    id: 'system',
+    sidebarTranslationKey: 'groupSystem',
+    panelHintKey: 'groupSystemHint',
+    icon: Settings,
+    visibility: { type: 'always' },
+    childIds: ['site-directory', 'dev-tools'],
   },
 ]
 
@@ -147,21 +228,23 @@ export const ADMIN_SIDEBAR_GROUPS: readonly AdminSidebarGroupEntry[] = [
  * 표시 조건을 바꿀 때는 여기와 `AdminSidebarAndHeader`의 Super/Manager 조회 로직을 함께 맞출 것.
  */
 export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
-  { id: 'reservation-imports', path: 'reservation-imports', sidebarTranslationKey: 'reservationImports', icon: Mail, visibility: { type: 'always' } },
+  { id: 'reservation-imports', path: 'reservation-imports', sidebarTranslationKey: 'reservationImports', icon: Mail, visibility: { type: 'always' }, groupId: 'data' },
   {
     id: 'customer-pages',
     path: 'customer-pages',
     sidebarTranslationKey: 'customerPages',
     icon: LayoutTemplate,
     visibility: { type: 'admin_or_manager' },
+    groupId: 'products',
   },
-  { id: 'products', path: 'products', sidebarTranslationKey: 'products', icon: BookOpen, visibility: { type: 'always' } },
+  { id: 'products', path: 'products', sidebarTranslationKey: 'products', icon: BookOpen, visibility: { type: 'always' }, groupId: 'products' },
   {
     id: 'content-library',
     path: 'content-library',
     sidebarTranslationKey: 'contentLibrary',
     icon: Library,
     visibility: { type: 'always' },
+    groupId: 'products',
   },
   {
     id: 'google-reviews',
@@ -169,9 +252,10 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     sidebarTranslationKey: 'googleReviews',
     icon: Star,
     visibility: { type: 'admin_or_manager' },
+    groupId: 'products',
   },
-  { id: 'options', path: 'options', sidebarTranslationKey: 'options', icon: Settings, visibility: { type: 'always' } },
-  { id: 'tour-courses', path: 'tour-courses', sidebarTranslationKey: 'courses', icon: Globe, visibility: { type: 'always' } },
+  { id: 'options', path: 'options', sidebarTranslationKey: 'options', icon: Settings, visibility: { type: 'always' }, groupId: 'products' },
+  { id: 'tour-courses', path: 'tour-courses', sidebarTranslationKey: 'courses', icon: Globe, visibility: { type: 'always' }, groupId: 'products' },
   {
     id: 'tour-cost-calculator',
     path: 'tour-cost-calculator',
@@ -179,15 +263,16 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: TrendingUp,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'operations',
   },
-  { id: 'channels', path: 'channels', sidebarTranslationKey: 'channels', icon: Settings, visibility: { type: 'always' } },
+  { id: 'channels', path: 'channels', sidebarTranslationKey: 'channels', icon: Settings, visibility: { type: 'always' }, groupId: 'sales' },
   {
     id: 'operator-b-manual',
     path: 'operator-b/manual',
     sidebarTranslationKey: 'operatorBManual',
     icon: BookMarked,
     visibility: { type: 'admin_or_manager' },
-    groupId: 'operator-b',
+    groupId: 'sales',
   },
   {
     id: 'operators',
@@ -195,7 +280,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     sidebarTranslationKey: 'operators',
     icon: Building2,
     visibility: { type: 'super_only' },
-    groupId: 'operator-b',
+    groupId: 'sales',
   },
   {
     id: 'commerce-ota-mappings',
@@ -203,11 +288,11 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     sidebarTranslationKey: 'otaDistribution',
     icon: Share2,
     visibility: { type: 'admin_or_manager' },
-    groupId: 'operator-b',
+    groupId: 'sales',
   },
-  { id: 'coupons', path: 'coupons', sidebarTranslationKey: 'coupons', icon: Ticket, visibility: { type: 'always' } },
-  { id: 'tag-translations', path: 'tag-translations', sidebarTranslationKey: 'tagTranslationManagement', icon: Tag, visibility: { type: 'always' } },
-  { id: 'pickup-hotels', path: 'pickup-hotels', sidebarTranslationKey: 'pickupHotels', icon: Building, visibility: { type: 'always' } },
+  { id: 'coupons', path: 'coupons', sidebarTranslationKey: 'coupons', icon: Ticket, visibility: { type: 'always' }, groupId: 'sales' },
+  { id: 'tag-translations', path: 'tag-translations', sidebarTranslationKey: 'tagTranslationManagement', icon: Tag, visibility: { type: 'always' }, hiddenFromNav: true },
+  { id: 'pickup-hotels', path: 'pickup-hotels', sidebarTranslationKey: 'pickupHotels', icon: Building, visibility: { type: 'always' }, groupId: 'operations' },
   {
     id: 'hotels',
     path: 'hotels',
@@ -215,6 +300,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: BedDouble,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'operations',
   },
   {
     id: 'vehicles',
@@ -223,6 +309,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: Car,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'operations',
   },
   {
     id: 'vehicle-maintenance',
@@ -231,6 +318,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: Wrench,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'operations',
   },
   {
     id: 'team',
@@ -239,6 +327,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: Users,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'team',
   },
   {
     id: 'attendance',
@@ -247,6 +336,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: Clock,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'team',
   },
   {
     id: 'team-chat',
@@ -255,6 +345,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: MessageCircle,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'team',
   },
   {
     id: 'guide-costs',
@@ -263,6 +354,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: Calculator,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'team',
   },
   {
     id: 'documents',
@@ -271,6 +363,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: FileText,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'team',
   },
   {
     id: 'operations-hub',
@@ -279,6 +372,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: ClipboardList,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'operations',
   },
   {
     id: 'sop',
@@ -287,6 +381,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: FileCheck,
     visibility: { type: 'admin_or_manager' },
     requiresOperationsModule: true,
+    groupId: 'team',
   },
   {
     id: 'waivers',
@@ -295,6 +390,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: FileSignature,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'operations',
   },
   {
     id: 'suppliers',
@@ -303,6 +399,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: Truck,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'suppliers',
   },
   {
     id: 'suppliers-settlement',
@@ -311,9 +408,24 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: DollarSign,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'suppliers',
   },
-  { id: 'reservations-statistics', path: 'reservations/statistics', sidebarTranslationKey: 'reservationStats', icon: BarChart3, visibility: { type: 'reservation_statistics' } },
-  { id: 'statement-reconciliation', path: 'statement-reconciliation', sidebarTranslationKey: 'statementReconciliation', icon: Landmark, visibility: { type: 'super_only' } },
+  {
+    id: 'reservations-statistics',
+    path: 'reservations/statistics',
+    sidebarTranslationKey: 'reservationStats',
+    icon: BarChart3,
+    visibility: { type: 'reservation_statistics' },
+    groupId: 'finance',
+  },
+  {
+    id: 'statement-reconciliation',
+    path: 'statement-reconciliation',
+    sidebarTranslationKey: 'statementReconciliation',
+    icon: Landmark,
+    visibility: { type: 'super_only' },
+    groupId: 'finance',
+  },
   {
     id: 'expenses',
     path: 'expenses',
@@ -321,6 +433,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: DollarSign,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'finance',
   },
   {
     id: 'company-expense-paid-for-labels',
@@ -329,6 +442,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: Tags,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    hiddenFromNav: true,
   },
   {
     id: 'partner-funds',
@@ -337,6 +451,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: Users,
     visibility: { type: 'email_allowlist', emailsLower: ['info@maniatour.com'] },
     requiresOperationsModule: true,
+    groupId: 'finance',
   },
   {
     id: 'quick-payment',
@@ -344,6 +459,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     sidebarTranslationKey: 'quickPaymentRequest',
     icon: Send,
     visibility: { type: 'always' },
+    hiddenFromNav: true,
   },
   {
     id: 'payment-methods',
@@ -352,6 +468,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: CreditCard,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'finance',
   },
   {
     id: 'expense-payment-method-normalize',
@@ -360,6 +477,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: Replace,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    hiddenFromNav: true,
   },
   {
     id: 'receipt-ocr-parse-rules',
@@ -368,6 +486,7 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: FileSearch,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    hiddenFromNav: true,
   },
   {
     id: 'tour-materials',
@@ -376,6 +495,16 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: FileText,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'operations',
+  },
+  {
+    id: 'tour-photos',
+    path: 'tour-photos',
+    sidebarTranslationKey: 'tourPhotos',
+    icon: Images,
+    visibility: { type: 'always' },
+    requiresOperationsModule: true,
+    groupId: 'operations',
   },
   {
     id: 'tour-photo-buckets',
@@ -384,8 +513,9 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: Camera,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    hiddenFromNav: true,
   },
-  { id: 'data-sync', path: 'data-sync', sidebarTranslationKey: 'dataSync', icon: FileSpreadsheet, visibility: { type: 'always' } },
+  { id: 'data-sync', path: 'data-sync', sidebarTranslationKey: 'dataSync', icon: FileSpreadsheet, visibility: { type: 'always' }, groupId: 'data' },
   {
     id: 'weather-records',
     path: 'weather-records',
@@ -393,11 +523,12 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     icon: Cloud,
     visibility: { type: 'always' },
     requiresOperationsModule: true,
+    groupId: 'operations',
   },
-  { id: 'data-review', path: 'data-review', sidebarTranslationKey: 'dataReview', icon: FileCheck, visibility: { type: 'always' } },
-  { id: 'audit-logs', path: 'audit-logs', sidebarTranslationKey: 'auditLogs', icon: History, visibility: { type: 'always' } },
-  { id: 'site-directory', path: 'site-directory', sidebarTranslationKey: 'siteDirectory', icon: LayoutGrid, visibility: { type: 'always' } },
-  { id: 'dev-tools', path: 'dev-tools', sidebarTranslationKey: 'developerTools', icon: Settings, visibility: { type: 'dev_tools' } },
+  { id: 'data-review', path: 'data-review', sidebarTranslationKey: 'dataReview', icon: FileCheck, visibility: { type: 'always' }, groupId: 'data' },
+  { id: 'audit-logs', path: 'audit-logs', sidebarTranslationKey: 'auditLogs', icon: History, visibility: { type: 'always' }, groupId: 'data' },
+  { id: 'site-directory', path: 'site-directory', sidebarTranslationKey: 'siteDirectory', icon: LayoutGrid, visibility: { type: 'always' }, groupId: 'system' },
+  { id: 'dev-tools', path: 'dev-tools', sidebarTranslationKey: 'developerTools', icon: Settings, visibility: { type: 'dev_tools' }, groupId: 'system' },
 ]
 
 export type AdminHeaderQuickEntry = {
@@ -491,6 +622,7 @@ export type BuiltAdminNavItem = {
 export type BuiltAdminNavGroup = {
   id: string
   name: string
+  hint: string
   icon: LucideIcon
   children: BuiltAdminNavItem[]
 }
@@ -512,7 +644,7 @@ export function buildAdminSidebarNavigation(
 ): BuiltAdminNavItem[] {
   const base = `/${locale}/admin`
   return ADMIN_SIDEBAR_REGISTRY.filter((e) => {
-    if (e.groupId) return false
+    if (e.groupId || e.hiddenFromNav) return false
     return isSidebarEntryVisible(e, ctx)
   }).map((e) => ({
     id: e.id,
@@ -522,7 +654,7 @@ export function buildAdminSidebarNavigation(
   }))
 }
 
-/** Operator B 등 — 최상위 버튼 + 패널용 하위 메뉴 */
+/** 폴더형 상위 메뉴 — 최상위 버튼 + 패널용 하위 메뉴 */
 export function buildAdminSidebarGroups(
   locale: string,
   tSidebar: (key: string) => string,
@@ -535,7 +667,7 @@ export function buildAdminSidebarGroups(
     const children = group.childIds
       .map((id) => byId.get(id))
       .filter((e): e is AdminSidebarRegistryEntry => !!e)
-      .filter((e) => isSidebarEntryVisible(e, ctx))
+      .filter((e) => !e.hiddenFromNav && isSidebarEntryVisible(e, ctx))
       .map((e) => ({
         id: e.id,
         name: tSidebar(e.sidebarTranslationKey),
@@ -548,10 +680,24 @@ export function buildAdminSidebarGroups(
     return {
       id: group.id,
       name: tSidebar(group.sidebarTranslationKey),
+      hint: tSidebar(group.panelHintKey),
       icon: group.icon,
       children,
     }
   }).filter((g): g is BuiltAdminNavGroup => g != null)
+}
+
+export function flattenAdminSidebarGroupItems(groups: BuiltAdminNavGroup[]): BuiltAdminNavItem[] {
+  const seen = new Set<string>()
+  const items: BuiltAdminNavItem[] = []
+  for (const group of groups) {
+    for (const child of group.children) {
+      if (seen.has(child.id)) continue
+      seen.add(child.id)
+      items.push(child)
+    }
+  }
+  return items
 }
 
 /** 헤더 데스크톱 빠른 이동 — 가시성 + site_access 패치 읽기 */

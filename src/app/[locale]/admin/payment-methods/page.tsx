@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import PaymentMethodManager from '@/components/PaymentMethodManager'
 import { 
   CreditCard, 
@@ -31,6 +32,8 @@ interface PaymentMethodStats {
 
 export default function PaymentMethodsPage() {
   const searchParams = useSearchParams()
+  const params = useParams()
+  const locale = typeof params?.locale === 'string' ? params.locale : 'ko'
   const filterUserEmail = searchParams.get('user_email')?.trim() || undefined
   const [stats, setStats] = useState<PaymentMethodStats>({
     total: 0,
@@ -152,13 +155,23 @@ export default function PaymentMethodsPage() {
     <div className="p-3 sm:p-4 lg:p-6 w-full">
       {/* 헤더 - 모바일 컴팩트 */}
       <div className="mb-4 sm:mb-6 lg:mb-8">
-        <div className="flex items-center gap-2 sm:gap-3 mb-1 sm:mb-2">
-          <CreditCard className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
-          <h1 className="text-lg sm:text-2xl font-bold text-gray-900">결제 방법 관리</h1>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2 sm:gap-3 mb-1 sm:mb-2">
+              <CreditCard className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
+              <h1 className="text-lg sm:text-2xl font-bold text-gray-900">결제 방법 관리</h1>
+            </div>
+            <p className="text-gray-600 text-xs sm:text-sm hidden sm:block">
+              직원 카드 및 결제 방법을 관리하고 사용량을 추적할 수 있습니다.
+            </p>
+          </div>
+          <Link
+            href={`/${locale}/admin/expense-payment-method-normalize`}
+            className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-100"
+          >
+            결제 방법 정규화
+          </Link>
         </div>
-        <p className="text-gray-600 text-xs sm:text-sm hidden sm:block">
-          직원 카드 및 결제 방법을 관리하고 사용량을 추적할 수 있습니다.
-        </p>
       </div>
 
       {/* 통계 카드 - 모바일 2x2 컴팩트 */}

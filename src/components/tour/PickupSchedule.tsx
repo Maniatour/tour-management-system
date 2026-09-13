@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, type ReactNode } from 'react'
 import { ChevronDown, ChevronUp, MapPin, Map, Users, Home, Plane, PlaneTakeoff, HelpCircle, X, Sparkles, Mail } from 'lucide-react'
 import { FaEnvelope, FaEye, FaCheckCircle, FaExclamationCircle, FaTimesCircle, FaPaperPlane } from 'react-icons/fa'
 import { useTranslations, useLocale } from 'next-intl'
@@ -54,6 +54,11 @@ interface PickupScheduleProps {
   getCustomerName: (customerId: string) => string
   getCustomerLanguage?: (customerId: string) => string
   openGoogleMaps: (link: string) => void
+  /** 투어 채팅 등에서 호텔 카드에 추가 액션(맵 복사·안내 전송) */
+  renderHotelExtraActions?: (ctx: {
+    hotelId: string
+    hotelInfo: PickupScheduleProps['pickupHotels'][number] | undefined
+  }) => ReactNode
   /** 투어 상품이 거주 상태 UI 대상일 때만 예약 행에 거주 아이콘·조회 */
   residentStatusIndicatorsEnabled?: boolean
   /** @deprecated 프리셋 선택으로 대체 */
@@ -86,6 +91,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
   getCustomerName,
   getCustomerLanguage,
   openGoogleMaps,
+  renderHotelExtraActions,
   residentStatusIndicatorsEnabled = false,
   useRepresentativePickup = false,
   onUseRepresentativePickupChange: _onUseRepresentativePickupChange,
@@ -668,6 +674,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
               )}
             </div>
           </div>
+          {renderHotelExtraActions?.({ hotelId: pickupHotelId, hotelInfo })}
           {hotelInfo && cardMode !== 'representative' && hotelInfo.pick_up_location && (
             <div className={`${chrome.bodyMuted} mb-2 truncate`} title={hotelInfo.pick_up_location}>
               {hotelInfo.pick_up_location}

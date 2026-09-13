@@ -752,7 +752,8 @@ const GYG_GENERIC_AUTHORS = new Set([
 
 const GYG_BODY_PRODUCT_MAP: Array<{ pattern: RegExp; productId: string; productName: string }> = [
   {
-    pattern: /Zion\s*Bryce\s*Grand\s*Canyon|Las\s*Vegas\s*>\s*Zion\s*Bryce|Zion\s*Bryce\s*&?\s*Antelope/i,
+    pattern:
+      /Zion[,\s]+Bryce[,\s]+Grand\s*Canyon|Las\s*Vegas\s*[:>]\s*Zion[,\s]+Bryce|Zion[,\s]+Bryce[\s,&]*Antelope|Zion[,\s]+Bryce.{0,80}2[\s-]*Day/i,
     productId: 'MNGC1N',
     productName: '그랜드서클 1박 2일 투어',
   },

@@ -1,12 +1,16 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Send, ImageIcon, Smile, MapPin, X } from 'lucide-react'
 import type { SupportedLanguage } from '@/lib/translation'
 import {
   TOUR_CHAT_IMAGE_ACCEPT,
   filesFromClipboardOrDrop,
+  snapshotChatImageFiles,
 } from '@/lib/tourChatImage'
+import ChatPendingImagePreview, {
+  type PendingChatImage,
+} from '@/components/chat/ChatPendingImagePreview'
 
 interface MessageInputProps {
   newMessage: string
@@ -20,7 +24,7 @@ interface MessageInputProps {
   onSendMessage: () => void
   onImageUpload: (files: File[]) => void
   onShareLocation: () => void
-  fileInputRef: React.RefObject<HTMLInputElement>
+  fileInputRef: React.RefObject<HTMLInputElement | null>
 }
 
 export default function MessageInput({
@@ -39,40 +43,88 @@ export default function MessageInput({
 }: MessageInputProps) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([])
+  const pendingImagesRef = useRef<PendingChatImage[]>([])
 
   const emojis = ['😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄', '😯', '😦', '😧', '😮', '😲', '🥱', '😴', '🤤', '😪', '😵', '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑', '🤠', '😈', '👿', '👹', '👺', '🤡', '💩', '👻', '💀', '☠️', '👽', '👾', '🤖', '🎃', '😺', '😸', '😹', '😻', '😼', '😽', '🙀', '😿', '😾']
 
   const busy = sending || uploading || gettingLocation
   const isKo = selectedLanguage === 'ko'
+  const canSend = pendingImages.length > 0 || Boolean(newMessage.trim())
 
-  const handleImageFiles = (files: File[]) => {
+  useEffect(() => {
+    pendingImagesRef.current = pendingImages
+  }, [pendingImages])
+
+  useEffect(() => {
+    return () => {
+      pendingImagesRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl))
+    }
+  }, [])
+
+  const queueImageFiles = async (files: File[]) => {
     if (busy || files.length === 0) return
-    onImageUpload(files)
+    const snapped = await snapshotChatImageFiles(files)
+    if (snapped.length === 0) return
+    setPendingImages((prev) => [
+      ...prev,
+      ...snapped.map((file) => ({
+        id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+      })),
+    ])
+  }
+
+  const removePendingImage = (id: string) => {
+    setPendingImages((prev) => {
+      const target = prev.find((item) => item.id === id)
+      if (target) URL.revokeObjectURL(target.previewUrl)
+      return prev.filter((item) => item.id !== id)
+    })
+  }
+
+  const handleSend = () => {
+    if (busy || !canSend) return
+    if (pendingImages.length > 0) {
+      const files = pendingImages.map((item) => item.file)
+      pendingImages.forEach((item) => URL.revokeObjectURL(item.previewUrl))
+      setPendingImages([])
+      onImageUpload(files)
+      return
+    }
+    onSendMessage()
   }
 
   const handlePaste = (e: React.ClipboardEvent) => {
     const files = filesFromClipboardOrDrop(e.clipboardData)
     if (files.length === 0) return
     e.preventDefault()
-    handleImageFiles(files)
+    void queueImageFiles(files)
   }
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
     if (busy) return
-    handleImageFiles(filesFromClipboardOrDrop(e.dataTransfer))
+    void queueImageFiles(filesFromClipboardOrDrop(e.dataTransfer))
   }
 
   if (!roomActive) return null
 
   return (
     <div className={`${isPublicView ? 'p-2 lg:p-4' : 'p-2 lg:p-4 border-t bg-white bg-opacity-90 backdrop-blur-sm shadow-lg'} flex-shrink-0 relative`}>
+      <ChatPendingImagePreview
+        items={pendingImages}
+        disabled={busy}
+        isKo={isKo}
+        onRemove={removePendingImage}
+      />
       <form
         autoComplete="off"
         onSubmit={(e) => {
           e.preventDefault()
-          onSendMessage()
+          handleSend()
         }}
         onPaste={handlePaste}
         onDragEnter={(e) => {
@@ -96,7 +148,7 @@ export default function MessageInput({
       >
         {isDragging && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-primary/50 bg-white/80 text-sm font-medium text-primary">
-            {isKo ? '이미지를 놓아서 보내기' : 'Drop image to send'}
+            {isKo ? '이미지를 놓아서 첨부' : 'Drop image to attach'}
           </div>
         )}
 
@@ -106,8 +158,8 @@ export default function MessageInput({
           onClick={() => fileInputRef.current?.click()}
           disabled={busy}
           className="flex-shrink-0 p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          title={isKo ? '사진·스크린샷 보내기' : 'Send photo or screenshot'}
-          aria-label={isKo ? '사진·스크린샷 보내기' : 'Send photo or screenshot'}
+          title={isKo ? '사진·스크린샷 첨부' : 'Attach photo or screenshot'}
+          aria-label={isKo ? '사진·스크린샷 첨부' : 'Attach photo or screenshot'}
         >
           {uploading ? (
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
@@ -117,14 +169,15 @@ export default function MessageInput({
         </button>
         <input
           type="file"
-          ref={fileInputRef}
+          ref={fileInputRef as React.RefObject<HTMLInputElement>}
           accept={TOUR_CHAT_IMAGE_ACCEPT}
           multiple
           onChange={(e) => {
             const files = e.target.files ? Array.from(e.target.files) : []
             if (files.length > 0) {
-              handleImageFiles(files)
+              void queueImageFiles(files)
             }
+            e.target.value = ''
           }}
           className="hidden"
           tabIndex={-1}
@@ -189,15 +242,17 @@ export default function MessageInput({
             if (e.nativeEvent.isComposing || e.key === 'Process') return
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
-              onSendMessage()
+              handleSend()
             }
           }}
           placeholder={
             uploading
               ? (isKo ? '이미지 전송 중...' : 'Sending image...')
-              : isKo
-                ? '메시지 입력, 또는 스크린샷 붙여넣기'
-                : 'Type a message, or paste a screenshot'
+              : pendingImages.length > 0
+                ? (isKo ? '캡션을 입력하거나 전송' : 'Add a caption, then send')
+                : isKo
+                  ? '메시지 입력, 또는 스크린샷 붙여넣기'
+                  : 'Type a message, or paste a screenshot'
           }
           className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent text-sm lg:text-base resize-none overflow-hidden max-h-24"
           disabled={busy}
@@ -215,12 +270,14 @@ export default function MessageInput({
         
         <button
           type="submit"
-          disabled={!newMessage.trim() || busy}
+          disabled={!canSend || busy}
           className="flex-shrink-0 px-3 lg:px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1 lg:space-x-2 text-sm lg:text-base"
         >
           <Send size={14} className="lg:w-4 lg:h-4" />
-          <span className="hidden lg:inline">{sending ? 'Sending...' : 'Send'}</span>
-          <span className="lg:hidden">{sending ? '...' : 'Send'}</span>
+          <span className="hidden lg:inline">
+            {sending || uploading ? (isKo ? '전송 중...' : 'Sending...') : (isKo ? '전송' : 'Send')}
+          </span>
+          <span className="lg:hidden">{sending || uploading ? '...' : (isKo ? '전송' : 'Send')}</span>
         </button>
       </form>
 

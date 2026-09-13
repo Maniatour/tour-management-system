@@ -1,7 +1,7 @@
 'use client'
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import {
   LogOut,
@@ -19,6 +19,8 @@ import {
   UserCheck,
   ChevronLeft,
   ChevronRight,
+  Lock,
+  LockOpen,
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -31,6 +33,7 @@ import {
   ADMIN_HEADER_QUICK_BUTTON_CLASS,
   buildAdminSidebarGroups,
   buildAdminSidebarNavigation,
+  flattenAdminSidebarGroupItems,
   resolveAdminHeaderQuickLabel,
   visibleAdminHeaderQuickEntries,
   type BuiltAdminNavGroup,
@@ -55,6 +58,23 @@ import {
   readAdminHeaderBadgeCache,
   writeAdminHeaderBadgeCache,
 } from '@/lib/adminHeaderBadgeCache'
+import {
+  ADMIN_SIDEBAR_FAVORITES_MAX,
+  readAdminSidebarFavorites,
+  reorderAdminSidebarFavorites,
+  toggleAdminSidebarFavorite,
+} from '@/lib/adminSidebarFavorites'
+import {
+  applyIdOrder,
+  moveIdInList,
+  readAdminSidebarOrder,
+  writeAdminSidebarOrder,
+  readAdminSidebarOrderLocked,
+  writeAdminSidebarOrderLocked,
+  type AdminSidebarOrderState,
+} from '@/lib/adminSidebarOrder'
+import AdminSidebarFavoriteStar from '@/components/admin/AdminSidebarFavoriteStar'
+import AdminSidebarDragHandle from '@/components/admin/AdminSidebarDragHandle'
 const SimulationModal = dynamic(() => import('./SimulationModal'), {
   ssr: false,
   loading: () => null,
@@ -139,6 +159,15 @@ interface AdminSidebarAndHeaderProps {
 
 const ADMIN_SIDEBAR_COLLAPSED_KEY = 'tms-admin-sidebar-collapsed'
 
+type SidebarDragPayload =
+  | { kind: 'favorite'; id: string }
+  | { kind: 'group'; id: string }
+  | { kind: 'child'; id: string; groupId: string }
+
+function isAdminNavHrefActive(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
+
 export default function AdminSidebarAndHeader({ locale, children }: AdminSidebarAndHeaderProps) {
   const pathname = usePathname()
   const router = useRouter()
@@ -150,8 +179,14 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const tSidebar = useTranslations('sidebar')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  /** Operator B 등 하위 메뉴 패널 */
-  const [openNavGroupId, setOpenNavGroupId] = useState<string | null>(null)
+  const [openGroupIds, setOpenGroupIds] = useState<Set<string>>(() => new Set())
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([])
+  const [sidebarOrder, setSidebarOrder] = useState<AdminSidebarOrderState>({
+    groupIds: [],
+    childrenByGroup: {},
+  })
+  const [orderLocked, setOrderLocked] = useState(true)
+  const dragPayloadRef = useRef<SidebarDragPayload | null>(null)
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
   const [showDailyReportModal, setShowDailyReportModal] = useState(false)
@@ -583,31 +618,137 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     [locale, tSidebar, navAccessCtx]
   )
 
-  const openNavGroup: BuiltAdminNavGroup | null = useMemo(() => {
-    if (!openNavGroupId) return null
-    return navGroups.find((g) => g.id === openNavGroupId) ?? null
-  }, [openNavGroupId, navGroups])
-
   const visibleHeaderQuickEntries = useMemo(
     () => visibleAdminHeaderQuickEntries(navAccessCtx),
     [navAccessCtx]
   )
 
+  useEffect(() => {
+    const email = authUser?.email ?? ''
+    setFavoriteIds(readAdminSidebarFavorites(email))
+    setSidebarOrder(readAdminSidebarOrder(email))
+    setOrderLocked(readAdminSidebarOrderLocked(email))
+  }, [authUser?.email])
+
+  const orderedGroups = useMemo(
+    () =>
+      applyIdOrder(navGroups, sidebarOrder.groupIds).map((group) => ({
+        ...group,
+        children: applyIdOrder(group.children, sidebarOrder.childrenByGroup[group.id] ?? []),
+      })),
+    [navGroups, sidebarOrder]
+  )
+
+  useEffect(() => {
+    const activeGroup = orderedGroups.find((group) =>
+      group.children.some((child) => isAdminNavHrefActive(pathname, child.href))
+    )
+    if (!activeGroup) return
+    setOpenGroupIds((prev) => {
+      if (prev.has(activeGroup.id)) return prev
+      const next = new Set(prev)
+      next.add(activeGroup.id)
+      return next
+    })
+  }, [pathname, orderedGroups])
+
+  const allNavItems = useMemo(() => {
+    const grouped = flattenAdminSidebarGroupItems(orderedGroups)
+    const leftover = navigation.filter((item) => !grouped.some((entry) => entry.id === item.id))
+    return [...grouped, ...leftover]
+  }, [orderedGroups, navigation])
+
+  const favoriteItems = useMemo(() => {
+    const byId = new Map(allNavItems.map((item) => [item.id, item]))
+    return favoriteIds
+      .map((id) => byId.get(id))
+      .filter((item): item is BuiltAdminNavItem => !!item)
+  }, [favoriteIds, allNavItems])
+
+  const atFavoriteLimit = favoriteIds.length >= ADMIN_SIDEBAR_FAVORITES_MAX
+
+  const persistSidebarOrder = (next: AdminSidebarOrderState) => {
+    if (orderLocked) return
+    setSidebarOrder(next)
+    writeAdminSidebarOrder(authUser?.email ?? '', next)
+  }
+
+  const handleToggleOrderLock = () => {
+    const next = !orderLocked
+    setOrderLocked(next)
+    writeAdminSidebarOrderLocked(authUser?.email ?? '', next)
+  }
+
+  const handleToggleFavorite = (id: string) => {
+    const result = toggleAdminSidebarFavorite(authUser?.email ?? '', id)
+    setFavoriteIds(result.ids)
+  }
+
+  const handleToggleGroup = (groupId: string) => {
+    setOpenGroupIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(groupId)) next.delete(groupId)
+      else next.add(groupId)
+      return next
+    })
+  }
+
+  const startSidebarDrag = (payload: SidebarDragPayload) => {
+    dragPayloadRef.current = payload
+  }
+
+  const bindSortableDrop = (
+    canDrop: (incoming: SidebarDragPayload) => boolean,
+    onDropOnThis: (incoming: SidebarDragPayload) => void
+  ) => ({
+    onDragOver: (event: React.DragEvent<HTMLElement>) => {
+      const incoming = dragPayloadRef.current
+      if (!incoming || !canDrop(incoming)) return
+      event.preventDefault()
+      event.stopPropagation()
+      event.dataTransfer.dropEffect = 'move'
+    },
+    onDrop: (event: React.DragEvent<HTMLElement>) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const incoming = dragPayloadRef.current
+      dragPayloadRef.current = null
+      if (!incoming || !canDrop(incoming)) return
+      onDropOnThis(incoming)
+    },
+    onDragEnd: () => {
+      dragPayloadRef.current = null
+    },
+  })
+
   const renderFlatNavItem = (
     item: BuiltAdminNavItem,
-    opts: { collapsed: boolean; onNavigate?: () => void }
+    opts: {
+      collapsed: boolean
+      onNavigate?: () => void
+      keyPrefix?: string
+      indent?: boolean
+      sortable?: boolean
+      dragKind?: 'favorite' | 'child'
+      groupId?: string
+    }
   ) => {
     const Icon = item.icon
-    const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
+    const isActive = isAdminNavHrefActive(pathname, item.href)
     const isTeamChat = item.href.includes('/admin/team-chat')
     const isDocuments = item.href.includes('/admin/documents')
     const isReservationImports = item.id === 'reservation-imports'
-    const itemClassName = `relative mb-1 flex items-center rounded-lg text-sm font-medium transition-colors ${
-      opts.collapsed ? 'justify-center px-2 py-2' : 'w-full px-2.5 py-1.5'
+    const isFavorite = favoriteIds.includes(item.id)
+    const showSort = Boolean(opts.sortable && !opts.collapsed && !orderLocked)
+    const isFavoriteArea = opts.keyPrefix === 'fav'
+    const itemClassName = `relative flex items-center rounded-lg text-sm font-medium transition-colors ${
+      opts.collapsed ? 'w-full justify-center px-2 py-2' : 'min-w-0 flex-1 px-2.5 py-1.5'
     } ${
       isActive
         ? 'bg-primary/10 text-primary'
-        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+        : isFavoriteArea
+          ? 'text-sky-700 hover:bg-sky-50 hover:text-sky-800'
+          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
     }`
     const iconBadge = (
       <>
@@ -656,10 +797,9 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       </>
     )
 
-    if (item.id === 'quick-payment') {
-      return (
+    const navNode =
+      item.id === 'quick-payment' ? (
         <button
-          key={item.id}
           type="button"
           title={opts.collapsed ? item.name : undefined}
           onClick={() => {
@@ -670,80 +810,209 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         >
           {iconBadge}
         </button>
+      ) : (
+        <Link
+          href={item.href}
+          prefetch={true}
+          title={opts.collapsed ? item.name : undefined}
+          {...(opts.onNavigate ? { onClick: opts.onNavigate } : {})}
+          className={itemClassName}
+        >
+          {iconBadge}
+        </Link>
       )
-    }
+
+    const dragKind = opts.dragKind
+    const dragPayload: SidebarDragPayload | null =
+      showSort && dragKind
+        ? dragKind === 'favorite'
+          ? { kind: 'favorite', id: item.id }
+          : { kind: 'child', id: item.id, groupId: opts.groupId ?? '' }
+        : null
+    const sortableBindings =
+      dragPayload
+        ? bindSortableDrop(
+            (incoming) => {
+              if (dragKind === 'favorite') return incoming.kind === 'favorite'
+              return incoming.kind === 'child' && incoming.groupId === opts.groupId
+            },
+            (incoming) => {
+              if (orderLocked) return
+              if (incoming.kind === 'favorite' && dragKind === 'favorite') {
+                setFavoriteIds(
+                  reorderAdminSidebarFavorites(authUser?.email ?? '', incoming.id, item.id)
+                )
+                return
+              }
+              if (incoming.kind === 'child' && dragKind === 'child' && opts.groupId) {
+                const group = orderedGroups.find((entry) => entry.id === opts.groupId)
+                if (!group) return
+                persistSidebarOrder({
+                  ...sidebarOrder,
+                  childrenByGroup: {
+                    ...sidebarOrder.childrenByGroup,
+                    [opts.groupId]: moveIdInList(
+                      group.children.map((child) => child.id),
+                      incoming.id,
+                      item.id
+                    ),
+                  },
+                })
+              }
+            }
+          )
+        : {}
 
     return (
-      <Link
-        key={item.id}
-        href={item.href}
-        prefetch={true}
-        title={opts.collapsed ? item.name : undefined}
-        {...(opts.onNavigate ? { onClick: opts.onNavigate } : {})}
-        className={itemClassName}
+      <div
+        key={`${opts.keyPrefix ?? 'nav'}-${item.id}`}
+        className={`mb-1 flex items-center ${
+          opts.collapsed ? 'w-full justify-center' : ''
+        } ${opts.indent && !opts.collapsed ? 'pl-3' : ''}`}
+        {...sortableBindings}
       >
-        {iconBadge}
-      </Link>
+        {navNode}
+        {!opts.collapsed && opts.keyPrefix !== 'fav' && (
+          <AdminSidebarFavoriteStar
+            active={isFavorite}
+            onClick={() => handleToggleFavorite(item.id)}
+            addLabel={tSidebar('favoriteAdd')}
+            removeLabel={tSidebar('favoriteRemove')}
+            limitLabel={tSidebar('favoriteLimit')}
+            atLimit={atFavoriteLimit}
+          />
+        )}
+        {dragPayload ? (
+          <AdminSidebarDragHandle
+            label={tSidebar('reorderHandle')}
+            onDragStart={() => startSidebarDrag(dragPayload)}
+          />
+        ) : null}
+      </div>
     )
   }
 
-  const renderNavGroupButton = (
+  const renderNavGroup = (
     group: BuiltAdminNavGroup,
-    opts: { collapsed: boolean }
+    opts: { collapsed: boolean; onNavigate?: () => void }
   ) => {
     const Icon = group.icon
-    const isOpen = openNavGroupId === group.id
-    const childActive = group.children.some(
-      (c) => pathname === c.href || pathname.startsWith(`${c.href}/`)
+    const isOpen = openGroupIds.has(group.id)
+    const childActive = group.children.some((child) => isAdminNavHrefActive(pathname, child.href))
+    const showSort = !opts.collapsed && !orderLocked
+    const groupBindings = bindSortableDrop(
+      (incoming) => incoming.kind === 'group',
+      (incoming) => {
+        if (incoming.kind !== 'group') return
+        persistSidebarOrder({
+          ...sidebarOrder,
+          groupIds: moveIdInList(
+            orderedGroups.map((entry) => entry.id),
+            incoming.id,
+            group.id
+          ),
+        })
+      }
     )
+
     return (
-      <button
-        key={group.id}
-        type="button"
-        title={opts.collapsed ? group.name : undefined}
-        aria-expanded={isOpen}
-        onClick={() => setOpenNavGroupId(isOpen ? null : group.id)}
-        className={`relative mb-1 flex w-full items-center rounded-lg text-sm font-medium transition-colors ${
-          opts.collapsed ? 'justify-center px-2 py-2' : 'px-2.5 py-1.5'
-        } ${
-          isOpen || childActive
-            ? 'bg-primary/10 text-primary'
-            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-        }`}
-      >
-        <Icon size={opts.collapsed ? 20 : 16} className={`shrink-0 ${opts.collapsed ? '' : 'mr-3'}`} />
-        {!opts.collapsed && (
-          <>
-            <span className="min-w-0 flex-1 truncate text-left">{group.name}</span>
-            <ChevronRight
-              size={16}
-              className={`ml-1 shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+      <div key={`group-${group.id}`} className="mb-1" {...groupBindings}>
+        <div className="flex w-full items-center">
+          <button
+            type="button"
+            title={opts.collapsed ? group.name : undefined}
+            aria-expanded={isOpen}
+            onClick={() => handleToggleGroup(group.id)}
+            className={`relative flex min-w-0 flex-1 items-center rounded-lg text-sm font-medium transition-colors ${
+              opts.collapsed ? 'justify-center px-2 py-2' : 'px-2.5 py-1.5'
+            } ${
+              isOpen || childActive
+                ? 'bg-primary/10 text-primary'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+            }`}
+          >
+            <Icon size={opts.collapsed ? 20 : 16} className={`shrink-0 ${opts.collapsed ? '' : 'mr-3'}`} />
+            {!opts.collapsed && (
+              <>
+                <span className="min-w-0 flex-1 truncate text-left">{group.name}</span>
+                <ChevronRight
+                  size={16}
+                  className={`ml-1 shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                />
+              </>
+            )}
+          </button>
+          {showSort ? (
+            <AdminSidebarDragHandle
+              label={tSidebar('reorderHandle')}
+              onDragStart={() => startSidebarDrag({ kind: 'group', id: group.id })}
             />
-          </>
-        )}
-      </button>
+          ) : null}
+        </div>
+        {isOpen ? (
+          <div className={opts.collapsed ? 'mt-0.5' : 'mt-0.5 pb-1'}>
+            {group.children.map((child) =>
+              renderFlatNavItem(child, {
+                ...opts,
+                keyPrefix: `child-${group.id}`,
+                indent: true,
+                sortable: true,
+                dragKind: 'child',
+                groupId: group.id,
+              })
+            )}
+          </div>
+        ) : null}
+      </div>
     )
   }
 
-  /** channels 다음에 Operator B 그룹을 끼워 넣음 */
   const renderSidebarNavList = (opts: { collapsed: boolean; onNavigate?: () => void }) => {
     const nodes: React.ReactNode[] = []
-    for (const item of navigation) {
-      nodes.push(renderFlatNavItem(item, opts))
-      if (item.id === 'channels') {
-        for (const group of navGroups) {
-          nodes.push(renderNavGroupButton(group, opts))
-        }
+    if (favoriteItems.length > 0) {
+      for (const item of favoriteItems) {
+        nodes.push(
+          renderFlatNavItem(item, {
+            ...opts,
+            keyPrefix: 'fav',
+            sortable: true,
+            dragKind: 'favorite',
+          })
+        )
       }
+      nodes.push(
+        <div
+          key="favorites-divider"
+          className={`my-2 border-t border-gray-200 ${opts.collapsed ? 'mx-1' : 'mx-2'}`}
+        />
+      )
     }
-    // channels가 권한으로 숨겨진 경우에도 그룹은 노출
-    if (!navigation.some((i) => i.id === 'channels')) {
-      for (const group of navGroups) {
-        nodes.push(renderNavGroupButton(group, opts))
-      }
+    for (const group of orderedGroups) {
+      nodes.push(renderNavGroup(group, opts))
+    }
+    for (const item of navigation) {
+      nodes.push(renderFlatNavItem(item, { ...opts, keyPrefix: 'nav' }))
     }
     return nodes
   }
+
+  const orderLockLabel = orderLocked ? tSidebar('orderUnlock') : tSidebar('orderLock')
+  const renderOrderLockButton = (iconSize: number) => (
+    <button
+      type="button"
+      onClick={handleToggleOrderLock}
+      className={`shrink-0 rounded-lg p-2 transition-colors ${
+        orderLocked
+          ? 'text-gray-600 hover:bg-gray-100'
+          : 'text-amber-600 hover:bg-amber-50'
+      }`}
+      aria-pressed={orderLocked}
+      aria-label={orderLockLabel}
+      title={orderLockLabel}
+    >
+      {orderLocked ? <Lock size={iconSize} /> : <LockOpen size={iconSize} />}
+    </button>
+  )
 
   const showHeaderAddReservation = siteAccessHeaderReadAllowed('hq-reservations')
   const showHeaderPriceInventory = siteAccessHeaderReadAllowed('hq-tours')
@@ -1214,18 +1483,19 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
             })}
           </div>
           
-          {/* 모바일 로그아웃 버튼 */}
-          <div className="pb-4 border-t border-gray-200 mt-4 pt-4">
+          {/* 모바일 로그아웃 · 순서 고정 */}
+          <div className="mt-4 flex items-center justify-between border-t border-gray-200 pb-4 pt-4">
             <button
               onClick={() => {
                 handleLogout()
                 setSidebarOpen(false)
               }}
-              className="flex items-center w-full px-3 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 rounded-lg transition-colors"
+              className="flex items-center px-3 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 rounded-lg transition-colors"
             >
               <LogOut size={16} className="mr-3" />
               {tAdmin('logout')}
             </button>
+            {renderOrderLockButton(16)}
           </div>
         </nav>
       </div>
@@ -1245,12 +1515,13 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
             {renderSidebarNavList({ collapsed: sidebarCollapsed })}
           </nav>
 
-          {/* 데스크톱: 사이드바 접기 (로그아웃은 상단 사용자 메뉴) */}
+          {/* 데스크톱: 순서 고정 · 사이드바 접기 */}
           <div
             className={`flex flex-shrink-0 items-center border-t border-gray-200 bg-white py-2 ${
-              sidebarCollapsed ? 'justify-center px-1.5' : 'justify-end px-2'
+              sidebarCollapsed ? 'flex-col justify-center gap-1 px-1.5' : 'justify-between px-2'
             }`}
           >
+            {renderOrderLockButton(sidebarCollapsed ? 20 : 16)}
             <button
               type="button"
               onClick={toggleSidebarCollapsed}
@@ -1264,72 +1535,6 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
           </div>
         </div>
       </div>
-
-      {/* Operator B 등 하위 메뉴 패널 (사이드바 옆 새 창) */}
-      {openNavGroup && (
-        <>
-          <button
-            type="button"
-            aria-label="Close submenu"
-            className="fixed inset-0 z-[40] bg-black/20 lg:bg-transparent"
-            onClick={() => setOpenNavGroupId(null)}
-          />
-          <aside
-            className={`fixed z-[45] flex flex-col border border-border/60 bg-white shadow-xl ${
-              sidebarCollapsed
-                ? 'lg:left-[var(--app-sidebar-width-collapsed)]'
-                : 'lg:left-[var(--app-sidebar-width)]'
-            } top-[var(--header-height,4rem)] bottom-0 left-0 right-0 m-3 max-h-[calc(100vh-var(--header-height,4rem)-1.5rem)] rounded-2xl lg:right-auto lg:m-0 lg:mt-2 lg:mb-2 lg:ml-2 lg:w-72 lg:max-h-none lg:rounded-xl`}
-            role="dialog"
-            aria-label={tSidebar('operatorBPanelTitle')}
-          >
-            <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3">
-              <div className="min-w-0">
-                <p className="text-xs font-medium tracking-wide text-muted-foreground">
-                  {tSidebar('operatorBPanelHint')}
-                </p>
-                <h2 className="mt-0.5 truncate text-base font-semibold text-foreground">
-                  {openNavGroup.name}
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setOpenNavGroupId(null)}
-                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label="Close"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-              {openNavGroup.children.map((child) => {
-                const ChildIcon = child.icon
-                const isActive =
-                  pathname === child.href || pathname.startsWith(`${child.href}/`)
-                return (
-                  <Link
-                    key={child.id}
-                    href={child.href}
-                    prefetch={true}
-                    onClick={() => {
-                      setSidebarOpen(false)
-                      setOpenNavGroupId(null)
-                    }}
-                    className={`flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
-                      isActive
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
-                    }`}
-                  >
-                    <ChildIcon size={18} className="mr-3 shrink-0" />
-                    <span className="truncate">{child.name}</span>
-                  </Link>
-                )
-              })}
-            </nav>
-          </aside>
-        </>
-      )}
 
       {/* 메인 콘텐츠 - 헤더 높이만큼 상단 여백, 모바일 푸터 높이만큼 하단 여백 */}
       <div

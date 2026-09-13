@@ -144,3 +144,69 @@ test('초이스 가격 저장 시 거주자 조합 키를 로어/엑스 키로�
   assert.equal(restricted['canyon+lower']?.ota_sale_price, 199)
   assert.equal(restricted['canyon+x']?.ota_sale_price, 219)
 })
+
+test('GYG Zion, Bryce 2-Day Single Room은 그랜드서클 1박2일·1인1실·로어 앤텔롭으로 파싱한다', () => {
+  const { platform_key, extracted_data } = extractReservationFromEmail({
+    subject: 'Booking - S382661 - GYG83W746MVL',
+    sourceEmail: 'noreply@getyourguide.com',
+    text: `
+Hi Supply Partner, great news!
+Your offer has been booked:
+Las Vegas: Zion, Bryce, Grand Canyon & Antelope 2-Day Tour
+Las Vegas: Zion, Bryce, Grand Canyon & Antelope 2-Day Tour
+
+Single Room (1 Person in 1 Hotel Room)
+
+ticket-booking
+Reference number
+
+GYG83W746MVL
+calendar
+Date
+
+November 23, 2026, 5:00 AM
+users
+Number of participants
+
+1 x Adult (Age 0 - 99)
+single-person
+Main customer
+
+Nur Azizah Maharani
+customer-3cbx7yfqszmi5sg3@reply.getyourguide.com
+Phone: +6285343509191
+Language: English
+globe
+Tour language
+
+English (Live tour guide)
+currency
+Price
+
+$ 700.00
+`,
+  })
+  assert.equal(platform_key, 'getyourguide')
+  assert.equal(extracted_data.product_id, 'MNGC1N')
+  assert.equal(extracted_data.product_name, '그랜드서클 1박 2일 투어')
+  assert.equal(extracted_data.channel_rn, 'GYG83W746MVL')
+  assert.equal(extracted_data.adults, 1)
+  assert.ok((extracted_data.import_choice_option_names || []).includes('1인 1실'))
+  assert.ok((extracted_data.import_choice_option_names || []).includes('Lower Antelope Canyon'))
+  assert.equal(
+    (extracted_data.import_choice_option_names || []).some((n) => /antelope\s*x|x\s*antelope/i.test(n)),
+    false
+  )
+})
+
+test('GYG Zion Bryce 2-Day HTML 한 줄 본문도 같은 상품·초이스로 파싱한다', () => {
+  const { extracted_data } = extractReservationFromEmail({
+    subject: 'Urgent : New Booking received - S382661 - GYG83W746MVL',
+    sourceEmail: 'supplier@getyourguide.com',
+    text: 'Hi Supply Partner, great news! Your offer has been booked: Las Vegas: Zion, Bryce, Grand Canyon & Antelope 2-Day Tour Las Vegas: Zion, Bryce, Grand Canyon & Antelope 2-Day Tour Single Room (1 Person in 1 Hotel Room) ticket-booking Reference number GYG83W746MVL calendar Date November 23, 2026, 5:00 AM users Number of participants 1 x Adult (Age 0 - 99) Main customer Nur Azizah Maharani customer-3cbx7yfqszmi5sg3@reply.getyourguide.com Phone: +6285343509191 Language: English Tour language English (Live tour guide) Price $ 700.00',
+  })
+  assert.equal(extracted_data.product_id, 'MNGC1N')
+  assert.equal(extracted_data.product_name, '그랜드서클 1박 2일 투어')
+  assert.ok((extracted_data.import_choice_option_names || []).includes('1인 1실'))
+  assert.ok((extracted_data.import_choice_option_names || []).includes('Lower Antelope Canyon'))
+})

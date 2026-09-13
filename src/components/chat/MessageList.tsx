@@ -219,8 +219,8 @@ export default function MessageList({
                   </div>
                   
                   {/* 삭제 버튼 (자신이 보낸 메시지이고 1분 이내) */}
-                  {((isPublicView && message.sender_type === 'customer') || 
-                    (!isPublicView && message.sender_type === 'guide')) && 
+                  {((isPublicView && message.sender_type === 'customer') ||
+                    (!isPublicView && (message.sender_type === 'guide' || message.sender_type === 'admin'))) &&
                    canDeleteMessage(message) && (
                     <button
                       onClick={() => {

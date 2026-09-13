@@ -22,6 +22,7 @@ import { TourPhotoMediaThumb, TourPhotoMediaViewer, isTourPhotoVideoItem } from 
 import { TourPhotoThumbOverflowMenu } from '@/components/tour/TourPhotoThumbOverflowMenu'
 import { setTourPhotoHiddenByAdmin } from '@/lib/tourPhotoVisibility'
 import { moveTourPhotoToReceipt } from '@/lib/moveTourPhotoToReceipt'
+import { deleteTourPhotoFromStorageAndDb } from '@/lib/deleteTourPhoto'
 
 interface TourPhoto {
   id: string
@@ -728,26 +729,15 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
   }
 
   // 사진 삭제
-  const handleDeletePhoto = async (photoId: string, filePath: string) => {
+  const handleDeletePhoto = async (photoId: string, filePath: string, thumbnailPath?: string | null) => {
     if (!confirm(t('deleteConfirm'))) return
 
     try {
-      // Storage에서 파일 삭제
-      const { error: storageError } = await supabase.storage
-        .from('tour-photos')
-        .remove([filePath])
-
-      if (storageError) throw storageError
-
-      // 데이터베이스에서 레코드 삭제
-      const { error: dbError } = await supabase
-        .from('tour_photos')
-        .delete()
-        .eq('id', photoId)
-
-      if (dbError) throw dbError
-
-      // 사진 목록 새로고침
+      await deleteTourPhotoFromStorageAndDb({
+        photoId,
+        filePath,
+        thumbnailPath: thumbnailPath ?? null,
+      })
       await loadPhotos()
       onPhotosUpdated?.()
     } catch (error) {
@@ -1260,7 +1250,7 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
                   <button
                     type="button"
                     disabled={actionBusy}
-                    onClick={() => handleDeletePhoto(selectedPhoto.id, selectedPhoto.file_path)}
+                    onClick={() => handleDeletePhoto(selectedPhoto.id, selectedPhoto.file_path, selectedPhoto.thumbnail_path)}
                     className="rounded bg-red-600 px-4 py-2 text-sm text-white transition-colors hover:bg-red-700 disabled:opacity-60"
                   >
                     {t('deleteShort')}

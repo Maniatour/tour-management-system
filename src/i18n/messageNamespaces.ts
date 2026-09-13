@@ -18,6 +18,7 @@ const ALL_LOCALE_NAMESPACE_KEYS = [
   'sidebar',
   'adminWeatherReminder',
   'adminWeatherRecords',
+  'adminTourPhotos',
   'siteDirectory',
   'common',
   'products',
@@ -118,8 +119,8 @@ const ROUTE_NAMESPACE_RULES: RouteNamespaceRule[] = [
     namespaces: ['reservations', 'booking', 'tours', 'customers', 'products'],
   },
   {
-    test: (p) => /\/admin\/(tours|tour-reports|tour-photo-buckets|tour-materials)/.test(p),
-    namespaces: ['tours', 'reservations', 'guideTour', 'weather'],
+    test: (p) => /\/admin\/(tours|tour-reports|tour-photos|tour-photo-buckets|tour-materials)/.test(p),
+    namespaces: ['tours', 'reservations', 'guideTour', 'weather', 'adminTourPhotos'],
   },
   {
     test: (p) => /\/admin\/booking/.test(p),

@@ -7,6 +7,7 @@ import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { isCancellationRequestEmailSubject } from '@/lib/emailReservationParser'
 import {
+  formatExtractedImportPartyLabel,
   isReservationRelatedImportNotifyRow,
   type ReservationImportNotifyRow,
 } from '@/lib/reservationImportNotify'
@@ -174,8 +175,9 @@ export default function ReservationImportNotificationListener({ locale }: { loca
     const customerName =
       normalizeCustomerNameFromImport(notification.extracted_data.customer_name) ||
       String(notification.extracted_data.customer_name ?? '').trim()
-    if (!tourDate && !productName && !customerName) return null
-    return { tourDate, productName, customerName }
+    const partyLabel = formatExtractedImportPartyLabel(notification.extracted_data)
+    if (!tourDate && !productName && !customerName && !partyLabel) return null
+    return { tourDate, productName, customerName, partyLabel }
   }, [notification])
 
   const handleClose = () => {
@@ -252,7 +254,7 @@ export default function ReservationImportNotificationListener({ locale }: { loca
           </p>
           {extractedMeta ? (
             <p className="text-xs text-gray-600 leading-relaxed">
-              {[extractedMeta.tourDate, extractedMeta.productName, extractedMeta.customerName]
+              {[extractedMeta.tourDate, extractedMeta.productName, extractedMeta.customerName, extractedMeta.partyLabel]
                 .filter(Boolean)
                 .join(' · ')}
             </p>

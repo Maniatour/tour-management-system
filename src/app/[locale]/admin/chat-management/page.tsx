@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { useRouter } from 'next/navigation'
-import { MessageCircle, Calendar, Search, RefreshCw, Languages, ChevronDown, Cast, Power, PowerOff, Users } from 'lucide-react'
+import { MessageCircle, Calendar, Search, RefreshCw, Languages, ChevronDown, Cast, Power, PowerOff, Users, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 
@@ -26,8 +26,22 @@ import {
 } from '@/lib/tourChatStaffDisplay'
 import ChatMessageBody from '@/components/chat/ChatMessageBody'
 import ChatImageBubble from '@/components/chat/ChatImageBubble'
-import { isChatImageMessage } from '@/lib/tourChatImage'
+import MessageInput from '@/components/chat/MessageInput'
+import {
+  isChatImageMessage,
+  prepareTourChatImageForUpload,
+  snapshotChatImageFiles,
+} from '@/lib/tourChatImage'
 import ChatSidebar from '@/components/chat/ChatSidebar'
+import PickupChatShareButtons from '@/components/chat/PickupChatShareButtons'
+import PickupChatSharePreviewModal from '@/components/chat/PickupChatSharePreviewModal'
+import {
+  buildPickupShareDraft,
+  pickupChatContentLocale,
+  type PickupChatShareDraft,
+  type PickupChatShareHotel,
+  type PickupChatShareKind,
+} from '@/lib/pickupChatShare'
 import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
 import { useChatParticipants } from '@/hooks/useChatParticipants'
 import {
@@ -296,6 +310,17 @@ export default function ChatManagementPage() {
   const [newMessage, setNewMessage] = useState('')
   const [sending, setSending] = useState(false)
   const sendingLockRef = useRef(false)
+  const [uploading, setUploading] = useState(false)
+  const uploadingRef = useRef(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [gettingLocation, setGettingLocation] = useState(false)
+  const [showLocationShareModal, setShowLocationShareModal] = useState(false)
+  const [pendingLocation, setPendingLocation] = useState<{
+    latitude: number
+    longitude: number
+    googleMapsLink: string
+    naverMapsLink: string
+  } | null>(null)
   const [listUi, setListUi] = useRoutePersistedState('chat-management', CHAT_MGMT_UI_DEFAULT)
   const { searchTerm, filterStatus, activeTab } = listUi
   const setSearchTerm = (v: string) => setListUi((prev) => ({ ...prev, searchTerm: v }))
@@ -304,7 +329,7 @@ export default function ChatManagementPage() {
   const [tourInfo, setTourInfo] = useState<TourInfo | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['pickup-schedule']))
-  const [pickupHotels, setPickupHotels] = useState<Array<{ id: string; hotel: string; pick_up_location?: string; google_maps_link?: string; link?: string }>>([])
+  const [pickupHotels, setPickupHotels] = useState<PickupChatShareHotel[]>([])
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [loadingTourInfo, setLoadingTourInfo] = useState(false)
   const [inactiveRoomsData, setInactiveRoomsData] = useState<ChatRoom[]>([])
@@ -312,6 +337,7 @@ export default function ChatManagementPage() {
   const [roomMessageCounts, setRoomMessageCounts] = useState<Record<string, number>>({})
   const [showParticipantsList, setShowParticipantsList] = useState(false)
   const [tourDetailModalOpen, setTourDetailModalOpen] = useState(false)
+  const [pickupShareDraft, setPickupShareDraft] = useState<PickupChatShareDraft | null>(null)
   const messagesRef = useRef<ChatMessage[]>([])
 
   useEffect(() => {
@@ -1165,6 +1191,11 @@ export default function ChatManagementPage() {
     setMessages([])
     setNewMessage('')
     setSending(false)
+    setUploading(false)
+    uploadingRef.current = false
+    setGettingLocation(false)
+    setShowLocationShareModal(false)
+    setPendingLocation(null)
     setListUi(CHAT_MGMT_UI_DEFAULT)
     setTourInfo(null)
     setRefreshing(false)
@@ -1528,12 +1559,12 @@ export default function ChatManagementPage() {
 
       // 5.5단계: 픽업 호텔 정보 가져오기 (PickupSchedule 컴포넌트용)
       // 투어 상세 페이지와 동일한 방식: 모든 호텔을 한 번에 가져오기
-      let pickupHotelsData: Array<{ id: string; hotel: string; pick_up_location?: string; google_maps_link?: string; link?: string }> = []
+      let pickupHotelsData: PickupChatShareHotel[] = []
       try {
         // pickup_hotels 테이블에는 'link' 컬럼이 있음 (google_maps_link 아님)
         const { data: allHotelsData, error: pickupHotelsError } = await supabase
           .from('pickup_hotels')
-          .select('id, hotel, pick_up_location, link')
+          .select('id, hotel, internal_name, pick_up_location, address, link, media, description_ko, description_en, from_inside_hotel_ko, from_inside_hotel_en, from_outside_hotel_ko, from_outside_hotel_en, content_i18n')
           .order('hotel')
 
         if (pickupHotelsError) {
@@ -1543,7 +1574,9 @@ export default function ChatManagementPage() {
           pickupHotelsData = allHotelsData.map((h: any) => ({
             ...h,
             id: String(h.id).trim(),
-            google_maps_link: h.link || undefined // link를 google_maps_link로 매핑
+            pick_up_location: h.pick_up_location || undefined,
+            address: h.address || undefined,
+            google_maps_link: h.link || undefined
           }))
           setPickupHotels(pickupHotelsData)
           
@@ -1682,22 +1715,52 @@ export default function ChatManagementPage() {
     }
   }, [])
 
-  // 메시지 전송
-  const sendMessage = async () => {
-    if (!newMessage.trim() || !selectedRoom || sending || sendingLockRef.current) return
+  const resolveStaffSender = () => {
     const staffEmail = user?.email?.trim()
     if (!staffEmail) {
       alert('로그인된 이메일이 없어 메시지를 보낼 수 없습니다.')
-      return
+      return null
     }
-
-    sendingLockRef.current = true
-    const messageText = newMessage.trim()
-    setSending(true)
-
     const staffLabel =
       staffChatLabelsByEmail[staffEmail.toLowerCase()] ??
       formatTourChatStaffDisplayName(staffEmail, myTeamProfile)
+    return { staffEmail, staffLabel }
+  }
+
+  const chatImageErrorText = (code: string) => {
+    const isKo = selectedLanguage === 'ko'
+    if (code === 'NOT_IMAGE') {
+      return isKo
+        ? '이미지 파일만 보낼 수 있습니다. JPEG, PNG, GIF, WebP, HEIC를 지원합니다.'
+        : 'Only image files can be sent (JPEG, PNG, GIF, WebP, HEIC).'
+    }
+    if (code === 'TOO_LARGE') {
+      return isKo
+        ? '파일이 너무 큽니다. 최대 20MB까지 선택할 수 있습니다.'
+        : 'File is too large. Maximum original size is 20MB.'
+    }
+    if (code === 'EMPTY_FILE') {
+      return isKo ? '빈 파일입니다. 다른 이미지를 선택해 주세요.' : 'That file is empty. Please choose another image.'
+    }
+    if (code === 'RECEIPT_COMPRESS_FAILED') {
+      return isKo
+        ? '이 이미지를 처리할 수 없습니다. PNG 또는 JPEG로 저장한 뒤 다시 보내 주세요.'
+        : 'Could not process that image. Please save it as PNG or JPEG and try again.'
+    }
+    return isKo ? '이미지 업로드 중 오류가 발생했습니다.' : 'An error occurred while uploading the image.'
+  }
+
+  // 메시지 전송
+  const sendMessage = async (overrideText?: string) => {
+    const messageText = (overrideText ?? newMessage).trim()
+    if (!messageText || !selectedRoom || sendingLockRef.current) return false
+    const staff = resolveStaffSender()
+    if (!staff) return false
+
+    sendingLockRef.current = true
+    setSending(true)
+
+    const { staffEmail, staffLabel } = staff
     
     // 즉시 UI에 메시지 표시 (낙관적 업데이트)
     const tempMessage: ChatMessage = {
@@ -1713,7 +1776,7 @@ export default function ChatManagementPage() {
     }
     
     setMessages(prev => [...prev, tempMessage])
-    setNewMessage('')
+    if (!overrideText) setNewMessage('')
 
     try {
       const { data, error } = await (supabase as unknown as { from: (table: string) => { insert: (data: unknown) => { select: () => { single: () => Promise<{ data: unknown; error: unknown }> } } } })
@@ -1735,15 +1798,313 @@ export default function ChatManagementPage() {
           commitOptimisticChatMessage(prev, tempMessage.id, data as ChatMessage)
         )
       }
+      return true
     } catch (error) {
       console.error('Error sending message:', error)
       alert('메시지 전송 중 오류가 발생했습니다.')
       
       // 실패 시 임시 메시지 제거
       setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id))
+      return false
     } finally {
       sendingLockRef.current = false
       setSending(false)
+    }
+  }
+
+  const sendImageMessage = async (
+    imageUrl: string,
+    fileName: string,
+    fileSize: number,
+    caption = ''
+  ) => {
+    if (!selectedRoom || sendingLockRef.current) return false
+    const staff = resolveStaffSender()
+    if (!staff) return false
+
+    sendingLockRef.current = true
+    setSending(true)
+
+    const { staffEmail, staffLabel } = staff
+    const tempMessage: ChatMessage = {
+      id: `temp_img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      room_id: selectedRoom.id,
+      sender_type: 'admin',
+      sender_name: staffLabel,
+      sender_email: staffEmail,
+      message: caption,
+      message_type: 'image',
+      file_url: imageUrl,
+      file_name: fileName,
+      file_size: fileSize,
+      is_read: false,
+      created_at: new Date().toISOString()
+    }
+
+    setMessages((prev) => [...prev, tempMessage])
+
+    try {
+      const { data, error } = await (supabase as unknown as { from: (table: string) => { insert: (data: unknown) => { select: () => { single: () => Promise<{ data: unknown; error: unknown }> } } } })
+        .from('chat_messages')
+        .insert({
+          room_id: selectedRoom.id,
+          sender_type: 'admin',
+          sender_name: staffLabel,
+          sender_email: staffEmail,
+          message: caption,
+          message_type: 'image',
+          file_url: imageUrl,
+          file_name: fileName,
+          file_size: fileSize
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      if (data) {
+        setMessages((prev) =>
+          commitOptimisticChatMessage(prev, tempMessage.id, data as ChatMessage)
+        )
+      }
+      return true
+    } catch (error) {
+      console.error('Error sending image message:', error)
+      alert(error instanceof Error ? error.message : chatImageErrorText('UPLOAD_FAILED'))
+      setMessages((prev) => prev.filter((msg) => msg.id !== tempMessage.id))
+      return false
+    } finally {
+      sendingLockRef.current = false
+      setSending(false)
+    }
+  }
+
+  const handleImageUpload = async (files: File[]) => {
+    if (!selectedRoom || uploadingRef.current) return
+
+    const snapped = await snapshotChatImageFiles(files)
+    if (snapped.length === 0) {
+      alert(chatImageErrorText('NOT_IMAGE'))
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
+
+    uploadingRef.current = true
+    setUploading(true)
+    const caption = newMessage.trim()
+    if (caption) setNewMessage('')
+
+    try {
+      for (let i = 0; i < snapped.length; i++) {
+        const file = snapped[i]
+        let prepared: File
+        try {
+          prepared = await prepareTourChatImageForUpload(file)
+        } catch (error) {
+          const code = error instanceof Error ? error.message : 'UPLOAD_FAILED'
+          alert(chatImageErrorText(code))
+          continue
+        }
+
+        const formData = new FormData()
+        formData.append('file', prepared)
+        formData.append('room_id', selectedRoom.id)
+        formData.append('room_code', selectedRoom.room_code)
+
+        const response = await fetch('/api/chat-messages/upload', {
+          method: 'POST',
+          body: formData
+        })
+
+        const result = await response.json().catch(() => ({}))
+        if (!response.ok || !result.success || !result.imageUrl) {
+          throw new Error(result.error || 'Upload failed')
+        }
+
+        await sendImageMessage(
+          result.imageUrl,
+          prepared.name || file.name,
+          prepared.size,
+          i === 0 ? caption : ''
+        )
+      }
+    } catch (error) {
+      console.error('Image upload error:', error)
+      alert(error instanceof Error ? error.message : chatImageErrorText('UPLOAD_FAILED'))
+    } finally {
+      uploadingRef.current = false
+      setUploading(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  const cancelLocationShare = () => {
+    setShowLocationShareModal(false)
+    setPendingLocation(null)
+    setGettingLocation(false)
+  }
+
+  const confirmLocationShare = async () => {
+    if (!pendingLocation) return
+    const locationMessage = selectedLanguage === 'ko'
+      ? `📍 내 위치\n\n🗺️ 지도 보기:\nGoogle Maps: ${pendingLocation.googleMapsLink}\nNaver Maps: ${pendingLocation.naverMapsLink}`
+      : `📍 My Location\n\n🗺️ View on Map:\nGoogle Maps: ${pendingLocation.googleMapsLink}`
+    setShowLocationShareModal(false)
+    setGettingLocation(false)
+    await sendMessage(locationMessage)
+    setPendingLocation(null)
+  }
+
+  const shareLocation = async () => {
+    if (!selectedRoom || gettingLocation || sending) return
+
+    if (!navigator.geolocation) {
+      alert(selectedLanguage === 'ko' ? '이 브라우저는 위치 서비스를 지원하지 않습니다.' : 'Geolocation is not supported by this browser.')
+      return
+    }
+
+    setGettingLocation(true)
+
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: false,
+          timeout: 20000,
+          maximumAge: 60000
+        })
+      })
+
+      const { latitude, longitude } = position.coords
+      setPendingLocation({
+        latitude,
+        longitude,
+        googleMapsLink: `https://www.google.com/maps?q=${latitude},${longitude}`,
+        naverMapsLink: `https://map.naver.com/?dlevel=11&lat=${latitude}&lng=${longitude}&mapMode=0&pinTitle=내+위치&pinType=default`
+      })
+      setShowLocationShareModal(true)
+    } catch (error) {
+      console.error('Error getting location:', error)
+      if (error instanceof GeolocationPositionError) {
+        if (error.code === error.PERMISSION_DENIED) {
+          alert(selectedLanguage === 'ko' ? '위치 권한이 거부되었습니다. 브라우저 설정에서 위치 권한을 허용해주세요.' : 'Location permission denied. Please enable location access in your browser settings.')
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          alert(selectedLanguage === 'ko' ? '위치 정보를 가져올 수 없습니다.' : 'Location information is unavailable.')
+        } else if (error.code === error.TIMEOUT) {
+          const retry = confirm(selectedLanguage === 'ko'
+            ? '위치 정보 요청 시간이 초과되었습니다. 다시 시도하시겠습니까?'
+            : 'Location request timed out. Would you like to try again?')
+          if (retry) {
+            setTimeout(() => shareLocation(), 500)
+            return
+          }
+        } else {
+          alert(selectedLanguage === 'ko' ? '위치 정보를 가져오는 중 오류가 발생했습니다.' : 'An error occurred while getting location.')
+        }
+      } else {
+        alert(selectedLanguage === 'ko' ? '위치 정보를 가져오는 중 오류가 발생했습니다.' : 'An error occurred while getting location.')
+      }
+    } finally {
+      setGettingLocation(false)
+    }
+  }
+
+  const openPickupSharePreview = (hotel: PickupChatShareHotel, kind: PickupChatShareKind) => {
+    if (!selectedRoom) {
+      alert(selectedLanguage === 'ko' ? '채팅방을 선택해주세요.' : 'Please select a chat room.')
+      return
+    }
+    const contentLocale = pickupChatContentLocale(
+      (tourInfo?.reservations || []).map((res) => res.customer?.language)
+    )
+    const draft = buildPickupShareDraft(hotel, kind, contentLocale)
+    if (!draft) {
+      alert(
+        kind === 'images'
+          ? (selectedLanguage === 'ko' ? '픽업 장소 사진이 없습니다.' : 'No pickup location images.')
+          : contentLocale === 'en'
+            ? (selectedLanguage === 'ko'
+              ? '영어 안내 문구가 없습니다. 픽업 호텔 영어 설명을 먼저 등록해 주세요.'
+              : 'No English pickup directions are saved for this hotel.')
+            : (selectedLanguage === 'ko' ? '보낼 안내 내용이 없습니다.' : 'No pickup directions to send.')
+      )
+      return
+    }
+    setPickupShareDraft(draft)
+  }
+
+  const confirmPickupShareDraft = async (draft: PickupChatShareDraft) => {
+    if (!selectedRoom) return
+
+    if (draft.kind === 'maps' && draft.mapsUrl) {
+      try {
+        await navigator.clipboard.writeText(draft.mapsUrl)
+      } catch {
+        // clipboard may be blocked; still send to chat
+      }
+    }
+
+    if (draft.kind === 'images') {
+      if (draft.imageUrls.length === 0) {
+        setPickupShareDraft(null)
+        return
+      }
+      const caption = draft.text.trim()
+      for (let i = 0; i < draft.imageUrls.length; i++) {
+        const url = draft.imageUrls[i]
+        const fileName = decodeURIComponent(url.split('/').pop()?.split('?')[0] || 'pickup.jpg')
+        const ok = await sendImageMessage(url, fileName, 0, i === 0 ? caption : '')
+        if (!ok) return
+      }
+      setPickupShareDraft(null)
+      return
+    }
+
+    if (!draft.text.trim()) {
+      setPickupShareDraft(null)
+      return
+    }
+    const ok = await sendMessage(draft.text.trim())
+    if (ok) setPickupShareDraft(null)
+  }
+
+  const canDeleteMessage = (message: ChatMessage) => {
+    if (message.sender_type === 'system') return false
+    if (message.id.startsWith('temp_')) return false
+    const email = user?.email?.trim().toLowerCase()
+    if (!email) return false
+    return (message.sender_email || '').trim().toLowerCase() === email
+  }
+
+  const deleteMessage = async (messageId: string) => {
+    if (!selectedRoom) return
+    if (messageId.startsWith('temp_')) {
+      setMessages((prev) => prev.filter((msg) => msg.id !== messageId))
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('chat_messages')
+        .delete()
+        .eq('id', messageId)
+
+      if (error) throw error
+
+      setMessages((prev) => prev.filter((msg) => msg.id !== messageId))
+      setTranslatedMessages((prev) => {
+        if (!(messageId in prev)) return prev
+        const next = { ...prev }
+        delete next[messageId]
+        return next
+      })
+      setRoomMessageCounts((prev) => {
+        if (prev[selectedRoom.id] === undefined) return prev
+        return { ...prev, [selectedRoom.id]: Math.max(0, prev[selectedRoom.id] - 1) }
+      })
+    } catch (error) {
+      console.error('Error deleting message:', error)
+      alert(selectedLanguage === 'ko' ? '메시지 삭제에 실패했습니다.' : 'Failed to delete the message.')
     }
   }
 
@@ -2047,6 +2408,24 @@ export default function ChatManagementPage() {
           setRoomMessageCounts((prev) => {
             if (prev[selectedRoom.id] === undefined) return prev
             return { ...prev, [selectedRoom.id]: prev[selectedRoom.id] + 1 }
+          })
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `room_id=eq.${selectedRoom.id}`
+        },
+        (payload) => {
+          const deletedId = (payload.old as { id?: string } | null)?.id
+          if (!deletedId) return
+          setMessages((prev) => prev.filter((msg) => msg.id !== deletedId))
+          setRoomMessageCounts((prev) => {
+            if (prev[selectedRoom.id] === undefined) return prev
+            return { ...prev, [selectedRoom.id]: Math.max(0, prev[selectedRoom.id] - 1) }
           })
         }
       )
@@ -2601,8 +2980,29 @@ export default function ChatManagementPage() {
                         </div>
                       )}
                       
-                      <div className="text-xs mt-1 opacity-70">
-                        {formatTime(message.created_at)}
+                      <div className="flex items-center justify-between gap-2 mt-1">
+                        <div className="text-xs opacity-70">
+                          {formatTime(message.created_at)}
+                        </div>
+                        {canDeleteMessage(message) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(selectedLanguage === 'ko' ? '메시지를 삭제하시겠습니까?' : 'Delete this message?')) {
+                                void deleteMessage(message.id)
+                              }
+                            }}
+                            className={`p-1 rounded transition-colors ${
+                              message.sender_type === 'admin'
+                                ? 'text-white/70 hover:text-red-200 hover:bg-white/10'
+                                : 'text-gray-400 hover:text-red-500 hover:bg-gray-100'
+                            }`}
+                            title={selectedLanguage === 'ko' ? '메시지 삭제' : 'Delete message'}
+                            aria-label={selectedLanguage === 'ko' ? '메시지 삭제' : 'Delete message'}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2610,28 +3010,26 @@ export default function ChatManagementPage() {
               })}
             </div>
 
-            {/* 메시지 입력 */}
-            <div className="bg-white/90 backdrop-blur-sm border-t border-gray-200 p-2 lg:p-4 flex-shrink-0 shadow-lg">
-              <div className="flex items-center space-x-2 w-full">
-                <input
-                  type="text"
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())}
-                  placeholder="메시지를 입력하세요..."
-                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring text-sm lg:text-base"
-                  disabled={sending}
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={!newMessage.trim() || sending}
-                  className="flex-shrink-0 px-3 lg:px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm lg:text-base"
-                >
-                  <span className="hidden lg:inline">{sending ? '전송 중...' : '전송'}</span>
-                  <span className="lg:hidden">{sending ? '...' : '전송'}</span>
-                </button>
-              </div>
-            </div>
+            <MessageInput
+              newMessage={newMessage}
+              setNewMessage={setNewMessage}
+              sending={sending}
+              uploading={uploading}
+              gettingLocation={gettingLocation}
+              isPublicView={false}
+              selectedLanguage={selectedLanguage}
+              roomActive
+              onSendMessage={() => {
+                void sendMessage()
+              }}
+              onImageUpload={(files) => {
+                void handleImageUpload(files)
+              }}
+              onShareLocation={() => {
+                void shareLocation()
+              }}
+              fileInputRef={fileInputRef}
+            />
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center">
@@ -2755,6 +3153,18 @@ export default function ChatManagementPage() {
                 openGoogleMaps={(link: string) => {
                   window.open(link, '_blank')
                 }}
+                renderHotelExtraActions={({ hotelId }) => {
+                  const hotel = pickupHotels.find((h) => h.id === hotelId)
+                  if (!hotel) return null
+                  return (
+                    <PickupChatShareButtons
+                      hotel={hotel}
+                      locale={selectedLanguage === 'ko' ? 'ko' : 'en'}
+                      disabled={!selectedRoom || sending || uploading}
+                      onShare={(kind) => openPickupSharePreview(hotel, kind)}
+                    />
+                  )
+                }}
               />
             </div>
 
@@ -2811,6 +3221,76 @@ export default function ChatManagementPage() {
           </div>
         )}
       </div>
+
+      {pickupShareDraft && (
+        <PickupChatSharePreviewModal
+          draft={pickupShareDraft}
+          isKo={selectedLanguage === 'ko'}
+          sending={sending}
+          onClose={() => setPickupShareDraft(null)}
+          onConfirm={(draft) => {
+            void confirmPickupShareDraft(draft)
+          }}
+        />
+      )}
+
+      {showLocationShareModal && pendingLocation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              {selectedLanguage === 'ko' ? '내 위치를 공유하시겠습니까?' : 'Share your location?'}
+            </h3>
+            <div className="mb-4 text-sm text-gray-600">
+              <p className="mb-2 whitespace-pre-line">
+                {selectedLanguage === 'ko'
+                  ? `위도: ${pendingLocation.latitude.toFixed(6)}\n경도: ${pendingLocation.longitude.toFixed(6)}`
+                  : `Latitude: ${pendingLocation.latitude.toFixed(6)}\nLongitude: ${pendingLocation.longitude.toFixed(6)}`}
+              </p>
+              <div className="flex gap-2 mt-2">
+                <a
+                  href={pendingLocation.googleMapsLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:text-primary/80 text-xs underline"
+                >
+                  View on Google Maps
+                </a>
+                {selectedLanguage === 'ko' && (
+                  <a
+                    href={pendingLocation.naverMapsLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:text-primary/80 text-xs underline"
+                  >
+                    View on Naver Maps
+                  </a>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={cancelLocationShare}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                {selectedLanguage === 'ko' ? '취소' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void confirmLocationShare()
+                }}
+                disabled={sending}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {sending
+                  ? (selectedLanguage === 'ko' ? '전송 중...' : 'Sending...')
+                  : (selectedLanguage === 'ko' ? '확인' : 'Confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {tourInfo ? (
         <TourDetailResizableDialog

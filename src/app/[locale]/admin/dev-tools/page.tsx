@@ -7,7 +7,7 @@ import { UserRole } from '@/lib/roles'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Eye, Users, Settings, Code, Monitor, Play, Square, ChevronDown, ChevronUp, User } from 'lucide-react'
+import { Eye, Users, Settings, Code, Monitor, Play, Square, ChevronDown, ChevronUp, User, LayoutGrid } from 'lucide-react'
 import { useRouter, useParams } from 'next/navigation'
 
 interface TeamMember {
@@ -226,6 +226,29 @@ export default function DevToolsPage() {
         </div>
         
       </div>
+
+      <Card className="mb-4 sm:mb-8">
+        <CardHeader className="p-3 sm:p-6 pb-2">
+          <CardTitle className="flex items-center text-sm sm:text-base">
+            <LayoutGrid className="w-4 h-4 sm:w-5 sm:h-5 mr-2 shrink-0" />
+            사이트 구조·권한
+          </CardTitle>
+          <CardDescription className="text-xs sm:text-sm">
+            관리자 메뉴와 역할별 접근 권한을 한곳에서 확인합니다.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-3 sm:p-6 pt-0">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-xs h-8"
+            onClick={() => router.push(`/${locale}/admin/site-directory`)}
+          >
+            사이트 구조 열기
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* 현재 사용자 정보 */}
       <Card className="mb-4 sm:mb-8">

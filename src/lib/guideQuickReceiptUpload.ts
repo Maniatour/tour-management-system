@@ -37,7 +37,28 @@ function receiptNote(ocrText?: string, note?: string): string {
   return lines.join('\n')
 }
 
-export async function uploadGuideQuickReceipt(params: GuideQuickReceiptUploadParams): Promise<void> {
+export type GuideQuickReceiptUploadResult = {
+  id: string
+  filePath: string
+}
+
+export async function deleteGuideQuickReceipt(params: {
+  expenseId: string
+  filePath?: string | null
+}): Promise<void> {
+  if (params.filePath) {
+    const { error: storageError } = await supabase.storage.from('tour-expenses').remove([params.filePath])
+    if (storageError) {
+      console.warn('Receipt storage delete failed:', storageError)
+    }
+  }
+  const { error } = await supabase.from('tour_expenses').delete().eq('id', params.expenseId)
+  if (error) throw error
+}
+
+export async function uploadGuideQuickReceipt(
+  params: GuideQuickReceiptUploadParams
+): Promise<GuideQuickReceiptUploadResult> {
   const { file, tourId, tourDate, productId, uploadedBy, ocrText, note } = params
   if (!isLikelyReceiptImageFile(file) || file.size <= 0) {
     throw new Error(EMPTY_RECEIPT_FILE)
@@ -73,8 +94,10 @@ export async function uploadGuideQuickReceipt(params: GuideQuickReceiptUploadPar
     candidates?.amount != null && Number.isFinite(candidates.amount) && candidates.amount > 0
       ? candidates.amount
       : 0
+  const expenseId = crypto.randomUUID()
 
   const { error: insertError } = await supabase.from('tour_expenses').insert({
+    id: expenseId,
     tour_id: tourId,
     paid_to: candidates?.paid_to?.trim() || null,
     paid_for: TOUR_EXPENSE_RECEIPT_PENDING_PAID_FOR,
@@ -94,4 +117,6 @@ export async function uploadGuideQuickReceipt(params: GuideQuickReceiptUploadPar
     await supabase.storage.from('tour-expenses').remove([filePath])
     throw insertError
   }
+
+  return { id: expenseId, filePath }
 }

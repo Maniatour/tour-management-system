@@ -913,9 +913,16 @@ const GYG_PRODUCT_ID_TO_NAME: Record<string, string> = {
   MDLVN: '라스베가스 야경투어',
 }
 
-/** GetYourGuide 본문 상품명 → 우리 product_id (S382661은 vendor code이므로 제목이 아닌 본문 상품명으로 매칭). Zion Bryce(그랜드서클)를 먼저 검사해 밤도깨비로 오매칭 방지. */
+/**
+ * GYG 본문 상품명 → 우리 product_id (S382661은 vendor code이므로 제목이 아닌 본문 상품명으로 매칭).
+ * Zion Bryce(그랜드서클 1박2일)를 먼저 검사해 밤도깨비로 오매칭 방지.
+ * "Las Vegas: Zion, Bryce, Grand Canyon & Antelope 2-Day Tour" 처럼 쉼표·콜론 구분도 허용.
+ */
+const GYG_MNGC1N_BODY_PATTERN =
+  /Zion[,\s]+Bryce[,\s]+Grand\s*Canyon|Las\s*Vegas\s*[:>]\s*Zion[,\s]+Bryce|Zion[,\s]+Bryce[\s,&]*Antelope|Zion[,\s]+Bryce.{0,80}2[\s-]*Day/i
+
 const GYG_BODY_PRODUCT_MAP: Array<{ pattern: RegExp | string; product_id: string }> = [
-  { pattern: /Zion\s*Bryce\s*Grand\s*Canyon|Las\s*Vegas\s*>\s*Zion\s*Bryce|Zion\s*Bryce\s*&?\s*Antelope/i, product_id: 'MNGC1N' },
+  { pattern: GYG_MNGC1N_BODY_PATTERN, product_id: 'MNGC1N' },
   // GYG 본문이 "Las Vegas: Grand Canyon Sunrise, ..." 처럼 콜론 구분인 경우가 많음 (화살표 > 외에 동일 의미)
   { pattern: /Grand\s*Canyon\s*Sunrise|Las\s*Vegas\s*[:>]?\s*Grand\s*Canyon\s*Sunrise/i, product_id: 'MDGCSUNRISE' },
   /** "Las Vegas: Grand Canyon, Antelope, Horseshoe, Lake Powell" + Shared Tour for Antelope X (One Day Grand Circle) → 그랜드서클 당일 */
@@ -1067,13 +1074,22 @@ function extractGetYourGuide(
   }
 
   // 상품명: "Las Vegas > Grand Canyon Sunrise + ..." 또는 "Las Vegas: Grand Canyon Sunrise, ..." (콜론은 이전 클래스에 없어 잘리던 문제 → : . 허용)
-  const productLine = text.match(/(?:offer\s*has\s*been\s*booked|product|tour)\s*:?\s*([A-Za-z0-9\s>+&,.:\-]+?)(?:\s*group\s*tour|with\s*lower|\n\n)/im)
+  // HTML→평문 시 줄바꿈이 공백이 되므로 Single Room / Reference number 도 종료 조건에 포함
+  const productLine = text.match(
+    /(?:offer\s*has\s*been\s*booked|product|tour)\s*:?\s*([A-Za-z0-9\s>+&,.:\-]+?)(?:\s*group\s*tour|with\s*lower|\n\n|\bsingle\s*room\b|\bdouble\s*room\b|\breference\s*number\b)/im
+  )
   if (productLine) out.product_name = productLine[1].trim()
   if (!out.product_name) {
-    const arrowProduct = text.match(/([A-Za-z0-9\s]+>\s*[A-Za-z0-9\s+&,.:\-]+?)(?:\s*group\s*tour|with\s*lower|number\s*of\s*participants|\n\n)/im)
+    const arrowProduct = text.match(/([A-Za-z0-9\s]+>\s*[A-Za-z0-9\s+&,.:\-]+?)(?:\s*group\s*tour|with\s*lower|number\s*of\s*participants|\n\n|\bsingle\s*room\b)/im)
     if (arrowProduct) out.product_name = arrowProduct[1].trim()
   }
   // 라벨 없이 제목/첫 줄만 오는 경우: 본문에서 직접 상품 줄 후보 추출
+  if (!out.product_name) {
+    const zionBryce2Day = text.match(
+      /(Las\s+Vegas\s*[:>]\s*Zion[,\s]+Bryce[^.]{0,120}?2[\s-]*Day\s*Tour)/i
+    )
+    if (zionBryce2Day) out.product_name = zionBryce2Day[1].trim()
+  }
   if (!out.product_name) {
     const loose = text.match(
       /(Las\s+Vegas\s*[:>]\s*Grand\s+Canyon\s+Sunrise[^.\n]*)/i
@@ -1145,6 +1161,19 @@ function extractGetYourGuide(
   } else if (gygDoubleOccupancy && !gygSingleOccupancy) {
     pushImportChoiceName('2인 1실')
     pushImportChoiceName('Double Room')
+  }
+
+  // 그랜드서클 1박2일: 본문에 앤텔롭 초이스가 없으면 로어 앤텔롭이 기본
+  const hasCanyonChoice = (out.import_choice_option_names || []).some((n) =>
+    /antelope|앤텔롭/i.test(n)
+  )
+  if (out.product_id === 'MNGC1N' && !hasCanyonChoice) {
+    if (/antelope\s+canyon\s+x\b|\bantelope\s*x\b|\bx\s*antelope/i.test(textOneLine)) {
+      pushImportChoiceName('X Antelope Canyon')
+      pushImportChoiceName('Antelope X Canyon')
+    } else {
+      pushImportChoiceName('Lower Antelope Canyon')
+    }
   }
 
   // 미국 거주자 구분·기타 입장료는 항상 미정 기본 선택 (import_choice_undecided_groups)

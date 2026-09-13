@@ -41,12 +41,19 @@ export type TourPhotoUploadQueueParams = {
   quiet?: boolean
 }
 
+export type UploadedTourPhotoRef = {
+  id: string
+  filePath: string
+  thumbnailPath: string | null
+}
+
 export type TourPhotoUploadQueueResult = {
   totalSuccessful: number
   totalFailed: number
   failedFiles: string[]
   skippedDuplicateContent: number
   skippedAlreadyUploaded: number
+  uploadedPhotos: UploadedTourPhotoRef[]
   /** 즉시 사용자에게 보여줄 메시지 (업로드할 파일 없음 등) */
   userMessages?: string[]
 }
@@ -77,6 +84,7 @@ export async function runTourPhotoUploadQueue(
     failedFiles: [],
     skippedDuplicateContent: 0,
     skippedAlreadyUploaded: 0,
+    uploadedPhotos: [],
   }
 
   if (!files.length) {
@@ -87,6 +95,7 @@ export async function runTourPhotoUploadQueue(
   let totalSuccessful = 0
   let totalFailed = 0
   const failedFiles: string[] = []
+  const uploadedPhotos: UploadedTourPhotoRef[] = []
   let skippedDuplicateContent = 0
   let skippedAlreadyUploaded = 0
 
@@ -159,6 +168,7 @@ export async function runTourPhotoUploadQueue(
     try {
       await runWithConcurrency(toUpload, concurrency, async (file) => {
       try {
+        let uploaded: UploadedTourPhotoRef | null = null
         await withUploadRetries(
           async () => {
             const maxBytes = tourPhotoMaxBytesForFile(file)
@@ -223,7 +233,7 @@ export async function runTourPhotoUploadQueue(
                 share_token: shareToken,
                 thumbnail_path: thumbnailPath,
               })
-              .select()
+              .select('id, file_path, thumbnail_path')
               .single()
 
             if (dbError) {
@@ -231,10 +241,16 @@ export async function runTourPhotoUploadQueue(
               if (thumbnailPath) await supabase.storage.from('tour-photos').remove([thumbnailPath])
               throw dbError
             }
-            if (!photoData) throw new Error('No row returned from tour_photos insert')
+            if (!photoData?.id) throw new Error('No row returned from tour_photos insert')
+            uploaded = {
+              id: photoData.id,
+              filePath: photoData.file_path || uploadData.path,
+              thumbnailPath: photoData.thumbnail_path ?? thumbnailPath,
+            }
           },
           { attempts: 4, baseDelayMs: 500, onBeforeRetry }
         )
+        if (uploaded) uploadedPhotos.push(uploaded)
         totalSuccessful += 1
       } catch (error) {
         console.error(`Error uploading ${file.name}:`, error)
@@ -259,6 +275,7 @@ export async function runTourPhotoUploadQueue(
       failedFiles,
       skippedDuplicateContent,
       skippedAlreadyUploaded,
+      uploadedPhotos,
     }
   } catch (error) {
     if (useSession) endTourPhotoUploadSession()

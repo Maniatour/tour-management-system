@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  formatExtractedImportPartyLabel,
   isBookingReceiptImportNotifyRow,
   isReservationRelatedImportNotifyRow,
   isReservationImportWithinRecentDays,
@@ -62,6 +63,20 @@ test('이미 예약이 있으면 미처리 뱃지에서 제외한다', () => {
   )
   assert.equal(isUnprocessedBookingImportListRow({ ...booking, status: 'confirmed' }), false)
   assert.equal(isUnprocessedBookingImportListRow({ ...booking, status: 'pending', reservation_id: 'r1' }), false)
+})
+
+test('예약 메일 알림 인원은 이름 뒤에 붙일 문구로 만든다', () => {
+  assert.equal(formatExtractedImportPartyLabel({ adults: 4 }), '4명')
+  assert.equal(formatExtractedImportPartyLabel({ total_people: 3 }), '3명')
+  assert.equal(
+    formatExtractedImportPartyLabel({ adults: 2, children: 1 }),
+    '성인 2 · 아동 1'
+  )
+  assert.equal(
+    formatExtractedImportPartyLabel({ adults: 1, children: 1, infants: 1 }),
+    '성인 1 · 아동 1 · 유아 1'
+  )
+  assert.equal(formatExtractedImportPartyLabel({}), '')
 })
 
 test('최근 3일 이내 수신 메일만 뱃지에 포함한다', () => {

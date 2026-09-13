@@ -1,11 +1,14 @@
 ﻿'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Cloud, RefreshCw, Sun } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import WeatherDataCollector from '@/components/WeatherDataCollector'
+import AdminTablePagination, {
+  DEFAULT_ADMIN_TABLE_PAGE_SIZE,
+} from '@/components/admin/AdminTablePagination'
 
 type TabId = 'weather' | 'sunriseSunset'
 
@@ -43,6 +46,9 @@ export default function AdminWeatherRecordsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [sortDesc, setSortDesc] = useState(true)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(DEFAULT_ADMIN_TABLE_PAGE_SIZE)
+  const tableRef = useRef<HTMLDivElement>(null)
 
   const loadWeather = useCallback(async () => {
     const { data, error: qErr } = await supabase
@@ -92,6 +98,10 @@ export default function AdminWeatherRecordsPage() {
     load()
   }, [load])
 
+  useEffect(() => {
+    setPage(1)
+  }, [activeTab, sortDesc])
+
   const fmtTime = (iso: string | null) => {
     if (!iso) return '—'
     try {
@@ -106,6 +116,52 @@ export default function AdminWeatherRecordsPage() {
 
   const currentRows = activeTab === 'weather' ? weatherRows : sunriseRows
   const isEmpty = !loading && currentRows.length === 0
+  const totalItems = currentRows.length
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+  const safePage = Math.min(Math.max(1, page), totalPages)
+  const rangeStart = totalItems === 0 ? 0 : (safePage - 1) * pageSize + 1
+  const rangeEnd = Math.min(safePage * pageSize, totalItems)
+  const pagedWeatherRows = useMemo(
+    () => weatherRows.slice((safePage - 1) * pageSize, (safePage - 1) * pageSize + pageSize),
+    [weatherRows, safePage, pageSize]
+  )
+  const pagedSunriseRows = useMemo(
+    () => sunriseRows.slice((safePage - 1) * pageSize, (safePage - 1) * pageSize + pageSize),
+    [sunriseRows, safePage, pageSize]
+  )
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  const goToPage = (nextPage: number) => {
+    setPage(nextPage)
+    tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const pagination = !isEmpty ? (
+    <AdminTablePagination
+      page={safePage}
+      totalPages={totalPages}
+      totalItems={totalItems}
+      pageSize={pageSize}
+      onPageChange={goToPage}
+      onPageSizeChange={(size) => {
+        setPageSize(size)
+        setPage(1)
+      }}
+      labels={{
+        showing: t('pagination.showing', { start: rangeStart, end: rangeEnd, total: totalItems }),
+        pageOf: t('pagination.pageOf', { current: safePage, total: totalPages }),
+        first: t('pagination.first'),
+        previous: t('pagination.previous'),
+        next: t('pagination.next'),
+        last: t('pagination.last'),
+        pageSize: t('pagination.pageSize'),
+        ariaNav: t('pagination.ariaNav'),
+      }}
+    />
+  ) : null
 
   return (
     <div className="max-w-full mx-auto px-2 sm:px-4 py-4 sm:py-6">
@@ -183,76 +239,84 @@ export default function AdminWeatherRecordsPage() {
         <p className="text-gray-600 text-sm">
           {activeTab === 'weather' ? t('errorEmpty') : t('errorEmptySunrise')}
         </p>
-      ) : activeTab === 'weather' ? (
-        <div className="overflow-x-auto bg-white rounded-lg border border-gray-200 shadow-sm">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colDate')}</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colLocation')}</th>
-                <th className="text-right px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colTemp')}</th>
-                <th className="text-right px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colMin')}</th>
-                <th className="text-right px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colMax')}</th>
-                <th className="text-right px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colHumidity')}</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colWeather')}</th>
-                <th className="text-right px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colWind')}</th>
-                <th className="text-right px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colVis')}</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colUpdated')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {weatherRows.map((r) => (
-                <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50/80">
-                  <td className="px-3 py-2 whitespace-nowrap text-gray-900">{r.date}</td>
-                  <td className="px-3 py-2 text-gray-800">{r.location_name}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {r.temperature != null ? Number(r.temperature).toFixed(1) : '—'}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {r.temp_min != null ? Number(r.temp_min).toFixed(1) : '—'}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {r.temp_max != null ? Number(r.temp_max).toFixed(1) : '—'}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{r.humidity ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-800 max-w-[200px] truncate" title={r.weather_description || ''}>
-                    {r.weather_main || '—'}
-                    {r.weather_description ? ` (${r.weather_description})` : ''}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {r.wind_speed != null ? Number(r.wind_speed).toFixed(1) : '—'}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{r.visibility ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">{fmtTime(r.updated_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       ) : (
-        <div className="overflow-x-auto bg-white rounded-lg border border-gray-200 shadow-sm">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colDate')}</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colLocation')}</th>
-                <th className="text-right px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colSunrise')}</th>
-                <th className="text-right px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colSunset')}</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colUpdated')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sunriseRows.map((r) => (
-                <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50/80">
-                  <td className="px-3 py-2 whitespace-nowrap text-gray-900">{r.date}</td>
-                  <td className="px-3 py-2 text-gray-800">{r.location_name}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-amber-700">{r.sunrise_time || '—'}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-indigo-700">{r.sunset_time || '—'}</td>
-                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">{fmtTime(r.updated_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div
+          ref={tableRef}
+          className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden"
+        >
+          {activeTab === 'weather' ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colDate')}</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colLocation')}</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colTemp')}</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colMin')}</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colMax')}</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colHumidity')}</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colWeather')}</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colWind')}</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colVis')}</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colUpdated')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedWeatherRows.map((r) => (
+                    <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50/80">
+                      <td className="px-3 py-2 whitespace-nowrap text-gray-900">{r.date}</td>
+                      <td className="px-3 py-2 text-gray-800">{r.location_name}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {r.temperature != null ? Number(r.temperature).toFixed(1) : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {r.temp_min != null ? Number(r.temp_min).toFixed(1) : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {r.temp_max != null ? Number(r.temp_max).toFixed(1) : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.humidity ?? '—'}</td>
+                      <td className="px-3 py-2 text-gray-800 max-w-[200px] truncate" title={r.weather_description || ''}>
+                        {r.weather_main || '—'}
+                        {r.weather_description ? ` (${r.weather_description})` : ''}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {r.wind_speed != null ? Number(r.wind_speed).toFixed(1) : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.visibility ?? '—'}</td>
+                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">{fmtTime(r.updated_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colDate')}</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colLocation')}</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colSunrise')}</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colSunset')}</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{t('colUpdated')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedSunriseRows.map((r) => (
+                    <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50/80">
+                      <td className="px-3 py-2 whitespace-nowrap text-gray-900">{r.date}</td>
+                      <td className="px-3 py-2 text-gray-800">{r.location_name}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-amber-700">{r.sunrise_time || '—'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-indigo-700">{r.sunset_time || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">{fmtTime(r.updated_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="border-t border-gray-200">{pagination}</div>
         </div>
       )}
     </div>

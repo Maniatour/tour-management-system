@@ -1,7 +1,7 @@
 'use client'
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ChangeEvent } from 'react'
-import { Camera, Check, Image as ImageIcon, Loader2, Receipt, RefreshCw, X, WifiOff } from 'lucide-react'
+import { Camera, Check, Image as ImageIcon, Loader2, Receipt, RefreshCw, Trash2, X, WifiOff } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
 import { fetchApiWithAuthWhenReady } from '@/lib/api-client-bearer'
@@ -10,7 +10,8 @@ import GuideLiveCameraOverlay from '@/components/guide/GuideLiveCameraOverlay'
 import { openGuideLiveCameraStream } from '@/lib/guideLiveCameraFocus'
 import { prepareGuideQuickPhoto } from '@/lib/guideQuickPhotoProcess'
 import { classifyGuideQuickCapture, type GuideQuickCaptureKind } from '@/lib/guideQuickPhotoClassify'
-import { uploadGuideQuickReceipt } from '@/lib/guideQuickReceiptUpload'
+import { deleteGuideQuickReceipt, uploadGuideQuickReceipt } from '@/lib/guideQuickReceiptUpload'
+import { deleteTourPhotoFromStorageAndDb } from '@/lib/deleteTourPhoto'
 import {
   deletePendingTourPhoto,
   enqueuePendingTourPhoto,
@@ -18,7 +19,7 @@ import {
   listPendingTourPhotos,
   type PendingTourPhotoRecord,
 } from '@/lib/guideOfflineStore'
-import { runTourPhotoUploadQueue } from '@/lib/runTourPhotoUploadQueue'
+import { runTourPhotoUploadQueue, dispatchTourPhotoUploadFinished } from '@/lib/runTourPhotoUploadQueue'
 import { tourPhotoPublicUrl } from '@/components/tour/TourPhotoMedia'
 import type { TodayPhotoThumb, TodayPhotoTourMatch } from '@/lib/guideTodayPhotoTour'
 
@@ -30,6 +31,36 @@ type LocalShot = {
   error?: string
   kind?: GuideQuickCaptureKind
   ocrText?: string
+  photoId?: string
+  filePath?: string
+  thumbnailPath?: string | null
+  expenseId?: string
+  receiptFilePath?: string
+}
+
+function QuickPhotoDeleteButton({
+  label,
+  disabled,
+  onDelete,
+}: {
+  label: string
+  disabled?: boolean
+  onDelete: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={(event) => {
+        event.stopPropagation()
+        onDelete()
+      }}
+      className="absolute right-1 top-1 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/70 text-white shadow-sm hover:bg-red-600 disabled:opacity-50"
+    >
+      <Trash2 className="h-4 w-4" />
+    </button>
+  )
 }
 
 type TodayPhotoTourResponse = {
@@ -80,6 +111,7 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
   const [offline, setOffline] = useState(false)
   const [liveCameraOpen, setLiveCameraOpen] = useState(false)
   const [liveStream, setLiveStream] = useState<MediaStream | null>(null)
+  const [deletingIds, setDeletingIds] = useState<string[]>([])
 
   const rememberPreview = (url: string) => {
     previewUrlsRef.current.push(url)
@@ -199,7 +231,7 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
 
       try {
         if (ctx.kind === 'receipt') {
-          await uploadGuideQuickReceipt({
+          const receipt = await uploadGuideQuickReceipt({
             file,
             tourId: ctx.tourId,
             tourDate: ctx.tourDate,
@@ -211,7 +243,14 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
           setShots((prev) =>
             prev.map((shot) => {
               if (shot.id !== shotId) return shot
-              return { id: shot.id, previewUrl: shot.previewUrl, status: 'saved', kind: 'receipt' }
+              return {
+                id: shot.id,
+                previewUrl: shot.previewUrl,
+                status: 'saved',
+                kind: 'receipt',
+                expenseId: receipt.id,
+                receiptFilePath: receipt.filePath,
+              }
             })
           )
           setReceiptCount((count) => count + 1)
@@ -226,11 +265,20 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
           quiet: true,
         })
         if (result.totalSuccessful > 0) {
+          const uploaded = result.uploadedPhotos[0]
           await deletePendingTourPhoto(shotId)
           setShots((prev) =>
             prev.map((shot) => {
               if (shot.id !== shotId) return shot
-              return { id: shot.id, previewUrl: shot.previewUrl, status: 'saved', kind: 'photo' }
+              return {
+                id: shot.id,
+                previewUrl: shot.previewUrl,
+                status: 'saved',
+                kind: 'photo',
+                photoId: uploaded?.id,
+                filePath: uploaded?.filePath,
+                thumbnailPath: uploaded?.thumbnailPath ?? null,
+              }
             })
           )
           setPhotoCount((count) => count + result.totalSuccessful)
@@ -303,6 +351,85 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
       })
     },
     [currentUserEmail, tour, uploadFile]
+  )
+
+  const dropShot = useCallback((shotId: string, previewUrl?: string) => {
+    setShots((prev) => prev.filter((shot) => shot.id !== shotId))
+    if (!previewUrl) return
+    URL.revokeObjectURL(previewUrl)
+    previewUrlsRef.current = previewUrlsRef.current.filter((url) => url !== previewUrl)
+  }, [])
+
+  const deleteShot = useCallback(
+    async (shot: LocalShot) => {
+      if (deletingIds.includes(shot.id)) return
+      const isSaved = shot.status === 'saved'
+      const confirmMessage =
+        shot.kind === 'receipt' && isSaved
+          ? t('deleteReceiptConfirm')
+          : isSaved
+            ? t('deleteConfirm')
+            : t('discardConfirm')
+      if (!window.confirm(confirmMessage)) return
+
+      setDeletingIds((ids) => (ids.includes(shot.id) ? ids : [...ids, shot.id]))
+      try {
+        if (isSaved && shot.kind === 'receipt' && shot.expenseId) {
+          await deleteGuideQuickReceipt({
+            expenseId: shot.expenseId,
+            filePath: shot.receiptFilePath ?? null,
+          })
+          setReceiptCount((count) => Math.max(0, count - 1))
+        } else if (isSaved && shot.photoId && shot.filePath) {
+          await deleteTourPhotoFromStorageAndDb({
+            photoId: shot.photoId,
+            filePath: shot.filePath,
+            thumbnailPath: shot.thumbnailPath ?? null,
+          })
+          const tourId = tourRef.current?.id || tour?.id
+          if (tourId) dispatchTourPhotoUploadFinished(tourId)
+          setRecentPhotos((photos) => photos.filter((item) => item.id !== shot.photoId))
+          setPhotoCount((count) => Math.max(0, count - 1))
+        } else if (isSaved) {
+          throw new Error(t('deleteError'))
+        }
+        await deletePendingTourPhoto(shot.id)
+        dropShot(shot.id, shot.previewUrl)
+      } catch (error) {
+        console.error('Error deleting quick photo:', error)
+        window.alert(t('deleteError'))
+      } finally {
+        setDeletingIds((ids) => ids.filter((id) => id !== shot.id))
+      }
+    },
+    [deletingIds, dropShot, t, tour]
+  )
+
+  const deleteRecentPhoto = useCallback(
+    async (photo: TodayPhotoThumb) => {
+      if (deletingIds.includes(photo.id)) return
+      if (!window.confirm(t('deleteConfirm'))) return
+
+      setDeletingIds((ids) => (ids.includes(photo.id) ? ids : [...ids, photo.id]))
+      try {
+        await deleteTourPhotoFromStorageAndDb({
+          photoId: photo.id,
+          filePath: photo.filePath,
+          thumbnailPath: photo.thumbnailPath ?? null,
+        })
+        const tourId = tourRef.current?.id || tour?.id
+        if (tourId) dispatchTourPhotoUploadFinished(tourId)
+        setRecentPhotos((photos) => photos.filter((item) => item.id !== photo.id))
+        setShots((prev) => prev.filter((shot) => shot.photoId !== photo.id))
+        setPhotoCount((count) => Math.max(0, count - 1))
+      } catch (error) {
+        console.error('Error deleting recent photo:', error)
+        window.alert(t('deleteError'))
+      } finally {
+        setDeletingIds((ids) => ids.filter((id) => id !== photo.id))
+      }
+    },
+    [deletingIds, t, tour]
   )
 
   const retryQueued = useCallback(async () => {
@@ -541,9 +668,16 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
               {t('photosToday', { count: photoCount })}
               {receiptCount > 0 ? ` · ${t('receiptsToday', { count: receiptCount })}` : ''}
             </p>
+            {(shots.length > 0 || recentPhotos.length > 0) && (
+              <p className="text-center text-xs text-muted-foreground">{t('deleteHint')}</p>
+            )}
 
             <div className="grid grid-cols-3 gap-2">
-              {shots.map((shot) => (
+              {shots.map((shot) => {
+                const canDelete =
+                  shot.status === 'saved' || shot.status === 'failed' || shot.status === 'queued'
+                const isDeleting = deletingIds.includes(shot.id)
+                return (
                 <div key={shot.id} className="relative aspect-square overflow-hidden rounded-xl border border-border/60 bg-muted">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={shot.previewUrl} alt="" className="h-full w-full object-cover" />
@@ -552,6 +686,13 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
                       <Receipt className="h-3 w-3" />
                       {t('receiptBadge')}
                     </span>
+                  )}
+                  {canDelete && (
+                    <QuickPhotoDeleteButton
+                      label={t('delete')}
+                      disabled={isDeleting}
+                      onDelete={() => void deleteShot(shot)}
+                    />
                   )}
                   <div className="absolute inset-x-0 bottom-0 bg-black/55 px-1.5 py-1 text-center text-[10px] font-medium text-white">
                     {shot.status === 'processing' && t('processing')}
@@ -564,25 +705,29 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
                       </span>
                     )}
                     {shot.status === 'failed' && t('failed')}
+                    {isDeleting && ` · ${t('deleting')}`}
                   </div>
-                  {(shot.status === 'processing' || shot.status === 'uploading') && (
+                  {(shot.status === 'processing' || shot.status === 'uploading' || isDeleting) && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                       <Loader2 className="h-6 w-6 animate-spin text-white" />
                     </div>
                   )}
-                  {(shot.status === 'failed' || shot.status === 'queued') && (
+                  {(shot.status === 'failed' || shot.status === 'queued') && !isDeleting && (
                     <button
                       type="button"
                       onClick={() => void retryShot(shot)}
-                      className="absolute left-1/2 top-2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-gray-900"
+                      className="absolute bottom-7 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-gray-900"
                     >
                       <RefreshCw className="h-3 w-3" />
                       {t('retry')}
                     </button>
                   )}
                 </div>
-              ))}
-              {recentPhotos.map((photo) => (
+                )
+              })}
+              {recentPhotos
+                .filter((photo) => !shots.some((shot) => shot.photoId === photo.id))
+                .map((photo) => (
                 <div key={photo.id} className="relative aspect-square overflow-hidden rounded-xl border border-border/60 bg-muted">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -590,6 +735,16 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
                     alt=""
                     className="h-full w-full object-cover"
                   />
+                  <QuickPhotoDeleteButton
+                    label={t('delete')}
+                    disabled={deletingIds.includes(photo.id)}
+                    onDelete={() => void deleteRecentPhoto(photo)}
+                  />
+                  {deletingIds.includes(photo.id) && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                      <Loader2 className="h-6 w-6 animate-spin text-white" />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

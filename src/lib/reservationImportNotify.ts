@@ -25,7 +25,32 @@ export type ReservationImportNotifyRow = {
     product_name?: string
     tour_date?: string
     customer_name?: string
+    adults?: number
+    children?: number
+    infants?: number
+    total_people?: number
   } | null
+}
+
+/** 예약 메일 알림: 이름 뒤에 붙일 인원 문구 (성인만이면 `N명`, 아동·유아 있으면 구분) */
+export function formatExtractedImportPartyLabel(
+  extracted?: ReservationImportNotifyRow['extracted_data']
+): string {
+  if (!extracted) return ''
+  const adults = Number(extracted.adults ?? 0) || 0
+  const children = Number(extracted.children ?? 0) || 0
+  const infants = Number(extracted.infants ?? 0) || 0
+  const breakdown = adults + children + infants
+  const total = breakdown > 0 ? breakdown : Number(extracted.total_people ?? 0) || 0
+  if (total <= 0) return ''
+  if (children > 0 || infants > 0) {
+    const parts: string[] = []
+    if (adults > 0) parts.push(`성인 ${adults}`)
+    if (children > 0) parts.push(`아동 ${children}`)
+    if (infants > 0) parts.push(`유아 ${infants}`)
+    return parts.join(' · ')
+  }
+  return `${total}명`
 }
 
 function isKKdayBookingSubject(subject: string | null | undefined): boolean {
