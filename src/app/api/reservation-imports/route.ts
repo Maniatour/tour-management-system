@@ -14,6 +14,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Json } from '@/lib/database.types'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import type { ReservationImportInsert, ExtractedReservationData } from '@/types/reservationImport'
+import { tryAutoConfirmReservationImport } from '@/lib/autoConfirmReservationImport'
 import { normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
 import { expandChannelRnMatchVariants } from '@/utils/channelRnMatch'
 
@@ -208,7 +209,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ id: inserted.id, status: 'pending' })
+  let status: 'pending' | 'confirmed' = 'pending'
+  let reservationId: string | null = null
+  if (!isZellePaymentSentEmail(subject)) {
+    try {
+      const auto = await tryAutoConfirmReservationImport(client as never, inserted.id)
+      if (auto.attempted && auto.ok) {
+        status = 'confirmed'
+        reservationId = auto.reservation_id
+      } else if (auto.attempted && !auto.ok) {
+        console.warn('[reservation-imports] auto-confirm failed:', auto.reason)
+      }
+    } catch (e) {
+      console.error('[reservation-imports] auto-confirm error:', e)
+    }
+  }
+
+  return NextResponse.json({
+    id: inserted.id,
+    status,
+    ...(reservationId ? { reservation_id: reservationId } : {}),
+  })
 }
 
 function channelRnMatchesExistingSet(channelRn: string | undefined | null, existing: Set<string>): boolean {
@@ -444,7 +465,7 @@ export async function GET(request: NextRequest) {
   let query = client
     .from('reservation_imports')
     .select(
-      'id, message_id, source_email, platform_key, subject, received_at, extracted_data, status, reservation_id, created_at'
+      'id, message_id, source_email, platform_key, subject, received_at, extracted_data, status, reservation_id, confirmed_by, created_at'
     )
 
   if (status === 'active') {

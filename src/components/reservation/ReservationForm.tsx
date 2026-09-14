@@ -160,8 +160,11 @@ import {
   findUsResidentClassificationChoice,
   buildResidentChoiceRowsFromLineState,
   mergeResidentRowsIntoSelectedChoices,
+  overlayResidentRowsFromPricingJson,
   parseResidentLineStateFromSelections,
+  residentAmountsAlignedToKeptCounts,
   residentLineStateEquals,
+  shouldKeepFormResidentCounts,
   computePassCoveredCount,
   recoverResidentStatusAmounts,
   selectedChoicesToPricingChoicesJson,
@@ -1068,6 +1071,8 @@ export default function ReservationForm({
   const [importChoicesHydratedProductId, setImportChoicesHydratedProductId] = useState<string | null>(null)
   /** 저장된 예약 수정: 초이스 하이드레이션 전에 loadPricingInfo가 빈 selectedChoices로 한 번 도는 것 방지 (가격·정산 오버레이 이중 표시) */
   const [editPricingChoicesReady, setEditPricingChoicesReady] = useState(true)
+  /** reservation_customers 조회가 끝나기 전에 게스트 거주 확인이 비거주자로 덮어쓰지 않도록 */
+  const [residentCustomersHydrated, setResidentCustomersHydrated] = useState(false)
   /** 채널 버튼/모달에 "Klook - All Inclusive" 형태로 보이기 위해 channel_products variant명 로드 */
   const [channelProductVariantsForDisplay, setChannelProductVariantsForDisplay] = useState<
     Array<{ variant_key: string; variant_name_ko?: string | null; variant_name_en?: string | null }>
@@ -1200,8 +1205,18 @@ export default function ReservationForm({
         parsed.nonResidentPurchasePassCount
       const formAssigned = assignedResidentPeopleFromForm(prev)
       // 초이스가 아직 미정이거나 수량이 비어도, 게스트 폼·reservation_customers로 이미 배정된 인원은 덮지 않음
-      const keepFormAssigned = formAssigned > 0 && parsedAssigned < formAssigned
-      const source = keepFormAssigned ? cur : parsed
+      // 총원이 같아도 미국 거주 ↔ 비거주처럼 라인 구성이 다르면 고객 테이블 값을 유지
+      const keepFormAssigned = shouldKeepFormResidentCounts(formAssigned, parsedAssigned, cur, parsed)
+      const source = keepFormAssigned
+        ? {
+            ...cur,
+            residentStatusAmounts: residentAmountsAlignedToKeptCounts(
+              cur,
+              parsed.residentStatusAmounts,
+              cur.residentStatusAmounts
+            ),
+          }
+        : parsed
       const assigned = assignedResidentPeopleFromForm(source)
       const passCovered = computePassCoveredCount(
         source.nonResidentWithPassCount,
@@ -1215,7 +1230,14 @@ export default function ReservationForm({
         ...source,
         undecidedResidentCount: nextUndecided,
       }
-      const needsChoiceSync = parsed.undecidedResidentCount > nextUndecided
+      const needsChoiceSync =
+        parsed.undecidedResidentCount > nextUndecided ||
+        (keepFormAssigned &&
+          (parsed.usResidentCount !== next.usResidentCount ||
+            parsed.nonResidentCount !== next.nonResidentCount ||
+            parsed.nonResidentUnder16Count !== next.nonResidentUnder16Count ||
+            parsed.nonResidentWithPassCount !== next.nonResidentWithPassCount ||
+            parsed.nonResidentPurchasePassCount !== next.nonResidentPurchasePassCount))
       if (
         residentLineStateEquals(cur, next) &&
         (prev.passCoveredCount || 0) === passCovered &&
@@ -1410,6 +1432,7 @@ export default function ReservationForm({
     customerId: formData.customerId || null,
     enabled: Boolean(effectiveReservationId) && showResidentStatusSection,
     productChoicesReady: (formData.productChoices?.length || 0) > 0,
+    residentCustomersHydrated,
     totalPeople: formData.totalPeople || 0,
     applyResidentParticipantPatch,
     syncResidentChoicesFromCurrentCounts,
@@ -1670,17 +1693,20 @@ export default function ReservationForm({
           reservationKeys: reservation ? Object.keys(reservation) : []
         })
         loadedReservationDataRef.current = null
+        setResidentCustomersHydrated(false)
         return
       }
       
       // 이미 로드된 reservation이면 스킵
       if (loadedReservationDataRef.current === reservation.id) {
         console.log('ReservationForm: 이미 로드된 reservation 데이터, 스킵:', reservation.id)
+        setResidentCustomersHydrated(true)
         return
       }
       // 예약 가져오기(이메일)에서 열었을 때: DB 조회 없이 전달된 rez 초기값만 사용
       if (typeof reservation.id === 'string' && reservation.id.startsWith('import-')) {
         loadedReservationDataRef.current = reservation.id
+        setResidentCustomersHydrated(true)
         return
       }
       
@@ -1694,10 +1720,12 @@ export default function ReservationForm({
           reservationKeys
         })
         loadedReservationDataRef.current = reservation.id
+        setResidentCustomersHydrated(true)
         return
       }
       
       loadedReservationDataRef.current = reservation.id
+      setResidentCustomersHydrated(false)
 
       console.log('ReservationForm: reservation_id로 데이터 조회 시작:', {
         reservationId: reservation.id,
@@ -1725,6 +1753,7 @@ export default function ReservationForm({
           // PGRST116은 "no rows returned" 오류 - 새 예약 모드일 수 있음
           if (reservationError.code === 'PGRST116') {
             console.log('ReservationForm: 예약 데이터가 없음 (새 예약 모드일 수 있음):', reservation.id)
+            setResidentCustomersHydrated(true)
             return
           }
           if (!isAbortLikeError(reservationError)) {
@@ -1736,6 +1765,7 @@ export default function ReservationForm({
               code: reservationError.code
             })
           }
+          setResidentCustomersHydrated(true)
           return
         }
 
@@ -2042,11 +2072,40 @@ export default function ReservationForm({
               }
             }
           }
+
+          setFormData((prev) => {
+            const incomingAssigned =
+              usResidentCount +
+              nonResidentCount +
+              nonResidentUnder16Count +
+              nonResidentWithPassCount +
+              nonResidentPurchasePassCount
+            const prevAssigned = assignedResidentPeopleFromForm(prev)
+            if (incomingAssigned === 0 && prevAssigned > 0) return prev
+            return {
+              ...prev,
+              usResidentCount,
+              nonResidentCount,
+              nonResidentWithPassCount,
+              nonResidentUnder16Count,
+              nonResidentPurchasePassCount,
+              passCoveredCount,
+              undecidedResidentCount: leftoverUndecidedResidentCount(
+                loadedTotalPeople,
+                incomingAssigned
+              ),
+              ...(guestResidentPatch || {}),
+            }
+          })
+          setResidentCustomersHydrated(true)
+        } else {
+          setResidentCustomersHydrated(true)
         }
       } catch (error) {
         if (!isAbortLikeError(error)) {
           console.error('ReservationForm: 데이터 조회 중 예외 발생:', error)
         }
+        setResidentCustomersHydrated(true)
       }
     }
 
@@ -2492,6 +2551,30 @@ export default function ReservationForm({
             quantity: qty,
             total_price: existingUndecided != null ? Number(existingUndecided.total_price) || 0 : 0,
           } as any)
+        }
+      }
+
+      // 3-4. reservation_pricing.choices의 거주 그룹이 있으면 테이블의 옛 비거주 행보다 우선
+      if (allProductChoices.length > 0) {
+        let pricingChoicesJson: unknown = reservationChoicesJson
+        try {
+          const { data: pricingRow } = await supabase
+            .from('reservation_pricing')
+            .select('choices')
+            .eq('reservation_id', reservationId)
+            .maybeSingle()
+          if (pricingRow?.choices) pricingChoicesJson = pricingRow.choices
+        } catch {
+          // keep reservationChoicesJson
+        }
+        if (pricingChoicesJson) {
+          const overlaid = overlayResidentRowsFromPricingJson(
+            allProductChoices,
+            selectedChoices,
+            pricingChoicesJson
+          )
+          selectedChoices.length = 0
+          selectedChoices.push(...overlaid)
         }
       }
 
@@ -4317,11 +4400,25 @@ export default function ReservationForm({
                 : 0,
               ...(channelSettlementFromDb != null ? { channelSettlementAmount: channelSettlementFromDb } : {}),
               onSiteBalanceAmount: onSiteBalanceAmount,
-              residentStatusAmounts: {
-                ...emptyResidentStatusAmounts(),
-                ...(prev.residentStatusAmounts || {}),
-                ...residentAmountsFromChoices,
-              },
+              residentStatusAmounts:
+                assignedResidentPeopleFromForm(prev) > 0
+                  ? residentAmountsAlignedToKeptCounts(
+                      {
+                        undecidedResidentCount: prev.undecidedResidentCount || 0,
+                        usResidentCount: prev.usResidentCount || 0,
+                        nonResidentCount: prev.nonResidentCount || 0,
+                        nonResidentUnder16Count: prev.nonResidentUnder16Count || 0,
+                        nonResidentWithPassCount: prev.nonResidentWithPassCount || 0,
+                        nonResidentPurchasePassCount: prev.nonResidentPurchasePassCount || 0,
+                      },
+                      { ...emptyResidentStatusAmounts(), ...residentAmountsFromChoices },
+                      { ...emptyResidentStatusAmounts(), ...(prev.residentStatusAmounts || {}) }
+                    )
+                  : {
+                      ...emptyResidentStatusAmounts(),
+                      ...(prev.residentStatusAmounts || {}),
+                      ...residentAmountsFromChoices,
+                    },
               // required 배열이 있을 때만 pricing choices JSON 유지 (옵션 단가 맵으로 덮어쓰지 않음)
               choices:
                 existingPricing.choices &&

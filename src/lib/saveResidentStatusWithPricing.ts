@@ -19,6 +19,7 @@ import {
   recoverResidentStatusAmounts,
   selectedChoiceRowsFromReservationPricingChoices,
   sumResidentFeeAmountsUsd,
+  UNDECIDED_OPTION_ID,
   type ResidentLineKey,
   type ResidentLineState,
 } from '@/utils/usResidentChoiceSync'
@@ -169,6 +170,7 @@ export async function saveResidentStatusWithPricing(
       'id, choice_group_ko, choice_group, options:choice_options(id, option_name_ko, option_name, option_key)'
     )
     .eq('product_id', reservation.product_id)
+    .order('sort_order')
   if (choicesErr) {
     return { ok: false, error: choicesErr.message }
   }
@@ -248,6 +250,33 @@ export async function saveResidentStatusWithPricing(
       .eq('id', pricing.id)
     if (updateErr) {
       return { ok: false, error: updateErr.message }
+    }
+
+    const { error: deleteChoiceErr } = await supabase
+      .from('reservation_choices')
+      .delete()
+      .eq('reservation_id', reservationId)
+      .eq('choice_id', residentChoice.id)
+    if (deleteChoiceErr) {
+      return { ok: false, error: deleteChoiceErr.message }
+    }
+    const choiceRowsToInsert = residentRows
+      .filter((row) => row.option_id && row.option_id !== UNDECIDED_OPTION_ID)
+      .map((row) => ({
+        reservation_id: reservationId,
+        choice_id: row.choice_id,
+        option_id: row.option_id,
+        quantity: row.quantity ?? 1,
+        total_price: Number(row.total_price) || 0,
+        option_key: row.option_key || null,
+      }))
+    if (choiceRowsToInsert.length > 0) {
+      const { error: insertChoiceErr } = await supabase
+        .from('reservation_choices')
+        .insert(choiceRowsToInsert)
+      if (insertChoiceErr) {
+        return { ok: false, error: insertChoiceErr.message }
+      }
     }
   } else {
     const parsed = parseResidentLineStateFromSelections(productChoices || [], choicesJson.required as never[])

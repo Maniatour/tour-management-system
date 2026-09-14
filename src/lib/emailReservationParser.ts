@@ -912,7 +912,7 @@ function extractCommonPatterns(text: string): Partial<ExtractedReservationData> 
 }
 
 /** GetYourGuide product_id → 내부 상품명 */
-const GYG_PRODUCT_ID_TO_NAME: Record<string, string> = {
+export const GYG_PRODUCT_ID_TO_NAME: Record<string, string> = {
   MNGC1N: '그랜드서클 1박 2일 투어',
   MDGCSUNRISE: '밤도깨비 그랜드캐년 일출 투어',
   MDGC1D: '그랜드서클 당일 투어',
@@ -927,7 +927,7 @@ const GYG_PRODUCT_ID_TO_NAME: Record<string, string> = {
 const GYG_MNGC1N_BODY_PATTERN =
   /Zion[,\s]+Bryce[,\s]+Grand\s*Canyon|Las\s*Vegas\s*[:>]\s*Zion[,\s]+Bryce|Zion[,\s]+Bryce[\s,&]*Antelope|Zion[,\s]+Bryce.{0,80}2[\s-]*Day/i
 
-const GYG_BODY_PRODUCT_MAP: Array<{ pattern: RegExp | string; product_id: string }> = [
+export const GYG_BODY_PRODUCT_MAP: Array<{ pattern: RegExp | string; product_id: string }> = [
   { pattern: GYG_MNGC1N_BODY_PATTERN, product_id: 'MNGC1N' },
   // GYG 본문이 "Las Vegas: Grand Canyon Sunrise, ..." 처럼 콜론 구분인 경우가 많음 (화살표 > 외에 동일 의미)
   { pattern: /Grand\s*Canyon\s*Sunrise|Las\s*Vegas\s*[:>]?\s*Grand\s*Canyon\s*Sunrise/i, product_id: 'MDGCSUNRISE' },
@@ -1253,7 +1253,7 @@ const KLOOK_LABEL_PATTERNS = [
 ]
 
 /** Klook Activity URL의 activity ID → 우리 투어명 매핑 (예약 가져오기 시 상품 매칭용) */
-const KLOOK_ACTIVITY_ID_TO_TOUR_NAME: Record<string, string> = {
+export const KLOOK_ACTIVITY_ID_TO_TOUR_NAME: Record<string, string> = {
   '78944': '밤도깨비 그랜드캐년 일출 투어',
   /** 동일 일출 상품의 다른 Klook 액티비티 URL — 채널 variant만 다를 수 있음 */
   '113386': '밤도깨비 그랜드캐년 일출 투어',
@@ -1266,7 +1266,7 @@ const KLOOK_ACTIVITY_ID_TO_TOUR_NAME: Record<string, string> = {
 }
 
 /** Activity ID → 내부 product_id (상품명 유사 매칭 오류 방지, 예: 일출 vs 비일출) */
-const KLOOK_ACTIVITY_ID_TO_PRODUCT_ID: Record<string, string> = {
+export const KLOOK_ACTIVITY_ID_TO_PRODUCT_ID: Record<string, string> = {
   '113386': 'MDGCSUNRISE',
   '78944': 'MDGCSUNRISE',
   '78870': 'MDGCSUNRISE',
@@ -1275,7 +1275,7 @@ const KLOOK_ACTIVITY_ID_TO_PRODUCT_ID: Record<string, string> = {
 }
 
 /** Activity ID별 Klook 채널 variant 강제 매핑 (본문 금액 파싱 결과보다 우선) */
-const KLOOK_ACTIVITY_ID_FORCE_VARIANT: Record<string, { key: string; label: string }> = {
+export const KLOOK_ACTIVITY_ID_FORCE_VARIANT: Record<string, { key: string; label: string }> = {
   '113386': { key: 'all_inclusive', label: 'All Inclusive' },
   /** 78944·78870은 채널의 실 variant_key(default)로 저장, 표시 라벨은 With Exclusions */
   '78944': { key: 'default', label: 'With Exclusions' },
@@ -1868,8 +1868,13 @@ function extractKlook(
 }
 
 /** KKday 상품번호 → 우리 투어명 (예약 가져오기 시 상품 자동 선택용) */
-const KKDAY_PRODUCT_NO_TO_TOUR_NAME: Record<string, string> = {
+export const KKDAY_PRODUCT_NO_TO_TOUR_NAME: Record<string, string> = {
   '174755': '밤도깨비 그랜드캐년 일출 투어',
+}
+
+/** KKday 상품번호 → 내부 product_id */
+export const KKDAY_PRODUCT_NO_TO_PRODUCT_ID: Record<string, string> = {
+  '174755': 'MDGCSUNRISE',
 }
 
 /**
@@ -1892,6 +1897,9 @@ function extractKKday(
     const no = productNoMatch[1].trim()
     if (KKDAY_PRODUCT_NO_TO_TOUR_NAME[no]) {
       out.product_name = KKDAY_PRODUCT_NO_TO_TOUR_NAME[no]
+    }
+    if (KKDAY_PRODUCT_NO_TO_PRODUCT_ID[no]) {
+      out.product_id = KKDAY_PRODUCT_NO_TO_PRODUCT_ID[no]
     }
   }
 

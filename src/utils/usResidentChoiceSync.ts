@@ -85,12 +85,58 @@ export function isUsResidentClassificationProductChoice(choice: {
   )
 }
 
-/** product_choices 행 중 미국 거주자 구분 그룹 (첫 일치) */
+function residentClassificationChoiceScore<
+  T extends {
+    choice_group_ko?: string | null
+    choice_group?: string | null
+    options?: Array<{
+      option_name_ko?: string | null
+      option_name?: string | null
+      option_key?: string | null
+    }> | null
+  }
+>(choice: T): number {
+  const lines = new Set<Exclude<ResidentLineKey, 'undecided'>>()
+  for (const opt of choice.options ?? []) {
+    const line = classifyResidentOption(opt)
+    if (line) lines.add(line)
+  }
+  let score = 0
+  if (lines.has('us_resident')) score += 8
+  if (lines.has('non_resident')) score += 4
+  if (lines.size > 0) score += 2
+  const g = (choice.choice_group_ko || '').trim()
+  if (g.includes('미국') && g.includes('거주') && g.includes('구분') && !g.includes('기타')) score += 2
+  if (g === '기타 입장료') score -= 3
+  return score
+}
+
+/** product_choices 행 중 미국 거주자 구분 그룹 (거주 라인 옵션이 있는 그룹 우선) */
 export function findUsResidentClassificationChoice<
-  T extends { id: string; choice_group_ko?: string | null; choice_group?: string | null }
+  T extends {
+    id: string
+    choice_group_ko?: string | null
+    choice_group?: string | null
+    options?: Array<{
+      option_name_ko?: string | null
+      option_name?: string | null
+      option_key?: string | null
+    }> | null
+  }
 >(productChoices: T[] | undefined | null): T | null {
   if (!productChoices?.length) return null
-  return productChoices.find((c) => isUsResidentClassificationProductChoice(c)) || null
+  const matches = productChoices.filter((c) => isUsResidentClassificationProductChoice(c))
+  if (!matches.length) return null
+  let best = matches[0]
+  let bestScore = residentClassificationChoiceScore(best)
+  for (let i = 1; i < matches.length; i++) {
+    const score = residentClassificationChoiceScore(matches[i])
+    if (score > bestScore) {
+      best = matches[i]
+      bestScore = score
+    }
+  }
+  return best
 }
 
 export type ProductChoiceForResidentFlow = {
@@ -132,6 +178,9 @@ export function productHasNonResidentChoiceOptions(
   return false
 }
 
+const NON_RESIDENT_NAME_RE = /비\s*거주|비거주|non[_\s-]*resident/i
+const US_RESIDENT_EN_RE = /\bu\.?s\.?\s*resident\b|\bus[_\s.-]*resident\b/i
+
 /** 옵션 메타 → 거주 라인 키 (미정은 옵션 행이 없고 UI 전용) */
 export function classifyResidentOption(option: {
   option_name_ko?: string | null
@@ -140,22 +189,26 @@ export function classifyResidentOption(option: {
 }): Exclude<ResidentLineKey, 'undecided'> | null {
   const ko = (option.option_name_ko || '').replace(/\s+/g, ' ').trim()
   const name = (option.option_name || '').trim()
-  const key = (option.option_key || '').toLowerCase()
+  const key = (option.option_key || '').toLowerCase().trim()
   const blob = `${ko} ${name} ${key}`.toLowerCase()
 
-  if (/패스\s*구매|패스구매|purchase.*pass|pass_purchase|buy.*pass/i.test(blob)) {
+  if (key === 'non_resident_purchase_pass' || /패스\s*구매|패스구매|purchase.*pass|pass_purchase|buy.*pass/i.test(blob)) {
     return 'non_resident_purchase_pass'
   }
-  if (/패스\s*보유|패스보유|with.*pass|has.*pass/i.test(blob)) {
+  if (key === 'non_resident_with_pass' || /패스\s*보유|패스보유|with.*pass|has.*pass/i.test(blob)) {
     return 'non_resident_with_pass'
   }
-  if (/미성년|16\s*세|under\s*16|minor/i.test(blob)) {
+  if (key === 'non_resident_under_16' || /미성년|16\s*세|under\s*16|minor/i.test(blob)) {
     return 'non_resident_under_16'
   }
+  if (key === 'us_resident') return 'us_resident'
   if (/미국/.test(ko) && /거주/.test(ko) && !/비/.test(ko)) {
     return 'us_resident'
   }
-  if (/비\s*거주|비거주|non[-\s]?resident/i.test(blob)) {
+  if (US_RESIDENT_EN_RE.test(`${name} ${key}`) && !NON_RESIDENT_NAME_RE.test(blob)) {
+    return 'us_resident'
+  }
+  if (key === 'non_resident' || NON_RESIDENT_NAME_RE.test(blob)) {
     return 'non_resident'
   }
   return null
@@ -256,7 +309,12 @@ export function parseResidentLineStateFromSelections<
       continue
     }
     const meta = optionMeta(choice, s.option_id)
-    const line = meta ? classifyResidentOption(meta) : null
+    const row = s as T & { option_name_ko?: string; option_name?: string; option_key?: string }
+    const line = classifyResidentOption({
+      option_name_ko: meta?.option_name_ko ?? row.option_name_ko ?? null,
+      option_name: meta?.option_name ?? row.option_name ?? null,
+      option_key: meta?.option_key ?? row.option_key ?? null,
+    })
     if (!line) continue
     switch (line) {
       case 'us_resident':
@@ -378,20 +436,148 @@ export function computePassCoveredCount(
 }
 
 export function residentLineStateEquals(a: ResidentLineState, b: ResidentLineState): boolean {
-  if (
-    a.undecidedResidentCount !== b.undecidedResidentCount ||
-    a.usResidentCount !== b.usResidentCount ||
-    a.nonResidentCount !== b.nonResidentCount ||
-    a.nonResidentUnder16Count !== b.nonResidentUnder16Count ||
-    a.nonResidentWithPassCount !== b.nonResidentWithPassCount ||
-    a.nonResidentPurchasePassCount !== b.nonResidentPurchasePassCount
-  ) {
-    return false
-  }
+  if (!residentLineCountsEqual(a, b)) return false
   for (const k of RESIDENT_LINE_KEYS) {
     if ((a.residentStatusAmounts[k] || 0) !== (b.residentStatusAmounts[k] || 0)) return false
   }
   return true
+}
+
+export function residentLineCountsEqual(
+  a: Pick<
+    ResidentLineState,
+    | 'undecidedResidentCount'
+    | 'usResidentCount'
+    | 'nonResidentCount'
+    | 'nonResidentUnder16Count'
+    | 'nonResidentWithPassCount'
+    | 'nonResidentPurchasePassCount'
+  >,
+  b: Pick<
+    ResidentLineState,
+    | 'undecidedResidentCount'
+    | 'usResidentCount'
+    | 'nonResidentCount'
+    | 'nonResidentUnder16Count'
+    | 'nonResidentWithPassCount'
+    | 'nonResidentPurchasePassCount'
+  >
+): boolean {
+  return (
+    a.undecidedResidentCount === b.undecidedResidentCount &&
+    a.usResidentCount === b.usResidentCount &&
+    a.nonResidentCount === b.nonResidentCount &&
+    a.nonResidentUnder16Count === b.nonResidentUnder16Count &&
+    a.nonResidentWithPassCount === b.nonResidentWithPassCount &&
+    a.nonResidentPurchasePassCount === b.nonResidentPurchasePassCount
+  )
+}
+
+/**
+ * 예약 정보 인원(reservation_customers)이 이미 있으면, 같은 총원이라도
+ * 초이스의 다른 라인(비거주 ↔ 미국 거주)으로 덮지 않는다.
+ */
+export function shouldKeepFormResidentCounts(
+  formAssigned: number,
+  parsedAssigned: number,
+  form: Pick<
+    ResidentLineState,
+    | 'usResidentCount'
+    | 'nonResidentCount'
+    | 'nonResidentUnder16Count'
+    | 'nonResidentWithPassCount'
+    | 'nonResidentPurchasePassCount'
+  >,
+  parsed: Pick<
+    ResidentLineState,
+    | 'usResidentCount'
+    | 'nonResidentCount'
+    | 'nonResidentUnder16Count'
+    | 'nonResidentWithPassCount'
+    | 'nonResidentPurchasePassCount'
+  >
+): boolean {
+  if (formAssigned <= 0) return false
+  if (parsedAssigned < formAssigned) return true
+  if (parsedAssigned <= 0) return true
+  return (
+    form.usResidentCount !== parsed.usResidentCount ||
+    form.nonResidentCount !== parsed.nonResidentCount ||
+    form.nonResidentUnder16Count !== parsed.nonResidentUnder16Count ||
+    form.nonResidentWithPassCount !== parsed.nonResidentWithPassCount ||
+    form.nonResidentPurchasePassCount !== parsed.nonResidentPurchasePassCount
+  )
+}
+
+const RESIDENT_COUNT_BY_LINE: Array<{
+  line: ResidentLineKey
+  count: keyof Pick<
+    ResidentLineState,
+    | 'undecidedResidentCount'
+    | 'usResidentCount'
+    | 'nonResidentCount'
+    | 'nonResidentUnder16Count'
+    | 'nonResidentWithPassCount'
+    | 'nonResidentPurchasePassCount'
+  >
+}> = [
+  { line: 'undecided', count: 'undecidedResidentCount' },
+  { line: 'us_resident', count: 'usResidentCount' },
+  { line: 'non_resident', count: 'nonResidentCount' },
+  { line: 'non_resident_under_16', count: 'nonResidentUnder16Count' },
+  { line: 'non_resident_with_pass', count: 'nonResidentWithPassCount' },
+  { line: 'non_resident_purchase_pass', count: 'nonResidentPurchasePassCount' },
+]
+
+/** 인원은 폼(고객 테이블)을 유지할 때, 0명 라인의 옛 금액을 되살리지 않는다. */
+export function residentAmountsAlignedToKeptCounts(
+  counts: Pick<
+    ResidentLineState,
+    | 'undecidedResidentCount'
+    | 'usResidentCount'
+    | 'nonResidentCount'
+    | 'nonResidentUnder16Count'
+    | 'nonResidentWithPassCount'
+    | 'nonResidentPurchasePassCount'
+  >,
+  parsedAmounts: Record<ResidentLineKey, number>,
+  formAmounts: Record<ResidentLineKey, number>
+): Record<ResidentLineKey, number> {
+  const out = emptyResidentStatusAmounts()
+  for (const { line, count } of RESIDENT_COUNT_BY_LINE) {
+    const qty = Math.max(0, Number(counts[count]) || 0)
+    if (qty <= 0) {
+      out[line] = Number(formAmounts[line]) || 0
+      continue
+    }
+    const formV = Number(formAmounts[line])
+    if (Number.isFinite(formV) && formV > 0) {
+      out[line] = Math.round(formV * 100) / 100
+      continue
+    }
+    const parsedV = Number(parsedAmounts[line])
+    out[line] = Number.isFinite(parsedV) ? Math.round(parsedV * 100) / 100 : 0
+  }
+  return out
+}
+
+/** pricing JSON의 거주 그룹 행이 있으면 reservation_choices의 옛 비거주 행보다 우선 */
+export function overlayResidentRowsFromPricingJson<
+  T extends { choice_id: string; option_id: string; quantity?: number; total_price?: number }
+>(
+  productChoices: Parameters<typeof findUsResidentClassificationChoice>[0],
+  selectedChoices: T[],
+  choicesJson: unknown
+): T[] {
+  const choice = findUsResidentClassificationChoice(productChoices)
+  if (!choice) return selectedChoices
+  const jsonRows = selectedChoiceRowsFromReservationPricingChoices(choicesJson).filter(
+    (row) => row.choice_id === choice.id
+  )
+  const hasConcrete = jsonRows.some((row) => row.option_id && String(row.option_id) !== UNDECIDED_OPTION_ID)
+  if (!hasConcrete) return selectedChoices
+  const without = selectedChoices.filter((s) => s.choice_id !== choice.id)
+  return [...without, ...(jsonRows as T[])]
 }
 
 /** Parse stored rows from reservation_pricing.choices.required (email). */
@@ -493,16 +679,37 @@ export function recoverResidentStatusAmounts(params: {
 
   applyPositive(residentFeeAmountsFromPricingChoicesJson(params.choicesJson))
 
+  let authoritative: Record<ResidentLineKey, number> | null = null
   const pcs = params.productChoices
   if (pcs?.length) {
     if (params.choicesJson != null) {
       const rows = selectedChoiceRowsFromReservationPricingChoices(params.choicesJson)
-      applyPositive(parseResidentLineStateFromSelections(pcs, rows)?.residentStatusAmounts)
+      const parsed = parseResidentLineStateFromSelections(pcs, rows)
+      applyPositive(parsed?.residentStatusAmounts)
+      if (parsed) authoritative = parsed.residentStatusAmounts
     }
     if (Array.isArray(params.selectedChoices) && params.selectedChoices.length > 0) {
-      applyPositive(
-        parseResidentLineStateFromSelections(pcs, params.selectedChoices)?.residentStatusAmounts
-      )
+      const parsed = parseResidentLineStateFromSelections(pcs, params.selectedChoices)
+      applyPositive(parsed?.residentStatusAmounts)
+      const assigned =
+        (parsed?.usResidentCount || 0) +
+        (parsed?.nonResidentCount || 0) +
+        (parsed?.nonResidentUnder16Count || 0) +
+        (parsed?.nonResidentWithPassCount || 0) +
+        (parsed?.nonResidentPurchasePassCount || 0) +
+        (parsed?.undecidedResidentCount || 0)
+      if (parsed && assigned > 0) {
+        authoritative = parsed.residentStatusAmounts
+      }
+    }
+  }
+
+  if (authoritative) {
+    for (const key of RESIDENT_LINE_KEYS) {
+      const v = Number(authoritative[key])
+      if (Number.isFinite(v) && v <= 0) {
+        delete out[key]
+      }
     }
   }
 

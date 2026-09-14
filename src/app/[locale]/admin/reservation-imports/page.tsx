@@ -4,7 +4,7 @@ import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
-import { Mail, ChevronLeft, ChevronRight, Loader2, FileText, RefreshCw, GripVertical, Inbox, Search, Filter, Ban } from 'lucide-react'
+import { Mail, ChevronLeft, ChevronRight, Loader2, FileText, RefreshCw, GripVertical, Inbox, Search, Filter, Ban, ListChecks } from 'lucide-react'
 import {
   isManiatourHomepageBookingEmail,
   isCancellationRequestEmailSubject,
@@ -30,6 +30,7 @@ import { useReservationData } from '@/hooks/useReservationData'
 import type { ExtractedReservationData } from '@/types/reservationImport'
 import type { Product } from '@/types/reservation'
 import { ReservationCancellationImportModal } from '@/components/reservation/ReservationCancellationImportModal'
+import { ReservationImportParseCoverageModal } from '@/components/reservation/ReservationImportParseCoverageModal'
 import {
   GMAIL_RESERVATION_SYNC_COMPLETE,
   GMAIL_RESERVATION_SYNC_UNAUTHORIZED,
@@ -55,11 +56,25 @@ interface ImportItem {
   extracted_data: ExtractedReservationData
   status: string
   reservation_id: string | null
+  confirmed_by?: string | null
   reservation_exists_by_channel_rn?: boolean
   reservation_exists_by_customer_match?: boolean
   /** 취소 메일만: 채널 RN으로 예약 상태 조회 결과 */
   cancellation_list_badge?: 'needed' | 'done' | null
   created_at: string | null
+}
+
+function AutoConfirmedImportBadge({ row }: { row: ImportItem }) {
+  if (row.status !== 'confirmed' && !row.reservation_id) return null
+  if (!String(row.confirmed_by || '').startsWith('system:email-auto-import')) return null
+  return (
+    <span
+      className="shrink-0 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded"
+      title="파싱·가격 연결이 완료되어 이메일 확인 없이 예약에 추가됨"
+    >
+      자동 추가
+    </span>
+  )
 }
 
 /** 취소 알림 메일 목록 뱃지 (API cancellation_list_badge) */
@@ -227,6 +242,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const [pasteBody, setPasteBody] = useState('')
   const [pasteFrom, setPasteFrom] = useState('')
   const [pasteSubmitting, setPasteSubmitting] = useState(false)
+  const [coverageOpen, setCoverageOpen] = useState(false)
   const [gmailStatus, setGmailStatus] = useState<{ connected: boolean; email: string | null; updated_at: string | null }>(emptyGmailStatus)
   const [gmailMessage, setGmailMessage] = useState<string | null>(null)
   const { isSyncing: gmailSyncing, startGmailImportSync } = useGmailReservationImportSync()
@@ -756,6 +772,14 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
+              onClick={() => setCoverageOpen(true)}
+              className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 py-2.5 border border-gray-300 bg-white text-gray-800 text-sm rounded-xl hover:bg-gray-50 touch-manipulation"
+            >
+              <ListChecks className="w-4 h-4 shrink-0" />
+              파싱 규칙
+            </button>
+            <button
+              type="button"
               onClick={() => setPasteOpen(true)}
               className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 py-2.5 bg-primary text-primary-foreground text-sm rounded-xl hover:bg-primary/90 active:bg-blue-800 touch-manipulation"
             >
@@ -996,6 +1020,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                       <td className="px-4 py-3 text-sm text-gray-900 min-w-[320px] max-w-[480px]" title={row.subject ?? ''}>
                         <div className="flex items-center gap-2 min-w-0">
                           <CancellationImportListBadge row={row} />
+                          <AutoConfirmedImportBadge row={row} />
                           <span className="truncate">{row.subject ?? '-'}</span>
                         </div>
                       </td>
@@ -1046,6 +1071,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start gap-2">
                         <CancellationImportListBadge row={row} />
+                        <AutoConfirmedImportBadge row={row} />
                         <p className="text-sm font-medium text-gray-900 line-clamp-2 flex-1">{row.subject ?? '-'}</p>
                       </div>
                       <p className="text-xs text-gray-500 mt-1">{formatDate(row.received_at ?? row.created_at)}</p>
@@ -1098,6 +1124,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
         onClose={() => setCancellationModalId(null)}
         onResolved={loadList}
       />
+      <ReservationImportParseCoverageModal open={coverageOpen} onClose={() => setCoverageOpen(false)} />
     </div>
   )
 }

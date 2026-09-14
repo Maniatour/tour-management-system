@@ -29,6 +29,7 @@ export function useGuestResidentCheckSync(args: {
   customerId?: string | null
   enabled: boolean
   productChoicesReady: boolean
+  residentCustomersHydrated?: boolean
   totalPeople: number
   applyResidentParticipantPatch: (patch: Record<string, unknown>) => void
   syncResidentChoicesFromCurrentCounts: () => void
@@ -42,6 +43,7 @@ export function useGuestResidentCheckSync(args: {
     customerId,
     enabled,
     productChoicesReady,
+    residentCustomersHydrated = true,
     totalPeople,
     applyResidentParticipantPatch,
     syncResidentChoicesFromCurrentCounts,
@@ -68,6 +70,7 @@ export function useGuestResidentCheckSync(args: {
   useEffect(() => {
     if (!enabled || !reservationId || !record || appliedRef.current) return
     if (!productChoicesReady) return
+    if (!residentCustomersHydrated) return
 
     const assigned = assignedResidentPeopleFromForm(formDataRef.current)
 
@@ -126,6 +129,7 @@ export function useGuestResidentCheckSync(args: {
     reservationId,
     customerId,
     productChoicesReady,
+    residentCustomersHydrated,
     totalPeople,
     record,
     applyResidentParticipantPatch,

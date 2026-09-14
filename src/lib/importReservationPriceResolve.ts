@@ -200,6 +200,13 @@ export function resolveOtaFromChoicesPricing(
   return uniquePositiveOta(choicesPricing)
 }
 
+/** 이메일 금액 문자열("$1,048.32") → 숫자 */
+export function parseImportMoneyString(raw?: string | null): number | null {
+  if (raw == null) return null
+  const n = parseFloat(String(raw).replace(/[^0-9.]/g, ''))
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 export function unitPriceFromEmailTotal(emailTotal: number | null | undefined, pax: number): number | null {
   if (emailTotal == null || !Number.isFinite(emailTotal) || emailTotal <= 0) return null
   const n = Math.max(1, Number(pax) || 1)

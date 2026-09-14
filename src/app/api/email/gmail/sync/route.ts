@@ -15,6 +15,7 @@ import {
   type GmailPart,
 } from '@/lib/gmailMessageBody'
 import type { Json } from '@/lib/database.types'
+import { tryAutoConfirmReservationImport } from '@/lib/autoConfirmReservationImport'
 
 export const maxDuration = 120
 
@@ -245,21 +246,36 @@ export async function POST(request: Request) {
           sourceEmail: from,
         })
 
-    const { error: insertErr } = await client.from('reservation_imports').insert({
-      message_id: messageId,
-      source_email: from,
-      platform_key,
-      subject,
-      received_at: receivedAt,
-      raw_body_text: body.slice(0, 50000),
-      raw_body_html: html ? html.slice(0, 50000) : null,
-      extracted_data: extracted_data as Json,
-      status: 'pending',
-    })
+    const { error: insertErr, data: inserted } = await client
+      .from('reservation_imports')
+      .insert({
+        message_id: messageId,
+        source_email: from,
+        platform_key,
+        subject,
+        received_at: receivedAt,
+        raw_body_text: body.slice(0, 50000),
+        raw_body_html: html ? html.slice(0, 50000) : null,
+        extracted_data: extracted_data as Json,
+        status: 'pending',
+      })
+      .select('id')
+      .single()
     if (insertErr) {
       console.error('[gmail/sync] reservation_imports insert:', insertErr.message, insertErr.code)
+      return false
     }
-    return !insertErr
+    if (inserted?.id && !zelleMail && !atmMail) {
+      try {
+        const auto = await tryAutoConfirmReservationImport(client as never, inserted.id)
+        if (auto.attempted && !auto.ok) {
+          console.warn('[gmail/sync] auto-confirm skipped/failed:', auto.reason)
+        }
+      } catch (e) {
+        console.error('[gmail/sync] auto-confirm error:', e)
+      }
+    }
+    return true
   }
 
   const updateHistoryId = async (historyId: string) => {
