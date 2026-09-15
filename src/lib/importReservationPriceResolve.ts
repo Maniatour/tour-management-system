@@ -76,6 +76,22 @@ function tokenSubsetMatch(a: string, b: string): boolean {
   return shorter.every((t) => longer.includes(t))
 }
 
+/** extracted_data의 옵션명. 없으면 product_choices 표시 문자열에서 복구 */
+export function importChoiceOptionNamesFromExtracted(ext: {
+  import_choice_option_names?: string[] | null
+  product_choices?: string | null
+}): string[] {
+  const named = (ext.import_choice_option_names || [])
+    .map((s) => String(s || '').trim())
+    .filter(Boolean)
+  if (named.length > 0) return named
+  const raw = String(ext.product_choices || '').trim()
+  if (!raw) return []
+  const withMatch = raw.match(/\bwith\s+(.+)$/i)
+  if (withMatch?.[1]) return [withMatch[1].trim()]
+  return [raw]
+}
+
 /**
  * 이메일 옵션명 → choice_options. includes 오매칭(Antelope → Upper 먼저)을 피하고
  * 정확 일치 · 별칭 · 유일 부분일치만 허용.
@@ -282,4 +298,27 @@ export function pickImportDynamicPricingOta(args: {
     }
   }
   return best
+}
+
+function roundImportUsd2(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
+/** 고객 총 결제(쿠폰 후 판매가). Viator 이메일 Net Rate와 다름. */
+export function importCustomerTotalPayment(productPriceTotal: number, couponDiscount = 0): number {
+  return roundImportUsd2(Math.max(0, (Number(productPriceTotal) || 0) - (Number(couponDiscount) || 0)))
+}
+
+/**
+ * 입금 내역 금액.
+ * Viator 이메일의 Net Rate는 채널 정산액이므로 입금에는 쓰지 않고 고객 총 결제를 넣는다.
+ */
+export function importDepositAmountForPaymentRecord(args: {
+  isViator: boolean
+  customerTotalPayment: number
+  emailTotal: number | null
+}): number {
+  if (args.isViator) return roundImportUsd2(args.customerTotalPayment)
+  if (args.emailTotal != null && args.emailTotal > 0) return roundImportUsd2(args.emailTotal)
+  return roundImportUsd2(args.customerTotalPayment)
 }

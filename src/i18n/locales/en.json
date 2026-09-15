@@ -3879,6 +3879,8 @@
       "childShort": "C",
       "infantShort": "I",
       "pickupTbd": "Pickup TBD",
+      "autoImportNeedsReview": "Auto-added",
+      "autoImportNeedsReviewHint": "This reservation was added automatically from email. Review the details and save to return to the normal card color.",
       "pickupHotelTbd": "Pickup hotel TBD",
       "assignedTour": "Assigned tour ({n} people) / Total {total} people",
       "assignedTourWithOther": "Assigned tour ({n} people) / Total {total} people ({other} excluded)",

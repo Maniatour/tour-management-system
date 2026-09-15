@@ -134,6 +134,7 @@ import ReservationOptionsSection from '@/components/reservation/ReservationOptio
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
 import ReservationEditHistoryModal from '@/components/reservation/ReservationEditHistoryModal'
+import { ReservationImportEmailViewButton } from '@/components/reservation/ReservationImportEmailViewButton'
 import ReservationLocalScratchList from '@/components/reservation/ReservationLocalScratchList'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
@@ -7168,6 +7169,9 @@ export default function ReservationForm({
                   <History className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">{locale === 'en' ? 'Edit history' : '수정 이력'}</span>
                 </button>
+              )}
+              {reservation?.id && !isNewReservation && !isImportMode && (
+                <ReservationImportEmailViewButton reservationId={reservation.id} />
               )}
               {reservation?.id && !isNewReservation && !isImportMode && (
                 <button

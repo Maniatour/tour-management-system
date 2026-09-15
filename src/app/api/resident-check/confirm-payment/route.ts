@@ -95,6 +95,7 @@ export async function POST(request: NextRequest) {
       reservationId: token.reservation_id,
       paymentIntentId: pi.id,
       amountUsdCents: pi.amount,
+      cardFeeUsdCents: submission.card_processing_fee_usd_cents,
     })
 
     await notifyStaffOfCustomerPayment(supabaseAdmin, {

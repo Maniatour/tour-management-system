@@ -251,6 +251,8 @@ export async function updateReservation(
       is_private_tour: payload.isPrivateTour || false,
       choices: payload.choices,
       variant_key: payload.variantKey ?? 'default',
+      // 관리자가 예약 내용을 확인하고 저장하면 자동 추가 강조를 해제
+      import_needs_review: false,
     }
 
     const { error } = await (supabase as any)

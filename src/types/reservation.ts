@@ -97,6 +97,8 @@ export interface Reservation {
   channelRN: string
   addedBy: string
   addedTime: string
+  /** 이메일 자동 추가 후 관리자가 내용을 확인하고 저장하기 전 */
+  importNeedsReview?: boolean
   tourId: string
   status: 'inquiry' | 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show' | 'date_changed' | 'deleted'
   /** date_changed 자리표시 → 실예약 */

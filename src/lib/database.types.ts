@@ -7470,6 +7470,7 @@ export type Database = {
           event_note: string | null
           id: string
           infant: number | null
+          import_needs_review: boolean
           inventory_hold_ids: string[] | null
           is_private_tour: boolean | null
           money_breakdown_json: Json | null
@@ -7510,6 +7511,7 @@ export type Database = {
           event_note?: string | null
           id?: string
           infant?: number | null
+          import_needs_review?: boolean
           inventory_hold_ids?: string[] | null
           is_private_tour?: boolean | null
           money_breakdown_json?: Json | null
@@ -7550,6 +7552,7 @@ export type Database = {
           event_note?: string | null
           id?: string
           infant?: number | null
+          import_needs_review?: boolean
           inventory_hold_ids?: string[] | null
           is_private_tour?: boolean | null
           money_breakdown_json?: Json | null

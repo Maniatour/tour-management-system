@@ -2,6 +2,10 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { STRIPE_PI_NOTE_PREFIX } from '@/lib/customerBookingCheckout'
 import { supabaseAdmin } from '@/lib/supabase'
 import { hasResidentCheckProof, primaryResidentCheckProofUrl } from '@/lib/residentCheckProofUrls'
+import {
+  mergeResidentCheckCardFeeUsd,
+  residentCheckCardFeeUsdFromPayment,
+} from '@/lib/residentCheckFees'
 import type { ResidentCheckSubmissionRow } from '@/lib/residentCheckTokenService'
 import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
@@ -50,8 +54,47 @@ export async function markResidentCheckTokenCompleted(tokenId: string): Promise<
 }
 
 /**
+ * 비거주자 카드 결제 수수료를 가격 정보 card_fee에 가산.
+ * 입금 기록이 처음 확정될 때만 호출해 중복 가산을 막는다.
+ */
+async function applyResidentCheckCardFeeToReservationPricing(
+  admin: SupabaseClient,
+  reservationId: string,
+  cardFeeUsd: number
+): Promise<void> {
+  if (!(cardFeeUsd > 0)) return
+  const { data: pricing, error } = await admin
+    .from('reservation_pricing')
+    .select('id, card_fee')
+    .eq('reservation_id', reservationId)
+    .maybeSingle()
+  if (error) {
+    console.warn(
+      '[recordResidentCheckCardPayment] 카드 수수료 조회 실패:',
+      reservationId,
+      error.message
+    )
+    return
+  }
+  if (!pricing?.id) return
+  const nextCardFee = mergeResidentCheckCardFeeUsd(pricing.card_fee, cardFeeUsd)
+  const { error: updateError } = await admin
+    .from('reservation_pricing')
+    .update({ card_fee: nextCardFee })
+    .eq('id', pricing.id)
+  if (updateError) {
+    console.warn(
+      '[recordResidentCheckCardPayment] 카드 수수료 저장 실패:',
+      reservationId,
+      updateError.message
+    )
+  }
+}
+
+/**
  * Resident-check Stripe card payment → payment_records (입금 관리).
  * Idempotent on payment intent id. Does not change reservation status.
+ * First confirmation also writes the included card processing fee into reservation_pricing.card_fee.
  */
 export async function recordResidentCheckCardPayment(
   admin: SupabaseClient,
@@ -59,6 +102,7 @@ export async function recordResidentCheckCardPayment(
     reservationId: string
     paymentIntentId: string
     amountUsdCents: number
+    cardFeeUsdCents?: number | null
   }
 ): Promise<{ alreadyRecorded: boolean; paymentRecordId: string | null }> {
   const amountUsd = Math.round(args.amountUsdCents) / 100
@@ -119,6 +163,14 @@ export async function recordResidentCheckCardPayment(
       throw new Error(`입금 기록 저장 실패: ${insertError.message}`)
     }
     paymentRecordId = inserted?.id ?? null
+  }
+
+  if (!alreadyRecorded) {
+    const cardFeeUsd = residentCheckCardFeeUsdFromPayment({
+      cardProcessingFeeUsdCents: args.cardFeeUsdCents,
+      amountUsdCents: args.amountUsdCents,
+    })
+    await applyResidentCheckCardFeeToReservationPricing(admin, args.reservationId, cardFeeUsd)
   }
 
   const sync = await syncReservationPricingAggregates(admin, args.reservationId)

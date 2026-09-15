@@ -7,7 +7,7 @@ import {
   toOtaAndNotIncluded,
   usesBookingTimeChoiceCatalog,
 } from '@/lib/bookingTimeChoicePricing'
-import { pickImportDynamicPricingOta, resolveOtaFromChoicesPricing } from '@/lib/importReservationPriceResolve'
+import { pickImportDynamicPricingOta, resolveOtaFromChoicesPricing, importChoiceOptionNamesFromExtracted, importCustomerTotalPayment, importDepositAmountForPaymentRecord } from '@/lib/importReservationPriceResolve'
 
 test('Klook 상품 설명의 연간패스 $250은 불포함 금액이 아니다', () => {
   const { extracted_data } = extractReservationFromEmail({
@@ -209,4 +209,46 @@ test('GYG Zion Bryce 2-Day HTML 한 줄 본문도 같은 상품·초이스로 �
   assert.equal(extracted_data.product_name, '그랜드서클 1박 2일 투어')
   assert.ok((extracted_data.import_choice_option_names || []).includes('1인 1실'))
   assert.ok((extracted_data.import_choice_option_names || []).includes('Lower Antelope Canyon'))
+})
+
+test('product_choices 표시 문자열에서 초이스 옵션명을 복구한다', () => {
+  assert.deepEqual(
+    importChoiceOptionNamesFromExtracted({
+      product_choices: 'Group Tour with Antelope Canyon X',
+    }),
+    ['Antelope Canyon X']
+  )
+  assert.deepEqual(
+    importChoiceOptionNamesFromExtracted({
+      import_choice_option_names: ['Lower Antelope Canyon'],
+      product_choices: 'Group Tour with Antelope Canyon X',
+    }),
+    ['Lower Antelope Canyon']
+  )
+})
+
+test('Viator 입금은 이메일 Net Rate가 아니라 고객 총 결제 금액을 쓴다', () => {
+  const customerTotal = importCustomerTotalPayment(349.44, 0)
+  assert.equal(customerTotal, 349.44)
+  assert.equal(
+    importDepositAmountForPaymentRecord({
+      isViator: true,
+      customerTotalPayment: customerTotal,
+      emailTotal: 262.08,
+    }),
+    349.44
+  )
+})
+
+test('GYG 입금은 이메일 금액을 유지한다', () => {
+  const customerTotal = importCustomerTotalPayment(384, 34.56)
+  assert.equal(customerTotal, 349.44)
+  assert.equal(
+    importDepositAmountForPaymentRecord({
+      isViator: false,
+      customerTotalPayment: customerTotal,
+      emailTotal: 349.44,
+    }),
+    349.44
+  )
 })

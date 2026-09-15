@@ -3891,6 +3891,8 @@
       "childShort": "아",
       "infantShort": "유",
       "pickupTbd": "픽업 미정",
+      "autoImportNeedsReview": "자동 추가",
+      "autoImportNeedsReviewHint": "이메일에서 자동 추가된 예약입니다. 내용을 확인한 뒤 저장하면 일반 카드로 바뀝니다.",
       "pickupHotelTbd": "픽업 호텔 미정",
       "assignedTour": "배정된 투어 ({n}명) / 총 {total}명",
       "assignedTourWithOther": "배정된 투어 ({n}명) / 총 {total}명 ({other}명)",

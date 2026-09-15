@@ -8,11 +8,27 @@ import {
 } from '@/lib/emailReservationParseCatalog'
 import { confirmReservationImport } from '@/lib/confirmReservationImport'
 import {
+  importChoiceOptionNamesFromExtracted,
+  importCustomerTotalPayment,
+  importDepositAmountForPaymentRecord,
   matchChoiceOptionFromImportNames,
   parseImportMoneyString,
   pickImportDynamicPricingOta,
   type ImportPricingRow,
 } from '@/lib/importReservationPriceResolve'
+import { canyonKeyFromLabels } from '@/lib/canyonChoice'
+import {
+  findCouponToMatchEmailAmount,
+  findViatorNinePercentCoupon,
+  importCouponDiscountSubtotal,
+  type ImportCouponRow,
+} from '@/lib/importReservationCouponResolve'
+import { computeChannelCommissionAmountUsd } from '@/utils/balanceChannelRevenue'
+import {
+  channelIsOtaForPricingSection,
+  computeChannelSettlementAmount,
+} from '@/utils/channelSettlement'
+import type { CouponChannelRow } from '@/utils/homepageBookingChannel'
 import {
   mapSemanticVariantToChannelProductKey,
   resolveImportChannelVariantKey,
@@ -235,7 +251,9 @@ export async function tryAutoConfirmReservationImport(
     choiceIds.length > 0
       ? await client
           .from('choice_options')
-          .select('id, choice_id, option_name, option_name_ko, option_key')
+          .select(
+            'id, choice_id, option_name, option_name_ko, option_key, adult_price, canyon_key, canonical_option_key'
+          )
           .in('choice_id', choiceIds)
       : { data: [] }
 
@@ -245,34 +263,61 @@ export async function tryAutoConfirmReservationImport(
     option_name?: string | null
     option_name_ko?: string | null
     option_key?: string | null
+    adult_price?: number | null
+    canyon_key?: string | null
+    canonical_option_key?: string | null
   }>
 
   const selectedChoices: Array<{
     choice_id: string
     option_id: string
     option_key: string | null
+    option_name?: string | null
+    option_name_ko?: string | null
+    canyon_key?: string | null
+    canonical_option_key?: string | null
     quantity: number
     total_price: number
   }> = []
+  const undecidedChoices: typeof selectedChoices = []
   const undecidedGroups = new Set(
     (merged.import_choice_undecided_groups || []).map((g) => g.toLowerCase().replace(/\s+/g, ''))
   )
+  const importOptionNames = importChoiceOptionNamesFromExtracted(merged)
 
   for (const choice of choiceList) {
     const groupBlob = `${choice.choice_group} ${choice.choice_group_ko}`.toLowerCase()
+    const groupCompact = groupBlob.replace(/\s+/g, '')
     const isUndecidedGroup = [...undecidedGroups].some(
-      (g) => groupBlob.replace(/\s+/g, '').includes(g) || g.includes(groupBlob.replace(/\s+/g, ''))
+      (g) => groupCompact.includes(g) || g.includes(groupCompact)
     )
-    if (isUndecidedGroup) continue
+    if (isUndecidedGroup) {
+      undecidedChoices.push({
+        choice_id: choice.id,
+        option_id: '__undecided__',
+        option_key: '__undecided__',
+        option_name_ko: '미정',
+        quantity: Math.max(1, totalPeople),
+        total_price: 0,
+      })
+      continue
+    }
     const opts = optionList.filter((o) => o.choice_id === choice.id)
-    const matched = matchChoiceOptionFromImportNames(opts, merged.import_choice_option_names)
+    const matched = matchChoiceOptionFromImportNames(opts, importOptionNames)
     if (matched) {
+      const canyonKey =
+        matched.canyon_key ||
+        canyonKeyFromLabels(matched.option_name_ko, matched.option_name, matched.option_key)
       selectedChoices.push({
         choice_id: choice.id,
         option_id: matched.id,
         option_key: matched.option_key ?? null,
+        option_name: matched.option_name ?? null,
+        option_name_ko: matched.option_name_ko ?? null,
+        ...(canyonKey ? { canyon_key: canyonKey } : {}),
+        ...(matched.canonical_option_key ? { canonical_option_key: matched.canonical_option_key } : {}),
         quantity: 1,
-        total_price: 0,
+        total_price: Number(matched.adult_price) || 0,
       })
     } else if (choice.is_required) {
       const looksCanyon = /앤텔롭|antelope|canyon/i.test(groupBlob)
@@ -282,17 +327,31 @@ export async function tryAutoConfirmReservationImport(
     }
   }
 
-  const { data: pricingRows } = await client
-    .from('dynamic_pricing')
-    .select('variant_key, choices_pricing, adult_price, not_included_price, commission_percent, price_type, updated_at')
-    .eq('product_id', productId)
-    .eq('date', tourDate)
-    .eq('channel_id', channelId)
-    .order('updated_at', { ascending: false })
-    .limit(40)
+  const [{ data: pricingRows }, { data: couponRows }, { data: channelRows }] = await Promise.all([
+    client
+      .from('dynamic_pricing')
+      .select('variant_key, choices_pricing, adult_price, not_included_price, commission_percent, price_type, updated_at')
+      .eq('product_id', productId)
+      .eq('date', tourDate)
+      .eq('channel_id', channelId)
+      .order('updated_at', { ascending: false })
+      .limit(40),
+    client
+      .from('coupons')
+      .select(
+        'coupon_code, discount_type, percentage_value, fixed_value, channel_id, product_id, start_date, end_date, status'
+      )
+      .eq('status', 'active'),
+    client.from('channels').select('id, name, type, category, pricing_type'),
+  ])
 
   const rows = (pricingRows || []) as ImportPricingRow[]
   if (!rows.length) return { attempted: false, reason: 'no_dynamic_pricing' }
+  const coupons = (couponRows || []) as ImportCouponRow[]
+  const couponChannels = (channelRows || []) as Array<
+    CouponChannelRow & { pricing_type?: string | null }
+  >
+  const channelMeta = couponChannels.find((c) => c.id === channelId) ?? null
 
   const picked = pickImportDynamicPricingOta({
     rows,
@@ -311,18 +370,88 @@ export async function tryAutoConfirmReservationImport(
     return { attempted: false, reason: 'dynamic_pricing_unusable' }
   }
 
-  if (!isViator && emailUnit != null && !pricesClose(emailUnit, picked.ota)) {
+  const productPriceTotal = Math.round(picked.ota * adults * 100) / 100
+  const notIncluded = picked.notIncluded || 0
+  const couponBase = importCouponDiscountSubtotal({
+    productPriceTotal,
+    notIncludedPerPerson: notIncluded,
+    pricingAdults: adults,
+    reservationAdults: adults,
+    child,
+    infant,
+    channel: channelMeta,
+  })
+  const couponMatchArgs = {
+    couponBase,
+    coupons,
+    channelId,
+    productId,
+    tourDate,
+    channels: couponChannels,
+  }
+
+  let couponCode: string | null = null
+  let couponDiscount = 0
+  if (isViator && netTotal != null) {
+    const commissionPct = picked.commissionPercent || 0
+    const trialCommission = computeChannelCommissionAmountUsd(productPriceTotal, commissionPct)
+    const isOta = channelIsOtaForPricingSection(channelMeta)
+    const notIncludedTotal = notIncluded * Math.max(1, totalPeople)
+    const settlementUi = computeChannelSettlementAmount({
+      depositAmount: netTotal,
+      onlinePaymentAmount: netTotal,
+      productPriceTotal: productPriceTotal + notIncludedTotal,
+      couponDiscount: 0,
+      additionalDiscount: 0,
+      optionTotalSum: 0,
+      additionalCost: 0,
+      tax: 0,
+      cardFee: 0,
+      prepaymentTip: 0,
+      onSiteBalanceAmount: 0,
+      returnedAmount: 0,
+      commissionAmount: trialCommission,
+      isOTAChannel: isOta,
+    })
+    if (Math.abs(settlementUi - netTotal) >= 0.02) {
+      const nine = findViatorNinePercentCoupon(couponMatchArgs)
+      if (nine) {
+        couponCode = nine.couponCode
+        couponDiscount = nine.couponDiscount
+      }
+    }
+  } else if (emailTotal != null) {
+    const matched = findCouponToMatchEmailAmount({ ...couponMatchArgs, emailTarget: emailTotal })
+    if (matched) {
+      couponCode = matched.couponCode
+      couponDiscount = matched.couponDiscount
+    }
+  }
+
+  const afterCouponUnit =
+    adults > 0 ? Math.round(((couponBase - couponDiscount) / adults) * 100) / 100 : picked.ota
+  if (
+    !isViator &&
+    emailUnit != null &&
+    !pricesClose(emailUnit, picked.ota) &&
+    !pricesClose(emailUnit, afterCouponUnit)
+  ) {
     return { attempted: false, reason: 'price_mismatch' }
   }
 
-  const productPriceTotal = Math.round(picked.ota * adults * 100) / 100
-  const notIncluded = picked.notIncluded || 0
-  const depositAmount = isViator && netTotal != null ? netTotal : emailTotal ?? productPriceTotal
   const commissionPercent = picked.commissionPercent || 0
+  const customerTotalPayment = importCustomerTotalPayment(productPriceTotal, couponDiscount)
+  const depositAmount = importDepositAmountForPaymentRecord({
+    isViator,
+    customerTotalPayment,
+    emailTotal,
+  })
+  const onlinePaymentAmount = isViator ? customerTotalPayment : depositAmount
   const commissionAmount =
-    isViator && netTotal != null && productPriceTotal > netTotal
-      ? Math.round((productPriceTotal - netTotal) * 100) / 100
-      : Math.round((productPriceTotal * commissionPercent) / 100 * 100) / 100
+    isViator && netTotal != null
+      ? Math.round(Math.max(0, customerTotalPayment - netTotal) * 100) / 100
+      : computeChannelCommissionAmountUsd(customerTotalPayment, commissionPercent)
+  const viatorSettlement = isViator && netTotal != null ? Math.round(netTotal * 100) / 100 : null
 
   let pickupHotel: string | null = merged.pickup_hotel ?? null
   if (pickupHotel && !isPickupImportNotDecidedLabel(pickupHotel)) {
@@ -350,11 +479,16 @@ export async function tryAutoConfirmReservationImport(
     event_note: merged.note || merged.special_requests || null,
     added_by: AUTO_CONFIRM_ADDED_BY,
     variant_key: picked.variantKey || dbVariantKey,
-    selected_choices: selectedChoices.map((c) => ({
+    selected_choices: [...selectedChoices, ...undecidedChoices].map((c) => ({
       choice_id: c.choice_id,
       option_id: c.option_id,
       quantity: c.quantity,
       total_price: c.total_price,
+      option_key: c.option_key,
+      ...(c.option_name ? { option_name: c.option_name } : {}),
+      ...(c.option_name_ko ? { option_name_ko: c.option_name_ko } : {}),
+      ...(c.canyon_key ? { canyon_key: c.canyon_key } : {}),
+      ...(c.canonical_option_key ? { canonical_option_key: c.canonical_option_key } : {}),
     })),
     pricingInfo: {
       adultProductPrice: picked.ota,
@@ -363,11 +497,13 @@ export async function tryAutoConfirmReservationImport(
       productPriceTotal,
       not_included_price: notIncluded,
       depositAmount,
-      onlinePaymentAmount: depositAmount,
+      onlinePaymentAmount,
       commission_percent: commissionPercent,
       commission_amount: commissionAmount,
       pricingAdults: adults,
-      totalPrice: productPriceTotal + notIncluded * totalPeople,
+      totalPrice: Math.max(0, productPriceTotal + notIncluded * totalPeople - couponDiscount),
+      ...(couponCode ? { couponCode, couponDiscount } : {}),
+      ...(viatorSettlement != null ? { channel_settlement_amount: viatorSettlement, balanceAmount: 0 } : {}),
     },
   })
 

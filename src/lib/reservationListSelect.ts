@@ -20,6 +20,7 @@ export const RESERVATION_LIST_SELECT = [
   'variant_key',
   'channel_rn',
   'added_by',
+  'import_needs_review',
   'created_at',
   'tour_id',
   'status',

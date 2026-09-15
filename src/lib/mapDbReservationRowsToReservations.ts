@@ -36,6 +36,7 @@ export function mapDbReservationRowsToReservations(
       channelRN: (item.channel_rn as string) || '',
       addedBy: (item.added_by as string) || '',
       addedTime: (item.created_at as string) || '',
+      importNeedsReview: !!item.import_needs_review,
       tourId: (item.tour_id as string) || '',
       status: ((item.status as string) || 'pending') as Reservation['status'],
       updated_at: (item.updated_at as string | null) ?? null,

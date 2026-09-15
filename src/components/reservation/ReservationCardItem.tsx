@@ -790,7 +790,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   return (
     <div
       key={reservation.id}
-      className={`bg-white rounded-lg shadow-md ${tourDateBorderClass} hover:shadow-lg transition-shadow duration-200 group w-full max-w-full min-w-0 h-full`}
+      className={`${reservation.importNeedsReview ? 'bg-amber-100' : 'bg-white'} rounded-lg shadow-md ${tourDateBorderClass} hover:shadow-lg transition-shadow duration-200 group w-full max-w-full min-w-0 h-full`}
       onDoubleClick={(e) => {
         const target = e.target as HTMLElement
         if (
@@ -828,6 +828,14 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   {reservationStatusIcon(String(reservation.status), 'h-4 w-4')}
                 </span>
               )}
+              {reservation.importNeedsReview ? (
+                <span
+                  className="shrink-0 rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900"
+                  title={t('card.autoImportNeedsReviewHint')}
+                >
+                  {t('card.autoImportNeedsReview')}
+                </span>
+              ) : null}
               {reservation.dateChangeLiveReservationId ? (
                 <button
                   type="button"

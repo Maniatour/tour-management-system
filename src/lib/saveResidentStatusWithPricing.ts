@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
+import { impliedResidentCheckCardFeeUsdFromRecords } from '@/lib/residentCheckFees'
 import {
   computeCustomerPaymentTotalLineFormula,
   computeRemainingBalanceAfterPaymentRecords,
@@ -30,6 +31,37 @@ export type ResidentStatusCountsInput = {
   nonResidentUnder16: number
   nonResidentWithPass: number
   residentStatusAmounts: Partial<Record<ResidentLineKey, number>>
+}
+
+async function ensureMissingResidentCheckCardFeeOnPricing(
+  supabase: SupabaseClient,
+  pricingId: string,
+  reservationId: string,
+  existingCardFee: unknown
+): Promise<number> {
+  const existing = Number(existingCardFee) || 0
+  if (existing > 0.005) return existing
+
+  const { data: payRows } = await supabase
+    .from('payment_records')
+    .select('amount, note')
+    .eq('reservation_id', reservationId)
+  const implied = impliedResidentCheckCardFeeUsdFromRecords(payRows || [])
+  if (!(implied > 0.005)) return existing
+
+  const { error } = await supabase
+    .from('reservation_pricing')
+    .update({ card_fee: implied })
+    .eq('id', pricingId)
+  if (error) {
+    console.warn(
+      '[saveResidentStatusWithPricing] 카드 수수료 저장 실패:',
+      reservationId,
+      error.message
+    )
+    return existing
+  }
+  return implied
 }
 
 function computeBalanceWithResidentFees(
@@ -164,6 +196,17 @@ export async function saveResidentStatusWithPricing(
     return { ok: true }
   }
 
+  const ensuredCardFee = await ensureMissingResidentCheckCardFeeOnPricing(
+    supabase,
+    pricing.id,
+    reservationId,
+    pricing.card_fee
+  )
+  const pricingForCalc: Record<string, unknown> = {
+    ...(pricing as Record<string, unknown>),
+    card_fee: ensuredCardFee,
+  }
+
   const { data: productChoices, error: choicesErr } = await supabase
     .from('product_choices')
     .select(
@@ -233,7 +276,7 @@ export async function saveResidentStatusWithPricing(
     }))
 
     const { balanceAmount, totalPriceGross } = computeBalanceWithResidentFees(
-      pricing as Record<string, unknown>,
+      pricingForCalc,
       party,
       records,
       residentFeesUsd
@@ -246,6 +289,7 @@ export async function saveResidentStatusWithPricing(
         choices_total: choicesTotal,
         total_price: totalPriceGross,
         balance_amount: balanceAmount,
+        card_fee: ensuredCardFee,
       })
       .eq('id', pricing.id)
     if (updateErr) {
@@ -296,7 +340,7 @@ export async function saveResidentStatusWithPricing(
         amount: Number(r.amount) || 0,
       }))
       const { balanceAmount, totalPriceGross } = computeBalanceWithResidentFees(
-        pricing as Record<string, unknown>,
+        pricingForCalc,
         party,
         records,
         residentFeesUsd
@@ -306,6 +350,7 @@ export async function saveResidentStatusWithPricing(
         .update({
           total_price: totalPriceGross,
           balance_amount: balanceAmount,
+          card_fee: ensuredCardFee,
         })
         .eq('id', pricing.id)
       if (updateErr) {
@@ -338,7 +383,7 @@ export async function saveResidentStatusWithPricing(
         amount: Number(r.amount) || 0,
       }))
       const { balanceAmount, totalPriceGross } = computeBalanceWithResidentFees(
-        pricingAfter as Record<string, unknown>,
+        { ...(pricingAfter as Record<string, unknown>), card_fee: ensuredCardFee },
         party,
         recordsAfter,
         residentFeesUsd
@@ -348,6 +393,7 @@ export async function saveResidentStatusWithPricing(
         .update({
           total_price: totalPriceGross,
           balance_amount: balanceAmount,
+          card_fee: ensuredCardFee,
         })
         .eq('id', pricingAfter.id)
     }

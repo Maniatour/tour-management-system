@@ -20,6 +20,13 @@ import {
   type DepartureBatchModalReason,
 } from '@/lib/tourDepartureThreshold'
 import { resolveOnSiteBalanceAmountForSave } from '@/utils/reservationPricingBalance'
+import { AUTO_CONFIRM_ADDED_BY } from '@/lib/emailReservationParseCatalog'
+import { selectedChoicesToPricingChoicesJson } from '@/utils/usResidentChoiceSync'
+import {
+  canyonKeyFromLabels,
+  canonicalOptionKeyFromCanyon,
+  isCanyonKey,
+} from '@/lib/canyonChoice'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 /** 입금 자동 기록: Wix Website (payment_methods.id) */
@@ -47,6 +54,122 @@ interface SelectedChoiceItem {
   option_id: string
   quantity?: number
   total_price?: number
+  option_key?: string | null
+  option_name?: string | null
+  option_name_ko?: string | null
+  canyon_key?: string | null
+  canonical_option_key?: string | null
+}
+
+type EnrichedChoiceItem = SelectedChoiceItem & {
+  option_key?: string | null
+  option_name?: string | null
+  option_name_ko?: string | null
+  canyon_key?: string | null
+  canonical_option_key?: string | null
+}
+
+async function enrichImportSelectedChoices(
+  client: SupabaseClient,
+  selectedChoices: SelectedChoiceItem[]
+): Promise<{
+  concrete: EnrichedChoiceItem[]
+  all: EnrichedChoiceItem[]
+  choicesJson: { required: Array<Record<string, unknown>> }
+  canyonChoice: string | null
+}> {
+  const allInput = selectedChoices.filter((c) => c.choice_id && c.option_id)
+  const optionIds = [
+    ...new Set(
+      allInput
+        .map((c) => c.option_id)
+        .filter((id) => id && id !== '__undecided__')
+    ),
+  ]
+  const metaById = new Map<
+    string,
+    {
+      option_key: string | null
+      option_name: string | null
+      option_name_ko: string | null
+      adult_price: number | null
+      canyon_key: string | null
+      canonical_option_key: string | null
+    }
+  >()
+  if (optionIds.length > 0) {
+    const { data } = await client
+      .from('choice_options')
+      .select('id, option_key, option_name, option_name_ko, adult_price, canyon_key, canonical_option_key')
+      .in('id', optionIds)
+    for (const row of data || []) {
+      const o = row as {
+        id: string
+        option_key?: string | null
+        option_name?: string | null
+        option_name_ko?: string | null
+        adult_price?: number | null
+        canyon_key?: string | null
+        canonical_option_key?: string | null
+      }
+      if (!o.id) continue
+      metaById.set(o.id, {
+        option_key: o.option_key ?? null,
+        option_name: o.option_name ?? null,
+        option_name_ko: o.option_name_ko ?? null,
+        adult_price: o.adult_price ?? null,
+        canyon_key: o.canyon_key ?? null,
+        canonical_option_key: o.canonical_option_key ?? null,
+      })
+    }
+  }
+
+  const all: EnrichedChoiceItem[] = allInput.map((c) => {
+    const meta = metaById.get(c.option_id)
+    const optionName = c.option_name ?? meta?.option_name ?? null
+    const optionNameKo = c.option_name_ko ?? meta?.option_name_ko ?? null
+    const optionKey = c.option_key ?? meta?.option_key ?? null
+    const fromLabels = canyonKeyFromLabels(optionNameKo, optionName, optionKey)
+    const canyonKey = c.canyon_key ?? meta?.canyon_key ?? fromLabels
+    const canonical =
+      c.canonical_option_key ??
+      meta?.canonical_option_key ??
+      (isCanyonKey(canyonKey) ? canonicalOptionKeyFromCanyon(canyonKey) : null)
+    const isUndecided = c.option_id === '__undecided__'
+    const totalPrice = isUndecided
+      ? 0
+      : c.total_price != null && Number(c.total_price) > 0
+        ? Number(c.total_price)
+        : Number(meta?.adult_price) || 0
+    return {
+      ...c,
+      option_key: optionKey,
+      option_name: optionName,
+      option_name_ko: optionNameKo,
+      canyon_key: canyonKey,
+      canonical_option_key: canonical,
+      total_price: totalPrice,
+    }
+  })
+
+  const concrete = all.filter((c) => c.option_id !== '__undecided__')
+  const canyonChoice = all.map((c) => c.canyon_key).find((k) => isCanyonKey(k)) ?? null
+  return {
+    concrete,
+    all,
+    choicesJson: selectedChoicesToPricingChoicesJson(
+      all.map((c) => ({
+        choice_id: c.choice_id,
+        option_id: c.option_id,
+        quantity: c.quantity ?? 1,
+        total_price: Number(c.total_price) || 0,
+        ...(c.option_key ? { option_key: c.option_key } : {}),
+        ...(c.option_name_ko ? { option_name_ko: c.option_name_ko } : {}),
+        ...(c.option_name ? { option_name: c.option_name } : {}),
+      }))
+    ),
+    canyonChoice,
+  }
 }
 
 /** 가격 정보 (reservation_pricing 저장용, 새 예약 추가와 동일) */
@@ -236,6 +359,12 @@ export async function confirmReservationImport(
     totalPeopleAfter
   )
 
+  const enrichedChoices = await enrichImportSelectedChoices(
+    client,
+    Array.isArray(body.selected_choices) ? body.selected_choices : []
+  )
+  const hasChoicesJson = enrichedChoices.choicesJson.required.length > 0
+
   const reservationData = {
     id: reservationId,
     customer_id: customerId,
@@ -257,8 +386,10 @@ export async function confirmReservationImport(
     selected_options: null,
     selected_option_prices: null,
     is_private_tour: false,
-    choices: null,
+    choices: hasChoicesJson ? enrichedChoices.choicesJson : null,
+    canyon_choice: enrichedChoices.canyonChoice,
     variant_key: body.variant_key ?? 'default',
+    import_needs_review: String(body.added_by || '').startsWith(AUTO_CONFIRM_ADDED_BY),
   }
 
   const { error: insertReservationError } = await client
@@ -307,30 +438,17 @@ export async function confirmReservationImport(
   )
 
   // reservation_choices 저장 (미정 __undecided__ 제외)
-  const selectedChoices = Array.isArray(body.selected_choices) ? body.selected_choices : []
-  const choicesToInsert = selectedChoices.filter(
-    (c) => c.choice_id && c.option_id && c.option_id !== '__undecided__'
-  )
-  if (choicesToInsert.length > 0) {
-    const optionIds = [...new Set(choicesToInsert.map((c) => c.option_id).filter(Boolean))]
-    const keyById = new Map<string, string>()
-    if (optionIds.length > 0) {
-      const { data: optionMeta } = await client
-        .from('choice_options')
-        .select('id, option_key')
-        .in('id', optionIds)
-      for (const o of optionMeta || []) {
-        if (o.id && o.option_key) keyById.set(o.id, o.option_key)
-      }
-    }
+  if (enrichedChoices.concrete.length > 0) {
     const { error: choicesError } = await client
       .from('reservation_choices')
       .insert(
-        choicesToInsert.map((c) => ({
+        enrichedChoices.concrete.map((c) => ({
           reservation_id: reservationId,
           choice_id: c.choice_id,
           option_id: c.option_id,
-          option_key: keyById.get(c.option_id) ?? null,
+          option_key: c.option_key ?? null,
+          canyon_key: isCanyonKey(c.canyon_key) ? c.canyon_key : null,
+          canonical_option_key: c.canonical_option_key ?? null,
           quantity: c.quantity ?? 1,
           total_price: c.total_price ?? 0,
         }))
@@ -446,7 +564,15 @@ export async function confirmReservationImport(
       not_included_price: Number(pricingInfo.not_included_price) || 0,
       required_options: pricingInfo.requiredOptions ?? {},
       required_option_total: reqOpt,
-      choices: pricingInfo.choices ?? {},
+      choices:
+        pricingInfo.choices &&
+        typeof pricingInfo.choices === 'object' &&
+        Array.isArray((pricingInfo.choices as { required?: unknown }).required) &&
+        ((pricingInfo.choices as { required: unknown[] }).required.length > 0)
+          ? pricingInfo.choices
+          : hasChoicesJson
+            ? enrichedChoices.choicesJson
+            : {},
       choices_total: Number(pricingInfo.choicesTotal) || 0,
       subtotal: subtotalStored,
       coupon_code: pricingInfo.couponCode ?? null,
