@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import WaiverDocumentView from '@/components/waiver/WaiverDocumentView'
+import PrintSignatureImage from '@/components/tour/print/PrintSignatureImage'
 import AntelopeXDuplexSheets from '@/components/tour/print/AntelopeXDuplexSheets'
 import {
   formatCanyonFormDate,
@@ -121,10 +122,30 @@ export default function WaiverPrintPage() {
           .acx-duplex-start { break-before: right; page-break-before: right; }
           header, nav, aside, [data-admin-chrome] { display: none !important; }
         }
+        .waiver-print .avoid-break .cwf-sig { max-height: 80px; margin-top: 12px; }
         ${getCanyonWaiverPrintStyles()}
       `}</style>
       <div className="no-print sticky top-0 z-10 flex gap-2 border-b bg-white p-3">
-        <button type="button" className="rounded-lg border px-4 py-2" onClick={() => window.print()}>
+        <button
+          type="button"
+          className="rounded-lg border px-4 py-2"
+          onClick={() => {
+            const root = document.querySelector('.waiver-print')
+            if (!(root instanceof HTMLElement)) {
+              window.print()
+              return
+            }
+            const started = Date.now()
+            const tick = () => {
+              if (!root.querySelector('[data-ink-state="pending"]') || Date.now() - started >= 8000) {
+                window.print()
+                return
+              }
+              window.setTimeout(tick, 50)
+            }
+            tick()
+          }}
+        >
           Print
         </button>
       </div>
@@ -178,8 +199,10 @@ export default function WaiverPrintPage() {
                   <p>Tour date: {data.tourDate}</p>
                   <p>Booking: {data.bookingNumber}</p>
                   {p.mania.signatureUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.mania.signatureUrl} alt={`Signature of ${p.name}`} className="mt-3 h-20 border" />
+                    <PrintSignatureImage
+                      src={p.mania.signatureUrl}
+                      alt={`Signature of ${p.name}`}
+                    />
                   ) : null}
                   <p className="mt-3 text-sm">
                     Electronically signed by {p.name} on {p.mania.signedAt}. Waiver {p.mania.waiverId} · {p.mania.version}

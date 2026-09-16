@@ -15,9 +15,11 @@ export default function WaiverDocumentView({
         <p className="text-xs font-medium tracking-wide text-muted-foreground">{content.operatorName}</p>
         <h2 className="text-xl font-semibold tracking-tight md:text-2xl">{content.title}</h2>
         {content.subtitle ? <p className="text-base font-medium">{content.subtitle}</p> : null}
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950">
-          {content.warning}
-        </p>
+        {content.warning.trim() ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950">
+            {content.warning}
+          </p>
+        ) : null}
       </header>
       {showGoverningNotice ? (
         <p className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
@@ -31,12 +33,14 @@ export default function WaiverDocumentView({
       ))}
       {content.sections.map((section) => (
         <section key={section.number} className="space-y-3">
-          <h3 className="text-lg font-semibold tracking-tight">
-            {section.number}. {section.title}
-          </h3>
-          {section.paragraphs.map((p) => (
+          {section.title.trim() ? (
+            <h3 className="text-lg font-semibold tracking-tight">
+              {section.number}. {section.title}
+            </h3>
+          ) : null}
+          {section.paragraphs.map((p, index) => (
             <p key={p.slice(0, 40)} className="text-base leading-7 text-muted-foreground">
-              {p}
+              {section.title.trim() || index > 0 ? p : `${section.number}. ${p}`}
             </p>
           ))}
           {section.bullets?.length ? (

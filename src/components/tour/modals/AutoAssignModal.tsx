@@ -7,6 +7,10 @@ import { supabase } from '@/lib/supabase'
 import { isCanyonKey } from '@/lib/canyonChoice'
 import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
 import { canonicalReservationIdKey, normalizeReservationIds } from '@/utils/tourUtils'
+import {
+  coalesceRelatedReservationsOntoOneTour,
+  ensureUniqueReservationIdsAcrossTours,
+} from '@/lib/exclusiveTourReservationAssignment'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
@@ -676,8 +680,12 @@ export default function AutoAssignModal({
         if (toIdx >= 0) result[toIdx].reservation_ids = [...(result[toIdx].reservation_ids || []), rid]
       }
     })
-    return result.map(t => ({ ...t, reservation_ids: dedupeReservationIds(t.reservation_ids) }))
-  }, [proposedTours, manualOverrides])
+    const unique = result.map(t => ({ ...t, reservation_ids: dedupeReservationIds(t.reservation_ids) }))
+    return coalesceRelatedReservationsOntoOneTour(
+      ensureUniqueReservationIdsAcrossTours(unique),
+      reservations
+    )
+  }, [proposedTours, manualOverrides, reservations])
 
   const setReservationToTour = useCallback((reservationId: string, toTourId: string) => {
     setManualOverrides(prev => new Map(prev).set(reservationId, toTourId))
@@ -924,7 +932,13 @@ export default function AutoAssignModal({
   const saveProposedTours = useCallback(async () => {
     setApplying(true)
     try {
-      for (const tour of displayTours) {
+      const exclusiveTours = coalesceRelatedReservationsOntoOneTour(
+        ensureUniqueReservationIdsAcrossTours(
+          displayTours.map((t) => ({ ...t, reservation_ids: t.reservation_ids ? [...t.reservation_ids] : [] }))
+        ),
+        reservations
+      )
+      for (const tour of exclusiveTours) {
         const arr = [...new Set(normalizeReservationIds(tour.reservation_ids))]
         const { error } = await supabase.from('tours').update({ reservation_ids: arr }).eq('id', tour.id)
         if (error) throw error

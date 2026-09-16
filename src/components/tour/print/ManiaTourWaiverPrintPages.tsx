@@ -6,20 +6,47 @@ import {
   type CanyonWaiverPrintGuest,
   type CanyonWaiverPrintPacket,
 } from '@/lib/canyonWaiverPrintForms'
+import PrintSignatureImage from '@/components/tour/print/PrintSignatureImage'
 
-function SignatureImage({ src, alt }: { src: string; alt: string }) {
+const MANIA_WAIVER_FRONT_THROUGH = 8
+
+function ManiaWaiverSections({
+  sections,
+}: {
+  sections: (typeof LAS_VEGAS_MANIA_WAIVER_EN.sections)[number][]
+}) {
   return (
-    <span className="cwf-sig-ink">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={alt} className="cwf-sig" />
-    </span>
+    <>
+      {sections.map((section) => (
+        <section key={section.number}>
+          <h3>
+            {section.number}. {section.title}
+          </h3>
+          {section.paragraphs.map((p) => (
+            <p key={p.slice(0, 40)}>{p}</p>
+          ))}
+          {section.bullets?.length ? (
+            <ul>
+              {section.bullets.map((b) => (
+                <li key={b.slice(0, 40)}>{b}</li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      ))}
+    </>
   )
 }
 
-function ManiaWaiverDocument({ date, guestCount }: { date: string; guestCount: number }) {
+function ManiaWaiverFront({ date, guestCount }: { date: string; guestCount: number }) {
   const content = LAS_VEGAS_MANIA_WAIVER_EN
   return (
-    <section className="mania-page" aria-label="Las Vegas Mania Tour waiver">
+    <section
+      className="mania-page mania-waiver-page"
+      data-print-section="mania-waiver"
+      aria-label="Las Vegas Mania Tour waiver front"
+    >
+      <p className="acx-sheet-side">Front · waiver</p>
       <article className="mania-doc">
         <p className="mania-op">{content.operatorName}</p>
         <h2>{content.title}</h2>
@@ -31,27 +58,31 @@ function ManiaWaiverDocument({ date, guestCount }: { date: string; guestCount: n
         {content.intro.map((p) => (
           <p key={p.slice(0, 48)}>{p}</p>
         ))}
-        {content.sections.map((section) => (
-          <section key={section.number}>
-            <h3>
-              {section.number}. {section.title}
-            </h3>
-            {section.paragraphs.map((p) => (
-              <p key={p.slice(0, 40)}>{p}</p>
-            ))}
-            {section.bullets?.length ? (
-              <ul>
-                {section.bullets.map((b) => (
-                  <li key={b.slice(0, 40)}>{b}</li>
-                ))}
-              </ul>
-            ) : null}
-          </section>
-        ))}
+        <ManiaWaiverSections sections={content.sections.slice(0, MANIA_WAIVER_FRONT_THROUGH)} />
+      </article>
+      <div className="mania-page-num">1</div>
+    </section>
+  )
+}
+
+function ManiaWaiverBack() {
+  const content = LAS_VEGAS_MANIA_WAIVER_EN
+  return (
+    <section
+      className="mania-page mania-waiver-page"
+      data-print-section="mania-waiver"
+      aria-label="Las Vegas Mania Tour waiver back"
+    >
+      <p className="acx-sheet-side">Back · waiver</p>
+      <article className="mania-doc">
+        <p className="mania-op">{content.operatorName}</p>
+        <h2>{content.title} — CONTINUED</h2>
+        <ManiaWaiverSections sections={content.sections.slice(MANIA_WAIVER_FRONT_THROUGH)} />
         {content.closing.map((p) => (
           <p key={p.slice(0, 40)}>{p}</p>
         ))}
       </article>
+      <div className="mania-page-num">2</div>
     </section>
   )
 }
@@ -70,7 +101,11 @@ function ManiaSignaturePage({
   const rows = padPrintRows(guests, MANIA_WAIVER_ROWS_PER_PAGE)
   const start = pageIndex * MANIA_WAIVER_ROWS_PER_PAGE
   return (
-    <section className="mania-page mania-sig-page" aria-label="Mania tour waiver signatures">
+    <section
+      className="mania-page mania-sig-page"
+      data-print-section="mania-signatures"
+      aria-label="Mania tour waiver signatures"
+    >
       <h2>LAS VEGAS MANIA TOUR — PARTICIPANT SIGNATURES</h2>
       <p className="mania-meta">
         Date: {packet.date || '________'}
@@ -95,7 +130,7 @@ function ManiaSignaturePage({
               <td className="mania-name">{guest?.printName || ''}</td>
               <td className="mania-sig">
                 {guest?.printName && guest.signatureUrl ? (
-                  <SignatureImage
+                  <PrintSignatureImage
                     src={guest.signatureUrl}
                     alt={`Signature of ${guest.printName}`}
                   />
@@ -111,30 +146,48 @@ function ManiaSignaturePage({
 
 export default function ManiaTourWaiverPrintPages({
   packet,
-  include,
+  includeWaiver,
+  includeSignatures,
   isFirstPrintedBlock,
 }: {
   packet: CanyonWaiverPrintPacket | null
-  include: boolean
+  includeWaiver: boolean
+  includeSignatures: boolean
   isFirstPrintedBlock: boolean
 }) {
-  if (!include || !packet) return null
+  if (!packet) return null
+  if (!includeWaiver && !includeSignatures) return null
   const chunks = chunkPrintGuests(packet.guests, MANIA_WAIVER_ROWS_PER_PAGE)
+  const guestCount = packet.guests.filter((g) => g.printName).length
+  const waiverStartClass = isFirstPrintedBlock ? undefined : 'cwf-page-break mania-duplex-start'
+
   return (
     <>
-      <div className={isFirstPrintedBlock ? undefined : 'cwf-page-break'}>
-        <ManiaWaiverDocument date={packet.date} guestCount={packet.guests.filter((g) => g.printName).length} />
-      </div>
-      {chunks.map((guests, pageIndex) => (
-        <div key={`mania-sig-${pageIndex}`} className="cwf-page-break">
-          <ManiaSignaturePage
-            packet={packet}
-            guests={guests}
-            pageIndex={pageIndex}
-            pageCount={chunks.length}
-          />
-        </div>
-      ))}
+      {includeWaiver ? (
+        <>
+          <div className={waiverStartClass}>
+            <ManiaWaiverFront date={packet.date} guestCount={guestCount} />
+          </div>
+          <div className="cwf-page-break">
+            <ManiaWaiverBack />
+          </div>
+        </>
+      ) : null}
+      {includeSignatures
+        ? chunks.map((guests, pageIndex) => (
+            <div
+              key={`mania-sig-${pageIndex}`}
+              className={includeWaiver || !isFirstPrintedBlock || pageIndex > 0 ? 'cwf-page-break' : undefined}
+            >
+              <ManiaSignaturePage
+                packet={packet}
+                guests={guests}
+                pageIndex={pageIndex}
+                pageCount={chunks.length}
+              />
+            </div>
+          ))
+        : null}
     </>
   )
 }

@@ -2,6 +2,14 @@
 
 import ReactCountryFlag from 'react-country-flag'
 import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
+import {
+  scheduleGuideLanguageMismatchLine,
+  scheduleProductCellPulseReasonLabel,
+  type ScheduleGuideLanguageMismatch,
+  type ScheduleGuestLangBucket,
+  type ScheduleProductCellPulseReason,
+  type ScheduleRequiredGuideLang,
+} from '@/lib/scheduleGuideLanguageMatch'
 
 const PRODUCT_SCHEDULE_KEYCAP_DIGITS = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣'] as const
 
@@ -22,7 +30,7 @@ export type ScheduleProductGridDailyCell = {
   waitingPeople?: number
   koWaitingPeople?: number
   enWaitingPeople?: number
-  /** 대기(pending) 중 일본어 고객 인원 — enWaitingPeople(비한국어)의 하위 집계 */
+  /** 대기(pending) 중 일본어 고객 인원 */
   jaWaitingPeople?: number
   canceledPeople?: number
   assignmentPendingReservationCount?: number
@@ -32,8 +40,10 @@ export type ScheduleProductGridDailyCell = {
   waitingReservationGroupCount?: number
   koPeople?: number
   enPeople?: number
-  /** 확정·모집 중 일본어 고객 인원 — enPeople(비한국어)의 하위 집계 */
+  /** 확정·모집 중 일본어 고객 인원 */
   jaPeople?: number
+  /** 배정된 가이드/어시 구사 언어가 한국어·일본어 손님과 맞지 않는 투어 */
+  guideLanguageMismatches?: ScheduleGuideLanguageMismatch[]
   choiceCounts?: Record<string, number>
   privateTourPeople?: number
   companionTourPeople?: number
@@ -43,6 +53,7 @@ export type ScheduleProductGridDailyCell = {
       teamIndex: number
       guideName: string
       assistantName: string
+      staffLocales?: ScheduleGuestLangBucket[]
       assigned: number
       max: number
       spotsLeft: number
@@ -124,6 +135,110 @@ export function aggregateScheduleBreakdownFromDailyData(
   return { ko, en, ja, choiceCounts }
 }
 
+function PulseReasonFlag({ locale }: { locale: ScheduleRequiredGuideLang }) {
+  return (
+    <ReactCountryFlag
+      countryCode={locale === 'ko' ? 'KR' : 'JP'}
+      svg
+      style={{ width: '0.95em', height: '0.7em' }}
+    />
+  )
+}
+
+export function ScheduleProductCellPulseReasonBadges({
+  reasons,
+  uiLocale = 'ko',
+}: {
+  reasons: ScheduleProductCellPulseReason[]
+  uiLocale?: string
+}) {
+  if (reasons.length === 0) return null
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-1">
+      {reasons.map((reason) => {
+        const kindClass =
+          reason.kind === 'capacity_overflow'
+            ? 'bg-red-500 text-white'
+            : reason.kind === 'unconfirmed_tour'
+              ? 'bg-orange-500 text-white'
+              : 'bg-violet-500 text-white'
+        return (
+          <span
+            key={reason.kind}
+            className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${kindClass}`}
+          >
+            {reason.kind === 'guide_language'
+              ? (reason.missingLocales || []).map((locale) => (
+                  <PulseReasonFlag key={locale} locale={locale} />
+                ))
+              : null}
+            {scheduleProductCellPulseReasonLabel(reason, uiLocale)}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+export function ScheduleGuideLanguageMismatchLines({
+  mismatches,
+  uiLocale = 'ko',
+}: {
+  mismatches: ScheduleGuideLanguageMismatch[]
+  uiLocale?: string
+}) {
+  if (mismatches.length === 0) return null
+  const isKo = uiLocale === 'ko'
+  return (
+    <div className="mb-2 space-y-1 rounded-md border border-violet-400/60 bg-violet-950/40 px-2 py-1.5">
+      <div className="text-[10px] font-bold uppercase tracking-wide text-violet-200">
+        {isKo ? '팀 언어 배정 (가이드·어시·드라이버)' : 'Team language (guide, assistant, driver)'}
+      </div>
+      {mismatches.map((mismatch) => (
+        <div key={mismatch.tourId} className="text-[11px] leading-snug text-violet-50">
+          {scheduleGuideLanguageMismatchLine(mismatch, uiLocale)}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+const STAFF_LANG_FLAG_COUNTRY: Record<ScheduleGuestLangBucket, string> = {
+  ko: 'KR',
+  en: 'US',
+  ja: 'JP',
+}
+
+const STAFF_FLAG_DISPLAY_ORDER: ScheduleGuestLangBucket[] = ['ko', 'en', 'ja']
+
+export function ScheduleStaffSpeakFlags({
+  locales,
+  className = 'inline-flex items-center gap-0.5 ml-1 align-middle',
+}: {
+  locales?: ScheduleGuestLangBucket[] | undefined
+  className?: string
+}) {
+  if (!locales || locales.length === 0) return null
+  const ordered = STAFF_FLAG_DISPLAY_ORDER.filter((locale) => locales.includes(locale))
+  return (
+    <span className={className}>
+      {ordered.map((locale) => (
+        <span
+          key={locale}
+          title={locale === 'ko' ? '한국어' : locale === 'ja' ? '일본어' : '영어'}
+          className="inline-flex"
+        >
+          <ReactCountryFlag
+            countryCode={STAFF_LANG_FLAG_COUNTRY[locale]}
+            svg
+            style={{ width: '1em', height: '0.75em' }}
+          />
+        </span>
+      ))}
+    </span>
+  )
+}
+
 export function ScheduleLangFlagsHoverLine({
   ko,
   en,
@@ -145,13 +260,11 @@ export function ScheduleLangFlagsHoverLine({
       <span className="inline-flex items-center gap-1 shrink-0">
         <ReactCountryFlag countryCode="US" svg style={{ width: '1em', height: '0.75em' }} />
         <span>{en}</span>
-        {ja > 0 ? (
-          <span className="inline-flex items-center gap-0.5 text-gray-300">
-            (
-            <ReactCountryFlag countryCode="JP" svg style={{ width: '1em', height: '0.75em' }} />
-            {ja})
-          </span>
-        ) : null}
+      </span>
+      <span className="text-gray-400 shrink-0">/</span>
+      <span className="inline-flex items-center gap-1 shrink-0">
+        <ReactCountryFlag countryCode="JP" svg style={{ width: '1em', height: '0.75em' }} />
+        <span>{ja}</span>
       </span>
     </div>
   )

@@ -3,61 +3,52 @@ import type { WaiverDocumentContent } from '@/lib/waiver/types'
 
 export const ANTELOPE_CANYON_X_WAIVER_ES: WaiverDocumentContent = {
   ...ANTELOPE_CANYON_X_WAIVER_EN,
-  title: 'TAADIDIIN TOURS — FORMULARIO DE EXENCIÓN',
+  title: 'TAADIDIIN TOURS – WAIVER FORM',
   subtitle:
     'EXENCIÓN DE RESPONSABILIDAD, RENUNCIA DE DERECHOS LEGALES Y ASUNCIÓN DE RIESGO PARA TOUR DE SENDERISMO Y FOTOGRAFÍA',
-  warning:
-    'IMPORTANTE: LEA DETENIDAMENTE ANTES DE FIRMAR. ESTE DOCUMENTO AFECTA SUS DERECHOS LEGALES.',
+  warning: '',
   intro: [
-    'Por el presente reconozco que he solicitado voluntariamente participar en un tour de senderismo y/o fotografía de Antelope Canyon X y/o Cardiac Canyon operado por Taadidiin Tours L.L.C. (“TT LLC”).',
-    'En contraprestación por que se me permita participar, acepto los siguientes términos.',
+    'Taadidiin Tours L.L.C. (TT LLC) ofrece tours de los cañones estrechos (Slot canyons): Antelope Canyon X y Cardiac Canyon. Entiendo que mi participación en los tours a través de los cañones incluye una caminata de bajada y subida por un cañón de terreno de tierra y que existe la posibilidad de sufrir una lesión. Declaro que gozo de buena salud y que puedo completar una caminata de subida y bajada por los cañones. Acepto voluntariamente firmar la Exención de Responsabilidad y acepto asumir todos los riesgos de una posible lesión mientras me encuentre en las instalaciones de TT LLC. También acepto cumplir todas las normas publicadas de TT LLC y las instrucciones dadas por los empleados de TT LLC. Esta exención comienza en la fecha de la firma y permanecerá vinculante en todo momento posterior. Al firmar el Formulario de Exención, entiendo y acepto, en nombre de mi(s) hijo(s) menor(es) y de mí mismo, la Exención de Responsabilidad, la Renuncia de Derechos Legales y la Asunción de Riesgo y los términos que siguen:',
   ],
   sections: [
     {
       number: '1',
-      title: 'Normas, advertencias e instrucciones',
+      title: '',
       paragraphs: [
-        'Acepto observar y obedecer todas las normas publicadas, advertencias escritas e instrucciones y direcciones verbales dadas por TT LLC, o por los empleados, representantes o agentes de TT LLC.',
+        'Acepto observar y obedecer todas las normas publicadas y las advertencias escritas colocadas a lo largo de los senderos, y acepto acatar todas las instrucciones o direcciones verbales dadas por empleados, representantes y agentes de TT LLC.',
       ],
     },
     {
       number: '2',
-      title: 'Terreno de tierra y asunción de riesgo',
+      title: '',
       paragraphs: [
-        'Reconozco que el tour implica caminar y hacer senderismo sobre terreno de tierra y otras superficies naturales, y que existen riesgos inherentes asociados con esta actividad.',
-        'Asumo plena responsabilidad por las lesiones personales mías y, si corresponde, de los miembros de mi familia, y entiendo que la participación puede resultar en muerte, lesiones personales u otros daños.',
-        'En la máxima medida permitida por la ley, eximo y libero a TT LLC de lesiones, pérdidas o daños derivados de mi participación o la de mi familia en el tour o de nuestra presencia en las instalaciones utilizadas por TT LLC, ya sea causados por culpa mía, de mi familia, de TT LLC o de terceros.',
+        'Entiendo y reconozco que los Tours de Senderismo y Fotografía tienen un terreno de tierra, y que ninguna cantidad de cuidado, precaución, instrucciones o pericia eliminará todos los peligros potenciales. ASUMO EXPRESA Y VOLUNTARIAMENTE EL RIESGO DE MUERTE, LESIONES PERSONALES O CUALQUIER OTRA FORMA DE DAÑO QUE PUEDA SUFRIRSE AL PARTICIPAR EN LA CAMINATA POR EL CAÑÓN O EN EL TOUR DE FOTOGRAFÍA.',
       ],
     },
     {
       number: '3',
-      title: 'No interponer acciones legales ni reclamaciones',
+      title: '',
       paragraphs: [
-        'Acepto no interponer ninguna acción legal ni presentar ninguna reclamación contra Taadidiin Tours L.L.C. relacionada con mi participación en el tour, en la máxima medida permitida por la ley aplicable.',
+        'ACEPTO QUE NO INTERPONDRÉ NINGÚN TIPO DE ACCIÓN LEGAL NI PRESENTARÉ RECLAMACIÓN alguna en mi nombre y/o en nombre de mi(s) hijo(s) menor(es) contra Taadidiin Tours por daños o cualquier pérdida sufrida como resultado de mi participación en el Tour de Senderismo y Fotografía.',
       ],
     },
     {
       number: '4',
-      title: 'Indemnización y defensa',
+      title: '',
       paragraphs: [
-        'Acepto indemnizar y defender a Taadidiin Tours L.L.C. frente a todas las reclamaciones, causas de acción, daños, sentencias, costos o gastos, incluidos honorarios de abogados y otros costos de litigio, que de cualquier modo surjan de mi participación o la de mi familia en el tour o de nuestra presencia en las instalaciones utilizadas por TT LLC.',
+        'Acepto INDEMNIZAR Y DEFENDER A TAADIDIIN TOURS de todas las reclamaciones, daños, posibles sentencias y costos, incluidos honorarios de abogados, incurridos en relación con cualquier acción presentada contra TT LLC, conjunta o separadamente, como resultado de la participación mía y de mi hijo menor en un Tour de Senderismo y Fotografía.',
       ],
     },
     {
       number: '5',
-      title: 'Salud, participación voluntaria y asistencia médica',
+      title: '',
       paragraphs: [
-        'Declaro que gozo de buena salud y de la condición física adecuada para participar en esta actividad.',
-        'Reconozco que participo voluntariamente y que asumo todos los riesgos asociados con el tour.',
-        'Autorizo a TT LLC a proporcionar u obtener asistencia médica cuando sea razonablemente necesario.',
+        'Gozo de buena salud y condición física. Participo voluntariamente con el conocimiento de que existen peligros potenciales, y acepto asumir todos esos riesgos. También entiendo que si me lesiono o enfermo, acepto que Taadidiin Tours L.L.C. y sus empleados, voluntarios o huéspedes no serán responsables si prestan asistencia médica a mí o a mi hijo menor.',
       ],
     },
   ],
   closing: [
-    'HE LEÍDO ESTA EXENCIÓN DE RESPONSABILIDAD, RENUNCIA DE DERECHOS LEGALES Y ASUNCIÓN DE RIESGO Y COMPRENDO PLENAMENTE SUS TÉRMINOS.',
-    'ENTIENDO LOS RIESGOS DESCRITOS ARRIBA. FIRMO VOLUNTARIAMENTE. TUVE LA OPORTUNIDAD DE HACER PREGUNTAS.',
-    'ASUMO LOS RIESGOS POR MÍ Y, SI CORRESPONDE, POR LOS HIJOS MENORES PARA QUIENES ESTOY AUTORIZADO A FIRMAR.',
-    'Todos los participantes deben escribir su nombre e firmar esta Exención de Responsabilidad antes de participar. En el caso de menores, el padre, la madre o el tutor legal escribe el nombre y la edad del menor y firma en nombre del menor.',
+    'HE LEÍDO ESTE FORMULARIO DE EXENCIÓN DE RESPONSABILIDAD, RENUNCIA DE DERECHOS LEGALES Y ASUNCIÓN DE RIESGO, Y ENTIENDO QUE HAY RIESGOS INVOLUCRADOS. FIRMO ESTA EXENCIÓN VOLUNTARIAMENTE Y TUVE AMPLIA OPORTUNIDAD DE PLANTEAR CUALQUIER PREGUNTA O INQUIETUD. RECONOZCO QUE MI PARTICIPACIÓN ES VOLUNTARIA CON EL CONOCIMIENTO DE QUE PUEDE HABER PELIGROS POTENCIALES. ACEPTO ASUMIR TODOS LOS RIESGOS EN NOMBRE MÍO Y DE MIS HIJOS MENORES.',
   ],
   languageNotice:
     'Esta traducción se proporciona para ayudarle a comprender la exención original de Taadidiin Tours. El documento oficial del operador es la versión en inglés.',
@@ -65,61 +56,52 @@ export const ANTELOPE_CANYON_X_WAIVER_ES: WaiverDocumentContent = {
 
 export const ANTELOPE_CANYON_X_WAIVER_FR: WaiverDocumentContent = {
   ...ANTELOPE_CANYON_X_WAIVER_EN,
-  title: 'TAADIDIIN TOURS — FORMULAIRE DE DÉCHARGE',
+  title: 'TAADIDIIN TOURS – WAIVER FORM',
   subtitle:
     'DÉCHARGE DE RESPONSABILITÉ, RENONCIATION AUX DROITS LÉGAUX ET ACCEPTATION DES RISQUES POUR VISITE DE RANDONNÉE ET DE PHOTOGRAPHIE',
-  warning:
-    'IMPORTANT : VEUILLEZ LIRE ATTENTIVEMENT AVANT DE SIGNER. CE DOCUMENT AFFECTE VOS DROITS LÉGAUX.',
+  warning: '',
   intro: [
-    'Je reconnais par les présentes avoir demandé volontairement à participer à une visite de randonnée et/ou de photographie d’Antelope Canyon X et/ou de Cardiac Canyon exploitée par Taadidiin Tours L.L.C. (« TT LLC »).',
-    'En contrepartie de l’autorisation de participer, j’accepte les conditions suivantes.',
+    'Taadidiin Tours L.L.C. (TT LLC) propose des visites des canyons étroits (Slot canyons) : Antelope Canyon X et Cardiac Canyon. Je comprends que ma participation aux visites à travers les canyons comprend une randonnée descendante et ascendante dans un canyon en terrain de terre et qu’il existe un risque de blessure. J’atteste être en bonne santé et capable d’effectuer une randonnée montante et descendante dans les canyons. J’accepte volontairement de signer la décharge de responsabilité et j’accepte d’assumer tous les risques d’une blessure éventuelle pendant que je me trouve dans les locaux de TT LLC. J’accepte également de respecter toutes les règles affichées de TT LLC et les instructions données par les employés de TT LLC. La présente décharge prend effet à la date de signature et demeure obligatoire pour tout le temps à venir. En apposant ma signature sur le formulaire de décharge, je comprends et accepte, au nom de mon ou mes enfant(s) mineur(s) et de moi-même, la décharge de responsabilité, la renonciation aux droits légaux et l’acceptation des risques ainsi que les conditions ci-après :',
   ],
   sections: [
     {
       number: '1',
-      title: 'Règles, avertissements et instructions',
+      title: '',
       paragraphs: [
-        'Je m’engage à observer et à obéir à toutes les règles affichées, aux avertissements écrits et aux instructions et consignes verbales données par TT LLC, ou par les employés, représentants ou agents de TT LLC.',
+        'Je m’engage à observer et à obéir à toutes les règles affichées et aux avertissements écrits placés le long des sentiers, et à me conformer à toutes les instructions ou consignes verbales données par les employés, représentants et agents de TT LLC.',
       ],
     },
     {
       number: '2',
-      title: 'Terrain en terre et acceptation des risques',
+      title: '',
       paragraphs: [
-        'Je reconnais que la visite implique de marcher et de randonner sur un terrain en terre et d’autres surfaces naturelles, et qu’il existe des risques inhérents associés à cette activité.',
-        'J’assume l’entière responsabilité des blessures corporelles me concernant et, le cas échéant, concernant les membres de ma famille, et je comprends que la participation peut entraîner la mort, des blessures corporelles ou d’autres dommages.',
-        'Dans toute la mesure permise par la loi, je décharge TT LLC des blessures, pertes ou dommages découlant de ma participation ou de celle de ma famille à la visite ou de notre présence dans les installations utilisées par TT LLC, qu’ils soient causés par ma faute, celle de ma famille, celle de TT LLC ou celle de tiers.',
+        'Je comprends et reconnais que les visites de randonnée et de photographie se déroulent sur un terrain de terre, et qu’aucune quantité de soin, de prudence, d’instructions ou d’expertise n’éliminera tous les dangers potentiels. J’ASSUME EXPRESSÉMENT ET VOLONTAIREMENT LE RISQUE DE DÉCÈS, DE BLESSURES CORPORELLES OU DE TOUTE AUTRE FORME DE DOMMAGE POUVANT ÊTRE SUBI LORS DE LA PARTICIPATION À LA RANDONNÉE DANS LE CANYON OU À LA VISITE PHOTOGRAPHIQUE.',
       ],
     },
     {
       number: '3',
-      title: 'Aucune action en justice ni réclamation',
+      title: '',
       paragraphs: [
-        'Je m’engage à n’intenter aucune action en justice ni à formuler aucune réclamation contre Taadidiin Tours L.L.C. en lien avec ma participation à la visite, dans toute la mesure permise par le droit applicable.',
+        'J’ACCEPTE DE N’INTENTER AUCUNE ACTION EN JUSTICE NI DE FORMULER AUCUNE RÉCLAMATION en mon nom et/ou au nom de mon ou mes enfant(s) mineur(s) contre Taadidiin Tours pour des dommages ou toute perte subie du fait de ma participation à la visite de randonnée et de photographie.',
       ],
     },
     {
       number: '4',
-      title: 'Indemnisation et défense',
+      title: '',
       paragraphs: [
-        'Je m’engage à indemniser et à défendre Taadidiin Tours L.L.C. contre toutes réclamations, causes d’action, dommages, jugements, coûts ou dépenses, y compris les honoraires d’avocat et autres frais de litige, qui pourraient de quelque manière que ce soit découler de ma participation ou de celle de ma famille à la visite ou de notre présence dans les installations utilisées par TT LLC.',
+        'Je m’engage à INDEMNISER ET DÉFENDRE TAADIDIIN TOURS contre toutes réclamations, dommages, jugements potentiels et coûts, y compris les honoraires d’avocat, encourus en lien avec toute action intentée contre TT LLC, conjointement ou séparément, du fait de ma participation et de celle de mon enfant mineur à une visite de randonnée et de photographie.',
       ],
     },
     {
       number: '5',
-      title: 'Santé, participation volontaire et assistance médicale',
+      title: '',
       paragraphs: [
-        'Je déclare être en bonne santé et en condition physique appropriée pour participer à cette activité.',
-        'Je reconnais que je participe volontairement et que j’assume tous les risques associés à la visite.',
-        'J’autorise TT LLC à fournir ou à obtenir une assistance médicale lorsque cela est raisonnablement nécessaire.',
+        'Je suis en bonne santé et en bonne condition physique. Je participe volontairement en sachant qu’il existe des dangers potentiels, et j’accepte d’assumer tous ces risques. Je comprends également que si je suis blessé ou tombe malade, j’accepte que Taadidiin Tours L.L.C. et ses employés, bénévoles ou clients ne soient pas tenus responsables s’ils apportent une assistance médicale à moi-même ou à mon enfant mineur.',
       ],
     },
   ],
   closing: [
-    'J’AI LU CETTE DÉCHARGE DE RESPONSABILITÉ, CETTE RENONCIATION AUX DROITS LÉGAUX ET CETTE ACCEPTATION DES RISQUES ET J’EN COMPRENDS PLEINEMENT LES CONDITIONS.',
-    'JE COMPRENDS LES RISQUES DÉCRITS CI-DESSUS. JE SIGNE VOLONTAIREMENT. J’AI EU LA POSSIBILITÉ DE POSER DES QUESTIONS.',
-    'J’ASSUME LES RISQUES POUR MOI-MÊME ET, LE CAS ÉCHÉANT, POUR LES ENFANTS MINEURS POUR LESQUELS JE SUIS AUTORISÉ À SIGNER.',
-    'Tous les participants doivent inscrire leur nom et signer la présente décharge de responsabilité avant de participer. Pour les mineurs, le parent ou le tuteur légal inscrit le nom et l’âge du mineur et signe au nom du mineur.',
+    'J’AI LU CE FORMULAIRE DE DÉCHARGE DE RESPONSABILITÉ, DE RENONCIATION AUX DROITS LÉGAUX ET D’ACCEPTATION DES RISQUES, ET JE COMPRENDS QU’IL EXISTE DES RISQUES. JE SIGNE CETTE DÉCHARGE VOLONTAIREMENT ET J’AI EU AMPLE POSSIBILITÉ DE SOULEVER TOUTE QUESTION OU PRÉOCCUPATION. JE RECONNAIS QUE MA PARTICIPATION EST VOLONTAIRE EN SACHANT QU’IL PEUT Y AVOIR DES DANGERS POTENTIELS. J’ACCEPTE D’ASSUMER TOUS LES RISQUES POUR MOI-MÊME ET POUR MES ENFANTS MINEURS.',
   ],
   languageNotice:
     'Cette traduction est fournie pour vous aider à comprendre la décharge originale de Taadidiin Tours. Le document officiel de l’exploitant est la version anglaise.',
@@ -127,61 +109,52 @@ export const ANTELOPE_CANYON_X_WAIVER_FR: WaiverDocumentContent = {
 
 export const ANTELOPE_CANYON_X_WAIVER_DE: WaiverDocumentContent = {
   ...ANTELOPE_CANYON_X_WAIVER_EN,
-  title: 'TAADIDIIN TOURS — HAFTUNGSAUSSCHLUSSFORMULAR',
+  title: 'TAADIDIIN TOURS – WAIVER FORM',
   subtitle:
     'HAFTUNGSFREISTELLUNG, VERZICHT AUF RECHTLICHE ANSPRÜCHE UND RISIKOÜBERNAHME FÜR WANDER- UND FOTOTOUR',
-  warning:
-    'WICHTIG: BITTE VOR DER UNTERZEICHNUNG SORGFÄLTIG LESEN. DIESES DOKUMENT BEEINFLUSST IHRE RECHTLICHEN ANSPRÜCHE.',
+  warning: '',
   intro: [
-    'Hiermit bestätige ich, dass ich freiwillig die Teilnahme an einer Wander- und/oder Fototour durch Antelope Canyon X und/oder Cardiac Canyon beantragt habe, die von Taadidiin Tours L.L.C. („TT LLC“) betrieben wird.',
-    'Als Gegenleistung für die Gestattung der Teilnahme stimme ich den folgenden Bedingungen zu.',
+    'Taadidiin Tours L.L.C. (TT LLC) bietet Touren durch die Slot Canyons Antelope Canyon X und Cardiac Canyon an. Ich verstehe, dass meine Teilnahme an den Touren durch die Canyons eine Wanderung hinab und hinauf in einem Canyon mit Erdgelände umfasst und dass die Gefahr einer Verletzung besteht. Ich versichere, dass ich bei guter Gesundheit bin und eine Wanderung hinauf und hinab durch die Canyons bewältigen kann. Ich stimme freiwillig zu, die Haftungsfreistellung zu unterzeichnen, und ich stimme zu, alle Risiken einer möglichen Verletzung zu übernehmen, während ich mich auf dem Gelände von TT LLC befinde. Ich stimme außerdem zu, alle von TT LLC ausgehängten Regeln und die Anweisungen der Mitarbeiter von TT LLC zu befolgen. Dieser Haftungsausschluss beginnt am Datum der Unterzeichnung und bleibt danach für alle Zeit verbindlich. Mit meiner Unterschrift auf dem Formular verstehe und stimme ich im Namen meines/meiner minderjährigen Kindes/Kinder und meiner selbst der Haftungsfreistellung, dem Verzicht auf rechtliche Ansprüche und der Risikoübernahme sowie den folgenden Bedingungen zu:',
   ],
   sections: [
     {
       number: '1',
-      title: 'Regeln, Warnungen und Anweisungen',
+      title: '',
       paragraphs: [
-        'Ich verpflichte mich, alle ausgehängten Regeln, schriftlichen Warnungen sowie mündlichen Anweisungen und Weisungen von TT LLC oder den Mitarbeitern, Vertretern oder Beauftragten von TT LLC zu beachten und zu befolgen.',
+        'Ich verpflichte mich, alle ausgehängten Regeln und schriftlichen Warnungen entlang der Wege zu beachten und zu befolgen und allen mündlichen Anweisungen oder Weisungen von Mitarbeitern, Vertretern und Beauftragten von TT LLC nachzukommen.',
       ],
     },
     {
       number: '2',
-      title: 'Erdgelände und Risikoübernahme',
+      title: '',
       paragraphs: [
-        'Ich erkenne an, dass die Tour Gehen und Wandern auf Erdgelände und anderen natürlichen Oberflächen umfasst und dass mit dieser Aktivität inhärente Risiken verbunden sind.',
-        'Ich übernehme die volle Verantwortung für Personenschäden an mir selbst und, soweit zutreffend, an meinen Familienmitgliedern und verstehe, dass die Teilnahme zu Tod, Personenschäden oder anderem Schaden führen kann.',
-        'Im weitestgehenden gesetzlich zulässigen Umfang stelle ich TT LLC von Verletzungen, Verlusten oder Schäden frei, die aus meiner oder meiner Familie Teilnahme an der Tour oder unserer Anwesenheit in den von TT LLC genutzten Einrichtungen entstehen, unabhängig davon, ob sie durch mein Verschulden, das meiner Familie, von TT LLC oder Dritter verursacht wurden.',
+        'Ich verstehe und erkenne an, dass die Wander- und Fototouren ein Erdgelände haben und dass keine noch so große Sorgfalt, Vorsicht, Anweisung oder Fachkenntnis alle potenziellen Gefahren beseitigen wird. ICH ÜBERNEHME AUSDRÜCKLICH UND FREIWILLIG DAS RISIKO DES TODES, PERSONENSCHÄDEN ODER JEGLICHER ANDERER SCHADENSFORMEN, DIE BEI DER TEILNAHME AN DER CANYON-WANDERUNG ODER DER FOTOTOUR ENTSTEHEN KÖNNEN.',
       ],
     },
     {
       number: '3',
-      title: 'Keine Rechtsstreitigkeiten oder Ansprüche',
+      title: '',
       paragraphs: [
-        'Ich verpflichte mich, im weitestgehenden nach geltendem Recht zulässigen Umfang keine Rechtsstreitigkeit einzuleiten und keinen Anspruch gegen Taadidiin Tours L.L.C. im Zusammenhang mit meiner Teilnahme an der Tour geltend zu machen.',
+        'ICH STIMME ZU, KEINE ART VON RECHTSSTREIT EINZULEITEN NOCH EINEN ANSPRUCH geltend zu machen, in meinem Namen und/oder im Namen meines/meiner minderjährigen Kindes/Kinder gegen Taadidiin Tours wegen Schäden oder Verlusten, die infolge meiner Teilnahme an der Wander- und Fototour entstehen.',
       ],
     },
     {
       number: '4',
-      title: 'Freistellung und Verteidigung',
+      title: '',
       paragraphs: [
-        'Ich verpflichte mich, Taadidiin Tours L.L.C. von allen Ansprüchen, Klagegründen, Schäden, Urteilen, Kosten oder Aufwendungen, einschließlich Anwaltsgebühren und sonstiger Prozesskosten, freizustellen und zu verteidigen, die in irgendeiner Weise aus meiner oder meiner Familie Teilnahme an der Tour oder unserer Anwesenheit in den von TT LLC genutzten Einrichtungen entstehen können.',
+        'Ich verpflichte mich, TAADIDIIN TOURS von allen Ansprüchen, Schäden, möglichen Urteilen und Kosten, einschließlich Anwaltsgebühren, freizustellen und zu verteidigen, die im Zusammenhang mit einer gegen TT LLC gemeinschaftlich oder einzeln erhobenen Klage infolge meiner und der Teilnahme meines minderjährigen Kindes an einer Wander- und Fototour entstehen.',
       ],
     },
     {
       number: '5',
-      title: 'Gesundheit, freiwillige Teilnahme und medizinische Hilfe',
+      title: '',
       paragraphs: [
-        'Ich erkläre, dass ich bei guter Gesundheit und in geeigneter körperlicher Verfassung bin, um an dieser Aktivität teilzunehmen.',
-        'Ich bestätige, dass ich freiwillig teilnehme und alle mit der Tour verbundenen Risiken übernehme.',
-        'Ich ermächtige TT LLC, soweit vernünftigerweise erforderlich, medizinische Hilfe zu leisten oder einzuholen.',
+        'Ich bin bei guter Gesundheit und in guter körperlicher Verfassung. Ich nehme freiwillig teil im Wissen, dass potenzielle Gefahren bestehen, und ich stimme zu, alle solchen Risiken zu übernehmen. Ich verstehe außerdem, dass ich, wenn ich verletzt werde oder erkranke, zustimme, dass Taadidiin Tours L.L.C. und deren Mitarbeiter, Freiwillige oder Gäste nicht haftbar gemacht werden, wenn sie mir oder meinem minderjährigen Kind medizinische Hilfe leisten.',
       ],
     },
   ],
   closing: [
-    'ICH HABE DIESE HAFTUNGSFREISTELLUNG, DIESEN VERZICHT AUF RECHTLICHE ANSPRÜCHE UND DIESE RISIKOÜBERNAHME GELESEN UND VERSTEHE IHRE BEDINGUNGEN VOLLSTÄNDIG.',
-    'ICH VERSTEHE DIE OBEN BESCHRIEBENEN RISIKEN. ICH UNTERZEICHNE FREIWILLIG. ICH HATTE DIE GELEGENHEIT, FRAGEN ZU STELLEN.',
-    'ICH ÜBERNEHME DIE RISIKEN FÜR MICH SELBST UND, SOWEIT ZUTREFFEND, FÜR MINDERJÄHRIGE KINDER, FÜR DIE ICH ZUR UNTERZEICHNUNG BERECHTIGT BIN.',
-    'Alle Teilnehmer müssen vor der Teilnahme ihren Namen in Druckbuchstaben angeben und diese Haftungsfreistellung unterzeichnen. Bei Minderjährigen schreibt der Elternteil oder gesetzliche Vormund den Namen und das Alter des Minderjährigen und unterzeichnet im Namen des Minderjährigen.',
+    'ICH HABE DIESES FORMULAR ZUR HAFTUNGSFREISTELLUNG, ZUM VERZICHT AUF RECHTLICHE ANSPRÜCHE UND ZUR RISIKOÜBERNAHME GELESEN UND VERSTEHE, DASS RISIKEN BESTEHEN. ICH UNTERZEICHNE DIESEN HAFTUNGSAUSSCHLUSS FREIWILLIG UND HATTE AUSREICHEND GELEGENHEIT, FRAGEN ODER BEDENKEN VORZUBRINGEN. ICH ERKENNE AN, DASS MEINE TEILNAHME FREIWILLIG ERFOLGT IM WISSEN, DASS POTENZIELLE GEFAHREN BESTEHEN KÖNNEN. ICH STIMME ZU, ALLE RISIKEN FÜR MICH SELBST UND MEINE MINDERJÄHRIGEN KINDER ZU ÜBERNEHMEN.',
   ],
   languageNotice:
     'Diese Übersetzung wird bereitgestellt, um Ihnen das Verständnis des ursprünglichen Taadidiin-Tours-Haftungsausschlusses zu erleichtern. Das offizielle Betreiberdokument ist die englische Fassung.',

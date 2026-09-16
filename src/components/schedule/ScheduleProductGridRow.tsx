@@ -15,11 +15,16 @@ import { tourChoiceCountsDisplayKeys } from '@/lib/tourChoiceCounts'
 import {
   aggregateScheduleBreakdownFromDailyData,
   formatProductScheduleCellPeopleWithPrivateSplit,
+  ScheduleGuideLanguageMismatchLines,
   ScheduleLangFlagsHoverLine,
+  ScheduleProductCellPulseReasonBadges,
+  ScheduleStaffSpeakFlags,
   ScheduleTotalColumnWithTooltip,
   type ScheduleMonthDayCell,
   type ScheduleProductGridProductRow,
 } from '@/lib/scheduleProductGridHelpers'
+import type { ScheduleProductCellPulseReason } from '@/lib/scheduleGuideLanguageMatch'
+import { scheduleProductCellLangBgClass } from '@/lib/scheduleGuideLanguageMatch'
 import { GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS } from '@/lib/guideToursVisibleUntil'
 
 export type ScheduleProductGridRowProps = {
@@ -40,7 +45,7 @@ export type ScheduleProductGridRowProps = {
   miscTourProductIds: string[]
   miscTourDayProductBreakdown: Record<string, Record<string, { name: string; total: number; waiting: number }>>
   products: ScheduleProductRef[]
-  scheduleHealthProductCellAlertSet: Set<string>
+  scheduleHealthProductCellAlerts: Map<string, ScheduleProductCellPulseReason[]>
   isToday: (dateString: string) => boolean
   isGuideVisibleUntilCutoff: (dateString: string) => boolean
   handleProductRowDragOver: (e: DragEvent, productId: string) => void
@@ -75,7 +80,7 @@ export default function ScheduleProductGridRow({
   draggedProductRow,
   miscTourProductIds,
   miscTourDayProductBreakdown,
-  scheduleHealthProductCellAlertSet,
+  scheduleHealthProductCellAlerts,
   isToday,
   isGuideVisibleUntilCutoff,
   handleProductRowDragOver,
@@ -183,16 +188,14 @@ export default function ScheduleProductGridRow({
             style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
           >
             {(() => {
-              const isHealthAlertCell = scheduleHealthProductCellAlertSet.has(`${productId}|${dateString}`)
+              const pulseReasons = scheduleHealthProductCellAlerts?.get(`${productId}|${dateString}`) || []
+              const isHealthAlertCell = pulseReasons.length > 0
               const langBgClass = dayData
-                ? (() => {
-                    const koAll = (dayData.koPeople || 0) + (dayData.koWaitingPeople || 0)
-                    const enAll = (dayData.enPeople || 0) + (dayData.enWaitingPeople || 0)
-                    if (koAll > 0 && enAll > 0) return 'bg-orange-100'
-                    if (koAll > 0) return 'bg-yellow-100'
-                    if (enAll > 0) return 'bg-red-100'
-                    return 'bg-white'
-                  })()
+                ? scheduleProductCellLangBgClass(
+                    (dayData.koPeople || 0) + (dayData.koWaitingPeople || 0),
+                    (dayData.enPeople || 0) + (dayData.enWaitingPeople || 0),
+                    (dayData.jaPeople || 0) + (dayData.jaWaitingPeople || 0),
+                  )
                 : 'bg-white'
               const todayBorderClass = isToday(dateString) ? 'border-l-2 border-r-2 border-red-500' : ''
               const todayWrapClass = isHealthAlertCell
@@ -215,6 +218,13 @@ export default function ScheduleProductGridRow({
                   content={
                     dayData ? (
                       <>
+                        {isHealthAlertCell ? (
+                          <ScheduleProductCellPulseReasonBadges reasons={pulseReasons} uiLocale={locale} />
+                        ) : null}
+                        <ScheduleGuideLanguageMismatchLines
+                          mismatches={dayData.guideLanguageMismatches || []}
+                          uiLocale={locale}
+                        />
                         {(() => {
                           if (!isScheduleMiscTourRowKey(productId) || miscTourProductIds.length === 0) {
                             return null
@@ -270,12 +280,13 @@ export default function ScheduleProductGridRow({
                           <div className="mt-2 pt-2 border-t border-gray-600 space-y-1.5">
                             {dayData.tourCapacityBreakdown.rows.map((row) => (
                               <div key={row.tourId} className="space-y-0.5">
-                                <div className="text-[11px] text-gray-200 leading-snug">
+                                <div className="text-[11px] text-gray-200 leading-snug inline-flex items-center flex-wrap">
                                   {tTourCal('scheduleCellCapacityTeam', {
                                     n: row.teamIndex,
                                     guide: row.guideName,
                                     assistant: row.assistantName,
                                   })}
+                                  <ScheduleStaffSpeakFlags locales={row.staffLocales} />
                                 </div>
                                 <div className="text-[11px] font-medium leading-snug">
                                   <span className="text-gray-400">

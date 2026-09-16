@@ -7,8 +7,8 @@ import { isTourCancelled, tourStaffVehicleAssignmentClearPatch } from '@/utils/t
 import {
   dedupeReservationIdsPreservingOrder,
   reservationIdsLooselyEqual,
-  sameTourProductAndDate,
 } from '@/utils/tourUtils'
+import { exclusiveAssignReservationsToTour } from '@/lib/exclusiveTourReservationAssignment'
 import {
   emitStaffAssignmentLockChanged,
   isAssistantAssignmentLocked,
@@ -318,57 +318,26 @@ export function useTourHandlers() {
       if (!rid || fromTourId === toTourId) return null
 
       try {
-        const { data: rows, error: fetchError } = await supabase
+        const assigned = await exclusiveAssignReservationsToTour({
+          tourId: toTourId,
+          reservationIds: [rid],
+          includeRelatedParty: true,
+        })
+        if (!assigned) return null
+
+        const { data: fromRow, error: fromErr } = await supabase
           .from('tours')
-          .select('id, reservation_ids')
-          .in('id', [fromTourId, toTourId])
-
-        if (fetchError || !rows?.length) {
-          console.error('handleMoveReservationBetweenTours fetch:', fetchError)
-          return null
-        }
-
-        const fromRow = rows.find((r) => r.id === fromTourId) as { id: string; reservation_ids?: unknown } | undefined
-        const toRow = rows.find((r) => r.id === toTourId) as { id: string; reservation_ids?: unknown } | undefined
-        if (!fromRow || !toRow) return null
-
-        const fromIds = dedupeReservationIdsPreservingOrder(fromRow.reservation_ids)
-        const toIds = dedupeReservationIdsPreservingOrder(toRow.reservation_ids)
-        const fromMatch = fromIds.find((id) => reservationIdsLooselyEqual(id, rid))
-        const ridForStorage = fromMatch ?? rid
-        const newFromIds = fromIds.filter((id) => !reservationIdsLooselyEqual(id, rid))
-        const newToIds = dedupeReservationIdsPreservingOrder([
-          ...toIds.filter((id) => !reservationIdsLooselyEqual(id, rid)),
-          ridForStorage,
-        ])
-
-        const { error: e1 } = await supabase
-          .from('tours')
-          .update({ reservation_ids: newFromIds } as Database['public']['Tables']['tours']['Update'])
+          .select('reservation_ids')
           .eq('id', fromTourId)
-
-        if (e1) {
-          console.error('handleMoveReservationBetweenTours update from:', e1)
-          alert('기존 투어에서 예약을 빼는 중 오류가 발생했습니다.')
-          return null
+          .maybeSingle()
+        if (fromErr) {
+          console.error('handleMoveReservationBetweenTours fetch from:', fromErr)
         }
 
-        const { error: e2 } = await supabase
-          .from('tours')
-          .update({ reservation_ids: newToIds } as Database['public']['Tables']['tours']['Update'])
-          .eq('id', toTourId)
-
-        if (e2) {
-          console.error('handleMoveReservationBetweenTours update to:', e2)
-          await supabase
-            .from('tours')
-            .update({ reservation_ids: fromIds } as Database['public']['Tables']['tours']['Update'])
-            .eq('id', fromTourId)
-          alert('새 투어에 예약을 넣는 중 오류가 발생했습니다.')
-          return null
+        return {
+          newFromIds: dedupeReservationIdsPreservingOrder(fromRow?.reservation_ids),
+          newToIds: assigned.targetReservationIds,
         }
-
-        return { newFromIds, newToIds }
       } catch (error) {
         console.error('handleMoveReservationBetweenTours:', error)
         return null
@@ -386,84 +355,18 @@ export function useTourHandlers() {
       if (!rid) return
 
       try {
-        const { data: conflictRows, error: conflictErr } = await supabase
-          .from('tours')
-          .select('id, product_id, tour_date')
-          .contains('reservation_ids', [rid])
-          .neq('id', tour.id)
-          .limit(1)
-
-        if (conflictErr) {
-          console.error('handleAssignReservation conflict check:', conflictErr)
-        } else if (conflictRows && conflictRows.length > 0) {
-          const conflict = conflictRows[0] as {
-            id: string
-            product_id: string | null
-            tour_date: string | null
-          }
-          const { data: targetMeta, error: targetMetaErr } = await supabase
-            .from('tours')
-            .select('product_id, tour_date')
-            .eq('id', tour.id)
-            .maybeSingle()
-
-          if (targetMetaErr) {
-            console.error('handleAssignReservation target tour meta:', targetMetaErr)
-          }
-
-          let shouldMove =
-            !!(targetMeta && sameTourProductAndDate(conflict, targetMeta))
-
-          if (!shouldMove && targetMeta) {
-            const { data: resRow, error: resErr } = await supabase
-              .from('reservations')
-              .select('product_id, tour_date')
-              .eq('id', rid)
-              .maybeSingle()
-            if (resErr) {
-              console.error('handleAssignReservation reservation meta:', resErr)
-            }
-            shouldMove = !!(resRow && sameTourProductAndDate(resRow, targetMeta))
-          }
-
-          if (shouldMove) {
-            const moved = await handleMoveReservationBetweenTours(rid, conflict.id, tour.id)
-            if (moved) return moved.newToIds
-            return
-          }
-
-          alert(
-            '이 예약은 이미 다른 투어에 배정되어 있습니다. 해당 투어에서 해제하거나, 이 화면에서 다른 투어에 배정된 예약을 이 투어로 옮기는 기능을 사용해 주세요.'
-          )
-          return
-        }
-
-        const currentReservationIds = dedupeReservationIdsPreservingOrder(
-          (tour as { reservation_ids?: unknown }).reservation_ids
-        )
-        if (currentReservationIds.some((id) => reservationIdsLooselyEqual(id, rid))) {
-          return currentReservationIds
-        }
-
-        const updatedReservationIds = dedupeReservationIdsPreservingOrder([...currentReservationIds, rid])
-
-        const { error } = await supabase
-          .from('tours')
-          .update({ reservation_ids: updatedReservationIds } as Database['public']['Tables']['tours']['Update'])
-          .eq('id', tour.id)
-
-        if (error) {
-          console.error('Error assigning reservation:', error)
-          return
-        }
-
-        return updatedReservationIds
+        const assigned = await exclusiveAssignReservationsToTour({
+          tourId: tour.id,
+          reservationIds: [rid],
+          includeRelatedParty: true,
+        })
+        return assigned?.targetReservationIds
       } catch (error) {
         console.error('Error assigning reservation:', error)
         return undefined
       }
     },
-    [handleMoveReservationBetweenTours]
+    []
   )
 
   // 예약 배정 해제 함수
@@ -510,51 +413,17 @@ export function useTourHandlers() {
     if (!tour || pendingReservations.length === 0) return
 
     try {
-      const currentReservationIds = dedupeReservationIdsPreservingOrder(tour.reservation_ids)
       const pendingIds = [
         ...new Set(pendingReservations.map((r) => String(r.id).trim()).filter(Boolean)),
       ]
-      const toAdd = pendingIds.filter(
-        (id) => !currentReservationIds.some((existing) => reservationIdsLooselyEqual(existing, id))
-      )
-      const conflictIds: string[] = []
-      for (const pid of toAdd) {
-        const { data: rows, error: qErr } = await supabase
-          .from('tours')
-          .select('id')
-          .contains('reservation_ids', [pid])
-          .neq('id', tour.id)
-          .limit(1)
-        if (qErr) {
-          console.error('handleAssignAllReservations conflict check:', qErr)
-          continue
-        }
-        if (rows && rows.length > 0) conflictIds.push(pid)
-      }
-      const addable = toAdd.filter((id) => !conflictIds.includes(id))
-      if (conflictIds.length > 0) {
-        alert(
-          '일부 예약은 이미 다른 투어에 배정되어 있어 이 투어에는 추가하지 않았습니다. 필요하면 해당 투어에서 해제한 뒤 다시 시도해 주세요.'
-        )
-      }
-      if (addable.length === 0) return
+      if (pendingIds.length === 0) return
 
-      const updatedReservationIds = dedupeReservationIdsPreservingOrder([
-        ...currentReservationIds,
-        ...addable,
-      ])
-
-      const { error } = await supabase
-        .from('tours')
-        .update({ reservation_ids: updatedReservationIds } as Database['public']['Tables']['tours']['Update'])
-        .eq('id', tour.id)
-
-      if (error) {
-        console.error('Error assigning all reservations:', error)
-        return
-      }
-
-      return updatedReservationIds
+      const assigned = await exclusiveAssignReservationsToTour({
+        tourId: tour.id,
+        reservationIds: pendingIds,
+        includeRelatedParty: true,
+      })
+      return assigned?.targetReservationIds
     } catch (error) {
       console.error('Error assigning all reservations:', error)
       return undefined

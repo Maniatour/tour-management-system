@@ -730,8 +730,20 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
           const activeAssignedReservations = assignedReservations.filter(
             (r) => !isCancelled(r.status) && !isReservationDeletedStatus(r.status)
           )
+          const assignedKeys = new Set(
+            assignedReservations.map((row) => canonicalReservationIdKey(String(row.id)))
+          )
+          const assignedCustomerIds = new Set(
+            assignedReservations
+              .map((row) => String(row.customer_id ?? '').trim())
+              .filter(Boolean)
+          )
           const activeOtherToursAssignedReservations = otherToursAssignedReservations.filter(
-            (r) => !isCancelled(r.status) && !isReservationDeletedStatus(r.status)
+            (r) =>
+              !isCancelled(r.status) &&
+              !isReservationDeletedStatus(r.status) &&
+              !assignedKeys.has(canonicalReservationIdKey(String(r.id))) &&
+              !(r.customer_id && assignedCustomerIds.has(String(r.customer_id).trim()))
           )
 
           const cancelledIdsForReasons = allSameDateProductReservationsList
@@ -1379,8 +1391,20 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
           const activeAssignedReservations = assignedReservations.filter(
             r => !isCancelled(r.status) && !isReservationDeletedStatus(r.status)
           )
+          const assignedKeys = new Set(
+            assignedReservations.map((row) => canonicalReservationIdKey(String(row.id)))
+          )
+          const assignedCustomerIds = new Set(
+            assignedReservations
+              .map((row) => String(row.customer_id ?? '').trim())
+              .filter(Boolean)
+          )
           const activeOtherToursAssignedReservations = otherToursAssignedReservations.filter(
-            r => !isCancelled(r.status) && !isReservationDeletedStatus(r.status)
+            (r) =>
+              !isCancelled(r.status) &&
+              !isReservationDeletedStatus(r.status) &&
+              !assignedKeys.has(canonicalReservationIdKey(String(r.id))) &&
+              !(r.customer_id && assignedCustomerIds.has(String(r.customer_id).trim()))
           )
 
           const cancelledIdsForReasons = reservationsList

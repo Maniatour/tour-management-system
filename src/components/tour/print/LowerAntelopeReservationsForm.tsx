@@ -1,20 +1,14 @@
+'use client'
+
 import type { CanyonWaiverPrintGuest, CanyonWaiverPrintPacket } from '@/lib/canyonWaiverPrintForms'
 import { LOWER_ANTELOPE_ROWS_PER_PAGE, padPrintRows } from '@/lib/canyonWaiverPrintForms'
+import PrintSignatureImage from '@/components/tour/print/PrintSignatureImage'
 
 export const DIXIES_LOWER_ANTELOPE_LOGO_PATH = '/print/dixies-lower-antelope-logo.png'
 
 function dixiesLogoSrc(): string {
   if (typeof window === 'undefined') return DIXIES_LOWER_ANTELOPE_LOGO_PATH
   return `${window.location.origin}${DIXIES_LOWER_ANTELOPE_LOGO_PATH}`
-}
-
-function SignatureImage({ src, alt, className }: { src: string; alt: string; className?: string }) {
-  return (
-    <span className="cwf-sig-ink">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={alt} className={className || 'cwf-sig'} />
-    </span>
-  )
 }
 
 export default function LowerAntelopeReservationsForm({
@@ -72,6 +66,13 @@ export default function LowerAntelopeReservationsForm({
       </div>
 
       <table className="lac-table">
+        <colgroup>
+          <col className="lac-col-num" />
+          <col className="lac-col-rn" />
+          <col className="lac-col-name" />
+          <col className="lac-col-sig" />
+          <col className="lac-col-country" />
+        </colgroup>
         <thead>
           <tr className="lac-chrome">
             <th />
@@ -86,15 +87,19 @@ export default function LowerAntelopeReservationsForm({
             <tr key={guest?.id ?? `empty-${start + i}`}>
               <td className="lac-num lac-chrome">{start + i + 1}</td>
               <td className="lac-rn" />
-              <td className="lac-name lac-ink">{guest?.printName || ''}</td>
+              <td className="lac-name lac-ink">
+                <span className="lac-ink-name">{guest?.printName || ''}</span>
+              </td>
               <td className="lac-sig lac-ink">
-                {guest?.printName && guest.signatureUrl ? (
-                  <SignatureImage
-                    src={guest.signatureUrl}
-                    alt={`Signature of ${guest.printName}`}
-                    className="cwf-sig lac-sig-img"
-                  />
-                ) : null}
+                <span className="lac-ink-sig">
+                  {guest?.printName && guest.signatureUrl ? (
+                    <PrintSignatureImage
+                      src={guest.signatureUrl}
+                      alt={`Signature of ${guest.printName}`}
+                      className="cwf-sig lac-sig-img"
+                    />
+                  ) : null}
+                </span>
               </td>
               <td className="lac-country" />
             </tr>

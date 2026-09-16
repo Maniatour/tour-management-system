@@ -54,9 +54,15 @@ test('historical hash stays stable for the frozen English snapshot', () => {
   assert.equal(first, second)
 })
 
-test('Canyon X operator names are preserved', () => {
+test('Canyon X English matches the official Taadidiin paper form', () => {
   assert.equal(ANTELOPE_CANYON_X_WAIVER_EN.operatorName, 'Taadidiin Tours L.L.C.')
-  assert.match(ANTELOPE_CANYON_X_WAIVER_EN.title, /TAADIDIIN/)
+  assert.match(ANTELOPE_CANYON_X_WAIVER_EN.title, /TAADIDIIN TOURS/)
+  assert.equal(ANTELOPE_CANYON_X_WAIVER_EN.warning, '')
+  assert.equal(ANTELOPE_CANYON_X_WAIVER_EN.intro.length, 1)
+  assert.match(ANTELOPE_CANYON_X_WAIVER_EN.intro[0], /Slot canyons: Antelope Canyon X and Cardiac Canyon/)
+  assert.equal(ANTELOPE_CANYON_X_WAIVER_EN.sections.length, 5)
+  assert.equal(ANTELOPE_CANYON_X_WAIVER_EN.sections[0].title, '')
+  assert.match(ANTELOPE_CANYON_X_WAIVER_EN.closing[0], /WILLINGLY\/VOLUNTARILY/)
   assert.equal(WAIVER_DOCUMENT_CATALOG.ANTELOPE_CANYON_X.sourceType, 'OFFICIAL_OPERATOR_FORM')
 })
 

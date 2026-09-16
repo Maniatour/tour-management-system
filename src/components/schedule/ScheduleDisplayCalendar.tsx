@@ -29,6 +29,7 @@ export type ScheduleDisplayCalendarTourSummary = {
   spotsLeft: number
   assignedKo: number
   assignedEn: number
+  assignedJa?: number
   guideName: string
   assistantName: string
   vehicleNumber: string
@@ -321,8 +322,8 @@ export default function ScheduleDisplayCalendar<T extends TourLike>({
                             ].join(' ')}
                             title={
                               locale === 'ko'
-                                ? `한국어 ${summary.assignedKo} · 영어 ${summary.assignedEn}`
-                                : `Korean ${summary.assignedKo} · English ${summary.assignedEn}`
+                                ? `한국어 ${summary.assignedKo} · 영어 ${summary.assignedEn} · 일본어 ${summary.assignedJa ?? 0}`
+                                : `Korean ${summary.assignedKo} · English ${summary.assignedEn} · Japanese ${summary.assignedJa ?? 0}`
                             }
                           >
                             <ReactCountryFlag
@@ -339,6 +340,13 @@ export default function ScheduleDisplayCalendar<T extends TourLike>({
                               aria-hidden
                             />
                             {summary.assignedEn}
+                            <ReactCountryFlag
+                              countryCode="JP"
+                              svg
+                              style={{ width: '0.85em', height: '0.65em' }}
+                              aria-hidden
+                            />
+                            {summary.assignedJa ?? 0}
                           </span>
                         </span>
                         <span

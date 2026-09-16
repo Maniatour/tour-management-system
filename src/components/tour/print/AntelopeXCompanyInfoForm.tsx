@@ -5,20 +5,12 @@ import {
   antelopeXPrintName,
   padPrintRows,
 } from '@/lib/canyonWaiverPrintForms'
+import PrintSignatureImage from '@/components/tour/print/PrintSignatureImage'
 
 function UnderlineValue({ value, minWidth }: { value: string; minWidth?: string }) {
   return (
     <span className="acx-line" style={minWidth ? { minWidth } : undefined}>
       {value || '\u00a0'}
-    </span>
-  )
-}
-
-function SignatureImage({ src, alt }: { src: string; alt: string }) {
-  return (
-    <span className="cwf-sig-ink">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={alt} className="cwf-sig" />
     </span>
   )
 }
@@ -73,7 +65,7 @@ export default function AntelopeXCompanyInfoForm({
           <div className="acx-field" style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
             <span>TOUR GUIDE SIGNATURE:</span>
             {packet.guideSignatureUrl ? (
-              <SignatureImage src={packet.guideSignatureUrl} alt="Tour guide signature" />
+              <PrintSignatureImage src={packet.guideSignatureUrl} alt="Tour guide signature" />
             ) : (
               <UnderlineValue value="" minWidth="62%" />
             )}
@@ -99,7 +91,7 @@ export default function AntelopeXCompanyInfoForm({
         </div>
       </div>
 
-      <ol style={{ listStyle: 'none', margin: '12px 0 0', padding: 0 }}>
+      <ol className="acx-guest-list">
         {rows.map((guest, i) => (
           <li key={guest?.id ?? `empty-${start + i}`} className="acx-guest">
             <span className="acx-idx">{start + i + 1}.</span>
@@ -111,7 +103,7 @@ export default function AntelopeXCompanyInfoForm({
               SIGNATURE:
               <span className="acx-fill">
                 {guest?.signatureUrl ? (
-                  <SignatureImage
+                  <PrintSignatureImage
                     src={guest.signatureUrl}
                     alt={`Signature of ${guest.printName || 'guest'}`}
                   />

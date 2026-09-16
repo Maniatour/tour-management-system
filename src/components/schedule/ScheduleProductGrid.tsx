@@ -3,6 +3,7 @@
 import { useMemo } from 'react'
 import type { RefObject, DragEvent, UIEvent } from 'react'
 import dayjs from 'dayjs'
+import type { ScheduleProductCellPulseReason } from '@/lib/scheduleGuideLanguageMatch'
 import {
   ScheduleTotalColumnWithTooltip,
   type ScheduleProductDayTotal,
@@ -32,14 +33,14 @@ export type ScheduleProductGridProps = {
   onProductScheduleBodyScroll: (e: UIEvent<HTMLDivElement>) => void
   dateNotes: Record<string, ScheduleDateNoteEntry>
   scheduleHealthHighlightDateSet: Set<string>
-  scheduleHealthProductCellAlertSet: Set<string>
+  scheduleHealthProductCellAlerts: Map<string, ScheduleProductCellPulseReason[]>
   scheduleInteractionDragging: boolean
   isToday: (dateString: string) => boolean
   isGuideVisibleUntilCutoff: (dateString: string) => boolean
   openDateNoteModal: (dateString: string) => void
   productScheduleData: Record<string, ScheduleProductGridProductRow>
   productTotals: Record<string, ScheduleProductDayTotal>
-  productScheduleGrandBreakdown: { ko: number; en: number; choiceCounts: Record<string, number> }
+  productScheduleGrandBreakdown: { ko: number; en: number; ja?: number; choiceCounts: Record<string, number> }
   productColors: Record<string, string>
   defaultPresetIds: string[]
   selectedProducts: string[]
@@ -74,7 +75,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
     onProductScheduleBodyScroll,
     dateNotes,
     scheduleHealthHighlightDateSet,
-    scheduleHealthProductCellAlertSet,
+    scheduleHealthProductCellAlerts,
     scheduleInteractionDragging,
     isToday,
     isGuideVisibleUntilCutoff,
@@ -131,7 +132,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
     miscTourProductIds,
     miscTourDayProductBreakdown,
     products,
-    scheduleHealthProductCellAlertSet,
+    scheduleHealthProductCellAlerts,
     isToday,
     isGuideVisibleUntilCutoff,
     handleProductRowDragOver,

@@ -1405,6 +1405,9 @@ export function TourDetailPageView({
       tourData.setTour((prev: TourRow | null) =>
         prev ? { ...prev, reservation_ids: updatedReservationIds } : null
       )
+      if (tourData.refreshReservations) {
+        await tourData.refreshReservations()
+      }
       return
     }
 
@@ -1448,6 +1451,9 @@ export function TourDetailPageView({
       tourData.setTour((prev: TourRow | null) =>
         prev ? { ...prev, reservation_ids: moved.newToIds } : null
       )
+      if (tourData.refreshReservations) {
+        await tourData.refreshReservations()
+      }
     }
   }
 
@@ -1550,6 +1556,9 @@ export function TourDetailPageView({
     tourData.setTour((prev: TourRow | null) =>
       prev ? { ...prev, reservation_ids: moved.newFromIds } : null
     )
+    if (tourData.refreshReservations) {
+      await tourData.refreshReservations()
+    }
   }
 
   const handleAssignAllReservations = async () => {
@@ -1590,6 +1599,9 @@ export function TourDetailPageView({
       return
     }
     tourData.setTour((prev: TourRow | null) => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
+    if (tourData.refreshReservations) {
+      await tourData.refreshReservations()
+    }
   }
 
   const handleUnassignAllReservations = async () => {

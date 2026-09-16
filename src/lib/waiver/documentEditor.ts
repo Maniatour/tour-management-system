@@ -88,10 +88,11 @@ export function normalizeWaiverContent(
 
 export function validateGoverningWaiverContent(content: WaiverDocumentContent): string | null {
   if (!content.title) return 'English title is required'
-  if (!content.warning) return 'English warning is required'
+  const paperStyle = content.code === 'ANTELOPE_CANYON_X'
+  if (!paperStyle && !content.warning) return 'English warning is required'
   if (!content.intro.length) return 'English introduction is required'
   if (!content.sections.length) return 'At least one English section is required'
-  if (content.sections.some((s) => !s.title || !s.paragraphs.length)) {
+  if (content.sections.some((s) => (!paperStyle && !s.title) || !s.paragraphs.length)) {
     return 'Each English section needs a title and at least one paragraph'
   }
   if (!content.closing.length) return 'English closing acknowledgment is required'

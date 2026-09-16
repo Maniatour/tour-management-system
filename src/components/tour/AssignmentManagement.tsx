@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslations, useLocale } from 'next-intl'
 import { ReservationSection } from './ReservationSection'
@@ -8,8 +8,8 @@ import { fetchTeamDisplayNameByEmail } from '@/utils/paymentRecordNoteDisplay'
 import { Sparkles, Wallet, X } from 'lucide-react'
 import { getStatusColor, getStatusText, getAssignmentStatusColor, getAssignmentStatusText } from '@/utils/tourStatusUtils'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
-import { computeAssignedReservationDisplayBalance } from '@/lib/assignedReservationBalance'
-import { paymentRecordAmountToNumber, type PaymentRecordLike } from '@/utils/reservationPricingBalance'
+import { exclusiveAssignReservationsToTour } from '@/lib/exclusiveTourReservationAssignment'
+import { getStoredReservationPricingAmounts, withNormalizedBalanceAmountForDisplay } from '@/utils/reservationPricingBalance'
 import { getReservationPartySize } from '@/utils/reservationUtils'
 import type { PickupHotelAssignmentOption } from '@/utils/pickupHotelUtils'
 import AutoAssignModal from './modals/AutoAssignModal'
@@ -167,29 +167,13 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
     }
 
     try {
-      const [
-        { data: pricingRows, error: pErr },
-        { data: payRows, error: payErr },
-        { data: optRows, error: oErr },
-        { data: custRows, error: cErr },
-      ] = await Promise.all([
-        supabase.from('reservation_pricing').select('*').in('reservation_id', reservationIds),
-        supabase
-          .from('payment_records')
-          .select('reservation_id, payment_status, amount')
-          .in('reservation_id', reservationIds),
-        supabase
-          .from('reservation_options')
-          .select('reservation_id, total_price, option_id, status')
-          .in('reservation_id', reservationIds),
-        supabase
-          .from('reservation_customers')
-          .select('reservation_id, resident_status')
-          .in('reservation_id', reservationIds),
-      ])
+      const { data: pricingRows, error: pErr } = await supabase
+        .from('reservation_pricing')
+        .select('reservation_id, total_price, deposit_amount, balance_amount')
+        .in('reservation_id', reservationIds)
 
-      if (pErr || payErr || oErr || cErr) {
-        console.error('배정 예약 잔금 합계 조회 오류:', pErr || payErr || oErr || cErr)
+      if (pErr) {
+        console.error('배정 예약 잔금 합계 조회 오류:', pErr)
         setAssignedBalanceTotal(0)
         setAssignedBalanceById(new Map())
         return
@@ -201,38 +185,6 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
         pricingById.set(id, row as Record<string, unknown>)
       }
 
-      const paymentsById = new Map<string, PaymentRecordLike[]>()
-      for (const row of payRows || []) {
-        const id = String((row as { reservation_id: string }).reservation_id)
-        const list = paymentsById.get(id) || []
-        list.push({
-          payment_status: String((row as { payment_status?: string | null }).payment_status || ''),
-          amount: paymentRecordAmountToNumber((row as { amount?: unknown }).amount),
-        })
-        paymentsById.set(id, list)
-      }
-
-      const optRowsById = new Map<
-        string,
-        Array<{ option_id?: string | null; total_price?: unknown; status?: string | null }>
-      >()
-      for (const row of optRows || []) {
-        const id = String((row as { reservation_id: string }).reservation_id)
-        const list = optRowsById.get(id) || []
-        list.push(row as { option_id?: string | null; total_price?: unknown; status?: string | null })
-        optRowsById.set(id, list)
-      }
-
-      const customersById = new Map<string, Array<{ resident_status?: string | null }>>()
-      for (const row of custRows || []) {
-        const id = String((row as { reservation_id: string }).reservation_id)
-        const list = customersById.get(id) || []
-        list.push({
-          resident_status: (row as { resident_status?: string | null }).resident_status ?? null,
-        })
-        customersById.set(id, list)
-      }
-
       const resById = new Map(assignedReservations.map((r) => [String(r.id), r]))
 
       let total = 0
@@ -242,13 +194,10 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
         const res = resById.get(id)
         if (!pricing || !res) continue
 
-        const b = computeAssignedReservationDisplayBalance({
-          reservation: res,
-          pricing,
-          paymentRecords: paymentsById.get(id) || [],
-          optionRows: optRowsById.get(id) || [],
-          customerRows: customersById.get(id) || [],
-        })
+        const b = getStoredReservationPricingAmounts(
+          withNormalizedBalanceAmountForDisplay(pricing),
+          { reservationStatus: res.status ?? null }
+        ).balanceAmount
         balanceById.set(id, b)
         total += b
       }
@@ -265,6 +214,24 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   useEffect(() => {
     void loadAssignedBalanceTotal()
   }, [loadAssignedBalanceTotal])
+
+  const repairedTourRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!isStaff || !currentTourId || assignedReservations.length === 0) return
+    if (repairedTourRef.current === currentTourId) return
+    repairedTourRef.current = currentTourId
+    const reservationIds = assignedReservations.map((r) => String(r.id).trim()).filter(Boolean)
+    void exclusiveAssignReservationsToTour({
+      tourId: currentTourId,
+      reservationIds,
+      productId,
+      tourDate,
+      includeRelatedParty: true,
+      reclaimFromOtherToursOnly: true,
+    }).then((result) => {
+      if (result?.changed && onRefresh) void onRefresh()
+    })
+  }, [isStaff, currentTourId, assignedReservations, productId, tourDate, onRefresh])
 
   const handleReceiveAllAssignedBalances = useCallback(async () => {
     if (!isStaff || receivingAllBalances) return

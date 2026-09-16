@@ -33,7 +33,11 @@ import ReservationEvidenceUpload from '@/components/reservation/ReservationEvide
 import { productShowsResidentStatusSectionByCode } from '@/utils/residentStatusSectionProducts'
 import { ResidentStatusCardBadge } from '@/components/tour/ResidentStatusCardBadge'
 import { isReservationCancelledStatus } from '@/utils/tourUtils'
-import { computeAssignedReservationDisplayBalance } from '@/lib/assignedReservationBalance'
+import {
+  getBalanceAmountForDisplay,
+  getStoredReservationPricingAmounts,
+  withNormalizedBalanceAmountForDisplay,
+} from '@/utils/reservationPricingBalance'
 import {
   displayPaymentRecordNote,
   fetchTeamDisplayNameByEmail,
@@ -238,13 +242,6 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const [showPaymentRecords, setShowPaymentRecords] = useState(false)
   const [loadingPayments, setLoadingPayments] = useState(false)
   const [reservationPricing, setReservationPricing] = useState<ReservationPricing | null>(null)
-  const [optionsTotalFromOptions, setOptionsTotalFromOptions] = useState<number | null>(null)
-  const [optionRowsForBalance, setOptionRowsForBalance] = useState<
-    Array<{ option_id?: string | null; total_price?: unknown; status?: string | null }>
-  >([])
-  const [residentCustomerRows, setResidentCustomerRows] = useState<
-    Array<{ resident_status?: string | null }>
-  >([])
   const [showSimplePickupModal, setShowSimplePickupModal] = useState(false)
   const [showReviewModal, setShowReviewModal] = useState(false)
   const [quickPaymentOpen, setQuickPaymentOpen] = useState(false)
@@ -284,35 +281,13 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 
   const computedDisplayBalance = useMemo(() => {
     if (!reservationPricing) return 0
-    return computeAssignedReservationDisplayBalance({
-      reservation: {
-        id: reservation.id,
-        status: reservation.status,
-        adults: reservation.adults,
-        children: reservation.children ?? null,
-        child: (reservation as { child?: number | null }).child ?? null,
-        infants: reservation.infants ?? null,
-        infant: (reservation as { infant?: number | null }).infant ?? null,
-      },
-      pricing: reservationPricing as unknown as Record<string, unknown>,
-      paymentRecords: paymentRecords.map((r) => ({
-        payment_status: r.payment_status,
-        amount: r.amount,
-      })),
-      optionRows: optionRowsForBalance,
-      customerRows: residentCustomerRows,
-    })
-  }, [
-    reservationPricing,
-    reservation.id,
-    reservation.status,
-    reservation.adults,
-    reservation.children,
-    reservation.infants,
-    paymentRecords,
-    optionRowsForBalance,
-    residentCustomerRows,
-  ])
+    return getBalanceAmountForDisplay(
+      withNormalizedBalanceAmountForDisplay(reservationPricing as unknown as Record<string, unknown>),
+      null,
+      {},
+      { reservationStatus: reservation.status }
+    )
+  }, [reservationPricing, reservation.status])
 
   const displayBalanceAmount =
     reservationPricing == null &&
@@ -356,11 +331,6 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       let passCoveredCount = 0
       
       if (reservationCustomers && reservationCustomers.length > 0) {
-        setResidentCustomerRows(
-          reservationCustomers.map((rc) => ({
-            resident_status: rc.resident_status ?? null,
-          }))
-        )
         reservationCustomers.forEach((rc: any) => {
           const status = rc.resident_status || 'unknown'
           
@@ -385,8 +355,6 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           nonResidentWithPass: nonResidentWithPassCount,
           passCoveredCount: passCoveredCount
         })
-      } else {
-        setResidentCustomerRows([])
       }
     } catch (error) {
       if (!isAbortError(error)) console.error('고객 정보 조회 오류:', error)
@@ -478,26 +446,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           balance_amount: normalizedBalance,
         } as ReservationPricing
         setReservationPricing(pricing)
-        const { data: opts } = await supabase
-          .from('reservation_options')
-          .select('total_price, option_id, status')
-          .eq('reservation_id', reservation.id)
-        const allOpts = opts || []
-        setOptionRowsForBalance(allOpts)
-        const activeOpts = allOpts.filter((o) => {
-          const st = String((o as { status?: string | null }).status ?? 'active').toLowerCase()
-          return st !== 'cancelled' && st !== 'refunded'
-        })
-        const sum = activeOpts.reduce(
-          (s: number, o: { total_price?: number | string | null }) =>
-            s + (typeof o.total_price === 'number' ? o.total_price : parseFloat(String(o.total_price || 0)) || 0),
-          0
-        )
-        setOptionsTotalFromOptions(allOpts.length ? sum : null)
       } else {
         setReservationPricing(null)
-        setOptionsTotalFromOptions(null)
-        setOptionRowsForBalance([])
       }
     } catch (error) {
       if (!isAbortError(error)) console.error('예약 가격 정보 조회 오류:', error)
@@ -2305,6 +2255,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             if (typeof value === 'string') return parseFloat(value) || 0
             return value
           }
+          const storedAmounts = getStoredReservationPricingAmounts(
+            reservationPricing as unknown as Record<string, unknown>,
+            { reservationStatus: reservation.status }
+          )
           const productPriceTotal = toNumber(reservationPricing.product_price_total)
           const couponDiscount = toNumber(reservationPricing.coupon_discount)
           const additionalDiscount = toNumber(reservationPricing.additional_discount)
@@ -2314,7 +2268,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           const cardFee = toNumber(reservationPricing.card_fee)
           const prepaymentCost = toNumber(reservationPricing.prepayment_cost)
           const prepaymentTip = toNumber(reservationPricing.prepayment_tip)
-          const effectiveOptionsTotal = optionsTotalFromOptions !== null ? optionsTotalFromOptions : toNumber(reservationPricing.option_total)
+          const effectiveOptionsTotal = toNumber(reservationPricing.option_total)
           const adultPrice = toNumber(reservationPricing.adult_product_price)
           const childPrice = toNumber(reservationPricing.child_product_price)
           const infantPrice = toNumber(reservationPricing.infant_product_price)
@@ -2326,9 +2280,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             const infants = (reservation.infants ?? (reservation as any).infant) || 0
             subtotal = adultPrice * (reservation.adults || 0) + childPrice * children + infantPrice * infants
           }
-          if (subtotal <= 0) return null
+          if (subtotal <= 0 && storedAmounts.totalPrice <= 0) return null
           // 상품가격합계(product_price_total)에 이미 (판매가+불포함)×인원이 포함됨 → 불포함 중복 가산 금지
-          const customerTotalPayment = subtotal - couponDiscount - additionalDiscount + effectiveOptionsTotal + additionalCost + tax + cardFee + prepaymentCost + prepaymentTip
+          const lineCustomerTotal = subtotal - couponDiscount - additionalDiscount + effectiveOptionsTotal + additionalCost + tax + cardFee + prepaymentCost + prepaymentTip
+          const customerTotalPayment = storedAmounts.totalPrice > 0 ? storedAmounts.totalPrice : lineCustomerTotal
           const totalRevenue = Math.max(0, customerTotalPayment - commissionAmount)
           const currency = reservationPricing.currency || 'USD'
           const currencySymbol = currency === 'KRW' ? '₩' : '$'

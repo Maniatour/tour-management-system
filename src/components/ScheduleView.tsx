@@ -186,6 +186,16 @@ import { useScheduleViewTicketBookings } from '@/hooks/useScheduleViewTicketBook
 import { useScheduleViewData } from '@/hooks/useScheduleViewData'
 import ScheduleMessageConfirmModals from '@/components/schedule/ScheduleMessageConfirmModals'
 import { aggregateScheduleBreakdownFromDailyData } from '@/lib/scheduleProductGridHelpers'
+import {
+  addScheduleProductCellPulseReason,
+  collectStaffScheduleLocales,
+  collectTourLanguageStaffEmails,
+  customerLanguageToScheduleBucket,
+  findTourGuideLanguageMismatch,
+  type ScheduleGuideLanguageMismatch,
+  type ScheduleGuestLangBucket,
+  type ScheduleProductCellPulseReason,
+} from '@/lib/scheduleGuideLanguageMatch'
 import type { ScheduleGuideDailyData, ScheduleGuideScheduleRow } from '@/lib/scheduleGuideGridTypes'
 import type { TourQuickPrintRequest } from '@/components/admin/todo/TourQuickPrintHost'
 import { isSuperAdminActor } from '@/lib/superAdmin'
@@ -3579,28 +3589,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
   // 고객 언어 맵 (customer_id -> ko / ja / en)
   const customerIdToLangBucket = useMemo(() => {
-    const map = new Map<string, 'ko' | 'ja' | 'en'>()
+    const map = new Map<string, ScheduleGuestLangBucket>()
     for (const c of customers) {
-      const lang = (c?.language || '').toString().toLowerCase().trim()
-      let bucket: 'ko' | 'ja' | 'en' = 'en'
-      if (
-        lang === 'ko' ||
-        lang === 'kr' ||
-        lang === '한국어' ||
-        lang === 'korean' ||
-        lang.includes('한국')
-      ) {
-        bucket = 'ko'
-      } else if (
-        lang === 'ja' ||
-        lang === 'jp' ||
-        lang === '일본어' ||
-        lang === 'japanese' ||
-        lang.includes('일본')
-      ) {
-        bucket = 'ja'
-      }
-      map.set(String(c.id), bucket)
+      map.set(String(c.id), customerLanguageToScheduleBucket(c?.language))
     }
     return map
   }, [customers])
@@ -3613,12 +3604,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     const reservationDateYmd = (res: Reservation) => String(res.tour_date || '').slice(0, 10)
     const reservationProductKey = (res: Reservation) => canonicalScheduleProductId(res.product_id)
 
-    // 고객 언어 맵: customer_id -> isKo
-    const idToIsKo = new Map<string, boolean>()
-    for (const c of customers) {
-      const lang = (c?.language || '').toString().toLowerCase()
-      const isKo = lang === 'ko' || lang === 'kr' || lang === '한국어' || lang === 'korean'
-      idToIsKo.set(String(c.id), isKo)
+    const staffByEmail = new Map<string, Team>()
+    for (const member of [...teamMembers, ...inactiveTeamMembers]) {
+      const email = String(member?.email || '').trim().toLowerCase()
+      if (email) staffByEmail.set(email, member)
     }
 
     const data: {
@@ -3630,6 +3619,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             waitingPeople: number
             koWaitingPeople: number
             enWaitingPeople: number
+            jaWaitingPeople: number
             canceledPeople: number
             /** 확정·모집인데 해당일 같은 상품 투어 어디에도 배정되지 않은 예약 건수 */
             assignmentPendingReservationCount: number
@@ -3640,6 +3630,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             tours: number
             koPeople: number
             enPeople: number
+            jaPeople: number
+            guideLanguageMismatches: ScheduleGuideLanguageMismatch[]
             choiceCounts: Record<string, number>
             /** 투어별 초이스 집계(카드와 일치) — 해당 날짜에 투어가 1개면 이걸 툴팁에 사용 */
             toursChoiceCounts: Array<{ tourId: string; label: string; choiceCounts: Record<string, number> }>
@@ -3654,6 +3646,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 teamIndex: number
                 guideName: string
                 assistantName: string
+                staffLocales: ScheduleGuestLangBucket[]
                 assigned: number
                 max: number
                 spotsLeft: number
@@ -3699,6 +3692,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           waitingPeople: number
           koWaitingPeople: number
           enWaitingPeople: number
+          jaWaitingPeople: number
           canceledPeople: number
           assignmentPendingReservationCount: number
           reservationGroupCount: number
@@ -3706,6 +3700,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           tours: number
           koPeople: number
           enPeople: number
+          jaPeople: number
+          guideLanguageMismatches: ScheduleGuideLanguageMismatch[]
           choiceCounts: Record<string, number>
           toursChoiceCounts: Array<{ tourId: string; label: string; choiceCounts: Record<string, number> }>
           privateTourPeople: number
@@ -3716,6 +3712,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               teamIndex: number
               guideName: string
               assistantName: string
+              staffLocales: ScheduleGuestLangBucket[]
               assigned: number
               max: number
               spotsLeft: number
@@ -3767,10 +3764,13 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         )
         const dayKoWaitingPeople = dayPendingReservations.reduce((sum, res) => {
           const cid = String(res.customer_id || '')
-          const isKo = idToIsKo.get(cid) === true
-          return sum + (isKo ? (res.total_people || 0) : 0)
+          return sum + (customerIdToLangBucket.get(cid) === 'ko' ? (res.total_people || 0) : 0)
         }, 0)
-        const dayEnWaitingPeople = Math.max(dayWaitingPeople - dayKoWaitingPeople, 0)
+        const dayJaWaitingPeople = dayPendingReservations.reduce((sum, res) => {
+          const cid = String(res.customer_id || '')
+          return sum + (customerIdToLangBucket.get(cid) === 'ja' ? (res.total_people || 0) : 0)
+        }, 0)
+        const dayEnWaitingPeople = Math.max(dayWaitingPeople - dayKoWaitingPeople - dayJaWaitingPeople, 0)
         const dayCanceledPeople = dayReservationsSameDate
           .filter(res => isReservationCancelledStatus(res.status))
           .reduce((sum, res) => sum + (res.total_people || 0), 0)
@@ -3795,10 +3795,13 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         const dayTotalPeople = dayPrivateTourPeople + dayCompanionTourPeople
         const dayKoPeople = dayReservations.reduce((sum, res) => {
           const cid = String(res.customer_id || '')
-          const isKo = idToIsKo.get(cid) === true
-          return sum + (isKo ? (res.total_people || 0) : 0)
+          return sum + (customerIdToLangBucket.get(cid) === 'ko' ? (res.total_people || 0) : 0)
         }, 0)
-        const dayEnPeople = Math.max(dayTotalPeople - dayKoPeople, 0)
+        const dayJaPeople = dayReservations.reduce((sum, res) => {
+          const cid = String(res.customer_id || '')
+          return sum + (customerIdToLangBucket.get(cid) === 'ja' ? (res.total_people || 0) : 0)
+        }, 0)
+        const dayEnPeople = Math.max(dayTotalPeople - dayKoPeople - dayJaPeople, 0)
 
         const dayReservationIds = new Set(dayReservations.map(r => r.id))
         // 초이스별 집계: 캐년(X/L/U)만 — 거주자·입장료 등 _other 제외 (투어 카드·입장권 목록과 동일)
@@ -3851,11 +3854,19 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             teamTypeStr === '1guide' || !tour.assistant_id
               ? '—'
               : resolveMemberDisplay(tour.assistant_id)
+          const staffEmails = collectTourLanguageStaffEmails({
+            guideEmail: tour.tour_guide_id,
+            assistantEmail: tour.assistant_id,
+          })
+          const staffLocales = collectStaffScheduleLocales(
+            staffEmails.map((email) => staffByEmail.get(email.toLowerCase()) ?? staffByEmail.get(email) ?? null),
+          )
           return {
             tourId: String(tour.id),
             teamIndex: idx + 1,
             guideName,
             assistantName,
+            staffLocales,
             assigned,
             max,
             spotsLeft,
@@ -3879,6 +3890,37 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 totalSpotsLeft: capTotalSpotsLeft
               }
 
+        const guideLanguageMismatches: ScheduleGuideLanguageMismatch[] = []
+        sortedDayTours.forEach((tour, idx) => {
+          const assignedCanon = new Set<string>()
+          for (const rawId of normalizeReservationIds(tour.reservation_ids)) {
+            if (rawId) assignedCanon.add(canonicalReservationIdKey(rawId))
+          }
+          const assignedRes = dayReservationsSameDate.filter(
+            (r) =>
+              assignedCanon.has(canonicalReservationIdKey(String(r.id))) &&
+              !isReservationCancelledStatus(r.status),
+          )
+          if (assignedRes.length === 0) return
+          const guestPeople = { ko: 0, ja: 0, en: 0 }
+          for (const res of assignedRes) {
+            const bucket = customerIdToLangBucket.get(String(res.customer_id || '')) || 'en'
+            guestPeople[bucket] += res.total_people || 0
+          }
+          const mismatch = findTourGuideLanguageMismatch({
+            tourId: String(tour.id),
+            teamIndex: idx + 1,
+            guideName: resolveMemberDisplay(tour.tour_guide_id),
+            assistantName: tour.assistant_id ? resolveMemberDisplay(tour.assistant_id) : '—',
+            guideEmail: tour.tour_guide_id,
+            assistantEmail: tour.assistant_id,
+            teamType: tour.team_type,
+            guestPeople,
+            staffByEmail,
+          })
+          if (mismatch) guideLanguageMismatches.push(mismatch)
+        })
+
         // 멀티데이: 예약·인원·용량(dayTours)은 시작일 기준, 투어 건수(tours)만 진행일마다 집계
         if (!dailyData[dateString]) {
           dailyData[dateString] = {
@@ -3886,6 +3928,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             waitingPeople: 0,
             koWaitingPeople: 0,
             enWaitingPeople: 0,
+            jaWaitingPeople: 0,
             canceledPeople: 0,
             assignmentPendingReservationCount: 0,
             reservationGroupCount: 0,
@@ -3893,6 +3936,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             tours: 0,
             koPeople: 0,
             enPeople: 0,
+            jaPeople: 0,
+            guideLanguageMismatches: [],
             choiceCounts: {},
             toursChoiceCounts: [],
             privateTourPeople: 0,
@@ -3907,12 +3952,15 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         dailyData[dateString].waitingPeople += dayWaitingPeople
         dailyData[dateString].koWaitingPeople += dayKoWaitingPeople
         dailyData[dateString].enWaitingPeople += dayEnWaitingPeople
+        dailyData[dateString].jaWaitingPeople += dayJaWaitingPeople
         dailyData[dateString].canceledPeople += dayCanceledPeople
         dailyData[dateString].assignmentPendingReservationCount += dayAssignmentPendingReservationCount
         dailyData[dateString].reservationGroupCount += dayReservations.length
         dailyData[dateString].waitingReservationGroupCount += dayPendingReservations.length
         dailyData[dateString].koPeople += dayKoPeople
         dailyData[dateString].enPeople += dayEnPeople
+        dailyData[dateString].jaPeople += dayJaPeople
+        dailyData[dateString].guideLanguageMismatches = guideLanguageMismatches
         dailyData[dateString].tours += toursCoveringThisDate.length
         Object.entries(choiceCountsByKey).forEach(([k, v]) => {
           dailyData[dateString].choiceCounts[k] = (dailyData[dateString].choiceCounts[k] || 0) + v
@@ -3938,7 +3986,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   }, [
     tours,
     reservations,
-    customers,
+    customerIdToLangBucket,
     products,
     selectedProducts,
     monthDays,
@@ -5155,6 +5203,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         spotsLeft: c.spotsLeft,
         assignedKo: c.assignedKo,
         assignedEn: c.assignedEn,
+        assignedJa: c.assignedJa,
         guideName: c.guideName,
         assistantName: c.assistantName,
         vehicleNumber: c.vehicleNumber,
@@ -5212,7 +5261,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       `날짜: ${c.tourDate}`,
       getTourAssignmentStatusTooltipLine(tour, locale),
       `인원: ${c.assignedPeople} / ${c.totalPeopleAll}`,
-      `배정 언어: ko ${c.assignedKo} / en ${c.assignedEn}`,
+      `배정 언어: ko ${c.assignedKo} / en ${c.assignedEn} / ja ${c.assignedJa}`,
       ...(c.choiceLine ? [c.choiceLine] : []),
       `가이드: ${c.guideName}`,
       `어시스턴트: ${c.assistantName}`,
@@ -5644,7 +5693,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   }, [productScheduleData, monthDays])
 
   const productScheduleGrandBreakdown = useMemo(() => {
-    const result = { ko: 0, en: 0, choiceCounts: {} as Record<string, number> }
+    const result = { ko: 0, en: 0, ja: 0, choiceCounts: {} as Record<string, number> }
     for (const product of Object.values(productScheduleData)) {
       const breakdown = aggregateScheduleBreakdownFromDailyData(
         product.dailyData,
@@ -5652,6 +5701,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       )
       result.ko += breakdown.ko
       result.en += breakdown.en
+      result.ja += breakdown.ja
       for (const [k, v] of Object.entries(breakdown.choiceCounts)) {
         result.choiceCounts[k] = (result.choiceCounts[k] || 0) + v
       }
@@ -5692,6 +5742,38 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       }
     }
     items.sort((a, b) => a.dateString.localeCompare(b.dateString) || a.productName.localeCompare(b.productName))
+    return items
+  }, [productScheduleData, monthDays])
+
+  const scheduleGuideLanguageMismatchItems = useMemo(() => {
+    const items: Array<{
+      productId: string
+      dateString: string
+      productName: string
+      mismatch: ScheduleGuideLanguageMismatch
+    }> = []
+    const todayStr = dayjs().format('YYYY-MM-DD')
+    for (const [productId, prod] of Object.entries(productScheduleData)) {
+      for (const { dateString, isEdgePadding } of monthDays) {
+        if (isEdgePadding) continue
+        if (dateString < todayStr) continue
+        const mismatches = prod.dailyData[dateString]?.guideLanguageMismatches || []
+        for (const mismatch of mismatches) {
+          items.push({
+            productId,
+            dateString,
+            productName: prod.product_name || productId,
+            mismatch,
+          })
+        }
+      }
+    }
+    items.sort(
+      (a, b) =>
+        a.dateString.localeCompare(b.dateString) ||
+        a.productName.localeCompare(b.productName) ||
+        a.mismatch.teamIndex - b.mismatch.teamIndex,
+    )
     return items
   }, [productScheduleData, monthDays])
 
@@ -5970,11 +6052,12 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   const scheduleHealthIssueCount = useMemo(
     () =>
       scheduleCapacityOverflowItems.length +
+      scheduleGuideLanguageMismatchItems.length +
       scheduleHealthFromFetch.vehicleMismatch.length +
       scheduleHealthFromFetch.incompleteTours.length +
       scheduleHealthFromFetch.ticketPeopleMismatch.length +
       scheduleHealthFromFetch.unconfirmedToursWithPendingOrConfirmedRes.length,
-    [scheduleCapacityOverflowItems, scheduleHealthFromFetch],
+    [scheduleCapacityOverflowItems, scheduleGuideLanguageMismatchItems, scheduleHealthFromFetch],
   )
 
   /** 스케줄 점검 요약(1~5)에 포함된 날짜 — 스케쥴뷰 상단 날짜 헤더 강조용 */
@@ -5994,22 +6077,30 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       const d = String(x.tourDate || '').slice(0, 10)
       if (d) s.add(d)
     }
+    for (const x of scheduleGuideLanguageMismatchItems) s.add(x.dateString)
     return s
-  }, [scheduleCapacityOverflowItems, scheduleHealthFromFetch])
+  }, [scheduleCapacityOverflowItems, scheduleHealthFromFetch, scheduleGuideLanguageMismatchItems])
 
-  /** 상품별 스케줄 테이블: 정원 초과·5일 이내 미확정 투어 해당 상품·날짜 셀 */
-  const scheduleHealthProductCellAlertSet = useMemo(() => {
-    const s = new Set<string>()
-    const key = (productId: string, dateString: string) => `${productId}|${dateString}`
+  /** 상품별 스케줄 테이블: 정원 초과·5일 이내 미확정 투어·가이드 언어 불일치 셀 */
+  const scheduleHealthProductCellAlerts = useMemo(() => {
+    const map = new Map<string, ScheduleProductCellPulseReason[]>()
     for (const x of scheduleCapacityOverflowItems) {
-      if (x.productId && x.dateString) s.add(key(x.productId, x.dateString))
+      addScheduleProductCellPulseReason(map, x.productId, x.dateString, { kind: 'capacity_overflow' })
     }
     for (const x of scheduleHealthFromFetch.unconfirmedToursWithPendingOrConfirmedRes) {
       const d = String(x.tourDate || '').slice(0, 10)
-      if (x.productId && d) s.add(key(x.productId, d))
+      if (x.productId && d) {
+        addScheduleProductCellPulseReason(map, x.productId, d, { kind: 'unconfirmed_tour' })
+      }
     }
-    return s
-  }, [scheduleCapacityOverflowItems, scheduleHealthFromFetch])
+    for (const x of scheduleGuideLanguageMismatchItems) {
+      addScheduleProductCellPulseReason(map, x.productId, x.dateString, {
+        kind: 'guide_language',
+        missingLocales: x.mismatch.missingLocales,
+      })
+    }
+    return map
+  }, [scheduleCapacityOverflowItems, scheduleHealthFromFetch, scheduleGuideLanguageMismatchItems])
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -7536,17 +7627,37 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               <MapPin className="w-4 h-4 mr-1 text-primary" />
               스케쥴뷰
             </div>
-            <div className="flex items-center gap-2 text-[11px]">
-              <div className="flex items-center gap-1.5 px-2 py-1 bg-yellow-100 border border-yellow-300 rounded-full" title="한국어">
+            <div className="flex flex-wrap items-center justify-end gap-1.5 text-[11px]">
+              <div className="flex items-center gap-1 px-1.5 py-1 bg-yellow-100 border border-yellow-300 rounded-full" title="한국어">
                 <ReactCountryFlag countryCode="KR" svg style={{ width: '22px', height: '16px' }} />
               </div>
-              <div className="flex items-center gap-1.5 px-2 py-1 bg-red-100 border border-red-300 rounded-full" title="영어">
+              <div className="flex items-center gap-1 px-1.5 py-1 bg-red-100 border border-red-300 rounded-full" title="영어">
                 <ReactCountryFlag countryCode="US" svg style={{ width: '22px', height: '16px' }} />
               </div>
-              <div className="flex items-center gap-1.5 px-2 py-1 bg-orange-100 border border-orange-300 rounded-full" title="한국어 & 영어">
+              <div className="flex items-center gap-1 px-1.5 py-1 bg-sky-100 border border-sky-300 rounded-full" title="일본어">
+                <ReactCountryFlag countryCode="JP" svg style={{ width: '22px', height: '16px' }} />
+              </div>
+              <div className="flex items-center gap-1 px-1.5 py-1 bg-orange-100 border border-orange-300 rounded-full" title="한국어 & 영어">
                 <ReactCountryFlag countryCode="KR" svg style={{ width: '22px', height: '16px' }} />
                 <span className="text-[10px] text-orange-400">&</span>
                 <ReactCountryFlag countryCode="US" svg style={{ width: '22px', height: '16px' }} />
+              </div>
+              <div className="flex items-center gap-1 px-1.5 py-1 bg-lime-100 border border-lime-300 rounded-full" title="한국어 & 일본어">
+                <ReactCountryFlag countryCode="KR" svg style={{ width: '22px', height: '16px' }} />
+                <span className="text-[10px] text-lime-500">&</span>
+                <ReactCountryFlag countryCode="JP" svg style={{ width: '22px', height: '16px' }} />
+              </div>
+              <div className="flex items-center gap-1 px-1.5 py-1 bg-violet-100 border border-violet-300 rounded-full" title="일본어 & 영어">
+                <ReactCountryFlag countryCode="JP" svg style={{ width: '22px', height: '16px' }} />
+                <span className="text-[10px] text-violet-400">&</span>
+                <ReactCountryFlag countryCode="US" svg style={{ width: '22px', height: '16px' }} />
+              </div>
+              <div className="flex items-center gap-1 px-1.5 py-1 bg-amber-100 border border-amber-300 rounded-full" title="한국어 & 영어 & 일본어">
+                <ReactCountryFlag countryCode="KR" svg style={{ width: '22px', height: '16px' }} />
+                <span className="text-[10px] text-amber-500">&</span>
+                <ReactCountryFlag countryCode="US" svg style={{ width: '22px', height: '16px' }} />
+                <span className="text-[10px] text-amber-500">&</span>
+                <ReactCountryFlag countryCode="JP" svg style={{ width: '22px', height: '16px' }} />
               </div>
             </div>
           </h3>
@@ -7565,7 +7676,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             onProductScheduleBodyScroll={onProductScheduleBodyScroll}
             dateNotes={dateNotes}
             scheduleHealthHighlightDateSet={scheduleHealthHighlightDateSet}
-            scheduleHealthProductCellAlertSet={scheduleHealthProductCellAlertSet}
+            scheduleHealthProductCellAlerts={scheduleHealthProductCellAlerts}
             scheduleInteractionDragging={scheduleInteractionDragging}
             isToday={isToday}
             isGuideVisibleUntilCutoff={isGuideVisibleUntilCutoff}
@@ -9156,8 +9267,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             </DialogTitle>
             <DialogDescription className="text-sm text-gray-600">
               {locale === 'ko'
-                ? '정원 초과, 차량·투어 건수, 인력·배차 미배정, 입장권 매수, 미확정 투어(대기·확정 예약)를 한 화면에서 확인합니다. (원격 데이터는 오늘 기준 7일·5일·4일 구간)'
-                : 'Capacity overflow, vehicle vs tour counts, missing staff/vehicle, ticket EA vs pax, and unconfirmed tours with pending/confirmed reservations. Remote snapshot uses rolling 7-, 5-, and 4-day windows from today.'}
+                ? '정원 초과, 차량·투어 건수, 인력·배차 미배정, 입장권 매수, 미확정 투어(대기·확정 예약), 가이드 언어 배정을 한 화면에서 확인합니다. (원격 데이터는 오늘 기준 7일·5일·4일 구간)'
+                : 'Capacity overflow, vehicle vs tour counts, missing staff/vehicle, ticket EA vs pax, unconfirmed tours, and guide language assignment. Remote snapshot uses rolling 7-, 5-, and 4-day windows from today.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -9418,6 +9529,50 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                       </li>
                     )
                   })}
+                </ul>
+            </section>
+            ) : null}
+
+            {scheduleGuideLanguageMismatchItems.length > 0 ? (
+            <section className="rounded-lg border border-violet-200 bg-violet-50/50 p-3">
+              <h4 className="text-sm font-bold text-violet-900">
+                6.{' '}
+                {locale === 'ko'
+                  ? '가이드 언어 배정 · 한국어·일본어 손님과 팀(가이드·어시·드라이버) 구사 언어 불일치'
+                  : 'Guide language — Korean/Japanese guests not covered by assigned guide, assistant, or driver'}
+              </h4>
+              <p className="mt-1 text-xs text-gray-600">
+                {locale === 'ko'
+                  ? '투어에 배정된 한국어 또는 일본어 손님이 있는데, 가이드·어시스턴트·드라이버 구사 언어에 해당 언어가 없으면 표시됩니다. 상품별 테이블 셀도 빨간색으로 깜빡입니다.'
+                  : 'Assigned Korean or Japanese guests are not covered by the guide, assistant, or driver languages. Matching product-table cells also blink red.'}
+              </p>
+                <ul className="mt-2 max-h-48 space-y-1.5 overflow-y-auto pr-1 text-sm">
+                  {scheduleGuideLanguageMismatchItems.map((row) => (
+                    <li key={`${row.mismatch.tourId}|${row.dateString}`}>
+                      <button
+                        type="button"
+                        className="w-full rounded-md border border-violet-100 bg-white/90 px-2 py-1.5 text-left hover:bg-violet-100/60"
+                        onClick={() => {
+                          setScheduleHealthModalOpen(false)
+                          openTourDetailModal(row.mismatch.tourId)
+                        }}
+                      >
+                        <span className="font-medium text-gray-900">{row.productName}</span>
+                        <span className="text-gray-500"> · {row.dateString}</span>
+                        <div className="mt-0.5 text-xs text-violet-900">
+                          {locale === 'ko' ? `팀${row.mismatch.teamIndex}` : `Team ${row.mismatch.teamIndex}`}{' '}
+                          {[row.mismatch.guideName, row.mismatch.assistantName]
+                            .filter((name) => name && name !== '—')
+                            .join(', ')}
+                          {' · '}
+                          {row.mismatch.missingLocales
+                            .map((lang) => (lang === 'ko' ? (locale === 'ko' ? '한국어' : 'Korean') : locale === 'ko' ? '일본어' : 'Japanese'))
+                            .join(locale === 'ko' ? '·' : '/')}
+                          {locale === 'ko' ? ' 필요' : ' needed'}
+                        </div>
+                      </button>
+                    </li>
+                  ))}
                 </ul>
             </section>
             ) : null}
@@ -11102,19 +11257,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                                         style={{ width: '16px', height: '12px', borderRadius: '2px' }}
                                         aria-hidden
                                       />
-                                      {summary.assignedEn + summary.assignedJa}
-                                      {summary.assignedJa > 0 ? (
-                                        <span className="inline-flex items-center gap-1 text-gray-500">
-                                          (
-                                          <ReactCountryFlag
-                                            countryCode="JP"
-                                            svg
-                                            style={{ width: '16px', height: '12px', borderRadius: '2px' }}
-                                            aria-hidden
-                                          />
-                                          {summary.assignedJa})
-                                        </span>
-                                      ) : null}
+                                      {summary.assignedEn}
+                                    </span>
+                                    <span className="text-gray-300">/</span>
+                                    <span className="inline-flex items-center gap-1 font-medium tabular-nums">
+                                      <ReactCountryFlag
+                                        countryCode="JP"
+                                        svg
+                                        style={{ width: '16px', height: '12px', borderRadius: '2px' }}
+                                        aria-hidden
+                                      />
+                                      {summary.assignedJa}
                                     </span>
                                   </div>
                                   <div className="text-xs text-gray-500 mt-1">

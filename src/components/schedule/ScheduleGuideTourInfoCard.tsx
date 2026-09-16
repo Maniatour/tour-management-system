@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, type ReactNode } from 'react'
-import ReactCountryFlag from 'react-country-flag'
+import { ScheduleLangFlagsHoverLine } from '@/lib/scheduleProductGridHelpers'
 import {
   ArrowLeftRight,
   Bus,
@@ -751,37 +751,12 @@ export default function ScheduleGuideTourInfoCard({
 
         {/* 언어 · 픽업 호텔 그룹 */}
         <div className="flex flex-wrap items-center gap-2.5 text-xs text-gray-700 mb-2">
-          <span className="inline-flex items-center gap-1.5 font-medium tabular-nums">
-            <ReactCountryFlag
-              countryCode="KR"
-              svg
-              style={{ width: '20px', height: '15px', borderRadius: '2px' }}
-              aria-hidden
-            />
-            {summary.assignedKo}
-          </span>
-          <span className="text-gray-300">/</span>
-          <span className="inline-flex items-center gap-1.5 font-medium tabular-nums">
-            <ReactCountryFlag
-              countryCode="US"
-              svg
-              style={{ width: '20px', height: '15px', borderRadius: '2px' }}
-              aria-hidden
-            />
-            {summary.assignedEn + summary.assignedJa}
-            {summary.assignedJa > 0 ? (
-              <span className="inline-flex items-center gap-1 text-gray-500">
-                (
-                <ReactCountryFlag
-                  countryCode="JP"
-                  svg
-                  style={{ width: '20px', height: '15px', borderRadius: '2px' }}
-                  aria-hidden
-                />
-                {summary.assignedJa})
-              </span>
-            ) : null}
-          </span>
+          <ScheduleLangFlagsHoverLine
+            ko={summary.assignedKo}
+            en={summary.assignedEn}
+            ja={summary.assignedJa}
+            className="inline-flex items-center gap-1.5 font-medium tabular-nums"
+          />
           <span
             className="inline-flex flex-wrap items-center gap-1 font-medium tabular-nums text-teal-800"
             title={locale === 'ko' ? '픽업 수 (픽업 스케줄 기준)' : 'Pickup stops (pickup schedule)'}

@@ -1,7 +1,7 @@
 /**
  * 배정 카드·Balance 봉투·투어 인쇄 등에서 동일하게 사용하는 잔액 표시.
- * 예약수정모달 가격정보「잔금」과 맞추기 위해, DB `balance_amount`와 계산값이 다르면
- * 가격 탭과 같은 계산값(총 결제 − 입금 순효과 등, 비거주자 비용 포함)을 우선한다.
+ * 표시 잔금은 reservation_pricing에 저장된 `balance_amount`를 쓴다.
+ * 저장값이 없을 때만 라인·입금 산식으로 보정한다.
  */
 
 import { isNotIncludedExcludedReservationStatus } from '@/lib/reservationStatus'
@@ -124,6 +124,7 @@ export type PartySizeSource = {
 
 /** reservation_pricing 행 또는 API JSON 일부 */
 export type PricingBalanceFields = {
+  total_price?: unknown
   balance_amount?: unknown
   deposit_amount?: unknown
   product_price_total?: unknown
@@ -993,7 +994,7 @@ export function computeRemainingBalanceAmount(
 export type GetBalanceDisplayOpts = {
   paymentRecords?: PaymentRecordLike[]
   /** 취소 예약은 잔액 0 (PricingSection displayedOnSiteBalance와 동일) */
-  reservationStatus?: string | null
+  reservationStatus?: string | null | undefined
   /** 거주 상태별 인원·금액(비거주 $100 등) — DB choices/total_price에 없을 때 카드·배정 헤더용 */
   residentFeeUsd?: number | null
 }
@@ -1018,33 +1019,42 @@ export function withNormalizedBalanceAmountForDisplay(
   return { ...pricing, balance_amount } as PricingBalanceFields
 }
 
-/**
- * 잔액 표시: 입금이 있으면 가격 정보 탭 `displayedOnSiteBalance`와 같은 식.
- * DB `balance_amount`와 계산값이 0.01 초과로 다르면 계산값 우선
- * (비거주자 비용 반영 후 DB 미동기화·구버전 sync 보정).
- * 계산이 0인데 DB에 잔액이 있으면 DB를 쓴다 (카드 배치가 비거주 비용을 놓친 경우).
- */
-function resolveBalanceDisplayAmount(
-  storedNum: number,
-  defaultBalance: number,
+export type StoredReservationPricingAmounts = {
+  totalPrice: number
   depositAmount: number
-): number {
-  if (isPhantomNegativeOnSiteBalance(storedNum, depositAmount)) {
-    return defaultBalance
+  balanceAmount: number
+}
+
+/**
+ * 예약 가격 표시의 단일 소스: `reservation_pricing`에 저장된 값.
+ * 취소·노쇼는 잔금 0. 저장 잔금이 없거나 보증금 레이스 음수일 때만 총액−보증금으로 보정.
+ */
+export function getStoredReservationPricingAmounts(
+  pricing: PricingBalanceFields | null | undefined,
+  opts?: { reservationStatus?: string | null | undefined }
+): StoredReservationPricingAmounts {
+  const totalPrice = roundUsd2(pricingFieldToNumber(pricing?.total_price))
+  const depositAmount = roundUsd2(pricingFieldToNumber(pricing?.deposit_amount))
+  if (isNotIncludedExcludedReservationStatus(opts?.reservationStatus)) {
+    return { totalPrice, depositAmount, balanceAmount: 0 }
   }
-  if (storedNum < -0.005) {
-    return roundUsd2(storedNum)
+  const rawStored = pricing?.balance_amount
+  if (rawStored === undefined || rawStored === null || rawStored === '') {
+    return {
+      totalPrice,
+      depositAmount,
+      balanceAmount: roundUsd2(Math.max(0, totalPrice - depositAmount)),
+    }
   }
-  if (Math.abs(defaultBalance) < 0.005 && Math.abs(storedNum) > 0.01) {
-    return roundUsd2(storedNum)
+  const storedNum = pricingFieldToNumber(rawStored)
+  if (!Number.isFinite(storedNum) || isPhantomNegativeOnSiteBalance(storedNum, depositAmount)) {
+    return {
+      totalPrice,
+      depositAmount,
+      balanceAmount: roundUsd2(Math.max(0, totalPrice - depositAmount)),
+    }
   }
-  if (Math.abs(storedNum) < 0.005 && Math.abs(defaultBalance) > 0.01) {
-    return defaultBalance
-  }
-  if (Math.abs(defaultBalance - storedNum) > 0.01) {
-    return defaultBalance
-  }
-  return roundUsd2(storedNum)
+  return { totalPrice, depositAmount, balanceAmount: roundUsd2(storedNum) }
 }
 
 export function getBalanceAmountForDisplay(
@@ -1057,6 +1067,14 @@ export function getBalanceAmountForDisplay(
 
   const excludeNotIncluded = isNotIncludedExcludedReservationStatus(opts?.reservationStatus)
   if (excludeNotIncluded) return 0
+
+  const rawStored = pricing.balance_amount
+  const hasStored = rawStored !== undefined && rawStored !== null && rawStored !== ''
+  if (hasStored) {
+    return getStoredReservationPricingAmounts(pricing, {
+      reservationStatus: opts?.reservationStatus,
+    }).balanceAmount
+  }
 
   const optsOnly =
     optionsTotalFromOptions !== null && optionsTotalFromOptions !== undefined
@@ -1076,41 +1094,20 @@ export function getBalanceAmountForDisplay(
 
   const records = opts?.paymentRecords
   const residentFeeUsd = opts?.residentFeeUsd
-  const defaultBalanceNoRecords = computeRemainingBalanceAmount(
-    pricingForLine,
-    optionsTotalFromOptions,
-    party,
-    residentFeeUsd
-  )
-
   if (records && records.length > 0) {
-    const defaultBalance = computeDisplayedOnSiteBalanceLikePricingSection(
+    return computeDisplayedOnSiteBalanceLikePricingSection(
       pricingForLine,
       optionsTotalFromOptions,
       party,
       records,
       residentFeeUsd
     )
-
-    const rawStored = pricing.balance_amount
-    if (rawStored === undefined || rawStored === null || rawStored === '') {
-      return defaultBalance
-    }
-    return resolveBalanceDisplayAmount(
-      pricingFieldToNumber(rawStored),
-      defaultBalance,
-      pricingFieldToNumber(pricing.deposit_amount)
-    )
   }
 
-  const rawStoredNoRecords = pricing.balance_amount
-  if (rawStoredNoRecords !== undefined && rawStoredNoRecords !== null && rawStoredNoRecords !== '') {
-    return resolveBalanceDisplayAmount(
-      pricingFieldToNumber(rawStoredNoRecords),
-      defaultBalanceNoRecords,
-      pricingFieldToNumber(pricing.deposit_amount)
-    )
-  }
-
-  return defaultBalanceNoRecords
+  return computeRemainingBalanceAmount(
+    pricingForLine,
+    optionsTotalFromOptions,
+    party,
+    residentFeeUsd
+  )
 }

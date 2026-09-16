@@ -242,6 +242,7 @@ function getPrintStyles(): string {
     ${getCanyonWaiverPrintStyles()}
     .cwf-page-break { break-before: page; page-break-before: always; }
     .acx-duplex-start { break-before: right; page-break-before: right; }
+    .mania-duplex-start { break-before: right; page-break-before: right; }
   `
 }
 
@@ -261,6 +262,34 @@ function waitForPrintImages(doc: Document): Promise<void> {
   ).then(() => undefined)
 }
 
+function waitForInkReady(root: HTMLElement, timeoutMs = 8000): Promise<void> {
+  const started = Date.now()
+  return new Promise((resolve) => {
+    const tick = () => {
+      if (!root.querySelector('[data-ink-state="pending"]') || Date.now() - started >= timeoutMs) {
+        resolve()
+        return
+      }
+      window.setTimeout(tick, 50)
+    }
+    tick()
+  })
+}
+
+function maniaSignatureMarkup(source: HTMLElement): string {
+  return Array.from(source.querySelectorAll('[data-print-section="mania-signatures"]'))
+    .map((el, i) => (i === 0 ? el.outerHTML : `<div class="cwf-page-break">${el.outerHTML}</div>`))
+    .join('')
+}
+
+function stripPrintSection(root: HTMLElement, section: string): void {
+  root.querySelectorAll(`[data-print-section="${section}"]`).forEach((page) => {
+    const wrap = page.parentElement
+    if (wrap && wrap !== root) wrap.remove()
+    else page.remove()
+  })
+}
+
 function lowerOverlayMarkup(source: HTMLElement): string {
   return Array.from(source.querySelectorAll('[data-print-section="lower-overlay"]'))
     .map((el, i) => (i === 0 ? el.outerHTML : `<div class="cwf-page-break">${el.outerHTML}</div>`))
@@ -268,11 +297,7 @@ function lowerOverlayMarkup(source: HTMLElement): string {
 }
 
 function stripLowerOverlayPages(root: HTMLElement): void {
-  root.querySelectorAll('[data-print-section="lower-overlay"]').forEach((page) => {
-    const wrap = page.parentElement
-    if (wrap && wrap !== root) wrap.remove()
-    else page.remove()
-  })
+  stripPrintSection(root, 'lower-overlay')
 }
 
 function printIframeDocument(input: {
@@ -365,7 +390,8 @@ export default function TourPrintModal({
   const [waiverPacket, setWaiverPacket] = useState<CanyonWaiverPrintTourPayload | null>(null)
   const [waiverLoading, setWaiverLoading] = useState(false)
   const [includeTourInfo, setIncludeTourInfo] = useState(true)
-  const [includeManiaForm, setIncludeManiaForm] = useState(true)
+  const [includeManiaWaiver, setIncludeManiaWaiver] = useState(true)
+  const [includeManiaSignatures, setIncludeManiaSignatures] = useState(true)
   const [includeLowerForm, setIncludeLowerForm] = useState(true)
   const [includeXForm, setIncludeXForm] = useState(true)
 
@@ -414,13 +440,14 @@ export default function TourPrintModal({
       close: isKo ? '닫기' : 'Close',
       loading: isKo ? '잔금 정보를 불러오는 중...' : 'Loading balance...',
       includeTourInfo: isKo ? '투어 정보' : 'Tour info',
-      includeMania: isKo ? '매니아 투어 면책 동의서' : 'Mania tour waiver',
+      includeManiaWaiver: isKo ? '매니아 면책서 (양면)' : 'Mania waiver (duplex)',
+      includeManiaSignatures: isKo ? '매니아 사인 폼 (단면)' : 'Mania signature form (simplex)',
       includeLower: isKo ? '로어 앤텔롭 (노란 용지)' : 'Lower Antelope (yellow paper)',
       includeX: isKo ? '앤텔롭 X 면책 동의서' : 'Antelope X waiver',
       waiverLoading: isKo ? '면책 서명 정보를 불러오는 중...' : 'Loading waiver signatures...',
       printPagesHint: isKo
-        ? '로어는 노란 원본 용지를 넣고 인쇄합니다. 이름·서명만 칸에 맞춰 나갑니다. 인쇄 배율은 100%(실제 크기)로 두세요. 다른 페이지와 함께 찍으면 흰 용지 다음에 로어 인쇄창이 한 번 더 뜹니다. 앤텔롭 X는 맨 마지막에 양면(앞=폼, 뒤=waiver, 긴 쪽 넘김)입니다.'
-        : 'Lower Antelope prints names and signatures onto Dixie yellow stock at 100% scale. If other pages are included, a second print dialog opens for the yellow paper. Antelope X prints last, duplex, flip on long edge.',
+        ? '매니아 면책서는 양면(앞·뒤)으로, 사인 폼은 따로 단면 인쇄창이 뜹니다. 로어는 노란 원본 용지에 이름·서명만 100%로 찍습니다. 앤텔롭 X는 맨 마지막에 양면(앞=폼, 뒤=waiver, 긴 쪽 넘김)입니다.'
+        : 'Mania waiver prints duplex; the signature form opens in a separate simplex dialog. Lower Antelope prints names and signatures onto yellow stock at 100%. Antelope X prints last, duplex, flip on long edge.',
     }),
     [isKo]
   )
@@ -691,7 +718,8 @@ export default function TourPrintModal({
         const json = (await res.json()) as CanyonWaiverPrintTourPayload
         if (cancelled) return
         setWaiverPacket(json)
-        setIncludeManiaForm(Boolean(json.mania))
+        setIncludeManiaWaiver(Boolean(json.mania))
+        setIncludeManiaSignatures(Boolean(json.mania))
         setIncludeLowerForm(Boolean(json.lower))
         setIncludeXForm(Boolean(json.canyonX))
         setIncludeTourInfo(true)
@@ -821,10 +849,11 @@ export default function TourPrintModal({
     [tourHotelBookings]
   )
 
-  const printMania = includeManiaForm && Boolean(waiverPacket?.mania)
+  const printManiaWaiver = includeManiaWaiver && Boolean(waiverPacket?.mania)
+  const printManiaSignatures = includeManiaSignatures && Boolean(waiverPacket?.mania)
   const printLower = includeLowerForm && Boolean(waiverPacket?.lower)
   const printX = includeXForm && Boolean(waiverPacket?.canyonX)
-  const canPrint = includeTourInfo || printMania || printLower || printX
+  const canPrint = includeTourInfo || printManiaWaiver || printManiaSignatures || printLower || printX
   const busy = loading || waiverLoading
 
   const handlePrint = () => {
@@ -836,8 +865,9 @@ export default function TourPrintModal({
     const mmToPx = (mm: number) => (mm * DPI) / 25.4
     const availW = Math.round(8.5 * DPI - 2 * mmToPx(MARGIN_MM))
     const availH = Math.round(11 * DPI - 2 * mmToPx(MARGIN_MM))
-    const printWhitePages = includeTourInfo || printMania || printX
+    const printWhitePages = includeTourInfo || printManiaWaiver || printX
     const styles = getPrintStyles()
+    const maniaSigHtml = printManiaSignatures ? maniaSignatureMarkup(target) : ''
     const overlayHtml = printLower ? lowerOverlayMarkup(target) : ''
 
     const printYellowStock = () => {
@@ -852,29 +882,68 @@ export default function TourPrintModal({
       })
     }
 
-    if (!printWhitePages) {
+    const printManiaSignatureSheets = () => {
+      if (!maniaSigHtml) {
+        printYellowStock()
+        return
+      }
+      printIframeDocument({
+        bodyHtml: maniaSigHtml,
+        title: isKo
+          ? `${productName} - 매니아 사인 폼`
+          : `${productName} - Mania signature form`,
+        styles,
+        fitWidthPx: availW,
+        ...(printLower
+          ? {
+              onAfterPrint: () => {
+                setTimeout(printYellowStock, 400)
+              },
+            }
+          : {}),
+      })
+    }
+
+    const runWhitePages = () => {
+      const clone = target.cloneNode(true) as HTMLElement
+      clone.removeAttribute('id')
+      stripLowerOverlayPages(clone)
+      stripPrintSection(clone, 'mania-signatures')
+
+      printIframeDocument({
+        bodyHtml: clone.innerHTML,
+        title: `${productName} - ${tourDate}`,
+        styles,
+        fitWidthPx: availW,
+        scaleTourInfoToPx: availH,
+        ...(printManiaSignatures || printLower
+          ? {
+              onAfterPrint: () => {
+                setTimeout(printManiaSignatureSheets, 400)
+              },
+            }
+          : {}),
+      })
+    }
+
+    const start = () => {
+      if (printWhitePages) {
+        runWhitePages()
+        return
+      }
+      if (printManiaSignatures) {
+        printManiaSignatureSheets()
+        return
+      }
       printYellowStock()
+    }
+
+    if (!printManiaSignatures && !printLower && !printX) {
+      start()
       return
     }
 
-    const clone = target.cloneNode(true) as HTMLElement
-    clone.removeAttribute('id')
-    stripLowerOverlayPages(clone)
-
-    printIframeDocument({
-      bodyHtml: clone.innerHTML,
-      title: `${productName} - ${tourDate}`,
-      styles,
-      fitWidthPx: availW,
-      scaleTourInfoToPx: availH,
-      ...(printLower
-        ? {
-            onAfterPrint: () => {
-              setTimeout(printYellowStock, 400)
-            },
-          }
-        : {}),
-    })
+    void waitForInkReady(target).then(start)
   }
 
   if (!isOpen) return null
@@ -926,15 +995,26 @@ export default function TourPrintModal({
               {L.includeTourInfo}
             </label>
             {waiverPacket?.mania ? (
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={includeManiaForm}
-                  onChange={(e) => setIncludeManiaForm(e.target.checked)}
-                />
-                {L.includeMania} ({waiverPacket.mania.guests.filter((g) => g.printName).length})
-              </label>
+              <>
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={includeManiaWaiver}
+                    onChange={(e) => setIncludeManiaWaiver(e.target.checked)}
+                  />
+                  {L.includeManiaWaiver}
+                </label>
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={includeManiaSignatures}
+                    onChange={(e) => setIncludeManiaSignatures(e.target.checked)}
+                  />
+                  {L.includeManiaSignatures} ({waiverPacket.mania.guests.filter((g) => g.printName).length})
+                </label>
+              </>
             ) : null}
             {waiverPacket?.lower ? (
               <label className="inline-flex items-center gap-2">
@@ -1133,7 +1213,8 @@ export default function TourPrintModal({
               mania={waiverPacket?.mania ?? null}
               lower={waiverPacket?.lower ?? null}
               canyonX={waiverPacket?.canyonX ?? null}
-              includeMania={printMania}
+              includeManiaWaiver={printManiaWaiver}
+              includeManiaSignatures={printManiaSignatures}
               includeLower={printLower}
               includeX={printX}
               isFirstPrintedBlock={!includeTourInfo}

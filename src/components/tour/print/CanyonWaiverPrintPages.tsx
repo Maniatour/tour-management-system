@@ -11,7 +11,8 @@ export default function CanyonWaiverPrintPages({
   mania = null,
   lower,
   canyonX,
-  includeMania = false,
+  includeManiaWaiver = false,
+  includeManiaSignatures = false,
   includeLower,
   includeX,
   isFirstPrintedBlock,
@@ -19,12 +20,13 @@ export default function CanyonWaiverPrintPages({
   mania?: CanyonWaiverPrintPacket | null
   lower: CanyonWaiverPrintPacket | null
   canyonX: CanyonWaiverPrintPacket | null
-  includeMania?: boolean
+  includeManiaWaiver?: boolean
+  includeManiaSignatures?: boolean
   includeLower: boolean
   includeX: boolean
   isFirstPrintedBlock: boolean
 }) {
-  const maniaOn = includeMania && Boolean(mania)
+  const maniaOn = (includeManiaWaiver || includeManiaSignatures) && Boolean(mania)
   const lowerChunks = includeLower && lower ? chunkPrintGuests(lower.guests, LOWER_ANTELOPE_ROWS_PER_PAGE) : []
   const xOn = includeX && Boolean(canyonX)
   const lowerIsFirst = isFirstPrintedBlock && !maniaOn
@@ -34,7 +36,8 @@ export default function CanyonWaiverPrintPages({
     <>
       <ManiaTourWaiverPrintPages
         packet={mania}
-        include={includeMania}
+        includeWaiver={includeManiaWaiver}
+        includeSignatures={includeManiaSignatures}
         isFirstPrintedBlock={isFirstPrintedBlock}
       />
       {lower &&
