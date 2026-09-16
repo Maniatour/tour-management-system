@@ -13117,6 +13117,15 @@ export type Database = {
         }
         Returns: boolean
       }
+      admin_reservation_status_transitions_in_range: {
+        Args: { p_range_end: string; p_range_start: string }
+        Returns: {
+          from_status: string | null
+          occurred_at: string
+          reservation_id: string
+          to_status: string | null
+        }[]
+      }
       apply_ticket_booking_action: {
         Args: {
           p_action: string

@@ -527,7 +527,8 @@ export async function fetchAdminReservationCardWeekStatusChangeExtraRows(
   args: Omit<
     FetchAdminReservationListArgs,
     'onCardWeekFetchProgress' | 'cardWeekLoadTier' | 'cardWeekRecentCreatedGteIso'
-  >
+  >,
+  options?: { includeAuditLogs?: boolean }
 ): Promise<{ rows: Record<string, unknown>[]; error: Error | null }> {
   if (!args.activityRangeStartIso || !args.activityRangeEndIso) {
     return { rows: [], error: null }
@@ -539,6 +540,7 @@ export async function fetchAdminReservationCardWeekStatusChangeExtraRows(
       {
         rangeStartIso: args.activityRangeStartIso,
         rangeEndIso: args.activityRangeEndIso,
+        includeAuditLogs: options?.includeAuditLogs !== false,
       }
     )
     if (eventsError) {

@@ -190,20 +190,134 @@ async function fetchReservationStatusAuditLogsChunked(
 }
 
 const TIME_RANGE_PAGE_SIZE = 1000
+const RANGE_CACHE_TTL_MS = 2 * 60 * 1000
+
+type RangeCacheEntry = {
+  at: number
+  eventRows: ReservationStatusAuditRow[]
+  mergedRows: ReservationStatusAuditRow[] | null
+}
+
+function timeRangeCacheKey(rangeStartIso: string, rangeEndIso: string): string {
+  return `${rangeStartIso}\u0001${rangeEndIso}`
+}
+
+const rangeCache = new Map<string, RangeCacheEntry>()
+const eventsInflight = new Map<
+  string,
+  Promise<{ rows: ReservationStatusAuditRow[]; error: unknown | null }>
+>()
+const auditInflight = new Map<
+  string,
+  Promise<{ rows: ReservationStatusAuditRow[]; error: unknown | null }>
+>()
+const rpcInflight = new Map<
+  string,
+  Promise<{ rows: ReservationStatusAuditRow[]; error: unknown | null } | 'missing'>
+>()
+let statusTransitionsRpcMissing = false
+
+function isMissingStatusTransitionsRpcError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const rec = error as { code?: string; message?: string }
+  const code = String(rec.code ?? '')
+  const message = String(rec.message ?? '')
+  return (
+    code === 'PGRST202' ||
+    code === '42883' ||
+    /admin_reservation_status_transitions_in_range/i.test(message) ||
+    /could not find the function/i.test(message) ||
+    /schema cache/i.test(message)
+  )
+}
+
+async function fetchStatusTransitionsViaRpcCoalesced(
+  supabase: SupabaseClient<Database>,
+  rangeStartIso: string,
+  rangeEndIso: string
+): Promise<{ rows: ReservationStatusAuditRow[]; error: unknown | null } | 'missing'> {
+  if (statusTransitionsRpcMissing) return 'missing'
+  const key = timeRangeCacheKey(rangeStartIso, rangeEndIso)
+  const cached = readFreshRangeCache(key)
+  if (cached?.mergedRows) return { rows: cached.mergedRows, error: null }
+
+  const existing = rpcInflight.get(key)
+  if (existing) return existing
+
+  const promise = (async () => {
+    const { data, error } = await supabase.rpc('admin_reservation_status_transitions_in_range', {
+      p_range_start: rangeStartIso,
+      p_range_end: rangeEndIso,
+    })
+    if (error) {
+      if (isMissingStatusTransitionsRpcError(error)) {
+        statusTransitionsRpcMissing = true
+        return 'missing' as const
+      }
+      return { rows: [] as ReservationStatusAuditRow[], error }
+    }
+    const eventAuditRows = mapEventDbRowsToAuditRows(
+      (data || []).map((row) => ({
+        reservation_id: row.reservation_id,
+        from_status: row.from_status,
+        to_status: row.to_status,
+        occurred_at: row.occurred_at,
+      }))
+    )
+    rangeCache.set(key, {
+      at: Date.now(),
+      eventRows: eventAuditRows,
+      mergedRows: eventAuditRows,
+    })
+    return { rows: eventAuditRows, error: null }
+  })().finally(() => {
+    if (rpcInflight.get(key) === promise) rpcInflight.delete(key)
+  })
+
+  rpcInflight.set(key, promise)
+  return promise
+}
+
+function readFreshRangeCache(key: string): RangeCacheEntry | null {
+  const entry = rangeCache.get(key)
+  if (!entry) return null
+  if (Date.now() - entry.at > RANGE_CACHE_TTL_MS) {
+    rangeCache.delete(key)
+    return null
+  }
+  return entry
+}
+
+function mapEventDbRowsToAuditRows(rows: ReservationStatusEventDbRow[]): ReservationStatusAuditRow[] {
+  const eventAuditRows: ReservationStatusAuditRow[] = []
+  for (const row of rows) {
+    const mapped = reservationStatusEventRowToAuditRow(row)
+    if (reservationAuditRowHasStatusFieldChange(mapped)) eventAuditRows.push(mapped)
+  }
+  return eventAuditRows
+}
+
+/** 같은 주간 구간을 extras·심플 카드·차트가 동시에 기다리지 않도록 메모리 캐시 */
+export function peekCachedReservationStatusTransitionRows(
+  rangeStartIso: string,
+  rangeEndIso: string
+): ReservationStatusAuditRow[] | null {
+  const entry = readFreshRangeCache(timeRangeCacheKey(rangeStartIso, rangeEndIso))
+  if (!entry) return null
+  return entry.mergedRows ?? entry.eventRows
+}
 
 async function fetchReservationStatusEventsByTimeRange(
   supabase: SupabaseClient<Database>,
   args: {
     rangeStartIso: string
     rangeEndIso: string
-    shouldAbort?: () => boolean
   }
 ): Promise<{ rows: ReservationStatusEventDbRow[]; error: unknown | null }> {
   const rows: ReservationStatusEventDbRow[] = []
   let offset = 0
 
   for (;;) {
-    if (args.shouldAbort?.()) return { rows, error: null }
     const { data, error } = await supabase
       .from('reservation_status_events')
       .select('reservation_id, from_status, to_status, occurred_at')
@@ -227,14 +341,12 @@ async function fetchReservationStatusAuditLogsByTimeRange(
   args: {
     rangeStartIso: string
     rangeEndIso: string
-    shouldAbort?: () => boolean
   }
 ): Promise<{ rows: ReservationStatusAuditRow[]; error: unknown | null }> {
   const rows: ReservationStatusAuditRow[] = []
   let offset = 0
 
   for (;;) {
-    if (args.shouldAbort?.()) return { rows, error: null }
     const { data, error } = await supabase
       .from('audit_logs')
       .select('record_id, created_at, changed_fields, old_values, new_values')
@@ -265,8 +377,64 @@ async function fetchReservationStatusAuditLogsByTimeRange(
   return { rows, error: null }
 }
 
+async function fetchEventsAuditRowsCoalesced(
+  supabase: SupabaseClient<Database>,
+  rangeStartIso: string,
+  rangeEndIso: string
+): Promise<{ rows: ReservationStatusAuditRow[]; error: unknown | null }> {
+  const key = timeRangeCacheKey(rangeStartIso, rangeEndIso)
+  const cached = readFreshRangeCache(key)
+  if (cached) return { rows: cached.eventRows, error: null }
+
+  const existing = eventsInflight.get(key)
+  if (existing) return existing
+
+  const promise = fetchReservationStatusEventsByTimeRange(supabase, {
+    rangeStartIso,
+    rangeEndIso,
+  })
+    .then((result) => {
+      if (result.error) return { rows: [] as ReservationStatusAuditRow[], error: result.error }
+      const eventAuditRows = mapEventDbRowsToAuditRows(result.rows)
+      const prev = rangeCache.get(key)
+      rangeCache.set(key, {
+        at: Date.now(),
+        eventRows: eventAuditRows,
+        mergedRows: prev?.mergedRows ?? null,
+      })
+      return { rows: eventAuditRows, error: null }
+    })
+    .finally(() => {
+      if (eventsInflight.get(key) === promise) eventsInflight.delete(key)
+    })
+
+  eventsInflight.set(key, promise)
+  return promise
+}
+
+async function fetchAuditLogRowsCoalesced(
+  supabase: SupabaseClient<Database>,
+  rangeStartIso: string,
+  rangeEndIso: string
+): Promise<{ rows: ReservationStatusAuditRow[]; error: unknown | null }> {
+  const key = timeRangeCacheKey(rangeStartIso, rangeEndIso)
+  const existing = auditInflight.get(key)
+  if (existing) return existing
+
+  const promise = fetchReservationStatusAuditLogsByTimeRange(supabase, {
+    rangeStartIso,
+    rangeEndIso,
+  }).finally(() => {
+    if (auditInflight.get(key) === promise) auditInflight.delete(key)
+  })
+
+  auditInflight.set(key, promise)
+  return promise
+}
+
 /**
  * 예약 id IN 청크 대신 occurred_at/created_at 구간 스캔 — 통계 감사 대량 id 시 수십~수백 요청 절감.
+ * 같은 구간 요청은 in-flight·메모리 캐시로 합친다. 호출자 abort는 네트워크를 끊지 않고 결과만 버린다.
  */
 export async function fetchReservationStatusTransitionsByTimeRange(
   supabase: SupabaseClient<Database>,
@@ -279,27 +447,51 @@ export async function fetchReservationStatusTransitionsByTimeRange(
   }
 ): Promise<{ rows: ReservationStatusAuditRow[]; error: unknown | null }> {
   const includeAuditLogs = args.includeAuditLogs !== false
+  if (args.shouldAbort?.()) return { rows: [], error: null }
 
-  const eventsResult = await fetchReservationStatusEventsByTimeRange(supabase, args)
+  const rpcResult = await fetchStatusTransitionsViaRpcCoalesced(
+    supabase,
+    args.rangeStartIso,
+    args.rangeEndIso
+  )
+  if (args.shouldAbort?.()) return { rows: [], error: null }
+  if (rpcResult !== 'missing' && !rpcResult.error) {
+    return rpcResult
+  }
+
+  const eventsResult = await fetchEventsAuditRowsCoalesced(
+    supabase,
+    args.rangeStartIso,
+    args.rangeEndIso
+  )
+  if (args.shouldAbort?.()) return { rows: [], error: null }
   if (eventsResult.error) return { rows: [], error: eventsResult.error }
 
-  const eventAuditRows: ReservationStatusAuditRow[] = []
-  for (const row of eventsResult.rows) {
-    const mapped = reservationStatusEventRowToAuditRow(row)
-    if (reservationAuditRowHasStatusFieldChange(mapped)) eventAuditRows.push(mapped)
-  }
-
   if (!includeAuditLogs) {
-    return { rows: eventAuditRows, error: null }
+    return { rows: eventsResult.rows, error: null }
   }
 
-  const auditResult = await fetchReservationStatusAuditLogsByTimeRange(supabase, args)
+  const key = timeRangeCacheKey(args.rangeStartIso, args.rangeEndIso)
+  const cached = readFreshRangeCache(key)
+  if (cached?.mergedRows) {
+    return { rows: cached.mergedRows, error: null }
+  }
+
+  const auditResult = await fetchAuditLogRowsCoalesced(
+    supabase,
+    args.rangeStartIso,
+    args.rangeEndIso
+  )
+  if (args.shouldAbort?.()) return { rows: [], error: null }
   if (auditResult.error) return { rows: [], error: auditResult.error }
 
-  return {
-    rows: mergeStatusTransitionRows(eventAuditRows, auditResult.rows),
-    error: null,
-  }
+  const merged = mergeStatusTransitionRows(eventsResult.rows, auditResult.rows)
+  rangeCache.set(key, {
+    at: Date.now(),
+    eventRows: eventsResult.rows,
+    mergedRows: merged,
+  })
+  return { rows: merged, error: null }
 }
 
 /** `audit_logs`만 구간 스캔 — events 1차 로드 후 백그라운드 보완용 */
@@ -311,7 +503,30 @@ export async function fetchReservationStatusAuditLogsTransitionsByTimeRange(
     shouldAbort?: () => boolean
   }
 ): Promise<{ rows: ReservationStatusAuditRow[]; error: unknown | null }> {
-  return fetchReservationStatusAuditLogsByTimeRange(supabase, args)
+  if (args.shouldAbort?.()) return { rows: [], error: null }
+  const rpcResult = await fetchStatusTransitionsViaRpcCoalesced(
+    supabase,
+    args.rangeStartIso,
+    args.rangeEndIso
+  )
+  if (args.shouldAbort?.()) return { rows: [], error: null }
+  if (rpcResult !== 'missing' && !rpcResult.error) {
+    return rpcResult
+  }
+  const result = await fetchAuditLogRowsCoalesced(supabase, args.rangeStartIso, args.rangeEndIso)
+  if (args.shouldAbort?.()) return { rows: [], error: null }
+  if (!result.error) {
+    const key = timeRangeCacheKey(args.rangeStartIso, args.rangeEndIso)
+    const prev = rangeCache.get(key)
+    if (prev) {
+      rangeCache.set(key, {
+        at: Date.now(),
+        eventRows: prev.eventRows,
+        mergedRows: mergeStatusTransitionRows(prev.eventRows, result.rows),
+      })
+    }
+  }
+  return result
 }
 
 function indexStatusAuditRowsByRecordId(
