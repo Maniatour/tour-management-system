@@ -241,8 +241,19 @@ function getPrintStyles(): string {
     ${getScopedStyles()}
     ${getCanyonWaiverPrintStyles()}
     .cwf-page-break { break-before: page; page-break-before: always; }
-    .acx-duplex-start { break-before: right; page-break-before: right; }
+    .acx-duplex-start { break-before: page; page-break-before: always; }
     .mania-duplex-start { break-before: right; page-break-before: right; }
+  `
+}
+
+/** 앤텔롭 X 전용: 1페이지=앞면 waiver, 2페이지=뒷면 사인 폼이 한 장에 붙도록 여백을 맞춘다. */
+function getAntelopeXPrintStyles(): string {
+  return `
+    html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+    @page { size: letter; margin: 0.4in; }
+    ${getCanyonWaiverPrintStyles()}
+    .cwf-page-break { break-before: page; page-break-before: always; }
+    .acx-duplex-start { break-before: auto; page-break-before: auto; }
   `
 }
 
@@ -279,6 +290,19 @@ function waitForInkReady(root: HTMLElement, timeoutMs = 8000): Promise<void> {
 function maniaSignatureMarkup(source: HTMLElement): string {
   return Array.from(source.querySelectorAll('[data-print-section="mania-signatures"]'))
     .map((el, i) => (i === 0 ? el.outerHTML : `<div class="cwf-page-break">${el.outerHTML}</div>`))
+    .join('')
+}
+
+function antelopeXMarkup(source: HTMLElement): string {
+  return Array.from(source.querySelectorAll('[data-print-section="antelope-x"]'))
+    .map((el, i) => {
+      const clone = el.cloneNode(true) as HTMLElement
+      if (i === 0) {
+        clone.classList.remove('cwf-page-break', 'acx-duplex-start')
+        if (!clone.className.trim()) clone.removeAttribute('class')
+      }
+      return i === 0 ? clone.outerHTML : `<div class="cwf-page-break">${clone.outerHTML}</div>`
+    })
     .join('')
 }
 
@@ -443,11 +467,11 @@ export default function TourPrintModal({
       includeManiaWaiver: isKo ? '매니아 면책서 (양면)' : 'Mania waiver (duplex)',
       includeManiaSignatures: isKo ? '매니아 사인 폼 (단면)' : 'Mania signature form (simplex)',
       includeLower: isKo ? '로어 앤텔롭 (노란 용지)' : 'Lower Antelope (yellow paper)',
-      includeX: isKo ? '앤텔롭 X 면책 동의서' : 'Antelope X waiver',
+      includeX: isKo ? '앤텔롭 X 면책 동의서 (양면)' : 'Antelope X waiver (duplex)',
       waiverLoading: isKo ? '면책 서명 정보를 불러오는 중...' : 'Loading waiver signatures...',
       printPagesHint: isKo
-        ? '매니아 면책서는 양면(앞·뒤)으로, 사인 폼은 따로 단면 인쇄창이 뜹니다. 로어는 노란 원본 용지에 이름·서명만 100%로 찍습니다. 앤텔롭 X는 맨 마지막에 양면(앞=폼, 뒤=waiver, 긴 쪽 넘김)입니다.'
-        : 'Mania waiver prints duplex; the signature form opens in a separate simplex dialog. Lower Antelope prints names and signatures onto yellow stock at 100%. Antelope X prints last, duplex, flip on long edge.',
+        ? '매니아 면책서는 양면(앞·뒤)으로, 사인 폼은 따로 단면 인쇄창이 뜹니다. 로어는 노란 원본 용지에 이름·서명만 100%로 찍습니다. 앤텔롭 X는 마지막에 양면 인쇄창이 따로 뜹니다. 앞면=면책 동의서, 뒷면=사인 폼. 프린터에서 양면·긴 쪽 넘김을 선택하세요.'
+        : 'Mania waiver prints duplex; the signature form opens in a separate simplex dialog. Lower Antelope prints names and signatures onto yellow stock at 100%. Antelope X opens last as its own duplex job: waiver on the front, signature form on the back. Choose two-sided, flip on long edge.',
     }),
     [isKo]
   )
@@ -865,10 +889,12 @@ export default function TourPrintModal({
     const mmToPx = (mm: number) => (mm * DPI) / 25.4
     const availW = Math.round(8.5 * DPI - 2 * mmToPx(MARGIN_MM))
     const availH = Math.round(11 * DPI - 2 * mmToPx(MARGIN_MM))
-    const printWhitePages = includeTourInfo || printManiaWaiver || printX
+    const printWhitePages = includeTourInfo || printManiaWaiver
     const styles = getPrintStyles()
     const maniaSigHtml = printManiaSignatures ? maniaSignatureMarkup(target) : ''
     const overlayHtml = printLower ? lowerOverlayMarkup(target) : ''
+    const xHtml = printX ? antelopeXMarkup(target) : ''
+    const xAvailW = Math.round(8.5 * DPI - 2 * 0.4 * DPI)
 
     const printYellowStock = () => {
       if (!overlayHtml) return
@@ -882,9 +908,29 @@ export default function TourPrintModal({
       })
     }
 
+    const printAntelopeXSheets = () => {
+      if (!xHtml) {
+        printYellowStock()
+        return
+      }
+      printIframeDocument({
+        bodyHtml: xHtml,
+        title: isKo ? `${productName} - 앤텔롭 X 양면` : `${productName} - Antelope X duplex`,
+        styles: getAntelopeXPrintStyles(),
+        fitWidthPx: xAvailW,
+        ...(printLower
+          ? {
+              onAfterPrint: () => {
+                setTimeout(printYellowStock, 400)
+              },
+            }
+          : {}),
+      })
+    }
+
     const printManiaSignatureSheets = () => {
       if (!maniaSigHtml) {
-        printYellowStock()
+        printAntelopeXSheets()
         return
       }
       printIframeDocument({
@@ -894,10 +940,10 @@ export default function TourPrintModal({
           : `${productName} - Mania signature form`,
         styles,
         fitWidthPx: availW,
-        ...(printLower
+        ...(printX || printLower
           ? {
               onAfterPrint: () => {
-                setTimeout(printYellowStock, 400)
+                setTimeout(printAntelopeXSheets, 400)
               },
             }
           : {}),
@@ -909,6 +955,7 @@ export default function TourPrintModal({
       clone.removeAttribute('id')
       stripLowerOverlayPages(clone)
       stripPrintSection(clone, 'mania-signatures')
+      stripPrintSection(clone, 'antelope-x')
 
       printIframeDocument({
         bodyHtml: clone.innerHTML,
@@ -916,7 +963,7 @@ export default function TourPrintModal({
         styles,
         fitWidthPx: availW,
         scaleTourInfoToPx: availH,
-        ...(printManiaSignatures || printLower
+        ...(printManiaSignatures || printX || printLower
           ? {
               onAfterPrint: () => {
                 setTimeout(printManiaSignatureSheets, 400)
@@ -933,6 +980,10 @@ export default function TourPrintModal({
       }
       if (printManiaSignatures) {
         printManiaSignatureSheets()
+        return
+      }
+      if (printX) {
+        printAntelopeXSheets()
         return
       }
       printYellowStock()

@@ -56,14 +56,14 @@ export function normalizeScheduleDisplayReservations<T extends { tour_date?: unk
 
 /** 그리드·달력·OTA 집계에 필요한 예약 컬럼만 (폼 편집 시 단건 재조회) */
 export const SCHEDULE_DISPLAY_RESERVATION_SELECT =
-  'id, tour_date, product_id, total_people, status, customer_id, choices'
+  'id, tour_date, product_id, total_people, status, customer_id, choices, tour_language'
 
 /**
  * 관리자 스케줄뷰 — 그리드·상품 셀 모달에 필요한 예약 컬럼
  * (예약 폼 열 때는 id로 단건 `select('*')` 재조회)
  */
 export const SCHEDULE_ADMIN_RESERVATION_SELECT =
-  'id, tour_date, product_id, total_people, status, customer_id, choices, is_private_tour, created_at, pickup_hotel, tour_id'
+  'id, tour_date, product_id, total_people, status, customer_id, choices, is_private_tour, created_at, pickup_hotel, tour_id, tour_language'
 
 /** 스케줄 디스플레이·관리자 스케줄뷰 공통 투어 조회 컬럼 (편집·배정에 필요한 필드) */
 export const SCHEDULE_DISPLAY_TOUR_SELECT =

@@ -14,6 +14,7 @@ import {
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
+import { formatTourLanguageAdminLabel, reservationOpsLanguageBucket } from '@/lib/reservationTourLanguage'
 import { normalizeTourLanguageToken } from '@/lib/tourHighlightLanguages'
 
 type TourRow = {
@@ -48,6 +49,7 @@ type ReservationRow = {
   status: string | null
   channel_id: string | null
   canyon_choice?: string | null
+  tour_language?: string | null
 }
 
 type ChannelRow = { id: string; name?: string | null; name_ko?: string | null }
@@ -329,7 +331,9 @@ export default function AutoAssignModal({
   }, [])
 
   const getReservationLanguage = useCallback((res: ReservationRow | undefined): string => {
-    if (!res?.customer_id) return ''
+    if (!res) return ''
+    if (res.tour_language) return reservationOpsLanguageBucket(res.tour_language, customerLanguages.get(res.customer_id || '') ?? getCustomerLanguage(res.customer_id || ''))
+    if (!res.customer_id) return ''
     return customerLanguages.get(res.customer_id) ?? getCustomerLanguage(res.customer_id)
   }, [customerLanguages, getCustomerLanguage])
 
@@ -748,7 +752,7 @@ export default function AutoAssignModal({
           supabase.from('tours').select('id, tour_guide_id, assistant_id, reservation_ids, tour_car_id, tour_status').eq('product_id', productId).eq('tour_date', tourDate),
           supabase.from('team').select('email, languages, name_ko, nick_name'),
           supabase.from('vehicles').select('id, capacity, nick, vehicle_number, vehicle_type, vehicle_category, rental_company, rental_start_date, rental_end_date').eq('operator_id', activeOperatorId),
-          supabase.from('reservations').select('id, customer_id, pickup_hotel, adults, child, infant, status, channel_id, canyon_choice').eq('product_id', productId).eq('tour_date', tourDate),
+          supabase.from('reservations').select('id, customer_id, pickup_hotel, adults, child, infant, status, channel_id, canyon_choice, tour_language').eq('product_id', productId).eq('tour_date', tourDate),
           supabase
             .from('pickup_hotels')
             .select('id, hotel, pick_up_location')
@@ -1096,6 +1100,9 @@ export default function AutoAssignModal({
                               <div key={`${tour.id}-${idx}-${rid}`} className="rounded border bg-white p-2 text-xs">
                                 <div className="flex items-center flex-wrap gap-1.5">
                                   <ReactCountryFlag countryCode={getFlagCode(lang)} svg style={{ width: '16px', height: '12px' }} />
+                                  <span className="rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium text-slate-700">
+                                    {formatTourLanguageAdminLabel(res?.tour_language, lang)}
+                                  </span>
                                   <span className="font-medium text-gray-900">{name}</span>
                                   <span className="flex items-center gap-0.5 bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">
                                     <Users size={10} />
@@ -1209,6 +1216,9 @@ export default function AutoAssignModal({
                               <div key={`${tour.id}-${idx}-${rid}`} className="rounded border bg-white p-2 text-xs relative">
                                 <div className="flex items-center flex-wrap gap-1.5">
                                   <ReactCountryFlag countryCode={getFlagCode(lang)} svg style={{ width: '16px', height: '12px' }} />
+                                  <span className="rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium text-slate-700">
+                                    {formatTourLanguageAdminLabel(res?.tour_language, lang)}
+                                  </span>
                                   <span className="font-medium text-gray-900">{name}</span>
                                   <span className="flex items-center gap-0.5 bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">
                                     <Users size={10} />

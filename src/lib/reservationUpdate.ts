@@ -40,6 +40,7 @@ import {
   reservationHasPartnerReturnedRefundLine,
 } from '@/lib/cancelDepositRefundPaymentRecord'
 import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
+import { resolveReservationTourLanguage } from '@/lib/reservationTourLanguage'
 
 const UNDECIDED_OPTION_ID = '__undecided__'
 const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
@@ -253,6 +254,10 @@ export async function updateReservation(
       variant_key: payload.variantKey ?? 'default',
       // 관리자가 예약 내용을 확인하고 저장하면 자동 추가 강조를 해제
       import_needs_review: false,
+      tour_language: resolveReservationTourLanguage({
+        explicitTourLanguage: payload.tourLanguage,
+        customerLanguage: payload.customerLanguage,
+      }),
     }
 
     const { error } = await (supabase as any)

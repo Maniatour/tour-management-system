@@ -8,6 +8,7 @@ import { useTranslations } from 'next-intl'
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - react-country-flag may lack types
 import ReactCountryFlag from 'react-country-flag'
+import TourLanguageBadge from '@/components/reservation/TourLanguageBadge'
 import { 
   getPickupHotelDisplay, 
   getCustomerName, 
@@ -992,6 +993,14 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             if (hideAssignedTourUi) {
               return (
                 <div className="flex items-start gap-1 min-w-0">
+                  <TourLanguageBadge
+                    tourLanguage={reservation.tourLanguage}
+                    customerLanguage={
+                      customers.find((c) => c.id === reservation.customerId)?.language ?? null
+                    }
+                    locale={locale}
+                    compact
+                  />
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-gray-600">
                     <span
                       className="inline-flex items-center gap-1 tabular-nums"
@@ -1040,6 +1049,14 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             const assignedN = tourInfo?.totalPeople ?? null
             return (
               <div className="flex items-center gap-1 min-w-0">
+                <TourLanguageBadge
+                  tourLanguage={reservation.tourLanguage}
+                  customerLanguage={
+                    customers.find((c) => c.id === reservation.customerId)?.language ?? null
+                  }
+                  locale={locale}
+                  compact
+                />
                 <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] leading-none text-gray-800 min-w-0 flex-1">
                   <button
                     type="button"

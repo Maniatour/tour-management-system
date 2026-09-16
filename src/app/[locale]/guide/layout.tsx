@@ -36,6 +36,7 @@ import { GuidePickupGeofenceProvider } from '@/contexts/GuidePickupGeofenceConte
 import { guidePathWithAppLocale, guidePreferredAppLocale } from '@/lib/guideLanguageDetection'
 import { persistPwaStartPath } from '@/lib/pwaStartUrl'
 import { tourReportRequiredDateRange } from '@/lib/tourReportExtras'
+import { assignedToursOrFilter } from '@/lib/guideAssignedToursFilter'
 
 interface GuideLayoutProps {
   children: React.ReactNode
@@ -410,7 +411,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
       const { data: toursData, error } = await supabaseClient
         .from('tours')
         .select('id, tour_date, tour_guide_id, assistant_id')
-        .or(`tour_guide_id.eq.${currentUserEmail},assistant_id.eq.${currentUserEmail}`)
+        .or(assignedToursOrFilter(currentUserEmail))
         .gte('tour_date', range.from)
         .lte('tour_date', range.to)
         .order('tour_date', { ascending: false })

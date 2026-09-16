@@ -47,7 +47,10 @@ import {
 import { isZellePaymentSentEmail } from '@/lib/zellePaymentEmail'
 import { isWellsFargoAtmReceiptEmail } from '@/lib/wellsFargoAtmReceipt'
 import { isPickupImportNotDecidedLabel } from '@/lib/reservationImportPickup'
-import { resolveImportCustomerLanguage } from '@/lib/importCustomerLanguage'
+import {
+  resolveImportCustomerLanguage,
+  resolveImportTourLanguage,
+} from '@/lib/importCustomerLanguage'
 import type { ExtractedReservationData } from '@/types/reservationImport'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -468,6 +471,7 @@ export async function tryAutoConfirmReservationImport(
     ...(merged.customer_email ? { customer_email: merged.customer_email } : {}),
     ...(merged.customer_phone ? { customer_phone: merged.customer_phone } : {}),
     customer_language: resolveImportCustomerLanguage(merged, row.platform_key),
+    tour_language: resolveImportTourLanguage(merged, row.platform_key),
     product_id: productId,
     tour_date: tourDate,
     tour_time: merged.tour_time ?? null,

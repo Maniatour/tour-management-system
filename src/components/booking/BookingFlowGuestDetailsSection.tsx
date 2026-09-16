@@ -530,7 +530,7 @@ export default function BookingFlowGuestDetailsSection({
 
       <div>
         <label className="mb-2 block text-sm font-medium text-gray-700">
-          {translate('선호 투어 언어 (복수 선택 가능)', 'Preferred Tour Languages (multiple selection)')}
+          {translate('투어 신청 언어 *', 'Tour Language *')}
         </label>
         <div className="grid max-h-60 grid-cols-2 gap-2 overflow-y-auto rounded-lg border border-gray-200 p-3 md:grid-cols-3 lg:grid-cols-4">
           {tourLanguages.map((language) => (
@@ -539,15 +539,11 @@ export default function BookingFlowGuestDetailsSection({
               className="flex cursor-pointer items-center space-x-2 rounded p-2 transition-colors hover:bg-gray-50"
             >
               <input
-                type="checkbox"
+                type="radio"
+                name="booking-tour-language"
                 checked={customerInfo.tourLanguages.includes(language.code)}
-                onChange={(e) => {
-                  const newLanguages = e.target.checked
-                    ? [...customerInfo.tourLanguages, language.code]
-                    : customerInfo.tourLanguages.filter((lang) => lang !== language.code)
-                  onCustomerInfoChange({ tourLanguages: newLanguages })
-                }}
-                className="h-4 w-4 rounded text-primary focus:ring-ring"
+                onChange={() => onCustomerInfoChange({ tourLanguages: [language.code] })}
+                className="h-4 w-4 text-primary focus:ring-ring"
               />
               <span className="text-sm text-gray-900">
                 {isEnglish ? language.nameEn : language.nameKo}

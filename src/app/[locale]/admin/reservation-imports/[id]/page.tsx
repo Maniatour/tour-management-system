@@ -451,6 +451,8 @@ export default function ReservationImportDetailPage() {
           customer_name: (payload.customerName as string) || undefined,
           customer_email: (payload.customerEmail as string) || undefined,
           customer_phone: (payload.customerPhone as string) || undefined,
+          customer_language: (payload.customerLanguage as string) || undefined,
+          tour_language: (payload.tourLanguage as string) || undefined,
           product_id: payload.productId,
           tour_date: payload.tourDate,
           tour_time: (payload.tourTime as string) || null,
@@ -889,6 +891,7 @@ export default function ReservationImportDetailPage() {
           ...((ext?.customer_phone ?? form.customer_phone) ? { customer_phone: ext?.customer_phone ?? form.customer_phone } : {}),
           ...(ext?.emergency_contact ? { emergency_contact: ext.emergency_contact } : {}),
           ...(ext?.language ? { customer_language: ext.language } : {}),
+          ...(ext?.tour_language ? { tour_language: ext.tour_language } : {}),
         }}
         initialShowNewCustomerForm={Boolean(normalizeCustomerNameFromImport(ext?.customer_name) || ext?.customer_name || form.customer_name)}
         {...(ext?.import_choice_option_names ? { initialChoiceOptionNamesFromImport: ext.import_choice_option_names } : {})}

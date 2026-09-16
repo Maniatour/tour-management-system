@@ -118,6 +118,8 @@ export interface Reservation {
   hasExistingTour?: boolean // 투어 존재 여부
   /** reservations.customer_communication_channel — 고객 소통 채널(간단 카드) */
   customerCommunicationChannel?: string | null
+  /** reservations.tour_language — 투어 신청 언어 (ko/en/ja). 고객 모국어와 별개 */
+  tourLanguage?: string | null
   
   // 가격 관련 속성들 (formData에서 사용)
   adultProductPrice?: number

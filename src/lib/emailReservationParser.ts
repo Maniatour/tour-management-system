@@ -977,6 +977,21 @@ function extractGygPickupHotelFromText(text: string): string | undefined {
   return value.length >= 3 ? value : undefined
 }
 
+const GYG_TOUR_LANGUAGE_NAME =
+  /(japanese|english|korean|spanish|french|german|italian|portuguese|chinese|russian|arabic|thai|vietnamese|indonesian|日本語|영어|한국어|중국어|스페인어|프랑스어|\bja\b|\bjp\b|\ben\b|\bko\b|\bkr\b)/i
+
+/** GyG "Tour language" / "Tour language\nJapanese (Live tour guide)" 값 추출 */
+function extractGygTourLanguageRaw(text: string): string | undefined {
+  const labelRe = /(?:tour\s*language|tour\s*lang)\s*:?/gi
+  let found: RegExpExecArray | null
+  while ((found = labelRe.exec(text)) != null) {
+    const after = text.slice(found.index + found[0].length, found.index + found[0].length + 180)
+    const named = after.match(GYG_TOUR_LANGUAGE_NAME)
+    if (named?.[0]) return named[0].trim()
+  }
+  return undefined
+}
+
 /** GetYourGuide 예약 메일 전용 추출 (라벨 기반) */
 function extractGetYourGuide(
   text: string,
@@ -1050,12 +1065,12 @@ function extractGetYourGuide(
     if (phoneAlt) out.customer_phone = phoneAlt[1].trim()
   }
 
-  // Tour language: "English (Live tour guide)" / Customer language: "Language: Spanish" (보통 Phone 다음 줄)
-  const tourLang = text.match(/(?:tour\s*language|tour\s*lang)\s*:?\s*([A-Za-z\s()]+?)(?:\s*(?:pickup|date|price|\n|$))/im)
-  const tourLanguageRaw = tourLang ? tourLang[1].trim() : undefined
+  // Tour language: "English (Live tour guide)" / 줄바꿈 "Tour language\nJapanese (Live tour guide)"
+  const tourLanguageRaw = extractGygTourLanguageRaw(text)
   // "Tour language:"는 제외: 단독 "Language:" 또는 "Customer language:"만 고객 언어로 매칭 (negative lookbehind)
   const customerLang = text.match(/(?:customer\s*language|(?<!tour\s)language)\s*:\s*([A-Za-z][A-Za-z\s()]*?)(?:\s*(?:tour\s*language|date|pickup)|\n\n|$)/im)
   const customerLanguageRaw = customerLang ? customerLang[1].trim() : undefined
+  if (tourLanguageRaw) out.tour_language = normalizeLanguageToCode(tourLanguageRaw)
   // 고객 언어가 있으면 고객 언어, 없으면 투어 언어로 매칭 (새 예약 추가 - 고객 언어 드롭다운용)
   const effectiveRaw = customerLanguageRaw ?? tourLanguageRaw
   if (effectiveRaw) out.language = normalizeLanguageToCode(effectiveRaw)
@@ -2017,9 +2032,14 @@ function extractViator(
     out.customer_phone = phone
   }
 
-  // Tour Language: English - Guide → 고객 언어 EN (줄 끝까지 캡처 후 정규화)
+  // Tour Language: English - Guide → 투어 신청 언어. 고객 언어는 전화번호 우선.
   const tourLang = normalized.match(/(?:Tour\s*[Ll]anguage)\s*:?\s*([^\n]+)/m)
-  if (tourLang) out.language = normalizeLanguageToCode(tourLang[1].trim())
+  if (tourLang) out.tour_language = normalizeLanguageToCode(tourLang[1].trim())
+  if (!out.language && out.customer_phone?.trim()) {
+    const langFromPhone = languageFromPhoneCountry(out.customer_phone.trim())
+    if (langFromPhone) out.language = langFromPhone
+  }
+  if (!out.language && out.tour_language) out.language = out.tour_language
 
   // Tour Name / Tour Option — HTML→텍스트 후 한 줄이 아니거나 레이블 순서가 바뀌어도 잡히도록 멀티라인·폴백
   let rawName = ''

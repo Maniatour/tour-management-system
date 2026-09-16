@@ -32,6 +32,7 @@ import {
 } from '@/lib/choicePricingUnit'
 import { choiceProcessingFeeAmount, parseApplyProcessingFee } from '@/lib/choiceProcessingFee'
 import { notifyStaffOfCustomerPayment } from '@/lib/customerPaymentNotifications'
+import { resolveReservationTourLanguage } from '@/lib/reservationTourLanguage'
 
 /** @deprecated Prefer KOVEgAS_DIRECT_CHANNEL_ID — kept for existing imports */
 export const HOMEPAGE_CHANNEL_ID = KOVEgAS_DIRECT_CHANNEL_ID
@@ -67,6 +68,8 @@ export type CustomerBookingCustomerInput = {
   email: string
   phone: string
   language?: string | null
+  /** 웹 예약 선호 투어 언어 (ko/en/ja). reservations.tour_language 로 저장 */
+  tourLanguages?: string[] | null
   specialRequests?: string | null
   localContactChannel?: string | null
   localContactChannels?: string[]
@@ -202,6 +205,11 @@ export function parseCustomerBookingCustomer(raw: unknown): CustomerBookingCusto
     email,
     phone,
     language: typeof o.customerLanguage === 'string' ? o.customerLanguage : typeof o.language === 'string' ? o.language : null,
+    tourLanguages: Array.isArray(o.tourLanguages)
+      ? o.tourLanguages.filter((item): item is string => typeof item === 'string')
+      : typeof o.tourLanguage === 'string'
+        ? [o.tourLanguage]
+        : [],
     specialRequests: typeof o.specialRequests === 'string' ? o.specialRequests : null,
     localContactChannel: localContactChannels[0] ?? null,
     localContactChannels,
@@ -1232,6 +1240,10 @@ export async function createPendingCustomerBooking(
     customer_id: customerId,
     tour_date: args.line.tourDate,
     tour_time: args.line.tourTime || null,
+    tour_language: resolveReservationTourLanguage({
+      preferredTourLanguages: args.customer.tourLanguages,
+      customerLanguage: args.customer.language,
+    }),
     adults: args.line.adults,
     child: args.line.child,
     infant: args.line.infant,

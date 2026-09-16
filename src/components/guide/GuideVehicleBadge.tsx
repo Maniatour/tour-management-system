@@ -15,12 +15,14 @@ function isPdfUrl(url: string): boolean {
 
 interface GuideVehicleBadgeProps {
   vehicleNumber?: string | null
+  vehicleNick?: string | null
   rentalAgreementFileUrl?: string | null
   unassignedLabel: string
 }
 
 export default function GuideVehicleBadge({
   vehicleNumber,
+  vehicleNick,
   rentalAgreementFileUrl,
   unassignedLabel,
 }: GuideVehicleBadgeProps) {
@@ -29,7 +31,7 @@ export default function GuideVehicleBadge({
 
   const agreementUrl = rentalAgreementFileUrl?.trim() || ''
   const hasAgreement = agreementUrl.length > 0
-  const label = vehicleNumber || unassignedLabel
+  const label = vehicleNick?.trim() || vehicleNumber || unassignedLabel
 
   const handleClick = (e: React.MouseEvent) => {
     if (!hasAgreement) return
@@ -85,8 +87,8 @@ export default function GuideVehicleBadge({
                 >
                   <FileText className="h-4 w-4 shrink-0 text-primary" />
                   <span className="truncate">{t('rentalAgreementTitle')}</span>
-                  {vehicleNumber ? (
-                    <span className="truncate text-gray-500">· {vehicleNumber}</span>
+                  {label !== unassignedLabel ? (
+                    <span className="truncate text-gray-500">· {label}</span>
                   ) : null}
                 </h3>
                 <button

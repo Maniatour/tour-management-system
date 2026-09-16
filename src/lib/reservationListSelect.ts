@@ -33,6 +33,7 @@ export const RESERVATION_LIST_SELECT = [
   'customer_communication_channel',
   'date_change_live_reservation_id',
   'date_change_placeholder_reservation_id',
+  'tour_language',
 ].join(',') + ',channels(name)'
 
 /** 통계·등록/취소 차트 전용 — embed·JSON 없이 전송량 최소화 (상품·채널 분해용 id 포함) */

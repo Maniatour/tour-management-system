@@ -1,4 +1,5 @@
 import { doesGuideSupportLanguage, type TeamLanguageData } from '@/lib/guideLanguageDetection'
+import { reservationOpsLanguageBucket } from '@/lib/reservationTourLanguage'
 
 export type ScheduleGuestLangBucket = 'ko' | 'ja' | 'en'
 export type ScheduleRequiredGuideLang = 'ko' | 'ja'
@@ -57,6 +58,13 @@ export function customerLanguageToScheduleBucket(
     return 'ja'
   }
   return 'en'
+}
+
+export function reservationToScheduleBucket(
+  tourLanguage: string | null | undefined,
+  customerLanguage: string | null | undefined,
+): ScheduleGuestLangBucket {
+  return reservationOpsLanguageBucket(tourLanguage, customerLanguage)
 }
 
 export function collectStaffScheduleLocales(

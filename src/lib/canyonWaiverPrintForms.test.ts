@@ -129,9 +129,9 @@ test('ageOnTourDate uses tour date', () => {
   assert.equal(ageOnTourDate(null, '2026-09-02'), null)
 })
 
-test('antelope X duplex page numbers are form front then waiver back', () => {
-  assert.equal(antelopeXDuplexPageNumber(0, 'form'), 1)
-  assert.equal(antelopeXDuplexPageNumber(0, 'waiver'), 2)
-  assert.equal(antelopeXDuplexPageNumber(1, 'form'), 3)
-  assert.equal(antelopeXDuplexPageNumber(1, 'waiver'), 4)
+test('antelope X duplex page numbers are waiver front then form back', () => {
+  assert.equal(antelopeXDuplexPageNumber(0, 'waiver'), 1)
+  assert.equal(antelopeXDuplexPageNumber(0, 'form'), 2)
+  assert.equal(antelopeXDuplexPageNumber(1, 'waiver'), 3)
+  assert.equal(antelopeXDuplexPageNumber(1, 'form'), 4)
 })

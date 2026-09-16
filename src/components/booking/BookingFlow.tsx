@@ -313,7 +313,8 @@ const allLanguages = [
 // 투어 언어 옵션 (영어, 한국어만)
 const tourLanguages = [
   { code: 'ko', nameKo: '한국어', nameEn: 'Korean' },
-  { code: 'en', nameKo: '영어', nameEn: 'English' }
+  { code: 'en', nameKo: '영어', nameEn: 'English' },
+  { code: 'ja', nameKo: '일본어', nameEn: 'Japanese' }
 ]
 
 type BookingPaymentCompleteResult = {
@@ -708,16 +709,22 @@ export default function BookingFlow({
   const getDefaultCustomerInfo = () => {
     if (locale === 'ko') {
       return {
-        country: 'KR', // 대한민국
-        customerLanguage: 'ko', // 한국어
-        tourLanguages: ['ko'] // 한국어
+        country: 'KR',
+        customerLanguage: 'ko',
+        tourLanguages: ['ko']
       }
-    } else {
+    }
+    if (locale === 'ja') {
       return {
-        country: 'US', // 미국
-        customerLanguage: 'en', // 영어
-        tourLanguages: ['en'] // 영어
+        country: 'JP',
+        customerLanguage: 'ja',
+        tourLanguages: ['ja']
       }
+    }
+    return {
+      country: 'US',
+      customerLanguage: 'en',
+      tourLanguages: ['en']
     }
   }
 

@@ -19,6 +19,10 @@ import {
   fetchGuideToursVisibleUntil,
   filterToursByGuideVisibleUntil,
 } from '@/lib/guideToursVisibleUntil'
+import {
+  assignedToursOrFilter,
+  GUIDE_PORTAL_TOUR_LIST_SELECT,
+} from '@/lib/guideAssignedToursFilter'
 import { GuideBackupTourBadge } from '@/components/guide/GuideBackupTourBadge'
 import { isGuideBackupTour } from '@/lib/guideBackupTour'
 
@@ -82,13 +86,11 @@ export default function GuideTours({}: GuideToursProps) {
   const { data: toursData, loading: toursLoading } = useOptimizedData({
     fetchFn: async () => {
       // 관리자/매니저는 모든 투어를, 투어 가이드는 배정된 투어만 가져오기
-      let query = supabase.from('tours').select('*')
+      let query = supabase.from('tours').select(GUIDE_PORTAL_TOUR_LIST_SELECT as '*')
       
-      if (userRole === 'team_member') {
-        // 투어 가이드는 배정된 투어만
-        query = query.or(`tour_guide_id.eq.${currentUserEmail},assistant_id.eq.${currentUserEmail}`)
+      if (userRole === 'team_member' || isSimulating) {
+        query = query.or(assignedToursOrFilter(currentUserEmail || ''))
       }
-      // 관리자/매니저는 모든 투어를 볼 수 있음
 
       const guideVisibleUntil = await fetchGuideToursVisibleUntil(supabase)
       const applyGuideVisibleCutoff = userRole === 'team_member' || isSimulating

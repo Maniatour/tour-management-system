@@ -4,6 +4,7 @@ import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAg
 import { isManiatourHomepageBookingEmail } from '@/lib/emailReservationParser'
 import {
   resolveImportCustomerLanguage,
+  resolveImportTourLanguage,
   shouldReplaceDefaultImportCustomerLanguage,
 } from '@/lib/importCustomerLanguage'
 import type { ExtractedReservationData } from '@/types/reservationImport'
@@ -225,6 +226,8 @@ export interface ConfirmReservationImportBody {
   customer_phone?: string
   /** 고객 언어 코드 (KR, EN, ES, …). 없으면 이메일 추출값/전화번호/채널로 추정 */
   customer_language?: string
+  /** 투어 신청 언어 (ko/en/ja 또는 KR/EN/JA). 없으면 한국인 ko, 그 외 en, 명시된 일본어 신청만 ja */
+  tour_language?: string
   product_id: string
   tour_date: string
   tour_time?: string | null
@@ -413,6 +416,17 @@ export async function confirmReservationImport(
     canyon_choice: enrichedChoices.canyonChoice,
     variant_key: body.variant_key ?? 'default',
     import_needs_review: String(body.added_by || '').startsWith(AUTO_CONFIRM_ADDED_BY),
+    tour_language: resolveImportTourLanguage(
+      {
+        ...((importRow.extracted_data && typeof importRow.extracted_data === 'object'
+          ? (importRow.extracted_data as ExtractedReservationData)
+          : {}) as ExtractedReservationData),
+        ...(body.tour_language ? { tour_language: body.tour_language } : {}),
+        ...(body.customer_language ? { language: body.customer_language } : {}),
+        ...(body.customer_phone ? { customer_phone: body.customer_phone } : {}),
+      },
+      importRow.platform_key
+    ),
   }
 
   const { error: insertReservationError } = await client

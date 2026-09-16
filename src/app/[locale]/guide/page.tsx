@@ -22,6 +22,10 @@ import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
 import { fetchPersonallyRespondedTourIds } from '@/lib/guideAssignmentStatus'
 import { translateOffScheduleReason } from '@/lib/offScheduleReasonI18n'
 import {
+  assignedToursOrFilter,
+  GUIDE_PORTAL_TOUR_LIST_SELECT,
+} from '@/lib/guideAssignedToursFilter'
+import {
   fetchGuideToursVisibleUntil,
   filterToursByGuideVisibleUntil,
 } from '@/lib/guideToursVisibleUntil'
@@ -45,6 +49,7 @@ type ExtendedTour = Omit<Tour, 'assignment_status'> & {
   assistant_name?: string | null;
   assistant_name_en?: string | null;
   vehicle_number?: string | null;
+  vehicle_nick?: string | null;
   rental_agreement_file_url?: string | null;
 }
 
@@ -368,8 +373,8 @@ export default function GuideDashboard() {
 
         const { data: toursData, error } = await supabase
           .from('tours')
-          .select('*')
-          .or(`tour_guide_id.eq.${currentUserEmail},assistant_id.eq.${currentUserEmail}`)
+          .select(GUIDE_PORTAL_TOUR_LIST_SELECT as '*')
+          .or(assignedToursOrFilter(currentUserEmail))
           .gte('tour_date', thirtyDaysAgoStr)
           .order('tour_date', { ascending: false })
           .limit(50)
@@ -629,10 +634,8 @@ export default function GuideDashboard() {
     const loadTours = async () => {
       try {
         setLoading(true)
-        console.log('Starting to load tours for user:', currentUserEmail)
 
         if (!currentUserEmail) {
-          console.log('No current user email, skipping tour load')
           return
         }
 
@@ -664,41 +667,26 @@ export default function GuideDashboard() {
         thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30)
         const thirtyDaysLaterStr = thirtyDaysLater.toISOString().split('T')[0]
 
-        const guideVisibleUntil = await fetchGuideToursVisibleUntil(supabase)
         const applyGuideVisibleCutoff = userRole === 'team_member' || isSimulating
-        const upperBound =
-          applyGuideVisibleCutoff && guideVisibleUntil && guideVisibleUntil < thirtyDaysLaterStr
-            ? guideVisibleUntil
-            : thirtyDaysLaterStr
+        const restrictToAssigned = userRole === 'team_member' || isSimulating
 
-        console.log('Tour query date range:', { 
-          from: thirtyDaysAgoStr, 
-          to: upperBound, 
-          today: today,
-          guideVisibleUntil,
-          currentUserEmail,
-          userRole,
-          isSimulating
-        })
-
-        // 사용자 역할에 따라 투어 쿼리 조건 설정
         let tourQuery = supabase
           .from('tours')
-          .select('*')
+          .select(GUIDE_PORTAL_TOUR_LIST_SELECT as '*')
           .gte('tour_date', thirtyDaysAgoStr)
-          .lte('tour_date', upperBound)
+          .lte('tour_date', thirtyDaysLaterStr)
           .order('tour_date', { ascending: true })
           .limit(100)
 
-        // 일반 가이드는 배정된 투어만, 관리자/매니저는 모든 투어
-        if (userRole === 'admin' || userRole === 'manager') {
-          console.log('Admin/Manager: Loading all tours')
-        } else {
-          console.log('Guide: Loading assigned tours only')
-          tourQuery = tourQuery.or(`tour_guide_id.eq.${currentUserEmail},assistant_id.eq.${currentUserEmail}`)
+        if (restrictToAssigned) {
+          tourQuery = tourQuery.or(assignedToursOrFilter(currentUserEmail))
         }
 
-        const { data: toursData, error } = await tourQuery as { data: Tour[] | null; error: Error | null }
+        const [tourResult, guideVisibleUntil] = await Promise.all([
+          tourQuery,
+          fetchGuideToursVisibleUntil(supabase),
+        ])
+        const { data: toursData, error } = tourResult as { data: Tour[] | null; error: Error | null }
 
         if (error) {
           console.error('Error loading tours:', error)
@@ -709,151 +697,12 @@ export default function GuideDashboard() {
           ? filterToursByGuideVisibleUntil(toursData || [], guideVisibleUntil)
           : (toursData || [])
 
-        console.log('Raw tours data from database:', toursWithinGuideHorizon)
-        
-        // 오늘 날짜의 투어가 있는지 확인
-        const todayTours = toursWithinGuideHorizon.filter(tour => tour.tour_date === today)
-        console.log('Today tours in raw data:', todayTours.map(t => ({ 
-          id: t.id, 
-          tour_date: t.tour_date, 
-          product_id: t.product_id,
-          tour_guide_id: t.tour_guide_id,
-          assistant_id: t.assistant_id
-        })))
-
-        // 상품 정보 가져오기
         const productIds = [...new Set(toursWithinGuideHorizon.map(tour => tour.product_id).filter((id): id is string => Boolean(id)))]
-        let productMap = new Map()
-        let productEnMap = new Map()
-        let productInternalKoMap = new Map()
-        let productInternalEnMap = new Map()
-        
-        if (productIds.length > 0) {
-          const { data: productsData } = await supabase
-            .from('products')
-            .select('id, name, name_en, name_ko, customer_name_en, customer_name_ko')
-            .in('id', productIds) as { data: { id: string; name: string; name_en: string | null; name_ko: string | null; customer_name_en: string | null; customer_name_ko: string | null }[] | null }
-          
-          // 디버깅을 위한 로그
-          console.log('Products Data Debug:', productsData)
-          
-          productMap = new Map((productsData || []).map(p => [p.id, p.customer_name_ko || p.name_ko || p.name]))
-          // 영어 맵: 영어 이름만 사용 (한글 이름은 fallback으로 사용하지 않음)
-          productEnMap = new Map((productsData || []).map(p => [p.id, p.customer_name_en || p.name_en || null]))
-          productInternalKoMap = new Map((productsData || []).map(p => [p.id, p.name_ko || p.name]))
-          productInternalEnMap = new Map((productsData || []).map(p => [p.id, p.name_en || null]))
-          
-          // 디버깅을 위한 로그
-          console.log('Product Maps Debug:', {
-            productMap: Array.from(productMap.entries()),
-            productEnMap: Array.from(productEnMap.entries())
-          })
-        }
-
-        // 팀원 정보 가져오기
-        const guideEmails = [...new Set(toursWithinGuideHorizon.map(tour => tour.tour_guide_id).filter((e): e is string => Boolean(e)))]
-        const assistantEmails = [...new Set(toursWithinGuideHorizon.map(tour => tour.assistant_id).filter((e): e is string => Boolean(e)))]
-        const allEmails = [...new Set([...guideEmails, ...assistantEmails])]
-        
-        let teamMap = new Map()
-        let teamEnMap = new Map()
-        if (allEmails.length > 0) {
-          try {
-            // 먼저 직접 조회 시도 (더 안전한 방식)
-            const { data: directData, error: directError } = await supabase
-              .from('team')
-              .select('email, name_ko, name_en, nick_name')
-              .in('email', allEmails)
-            
-            if (!directError && directData) {
-              type TeamNameRow = {
-                email: string
-                name_ko: string
-                name_en: string
-                nick_name?: string | null
-              }
-              teamMap = new Map(
-                ((directData as TeamNameRow[]) || []).map((member) => [
-                  member.email,
-                  teamMemberNameForLocale(member, 'ko'),
-                ])
-              )
-              teamEnMap = new Map(
-                ((directData as TeamNameRow[]) || []).map((member) => [
-                  member.email,
-                  teamMemberNameForLocale(member, 'en'),
-                ])
-              )
-            } else {
-              // 직접 조회 실패 시 RPC 함수 시도 (fallback)
-              console.log('Direct query failed, trying RPC function...', directError)
-              
-              const { data: rpcData, error: rpcError } = await supabase
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                .rpc('get_team_members_info', { p_emails: allEmails } as any)
-              
-              if (!rpcError && rpcData) {
-                type TeamNameRow = {
-                  email: string
-                  name_ko: string
-                  name_en: string
-                  nick_name?: string | null
-                }
-                teamMap = new Map(
-                  ((rpcData as TeamNameRow[]) || []).map((member) => [
-                    member.email,
-                    teamMemberNameForLocale(member, 'ko'),
-                  ])
-                )
-                teamEnMap = new Map(
-                  ((rpcData as TeamNameRow[]) || []).map((member) => [
-                    member.email,
-                    teamMemberNameForLocale(member, 'en'),
-                  ])
-                )
-              } else {
-                console.error('Both direct query and RPC failed:', { directError, rpcError })
-                teamMap = new Map()
-                teamEnMap = new Map()
-              }
-            }
-          } catch (error) {
-            console.error('Error fetching team data:', error)
-            teamMap = new Map()
-            teamEnMap = new Map()
-          }
-        }
-
-        // 차량 정보 가져오기
+        const allEmails = [...new Set(toursWithinGuideHorizon.flatMap(tour =>
+          [tour.tour_guide_id, tour.assistant_id].filter((e): e is string => Boolean(e))
+        ))]
         const vehicleIds = [...new Set(toursWithinGuideHorizon.map(tour => tour.tour_car_id).filter((id): id is string => Boolean(id)))]
-        
-        let vehicleMap = new Map<string, { vehicle_number: string | null; rental_agreement_file_url: string | null }>()
-        if (vehicleIds.length > 0) {
-          const { data: vehiclesData } = await supabase
-            .from('vehicles')
-            .select('id, vehicle_number, rental_agreement_file_url')
-            .in('id', vehicleIds) as {
-            data:
-              | {
-                  id: string
-                  vehicle_number: string | null
-                  rental_agreement_file_url: string | null
-                }[]
-              | null
-          }
 
-          vehicleMap = new Map(
-            (vehiclesData || []).map((vehicle) => [
-              vehicle.id,
-              {
-                vehicle_number: vehicle.vehicle_number,
-                rental_agreement_file_url: vehicle.rental_agreement_file_url,
-              },
-            ])
-          )
-        }
-
-        // reservation_ids 정규화 함수: 배열/JSON/콤마 지원
         const normalizeReservationIds = (value: unknown): string[] => {
           if (!value) return []
           if (Array.isArray(value)) {
@@ -864,8 +713,8 @@ export default function GuideDashboard() {
             if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
               try {
                 const parsed = JSON.parse(trimmed)
-                return Array.isArray(parsed) 
-                  ? parsed.map((v: unknown) => String(v).trim()).filter((v: string) => v.length > 0) 
+                return Array.isArray(parsed)
+                  ? parsed.map((v: unknown) => String(v).trim()).filter((v: string) => v.length > 0)
                   : []
               } catch {
                 return []
@@ -879,70 +728,136 @@ export default function GuideDashboard() {
           return []
         }
 
-        // 예약 정보로 인원 계산
-        const reservationIds = [...new Set(toursWithinGuideHorizon.flatMap(tour => {
-          return normalizeReservationIds(tour.reservation_ids)
-        }))]
+        const reservationIds = [...new Set(toursWithinGuideHorizon.flatMap(tour =>
+          normalizeReservationIds(tour.reservation_ids)
+        ))]
 
-        console.log('Reservation IDs to fetch:', reservationIds)
+        type TeamNameRow = {
+          email: string
+          name_ko: string
+          name_en: string
+          nick_name?: string | null
+        }
 
-        let reservationMap = new Map<string, { total: number; adults: number; children: number; infants: number }>()
-        if (reservationIds.length > 0) {
+        const loadTeamMaps = async () => {
+          const empty = { teamMap: new Map<string, string>(), teamEnMap: new Map<string, string>() }
+          if (allEmails.length === 0) return empty
           try {
-            const { data: reservationsData, error: reservationsError } = await supabase
-              .from('reservations')
-              .select('id, adults, child, infant, total_people, status')
-              .in('id', reservationIds)
-            
-            if (reservationsError) {
-              console.error('Error fetching reservations:', reservationsError)
-              console.error('Error details:', {
-                message: reservationsError.message,
-                details: reservationsError.details,
-                hint: reservationsError.hint,
-                code: reservationsError.code
-              })
-            } else {
-              console.log('Reservations data fetched:', reservationsData?.length || 0, 'reservations')
-              
-              if (reservationsData && reservationsData.length > 0) {
-                reservationMap = new Map((reservationsData as Array<{
-                  id: string;
-                  adults?: number | null;
-                  child?: number | null;
-                  infant?: number | null;
-                  total_people?: number | null;
-                  status?: string | null;
-                }>)
-                  .filter((r) => !reservationExcludedFromTourSettlementAggregates(r.status))
-                  .map(r => {
-                  const adults = r.adults || 0
-                  const children = r.child || 0
-                  const infants = r.infant || 0
-                  const total = r.total_people || (adults + children + infants)
-                  return [r.id, { total, adults, children, infants }]
-                }))
-                
-                console.log('Reservation map created:', reservationMap.size, 'entries')
-              }
+            const { data: directData, error: directError } = await supabase
+              .from('team')
+              .select('email, name_ko, name_en, nick_name')
+              .in('email', allEmails)
+
+            const applyRows = (rows: TeamNameRow[]) => ({
+              teamMap: new Map(rows.map((member) => [member.email, teamMemberNameForLocale(member, 'ko')])),
+              teamEnMap: new Map(rows.map((member) => [member.email, teamMemberNameForLocale(member, 'en')])),
+            })
+
+            if (!directError && directData) {
+              return applyRows((directData as TeamNameRow[]) || [])
             }
+
+            const { data: rpcData, error: rpcError } = await supabase
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              .rpc('get_team_members_info', { p_emails: allEmails } as any)
+
+            if (!rpcError && rpcData) {
+              return applyRows((rpcData as TeamNameRow[]) || [])
+            }
+            console.error('Both direct query and RPC failed:', { directError, rpcError })
+            return empty
           } catch (error) {
-            console.error('Exception while fetching reservations:', error)
+            console.error('Error fetching team data:', error)
+            return empty
           }
         }
 
-        // 투어 데이터 확장
+        const [
+          productsResult,
+          teamMaps,
+          vehiclesResult,
+          reservationsResult,
+          offSchedulesResult,
+          responded,
+        ] = await Promise.all([
+          productIds.length > 0
+            ? supabase
+                .from('products')
+                .select('id, name, name_en, name_ko, customer_name_en, customer_name_ko')
+                .in('id', productIds)
+            : Promise.resolve({ data: [] as { id: string; name: string; name_en: string | null; name_ko: string | null; customer_name_en: string | null; customer_name_ko: string | null }[] | null }),
+          loadTeamMaps(),
+          vehicleIds.length > 0
+            ? supabase.from('vehicles').select('id, vehicle_number, nick, rental_agreement_file_url').in('id', vehicleIds)
+            : Promise.resolve({ data: [] as { id: string; vehicle_number: string | null; nick: string | null; rental_agreement_file_url: string | null }[] | null }),
+          reservationIds.length > 0
+            ? supabase.from('reservations').select('id, adults, child, infant, total_people, status').in('id', reservationIds)
+            : Promise.resolve({ data: [] as { id: string; adults?: number | null; child?: number | null; infant?: number | null; total_people?: number | null; status?: string | null }[] | null, error: null }),
+          supabase
+            .from('off_schedules')
+            .select('*')
+            .eq('team_email', currentUserEmail)
+            .order('off_date', { ascending: false })
+            .limit(20),
+          fetchPersonallyRespondedTourIds(currentUserEmail),
+        ])
+
+        const productsData = productsResult.data as
+          | { id: string; name: string; name_en: string | null; name_ko: string | null; customer_name_en: string | null; customer_name_ko: string | null }[]
+          | null
+        const productMap = new Map((productsData || []).map(p => [p.id, p.customer_name_ko || p.name_ko || p.name]))
+        const productEnMap = new Map((productsData || []).map(p => [p.id, p.customer_name_en || p.name_en || null]))
+        const productInternalKoMap = new Map((productsData || []).map(p => [p.id, p.name_ko || p.name]))
+        const productInternalEnMap = new Map((productsData || []).map(p => [p.id, p.name_en || null]))
+
+        const { teamMap, teamEnMap } = teamMaps
+
+        const vehiclesData = vehiclesResult.data as
+          | { id: string; vehicle_number: string | null; nick: string | null; rental_agreement_file_url: string | null }[]
+          | null
+        const vehicleMap = new Map(
+          (vehiclesData || []).map((vehicle) => [
+            vehicle.id,
+            {
+              vehicle_number: vehicle.vehicle_number,
+              nick: vehicle.nick,
+              rental_agreement_file_url: vehicle.rental_agreement_file_url,
+            },
+          ])
+        )
+
+        let reservationMap = new Map<string, { total: number; adults: number; children: number; infants: number }>()
+        const reservationsError = 'error' in reservationsResult ? reservationsResult.error : null
+        if (reservationsError) {
+          console.error('Error fetching reservations:', reservationsError)
+        } else {
+          reservationMap = new Map(
+            ((reservationsResult.data || []) as Array<{
+              id: string
+              adults?: number | null
+              child?: number | null
+              infant?: number | null
+              total_people?: number | null
+              status?: string | null
+            }>)
+              .filter((r) => !reservationExcludedFromTourSettlementAggregates(r.status))
+              .map((r) => {
+                const adults = r.adults || 0
+                const children = r.child || 0
+                const infants = r.infant || 0
+                const total = r.total_people || (adults + children + infants)
+                return [r.id, { total, adults, children, infants }] as const
+              })
+          )
+        }
+
         const extendedTours: ExtendedTour[] = toursWithinGuideHorizon.map(tour => {
           let assignedPeople = 0
           let assignedAdults = 0
           let assignedChildren = 0
           let assignedInfants = 0
-          
-          const ids = normalizeReservationIds(tour.reservation_ids)
-          // 중복 제거
-          const uniqueIds = [...new Set(ids)]
-          console.log(`Tour ${tour.id} reservation_ids:`, tour.reservation_ids, 'normalized:', ids, 'unique:', uniqueIds)
-          
+
+          const uniqueIds = [...new Set(normalizeReservationIds(tour.reservation_ids))]
           uniqueIds.forEach(id => {
             const reservation = reservationMap.get(id)
             if (reservation) {
@@ -950,114 +865,51 @@ export default function GuideDashboard() {
               assignedAdults += reservation.adults
               assignedChildren += reservation.children
               assignedInfants += reservation.infants
-              console.log(`Tour ${tour.id} - Reservation ${id}: total=${reservation.total}, adults=${reservation.adults}, children=${reservation.children}, infants=${reservation.infants}`)
-            } else {
-              console.warn(`Tour ${tour.id} - Reservation ${id} not found in map`)
             }
           })
-          
-          console.log(`Tour ${tour.id} final counts: total=${assignedPeople}, adults=${assignedAdults}, children=${assignedChildren}, infants=${assignedInfants}`)
 
-          const extendedTour = {
+          return {
             ...tour,
-            product_name: tour.product_id ? productMap.get(tour.product_id) : null,
-            product_name_en: tour.product_id ? productEnMap.get(tour.product_id) : null,
-            name_ko: tour.product_id ? productInternalKoMap.get(tour.product_id) : null,
-            name_en: tour.product_id ? productInternalEnMap.get(tour.product_id) : null,
+            product_name: (tour.product_id ? productMap.get(tour.product_id) : null) ?? null,
+            product_name_en: (tour.product_id ? productEnMap.get(tour.product_id) : null) ?? null,
+            name_ko: (tour.product_id ? productInternalKoMap.get(tour.product_id) : null) ?? null,
+            name_en: (tour.product_id ? productInternalEnMap.get(tour.product_id) : null) ?? null,
             assigned_people: assignedPeople,
             assigned_adults: assignedAdults,
             assigned_children: assignedChildren,
             assigned_infants: assignedInfants,
-            guide_name: tour.tour_guide_id ? teamMap.get(tour.tour_guide_id) : null,
-            guide_name_en: tour.tour_guide_id ? teamEnMap.get(tour.tour_guide_id) : null,
-            assistant_name: tour.assistant_id ? teamMap.get(tour.assistant_id) : null,
-            assistant_name_en: tour.assistant_id ? teamEnMap.get(tour.assistant_id) : null,
+            guide_name: (tour.tour_guide_id ? teamMap.get(tour.tour_guide_id) : null) ?? null,
+            guide_name_en: (tour.tour_guide_id ? teamEnMap.get(tour.tour_guide_id) : null) ?? null,
+            assistant_name: (tour.assistant_id ? teamMap.get(tour.assistant_id) : null) ?? null,
+            assistant_name_en: (tour.assistant_id ? teamEnMap.get(tour.assistant_id) : null) ?? null,
             vehicle_number: tour.tour_car_id ? vehicleMap.get(tour.tour_car_id)?.vehicle_number ?? null : null,
+            vehicle_nick: tour.tour_car_id ? vehicleMap.get(tour.tour_car_id)?.nick ?? null : null,
             rental_agreement_file_url: tour.tour_car_id
               ? vehicleMap.get(tour.tour_car_id)?.rental_agreement_file_url ?? null
               : null,
           }
-
-          // 디버깅을 위한 로그
-          if (tour.product_id === 'MDGCSUNRISE') {
-            console.log('MDGCSUNRISE Extended Tour Data:', {
-              tourId: tour.id,
-              productId: tour.product_id,
-              product_name: extendedTour.product_name,
-              product_name_en: extendedTour.product_name_en,
-              name_ko: extendedTour.name_ko,
-              name_en: extendedTour.name_en,
-              productMapValue: tour.product_id ? productMap.get(tour.product_id) : null,
-              productEnMapValue: tour.product_id ? productEnMap.get(tour.product_id) : null
-            })
-          }
-
-          return extendedTour
         })
 
-        // 투어 분류 - 오늘 투어는 두 탭 모두에 표시
-        console.log('All tours before filtering:', extendedTours.map(t => ({ 
-          id: t.id, 
-          tour_date: t.tour_date, 
-          product_id: t.product_id,
-          tour_guide_id: t.tour_guide_id,
-          assistant_id: t.assistant_id
-        })))
-        
-        // 오늘 날짜의 투어가 확장된 데이터에 있는지 확인
-        const todayToursExtended = extendedTours.filter(tour => tour.tour_date === today)
-        console.log('Today tours in extended data:', todayToursExtended.map(t => ({ 
-          id: t.id, 
-          tour_date: t.tour_date, 
-          product_id: t.product_id,
-          tour_guide_id: t.tour_guide_id,
-          assistant_id: t.assistant_id
-        })))
-        
         const upcomingToursList = extendedTours.filter(tour => tour.tour_date >= today)
-        // 지난 투어는 오늘 이전의 투어만 포함하고, 최신순으로 정렬
         const pastToursList = extendedTours
           .filter(tour => tour.tour_date < today)
           .sort((a, b) => {
-            // 날짜 기준 내림차순 정렬 (최신 투어가 먼저)
             if (a.tour_date > b.tour_date) return -1
             if (a.tour_date < b.tour_date) return 1
             return 0
           })
-        
-        console.log('Filtered tours:', {
-          today,
-          upcomingToursList: upcomingToursList.map(t => ({ id: t.id, tour_date: t.tour_date })),
-          pastToursList: pastToursList.map(t => ({ id: t.id, tour_date: t.tour_date }))
-        })
 
         const upcomingSlice = upcomingToursList.slice(0, 5)
         const pastSlice = pastToursList.slice(0, 10)
         setUpcomingTours(upcomingSlice)
         setPastTours(pastSlice)
-        const responded = await fetchPersonallyRespondedTourIds(currentUserEmail)
         setRespondedTourIds(responded)
-        
-        console.log('Final tour state set:', {
-          upcomingToursCount: upcomingSlice.length,
-          pastToursCount: pastSlice.length,
-          todayToursInUpcoming: upcomingToursList.filter(t => t.tour_date === today).length,
-          todayToursInPast: pastToursList.filter(t => t.tour_date === today).length
-        })
 
-        // 오프 스케줄 데이터 로드 (모든 오프 스케줄)
         let offSchedulesSnapshot: OffSchedule[] = []
-        const { data: offSchedulesData, error: offSchedulesError } = await supabase
-          .from('off_schedules')
-          .select('*')
-          .eq('team_email', currentUserEmail)
-          .order('off_date', { ascending: false }) // 최신순으로 정렬
-          .limit(20) // 더 많은 오프 스케줄 표시
-
-        if (offSchedulesError) {
-          console.error('Error loading off schedules:', offSchedulesError)
+        if (offSchedulesResult.error) {
+          console.error('Error loading off schedules:', offSchedulesResult.error)
         } else {
-          offSchedulesSnapshot = offSchedulesData || []
+          offSchedulesSnapshot = offSchedulesResult.data || []
           setOffSchedules(offSchedulesSnapshot)
         }
 
@@ -1263,12 +1115,7 @@ export default function GuideDashboard() {
           {activeTab === 'upcoming' && (
             <div className="space-y-2">
               {upcomingTours.length > 0 ? (
-                <>
-                  {(() => {
-                    console.log('About to render upcoming tours:', upcomingTours.map(t => ({ id: t.id, tour_date: t.tour_date, product_id: t.product_id })))
-                    return upcomingTours.map((tour) => {
-                      console.log('Rendering TourCard for:', tour.id, 'date:', tour.tour_date)
-                      return (
+                upcomingTours.map((tour) => (
                         <TourCard
                           key={tour.id}
                           tour={tour}
@@ -1296,10 +1143,7 @@ export default function GuideDashboard() {
                             }
                           }}
                         />
-                      )
-                    })
-                  })()}
-                </>
+                ))
               ) : (
                 <div className="text-center text-gray-500 py-8">
                   <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-300" />
@@ -1898,49 +1742,12 @@ function TourCard({
   useEffect(() => {
     setLocalResponded(personallyResponded)
   }, [personallyResponded, tour.id])
-  
-  // 디버깅을 위한 로그
-  console.log('TourCard component called:', {
-    tourId: tour.id,
-    tourDate: tour.tour_date,
-    productId: tour.product_id,
-    locale,
-    assignmentStatus: tour.assignment_status,
-    allTourData: tour
-  })
-  
-  // 투어 이름 매핑 함수
+
   const getTourDisplayName = (tour: ExtendedTour, locale: string) => {
-    // 디버깅을 위한 로그
-    console.log('TourCard Debug - getTourDisplayName:', {
-      tourId: tour.id,
-      locale,
-      name_en: tour.name_en,
-      name_ko: tour.name_ko,
-      product_name_en: tour.product_name_en,
-      product_name: tour.product_name,
-      product_id: tour.product_id,
-      allTourData: tour
-    })
-    
     if (locale === 'en') {
-      // 영어 모드에서는 product_id의 name_en을 우선 사용
-      // name_en (productInternalEnMap에서 가져온 product의 name_en)을 최우선 사용
-      // 없으면 product_id만 표시 (한글 이름이나 customer_name_en은 표시하지 않음)
-      const result = tour.name_en || tour.product_id
-      console.log('English result:', result, {
-        name_en: tour.name_en,
-        product_name_en: tour.product_name_en,
-        name_ko: tour.name_ko,
-        product_name: tour.product_name
-      })
-      return result
-    } else {
-      // 한국어 모드에서는 한국어 이름 우선 사용
-      const result = tour.name_ko || tour.product_name || tour.name_en || tour.product_name_en || tour.product_id
-      console.log('Korean result:', result)
-      return result
+      return tour.name_en || tour.product_id
     }
+    return tour.name_ko || tour.product_name || tour.name_en || tour.product_name_en || tour.product_id
   }
   
   // 라스베가스 시간대 기준 오늘 날짜 계산
@@ -1963,36 +1770,6 @@ function TourCard({
     tourStatus: tour.tour_status,
     assignmentStatus: assignmentStatus,
   })
-  
-  console.log('TourCard date check:', {
-    tourId: tour.id,
-    tourDate: tour.tour_date,
-    today,
-    isToday,
-    comparison: `${tour.tour_date} === ${today}`,
-    comparisonResult: tour.tour_date === today
-  })
-  
-  // 렌더링 전 로그
-  console.log('TourCard DOM rendering for tour:', tour.id, 'date:', tour.tour_date, 'isToday:', isToday)
-  
-  // 실제 DOM 렌더링 로그
-  console.log('TourCard about to render DOM for:', tour.id)
-  
-  // DOM 요소 생성 로그
-  console.log('TourCard DOM element created for:', tour.id, 'date:', tour.tour_date)
-  
-  // 투어 카드 렌더링 시작 로그
-  console.log('TourCard rendering started for:', tour.id, 'date:', tour.tour_date, 'isToday:', isToday)
-  
-  // 투어 카드 렌더링 완료 로그
-  console.log('TourCard rendering completed for:', tour.id, 'date:', tour.tour_date, 'isToday:', isToday)
-  
-  // 투어 카드 렌더링 최종 로그
-  console.log('TourCard final rendering for:', tour.id, 'date:', tour.tour_date, 'isToday:', isToday)
-  
-  // 투어 카드 렌더링 최종 최종 로그
-  console.log('TourCard ultimate rendering for:', tour.id, 'date:', tour.tour_date, 'isToday:', isToday)
 
   return (
     <div
@@ -2103,6 +1880,7 @@ function TourCard({
 
           {/* 차량 배지 */}
           <GuideVehicleBadge
+            vehicleNick={tour.vehicle_nick ?? null}
             vehicleNumber={tour.vehicle_number ?? null}
             rentalAgreementFileUrl={tour.rental_agreement_file_url ?? null}
             unassignedLabel={t('tourCard.unassigned')}

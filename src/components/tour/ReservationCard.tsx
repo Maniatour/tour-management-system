@@ -22,6 +22,7 @@ import {
   CreditCard,
 } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
+import TourLanguageBadge from '@/components/reservation/TourLanguageBadge'
 import Image from 'next/image'
 import { getStoredAccessTokenIfValid, supabase } from '@/lib/supabase'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
@@ -2335,6 +2336,16 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         {/* 3번째 줄 - pickup_location과 잔액 정보, 액션 버튼들 */}
         <div className="flex items-center justify-between mt-1 gap-2 min-w-0">
           <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+            <TourLanguageBadge
+              tourLanguage={
+                (reservation as { tour_language?: string | null; tourLanguage?: string | null })
+                  .tour_language ??
+                (reservation as { tourLanguage?: string | null }).tourLanguage
+              }
+              customerLanguage={customerLanguage}
+              locale={locale}
+              compact={cardCompact}
+            />
             {/* 픽업 위치 — 취소 예약은 취소 사유 */}
             {(() => {
               const pickupLineText = isReservationCancelled

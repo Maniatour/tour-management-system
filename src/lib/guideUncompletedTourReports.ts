@@ -1,19 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { assignedToursOrFilter } from '@/lib/guideAssignedToursFilter'
 import { tourReportRequiredDateRange } from '@/lib/tourReportExtras'
 
 export type GuideUncompletedTourReportItem = {
   id: string
   tourDate: string
   name: string
-}
-
-function assignedToursOrFilter(email: string): string {
-  const raw = email.trim().replace(/"/g, '')
-  const lower = raw.toLowerCase()
-  if (raw && raw !== lower) {
-    return `tour_guide_id.eq."${raw}",assistant_id.eq."${raw}",tour_guide_id.eq."${lower}",assistant_id.eq."${lower}"`
-  }
-  return `tour_guide_id.eq."${lower}",assistant_id.eq."${lower}"`
 }
 
 export async function listUncompletedTourReportsForGuide(

@@ -1,12 +1,13 @@
 import { ANTELOPE_CANYON_X_WAIVER_PRINT } from '@/lib/waiver/documents/antelopeCanyonX/printEn'
 import {
   ANTELOPE_X_ROWS_PER_PAGE,
+  antelopeXDuplexPageNumber,
   chunkPrintGuests,
   type CanyonWaiverPrintPacket,
 } from '@/lib/canyonWaiverPrintForms'
 import AntelopeXCompanyInfoForm from '@/components/tour/print/AntelopeXCompanyInfoForm'
 
-function AntelopeXWaiverBack() {
+function AntelopeXWaiverFront({ pageIndex }: { pageIndex: number }) {
   const content = ANTELOPE_CANYON_X_WAIVER_PRINT
   return (
     <section className="cwf-page acx-waiver-page" aria-label="Antelope Canyon X liability waiver">
@@ -28,7 +29,7 @@ function AntelopeXWaiverBack() {
         </ol>
         <p className="acx-waiver-closing">{content.closing}</p>
       </article>
-      <div className="acx-page-num">1</div>
+      <div className="acx-page-num">{antelopeXDuplexPageNumber(pageIndex, 'waiver')}</div>
     </section>
   )
 }
@@ -44,26 +45,30 @@ export default function AntelopeXDuplexSheets({
   return (
     <>
       {chunks.map((guests, pageIndex) => {
-        const formBreakClass =
+        const sheetBreakClass =
           pageIndex === 0
             ? isFirstPrintedBlock
               ? undefined
               : 'cwf-page-break acx-duplex-start'
             : 'cwf-page-break'
         return (
-          <div key={`x-sheet-${pageIndex}`}>
-            <div className={formBreakClass}>
-              <p className="acx-sheet-side">Front · signature form</p>
+          <div
+            key={`x-sheet-${pageIndex}`}
+            className={sheetBreakClass}
+            data-print-section="antelope-x"
+          >
+            <div className="acx-sheet-front">
+              <p className="acx-sheet-side">Front · waiver</p>
+              <AntelopeXWaiverFront pageIndex={pageIndex} />
+            </div>
+            <div className="acx-sheet-back">
+              <p className="acx-sheet-side">Back · signature form</p>
               <AntelopeXCompanyInfoForm
                 packet={packet}
                 guests={guests}
                 pageIndex={pageIndex}
                 pageCount={chunks.length}
               />
-            </div>
-            <div className="cwf-page-break">
-              <p className="acx-sheet-side">Back · waiver</p>
-              <AntelopeXWaiverBack />
             </div>
           </div>
         )

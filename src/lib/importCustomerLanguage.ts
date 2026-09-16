@@ -34,6 +34,34 @@ export function resolveImportCustomerLanguage(
   return 'EN'
 }
 
+/**
+ * 예약 가져오기 투어 신청 언어.
+ * extracted.tour_language가 있으면 그대로, 한국 고객/한국 OTA는 ko, 그 외는 en.
+ * 고객 언어가 일본어여도 투어 언어는 자동으로 ja로 두지 않는다.
+ */
+export function resolveImportTourLanguage(
+  extracted:
+    | Pick<
+        ExtractedReservationData,
+        'tour_language' | 'language' | 'customer_phone' | 'platform_key'
+      >
+    | null
+    | undefined,
+  platformKey?: string | null
+): 'ko' | 'en' | 'ja' {
+  const explicit = String(extracted?.tour_language || '').trim()
+  if (explicit) {
+    const code = normalizeLanguageToCode(explicit)
+    if (/^(ja|jp)/i.test(code)) return 'ja'
+    if (/^(kr|ko)/i.test(code)) return 'ko'
+    return 'en'
+  }
+
+  const customerLanguage = resolveImportCustomerLanguage(extracted, platformKey)
+  if (/^(kr|ko)/i.test(customerLanguage)) return 'ko'
+  return 'en'
+}
+
 export function shouldReplaceDefaultImportCustomerLanguage(
   existingLanguage: string | null | undefined
 ): boolean {

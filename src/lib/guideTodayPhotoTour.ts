@@ -6,6 +6,7 @@ import { isGuideBackupTour } from '@/lib/guideBackupTour'
 import { calculatePickupDate } from '@/lib/reservationDisplayUtils'
 import { tourCoversCalendarDate } from '@/lib/scheduleVehicleOilMaintenance'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
+import { assignedToursOrFilter } from '@/lib/guideAssignedToursFilter'
 import { normalizeReservationIds, parseTourAssignmentEmails } from '@/utils/tourUtils'
 
 /** MNGC3N 최대 4일. 시작일이 이 구간 안인 투어만 조회한다. */
@@ -301,6 +302,7 @@ export async function resolveTodayPhotoTourForGuide(
     )
     .gte('tour_date', lookbackStart)
     .lte('tour_date', lookaheadEnd)
+    .or(assignedToursOrFilter(needle))
 
   if (error) throw error
 
@@ -308,21 +310,19 @@ export async function resolveTodayPhotoTourForGuide(
   const assigned = rows.filter(
     (tour) => isGuideAssignedToTour(needle, tour) && !isTourCancelled(tour.tour_status)
   )
-  const pickupTimeByTourId = await loadEarliestPickupTimeByTourId(db, assigned)
+  const needsPickupLookup = assigned.some((tour) => tour.tour_date > today)
+  const pickupTimeByTourId = needsPickupLookup
+    ? await loadEarliestPickupTimeByTourId(db, assigned)
+    : new Map(assigned.map((tour) => [tour.id, null as string | null]))
   const eligible = selectEligiblePhotoTours(assigned, needle, today, nowMs, pickupTimeByTourId)
   const picked = pickTodayPhotoTour(eligible, needle, nowMs)
   if (!picked) return empty
 
   const candidateCount = eligible.length
 
-  const { count } = await db
+  const { count, data: recent } = await db
     .from('tour_photos')
-    .select('id', { count: 'exact', head: true })
-    .eq('tour_id', picked.id)
-
-  const { data: recent } = await db
-    .from('tour_photos')
-    .select('id, file_name, file_path, thumbnail_path')
+    .select('id, file_name, file_path, thumbnail_path', { count: 'exact' })
     .eq('tour_id', picked.id)
     .order('created_at', { ascending: false })
     .limit(12)

@@ -97,6 +97,8 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
   const previewUrlsRef = useRef<string[]>([])
   const tourRef = useRef<TodayPhotoTourMatch | null>(null)
   const loadingTourRef = useRef(false)
+  const loadTourPromiseRef = useRef<Promise<void> | null>(null)
+  const lastLoadedAtRef = useRef(0)
   const liveStreamRef = useRef<MediaStream | null>(null)
   const cameraRequestIdRef = useRef(0)
   const liveCameraOpenRef = useRef(false)
@@ -130,38 +132,53 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
     [tPhoto]
   )
 
-  const loadTour = useCallback(async () => {
-    setLoadingTour(true)
-    setTourError(null)
+  const loadTour = useCallback(async (opts?: { silent?: boolean }) => {
+    if (loadTourPromiseRef.current) return loadTourPromiseRef.current
+    const silent = Boolean(opts?.silent && tourRef.current)
+    const run = (async () => {
+      if (!silent) setLoadingTour(true)
+      setTourError(null)
+      try {
+        const headers: Record<string, string> = {}
+        if (isSimulating && simulatedUser?.email) {
+          headers['x-simulated-user-email'] = simulatedUser.email
+        }
+        const res = await fetchApiWithAuthWhenReady(
+          `/api/guide/today-photo-tour?locale=${encodeURIComponent(locale)}`,
+          { headers }
+        )
+        if (!res) {
+          setTour(null)
+          tourRef.current = null
+          setTourError(t('authRequired'))
+          return
+        }
+        const data = (await res.json()) as TodayPhotoTourResponse
+        if (!res.ok || !data.ok) {
+          setTour(null)
+          tourRef.current = null
+          setTourError(data.error || t('loadError'))
+          return
+        }
+        setTour(data.tour ?? null)
+        tourRef.current = data.tour ?? null
+        setPhotoCount(data.photoCount ?? 0)
+        setRecentPhotos(data.recentPhotos ?? [])
+        lastLoadedAtRef.current = Date.now()
+        if (!data.tour) setTourError(t('noTour'))
+      } catch {
+        setTour(null)
+        tourRef.current = null
+        setTourError(t('loadError'))
+      } finally {
+        setLoadingTour(false)
+      }
+    })()
+    loadTourPromiseRef.current = run
     try {
-      const headers: Record<string, string> = {}
-      if (isSimulating && simulatedUser?.email) {
-        headers['x-simulated-user-email'] = simulatedUser.email
-      }
-      const res = await fetchApiWithAuthWhenReady(
-        `/api/guide/today-photo-tour?locale=${encodeURIComponent(locale)}`,
-        { headers }
-      )
-      if (!res) {
-        setTour(null)
-        setTourError(t('authRequired'))
-        return
-      }
-      const data = (await res.json()) as TodayPhotoTourResponse
-      if (!res.ok || !data.ok) {
-        setTour(null)
-        setTourError(data.error || t('loadError'))
-        return
-      }
-      setTour(data.tour ?? null)
-      setPhotoCount(data.photoCount ?? 0)
-      setRecentPhotos(data.recentPhotos ?? [])
-      if (!data.tour) setTourError(t('noTour'))
-    } catch {
-      setTour(null)
-      setTourError(t('loadError'))
+      await run
     } finally {
-      setLoadingTour(false)
+      if (loadTourPromiseRef.current === run) loadTourPromiseRef.current = null
     }
   }, [isSimulating, locale, simulatedUser?.email, t])
 
@@ -481,7 +498,10 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
 
   useEffect(() => {
     if (!open) return
-    void loadTour()
+    const fresh = Date.now() - lastLoadedAtRef.current < 60_000 && Boolean(tourRef.current)
+    if (!fresh) {
+      void loadTour({ silent: Boolean(tourRef.current) })
+    }
     void (async () => {
       const pending = await listPendingTourPhotos()
       if (pending.length === 0) return
@@ -522,39 +542,46 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
   }, [])
 
   const takePhoto = useCallback(() => {
-    if (!tourRef.current) {
-      if (!loadingTourRef.current) setTourError(t('noTour'))
-      return false
-    }
-    if (liveCameraOpenRef.current) return true
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      cameraInputRef.current?.click()
+    const startCamera = () => {
+      if (liveCameraOpenRef.current) return true
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        cameraInputRef.current?.click()
+        return true
+      }
+
+      const requestId = cameraRequestIdRef.current + 1
+      cameraRequestIdRef.current = requestId
+      liveCameraOpenRef.current = true
+      setLiveCameraOpen(true)
+
+      void openGuideLiveCameraStream()
+        .then((stream) => {
+          if (cameraRequestIdRef.current !== requestId) {
+            stream.getTracks().forEach((track) => track.stop())
+            return
+          }
+          liveStreamRef.current = stream
+          setLiveStream(stream)
+        })
+        .catch(() => {
+          if (cameraRequestIdRef.current !== requestId) return
+          liveCameraOpenRef.current = false
+          setLiveCameraOpen(false)
+          cameraInputRef.current?.click()
+        })
+
       return true
     }
 
-    const requestId = cameraRequestIdRef.current + 1
-    cameraRequestIdRef.current = requestId
-    liveCameraOpenRef.current = true
-    setLiveCameraOpen(true)
+    if (tourRef.current) return startCamera()
 
-    void openGuideLiveCameraStream()
-      .then((stream) => {
-        if (cameraRequestIdRef.current !== requestId) {
-          stream.getTracks().forEach((track) => track.stop())
-          return
-        }
-        liveStreamRef.current = stream
-        setLiveStream(stream)
-      })
-      .catch(() => {
-        if (cameraRequestIdRef.current !== requestId) return
-        liveCameraOpenRef.current = false
-        setLiveCameraOpen(false)
-        cameraInputRef.current?.click()
-      })
-
-    return true
-  }, [t])
+    const pending = loadTourPromiseRef.current || loadTour({ silent: false })
+    void pending.then(() => {
+      if (tourRef.current) startCamera()
+      else if (!loadingTourRef.current) setTourError(t('noTour'))
+    })
+    return false
+  }, [loadTour, t])
 
   useImperativeHandle(ref, () => ({ openCamera: takePhoto }), [takePhoto])
 

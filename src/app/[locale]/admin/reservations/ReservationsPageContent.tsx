@@ -14,6 +14,7 @@ import type { Database } from '@/lib/supabase'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
 import { computeCustomerPaymentTotalLineFormula, resolveOnSiteBalanceAmountForSave } from '@/utils/reservationPricingBalance'
 import { mapDbReservationRowsToReservations } from '@/lib/mapDbReservationRowsToReservations'
+import { resolveReservationTourLanguage } from '@/lib/reservationTourLanguage'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
 import {
@@ -4847,10 +4848,14 @@ export default function AdminReservations() {
         status: reservation.status,
         selected_options: reservation.selectedOptions,
         selected_option_prices: reservation.selectedOptionPrices,
-        is_private_tour: reservation.isPrivateTour || false,
-        choices: reservation.choices,
-        variant_key: (reservation as any).variantKey || 'default', // variant_key ???
-        ...operatorIdInsert(operatorId),
+      is_private_tour: reservation.isPrivateTour || false,
+      choices: reservation.choices,
+      variant_key: (reservation as any).variantKey || 'default', // variant_key ???
+      tour_language: resolveReservationTourLanguage({
+        explicitTourLanguage: (reservation as { tourLanguage?: string | null }).tourLanguage,
+        customerLanguage: (reservation as { customerLanguage?: string | null }).customerLanguage,
+      }),
+      ...operatorIdInsert(operatorId),
       }
 
       // ID? ?????upsert ??? (???? ????? update, ?????insert)

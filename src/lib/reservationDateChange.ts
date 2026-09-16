@@ -145,6 +145,7 @@ export async function applyNoShowDateChange(
     is_private_tour: row.is_private_tour ?? false,
     operator_id: operatorId,
     archive: false,
+    tour_language: row.tour_language ?? null,
     date_change_live_reservation_id: liveId,
     date_change_placeholder_reservation_id: null,
   }

@@ -15,6 +15,8 @@ export interface ExtractedReservationData {
   /** 비상연락처 (Klook WhatsApp 등) */
   emergency_contact?: string
   language?: string
+  /** OTA 투어 신청 언어 (GyG Tour language 등). 고객 언어와 별개 */
+  tour_language?: string
   /** 예약 */
   product_name?: string
   product_choices?: string

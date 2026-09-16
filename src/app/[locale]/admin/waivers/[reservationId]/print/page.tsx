@@ -119,7 +119,7 @@ export default function WaiverPrintPage() {
           body { background: white !important; }
           .page-break { break-after: page; page-break-after: always; }
           .avoid-break { break-inside: avoid; page-break-inside: avoid; }
-          .acx-duplex-start { break-before: right; page-break-before: right; }
+          .acx-duplex-start { break-before: page; page-break-before: always; }
           header, nav, aside, [data-admin-chrome] { display: none !important; }
         }
         .waiver-print .avoid-break .cwf-sig { max-height: 80px; margin-top: 12px; }

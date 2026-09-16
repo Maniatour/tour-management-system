@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   resolveImportCustomerLanguage,
+  resolveImportTourLanguage,
   shouldReplaceDefaultImportCustomerLanguage,
 } from '@/lib/importCustomerLanguage'
 
@@ -31,4 +32,14 @@ test('DB 기본값 ko만 자동 추가 언어로 덮어쓴다', () => {
   assert.equal(shouldReplaceDefaultImportCustomerLanguage(null), true)
   assert.equal(shouldReplaceDefaultImportCustomerLanguage('KR'), false)
   assert.equal(shouldReplaceDefaultImportCustomerLanguage('EN'), false)
+})
+
+test('투어 신청 언어는 명시된 일본어만 ja이고 일본인 고객은 기본 en이다', () => {
+  assert.equal(resolveImportTourLanguage({ tour_language: 'Japanese' }), 'ja')
+  assert.equal(resolveImportTourLanguage({ tour_language: 'JA' }), 'ja')
+  assert.equal(resolveImportTourLanguage({ tour_language: 'Japanese (Live tour guide)' }), 'ja')
+  assert.equal(resolveImportTourLanguage({ language: 'JA', customer_phone: '+81 90-1234-5678' }), 'en')
+  assert.equal(resolveImportTourLanguage({ language: 'KR' }), 'ko')
+  assert.equal(resolveImportTourLanguage({}, 'myrealtrip'), 'ko')
+  assert.equal(resolveImportTourLanguage({}, 'viator'), 'en')
 })

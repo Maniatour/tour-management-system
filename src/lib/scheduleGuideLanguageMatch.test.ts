@@ -5,6 +5,7 @@ import {
   collectStaffScheduleLocales,
   customerLanguageToScheduleBucket,
   findTourGuideLanguageMismatch,
+  reservationToScheduleBucket,
   scheduleGuideLanguageMismatchLine,
   scheduleProductCellLangBgClass,
   scheduleProductCellPulseReasonLabel,
@@ -18,6 +19,13 @@ test('customerLanguageToScheduleBucket maps Korean, Japanese, and fallback Engli
   assert.equal(customerLanguageToScheduleBucket('日本語'), 'ja')
   assert.equal(customerLanguageToScheduleBucket('EN'), 'en')
   assert.equal(customerLanguageToScheduleBucket(null), 'en')
+})
+
+test('reservationToScheduleBucket uses stored tour language, not customer nationality', () => {
+  assert.equal(reservationToScheduleBucket('en', 'JA'), 'en')
+  assert.equal(reservationToScheduleBucket('ja', 'EN'), 'ja')
+  assert.equal(reservationToScheduleBucket(null, 'KR'), 'ko')
+  assert.equal(reservationToScheduleBucket(null, 'JA'), 'en')
 })
 
 test('collectStaffScheduleLocales reads KR/EN/JP team codes', () => {

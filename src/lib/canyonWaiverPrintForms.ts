@@ -40,9 +40,9 @@ export type CanyonWaiverPrintTourPayload = {
   canyonKeysByReservationId?: Record<string, Array<'X' | 'L'>>
 }
 
-/** 한 장 양면: 앞면 서명 폼(홀수), 뒷면 waiver(짝수) */
+/** 한 장 양면: 앞면 waiver(홀수), 뒷면 사인 폼(짝수) */
 export function antelopeXDuplexPageNumber(formPageIndex: number, side: 'form' | 'waiver'): number {
-  return Math.max(0, formPageIndex) * 2 + (side === 'form' ? 1 : 2)
+  return Math.max(0, formPageIndex) * 2 + (side === 'waiver' ? 1 : 2)
 }
 
 export function trimPrintText(value: string | null | undefined): string {
@@ -359,8 +359,6 @@ export function getCanyonWaiverPrintStyles(): string {
       background: #fff;
       color: #111;
       font-family: "Times New Roman", Times, serif;
-      break-inside: avoid;
-      page-break-inside: avoid;
     }
     .acx-title { text-align: center; font-size: 20px; font-weight: 800; letter-spacing: 0.04em; margin: 0 0 10px; }
     .acx-field { font-size: 13px; margin: 0 0 6px; line-height: 1.3; }
@@ -469,6 +467,11 @@ export function getCanyonWaiverPrintStyles(): string {
       margin: 0 0 8px;
       font-family: ui-sans-serif, system-ui, sans-serif;
     }
+    .acx-sheet-back, .acx-duplex-start {
+      margin-top: 28px;
+      padding-top: 20px;
+      border-top: 2px dashed #d1d5db;
+    }
 
     @media screen {
       .lac-page {
@@ -563,7 +566,41 @@ export function getCanyonWaiverPrintStyles(): string {
         print-color-adjust: exact;
       }
       .cwf-page-break { margin-top: 0; padding-top: 0; border-top: none; break-before: page; page-break-before: always; }
-      .acx-duplex-start, .mania-duplex-start { break-before: right; page-break-before: right; }
+      .acx-duplex-start { break-before: page; page-break-before: always; }
+      .mania-duplex-start { break-before: right; page-break-before: right; }
+      .acx-sheet-front {
+        margin-top: 0;
+        padding-top: 0;
+        border-top: none;
+        break-after: page;
+        page-break-after: always;
+        break-inside: avoid;
+        page-break-inside: avoid;
+        overflow: hidden;
+      }
+      .acx-sheet-back, .acx-duplex-start {
+        margin-top: 0;
+        padding-top: 0;
+        border-top: none;
+      }
+      .acx-sheet-back {
+        break-before: auto;
+        page-break-before: auto;
+        break-inside: avoid;
+        page-break-inside: avoid;
+        overflow: hidden;
+      }
+      .acx-page, .acx-waiver-page {
+        overflow: hidden;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .acx-waiver-official { font-size: 11pt; line-height: 1.34; }
+      .acx-waiver-official h2 { font-size: 12pt; margin: 0 0 6pt; }
+      .acx-waiver-official .acx-waiver-sub { font-size: 11pt; margin: 0 0 8pt; }
+      .acx-waiver-official p { margin: 0 0 7pt; }
+      .acx-waiver-official li { margin: 0 0 6pt; }
+      .acx-waiver-official .acx-waiver-closing { margin: 4pt 0 0; font-size: 11pt; }
       .acx-sheet-side { display: none !important; }
       .cwf-sig {
         filter: none !important;

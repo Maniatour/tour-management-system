@@ -49,6 +49,7 @@ import {
   type VehicleOilMaintenanceSummary,
 } from '@/lib/scheduleVehicleOilMaintenance'
 import ReactCountryFlag from 'react-country-flag'
+import TourLanguageBadge from '@/components/reservation/TourLanguageBadge'
 import dynamic from 'next/dynamic'
 import {
   Dialog,
@@ -192,6 +193,7 @@ import {
   collectTourLanguageStaffEmails,
   customerLanguageToScheduleBucket,
   findTourGuideLanguageMismatch,
+  reservationToScheduleBucket,
   type ScheduleGuideLanguageMismatch,
   type ScheduleGuestLangBucket,
   type ScheduleProductCellPulseReason,
@@ -3596,6 +3598,13 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     return map
   }, [customers])
 
+  const reservationLangBucket = useCallback((res: Reservation): ScheduleGuestLangBucket => {
+    return reservationToScheduleBucket(
+      res?.tour_language ?? res?.tourLanguage,
+      customerIdToLangBucket.get(String(res?.customer_id || '')),
+    )
+  }, [customerIdToLangBucket])
+
   // 상품별 스케줄 데이터 계산 (초이스별 인원 포함)
   const productScheduleData = useMemo(() => {
     if (!selectedProducts.length) return {}
@@ -3763,12 +3772,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           0
         )
         const dayKoWaitingPeople = dayPendingReservations.reduce((sum, res) => {
-          const cid = String(res.customer_id || '')
-          return sum + (customerIdToLangBucket.get(cid) === 'ko' ? (res.total_people || 0) : 0)
+          return sum + (reservationLangBucket(res) === 'ko' ? (res.total_people || 0) : 0)
         }, 0)
         const dayJaWaitingPeople = dayPendingReservations.reduce((sum, res) => {
-          const cid = String(res.customer_id || '')
-          return sum + (customerIdToLangBucket.get(cid) === 'ja' ? (res.total_people || 0) : 0)
+          return sum + (reservationLangBucket(res) === 'ja' ? (res.total_people || 0) : 0)
         }, 0)
         const dayEnWaitingPeople = Math.max(dayWaitingPeople - dayKoWaitingPeople - dayJaWaitingPeople, 0)
         const dayCanceledPeople = dayReservationsSameDate
@@ -3794,12 +3801,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         }
         const dayTotalPeople = dayPrivateTourPeople + dayCompanionTourPeople
         const dayKoPeople = dayReservations.reduce((sum, res) => {
-          const cid = String(res.customer_id || '')
-          return sum + (customerIdToLangBucket.get(cid) === 'ko' ? (res.total_people || 0) : 0)
+          return sum + (reservationLangBucket(res) === 'ko' ? (res.total_people || 0) : 0)
         }, 0)
         const dayJaPeople = dayReservations.reduce((sum, res) => {
-          const cid = String(res.customer_id || '')
-          return sum + (customerIdToLangBucket.get(cid) === 'ja' ? (res.total_people || 0) : 0)
+          return sum + (reservationLangBucket(res) === 'ja' ? (res.total_people || 0) : 0)
         }, 0)
         const dayEnPeople = Math.max(dayTotalPeople - dayKoPeople - dayJaPeople, 0)
 
@@ -3904,7 +3909,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           if (assignedRes.length === 0) return
           const guestPeople = { ko: 0, ja: 0, en: 0 }
           for (const res of assignedRes) {
-            const bucket = customerIdToLangBucket.get(String(res.customer_id || '')) || 'en'
+            const bucket = reservationLangBucket(res)
             guestPeople[bucket] += res.total_people || 0
           }
           const mismatch = findTourGuideLanguageMismatch({
@@ -3986,7 +3991,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   }, [
     tours,
     reservations,
-    customerIdToLangBucket,
+    reservationLangBucket,
     products,
     selectedProducts,
     monthDays,
@@ -5066,7 +5071,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       for (const r of assigned) {
         const people = r.total_people || 0
         assignedPeople += people
-        const bucket = customerIdToLangBucket.get(String(r.customer_id || '')) || 'en'
+        const bucket = reservationLangBucket(r)
         if (bucket === 'ko') assignedKo += people
         else if (bucket === 'ja') assignedJa += people
         else assignedEn += people
@@ -5220,7 +5225,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       ticketBookings,
       reservationChoices,
       teamMembers,
-      customerIdToLangBucket,
+      reservationLangBucket,
       displayOtaSaleStatusByKey,
       locale,
       productColors,
@@ -5449,7 +5454,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     ticketBookings,
     reservationChoices,
     teamMembers,
-    customerIdToLangBucket,
+    reservationLangBucket,
     products,
     pickupHotelIdToGroupNumber,
     pickupHotelIdToLabel,
@@ -9902,6 +9907,14 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                           {customerName}
                         </span>
                       </button>
+                      <TourLanguageBadge
+                        tourLanguage={res.tour_language ?? res.tourLanguage}
+                        customerLanguage={customer?.language}
+                        locale={locale}
+                        compact
+                        showLabel
+                        className="ml-auto"
+                      />
                     </div>
                     <button
                       type="button"

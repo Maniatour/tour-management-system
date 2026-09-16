@@ -232,6 +232,11 @@ import type {
   Reservation 
 } from '@/types/reservation'
 import { formatPickupHotelFormLabel } from '@/utils/pickupHotelUtils'
+import {
+  TOUR_LANGUAGE_OPTIONS,
+  canonicalizeTourLanguage,
+  inferLegacyTourLanguage,
+} from '@/lib/reservationTourLanguage'
 
 // 언어 선택 옵션 (국기용 country code + 라벨)
 const LANGUAGE_OPTIONS: { value: string; countryCode: string; label: string }[] = [
@@ -417,7 +422,7 @@ interface ReservationFormProps {
   /** 새 예약 추가 모드(아직 DB에 저장 전). true이면 예약 옵션 추가는 저장 후에만 가능 */
   isNewReservation?: boolean
   /** 예약 가져오기(이메일)에서 넘긴 초기 고객 정보. reservation.id가 import- 로 시작할 때 사용 */
-  initialDataFromImport?: { customer_name?: string; customer_email?: string; customer_phone?: string; emergency_contact?: string; customer_language?: string }
+  initialDataFromImport?: { customer_name?: string; customer_email?: string; customer_phone?: string; emergency_contact?: string; customer_language?: string; tour_language?: string }
   /** 예약 가져오기 시 새 고객 추가 폼을 열어둘지 여부 (이메일에서 고객명이 있을 때 true) */
   initialShowNewCustomerForm?: boolean
   /** 예약 가져오기에서 파싱한 초이스 옵션명 (예: "Lower Antelope Canyon"). 상품 초이스 로드 시 해당 옵션으로 선택 */
@@ -509,6 +514,7 @@ type RezLike = Partial<Reservation> & {
   selected_option_prices?: { [key: string]: number }
   is_private_tour?: boolean
   variant_key?: string
+  tour_language?: string | null
 }
 
 export default function ReservationForm({ 
@@ -690,6 +696,7 @@ export default function ReservationForm({
     customerEmail: string
     customerAddress: string
     customerLanguage: string
+    tourLanguage: string
     customerEmergencyContact: string
     customerSpecialRequests: string
     customerChannelId: string
@@ -874,6 +881,23 @@ export default function ReservationForm({
         return lang || 'KR'
       }
       return 'KR'
+    })(),
+    tourLanguage: (() => {
+      const stored = canonicalizeTourLanguage(
+        reservation?.tourLanguage ||
+          rez.tour_language ||
+          (initialDataFromImport as { tour_language?: string } | undefined)?.tour_language
+      )
+      if (stored) return stored
+      if (initialDataFromImport?.customer_language && (reservation as any)?.id?.startsWith?.('import-')) {
+        return inferLegacyTourLanguage(initialDataFromImport.customer_language)
+      }
+      const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id
+      if (customerId && customers.length > 0) {
+        const customer = customers.find(c => c.id === customerId)
+        return inferLegacyTourLanguage((customer as any)?.language)
+      }
+      return 'en'
     })(),
     customerEmergencyContact: (() => {
       if (initialDataFromImport?.emergency_contact && (reservation as any)?.id?.startsWith?.('import-')) return initialDataFromImport.emergency_contact
@@ -1570,9 +1594,16 @@ export default function ReservationForm({
       const l = (initialDataFromImport.customer_language || '').trim()
       next.customerLanguage = (l === 'EN' || l === 'en' || l === 'English' || l === '영어' || /^english\b/i.test(l)) ? 'EN' : (l === 'KR' || l === 'ko' || l === '한국어' || /^korean\b|^한국어/i.test(l)) ? 'KR' : (l.length === 2 ? l.toUpperCase() : l)
     }
+    if (initialDataFromImport.tour_language != null && initialDataFromImport.tour_language !== '') {
+      next.tourLanguage =
+        canonicalizeTourLanguage(initialDataFromImport.tour_language) ||
+        inferLegacyTourLanguage(initialDataFromImport.customer_language)
+    } else if (initialDataFromImport.customer_language) {
+      next.tourLanguage = inferLegacyTourLanguage(initialDataFromImport.customer_language)
+    }
     if (Object.keys(next).length === 0) return
     setFormData(prev => ({ ...prev, ...next, customerSearch: next.customerName ?? prev.customerSearch }))
-  }, [isImportMode, initialDataFromImport?.customer_name, initialDataFromImport?.customer_email, initialDataFromImport?.customer_phone, initialDataFromImport?.emergency_contact, initialDataFromImport?.customer_language])
+  }, [isImportMode, initialDataFromImport?.customer_name, initialDataFromImport?.customer_email, initialDataFromImport?.customer_phone, initialDataFromImport?.emergency_contact, initialDataFromImport?.customer_language, initialDataFromImport?.tour_language])
 
   // 이메일 가져오기: 상품이 바뀌면 초이스 하이드레이션을 다시 기다림 (가격은 그 이후에만 로드)
   useEffect(() => {
@@ -1663,6 +1694,7 @@ export default function ReservationForm({
           customerEmail: stripSpacesFromContactInput(customer.email || ''),
           customerAddress: (customerData.address as string | undefined) || '',
           customerLanguage: customer.language || 'KR',
+          tourLanguage: inferLegacyTourLanguage(customer.language),
           customerEmergencyContact: (customerData.emergency_contact as string | undefined) || '',
           customerSpecialRequests: (customerData.special_requests as string | undefined) || '',
           channelId: (customerData.channel_id as string | undefined) || prev.channelId || '',
@@ -7400,6 +7432,7 @@ export default function ReservationForm({
                         customerEmail: '',
                         customerAddress: '',
                         customerLanguage: 'KR',
+                        tourLanguage: 'ko',
                         customerEmergencyContact: '',
                         customerSpecialRequests: '',
                         customerChannelId: '',
@@ -7427,7 +7460,11 @@ export default function ReservationForm({
                               const next = { ...prev, customerPhone: phone }
                               const country = getCountryFromPhone(phone)
                               const langMatch = country ? LANGUAGE_OPTIONS.find(o => o.countryCode === country) : null
-                              if (langMatch) next.customerLanguage = langMatch.value
+                              if (langMatch) {
+                                next.customerLanguage = langMatch.value
+                                if (langMatch.value === 'KR') next.tourLanguage = 'ko'
+                                else if (prev.tourLanguage !== 'ja') next.tourLanguage = 'en'
+                              }
                               return next
                             })
                           }}
@@ -7457,7 +7494,7 @@ export default function ReservationForm({
                       </div>
                       
                       <div ref={languageDropdownRef}>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">언어</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">고객 언어</label>
                         <div className="relative">
                           <button
                             type="button"
@@ -7488,7 +7525,15 @@ export default function ReservationForm({
                                   key={opt.value}
                                   type="button"
                                   onClick={() => {
-                                    setFormData(prev => ({ ...prev, customerLanguage: opt.value }))
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      customerLanguage: opt.value,
+                                      ...(opt.value === 'KR'
+                                        ? { tourLanguage: 'ko' }
+                                        : prev.tourLanguage === 'ja'
+                                          ? {}
+                                          : { tourLanguage: inferLegacyTourLanguage(opt.value) }),
+                                    }))
                                     setLanguageDropdownOpen(false)
                                   }}
                                   className={`w-full px-2 py-1.5 text-xs flex items-center gap-2 hover:bg-gray-100 text-left ${formData.customerLanguage === opt.value ? 'bg-primary/5 text-primary' : ''}`}
@@ -7504,6 +7549,27 @@ export default function ReservationForm({
                             </div>
                           )}
                         </div>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">투어 신청 언어</label>
+                        <select
+                          value={formData.tourLanguage || 'en'}
+                          onChange={(e) =>
+                            setFormData((prev) => ({ ...prev, tourLanguage: e.target.value }))
+                          }
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent text-xs bg-white"
+                        >
+                          {TOUR_LANGUAGE_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.labelKo}
+                            </option>
+                          ))}
+                        </select>
+                        {formData.tourLanguage === 'en' &&
+                        /^(ja|jp)/i.test(String(formData.customerLanguage || '')) ? (
+                          <p className="mt-1 text-xs text-gray-500">영어 (일본인) — 고객은 일본어, 투어는 영어</p>
+                        ) : null}
                       </div>
                       
                       <div>

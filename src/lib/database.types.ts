@@ -7487,6 +7487,7 @@ export type Database = {
           total_people: number | null
           tour_date: string
           tour_id: string | null
+          tour_language: string | null
           tour_time: string | null
           updated_at: string | null
           variant_key: string
@@ -7528,6 +7529,7 @@ export type Database = {
           total_people?: number | null
           tour_date: string
           tour_id?: string | null
+          tour_language?: string | null
           tour_time?: string | null
           updated_at?: string | null
           variant_key?: string
@@ -7569,6 +7571,7 @@ export type Database = {
           total_people?: number | null
           tour_date?: string
           tour_id?: string | null
+          tour_language?: string | null
           tour_time?: string | null
           updated_at?: string | null
           variant_key?: string
