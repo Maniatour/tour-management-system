@@ -5,6 +5,10 @@ import { useRouter } from 'next/navigation'
 import { AlertTriangle, CheckCircle2, ExternalLink, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useReportAdminAlert } from '@/contexts/AdminAlertInboxContext'
+import { makeAdminAlertDraft } from '@/lib/adminAlertInbox'
+import { asAdminAlertPayload } from '@/lib/adminAlertReplay'
+import { useAdminAlertReplay } from '@/hooks/useAdminAlertReplay'
 import { isSuperAdminActor } from '@/lib/superAdmin'
 
 type PricingAuditNotification = {
@@ -23,12 +27,30 @@ type PricingAuditNotification = {
 export default function ReservationPricingAuditNotificationListener({ locale }: { locale: string }) {
   const router = useRouter()
   const { authUser, userPosition } = useAuth()
+  const report = useReportAdminAlert()
   const isSuper = isSuperAdminActor(authUser?.email, userPosition)
   const [notification, setNotification] = useState<PricingAuditNotification | null>(null)
 
   const showNotification = useCallback((next: PricingAuditNotification) => {
+    const isRequest = next.notification_type === 'modification_request'
+    const actor = next.actor_nick_name || next.actor_name || next.actor_email
+    report(
+      makeAdminAlertDraft('pricing_audit', next.id, {
+        title: isRequest ? '가격 정보 수정 요청' : 'Audited 가격 정보 수정 알림',
+        body: `${actor} · ${next.message}`.trim(),
+        href: `/${locale}/admin/reservations/${next.reservation_id}`,
+        createdAt: next.created_at,
+        payload: next,
+      })
+    )
     setNotification(next)
-  }, [])
+  }, [locale, report])
+
+  useAdminAlertReplay('pricing_audit', (item) => {
+    const row = asAdminAlertPayload<PricingAuditNotification>(item.payload)
+    if (!row?.id) return
+    setNotification(row)
+  })
 
   useEffect(() => {
     if (!isSuper || !authUser?.email) return

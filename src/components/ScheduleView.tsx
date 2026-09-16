@@ -2,7 +2,6 @@
 import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react'
-import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
 import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone, UserCheck, History, Receipt, Wallet, Sparkles, Headphones, FileText } from 'lucide-react'
@@ -383,27 +382,7 @@ const SCHEDULE_GUIDE_MODAL_NO_VEHICLE = '__schedule_guide_modal_no_vehicle__'
 
 /** 통합 스케줄 알림: 닫으면 같은 탭 세션에서 자동 모달 재표시 안 함 (월 변경 시 초기화) */
 const SCHEDULE_HEALTH_SUMMARY_SESSION_KEY = 'schedule_health_summary_modal_v1'
-const SCHEDULE_HEALTH_FAB_POS_KEY = 'schedule_health_fab_pos_v1'
 const SCHEDULE_HEALTH_UI_MODE_KEY = 'schedule_health_ui_mode_v1'
-
-function clampScheduleHealthFabPos(left: number, top: number): { left: number; top: number } {
-  if (typeof window === 'undefined') return { left: 16, top: 16 }
-  const size = 72
-  const w = window.innerWidth
-  const h = window.innerHeight
-  return {
-    left: Math.min(Math.max(8, left), Math.max(8, w - size - 8)),
-    top: Math.min(Math.max(8, top), Math.max(8, h - size - 8)),
-  }
-}
-
-function defaultScheduleHealthFabPos(): { left: number; top: number } {
-  if (typeof window === 'undefined') return { left: 16, top: 16 }
-  return clampScheduleHealthFabPos(
-    Math.max(16, window.innerWidth - 72),
-    Math.max(16, window.innerHeight - 96),
-  )
-}
 
 function isActiveTicketBookingStatusForHealth(row: ScheduleTicketBookingActivityRow): boolean {
   return isTicketBookingActiveForScheduleGrid(row)
@@ -1080,16 +1059,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   } | null>(null)
   const [scheduleHealthFetchedLoaded, setScheduleHealthFetchedLoaded] = useState(false)
   const [scheduleHealthModalOpen, setScheduleHealthModalOpen] = useState(false)
-  const [scheduleHealthFabPos, setScheduleHealthFabPos] = useState<{ left: number; top: number } | null>(null)
-  const [scheduleHealthFabHydrated, setScheduleHealthFabHydrated] = useState(false)
-  const scheduleHealthFabDragRef = useRef<{
-    pointerId: number
-    startClientX: number
-    startClientY: number
-    startLeft: number
-    startTop: number
-  } | null>(null)
-  const scheduleHealthFabPosRef = useRef({ left: 0, top: 0 })
   const [scheduleHealthUiMode, setScheduleHealthUiMode] = useState<'auto_modal' | 'fab_only'>(() => {
     if (typeof window === 'undefined') return 'auto_modal'
     return localStorage.getItem(SCHEDULE_HEALTH_UI_MODE_KEY) === 'fab_only' ? 'fab_only' : 'auto_modal'
@@ -2192,46 +2161,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     },
     [getMultiDayTourDays]
   )
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      const raw = localStorage.getItem(SCHEDULE_HEALTH_FAB_POS_KEY)
-      if (raw) {
-        const p = JSON.parse(raw) as { left?: unknown; top?: unknown }
-        if (
-          typeof p.left === 'number' &&
-          typeof p.top === 'number' &&
-          Number.isFinite(p.left) &&
-          Number.isFinite(p.top)
-        ) {
-          const clamped = clampScheduleHealthFabPos(p.left, p.top)
-          scheduleHealthFabPosRef.current = clamped
-          setScheduleHealthFabPos(clamped)
-          setScheduleHealthFabHydrated(true)
-          return
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-    const def = defaultScheduleHealthFabPos()
-    scheduleHealthFabPosRef.current = def
-    setScheduleHealthFabPos(def)
-    setScheduleHealthFabHydrated(true)
-  }, [])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const onResize = () => {
-      const cur = scheduleHealthFabPosRef.current
-      const clamped = clampScheduleHealthFabPos(cur.left, cur.top)
-      scheduleHealthFabPosRef.current = clamped
-      setScheduleHealthFabPos(clamped)
-    }
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
 
   useEffect(() => {
     if (isDisplayMode || !canManageSharedSchedule) return
@@ -6101,54 +6030,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     setScheduleHealthModalOpen(true)
   }, [scheduleHealthFetchedLoaded, scheduleHealthIssueCount, scheduleHealthUiMode])
 
-  const scheduleHealthFabOnPointerMove = useCallback((e: PointerEvent) => {
-    const drag = scheduleHealthFabDragRef.current
-    if (!drag || drag.pointerId !== e.pointerId) return
-    const dx = e.clientX - drag.startClientX
-    const dy = e.clientY - drag.startClientY
-    const w = window.innerWidth
-    const h = window.innerHeight
-    const btn = 56
-    const nextLeft = Math.min(Math.max(8, drag.startLeft + dx), Math.max(8, w - btn - 8))
-    const nextTop = Math.min(Math.max(8, drag.startTop + dy), Math.max(8, h - btn - 8))
-    scheduleHealthFabPosRef.current = { left: nextLeft, top: nextTop }
-    setScheduleHealthFabPos({ left: nextLeft, top: nextTop })
-  }, [])
-
-  const scheduleHealthFabOnPointerUp = useCallback((e: PointerEvent) => {
-    const drag = scheduleHealthFabDragRef.current
-    if (!drag || drag.pointerId !== e.pointerId) return
-    scheduleHealthFabDragRef.current = null
-    window.removeEventListener('pointermove', scheduleHealthFabOnPointerMove)
-    window.removeEventListener('pointerup', scheduleHealthFabOnPointerUp)
-    window.removeEventListener('pointercancel', scheduleHealthFabOnPointerUp)
-    try {
-      localStorage.setItem(SCHEDULE_HEALTH_FAB_POS_KEY, JSON.stringify(scheduleHealthFabPosRef.current))
-    } catch {
-      /* ignore */
-    }
-  }, [scheduleHealthFabOnPointerMove])
-
-  const scheduleHealthFabOnPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (e.button !== 0 || !scheduleHealthFabPos) return
-      e.stopPropagation()
-      e.preventDefault()
-      e.currentTarget.setPointerCapture(e.pointerId)
-      scheduleHealthFabDragRef.current = {
-        pointerId: e.pointerId,
-        startClientX: e.clientX,
-        startClientY: e.clientY,
-        startLeft: scheduleHealthFabPos.left,
-        startTop: scheduleHealthFabPos.top,
-      }
-      window.addEventListener('pointermove', scheduleHealthFabOnPointerMove)
-      window.addEventListener('pointerup', scheduleHealthFabOnPointerUp)
-      window.addEventListener('pointercancel', scheduleHealthFabOnPointerUp)
-    },
-    [scheduleHealthFabPos, scheduleHealthFabOnPointerMove, scheduleHealthFabOnPointerUp],
-  )
-
   const persistScheduleHealthUiMode = useCallback((mode: 'auto_modal' | 'fab_only') => {
     setScheduleHealthUiMode(mode)
     try {
@@ -7224,65 +7105,20 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     return counts
   }, [tours, monthDays, tourCoversScheduleDate, reservations])
 
-  const scheduleHealthFabEl = (() => {
-    if (isDisplayMode) return null
-    if (!scheduleHealthFabHydrated || !scheduleHealthFabPos || scheduleHealthModalOpen) return null
-    if (typeof document === 'undefined') return null
-    const { left, top } = scheduleHealthFabPos
-    return createPortal(
-          <div
-            className="fixed z-[1300] touch-none select-none"
-            style={{ left, top }}
-          >
-            <div className="relative">
-              <div
-                role="presentation"
-                onPointerDown={scheduleHealthFabOnPointerDown}
-                className="absolute -left-1 -top-1 z-10 flex h-8 w-8 cursor-grab items-center justify-center rounded-full border border-amber-900/30 bg-amber-200 shadow-md active:cursor-grabbing"
-                title={locale === 'ko' ? '끌어서 위치 이동' : 'Drag to reposition'}
-              >
-                <GripVertical className="h-4 w-4 text-amber-950" aria-hidden />
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (scheduleHealthIssueCount === 0) return
-                  setScheduleHealthModalOpen(true)
-                }}
-                className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg ring-2 ring-amber-200 hover:brightness-105 focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-400"
-                title={locale === 'ko' ? '스케줄 점검 요약' : 'Schedule health summary'}
-                aria-label={locale === 'ko' ? '스케줄 점검 요약 열기' : 'Open schedule health summary'}
-              >
-                <Bell className="h-8 w-8" strokeWidth={2.25} aria-hidden />
-                {scheduleHealthIssueCount > 0 ? (
-                  <span className="absolute -right-1 -top-1 flex h-6 min-w-[1.25rem] items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold text-white shadow">
-                    {scheduleHealthIssueCount > 99 ? '99+' : scheduleHealthIssueCount}
-                  </span>
-                ) : null}
-              </button>
-            </div>
-          </div>,
-          document.body,
-        )
-  })()
-
   if (loading) {
     return (
-      <>
-        {scheduleHealthFabEl}
-        <div className="flex h-64 items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <div className="h-9 w-9 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-            <p className="text-sm text-muted-foreground">
-              {isDisplayMode
-                ? locale === 'ko'
-                  ? '스케줄 디스플레이를 불러오는 중...'
-                  : 'Loading schedule display...'
-                : 'Loading...'}
-            </p>
-          </div>
+      <div className="flex h-64 items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-9 w-9 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">
+            {isDisplayMode
+              ? locale === 'ko'
+                ? '스케줄 디스플레이를 불러오는 중...'
+                : 'Loading schedule display...'
+              : 'Loading...'}
+          </p>
         </div>
-      </>
+      </div>
     )
   }
 
@@ -7386,24 +7222,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
 
               <button
                 type="button"
-                onClick={() => {
-                  if (scheduleHealthIssueCount === 0) return
-                  setScheduleHealthModalOpen(true)
-                }}
-                className="relative flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-sm hover:brightness-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
-                title={locale === 'ko' ? '스케줄 점검 요약' : 'Schedule health summary'}
-                aria-label={locale === 'ko' ? '스케줄 점검 요약' : 'Schedule health summary'}
-              >
-                <Bell className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
-                {scheduleHealthFetchedLoaded && scheduleHealthIssueCount > 0 ? (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-600 px-0.5 text-[10px] font-bold leading-none text-white">
-                    {scheduleHealthIssueCount > 99 ? '99+' : scheduleHealthIssueCount}
-                  </span>
-                ) : null}
-              </button>
-
-              <button
-                type="button"
                 onClick={() => setShowGuideScheduleAssignmentBulkModal(true)}
                 className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"
                 title={locale === 'ko' ? '가이드 스케줄 부여 SMS' : 'Send schedule assignment SMS'}
@@ -7441,6 +7259,24 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 aria-label={locale === 'ko' ? '오프 스케줄 히스토리' : 'Off schedule history'}
               >
                 <History className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (scheduleHealthIssueCount === 0) return
+                  setScheduleHealthModalOpen(true)
+                }}
+                className="relative flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-sm hover:brightness-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                title={locale === 'ko' ? '스케줄 점검 요약' : 'Schedule health summary'}
+                aria-label={locale === 'ko' ? '스케줄 점검 요약' : 'Schedule health summary'}
+              >
+                <Bell className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
+                {scheduleHealthFetchedLoaded && scheduleHealthIssueCount > 0 ? (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-600 px-0.5 text-[10px] font-bold leading-none text-white">
+                    {scheduleHealthIssueCount > 99 ? '99+' : scheduleHealthIssueCount}
+                  </span>
+                ) : null}
               </button>
             </div>
           </div>
@@ -9614,7 +9450,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                     checked={scheduleHealthUiMode === 'fab_only'}
                     onChange={() => persistScheduleHealthUiMode('fab_only')}
                   />
-                  {locale === 'ko' ? '플로팅 버튼만 (자동 모달 끄기)' : 'Floating button only (no auto modal)'}
+                  {locale === 'ko' ? '헤더 버튼만 (자동 모달 끄기)' : 'Header button only (no auto modal)'}
                 </label>
               </div>
             </div>
@@ -11600,12 +11436,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   )
 
   if (!isDisplayMode) {
-    return (
-      <>
-        {scheduleMainPanel}
-        {scheduleHealthFabEl}
-      </>
-    )
+    return scheduleMainPanel
   }
 
   return (
@@ -11645,7 +11476,6 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       onAssignVehicle={(tour) => {
         setUnassignedVehicleAssignModalTourId(tour.id)
       }}
-      footerSlot={scheduleHealthFabEl}
     />
   )
 }

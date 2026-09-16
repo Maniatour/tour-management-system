@@ -11,6 +11,7 @@ import {
   padPrintRows,
   pickEnglishPrintName,
   pickReusableWaiverSignature,
+  antelopeXDuplexPageNumber,
 } from '@/lib/canyonWaiverPrintForms'
 
 test('pickEnglishPrintName prefers Latin legal name', () => {
@@ -126,4 +127,11 @@ test('antelope X minor print name includes age', () => {
 test('ageOnTourDate uses tour date', () => {
   assert.equal(ageOnTourDate('2018-09-02', '2026-09-02'), 8)
   assert.equal(ageOnTourDate(null, '2026-09-02'), null)
+})
+
+test('antelope X duplex page numbers are form front then waiver back', () => {
+  assert.equal(antelopeXDuplexPageNumber(0, 'form'), 1)
+  assert.equal(antelopeXDuplexPageNumber(0, 'waiver'), 2)
+  assert.equal(antelopeXDuplexPageNumber(1, 'form'), 3)
+  assert.equal(antelopeXDuplexPageNumber(1, 'waiver'), 4)
 })

@@ -6,6 +6,10 @@ import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
 import { Bell, Check, Clock } from 'lucide-react'
+import { useReportAdminAlert } from '@/contexts/AdminAlertInboxContext'
+import { makeAdminAlertDraft } from '@/lib/adminAlertInbox'
+import { asAdminAlertPayload, unshiftUniqueAlert } from '@/lib/adminAlertReplay'
+import { useAdminAlertReplay } from '@/hooks/useAdminAlertReplay'
 import {
   computeNextNotifyAtIso,
   type OpTodoNotifyCategory,
@@ -43,6 +47,7 @@ type OpTodoNotificationLayerProps = {
   /** 완료·스누즈 후 목록 갱신 */
   onRefresh: () => void | Promise<void>
   pollMs?: number
+  locale?: string
 }
 
 function scheduleFromRow(row: OpTodoNotifyRow): OpTodoNotifyScheduleInput | null {
@@ -62,9 +67,11 @@ export function OpTodoNotificationLayer({
   audiences,
   onRefresh,
   pollMs = 25000,
+  locale = 'ko',
 }: OpTodoNotificationLayerProps) {
   const [stack, setStack] = useState<OpTodoNotifyRow[]>([])
   const stackRef = useRef<OpTodoNotifyRow[]>([])
+  const report = useReportAdminAlert()
 
   const audienceSet = useMemo(() => new Set(audiences), [audiences])
   const emailKey = (userEmail || '').toLowerCase()
@@ -125,7 +132,28 @@ export function OpTodoNotificationLayer({
 
     stackRef.current = visible
     setStack(visible)
-  }, [supabase, emailKey, audienceSet])
+    for (const row of visible) {
+      report(
+        makeAdminAlertDraft('op_todo', row.id, {
+          title: '체크리스트 알림',
+          body: row.title,
+          href: `/${locale}/admin/team-board`,
+          ...(row.next_notify_at ? { createdAt: row.next_notify_at } : {}),
+          payload: row,
+        })
+      )
+    }
+  }, [supabase, emailKey, audienceSet, locale, report])
+
+  useAdminAlertReplay('op_todo', (item) => {
+    const row = asAdminAlertPayload<OpTodoNotifyRow>(item.payload)
+    if (!row?.id) return
+    setStack((prev) => {
+      const next = unshiftUniqueAlert(prev, row, (entry) => entry.id === row.id)
+      stackRef.current = next
+      return next
+    })
+  })
 
   useEffect(() => {
     void refreshDue()

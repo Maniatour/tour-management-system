@@ -5,6 +5,10 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Cloud, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
+import { useReportAdminAlert } from '@/contexts/AdminAlertInboxContext'
+import { makeAdminAlertDraft } from '@/lib/adminAlertInbox'
+import { asAdminAlertPayload } from '@/lib/adminAlertReplay'
+import { useAdminAlertReplay } from '@/hooks/useAdminAlertReplay'
 
 const DISMISS_KEY = 'admin_weather_reminder_dismissed'
 
@@ -24,6 +28,7 @@ interface AdminWeatherReminderModalProps {
 export default function AdminWeatherReminderModal({ locale }: AdminWeatherReminderModalProps) {
   const pathname = usePathname() ?? ''
   const t = useTranslations('adminWeatherReminder')
+  const report = useReportAdminAlert()
   const [open, setOpen] = useState(false)
   const [status, setStatus] = useState<WeatherStatusPayload | null>(null)
   const [loading, setLoading] = useState(true)
@@ -60,7 +65,22 @@ export default function AdminWeatherReminderModal({ locale }: AdminWeatherRemind
     if (pathname.includes('/admin/data-sync')) return
     if (!status.needsReminder) return
     setOpen(true)
-  }, [loading, status, pathname])
+    report(
+      makeAdminAlertDraft('weather_reminder', status.today, {
+        title: t('title'),
+        body: t('subtitle'),
+        href: `/${locale}/admin/weather-records`,
+        createdAt: new Date().toISOString(),
+        payload: status,
+      })
+    )
+  }, [loading, status, pathname, locale, report, t])
+
+  useAdminAlertReplay('weather_reminder', (item) => {
+    const row = asAdminAlertPayload<WeatherStatusPayload>(item.payload)
+    if (row) setStatus(row)
+    setOpen(true)
+  })
 
   const handleDismiss = () => {
     try {

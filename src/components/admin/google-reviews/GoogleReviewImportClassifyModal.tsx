@@ -17,7 +17,6 @@ type ReviewsResponse = {
 type Props = {
   locale: string
   notification: GoogleReviewImportNotifyRow
-  remaining: number
   onLater: () => void
   onDone: () => void
   onOpenPage: () => void
@@ -26,7 +25,6 @@ type Props = {
 export default function GoogleReviewImportClassifyModal({
   locale,
   notification,
-  remaining,
   onLater,
   onDone,
   onOpenPage,
@@ -191,11 +189,6 @@ export default function GoogleReviewImportClassifyModal({
                   ? `신규 ${notification.imported_count}건 · 갱신 ${notification.updated_count}건 · 자동 분류 ${notification.classified_count}건`
                   : `New ${notification.imported_count} · Updated ${notification.updated_count} · Classified ${notification.classified_count}`}
               </p>
-              {remaining > 0 ? (
-                <p className="mt-0.5 text-xs text-amber-700">
-                  {isKo ? `외 ${remaining}건 대기 중` : `${remaining} more waiting`}
-                </p>
-              ) : null}
             </div>
           </div>
           <button

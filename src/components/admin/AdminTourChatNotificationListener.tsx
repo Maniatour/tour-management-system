@@ -5,11 +5,16 @@ import { useRouter } from 'next/navigation'
 import { Car, MessageCircle, User, Users, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useReportAdminAlert } from '@/contexts/AdminAlertInboxContext'
+import { makeAdminAlertDraft } from '@/lib/adminAlertInbox'
+import { asAdminAlertPayload } from '@/lib/adminAlertReplay'
+import { useAdminAlertReplay } from '@/hooks/useAdminAlertReplay'
+import {
+  ADMIN_TOUR_CHAT_ACTIVE_ROOM_KEY,
+  ADMIN_TOUR_CHAT_PENDING_ROOM_KEY,
+} from '@/lib/adminTourChatNotifyKeys'
 
-/** 채팅 관리 페이지에서 열어둔 방 — 알림 중복 방지 */
-export const ADMIN_TOUR_CHAT_ACTIVE_ROOM_KEY = 'admin-tour-chat-active-room'
-/** 알림에서 "채팅 관리로 이동" 시 자동으로 열 방 */
-export const ADMIN_TOUR_CHAT_PENDING_ROOM_KEY = 'admin-tour-chat-pending-room-id'
+export { ADMIN_TOUR_CHAT_ACTIVE_ROOM_KEY, ADMIN_TOUR_CHAT_PENDING_ROOM_KEY }
 
 type IncomingPayload = {
   roomId: string
@@ -57,15 +62,33 @@ function formatStaffField(
 export default function AdminTourChatNotificationListener({ locale }: { locale: string }) {
   const router = useRouter()
   const { authUser, userRole } = useAuth()
+  const report = useReportAdminAlert()
   const enabled = Boolean(authUser?.email && userRole && userRole !== 'customer')
 
   const [open, setOpen] = useState(false)
   const [payload, setPayload] = useState<IncomingPayload | null>(null)
 
   const showNotification = useCallback((next: IncomingPayload) => {
+    const dateDot = formatTourDateDot(next.tourDate)
+    report(
+      makeAdminAlertDraft('tour_chat', `${next.roomId}:${next.messagePreview}`, {
+        title: '새 투어 채팅 메시지',
+        body: [next.senderName, dateDot, next.tourTitle, next.messagePreview].filter(Boolean).join(' · '),
+        href: `/${locale}/admin/chat-management`,
+        pendingChatRoomId: next.roomId,
+        payload: next,
+      })
+    )
     setPayload(next)
     setOpen(true)
-  }, [])
+  }, [locale, report])
+
+  useAdminAlertReplay('tour_chat', (item) => {
+    const row = asAdminAlertPayload<IncomingPayload>(item.payload)
+    if (!row?.roomId) return
+    setPayload(row)
+    setOpen(true)
+  })
 
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return

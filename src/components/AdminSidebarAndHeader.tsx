@@ -25,6 +25,7 @@ import {
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import ReactCountryFlag from 'react-country-flag'
+import { AdminNotificationCenterButton } from '@/components/admin/alerts/AdminNotificationCenterButton'
 import { useAuth } from '@/contexts/AuthContext'
 import { useOperator } from '@/contexts/OperatorContext'
 import type { UserRole } from '@/lib/roles'
@@ -1228,6 +1229,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                   <StaffSiteAlertHeaderButton locale={locale} />
                 </div>
               )}
+
+              {authUser?.email ? <AdminNotificationCenterButton locale={locale} /> : null}
               
               {/* 사용자 정보 드롭다운 */}
               <div className="relative">

@@ -2,6 +2,11 @@ import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { generateCustomerId, generateReservationId } from '@/lib/entityIds'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 import { isManiatourHomepageBookingEmail } from '@/lib/emailReservationParser'
+import {
+  resolveImportCustomerLanguage,
+  shouldReplaceDefaultImportCustomerLanguage,
+} from '@/lib/importCustomerLanguage'
+import type { ExtractedReservationData } from '@/types/reservationImport'
 import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
 import { computeDayTourCapacityTotals, computePerTourCapacityRows, pickTourWithMostSpotsLeft } from '@/lib/scheduleTourCapacity'
 import { shouldOpenPriceInventoryForRemaining } from '@/lib/otaPriceInventory'
@@ -218,6 +223,8 @@ export interface ConfirmReservationImportBody {
   customer_name?: string
   customer_email?: string
   customer_phone?: string
+  /** 고객 언어 코드 (KR, EN, ES, …). 없으면 이메일 추출값/전화번호/채널로 추정 */
+  customer_language?: string
   product_id: string
   tour_date: string
   tour_time?: string | null
@@ -307,14 +314,29 @@ export async function confirmReservationImport(
         error: 'Provide either customer_id or customer_name',
       }
     }
+    const extracted =
+      importRow.extracted_data && typeof importRow.extracted_data === 'object'
+        ? (importRow.extracted_data as ExtractedReservationData)
+        : {}
+    const customerLanguage = resolveImportCustomerLanguage(
+      {
+        ...extracted,
+        ...(body.customer_language ? { language: body.customer_language } : {}),
+        ...(body.customer_phone ? { customer_phone: body.customer_phone } : {}),
+      },
+      importRow.platform_key
+    )
     if (body.customer_email) {
       const { data: existing } = await client
         .from('customers')
-        .select('id')
+        .select('id, language')
         .eq('email', body.customer_email)
         .maybeSingle()
       if (existing) {
         customerId = existing.id
+        if (shouldReplaceDefaultImportCustomerLanguage(existing.language)) {
+          await client.from('customers').update({ language: customerLanguage }).eq('id', existing.id)
+        }
       }
     }
     if (!customerId) {
@@ -325,6 +347,7 @@ export async function confirmReservationImport(
           name: body.customer_name,
           email: body.customer_email ?? null,
           phone: body.customer_phone ?? null,
+          language: customerLanguage,
         })
         .select('id')
         .single()

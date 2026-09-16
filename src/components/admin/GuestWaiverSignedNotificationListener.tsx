@@ -6,6 +6,10 @@ import { ExternalLink, FileSignature, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { useAuth } from '@/contexts/AuthContext'
+import { useReportAdminAlert } from '@/contexts/AdminAlertInboxContext'
+import { makeAdminAlertDraft } from '@/lib/adminAlertInbox'
+import { asAdminAlertPayload, unshiftUniqueAlert } from '@/lib/adminAlertReplay'
+import { useAdminAlertReplay } from '@/hooks/useAdminAlertReplay'
 import { invalidateWaiverCardSummary } from '@/lib/waiver/cardSummaryClient'
 
 const DISMISSED_KEY = 'tms-guest-waiver-signed-notify-dismissed'
@@ -87,6 +91,7 @@ function asAcceptanceRow(raw: unknown): WaiverAcceptanceNotifyRow | null {
 export default function GuestWaiverSignedNotificationListener({ locale }: { locale: string }) {
   const router = useRouter()
   const { authUser, userRole } = useAuth()
+  const report = useReportAdminAlert()
   const enabled = Boolean(authUser?.email && userRole && userRole !== 'customer')
   const isKo = locale !== 'en'
   const [queue, setQueue] = useState<GuestWaiverSignedNotifyItem[]>([])
@@ -94,9 +99,22 @@ export default function GuestWaiverSignedNotificationListener({ locale }: { loca
   const dismissedRef = useRef<Set<string>>(new Set())
   const notification = queue[0] ?? null
 
-  const enqueue = useCallback((next: GuestWaiverSignedNotifyItem) => {
-    if (!next.key || dismissedRef.current.has(next.key)) return
+  const enqueue = useCallback((next: GuestWaiverSignedNotifyItem, replay = false) => {
+    if (!next.key) return
+    if (!replay && dismissedRef.current.has(next.key)) return
+    const docs = next.documentCodes.map((code) => documentLabel(code, locale !== 'en')).join(', ')
+    if (!replay) {
+      report(
+        makeAdminAlertDraft('guest_waiver_signed', next.key, {
+          title: locale !== 'en' ? '면책 동의서 접수' : 'Waiver signed',
+          body: [next.customerName, next.participantName, next.productName, docs].filter(Boolean).join(' · '),
+          href: `/${locale}/admin/reservations/${next.reservationId}`,
+          payload: next,
+        })
+      )
+    }
     setQueue((prev) => {
+      if (replay) return unshiftUniqueAlert(prev, next, (item) => item.key === next.key)
       const existing = prev.find((item) => item.key === next.key)
       if (existing) {
         const codes = [...new Set([...existing.documentCodes, ...next.documentCodes])]
@@ -105,7 +123,12 @@ export default function GuestWaiverSignedNotificationListener({ locale }: { loca
       }
       return [...prev, next]
     })
-  }, [])
+  }, [locale, report])
+
+  useAdminAlertReplay('guest_waiver_signed', (item) => {
+    const row = asAdminAlertPayload<GuestWaiverSignedNotifyItem>(item.payload)
+    if (row?.key) enqueue(row, true)
+  })
 
   const hydrateFromAcceptance = useCallback(
     async (raw: unknown) => {

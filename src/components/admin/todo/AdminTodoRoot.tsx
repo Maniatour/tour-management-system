@@ -11,7 +11,7 @@ type AdminTodoRootProps = {
 export default function AdminTodoRoot({ locale }: AdminTodoRootProps) {
   return (
     <AdminTodoProvider>
-      <AdminOpTodoNotificationLayer />
+      <AdminOpTodoNotificationLayer locale={locale} />
       <AdminTodoFloatingWidget locale={locale} />
       <AdminTodoActionHost locale={locale} />
     </AdminTodoProvider>

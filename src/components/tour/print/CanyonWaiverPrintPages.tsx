@@ -1,35 +1,47 @@
 import {
-  ANTELOPE_X_ROWS_PER_PAGE,
   LOWER_ANTELOPE_ROWS_PER_PAGE,
   chunkPrintGuests,
   type CanyonWaiverPrintPacket,
 } from '@/lib/canyonWaiverPrintForms'
 import LowerAntelopeReservationsForm from '@/components/tour/print/LowerAntelopeReservationsForm'
-import AntelopeXCompanyInfoForm from '@/components/tour/print/AntelopeXCompanyInfoForm'
+import ManiaTourWaiverPrintPages from '@/components/tour/print/ManiaTourWaiverPrintPages'
+import AntelopeXDuplexSheets from '@/components/tour/print/AntelopeXDuplexSheets'
 
 export default function CanyonWaiverPrintPages({
+  mania = null,
   lower,
   canyonX,
+  includeMania = false,
   includeLower,
   includeX,
   isFirstPrintedBlock,
 }: {
+  mania?: CanyonWaiverPrintPacket | null
   lower: CanyonWaiverPrintPacket | null
   canyonX: CanyonWaiverPrintPacket | null
+  includeMania?: boolean
   includeLower: boolean
   includeX: boolean
   isFirstPrintedBlock: boolean
 }) {
+  const maniaOn = includeMania && Boolean(mania)
   const lowerChunks = includeLower && lower ? chunkPrintGuests(lower.guests, LOWER_ANTELOPE_ROWS_PER_PAGE) : []
-  const xChunks = includeX && canyonX ? chunkPrintGuests(canyonX.guests, ANTELOPE_X_ROWS_PER_PAGE) : []
+  const xOn = includeX && Boolean(canyonX)
+  const lowerIsFirst = isFirstPrintedBlock && !maniaOn
+  const xIsFirst = isFirstPrintedBlock && !maniaOn && lowerChunks.length === 0
 
   return (
     <>
+      <ManiaTourWaiverPrintPages
+        packet={mania}
+        include={includeMania}
+        isFirstPrintedBlock={isFirstPrintedBlock}
+      />
       {lower &&
         lowerChunks.map((guests, pageIndex) => (
           <div
             key={`lower-${pageIndex}`}
-            className={!(isFirstPrintedBlock && pageIndex === 0) ? 'cwf-page-break' : undefined}
+            className={!(lowerIsFirst && pageIndex === 0) ? 'cwf-page-break' : undefined}
           >
             <LowerAntelopeReservationsForm
               packet={lower}
@@ -39,24 +51,9 @@ export default function CanyonWaiverPrintPages({
             />
           </div>
         ))}
-      {canyonX &&
-        xChunks.map((guests, pageIndex) => (
-          <div
-            key={`x-${pageIndex}`}
-            className={
-              !(isFirstPrintedBlock && lowerChunks.length === 0 && pageIndex === 0)
-                ? 'cwf-page-break'
-                : undefined
-            }
-          >
-            <AntelopeXCompanyInfoForm
-              packet={canyonX}
-              guests={guests}
-              pageIndex={pageIndex}
-              pageCount={xChunks.length}
-            />
-          </div>
-        ))}
+      {xOn && canyonX ? (
+        <AntelopeXDuplexSheets packet={canyonX} isFirstPrintedBlock={xIsFirst} />
+      ) : null}
     </>
   )
 }

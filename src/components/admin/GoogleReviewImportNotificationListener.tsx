@@ -4,12 +4,21 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useReportAdminAlert } from '@/contexts/AdminAlertInboxContext'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import {
   GOOGLE_REVIEW_IMPORT_NOTIFY_TABLE,
   mapGoogleReviewImportNotifyRow,
   type GoogleReviewImportNotifyRow,
 } from '@/lib/googleReviewImportNotify'
+import { makeAdminAlertDraft } from '@/lib/adminAlertInbox'
+import { asAdminAlertPayload } from '@/lib/adminAlertReplay'
+import { useAdminAlertReplay } from '@/hooks/useAdminAlertReplay'
+import {
+  googleReviewImportNotifyIdsAtOrBefore,
+  mergeGoogleReviewImportNotifyRows,
+  pickLatestGoogleReviewImportNotification,
+} from '@/lib/googleReviewImportNotifyQueue'
 import GoogleReviewImportClassifyModal from '@/components/admin/google-reviews/GoogleReviewImportClassifyModal'
 
 const SESSION_KEY = 'tms-google-review-import-notify-session'
@@ -39,17 +48,55 @@ function writeIdSet(key: string, ids: Set<string>) {
 export default function GoogleReviewImportNotificationListener({ locale }: { locale: string }) {
   const router = useRouter()
   const { authUser, userRole } = useAuth()
+  const report = useReportAdminAlert()
   const enabled = Boolean(authUser?.email && userRole && userRole !== 'customer')
-  const [queue, setQueue] = useState<GoogleReviewImportNotifyRow[]>([])
+  const [notification, setNotification] = useState<GoogleReviewImportNotifyRow | null>(null)
   const sessionDismissedRef = useRef<Set<string>>(new Set())
   const foreverDismissedRef = useRef<Set<string>>(new Set())
-  const notification = queue[0] ?? null
+  const knownRowsRef = useRef<GoogleReviewImportNotifyRow[]>([])
 
-  const enqueue = useCallback((next: GoogleReviewImportNotifyRow) => {
-    if (!next?.id) return
-    if (sessionDismissedRef.current.has(next.id) || foreverDismissedRef.current.has(next.id)) return
-    setQueue((prev) => (prev.some((item) => item.id === next.id) ? prev : [...prev, next]))
+  const dismissedIds = useCallback(() => {
+    return new Set([...sessionDismissedRef.current, ...foreverDismissedRef.current])
   }, [])
+
+  const reportRow = useCallback(
+    (row: GoogleReviewImportNotifyRow) => {
+      report(
+        makeAdminAlertDraft('google_review_import', row.id, {
+          title: '구글 리뷰 가져오기',
+          body:
+            row.unclassified_count > 0
+              ? `미분류 ${row.unclassified_count}건`
+              : `신규 ${row.imported_count}건 · 갱신 ${row.updated_count}건`,
+          href: `/${locale}/admin/google-reviews?tab=google&unclassified=1`,
+          createdAt: row.created_at,
+          payload: row,
+        })
+      )
+    },
+    [locale, report]
+  )
+
+  const showLatest = useCallback(() => {
+    setNotification(pickLatestGoogleReviewImportNotification(knownRowsRef.current, dismissedIds()))
+  }, [dismissedIds])
+
+  const enqueue = useCallback(
+    (next: GoogleReviewImportNotifyRow) => {
+      if (!next?.id) return
+      knownRowsRef.current = mergeGoogleReviewImportNotifyRows(knownRowsRef.current, [next])
+      if (!dismissedIds().has(next.id)) reportRow(next)
+      showLatest()
+    },
+    [dismissedIds, reportRow, showLatest]
+  )
+
+  useAdminAlertReplay('google_review_import', (item) => {
+    const row = asAdminAlertPayload<GoogleReviewImportNotifyRow>(item.payload)
+    if (!row?.id) return
+    knownRowsRef.current = mergeGoogleReviewImportNotifyRows(knownRowsRef.current, [row])
+    setNotification(row)
+  })
 
   useEffect(() => {
     if (!enabled) return
@@ -72,10 +119,13 @@ export default function GoogleReviewImportNotificationListener({ locale }: { loc
         .limit(20)
 
       if (cancelled || !Array.isArray(data)) return
-      for (const raw of data) {
-        const row = mapGoogleReviewImportNotifyRow(raw as Record<string, unknown>)
-        if (row) enqueue(row)
-      }
+      const rows = data
+        .map((raw) => mapGoogleReviewImportNotifyRow(raw as Record<string, unknown>))
+        .filter((row): row is GoogleReviewImportNotifyRow => row != null)
+      knownRowsRef.current = mergeGoogleReviewImportNotifyRows(knownRowsRef.current, rows)
+      const latest = pickLatestGoogleReviewImportNotification(knownRowsRef.current, dismissedIds())
+      if (latest) reportRow(latest)
+      showLatest()
     }
 
     const start = async () => {
@@ -105,25 +155,25 @@ export default function GoogleReviewImportNotificationListener({ locale }: { loc
       window.clearInterval(timer)
       if (channel) void supabase.removeChannel(channel)
     }
-  }, [enabled, enqueue])
+  }, [enabled, enqueue, showLatest, dismissedIds, reportRow])
 
-  const dismissSession = () => {
+  const dismissThroughCurrent = (forever: boolean) => {
     const current = notification
-    if (current?.id) {
-      sessionDismissedRef.current.add(current.id)
-      writeIdSet(SESSION_KEY, sessionDismissedRef.current)
+    if (!current?.id) {
+      setNotification(null)
+      return
     }
-    setQueue((prev) => prev.slice(1))
+    const ids = googleReviewImportNotifyIdsAtOrBefore(knownRowsRef.current, current.created_at)
+    const target = forever ? foreverDismissedRef : sessionDismissedRef
+    const key = forever ? FOREVER_KEY : SESSION_KEY
+    for (const id of ids) target.current.add(id)
+    writeIdSet(key, target.current)
+    showLatest()
   }
 
-  const dismissForever = () => {
-    const current = notification
-    if (current?.id) {
-      foreverDismissedRef.current.add(current.id)
-      writeIdSet(FOREVER_KEY, foreverDismissedRef.current)
-    }
-    setQueue((prev) => prev.slice(1))
-  }
+  const dismissSession = () => dismissThroughCurrent(false)
+
+  const dismissForever = () => dismissThroughCurrent(true)
 
   const handleOpenPage = () => {
     dismissSession()
@@ -136,7 +186,6 @@ export default function GoogleReviewImportNotificationListener({ locale }: { loc
     <GoogleReviewImportClassifyModal
       locale={locale}
       notification={notification}
-      remaining={Math.max(0, queue.length - 1)}
       onLater={dismissSession}
       onDone={dismissForever}
       onOpenPage={handleOpenPage}

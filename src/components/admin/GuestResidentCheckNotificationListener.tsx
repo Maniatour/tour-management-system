@@ -5,6 +5,10 @@ import { useRouter } from 'next/navigation'
 import { ExternalLink, FileText, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useReportAdminAlert } from '@/contexts/AdminAlertInboxContext'
+import { makeAdminAlertDraft } from '@/lib/adminAlertInbox'
+import { asAdminAlertPayload, unshiftUniqueAlert } from '@/lib/adminAlertReplay'
+import { useAdminAlertReplay } from '@/hooks/useAdminAlertReplay'
 import { isGuestResidentCheckFilledByCustomer } from '@/lib/residentCheckGuestMapping'
 
 const DISMISSED_KEY = 'tms-guest-resident-check-notify-dismissed'
@@ -80,19 +84,39 @@ function asSubmissionRow(raw: unknown): SubmissionNotifyRow | null {
 export default function GuestResidentCheckNotificationListener({ locale }: { locale: string }) {
   const router = useRouter()
   const { authUser, userRole } = useAuth()
+  const report = useReportAdminAlert()
   const enabled = Boolean(authUser?.email && userRole && userRole !== 'customer')
   const [queue, setQueue] = useState<GuestResidentCheckNotifyItem[]>([])
   const sinceIsoRef = useRef(new Date().toISOString())
   const dismissedRef = useRef<Set<string>>(new Set())
   const notification = queue[0] ?? null
 
-  const enqueue = useCallback((next: GuestResidentCheckNotifyItem) => {
-    if (!next.tokenId || dismissedRef.current.has(next.tokenId)) return
+  const enqueue = useCallback((next: GuestResidentCheckNotifyItem, replay = false) => {
+    if (!next.tokenId) return
+    if (!replay && dismissedRef.current.has(next.tokenId)) return
+    if (!replay) {
+      report(
+        makeAdminAlertDraft('guest_resident_check', next.tokenId, {
+          title: '게스트 거주 확인 폼 접수',
+          body: [next.customerName, next.productName, formatTourDate(next.tourDate), residencyLabel(next.residency)]
+            .filter(Boolean)
+            .join(' · '),
+          href: `/${locale}/admin/reservations/${next.reservationId}?guestResidentCheck=1`,
+          payload: next,
+        })
+      )
+    }
     setQueue((prev) => {
+      if (replay) return unshiftUniqueAlert(prev, next, (item) => item.tokenId === next.tokenId)
       if (prev.some((item) => item.tokenId === next.tokenId)) return prev
       return [...prev, next]
     })
-  }, [])
+  }, [locale, report])
+
+  useAdminAlertReplay('guest_resident_check', (item) => {
+    const row = asAdminAlertPayload<GuestResidentCheckNotifyItem>(item.payload)
+    if (row?.tokenId) enqueue(row, true)
+  })
 
   const hydrateFromSubmission = useCallback(
     async (raw: unknown) => {

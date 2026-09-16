@@ -42,6 +42,19 @@ export function normalizeTicketBookingStatusForSave(
   return normalizeTicketBookingStatusFromDb(raw)
 }
 
+const CANCELLED_TICKET_STATUSES = new Set(['cancelled', 'canceled', 'weather_cancelled'])
+
+/** 투어 정보 프린트 부킹 목록 — 확정 취소만 숨김 (취소 요청·크레딧은 유지) */
+export function isCancelledTicketBookingForPrint(row: {
+  status?: string | null
+  booking_status?: string | null
+}): boolean {
+  const status = String(row.status ?? '').trim().toLowerCase()
+  if (CANCELLED_TICKET_STATUSES.has(status)) return true
+  const bookingStatus = String(row.booking_status ?? '').trim().toLowerCase()
+  return CANCELLED_TICKET_STATUSES.has(bookingStatus)
+}
+
 export function getTicketBookingStatusBadgeClass(status: string | null | undefined): string {
   const normalizedStatus = (status ?? '').toLowerCase()
   switch (normalizedStatus) {

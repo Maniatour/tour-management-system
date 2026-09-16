@@ -5,6 +5,10 @@ import { useRouter } from 'next/navigation'
 import { Mail, ExternalLink, X } from 'lucide-react'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useReportAdminAlert } from '@/contexts/AdminAlertInboxContext'
+import { makeAdminAlertDraft } from '@/lib/adminAlertInbox'
+import { asAdminAlertPayload, unshiftUniqueAlert } from '@/lib/adminAlertReplay'
+import { useAdminAlertReplay } from '@/hooks/useAdminAlertReplay'
 import { isCancellationRequestEmailSubject } from '@/lib/emailReservationParser'
 import {
   formatExtractedImportPartyLabel,
@@ -45,6 +49,7 @@ function writeDismissed(ids: Set<string>) {
 export default function ReservationImportNotificationListener({ locale }: { locale: string }) {
   const router = useRouter()
   const { authUser, userRole } = useAuth()
+  const report = useReportAdminAlert()
   const enabled = Boolean(authUser?.email && userRole && userRole !== 'customer')
   const [queue, setQueue] = useState<ReservationImportNotifyRow[]>([])
   const sinceIsoRef = useRef(new Date().toISOString())
@@ -53,14 +58,36 @@ export default function ReservationImportNotificationListener({ locale }: { loca
   const [tourStatus, setTourStatus] = useState<ImportTourDayStatusSummary | null>(null)
   const [tourStatusLoading, setTourStatusLoading] = useState(false)
 
-  const enqueue = useCallback((next: ReservationImportNotifyRow) => {
-    if (!next?.id || dismissedRef.current.has(next.id)) return
+  const enqueue = useCallback((next: ReservationImportNotifyRow, replay = false) => {
+    if (!next?.id) return
+    if (!replay && dismissedRef.current.has(next.id)) return
     if (!isReservationRelatedImportNotifyRow(next)) return
+    const isCancel = isCancellationRequestEmailSubject(next.subject)
+    const createdAt = next.created_at || next.received_at || ''
+    if (!replay) {
+      report(
+        makeAdminAlertDraft('reservation_import', next.id, {
+          title: isCancel ? '취소 메일 접수' : '예약 메일 접수',
+          body: next.subject?.trim() || '(제목 없음)',
+          href: isCancel
+            ? `/${locale}/admin/reservation-imports?cancellationImport=${encodeURIComponent(next.id)}`
+            : `/${locale}/admin/reservation-imports/${next.id}`,
+          ...(createdAt ? { createdAt } : {}),
+          payload: next,
+        })
+      )
+    }
     setQueue((prev) => {
+      if (replay) return unshiftUniqueAlert(prev, next, (item) => item.id === next.id)
       if (prev.some((item) => item.id === next.id)) return prev
       return [...prev, next]
     })
-  }, [])
+  }, [locale, report])
+
+  useAdminAlertReplay('reservation_import', (item) => {
+    const row = asAdminAlertPayload<ReservationImportNotifyRow>(item.payload)
+    if (row?.id) enqueue(row, true)
+  })
 
   useEffect(() => {
     if (!enabled) return

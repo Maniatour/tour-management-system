@@ -17,6 +17,7 @@ import {
   CANYON_WAIVER_COMPANY_NAME,
   formatCanyonFormDate,
   formatCanyonFormTime,
+  countryFromCustomerLanguage,
   pickEnglishPrintName,
   pickReusableWaiverSignature,
   type CanyonWaiverPrintPacket,
@@ -237,6 +238,7 @@ export async function GET(request: NextRequest) {
   const empty: CanyonWaiverPrintTourPayload = {
     tourId,
     tourDate: tourDateYmd,
+    mania: null,
     lower: null,
     canyonX: null,
     canyonKeysByReservationId: {},
@@ -322,11 +324,7 @@ export async function GET(request: NextRequest) {
     canyonKeysByReservationId[rez.id] = keys
     for (const key of keys) rezByCanyon[key].push(rez)
   }
-  const relevant = [...new Map([...rezByCanyon.X, ...rezByCanyon.L].map((r) => [r.id, r])).values()]
-  const relevantIds = new Set(relevant.map((r) => r.id))
-  if (relevantIds.size === 0) {
-    return NextResponse.json({ ...empty, canyonKeysByReservationId })
-  }
+  const activeIdSet = new Set(activeIds)
 
   const ticketMap = new Map<string, TicketRow>()
   for (const ticket of [...ticketsByTour, ...ticketsByRes]) {
@@ -340,7 +338,7 @@ export async function GET(request: NextRequest) {
 
   const participantsByRes = new Map<string, ParticipantRow[]>()
   for (const p of participants) {
-    if (!relevantIds.has(p.reservation_id)) continue
+    if (!activeIdSet.has(p.reservation_id)) continue
     const list = participantsByRes.get(p.reservation_id) || []
     list.push(p)
     participantsByRes.set(p.reservation_id, list)
@@ -349,9 +347,11 @@ export async function GET(request: NextRequest) {
     list.sort((a, b) => a.slot_index - b.slot_index)
   }
 
-  const needsGuardian = relevant.some((rez) => participantsByRes.get(rez.id)?.[0]?.participant_type === 'MINOR')
+  const needsGuardian = reservations.some((rez) =>
+    (participantsByRes.get(rez.id) || []).some((p) => p.participant_type === 'MINOR')
+  )
   const submissionIds = needsGuardian
-    ? submissions.filter((s) => relevantIds.has(s.reservation_id)).map((s) => s.id)
+    ? submissions.filter((s) => activeIdSet.has(s.reservation_id)).map((s) => s.id)
     : []
   const guardians = submissionIds.length
     ? await selectInChunks<{
@@ -369,7 +369,7 @@ export async function GET(request: NextRequest) {
 
   const acceptByParticipant = new Map<string, AcceptanceRow[]>()
   for (const a of signedAcceptances) {
-    if (!relevantIds.has(a.reservation_id)) continue
+    if (!activeIdSet.has(a.reservation_id)) continue
     const list = acceptByParticipant.get(a.participant_id) || []
     list.push(a)
     acceptByParticipant.set(a.participant_id, list)
@@ -402,7 +402,25 @@ export async function GET(request: NextRequest) {
     })
   }
 
+  function maniaSignatureIdForParticipant(participant: ParticipantRow): string | null {
+    const rows = acceptByParticipant.get(participant.id) || []
+    const maniaAcc = rows.find((a) => a.document_code === 'LAS_VEGAS_MANIA')
+    const guardian = guardianByParticipant.get(participant.id)
+    return pickReusableWaiverSignature({
+      canyonSignatureUrl: null,
+      maniaSignatureUrl: maniaAcc?.signature_id ?? null,
+      guardianSignatureUrl: guardian?.signatureId ?? null,
+      isMinor: participant.participant_type === 'MINOR',
+    })
+  }
+
   const neededSigIds = new Set<string>()
+  for (const rez of reservations) {
+    for (const participant of participantsByRes.get(rez.id) || []) {
+      const id = maniaSignatureIdForParticipant(participant)
+      if (id) neededSigIds.add(id)
+    }
+  }
   for (const rez of rezByCanyon.L) {
     const lead = participantsByRes.get(rez.id)?.[0]
     const id = lead ? signatureIdForParticipant(lead, 'L') : null
@@ -431,7 +449,7 @@ export async function GET(request: NextRequest) {
 
   const rcByRes = new Map<string, RcRow[]>()
   for (const row of rcRows) {
-    if (!relevantIds.has(row.reservation_id)) continue
+    if (!activeIdSet.has(row.reservation_id)) continue
     const list = rcByRes.get(row.reservation_id) || []
     list.push(row)
     rcByRes.set(row.reservation_id, list)
@@ -465,6 +483,61 @@ export async function GET(request: NextRequest) {
     })
   }
 
+  function maniaGuestsForReservation(rez: RezRow) {
+    const customer = rez.customer_id ? customerById.get(rez.customer_id) : undefined
+    const country = countryFromCustomerLanguage(customer?.language)
+    const slots = participantsByRes.get(rez.id) || []
+    const rcs = rcByRes.get(rez.id) || []
+    const tourDate = String(rez.tour_date || tourDateYmd)
+    const size = partySize(rez)
+    if (slots.length === 0) {
+      const leadRc = rcs[0] || null
+      return buildLeadCompanionRoster({
+        reservationId: rez.id,
+        partySize: size,
+        leadName: pickEnglishPrintName({
+          nameEn: leadRc?.name_en ?? null,
+          name: leadRc?.name || leadRc?.name_ko || customer?.name || null,
+        }),
+      }).map((guest) => ({ ...guest, country }))
+    }
+    const guests = slots.map((slot) => {
+      const rc = rcs[slot.slot_index] || rcs[0] || null
+      const guardian = guardianByParticipant.get(slot.id)
+      const sigId = maniaSignatureIdForParticipant(slot)
+      return {
+        id: slot.id,
+        reservationId: rez.id,
+        printName: pickEnglishPrintName({
+          fullLegalName: slot.full_legal_name,
+          nameEn: rc?.name_en ?? null,
+          name: rc?.name || rc?.name_ko || customer?.name || null,
+          placeholder: slot.placeholder_label,
+        }),
+        signatureUrl: sigId ? signatureUrls[sigId] ?? null : null,
+        country,
+        receiptNumber: String(rez.channel_rn || '').trim(),
+        isMinor: slot.participant_type === 'MINOR',
+        age: ageOnTourDate(slot.date_of_birth, tourDate),
+        guardianName: guardian?.name ?? null,
+      }
+    })
+    while (guests.length < size) {
+      guests.push({
+        id: `${rez.id}:companion:${guests.length}`,
+        reservationId: rez.id,
+        printName: '',
+        signatureUrl: null,
+        country: '',
+        receiptNumber: '',
+        isMinor: false,
+        age: null,
+        guardianName: null,
+      })
+    }
+    return guests
+  }
+
   let guideName = String(
     teamMember?.name_en || teamMember?.nick_name || teamMember?.name_ko || guideEmail || ''
   )
@@ -473,6 +546,32 @@ export async function GET(request: NextRequest) {
   const guideSignatureUrl = guideSig?.signature_id ? signatureUrls[guideSig.signature_id] ?? null : null
   if (guideSig?.guide_name) guideName = guideSig.guide_name
   if (guideSig?.guide_phone) guidePhone = guideSig.guide_phone
+
+  function buildManiaPacket(): CanyonWaiverPrintPacket | null {
+    const guests = reservations.flatMap((rez) => maniaGuestsForReservation(rez))
+    if (guests.length === 0) return null
+    const counts = reservations.reduce(
+      (acc, rez) => {
+        const party = partyAdultsMinors(rez)
+        acc.adults += party.adults
+        acc.minors += party.minors
+        return acc
+      },
+      { adults: 0, minors: 0 }
+    )
+    return {
+      canyon: 'M',
+      companyName: CANYON_WAIVER_COMPANY_NAME,
+      date: formatCanyonFormDate(tourDateYmd),
+      tourTime: formatCanyonFormTime(modeValue(reservations.map((r) => r.tour_time))),
+      adultCount: counts.adults,
+      minorCount: counts.minors,
+      guideName,
+      guidePhone,
+      guideSignatureUrl: null,
+      guests,
+    }
+  }
 
   function buildPacket(canyon: CanyonPrintKey, rezList: RezRow[]): CanyonWaiverPrintPacket | null {
     const guests = rezList.flatMap((rez) => guestsForReservation(rez, canyon))
@@ -511,6 +610,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     tourId,
     tourDate: tourDateYmd,
+    mania: buildManiaPacket(),
     lower: buildPacket('L', rezByCanyon.L),
     canyonX: buildPacket('X', rezByCanyon.X),
     canyonKeysByReservationId,

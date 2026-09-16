@@ -1,5 +1,10 @@
 import type { CanyonWaiverPrintGuest, CanyonWaiverPrintPacket } from '@/lib/canyonWaiverPrintForms'
-import { ANTELOPE_X_ROWS_PER_PAGE, antelopeXPrintName, padPrintRows } from '@/lib/canyonWaiverPrintForms'
+import {
+  ANTELOPE_X_ROWS_PER_PAGE,
+  antelopeXDuplexPageNumber,
+  antelopeXPrintName,
+  padPrintRows,
+} from '@/lib/canyonWaiverPrintForms'
 
 function UnderlineValue({ value, minWidth }: { value: string; minWidth?: string }) {
   return (
@@ -11,8 +16,10 @@ function UnderlineValue({ value, minWidth }: { value: string; minWidth?: string 
 
 function SignatureImage({ src, alt }: { src: string; alt: string }) {
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt={alt} className="cwf-sig" />
+    <span className="cwf-sig-ink">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={alt} className="cwf-sig" />
+    </span>
   )
 }
 
@@ -115,7 +122,7 @@ export default function AntelopeXCompanyInfoForm({
         ))}
       </ol>
 
-      <div className="acx-page-num">{pageIndex + 2}</div>
+      <div className="acx-page-num">{antelopeXDuplexPageNumber(pageIndex, 'form')}</div>
     </section>
   )
 }

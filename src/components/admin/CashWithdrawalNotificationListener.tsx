@@ -6,6 +6,10 @@ import { Banknote, ExternalLink, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useReportAdminAlert } from '@/contexts/AdminAlertInboxContext'
+import { makeAdminAlertDraft } from '@/lib/adminAlertInbox'
+import { asAdminAlertPayload, unshiftUniqueAlert } from '@/lib/adminAlertReplay'
+import { useAdminAlertReplay } from '@/hooks/useAdminAlertReplay'
 import CashLedgerReviewControls from '@/components/expenses/CashLedgerReviewControls'
 import {
   CASH_WITHDRAWAL_NOTIFY_EMAIL,
@@ -57,6 +61,7 @@ function formatWhen(raw: string | null | undefined): string {
 export default function CashWithdrawalNotificationListener({ locale }: { locale: string }) {
   const router = useRouter()
   const { authUser } = useAuth()
+  const report = useReportAdminAlert()
   const email = authUser?.email?.trim().toLowerCase() ?? ''
   const enabled = email === CASH_WITHDRAWAL_NOTIFY_EMAIL
   const [queue, setQueue] = useState<CashWithdrawalNotification[]>([])
@@ -64,11 +69,26 @@ export default function CashWithdrawalNotificationListener({ locale }: { locale:
   const notification = queue[0] ?? null
 
   const enqueue = useCallback((next: CashWithdrawalNotification) => {
+    report(
+      makeAdminAlertDraft('cash_withdrawal', next.id, {
+        title: '현금 출금 추가',
+        body: `${formatMoney(next.amount)} · ${next.description?.trim() || next.message}`,
+        href: `/${locale}/admin/expenses?tab=cash`,
+        createdAt: next.created_at,
+        payload: next,
+      })
+    )
     setQueue((prev) => {
       if (prev.some((item) => item.id === next.id)) return prev
       return [...prev, next]
     })
-  }, [])
+  }, [locale, report])
+
+  useAdminAlertReplay('cash_withdrawal', (item) => {
+    const row = asAdminAlertPayload<CashWithdrawalNotification>(item.payload)
+    if (!row?.id) return
+    setQueue((prev) => unshiftUniqueAlert(prev, row, (entry) => entry.id === row.id))
+  })
 
   useEffect(() => {
     if (!enabled || !email) return

@@ -325,7 +325,7 @@ function detectPlatform(sourceEmail: string | null, subject: string): string | n
 }
 
 /** 전화번호에서 국가 번호(국가 코드)를 추출해 언어 코드로 매핑. 매칭 실패 시 null (KR, EN, ES, JA, ZH, FR, DE, IT, PT, RU) */
-function languageFromPhoneCountry(phone: string): string | null {
+export function languageFromPhoneCountry(phone: string): string | null {
   let s = phone.trim()
   if (s.startsWith('+')) s = s.slice(1)
   else if (s.startsWith('00')) s = s.slice(2)
@@ -346,7 +346,7 @@ function languageFromPhoneCountry(phone: string): string | null {
 }
 
 /** 이메일에서 나온 언어명/문구를 고객 언어 드롭다운 코드로 매핑 (KR, EN, ES, JA, ZH, FR, DE, IT, PT, RU) */
-function normalizeLanguageToCode(raw: string): string {
+export function normalizeLanguageToCode(raw: string): string {
   const s = raw.trim().toLowerCase()
   if (/^(kr|ko|korean|한국어)/.test(s)) return 'KR'
   if (/^(en|english|영어)/.test(s)) return 'EN'

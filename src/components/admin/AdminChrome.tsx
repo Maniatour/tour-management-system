@@ -13,6 +13,7 @@ import MobileFooter from '@/components/MobileFooter'
 import GlobalAudioPlayer from '@/components/GlobalAudioPlayer'
 import AdminPageTitle from '@/components/admin/AdminPageTitle'
 import { SiteAccessMatrixPatchProvider } from '@/contexts/SiteAccessMatrixPatchContext'
+import { AdminAlertInboxProvider } from '@/contexts/AdminAlertInboxContext'
 
 const AdminTodoRoot = dynamic(() => import('@/components/admin/todo/AdminTodoRoot'), {
   ssr: false,
@@ -55,17 +56,20 @@ export default function AdminChrome({ locale, children }: AdminChromeProps) {
   if (bareChrome) {
     return (
       <SiteAccessMatrixPatchProvider>
-        <OpsModuleRouteGuard>
-          <div className="admin-shell min-h-screen w-full bg-background px-0">
-            {children}
-          </div>
-        </OpsModuleRouteGuard>
+        <AdminAlertInboxProvider>
+          <OpsModuleRouteGuard>
+            <div className="admin-shell min-h-screen w-full bg-background px-0">
+              {children}
+            </div>
+          </OpsModuleRouteGuard>
+        </AdminAlertInboxProvider>
       </SiteAccessMatrixPatchProvider>
     )
   }
 
   return (
     <SiteAccessMatrixPatchProvider>
+      <AdminAlertInboxProvider>
       <AdminPageTitle locale={locale} />
       <TeamBoardManualProvider locale={locale}>
         <div className="admin-shell min-h-screen w-full min-w-0 max-w-full overflow-x-clip px-0">
@@ -80,6 +84,7 @@ export default function AdminChrome({ locale, children }: AdminChromeProps) {
           <GlobalAudioPlayer />
         </div>
       </TeamBoardManualProvider>
+      </AdminAlertInboxProvider>
     </SiteAccessMatrixPatchProvider>
   )
 }

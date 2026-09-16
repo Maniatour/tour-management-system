@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { filterTicketBookingsExcludedFromMainUi } from '@/lib/ticketBookingSoftDelete'
+import { isCancelledTicketBookingForPrint } from '@/lib/ticketBookingStatus'
 import {
   buildPickupResolveContextFromTour,
   fetchPickupGroupPresetWithReps,
@@ -52,6 +53,7 @@ type LocalTicketBooking = {
   reservation_id?: string | null
   rn_number?: string | null
   status?: string | null
+  booking_status?: string | null
 }
 
 type LocalTourHotelBooking = {
@@ -70,6 +72,7 @@ type LocalTourHotelBooking = {
 function aggregateTicketBookingsForPrint(ticketBookings: LocalTicketBooking[]): LocalTicketBooking[] {
   const companyMap = new Map<string, { company: string; totalEa: number; bookings: LocalTicketBooking[] }>()
   for (const booking of ticketBookings) {
+    if (isCancelledTicketBookingForPrint(booking)) continue
     const company = booking.company || 'Unknown'
     const ea = booking.ea || 0
     if (!companyMap.has(company)) {
@@ -89,6 +92,8 @@ function aggregateTicketBookingsForPrint(ticketBookings: LocalTicketBooking[]): 
       ea: b.ea || 0,
       reservation_id: b.reservation_id ?? null,
       rn_number: b.rn_number ?? null,
+      status: b.status ?? null,
+      booking_status: b.booking_status ?? null,
     })),
   }))
 }

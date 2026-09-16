@@ -4,6 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Headphones } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { useReportAdminAlert } from '@/contexts/AdminAlertInboxContext'
+import { makeAdminAlertDraft } from '@/lib/adminAlertInbox'
+import { asAdminAlertPayload } from '@/lib/adminAlertReplay'
+import { useAdminAlertReplay } from '@/hooks/useAdminAlertReplay'
 import { todayInLasVegas } from '@/lib/dailyReport/dateUtils'
 import { isGoblinNarrationReminderWindow } from '@/lib/goblinTour'
 import { fetchToursNarrationHistory } from '@/lib/tourNarrationPlays'
@@ -18,6 +22,7 @@ function dismissKey(dateYmd: string): string {
 export default function AdminGoblinNarrationReminderModal({ locale }: { locale: string }) {
   const pathname = usePathname() ?? ''
   const { operatorId } = useOperatorOptional()
+  const report = useReportAdminAlert()
   const isEn = locale === 'en'
   const [open, setOpen] = useState(false)
   const [today, setToday] = useState('')
@@ -45,7 +50,24 @@ export default function AdminGoblinNarrationReminderModal({ locale }: { locale: 
     })
     if (rows.length === 0) return
     setOpen(true)
-  }, [pathname, operatorId, locale, open])
+    report(
+      makeAdminAlertDraft('goblin_narration', ymd, {
+        title: isEn ? "Today's goblin tour narration" : '오늘 밤도깨비 나레이션 재생',
+        body: isEn
+          ? 'Check whether each goblin tour played narration today.'
+          : '오늘 밤도깨비 투어 나레이션 재생 여부를 확인하세요.',
+        createdAt: new Date().toISOString(),
+        payload: { today: ymd },
+      })
+    )
+  }, [pathname, operatorId, locale, open, report, isEn])
+
+  useAdminAlertReplay('goblin_narration', (item) => {
+    const row = asAdminAlertPayload<{ today?: string }>(item.payload)
+    closedThisSessionRef.current = false
+    setToday(row?.today || todayInLasVegas())
+    setOpen(true)
+  })
 
   useEffect(() => {
     void maybeOpen()

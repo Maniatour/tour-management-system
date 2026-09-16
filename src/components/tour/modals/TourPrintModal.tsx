@@ -21,6 +21,7 @@ import { loadResidentStatusAmountsForReservation } from '@/lib/saveResidentStatu
 import { getEffectivePickupHotelId, getPickupHotelNameById } from '@/lib/effectivePickupHotel'
 import type { PickupResolveContext } from '@/lib/pickupGroupPreset'
 import { isActiveTourHotelBookingForList } from '@/lib/tourHotelReferences'
+import { isCancelledTicketBookingForPrint } from '@/lib/ticketBookingStatus'
 import { applyStoredCanyonChoices } from '@/lib/canyonChoice'
 import { appendCanyonChoicesFromReservationJson } from '@/lib/fetchCanyonChoiceRows'
 import { isCanyonTourChoiceKey, type ReservationChoiceRow } from '@/lib/tourChoiceCounts'
@@ -74,12 +75,16 @@ export interface PrintTicketBooking {
   ea?: number | null
   reservation_id?: string | null
   rn_number?: string | null
+  status?: string | null
+  booking_status?: string | null
   bookingDetails?: Array<{
     check_in_date: string | null
     time: string | null
     ea: number
     reservation_id: string | null
     rn_number: string | null
+    status?: string | null
+    booking_status?: string | null
   }>
 }
 
@@ -236,7 +241,97 @@ function getPrintStyles(): string {
     ${getScopedStyles()}
     ${getCanyonWaiverPrintStyles()}
     .cwf-page-break { break-before: page; page-break-before: always; }
+    .acx-duplex-start { break-before: right; page-break-before: right; }
   `
+}
+
+function waitForPrintImages(doc: Document): Promise<void> {
+  const imgs = Array.from(doc.images)
+  if (imgs.length === 0) return Promise.resolve()
+  return Promise.all(
+    imgs.map(
+      (img) =>
+        img.complete
+          ? Promise.resolve()
+          : new Promise<void>((resolve) => {
+              img.addEventListener('load', () => resolve(), { once: true })
+              img.addEventListener('error', () => resolve(), { once: true })
+            })
+    )
+  ).then(() => undefined)
+}
+
+function lowerOverlayMarkup(source: HTMLElement): string {
+  return Array.from(source.querySelectorAll('[data-print-section="lower-overlay"]'))
+    .map((el, i) => (i === 0 ? el.outerHTML : `<div class="cwf-page-break">${el.outerHTML}</div>`))
+    .join('')
+}
+
+function stripLowerOverlayPages(root: HTMLElement): void {
+  root.querySelectorAll('[data-print-section="lower-overlay"]').forEach((page) => {
+    const wrap = page.parentElement
+    if (wrap && wrap !== root) wrap.remove()
+    else page.remove()
+  })
+}
+
+function printIframeDocument(input: {
+  bodyHtml: string
+  title: string
+  styles: string
+  fitWidthPx: number
+  scaleTourInfoToPx?: number
+  onAfterPrint?: () => void
+}): void {
+  const iframe = document.createElement('iframe')
+  iframe.title = input.title
+  iframe.style.cssText =
+    'position:fixed;left:-10000px;top:0;width:816px;height:1056px;border:none;overflow:hidden;'
+  document.body.appendChild(iframe)
+  const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
+  if (!iframeDoc) {
+    document.body.removeChild(iframe)
+    return
+  }
+  iframeDoc.open()
+  iframeDoc.write(
+    `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${input.title}</title>` +
+      `<style>${input.styles}</style></head><body>` +
+      `<div id="tp-fit" style="width:${input.fitWidthPx}px;">${input.bodyHtml}</div>` +
+      `</body></html>`
+  )
+  iframeDoc.close()
+  const printWin = iframe.contentWindow
+  if (!printWin) {
+    document.body.removeChild(iframe)
+    return
+  }
+  const runPrint = () => {
+    const tourInfo = iframeDoc.querySelector('.tp-tour-info') as HTMLElement | null
+    if (input.scaleTourInfoToPx && tourInfo) {
+      const contentH = tourInfo.scrollHeight
+      if (contentH > input.scaleTourInfoToPx - 6) {
+        const scale = Math.max(0.4, (input.scaleTourInfoToPx - 6) / contentH)
+        ;(tourInfo.style as CSSStyleDeclaration & { zoom?: string }).zoom = String(scale)
+      }
+    }
+    printWin.focus()
+    setTimeout(() => {
+      runPrintAndKeepAlive(
+        printWin,
+        () => {
+          removePrintIframe(iframe)
+          input.onAfterPrint?.()
+        },
+        input.title
+      )
+    }, 250)
+  }
+  const start = () => {
+    void waitForPrintImages(iframeDoc).then(() => requestAnimationFrame(() => requestAnimationFrame(runPrint)))
+  }
+  if (iframeDoc.readyState === 'complete') start()
+  else printWin.addEventListener('load', start, { once: true })
 }
 
 // ---------------------------------------------------------------------------
@@ -270,6 +365,7 @@ export default function TourPrintModal({
   const [waiverPacket, setWaiverPacket] = useState<CanyonWaiverPrintTourPayload | null>(null)
   const [waiverLoading, setWaiverLoading] = useState(false)
   const [includeTourInfo, setIncludeTourInfo] = useState(true)
+  const [includeManiaForm, setIncludeManiaForm] = useState(true)
   const [includeLowerForm, setIncludeLowerForm] = useState(true)
   const [includeXForm, setIncludeXForm] = useState(true)
 
@@ -318,12 +414,13 @@ export default function TourPrintModal({
       close: isKo ? '닫기' : 'Close',
       loading: isKo ? '잔금 정보를 불러오는 중...' : 'Loading balance...',
       includeTourInfo: isKo ? '투어 정보' : 'Tour info',
-      includeLower: isKo ? '로어 앤텔롭 면책 폼' : 'Lower Antelope form',
-      includeX: isKo ? '앤텔롭 X 면책 폼' : 'Antelope X form',
+      includeMania: isKo ? '매니아 투어 면책 동의서' : 'Mania tour waiver',
+      includeLower: isKo ? '로어 앤텔롭 (노란 용지)' : 'Lower Antelope (yellow paper)',
+      includeX: isKo ? '앤텔롭 X 면책 동의서' : 'Antelope X waiver',
       waiverLoading: isKo ? '면책 서명 정보를 불러오는 중...' : 'Loading waiver signatures...',
       printPagesHint: isKo
-        ? '캐년 폼은 투어 정보 다음 페이지로 인쇄됩니다.'
-        : 'Canyon forms print on following pages.',
+        ? '로어는 노란 원본 용지를 넣고 인쇄합니다. 이름·서명만 칸에 맞춰 나갑니다. 인쇄 배율은 100%(실제 크기)로 두세요. 다른 페이지와 함께 찍으면 흰 용지 다음에 로어 인쇄창이 한 번 더 뜹니다. 앤텔롭 X는 맨 마지막에 양면(앞=폼, 뒤=waiver, 긴 쪽 넘김)입니다.'
+        : 'Lower Antelope prints names and signatures onto Dixie yellow stock at 100% scale. If other pages are included, a second print dialog opens for the yellow paper. Antelope X prints last, duplex, flip on long edge.',
     }),
     [isKo]
   )
@@ -594,6 +691,7 @@ export default function TourPrintModal({
         const json = (await res.json()) as CanyonWaiverPrintTourPayload
         if (cancelled) return
         setWaiverPacket(json)
+        setIncludeManiaForm(Boolean(json.mania))
         setIncludeLowerForm(Boolean(json.lower))
         setIncludeXForm(Boolean(json.canyonX))
         setIncludeTourInfo(true)
@@ -691,9 +789,11 @@ export default function TourPrintModal({
       resNo: string
     }> = []
     for (const b of ticketBookings) {
+      if (isCancelledTicketBookingForPrint(b)) continue
       const company = b.company || 'N/A'
       if (b.bookingDetails && b.bookingDetails.length > 0) {
         for (const d of b.bookingDetails) {
+          if (isCancelledTicketBookingForPrint(d)) continue
           rows.push({
             company,
             date: formatYmd(d.check_in_date),
@@ -721,96 +821,60 @@ export default function TourPrintModal({
     [tourHotelBookings]
   )
 
+  const printMania = includeManiaForm && Boolean(waiverPacket?.mania)
   const printLower = includeLowerForm && Boolean(waiverPacket?.lower)
   const printX = includeXForm && Boolean(waiverPacket?.canyonX)
-  const canPrint = includeTourInfo || printLower || printX
+  const canPrint = includeTourInfo || printMania || printLower || printX
   const busy = loading || waiverLoading
 
   const handlePrint = () => {
     const target = document.getElementById('tour-print-content')
     if (!target) return
-    const clone = target.cloneNode(true) as HTMLElement
-    clone.removeAttribute('id')
 
     const DPI = 96
     const MARGIN_MM = 12
     const mmToPx = (mm: number) => (mm * DPI) / 25.4
     const availW = Math.round(8.5 * DPI - 2 * mmToPx(MARGIN_MM))
     const availH = Math.round(11 * DPI - 2 * mmToPx(MARGIN_MM))
-    const printCanyonPages = printLower || printX
+    const printWhitePages = includeTourInfo || printMania || printX
+    const styles = getPrintStyles()
+    const overlayHtml = printLower ? lowerOverlayMarkup(target) : ''
 
-    const iframe = document.createElement('iframe')
-    iframe.title = 'Tour Print'
-    iframe.style.cssText =
-      'position:fixed;left:-10000px;top:0;width:816px;height:1056px;border:none;overflow:hidden;'
-    document.body.appendChild(iframe)
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
-    if (!iframeDoc) {
-      document.body.removeChild(iframe)
-      return
+    const printYellowStock = () => {
+      if (!overlayHtml) return
+      printIframeDocument({
+        bodyHtml: overlayHtml,
+        title: isKo
+          ? `${productName} - 로어 앤텔롭 노란 용지`
+          : `${productName} - Lower Antelope yellow stock`,
+        styles,
+        fitWidthPx: availW,
+      })
     }
-    iframeDoc.open()
-    iframeDoc.write(
-      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${productName} - ${tourDate}</title>` +
-        `<style>${getPrintStyles()}</style></head><body>` +
-        `<div id="tp-fit" style="width:${availW}px;">${clone.innerHTML}</div>` +
-        `</body></html>`
-    )
-    iframeDoc.close()
 
-    const printWin = iframe.contentWindow
-    if (!printWin) {
-      document.body.removeChild(iframe)
+    if (!printWhitePages) {
+      printYellowStock()
       return
     }
 
-    const waitForImages = () => {
-      const imgs = Array.from(iframeDoc.images)
-      if (imgs.length === 0) return Promise.resolve()
-      return Promise.all(
-        imgs.map((img) =>
-          img.complete
-            ? Promise.resolve()
-            : new Promise<void>((resolve) => {
-                img.addEventListener('load', () => resolve(), { once: true })
-                img.addEventListener('error', () => resolve(), { once: true })
-              })
-        )
-      ).then(() => undefined)
-    }
+    const clone = target.cloneNode(true) as HTMLElement
+    clone.removeAttribute('id')
+    stripLowerOverlayPages(clone)
 
-    const runPrint = () => {
-      const fit = iframeDoc.getElementById('tp-fit')
-      const tourInfo = iframeDoc.querySelector('.tp-tour-info') as HTMLElement | null
-      if (printCanyonPages) {
-        if (tourInfo) {
-          const contentH = tourInfo.scrollHeight
-          if (contentH > availH - 6) {
-            const scale = Math.max(0.4, (availH - 6) / contentH)
-            ;(tourInfo.style as CSSStyleDeclaration & { zoom?: string }).zoom = String(scale)
+    printIframeDocument({
+      bodyHtml: clone.innerHTML,
+      title: `${productName} - ${tourDate}`,
+      styles,
+      fitWidthPx: availW,
+      scaleTourInfoToPx: availH,
+      ...(printLower
+        ? {
+            onAfterPrint: () => {
+              setTimeout(printYellowStock, 400)
+            },
           }
-        }
-      } else if (fit) {
-        const contentH = fit.scrollHeight
-        if (contentH > availH - 6) {
-          const scale = Math.max(0.4, (availH - 6) / contentH)
-          ;(fit.style as CSSStyleDeclaration & { zoom?: string }).zoom = String(scale)
-        }
-      }
-      printWin.focus()
-      setTimeout(() => {
-        runPrintAndKeepAlive(printWin, () => removePrintIframe(iframe), `${productName} - ${tourDate}`)
-      }, 250)
-    }
-
-    const start = () => {
-      void waitForImages().then(() => requestAnimationFrame(() => requestAnimationFrame(runPrint)))
-    }
-    if (iframeDoc.readyState === 'complete') {
-      start()
-    } else {
-      printWin.addEventListener('load', start, { once: true })
-    }
+        : {}),
+    })
   }
 
   if (!isOpen) return null
@@ -861,6 +925,17 @@ export default function TourPrintModal({
               />
               {L.includeTourInfo}
             </label>
+            {waiverPacket?.mania ? (
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={includeManiaForm}
+                  onChange={(e) => setIncludeManiaForm(e.target.checked)}
+                />
+                {L.includeMania} ({waiverPacket.mania.guests.filter((g) => g.printName).length})
+              </label>
+            ) : null}
             {waiverPacket?.lower ? (
               <label className="inline-flex items-center gap-2">
                 <input
@@ -884,7 +959,7 @@ export default function TourPrintModal({
               </label>
             ) : null}
           </div>
-          {waiverPacket?.lower || waiverPacket?.canyonX ? (
+          {waiverPacket?.mania || waiverPacket?.lower || waiverPacket?.canyonX ? (
             <p className="text-xs text-gray-500">{L.printPagesHint}</p>
           ) : null}
         </header>
@@ -1055,8 +1130,10 @@ export default function TourPrintModal({
             </div>
             ) : null}
             <CanyonWaiverPrintPages
+              mania={waiverPacket?.mania ?? null}
               lower={waiverPacket?.lower ?? null}
               canyonX={waiverPacket?.canyonX ?? null}
+              includeMania={printMania}
               includeLower={printLower}
               includeX={printX}
               isFirstPrintedBlock={!includeTourInfo}

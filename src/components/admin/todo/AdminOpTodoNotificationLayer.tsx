@@ -10,7 +10,7 @@ import { dispatchOpTodoRefresh } from '@/lib/opTodoRefresh'
 import { OpTodoNotificationLayer } from '@/components/team-board/OpTodoNotificationLayer'
 
 /** 모든 admin 페이지에서 체크리스트 알림 표시 (팀 게시판 전용 제거) */
-export function AdminOpTodoNotificationLayer() {
+export function AdminOpTodoNotificationLayer({ locale }: { locale: string }) {
   const { user, userRole, userPosition } = useAuth()
 
   const persona = useMemo(
@@ -38,6 +38,7 @@ export function AdminOpTodoNotificationLayer() {
       supabase={supabase}
       userEmail={user.email}
       audiences={audiences}
+      locale={locale}
       onRefresh={() => dispatchOpTodoRefresh()}
     />
   )

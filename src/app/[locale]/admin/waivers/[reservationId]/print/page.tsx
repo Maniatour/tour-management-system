@@ -3,10 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import WaiverDocumentView from '@/components/waiver/WaiverDocumentView'
-import AntelopeXCompanyInfoForm from '@/components/tour/print/AntelopeXCompanyInfoForm'
+import AntelopeXDuplexSheets from '@/components/tour/print/AntelopeXDuplexSheets'
 import {
-  ANTELOPE_X_ROWS_PER_PAGE,
-  chunkPrintGuests,
   formatCanyonFormDate,
   formatCanyonFormTime,
   getCanyonWaiverPrintStyles,
@@ -110,7 +108,6 @@ export default function WaiverPrintPage() {
       guardianName: p.guardianName,
     })),
   }
-  const canyonXChunks = chunkPrintGuests(canyonXPacket.guests, ANTELOPE_X_ROWS_PER_PAGE)
 
   return (
     <div className="waiver-print bg-white text-black">
@@ -121,6 +118,7 @@ export default function WaiverPrintPage() {
           body { background: white !important; }
           .page-break { break-after: page; page-break-after: always; }
           .avoid-break { break-inside: avoid; page-break-inside: avoid; }
+          .acx-duplex-start { break-before: right; page-break-before: right; }
           header, nav, aside, [data-admin-chrome] { display: none !important; }
         }
         ${getCanyonWaiverPrintStyles()}
@@ -193,21 +191,10 @@ export default function WaiverPrintPage() {
         : null}
 
       {showCanyon ? (
-        <>
-          <section className="page-break mx-auto max-w-[8.5in] px-8 py-8">
-            <WaiverDocumentView content={data.canyonXEnglish} languageNotice="" showGoverningNotice={false} />
-          </section>
-          {canyonXChunks.map((group, pageIdx) => (
-            <section key={pageIdx} className="page-break mx-auto max-w-[8.5in]">
-              <AntelopeXCompanyInfoForm
-                packet={canyonXPacket}
-                guests={group}
-                pageIndex={pageIdx}
-                pageCount={canyonXChunks.length}
-              />
-            </section>
-          ))}
-        </>
+        <AntelopeXDuplexSheets
+          packet={canyonXPacket}
+          isFirstPrintedBlock={!showCover && !showMania}
+        />
       ) : null}
     </div>
   )

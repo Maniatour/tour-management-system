@@ -4,6 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookOpen, Check, ExternalLink, Loader2, Megaphone, PenLine } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTeamBoardManualOptional } from '@/contexts/TeamBoardManualContext'
+import { useAdminAlertInboxOptional, useReportAdminAlert } from '@/contexts/AdminAlertInboxContext'
+import { makeAdminAlertDraft } from '@/lib/adminAlertInbox'
+import { asAdminAlertPayload, unshiftUniqueAlert } from '@/lib/adminAlertReplay'
+import { useAdminAlertReplay } from '@/hooks/useAdminAlertReplay'
 import { hubArticleLinkLabel } from '@/lib/hubArticleManualLink'
 import WaiverSignaturePad from '@/components/waiver/WaiverSignaturePad'
 import {
@@ -26,6 +30,8 @@ type StaffSiteAlertPopupLayerProps = {
 
 export function StaffSiteAlertPopupLayer({ userEmail, locale }: StaffSiteAlertPopupLayerProps) {
   const manualCtx = useTeamBoardManualOptional()
+  const report = useReportAdminAlert()
+  const inbox = useAdminAlertInboxOptional()
   const viewLang: SopEditLocale = locale.startsWith('ko') ? 'ko' : 'en'
   const [queue, setQueue] = useState<PendingAlert[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -74,10 +80,26 @@ export function StaffSiteAlertPopupLayer({ userEmail, locale }: StaffSiteAlertPo
         })
       }
       setQueue(mapped)
+      for (const item of mapped) {
+        report(
+          makeAdminAlertDraft('staff_site_alert', item.recipient_id, {
+            title: staffSiteAlertLocalizedTitle(item, locale),
+            body: staffSiteAlertLocalizedBody(item, locale).slice(0, 180),
+            createdAt: item.created_at,
+            payload: item,
+          })
+        )
+      }
     } catch (e) {
       console.error('StaffSiteAlertPopupLayer', e)
     }
-  }, [emailKey, schemaUnavailable])
+  }, [emailKey, schemaUnavailable, locale, report])
+
+  useAdminAlertReplay('staff_site_alert', (item) => {
+    const row = asAdminAlertPayload<PendingAlert>(item.payload)
+    if (!row?.recipient_id) return
+    setQueue((prev) => unshiftUniqueAlert(prev, row, (entry) => entry.recipient_id === row.recipient_id))
+  })
 
   useEffect(() => {
     if (!emailKey) return
@@ -121,6 +143,7 @@ export function StaffSiteAlertPopupLayer({ userEmail, locale }: StaffSiteAlertPo
         .eq('id', current.recipient_id)
 
       if (error) throw error
+      inbox?.markRead(`staff_site_alert:${current.recipient_id}`)
       setQueue((prev) => prev.filter((p) => p.recipient_id !== current.recipient_id))
     } catch (e) {
       console.error('StaffSiteAlertPopupLayer ack', e)

@@ -10,8 +10,10 @@ function dixiesLogoSrc(): string {
 
 function SignatureImage({ src, alt, className }: { src: string; alt: string; className?: string }) {
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt={alt} className={className || 'cwf-sig'} />
+    <span className="cwf-sig-ink">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={alt} className={className || 'cwf-sig'} />
+    </span>
   )
 }
 
@@ -30,11 +32,18 @@ export default function LowerAntelopeReservationsForm({
   const start = pageIndex * LOWER_ANTELOPE_ROWS_PER_PAGE
 
   return (
-    <section className="cwf-page lac-page" aria-label="Lower Antelope Canyon reservations form">
-      <div className="lac-top">
+    <section
+      className="cwf-page lac-page"
+      data-print-section="lower-overlay"
+      aria-label="Lower Antelope Canyon reservations overlay"
+    >
+      <p className="lac-preview-note">
+        Preview on yellow stock — print fills Print Name and Signature only
+      </p>
+      <div className="lac-chrome lac-top">
         <div className="lac-logo">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={dixiesLogoSrc()} alt="Dixie's Lower Antelope Canyon Tours" />
+          <img src={dixiesLogoSrc()} alt="" />
         </div>
         <h1 className="lac-title">RESERVATIONS</h1>
         <div className="lac-meta">
@@ -45,13 +54,13 @@ export default function LowerAntelopeReservationsForm({
         </div>
       </div>
 
-      <div className="lac-company">
+      <div className="lac-chrome lac-company">
         Company Name: <span className="lac-fill">{packet.companyName}</span>
       </div>
-      <p className="lac-waiver">
+      <p className="lac-chrome lac-waiver">
         I have read Lower Antelope Canyon Tour&apos;s Waiver of Liability and consent to the Waiver.
       </p>
-      <div className="lac-ops">
+      <div className="lac-chrome lac-ops">
         <div>
           <div className="lac-sign-line">Leilah Young</div>
           <div className="lac-sign-label">Signature of Operator</div>
@@ -64,7 +73,7 @@ export default function LowerAntelopeReservationsForm({
 
       <table className="lac-table">
         <thead>
-          <tr>
+          <tr className="lac-chrome">
             <th />
             <th>Receipt #</th>
             <th>Print Name</th>
@@ -75,10 +84,10 @@ export default function LowerAntelopeReservationsForm({
         <tbody>
           {rows.map((guest, i) => (
             <tr key={guest?.id ?? `empty-${start + i}`}>
-              <td className="lac-num">{start + i + 1}</td>
+              <td className="lac-num lac-chrome">{start + i + 1}</td>
               <td className="lac-rn" />
-              <td className="lac-name">{guest?.printName || ''}</td>
-              <td className="lac-sig">
+              <td className="lac-name lac-ink">{guest?.printName || ''}</td>
+              <td className="lac-sig lac-ink">
                 {guest?.printName && guest.signatureUrl ? (
                   <SignatureImage
                     src={guest.signatureUrl}
@@ -93,7 +102,7 @@ export default function LowerAntelopeReservationsForm({
         </tbody>
       </table>
 
-      <div className="lac-foot">
+      <div className="lac-chrome lac-foot">
         <span>Initials of Book Keeper ________</span>
         <span>W/O Permit Total ________</span>
       </div>

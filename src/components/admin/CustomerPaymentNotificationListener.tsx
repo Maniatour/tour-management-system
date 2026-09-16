@@ -5,6 +5,10 @@ import { useRouter } from 'next/navigation'
 import { CreditCard, ExternalLink, Users, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useReportAdminAlert } from '@/contexts/AdminAlertInboxContext'
+import { makeAdminAlertDraft } from '@/lib/adminAlertInbox'
+import { asAdminAlertPayload, unshiftUniqueAlert } from '@/lib/adminAlertReplay'
+import { useAdminAlertReplay } from '@/hooks/useAdminAlertReplay'
 import { customerPaymentNotifyKindFromMessage } from '@/lib/customerPaymentNotifyKind'
 
 type CustomerPaymentNotification = {
@@ -56,16 +60,35 @@ function formatGuests(n: CustomerPaymentNotification): string {
 export default function CustomerPaymentNotificationListener({ locale }: { locale: string }) {
   const router = useRouter()
   const { authUser, userRole } = useAuth()
+  const report = useReportAdminAlert()
   const enabled = Boolean(authUser?.email && userRole && userRole !== 'customer')
   const [queue, setQueue] = useState<CustomerPaymentNotification[]>([])
   const notification = queue[0] ?? null
 
   const enqueue = useCallback((next: CustomerPaymentNotification) => {
+    const isResidentCheck = customerPaymentNotifyKindFromMessage(next.message) === 'resident_check'
+    report(
+      makeAdminAlertDraft('customer_payment', next.id, {
+        title: isResidentCheck ? '거주·패스 안내 결제' : '고객 결제 완료',
+        body: [next.customer_name, formatMoney(next.amount, next.currency), next.product_name]
+          .filter(Boolean)
+          .join(' · '),
+        href: `/${locale}/admin/reservations/${next.reservation_id}`,
+        createdAt: next.created_at,
+        payload: next,
+      })
+    )
     setQueue((prev) => {
       if (prev.some((item) => item.id === next.id)) return prev
       return [...prev, next]
     })
-  }, [])
+  }, [locale, report])
+
+  useAdminAlertReplay('customer_payment', (item) => {
+    const row = asAdminAlertPayload<CustomerPaymentNotification>(item.payload)
+    if (!row?.id) return
+    setQueue((prev) => unshiftUniqueAlert(prev, row, (entry) => entry.id === row.id))
+  })
 
   useEffect(() => {
     if (!enabled || !authUser?.email) return

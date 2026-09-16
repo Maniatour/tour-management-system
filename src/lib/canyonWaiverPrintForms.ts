@@ -2,6 +2,7 @@
 
 export const LOWER_ANTELOPE_ROWS_PER_PAGE = 25
 export const ANTELOPE_X_ROWS_PER_PAGE = 18
+export const MANIA_WAIVER_ROWS_PER_PAGE = 18
 export const CANYON_WAIVER_COMPANY_NAME = 'LAS VEGAS MANIA TOUR'
 
 export type CanyonWaiverPrintGuest = {
@@ -17,7 +18,7 @@ export type CanyonWaiverPrintGuest = {
 }
 
 export type CanyonWaiverPrintPacket = {
-  canyon: 'L' | 'X'
+  canyon: 'L' | 'X' | 'M'
   companyName: string
   date: string
   tourTime: string
@@ -32,10 +33,16 @@ export type CanyonWaiverPrintPacket = {
 export type CanyonWaiverPrintTourPayload = {
   tourId: string
   tourDate: string
+  mania?: CanyonWaiverPrintPacket | null
   lower: CanyonWaiverPrintPacket | null
   canyonX: CanyonWaiverPrintPacket | null
   /** 예약별 L/X — 인쇄 모달 배지용 (서버에서 이미 해석) */
   canyonKeysByReservationId?: Record<string, Array<'X' | 'L'>>
+}
+
+/** 한 장 양면: 앞면 서명 폼(홀수), 뒷면 waiver(짝수) */
+export function antelopeXDuplexPageNumber(formPageIndex: number, side: 'form' | 'waiver'): number {
+  return Math.max(0, formPageIndex) * 2 + (side === 'form' ? 1 : 2)
 }
 
 export function trimPrintText(value: string | null | undefined): string {
@@ -212,18 +219,64 @@ export function getCanyonWaiverPrintStyles(): string {
     .cwf-page { box-sizing: border-box; color: #111; }
     .cwf-page *, .cwf-page *::before, .cwf-page *::after { box-sizing: border-box; }
     .cwf-page img { max-width: 100%; }
-    .cwf-sig { display: block; max-height: 28px; width: auto; object-fit: contain; object-position: left bottom; }
+    .cwf-sig-ink { display: inline-flex; align-items: flex-end; max-width: 100%; }
+    .cwf-sig {
+      display: block;
+      max-height: 32px;
+      width: auto;
+      object-fit: contain;
+      object-position: left bottom;
+      filter: grayscale(1) contrast(700%) brightness(0.92);
+      mix-blend-mode: multiply;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
     .cwf-page-break { margin-top: 28px; padding-top: 20px; border-top: 2px dashed #d1d5db; }
+
+    .mania-page { box-sizing: border-box; color: #111; background: #fff; }
+    .mania-doc { color: #111; font-family: "Times New Roman", Times, serif; font-size: 10.5px; line-height: 1.38; }
+    .mania-doc .mania-op { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; margin: 0 0 6px; }
+    .mania-doc h2 { font-size: 15px; font-weight: 800; margin: 0 0 8px; line-height: 1.25; }
+    .mania-doc .mania-warn { border: 1.5px solid #111; padding: 6px 8px; font-weight: 700; margin: 0 0 10px; }
+    .mania-doc p { margin: 0 0 7px; color: #111; }
+    .mania-doc h3 { font-size: 11.5px; font-weight: 800; margin: 10px 0 4px; page-break-after: avoid; }
+    .mania-doc ul { margin: 0 0 8px; padding-left: 16px; }
+    .mania-doc li { margin: 0 0 3px; color: #111; }
+    .mania-meta { font-size: 12px; margin: 0 0 12px; font-family: "Times New Roman", Times, serif; }
+    .mania-sig-page { padding-top: 4px; font-family: "Times New Roman", Times, serif; }
+    .mania-sig-page h2 { font-size: 16px; font-weight: 800; margin: 0 0 10px; letter-spacing: 0.04em; }
+    .mania-sig-table { width: 100%; border-collapse: collapse; background: #fff; }
+    .mania-sig-table th, .mania-sig-table td { border: 1px solid #111; padding: 3px 6px; height: 36px; font-size: 11px; vertical-align: middle; }
+    .mania-sig-table th { font-weight: 700; text-align: center; height: 24px; }
+    .mania-sig-table td.mania-num { width: 32px; text-align: center; }
+    .mania-sig-table td.mania-name { font-weight: 700; letter-spacing: 0.02em; }
+    .mania-sig-table td.mania-sig { width: 220px; }
+    .mania-sig-table .cwf-sig { max-height: 30px; }
 
     .lac-page {
       width: 100%;
       min-height: 10.2in;
       padding: 10px 14px 12px;
-      background: #fff;
+      background: #f6e9a0;
       color: #111;
       font-family: "Times New Roman", Times, serif;
       break-inside: avoid;
       page-break-inside: avoid;
+      position: relative;
+    }
+    .lac-preview-note {
+      position: absolute;
+      top: 4px;
+      left: 14px;
+      right: 14px;
+      margin: 0;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #7a6410;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      pointer-events: none;
     }
     .lac-top { display: grid; grid-template-columns: 108px 1fr 150px; align-items: start; gap: 8px; }
     .lac-logo { text-align: center; line-height: 1.05; padding-top: 0; }
@@ -236,15 +289,15 @@ export function getCanyonWaiverPrintStyles(): string {
     .lac-ops { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 8px; }
     .lac-ops .lac-sign-line { border-bottom: 1px solid #111; min-height: 28px; font-family: "Segoe Script", "Brush Script MT", "Lucida Handwriting", cursive; font-size: 20px; padding: 0 8px 2px; }
     .lac-ops .lac-sign-label { font-size: 11px; text-align: center; margin-top: 2px; }
-    .lac-table { width: 100%; border-collapse: collapse; background: #fff; }
+    .lac-table { width: 100%; border-collapse: collapse; background: #fff8c8; }
     .lac-table th, .lac-table td { border: 1px solid #111; font-size: 11px; padding: 0 4px; height: 27px; vertical-align: middle; }
-    .lac-table th { font-weight: 700; text-align: center; height: 22px; background: #fff; }
+    .lac-table th { font-weight: 700; text-align: center; height: 22px; background: #f6e9a0; }
     .lac-table td.lac-num { width: 28px; text-align: center; }
     .lac-table td.lac-rn { width: 88px; font-family: ui-monospace, Menlo, monospace; font-size: 10px; }
     .lac-table td.lac-name { font-weight: 700; letter-spacing: 0.02em; }
     .lac-table td.lac-sig { width: 150px; }
     .lac-table td.lac-country { width: 72px; text-align: center; }
-    .lac-table .lac-sig-img { max-height: 22px; }
+    .lac-table .lac-sig-img { max-height: 26px; }
     .lac-foot { display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; }
 
     .acx-page {
@@ -271,9 +324,60 @@ export function getCanyonWaiverPrintStyles(): string {
     .acx-page-num { text-align: right; margin-top: 18px; font-size: 13px; }
     .acx-guide-sig { max-height: 36px; }
 
+    .acx-waiver-page {
+      width: 100%;
+      min-height: 10.2in;
+      padding: 14px 18px 12px;
+      background: #fff;
+      color: #111;
+      font-family: "Times New Roman", Times, serif;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .acx-waiver-doc { font-size: 10.5px; line-height: 1.34; color: #111; }
+    .acx-waiver-doc .acx-waiver-op { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; margin: 0 0 6px; }
+    .acx-waiver-doc h2 { font-size: 15px; font-weight: 800; margin: 0 0 6px; line-height: 1.25; }
+    .acx-waiver-doc .acx-waiver-sub { font-size: 11.5px; font-weight: 700; margin: 0 0 8px; }
+    .acx-waiver-doc .acx-waiver-warn { border: 1.5px solid #111; padding: 6px 8px; font-weight: 700; margin: 0 0 8px; }
+    .acx-waiver-doc p { margin: 0 0 6px; color: #111; }
+    .acx-waiver-doc h3 { font-size: 11.5px; font-weight: 800; margin: 8px 0 3px; page-break-after: avoid; }
+    .acx-waiver-doc ul { margin: 0 0 6px; padding-left: 16px; }
+    .acx-waiver-doc li { margin: 0 0 3px; color: #111; }
+    .acx-waiver-doc .acx-waiver-meta { font-size: 11px; margin: 0 0 8px; }
+    .acx-sheet-side {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #6b7280;
+      margin: 0 0 8px;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+    }
+
     @media print {
-      .lac-page, .acx-page { min-height: auto; }
+      .lac-page, .acx-page, .acx-waiver-page, .mania-page { min-height: auto; }
+      .lac-page { background: transparent !important; }
+      .lac-preview-note { display: none !important; }
+      .lac-chrome { visibility: hidden !important; }
+      .lac-table, .lac-table th, .lac-table td {
+        background: transparent !important;
+        border-color: transparent !important;
+      }
+      .lac-table td.lac-ink {
+        visibility: visible !important;
+        color: #111 !important;
+      }
+      .lac-table td.lac-ink img,
+      .lac-table td.lac-ink .cwf-sig {
+        visibility: visible !important;
+      }
       .cwf-page-break { margin-top: 0; padding-top: 0; border-top: none; break-before: page; page-break-before: always; }
+      .acx-duplex-start { break-before: right; page-break-before: right; }
+      .acx-sheet-side { display: none !important; }
+      .cwf-sig {
+        filter: grayscale(1) contrast(900%) brightness(0.85);
+        mix-blend-mode: multiply;
+      }
     }
   `
 }
