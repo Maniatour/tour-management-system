@@ -7,6 +7,7 @@ import {
   pickTourLanguageFromPreferredList,
   reservationOpsLanguageBucket,
   resolveReservationTourLanguage,
+  resolveTourLanguageForReservationWrite,
 } from '@/lib/reservationTourLanguage'
 
 test('canonicalizeTourLanguage maps KR/JA aliases', () => {
@@ -48,6 +49,25 @@ test('resolveReservationTourLanguage prefers explicit Japanese application', () 
       customerLanguage: 'JA',
     }),
     'en'
+  )
+})
+
+test('resolveTourLanguageForReservationWrite keeps existing Japanese when incoming is empty', () => {
+  assert.equal(
+    resolveTourLanguageForReservationWrite({
+      incomingTourLanguage: undefined,
+      existingTourLanguage: 'ja',
+      customerLanguage: 'JA',
+    }),
+    'ja'
+  )
+  assert.equal(
+    resolveTourLanguageForReservationWrite({
+      incomingTourLanguage: 'ja',
+      existingTourLanguage: 'en',
+      customerLanguage: 'JA',
+    }),
+    'ja'
   )
 })
 

@@ -113,18 +113,21 @@ export function isReservationUpdatedStrictlyAfterAdded(r: {
   return Number.isFinite(a) && Number.isFinite(u) && u > a
 }
 
-/** 날짜 그룹·심플 카드 감사 대상과 동일: 등록일·수정일·(선택) 상태 이벤트 로컬일 */
+/** 날짜 그룹·심플 카드: 등록일 + (선택) 실제 상태 이벤트 로컬일. 단순 수정일(`updated_at`)은 넣지 않는다. */
 export function collectReservationActivityDateKeys(
   r: { addedTime?: string | null; updated_at?: string | null },
   auditRows?: ReservationStatusAuditRow[]
 ): string[] {
   const activityDates = new Set<string>()
   const createdKey = isoToLocalCalendarDateKey(r.addedTime)
-  const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
   if (createdKey) activityDates.add(createdKey)
-  if (updatedKey) activityDates.add(updatedKey)
   if (auditRows?.length) {
     for (const row of auditRows) {
+      if (!reservationAuditRowHasStatusFieldChange(row)) continue
+      const to = statusFromReservationAuditJson(row.new_values)
+      const from = statusFromReservationAuditJson(row.old_values)
+      if (!to || !from || from === to) continue
+      if (!isSimpleCardListedReservationStatusTransition({ from, to })) continue
       const dk = isoToLocalCalendarDateKey(row.created_at)
       if (dk) activityDates.add(dk)
     }
@@ -134,7 +137,7 @@ export function collectReservationActivityDateKeys(
 
 /**
  * 심플 카드 「상태 변경」에 해당 날짜를 조회·표시할지.
- * `updated_at`만 보면 이벤트(occurred_at) 일자와 어긋나는 경우가 있다.
+ * 등록일이 아닌 날의 **실제 status 전환**만 true. 메모·가격 등 단순 수정(`updated_at`)은 제외.
  */
 export function shouldIncludeSimpleCardStatusChangeTargetDate(
   r: { addedTime?: string | null; updated_at?: string | null },
@@ -142,25 +145,15 @@ export function shouldIncludeSimpleCardStatusChangeTargetDate(
   auditRows?: ReservationStatusAuditRow[]
 ): boolean {
   const createdKey = isoToLocalCalendarDateKey(r.addedTime)
-  const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
-  if (
-    dateKey === updatedKey &&
-    (createdKey !== dateKey || isReservationUpdatedStrictlyAfterAdded(r))
-  ) {
-    return true
-  }
-  if (dateKey !== createdKey && dateKey !== updatedKey) {
-    return true
-  }
-  if (auditRows?.length) {
-    for (const row of auditRows) {
-      if (isoToLocalCalendarDateKey(row.created_at) !== dateKey) continue
-      if (!reservationAuditRowHasStatusFieldChange(row)) continue
-      const to = statusFromReservationAuditJson(row.new_values)
-      const from = statusFromReservationAuditJson(row.old_values)
-      if (to && from && from !== to && isSimpleCardListedReservationStatusTransition({ from, to })) {
-        return true
-      }
+  if (createdKey === dateKey) return false
+  if (!auditRows?.length) return false
+  for (const row of auditRows) {
+    if (isoToLocalCalendarDateKey(row.created_at) !== dateKey) continue
+    if (!reservationAuditRowHasStatusFieldChange(row)) continue
+    const to = statusFromReservationAuditJson(row.new_values)
+    const from = statusFromReservationAuditJson(row.old_values)
+    if (to && from && from !== to && isSimpleCardListedReservationStatusTransition({ from, to })) {
+      return true
     }
   }
   return false

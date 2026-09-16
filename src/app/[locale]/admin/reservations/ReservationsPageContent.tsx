@@ -90,6 +90,7 @@ import {
   fetchAdminReservationListCalendarProgressive,
   fetchAdminReservationListAllFlatProgressive,
   fetchAdminReservationListActivityWindowRowCount,
+  fetchAdminReservationCardWeekStatusChangeExtraRows,
   prefetchAdminReservationListAdjacentPage,
   prefetchAdminReservationCardWeekAdjacentSnapshots,
   prefetchAdminReservationCalendarAdjacentSnapshots,
@@ -162,7 +163,6 @@ import {
 } from '@/lib/browserLocalWeek'
 import {
   type ReservationStatusAuditRow,
-  buildSimpleCardStatusChangeAuditRequestFromFiltered,
   buildSimpleCardStatusTransitionMapFromCachedAuditRows,
   collectReservationActivityDateKeys,
   isIntoCancelledLikeTransition,
@@ -170,7 +170,6 @@ import {
   statusTransitionSortIndex,
 } from '@/lib/reservationStatusAudit'
 import {
-  fetchReservationStatusTransitionsChunked,
   fetchReservationStatusTransitionsByTimeRange,
   fetchReservationStatusAuditLogsTransitionsByTimeRange,
   mergeIndexedStatusAuditRows,
@@ -291,20 +290,27 @@ function localWeekdayIndexFromYmd(ymd: string): number {
   return new Date(y, m - 1, d, 12, 0, 0, 0).getDay()
 }
 
-/** 그룹 날짜 기준: 해당일 등록(addedTime) vs 해당일 수정(updated_at) — 당일 등록 건은 등록에만 포함하고 상태변경에선 제외(중복 방지) */
-function splitReservationsByActivityForDate(date: string, reservations: Reservation[]) {
+/** 그룹 날짜 기준: 해당일 등록(addedTime) vs 해당일 실제 상태 전환. 단순 수정(`updated_at`)은 상태변경에 넣지 않는다. */
+function splitReservationsByActivityForDate(
+  date: string,
+  reservations: Reservation[],
+  statusTransitionMap: Record<string, { from: string; to: string }>
+) {
   const registration: Reservation[] = []
   const statusChange: Reservation[] = []
   const seenReg = new Set<string>()
   const seenStatus = new Set<string>()
   for (const r of reservations) {
     const createdKey = isoToLocalCalendarDateKey(r.addedTime)
-    const updatedKey = isoToLocalCalendarDateKey(r.updated_at ?? null)
     if (createdKey === date && !seenReg.has(r.id)) {
       seenReg.add(r.id)
       registration.push(r)
     }
-    if (updatedKey === date && !seenStatus.has(r.id) && createdKey !== date) {
+    if (
+      createdKey !== date &&
+      statusTransitionMap[`${r.id}|${date}`] &&
+      !seenStatus.has(r.id)
+    ) {
       seenStatus.add(r.id)
       statusChange.push(r)
     }
@@ -312,25 +318,17 @@ function splitReservationsByActivityForDate(date: string, reservations: Reservat
   return { registration, statusChange }
 }
 
-/** 심플 카드 상태 감사: effect 의존 키 + 네트워크 조회 필요 여부(첫 프레임부터 로딩 UI로 맞춤) */
+/** 심플 카드 상태 감사: 주간 구간만으로 조회 키를 고정(목록 청크가 늘어도 재조회하지 않음) */
 function computeSimpleCardStatusAuditPlan(
   groupByDate: boolean,
-  filteredReservations: Reservation[],
-  cardsWeekPage: number,
-  auditRowsByRecordId?: Record<string, ReservationStatusAuditRow[]>
+  cardsWeekPage: number
 ): null | { contentKey: string; needsNetworkFetch: boolean } {
   if (!groupByDate) return null
-  const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(
-    filteredReservations,
-    cardsWeekPage,
-    auditRowsByRecordId
-  )
   const { startYmd, endYmd } = browserLocalWeekRangeFromOffset(cardsWeekPage)
-  const keys = req.targets.map((t) => t.key).sort().join(',')
-  /** ISO 대신 달력 주간 키 — 목록 폴링 시각이 바뀌어도 동일 주·동일 대상이면 키가 안정적 */
-  const contentKey = `${startYmd}\u0001${endYmd}\u0001${keys}`
-  const needsNetworkFetch = req.targets.length > 0 && req.uniqueIds.length > 0
-  return { contentKey, needsNetworkFetch }
+  return {
+    contentKey: `${startYmd}\u0001${endYmd}`,
+    needsNetworkFetch: true,
+  }
 }
 
 function reservationTouchesActivityIsoRange(
@@ -2003,10 +2001,6 @@ export default function AdminReservations() {
     (regCancelChartAuditLoadedSignature === regCancelChartAuditScopeSignature ||
       regCancelChartAuditPendingRefetch)
 
-  const simpleCardStatusAuditRowsForRequest = regCancelChartAuditReady
-    ? regCancelChartAuditRowsByRecordId
-    : undefined
-
   const regCancelChartDisplayScopeKey = useMemo(() => {
     if (!groupByDate || viewMode === 'list') return null
     return [
@@ -3033,6 +3027,47 @@ export default function AdminReservations() {
           hydrationBatch.dispose()
         }
 
+        if (fetchGen === adminCardWeekFetchGenRef.current) {
+          const extraResult = await fetchAdminReservationCardWeekStatusChangeExtraRows(supabase, cardArgs)
+          if (fetchGen === adminCardWeekFetchGenRef.current && extraResult.rows.length > 0) {
+            const loadedIds = new Set(
+              reservationsListRef.current.map((r) => String(r.id ?? '').trim()).filter(Boolean)
+            )
+            const newExtraRows = extraResult.rows.filter((row) => {
+              const id = String(row.id ?? '').trim()
+              return Boolean(id) && !loadedIds.has(id)
+            })
+            if (newExtraRows.length > 0) {
+              const extraTotal = (totalForProgress ?? tierBaseLoaded) + newExtraRows.length
+              if (!firstPaintDone) {
+                seedFirstPaintSideHydrate(newExtraRows)
+                await replaceReservationsFromQueryResultRef.current(newExtraRows, {
+                  skipLoadingFlags: true,
+                  skipHeavySideMaps: true,
+                  listProgress: {
+                    current: newExtraRows.length,
+                    total: extraTotal,
+                  },
+                })
+                setServerListTotal(extraTotal)
+                setServerListLoading(false)
+                firstPaintDone = true
+              } else {
+                await mergeMoreReservationsFromQueryResultRef.current(newExtraRows, {
+                  skipLoadingFlags: true,
+                  skipHeavySideMaps: true,
+                  listProgress: {
+                    current: tierBaseLoaded + newExtraRows.length,
+                    total: extraTotal,
+                  },
+                })
+              }
+              tierBaseLoaded += newExtraRows.length
+              setServerListTotal((prev) => Math.max(prev, tierBaseLoaded))
+            }
+          }
+        }
+
         // count RPC/head count가 지연·중단돼도 본문 finally가 막히지 않게 비동기로만 반영
         void countPromise.then((result) => {
           if (fetchGen !== adminCardWeekFetchGenRef.current) return
@@ -3043,7 +3078,7 @@ export default function AdminReservations() {
             return
           }
           if (result.count != null) {
-            setServerListTotal(result.count)
+            setServerListTotal((prev) => Math.max(prev, result.count ?? 0))
           }
         })
 
@@ -3882,8 +3917,16 @@ export default function AdminReservations() {
       const auditRows = regCancelChartAuditReady
         ? regCancelChartAuditRowsByRecordId[String(reservation.id ?? '').trim()]
         : undefined
-      const activityDates = collectReservationActivityDateKeys(reservation, auditRows)
-      if (activityDates.length === 0) return
+      const activityDates = new Set(collectReservationActivityDateKeys(reservation, auditRows))
+      const reservationId = String(reservation.id ?? '').trim()
+      if (reservationId) {
+        for (const ymd of browserLocalInclusiveDateKeys(weekStartStr, weekEndStr)) {
+          if (simpleCardStatusTransitionMap[`${reservationId}|${ymd}`]) {
+            activityDates.add(ymd)
+          }
+        }
+      }
+      if (activityDates.size === 0) return
 
       activityDates.forEach((ymd) => {
         if (ymd < weekStartStr || ymd > weekEndStr) return
@@ -3909,7 +3952,16 @@ export default function AdminReservations() {
       })
     
     return sortedGroups
-  }, [filteredReservations, groupByDate, cardsWeekPage, regCancelChartAuditReady, regCancelChartAuditRowsByRecordId])
+  }, [filteredReservations, groupByDate, cardsWeekPage, regCancelChartAuditReady, regCancelChartAuditRowsByRecordId, simpleCardStatusTransitionMap])
+
+  const groupedReservationUniqueCount = useMemo(() => {
+    const ids = new Set<string>()
+    for (const list of Object.values(groupedReservations)) {
+      for (const r of list) ids.add(r.id)
+    }
+    return ids.size
+  }, [groupedReservations])
+  const groupedDateCount = Object.keys(groupedReservations).length
 
   useEffect(() => {
     regCancelChartAuditInFlightSignatureRef.current = null
@@ -3924,19 +3976,9 @@ export default function AdminReservations() {
     if (!groupByDate) return false
     const range = regCancelChartAuditIsoRange
     if (!range) return false
-    const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(
-      filteredReservations,
-      cardsWeekPage,
-      simpleCardStatusAuditRowsForRequest
-    )
-    return req.rangeStart >= range.rangeStartIso && req.rangeEnd <= range.rangeEndIso
-  }, [
-    groupByDate,
-    filteredReservations,
-    cardsWeekPage,
-    regCancelChartAuditIsoRange,
-    simpleCardStatusAuditRowsForRequest,
-  ])
+    const week = browserLocalWeekRangeFromOffset(cardsWeekPage)
+    return week.rangeStartIso >= range.rangeStartIso && week.rangeEndIso <= range.rangeEndIso
+  }, [groupByDate, cardsWeekPage, regCancelChartAuditIsoRange])
 
   useEffect(() => {
     if (!groupByDate || !weeklyStatsModalOpen) {
@@ -4292,14 +4334,8 @@ export default function AdminReservations() {
 
   /** 참조가 아닌 감사 대상 식별 — 목록이 같은 내용으로 자주 갱신돼도 로딩 문구가 깜빡이지 않게 함 */
   const simpleCardStatusAuditPlan = useMemo(
-    () =>
-      computeSimpleCardStatusAuditPlan(
-        groupByDate,
-        filteredReservations,
-        cardsWeekPage,
-        simpleCardStatusAuditRowsForRequest
-      ),
-    [groupByDate, filteredReservations, cardsWeekPage, simpleCardStatusAuditRowsForRequest]
+    () => computeSimpleCardStatusAuditPlan(groupByDate, cardsWeekPage),
+    [groupByDate, cardsWeekPage]
   )
   /** 심플 카드 상태 전환 집계 UI 안정용 — contentKey(대상 목록)와 무관하게 «같은 7일 카드 주» */
   const simpleCardStatusScopeKey = useMemo(() => {
@@ -4364,36 +4400,11 @@ export default function AdminReservations() {
       setSimpleCardStatusTransitionDisplayScopeKey(null)
       return
     }
-    /** 이미 이 키로 조회·커밋 완료 — 차트 rows 객체 참조만 바뀌는 재실행에서 맵·요약을 지우지 않음 */
     if (lastSimpleCardStatusAuditFetchedKeyRef.current === runKey) {
       simpleCardStatusTransitionInFlightKeyRef.current = null
       return
     }
-    /** 동일 키로 이미 디바운스·fetch 진행 중(첫 라운드 미완료) — 재진입 시 맵·로딩을 다시 건드리지 않음 */
     if (simpleCardStatusTransitionInFlightKeyRef.current === runKey) {
-      return
-    }
-    const reqSync = buildSimpleCardStatusChangeAuditRequestFromFiltered(
-      filteredReservations,
-      cardsWeekPage,
-      simpleCardStatusAuditRowsForRequest
-    )
-    if (reqSync.targets.length === 0) {
-      setSimpleCardStatusTransitionMap({})
-      if (scheduleScopeKey) setSimpleCardStatusTransitionDisplayScopeKey(scheduleScopeKey)
-      simpleCardStatusTransitionMapClearedForScopeRef.current = scheduleScopeKey
-      if (filteredReservations.length > 0) {
-        lastSimpleCardStatusAuditFetchedKeyRef.current = runKey
-      }
-      return
-    }
-    if (reqSync.uniqueIds.length === 0) {
-      setSimpleCardStatusTransitionMap({})
-      if (scheduleScopeKey) setSimpleCardStatusTransitionDisplayScopeKey(scheduleScopeKey)
-      simpleCardStatusTransitionMapClearedForScopeRef.current = scheduleScopeKey
-      if (filteredReservations.length > 0) {
-        lastSimpleCardStatusAuditFetchedKeyRef.current = runKey
-      }
       return
     }
 
@@ -4404,28 +4415,22 @@ export default function AdminReservations() {
       simpleCardStatusTransitionMapClearedForScopeRef.current = scheduleScopeKey
     }
 
-    const debounceMs = 450
+    const debounceMs = 200
     const timer = window.setTimeout(() => {
       void (async () => {
         try {
           if (cancelled) return
-          const req = buildSimpleCardStatusChangeAuditRequestFromFiltered(
-            filteredReservations,
-            cardsWeekPage,
-            simpleCardStatusAuditRowsForRequest
-          )
-          if (req.targets.length === 0 || req.uniqueIds.length === 0) {
-            setSimpleCardStatusTransitionMap({})
-            if (scheduleScopeKey) setSimpleCardStatusTransitionDisplayScopeKey(scheduleScopeKey)
-            if (filteredReservations.length > 0) {
-              lastSimpleCardStatusAuditFetchedKeyRef.current = runKey
-            }
-            return
-          }
+          const week = browserLocalWeekRangeFromOffset(cardsWeekPage)
+          const toMapReq = (rowsByRecord: Record<string, ReservationStatusAuditRow[]>) => ({
+            rangeStart: week.rangeStartIso,
+            rangeEnd: week.rangeEndIso,
+            targets: [] as { key: string; reservationId: string; dateKey: string }[],
+            uniqueIds: Object.keys(rowsByRecord),
+          })
 
           if (regCancelChartAuditReady && chartAuditRangeCoversSimpleCardWeek) {
             const next = buildSimpleCardStatusTransitionMapFromCachedAuditRows(
-              req,
+              toMapReq(regCancelChartAuditRowsByRecordId),
               regCancelChartAuditRowsByRecordId
             )
             if (cancelled) return
@@ -4435,10 +4440,9 @@ export default function AdminReservations() {
             return
           }
 
-          const { rows, error } = await fetchReservationStatusTransitionsChunked(supabase, {
-            reservationIds: req.uniqueIds,
-            rangeStartIso: req.rangeStart,
-            rangeEndIso: req.rangeEnd,
+          const { rows, error } = await fetchReservationStatusTransitionsByTimeRange(supabase, {
+            rangeStartIso: week.rangeStartIso,
+            rangeEndIso: week.rangeEndIso,
             shouldAbort: () => cancelled,
           })
           if (cancelled) return
@@ -4462,7 +4466,7 @@ export default function AdminReservations() {
             rowsByRecord[id] = arr
           }
 
-          const next = buildSimpleCardStatusTransitionMapFromCachedAuditRows(req, rowsByRecord)
+          const next = buildSimpleCardStatusTransitionMapFromCachedAuditRows(toMapReq(rowsByRecord), rowsByRecord)
           if (cancelled) return
           setSimpleCardStatusTransitionMap(next)
           if (scheduleScopeKey) setSimpleCardStatusTransitionDisplayScopeKey(scheduleScopeKey)
@@ -4480,7 +4484,6 @@ export default function AdminReservations() {
       })()
     }, debounceMs)
 
-    // filteredReservations·cardsWeekPage는 contentKey에 녹아 있음. 차트 rows 참조 변경만으로 재실행하지 않음(맵 깜빡임 방지).
     return () => {
       cancelled = true
       window.clearTimeout(timer)
@@ -4488,7 +4491,7 @@ export default function AdminReservations() {
         simpleCardStatusTransitionInFlightKeyRef.current = null
       }
     }
-  }, [simpleCardAuditContentKey, regCancelChartAuditReady, chartAuditRangeCoversSimpleCardWeek])
+  }, [simpleCardAuditContentKey, cardsWeekPage, regCancelChartAuditReady, chartAuditRangeCoversSimpleCardWeek])
 
   const statisticsWeekBoundary = useMemo(
     () => browserLocalWeekRangeFromOffset(statisticsWeekOffset),
@@ -5278,7 +5281,7 @@ export default function AdminReservations() {
       }
       const savedId = editingReservation.id
       await refreshReservationPricingForActionRequired([savedId])
-      void refreshReservations()
+      await refreshReservations()
       setEditingReservation(null)
       alert(t('messages.reservationUpdated'))
     } catch (error) {
@@ -6458,10 +6461,10 @@ export default function AdminReservations() {
         <div className="text-sm text-gray-600">
           {groupByDate && viewMode !== 'list' ? (
             <>
-              {Object.values(groupedReservations).flat().length}
-              {t('groupingLabels.reservationsGroupedBy')} {Object.keys(groupedReservations).length}
+              {groupedReservationUniqueCount}
+              {t('groupingLabels.reservationsGroupedBy')} {groupedDateCount}
               {t('groupingLabels.registrationDates')}
-              {Object.values(groupedReservations).flat().length !== serverListTotal && serverListTotal > 0 && (
+              {groupedReservationUniqueCount !== serverListTotal && serverListTotal > 0 && (
                 <span className="ml-2 text-primary">
                   ({t('groupingLabels.filteredFromTotal')} {serverListTotal}
                   {t('stats.more')})
@@ -6605,29 +6608,16 @@ export default function AdminReservations() {
               Object.entries(groupedReservations).map(([date, reservations]) => {
                 const handleToggleCollapse = () => toggleGroupCollapse(date)
                 const dayReservations = reservations as Reservation[]
-                const { registration: regList, statusChange: statusListFromUpdated } =
-                  splitReservationsByActivityForDate(date, dayReservations)
+                const { registration: regList, statusChange: statusList } =
+                  splitReservationsByActivityForDate(date, dayReservations, simpleCardStatusTransitionMap)
 
-                /** 이벤트(occurred_at) 로컬일 기준 — updated_at 그룹과 달라도 당일 상태 전환이 보이게 */
+                /** 이벤트(occurred_at) 로컬일 기준 — 등록일이 아닌 날의 실제 상태 전환만 */
                 const simpleCardStatusAuditReady =
                   !simpleCardStatusTransitionLoadingEffective &&
                   simpleCardStatusScopeKey != null &&
                   simpleCardStatusTransitionDisplayScopeKey === simpleCardStatusScopeKey
 
-                const statusListFromEvents = simpleCardStatusAuditReady
-                  ? dayReservations.filter(
-                      (r) =>
-                        !!simpleCardStatusTransitionMap[`${r.id}|${date}`] &&
-                        isoToLocalCalendarDateKey(r.addedTime) !== date
-                    )
-                  : statusListFromUpdated
-                /** events·audit 미동기화 시에도 수정일 기준 후보는 유지(빈 섹션 방지) */
-                const statusList =
-                  simpleCardStatusAuditReady && statusListFromEvents.length === 0
-                    ? statusListFromUpdated
-                    : statusListFromEvents
-
-                const statusListForSimple = statusList
+                const statusListForSimple = simpleCardStatusAuditReady ? statusList : []
 
                 const gridClass = 'admin-reservations-card-grid admin-reservations-card-grid--simple'
 
@@ -6814,16 +6804,15 @@ export default function AdminReservations() {
                                 </button>
                                 {statusOpen && (
                                   <div className="border-t border-gray-100 space-y-3 px-0 pb-2 pt-1 sm:pl-3 sm:pr-2 sm:pb-3 sm:pt-2">
-                                    {statusList.length > 0 ? (
-                                      simpleCardStatusTransitionLoadingEffective ? (
-                                        <p className="text-xs text-gray-500 px-1 py-2 leading-relaxed">
-                                          {t('groupingLabels.simpleCardStatusChangeAuditLoadingBody')}
-                                        </p>
-                                      ) : statusListForSimple.length === 0 ? (
-                                        <p className="text-xs text-gray-400 px-1 py-1">
-                                          {t('groupingLabels.simpleCardGroupEmpty')}
-                                        </p>
-                                      ) : simpleCardStatusSubgroups ? (
+                                    {simpleCardStatusTransitionLoadingEffective ? (
+                                      <p className="text-xs text-gray-500 px-1 py-2 leading-relaxed">
+                                        {t('groupingLabels.simpleCardStatusChangeAuditLoadingBody')}
+                                      </p>
+                                    ) : statusListForSimple.length === 0 ? (
+                                      <p className="text-xs text-gray-400 px-1 py-1">
+                                        {t('groupingLabels.simpleCardGroupEmpty')}
+                                      </p>
+                                    ) : simpleCardStatusSubgroups ? (
                                         simpleCardStatusSubgroups.map((g, subIdx) => {
                                           const subKey = `${date}|simple-acc-status-sub|${subIdx}`
                                           const defaultSubOpen = false
@@ -6877,12 +6866,7 @@ export default function AdminReservations() {
                                             </div>
                                           )
                                         })
-                                      ) : null
-                                    ) : (
-                                      <p className="text-xs text-gray-400 px-1 py-1">
-                                        {t('groupingLabels.simpleCardGroupEmpty')}
-                                      </p>
-                                    )}
+                                      ) : null}
                                   </div>
                                 )}
                               </div>

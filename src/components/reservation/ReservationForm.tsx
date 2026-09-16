@@ -6872,6 +6872,11 @@ export default function ReservationForm({
         pickUpHotel: resolvedPickUpHotel,
         id: reservation?.id, // 예약 ID 포함 (새 예약 모드에서 미리 생성된 ID)
         customerId: finalCustomerId || fd.customerId,
+        tourLanguage:
+          canonicalizeTourLanguage(fd.tourLanguage) ||
+          canonicalizeTourLanguage(formData.tourLanguage) ||
+          fd.tourLanguage,
+        customerLanguage: fd.customerLanguage || formData.customerLanguage,
         totalPeople,
         choices: choicesData,
         selectedChoices: fd.selectedChoices as any,

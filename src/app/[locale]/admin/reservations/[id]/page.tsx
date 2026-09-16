@@ -14,6 +14,7 @@ import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
 import { ReservationFormEmailSendButtons } from '@/components/reservation/ReservationFormEmailSendButtons'
 import { ReservationFormSmsSendButton } from '@/components/reservation/ReservationFormSmsSendButton'
 import { getCustomerName } from '@/utils/reservationUtils'
+import { mapDbReservationRowsToReservations } from '@/lib/mapDbReservationRowsToReservations'
 
 // 리사이즈 가능한 모달 컴포넌트
 function ResizableModal({
@@ -200,65 +201,12 @@ export default function ReservationDetailsPage() {
         }
 
         if (data) {
-          // Minimal map to Reservation type; rely on list loader shape
-          const mapped: Reservation = {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            id: (data as any).id,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            customerId: (data as any).customer_id || '',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            productId: (data as any).product_id || '',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            tourDate: (data as any).tour_date || '',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            tourTime: (data as any).tour_time || '',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            eventNote: (data as any).event_note || '',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            pickUpHotel: (data as any).pickup_hotel || '',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            pickUpTime: (data as any).pickup_time || '',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            adults: (data as any).adults || 0,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            child: (data as any).child || 0,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            infant: (data as any).infant || 0,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            totalPeople: (data as any).total_people || 0,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            channelId: (data as any).channel_id || '',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            channelRN: (data as any).channel_rn || '',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            addedBy: (data as any).added_by || '',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            addedTime: (data as any).created_at || '',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            tourId: (data as any).tour_id || '',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            status: ((data as any).status as Reservation['status']) || 'pending',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            selectedOptions: (typeof (data as any).selected_options === 'string'
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              ? (() => { try { return JSON.parse((data as any).selected_options as unknown as string) } catch { return {} } })()
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              : ((data as any).selected_options as { [optionId: string]: string[] }) || {}),
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            selectedOptionPrices: (typeof (data as any).selected_option_prices === 'string'
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              ? (() => { try { return JSON.parse((data as any).selected_option_prices as unknown as string) } catch { return {} } })()
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              : ((data as any).selected_option_prices as { [key: string]: number }) || {}),
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            choices: (typeof (data as any).choices === 'string'
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              ? (() => { try { return JSON.parse((data as any).choices as unknown as string) } catch { return {} } })()
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              : ((data as any).choices as { [key: string]: unknown }) || {}),
-            hasExistingTour: false
-          }
-          setReservation(mapped)
+          const mapped = mapDbReservationRowsToReservations(
+            [data as Record<string, unknown>],
+            new Map(),
+            new Map()
+          )[0]
+          if (mapped) setReservation(mapped)
         }
       } finally {
         setLoadingReservation(false)
@@ -270,10 +218,11 @@ export default function ReservationDetailsPage() {
   const handleSubmit = useCallback(async (payload: Omit<Reservation, 'id'>) => {
     if (!reservation) return
     try {
-      const fullPayload = {
+        const fullPayload = {
         ...payload,
         pricingInfo: (payload as ReservationUpdatePayload).pricingInfo,
         customerLanguage: (payload as ReservationUpdatePayload).customerLanguage,
+        tourLanguage: (payload as ReservationUpdatePayload).tourLanguage,
         variantKey: (payload as ReservationUpdatePayload).variantKey,
         selectedChoices: Array.isArray((payload as ReservationUpdatePayload).selectedChoices)
           ? (payload as ReservationUpdatePayload).selectedChoices
@@ -300,44 +249,12 @@ export default function ReservationDetailsPage() {
         .single()
       
       if (!loadError && updatedReservation) {
-        // 예약 데이터를 다시 매핑하여 상태 업데이트
-        const mapped = {
-          id: updatedReservation.id,
-          customerId: updatedReservation.customer_id || '',
-          customerSearch: '',
-          showCustomerDropdown: false,
-          productId: updatedReservation.product_id || '',
-          selectedProductCategory: '',
-          selectedProductSubCategory: '',
-          productSearch: '',
-          showProductDropdown: false,
-          tourDate: updatedReservation.tour_date || '',
-          tourTime: updatedReservation.tour_time || '',
-          eventNote: updatedReservation.event_note || '',
-          pickUpHotel: updatedReservation.pickup_hotel || '',
-          pickUpTime: updatedReservation.pickup_time || '',
-          adults: updatedReservation.adults || 0,
-          child: updatedReservation.child || 0,
-          infant: updatedReservation.infant || 0,
-          totalPeople: updatedReservation.total_people || 0,
-          channelId: updatedReservation.channel_id || '',
-          channelRN: updatedReservation.channel_rn || '',
-          addedBy: updatedReservation.added_by || '',
-          addedTime: updatedReservation.created_at || '',
-          tourId: updatedReservation.tour_id || '',
-          status: (updatedReservation.status as Reservation['status']) || 'pending',
-          selectedOptions: (typeof updatedReservation.selected_options === 'string'
-            ? (() => { try { return JSON.parse(updatedReservation.selected_options as unknown as string) } catch { return {} } })()
-            : (updatedReservation.selected_options as { [optionId: string]: string[] }) || {}),
-          selectedOptionPrices: (typeof updatedReservation.selected_option_prices === 'string'
-            ? (() => { try { return JSON.parse(updatedReservation.selected_option_prices as unknown as string) } catch { return {} } })()
-            : (updatedReservation.selected_option_prices as { [key: string]: number }) || {}),
-          choices: (typeof updatedReservation.choices === 'string'
-            ? (() => { try { return JSON.parse(updatedReservation.choices as unknown as string) } catch { return {} } })()
-            : (updatedReservation.choices as { [key: string]: unknown }) || {}),
-          hasExistingTour: false
-        }
-        setReservation(mapped)
+        const mapped = mapDbReservationRowsToReservations(
+          [updatedReservation as Record<string, unknown>],
+          new Map(),
+          new Map()
+        )[0]
+        if (mapped) setReservation(mapped)
       }
       
       alert(t('messages.reservationUpdated'))

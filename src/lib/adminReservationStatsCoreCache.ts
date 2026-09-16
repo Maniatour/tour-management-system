@@ -17,8 +17,8 @@ export type AdminReservationStatsCoreCacheKeyArgs = {
 }
 
 const CACHE_TTL_MS = 3 * 60 * 1000
-/** v2: product_id·channel_id 포함 SELECT — 구캐시(Unknown 상품/채널) 무효화 */
-const CACHE_KEY_PREFIX = 'admin-reservation-stats-core-v2\u001f'
+/** v3: created_at 주간 + 실제 상태 전환 extras (updated_at UNION 제거) */
+const CACHE_KEY_PREFIX = 'admin-reservation-stats-core-v3\u001f'
 
 export function buildAdminReservationStatsCoreCacheKey(
   args: AdminReservationStatsCoreCacheKeyArgs

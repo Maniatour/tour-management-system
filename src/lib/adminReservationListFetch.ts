@@ -23,6 +23,11 @@ import {
 } from '@/lib/browserLocalWeek'
 import { writeAdminReservationPricingMemory } from '@/lib/adminReservationPricingMemoryCache'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
+import { fetchReservationStatusTransitionsByTimeRange } from '@/lib/reservationStatusEventsFetch'
+import {
+  isSimpleCardListedReservationStatusTransition,
+  statusFromReservationAuditJson,
+} from '@/lib/reservationStatusAudit'
 
 function qIdent(s: string): string {
   return String(s).replace(/"/g, '""')
@@ -58,8 +63,6 @@ const UUID_RE =
 
 /** 마이그레이션 미적용 시 RPC 재시도 폭주 방지 */
 let searchLookupRpcMissing = false
-let cardWeekActivityRpcMissing = false
-let cardWeekActivityCountRpcMissing = false
 
 function isProbableUuid(s: string): boolean {
   return UUID_RE.test(s.trim())
@@ -384,11 +387,9 @@ function applyAdminReservationListRowFilters(q: any, args: FetchAdminReservation
   }
 
   if (args.mode === 'card-week' && args.activityRangeStartIso && args.activityRangeEndIso) {
-    const a = qIdent(args.activityRangeStartIso)
-    const b = qIdent(args.activityRangeEndIso)
-    q = q.or(
-      `and(created_at.gte."${a}",created_at.lte."${b}"),and(updated_at.gte."${a}",updated_at.lte."${b}")`
-    )
+    q = q
+      .gte('created_at', args.activityRangeStartIso)
+      .lte('created_at', args.activityRangeEndIso)
   }
 
   if (args.mode === 'calendar') {
@@ -487,8 +488,8 @@ function buildAdminReservationListQuery(
 }
 
 /**
- * `card-week` 활동 구간(및 동일 필터)에 해당하는 예약 행 수. 단계 로드 진행률 total에 사용.
- * 검색어 없을 때는 UNION count RPC를 우선 사용(OR head count보다 planner 친화적).
+ * `card-week` 등록 구간(`created_at`) 행 수. 단계 로드 진행률 total에 사용.
+ * `updated_at` UNION count RPC는 단순 수정까지 전부 세어 쓰지 않는다.
  */
 export async function fetchAdminReservationListActivityWindowRowCount(
   supabase: SupabaseClient,
@@ -500,44 +501,6 @@ export async function fetchAdminReservationListActivityWindowRowCount(
     }
 
     const searchActive = args.debouncedSearchTerm.trim().length > 0
-    const extraRowFiltersActive =
-      args.selectedPickupHotel === ADMIN_RESERVATION_PICKUP_HOTEL_UNSET ||
-      isActiveListFilterValue(args.selectedPickupHotel) ||
-      isActiveListFilterValue(args.selectedProduct)
-    if (!searchActive && !extraRowFiltersActive && !cardWeekActivityCountRpcMissing) {
-      const opId = resolveOperatorId(args.operatorId)
-      const { data, error } = await supabase.rpc('admin_reservation_card_week_activity_count', {
-        p_operator_id: opId,
-        p_range_start: args.activityRangeStartIso,
-        p_range_end: args.activityRangeEndIso,
-        p_status: args.selectedStatus || 'all',
-        p_channel_id:
-          args.selectedChannel && args.selectedChannel !== 'all' ? args.selectedChannel : null,
-        p_tour_date_start: args.dateRange.start || null,
-        p_tour_date_end: args.dateRange.end || null,
-        p_customer_id: args.customerIdFromUrl,
-      })
-      if (!error) {
-        const n = typeof data === 'number' ? data : Number(data)
-        if (Number.isFinite(n)) {
-          return { count: Math.max(0, Math.trunc(n)), error: null }
-        }
-      } else {
-        const code = String(error.code ?? '')
-        const msg = (error.message ?? '').toLowerCase()
-        if (
-          code === 'PGRST202' ||
-          code === '42883' ||
-          (msg.includes('function') && msg.includes('does not exist')) ||
-          msg.includes('admin_reservation_card_week_activity_count')
-        ) {
-          cardWeekActivityCountRpcMissing = true
-        } else {
-          return { count: null, error: error as Error }
-        }
-      }
-    }
-
     const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm, args.operatorId)
     const countMode = searchActive ? ('planned' as const) : ('exact' as const)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -550,6 +513,73 @@ export async function fetchAdminReservationListActivityWindowRowCount(
     return { count: count ?? null, error: null }
   } catch (e) {
     return { count: null, error: e instanceof Error ? e : new Error(String(e)) }
+  }
+}
+
+const CARD_WEEK_STATUS_EXTRA_ID_CHUNK = 100
+
+/**
+ * 카드 주간에 실제 상태 전환이 있는 예약(등록일이 주 밖이어도).
+ * `updated_at` 단순 수정은 포함하지 않는다.
+ */
+export async function fetchAdminReservationCardWeekStatusChangeExtraRows(
+  supabase: SupabaseClient,
+  args: Omit<
+    FetchAdminReservationListArgs,
+    'onCardWeekFetchProgress' | 'cardWeekLoadTier' | 'cardWeekRecentCreatedGteIso'
+  >
+): Promise<{ rows: Record<string, unknown>[]; error: Error | null }> {
+  if (!args.activityRangeStartIso || !args.activityRangeEndIso) {
+    return { rows: [], error: null }
+  }
+
+  try {
+    const { rows: auditRows, error: eventsError } = await fetchReservationStatusTransitionsByTimeRange(
+      supabase,
+      {
+        rangeStartIso: args.activityRangeStartIso,
+        rangeEndIso: args.activityRangeEndIso,
+      }
+    )
+    if (eventsError) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[admin reservations] card-week status extras skipped:', eventsError)
+      }
+      return { rows: [], error: null }
+    }
+
+    const idSet = new Set<string>()
+    for (const row of auditRows) {
+      const from = statusFromReservationAuditJson(row.old_values)
+      const to = statusFromReservationAuditJson(row.new_values)
+      if (!from || !to || !isSimpleCardListedReservationStatusTransition({ from, to })) continue
+      const id = String(row.record_id ?? '').trim()
+      if (id) idSet.add(id)
+    }
+    const ids = [...idSet]
+    if (ids.length === 0) return { rows: [], error: null }
+
+    const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm, args.operatorId)
+    const extraArgs: FetchAdminReservationListArgs = { ...args, mode: 'card-flat' }
+    const selectFields = args.selectFieldsOverride ?? RESERVATION_LIST_SELECT
+    const out: Record<string, unknown>[] = []
+
+    for (let i = 0; i < ids.length; i += CARD_WEEK_STATUS_EXTRA_ID_CHUNK) {
+      const chunk = ids.slice(i, i + CARD_WEEK_STATUS_EXTRA_ID_CHUNK)
+      let q = supabase.from('reservations').select(selectFields)
+      q = applyAdminReservationListRowFilters(q, extraArgs, searchOr)
+      q = q.in('id', chunk)
+      const { data, error } = await q
+      if (error) return { rows: out, error: error as Error }
+      out.push(...((data || []) as unknown as Record<string, unknown>[]))
+    }
+
+    return { rows: out, error: null }
+  } catch (e) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[admin reservations] card-week status extras failed:', e)
+    }
+    return { rows: [], error: null }
   }
 }
 
@@ -934,164 +964,56 @@ export type CardWeekProgressiveHandlers = {
   onProgress?: (info: { loaded: number; total: number | null }) => void
 }
 
-function isCardWeekActivityRpcUnavailable(err: { code?: string; message?: string } | null): boolean {
-  if (!err) return false
-  const code = String(err.code ?? '')
-  const msg = (err.message ?? '').toLowerCase()
-  return (
-    code === 'PGRST202' ||
-    code === '42883' ||
-    (msg.includes('function') && msg.includes('does not exist')) ||
-    msg.includes('admin_reservation_card_week_activity_ids')
-  )
-}
-
-function parseCardWeekActivityIdRows(data: unknown): string[] {
-  if (!Array.isArray(data)) return []
-  const out: string[] = []
-  for (const row of data) {
-    if (!row || typeof row !== 'object') continue
-    const id = 'id' in row ? String((row as { id: unknown }).id ?? '').trim() : ''
-    if (id) out.push(id)
-  }
-  return out
-}
-
-async function fetchCardWeekRowsByOrderedIds(
+async function appendCardWeekStatusChangeExtrasToProgressive(
   supabase: SupabaseClient,
   args: Omit<FetchAdminReservationListArgs, 'onCardWeekFetchProgress'>,
-  ids: string[]
-): Promise<{ rows: Record<string, unknown>[]; error: Error | null }> {
-  if (ids.length === 0) return { rows: [], error: null }
-  const opId = resolveOperatorId(args.operatorId)
-  const selectFields = args.selectFieldsOverride ?? RESERVATION_LIST_SELECT
-  const { data, error } = await supabase
-    .from('reservations')
-    .select(selectFields)
-    .eq('operator_id', opId)
-    .in('id', ids)
-  if (error) return { rows: [], error: error as Error }
-  const byId = new Map<string, Record<string, unknown>>()
-  for (const row of (data || []) as unknown as Record<string, unknown>[]) {
-    const id = String(row.id ?? '')
-    if (id) byId.set(id, row)
+  handlers: CardWeekProgressiveHandlers,
+  merged: Record<string, unknown>[],
+  firstChunkDone: boolean,
+  totalCount: number | null
+): Promise<{ error: Error | null; loadedRowCount: number }> {
+  const extraResult = await fetchAdminReservationCardWeekStatusChangeExtraRows(supabase, args)
+  if (extraResult.error) {
+    return { error: extraResult.error, loadedRowCount: merged.length }
   }
-  const rows: Record<string, unknown>[] = []
-  for (const id of ids) {
-    const row = byId.get(id)
-    if (row) rows.push(row)
+  const loadedIds = new Set(merged.map((r) => String(r.id ?? '').trim()).filter(Boolean))
+  const newRows = extraResult.rows.filter((r) => {
+    const id = String(r.id ?? '').trim()
+    return Boolean(id) && !loadedIds.has(id)
+  })
+  if (newRows.length === 0) {
+    return { error: null, loadedRowCount: merged.length }
   }
-  return { rows, error: null }
-}
-
-/**
- * 검색어 없을 때: UNION RPC로 활동 구간 id를 받은 뒤 상세 행을 `.in(id)`로 로드.
- * RPC 미적용·오류 시 null → 호출부가 PostgREST OR 경로로 폴백.
- */
-async function fetchAdminReservationListCardWeekProgressiveViaActivityRpc(
-  supabase: SupabaseClient,
-  args: Omit<FetchAdminReservationListArgs, 'onCardWeekFetchProgress'>,
-  handlers: CardWeekProgressiveHandlers
-): Promise<{ error: Error | null; loadedRowCount: number } | null> {
-  if (cardWeekActivityRpcMissing) return null
-  if (args.debouncedSearchTerm.trim()) return null
-  if (!args.activityRangeStartIso || !args.activityRangeEndIso) return null
-
-  const opId = resolveOperatorId(args.operatorId)
-  const chunk = ADMIN_RESERVATION_CARD_WEEK_CHUNK_SIZE
-  const merged: Record<string, unknown>[] = []
-  let offset = 0
-  let chunkIndex = 0
-  const maxChunks = 400
-  let firstChunkDone = false
-
-  for (;;) {
-    if (chunkIndex >= maxChunks) {
-      return {
-        error: new Error(`[admin reservations] card-week activity rpc chunk limit exceeded`),
-        loadedRowCount: merged.length,
-      }
+  merged.push(...newRows)
+  const nextTotal = totalCount == null ? merged.length : Math.max(totalCount, merged.length)
+  handlers.onProgress?.({ loaded: merged.length, total: nextTotal })
+  try {
+    if (!firstChunkDone) {
+      const keep = await handlers.onFirstChunk({ rows: newRows, totalCount: nextTotal })
+      if (keep === false) return { error: null, loadedRowCount: merged.length }
+    } else {
+      const keep = await handlers.onAdditionalChunk?.({
+        rows: newRows,
+        mergedLoaded: merged.length,
+        totalCount: nextTotal,
+      })
+      if (keep === false) return { error: null, loadedRowCount: merged.length }
     }
-    chunkIndex += 1
-
-    const { data, error } = await supabase.rpc('admin_reservation_card_week_activity_ids', {
-      p_operator_id: opId,
-      p_range_start: args.activityRangeStartIso,
-      p_range_end: args.activityRangeEndIso,
-      p_status: args.selectedStatus || 'all',
-      p_channel_id:
-        args.selectedChannel && args.selectedChannel !== 'all' ? args.selectedChannel : null,
-      p_tour_date_start: args.dateRange.start || null,
-      p_tour_date_end: args.dateRange.end || null,
-      p_customer_id: args.customerIdFromUrl,
-      p_tier: args.cardWeekLoadTier ?? null,
-      p_recent_created_gte: args.cardWeekRecentCreatedGteIso ?? null,
-      p_legacy_tour_date_cutoff: ADMIN_RESERVATION_LEGACY_TOUR_DATE_CUTOFF_YMD,
-      p_limit: chunk,
-      p_offset: offset,
-    })
-
-    if (error) {
-      if (isCardWeekActivityRpcUnavailable(error)) {
-        cardWeekActivityRpcMissing = true
-        return null
-      }
-      return { error: error as Error, loadedRowCount: merged.length }
+  } catch (e) {
+    if (!firstChunkDone) {
+      return { error: e instanceof Error ? e : new Error(String(e)), loadedRowCount: merged.length }
     }
-
-    const ids = parseCardWeekActivityIdRows(data)
-    if (ids.length === 0) {
-      if (!firstChunkDone) {
-        try {
-          const keep = await handlers.onFirstChunk({ rows: [], totalCount: 0 })
-          if (keep === false) return { error: null, loadedRowCount: 0 }
-        } catch (e) {
-          return { error: e instanceof Error ? e : new Error(String(e)), loadedRowCount: 0 }
-        }
-      }
-      break
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[admin reservations] card-week status extras merge failed:', e)
     }
-
-    const { rows: batch, error: rowsError } = await fetchCardWeekRowsByOrderedIds(supabase, args, ids)
-    if (rowsError) return { error: rowsError, loadedRowCount: merged.length }
-
-    merged.push(...batch)
-    // exact total은 별도 count RPC 없이 null — 진행률은 loaded만 갱신
-    handlers.onProgress?.({ loaded: merged.length, total: null })
-
-    try {
-      if (!firstChunkDone) {
-        firstChunkDone = true
-        const keep = await handlers.onFirstChunk({ rows: batch, totalCount: null })
-        if (keep === false) return { error: null, loadedRowCount: merged.length }
-      } else {
-        const keep = await handlers.onAdditionalChunk?.({
-          rows: batch,
-          mergedLoaded: merged.length,
-          totalCount: null,
-        })
-        if (keep === false) break
-      }
-    } catch (e) {
-      if (!firstChunkDone) {
-        return { error: e instanceof Error ? e : new Error(String(e)), loadedRowCount: merged.length }
-      }
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('[admin reservations] card-week activity rpc merge failed:', e)
-      }
-      break
-    }
-
-    if (ids.length < chunk) break
-    offset += chunk
   }
-
   return { error: null, loadedRowCount: merged.length }
 }
 
 /**
  * `card-week`: 첫 청크만 먼저 콜백으로 넘긴 뒤, 동일 쿼리로 나머지 청크를 이어 받는다.
- * 검색어 없을 때는 UNION activity RPC를 우선 시도하고, 미적용 시 PostgREST OR로 폴백한다.
+ * 구간은 `created_at`(등록) 기준. 단계(tier)가 없으면 실제 상태 전환 extras를 이어서 병합한다.
+ * (`updated_at` UNION activity RPC는 단순 수정까지 전부 끌어와 사용하지 않는다.)
  */
 export async function fetchAdminReservationListCardWeekProgressive(
   supabase: SupabaseClient,
@@ -1099,19 +1021,13 @@ export async function fetchAdminReservationListCardWeekProgressive(
   handlers: CardWeekProgressiveHandlers
 ): Promise<{ error: Error | null; loadedRowCount: number }> {
   try {
-    const viaRpc = await fetchAdminReservationListCardWeekProgressiveViaActivityRpc(
-      supabase,
-      args,
-      handlers
-    )
-    if (viaRpc) return viaRpc
-
     const searchOr = await buildSearchOrClause(supabase, args.debouncedSearchTerm, args.operatorId)
     const chunk = ADMIN_RESERVATION_CARD_WEEK_CHUNK_SIZE
     const merged: Record<string, unknown>[] = []
     let totalCount: number | null = null
     let offset = 0
     let chunkIndex = 0
+    let firstChunkDone = false
     const maxChunks = 400
 
     for (;;) {
@@ -1138,6 +1054,7 @@ export async function fetchAdminReservationListCardWeekProgressive(
         handlers.onProgress?.({ loaded: merged.length, total: totalCount })
         try {
           const keep = await handlers.onFirstChunk({ rows: batch, totalCount })
+          firstChunkDone = true
           if (keep === false) {
             return { error: null, loadedRowCount: merged.length }
           }
@@ -1171,6 +1088,17 @@ export async function fetchAdminReservationListCardWeekProgressive(
         break
       }
       offset += chunk
+    }
+
+    if (!args.cardWeekLoadTier) {
+      return appendCardWeekStatusChangeExtrasToProgressive(
+        supabase,
+        args,
+        handlers,
+        merged,
+        firstChunkDone,
+        totalCount
+      )
     }
 
     return { error: null, loadedRowCount: merged.length }

@@ -40,7 +40,7 @@ import {
   reservationHasPartnerReturnedRefundLine,
 } from '@/lib/cancelDepositRefundPaymentRecord'
 import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
-import { resolveReservationTourLanguage } from '@/lib/reservationTourLanguage'
+import { resolveTourLanguageForReservationWrite } from '@/lib/reservationTourLanguage'
 
 const UNDECIDED_OPTION_ID = '__undecided__'
 const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
@@ -192,6 +192,7 @@ export function toReservationUpdatePayload(
     ...payload,
     pricingInfo: payload.pricingInfo,
     customerLanguage: payload.customerLanguage,
+    tourLanguage: payload.tourLanguage,
     variantKey: payload.variantKey,
     selectedChoices: Array.isArray(payload.selectedChoices) ? payload.selectedChoices : undefined,
     usResidentCount: payload.usResidentCount,
@@ -212,7 +213,7 @@ export async function updateReservation(
   try {
     const { data: existingReservation, error: existingErr } = await supabase
       .from('reservations')
-      .select('product_id, tour_date, status')
+      .select('product_id, tour_date, status, tour_language')
       .eq('id', reservationId)
       .maybeSingle()
 
@@ -254,8 +255,11 @@ export async function updateReservation(
       variant_key: payload.variantKey ?? 'default',
       // 관리자가 예약 내용을 확인하고 저장하면 자동 추가 강조를 해제
       import_needs_review: false,
-      tour_language: resolveReservationTourLanguage({
-        explicitTourLanguage: payload.tourLanguage,
+      tour_language: resolveTourLanguageForReservationWrite({
+        incomingTourLanguage:
+          payload.tourLanguage ??
+          (payload as { tour_language?: string | null }).tour_language,
+        existingTourLanguage: (existingReservation as { tour_language?: string | null }).tour_language,
         customerLanguage: payload.customerLanguage,
       }),
     }

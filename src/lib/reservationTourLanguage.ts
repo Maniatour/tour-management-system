@@ -111,6 +111,23 @@ export function resolveReservationTourLanguage(args: {
   return inferLegacyTourLanguage(args.customerLanguage)
 }
 
+/** 예약 수정: 폼에 값이 있으면 그걸 쓰고, 없으면 기존 DB 값을 유지한다. 고객 모국어로 덮어쓰지 않는다. */
+export function resolveTourLanguageForReservationWrite(args: {
+  incomingTourLanguage?: string | null | undefined
+  existingTourLanguage?: string | null | undefined
+  preferredTourLanguages?: string[] | null | undefined
+  customerLanguage?: string | null | undefined
+}): TourLanguageCode {
+  const incoming = canonicalizeTourLanguage(args.incomingTourLanguage)
+  if (incoming) return incoming
+  const existing = canonicalizeTourLanguage(args.existingTourLanguage)
+  if (existing) return existing
+  return resolveReservationTourLanguage({
+    preferredTourLanguages: args.preferredTourLanguages,
+    customerLanguage: args.customerLanguage,
+  })
+}
+
 export function reservationOpsLanguageBucket(
   tourLanguage: string | null | undefined,
   customerLanguage: string | null | undefined

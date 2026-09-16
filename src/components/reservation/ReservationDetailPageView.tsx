@@ -95,6 +95,7 @@ export function ReservationDetailPageView({
           ...payload,
           pricingInfo: (payload as ReservationUpdatePayload).pricingInfo,
           customerLanguage: (payload as ReservationUpdatePayload).customerLanguage,
+          tourLanguage: (payload as ReservationUpdatePayload).tourLanguage,
           variantKey: (payload as ReservationUpdatePayload).variantKey,
           selectedChoices: Array.isArray((payload as ReservationUpdatePayload).selectedChoices)
             ? (payload as ReservationUpdatePayload).selectedChoices

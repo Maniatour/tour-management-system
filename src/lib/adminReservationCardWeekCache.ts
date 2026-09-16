@@ -21,8 +21,8 @@ export type AdminReservationCardWeekCacheKeyArgs = {
 }
 
 const CACHE_TTL_MS = 2 * 60 * 1000
-/** v2: customers(id,name) embed 포함 스냅샷 */
-const CACHE_KEY_PREFIX = 'admin-reservation-card-week-v2\u001f'
+/** v3: created_at 주간 + 실제 상태 전환 extras (updated_at UNION 제거) */
+const CACHE_KEY_PREFIX = 'admin-reservation-card-week-v3\u001f'
 
 export function buildAdminReservationCardWeekCacheKey(
   args: AdminReservationCardWeekCacheKeyArgs
