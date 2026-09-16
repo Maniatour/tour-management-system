@@ -10760,10 +10760,19 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                                 </span>
                               ))}
                             </div>
-                            <span className="shrink-0 text-xs tabular-nums text-gray-600">
-                              {res.total_people ?? 0}
-                              {locale === 'ko' ? '명' : ' pax'}
-                            </span>
+                            <div className="inline-flex shrink-0 items-center gap-1.5">
+                              <TourLanguageBadge
+                                tourLanguage={res.tour_language ?? res.tourLanguage}
+                                customerLanguage={customer?.language}
+                                locale={locale}
+                                compact
+                                showLabel
+                              />
+                              <span className="text-xs tabular-nums text-gray-600">
+                                {res.total_people ?? 0}
+                                {locale === 'ko' ? '명' : ' pax'}
+                              </span>
+                            </div>
                           </div>
                           <div className="mt-0.5 min-w-0 truncate pl-0.5 text-[11px] leading-snug text-gray-600">
                             {pickupHotelId ? (

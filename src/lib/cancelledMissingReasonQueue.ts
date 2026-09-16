@@ -3,8 +3,12 @@ import { fetchCancellationFollowUpMeta } from '@/lib/reservationCancellationReas
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { fetchReservationsByIdsProgressive } from '@/lib/operationalQueueFetch'
 import { mapDbReservationRowsToReservations } from '@/lib/mapDbReservationRowsToReservations'
-import { isReservationTourDatePastLocal, localCalendarDateKeyToday } from '@/utils/reservationUtils'
+import { isReservationTourDatePastLocal } from '@/utils/reservationUtils'
 import type { Customer, Reservation } from '@/types/reservation'
+import { fetchReservationStatusTransitionsByTimeRange } from '@/lib/reservationStatusEventsFetch'
+import { orderReservationIdsByLatestCancelTransition } from '@/lib/reservationStatusAudit'
+
+export { orderReservationIdsByLatestCancelTransition }
 
 /** 최근 취소 건 중 취소 사유 미기록 조회 기간(일) */
 export const CANCELLED_MISSING_REASON_LOOKBACK_DAYS = 30
@@ -88,20 +92,16 @@ export async function fetchCancelledMissingReasonQueueMeta(
   const since = new Date()
   since.setDate(since.getDate() - CANCELLED_MISSING_REASON_LOOKBACK_DAYS)
   const sinceIso = since.toISOString()
-  const todayYmd = localCalendarDateKeyToday()
 
-  const { data: rows, error } = await supabase
-    .from('reservations')
-    .select('id, updated_at, tour_date')
-    .eq('operator_id', opId)
-    .in('status', ['cancelled', 'canceled'])
-    .gte('updated_at', sinceIso)
-    .or(`tour_date.is.null,tour_date.gte.${todayYmd}`)
-    .order('updated_at', { ascending: false })
-    .limit(300)
-
-  if (error) {
-    console.error('cancelledMissingReasonQueue reservations:', error)
+  const { rows: transitionRows, error: transitionError } = await fetchReservationStatusTransitionsByTimeRange(
+    supabase,
+    {
+      rangeStartIso: sinceIso,
+      rangeEndIso: new Date().toISOString(),
+    }
+  )
+  if (transitionError) {
+    console.error('cancelledMissingReasonQueue status transitions:', transitionError)
     return {
       needsFollowUpIds: [],
       awaitingReasonIds: [],
@@ -111,10 +111,43 @@ export async function fetchCancelledMissingReasonQueueMeta(
     }
   }
 
-  const candidateIds = (rows || [])
-    .filter((r) => !isReservationTourDatePastLocal((r as { tour_date?: string | null }).tour_date))
-    .map((r) => String((r as { id?: string }).id ?? '').trim())
-    .filter(Boolean)
+  const orderedByCancelAt = orderReservationIdsByLatestCancelTransition(transitionRows)
+  if (orderedByCancelAt.length === 0) {
+    return {
+      needsFollowUpIds: [],
+      awaitingReasonIds: [],
+      unionCount: 0,
+      needsFollowUpCount: 0,
+      awaitingReasonCount: 0,
+    }
+  }
+
+  const stillCancelledIds = new Set<string>()
+  const tourDateById = new Map<string, string | null>()
+  const chunkSize = 150
+  for (let i = 0; i < orderedByCancelAt.length; i += chunkSize) {
+    const chunk = orderedByCancelAt.slice(i, i + chunkSize)
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('id, tour_date, status')
+      .eq('operator_id', opId)
+      .in('id', chunk)
+      .in('status', ['cancelled', 'canceled'])
+    if (error) {
+      console.error('cancelledMissingReasonQueue reservations:', error)
+      continue
+    }
+    for (const row of data || []) {
+      const id = String((row as { id?: string }).id ?? '').trim()
+      if (!id) continue
+      stillCancelledIds.add(id)
+      tourDateById.set(id, (row as { tour_date?: string | null }).tour_date ?? null)
+    }
+  }
+
+  const candidateIds = orderedByCancelAt
+    .filter((id) => stillCancelledIds.has(id) && !isReservationTourDatePastLocal(tourDateById.get(id)))
+    .slice(0, 300)
 
   if (candidateIds.length === 0) {
     return {

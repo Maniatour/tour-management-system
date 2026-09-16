@@ -217,7 +217,7 @@ import {
   assignedResidentPeopleFromForm,
   fetchLatestResidentCheckGuestRecord,
   guestResidentCountsToFormPatch,
-  leftoverUndecidedResidentCount,
+  leftoverUndecidedFromResidentLines,
   residentStatusCountsFromGuestSubmission,
 } from '@/lib/residentCheckReservationSync'
 import { saveResidentStatusWithPricing } from '@/lib/saveResidentStatusWithPricing'
@@ -1242,7 +1242,6 @@ export default function ReservationForm({
             ),
           }
         : parsed
-      const assigned = assignedResidentPeopleFromForm(source)
       const passCovered = computePassCoveredCount(
         source.nonResidentWithPassCount,
         source.usResidentCount,
@@ -1250,7 +1249,7 @@ export default function ReservationForm({
         source.nonResidentUnder16Count,
         prev.totalPeople
       )
-      const nextUndecided = leftoverUndecidedResidentCount(prev.totalPeople || 0, assigned)
+      const nextUndecided = leftoverUndecidedFromResidentLines(prev.totalPeople || 0, source)
       const next: ResidentLineState = {
         ...source,
         undecidedResidentCount: nextUndecided,
@@ -1946,9 +1945,15 @@ export default function ReservationForm({
                       nonResidentUnder16Count,
                       nonResidentPurchasePassCount,
                       passCoveredCount,
-                      undecidedResidentCount: leftoverUndecidedResidentCount(
+                      undecidedResidentCount: leftoverUndecidedFromResidentLines(
                         loadedTotalPeople,
-                        incomingAssigned
+                        {
+                          usResidentCount,
+                          nonResidentCount,
+                          nonResidentUnder16Count,
+                          nonResidentWithPassCount,
+                          nonResidentPurchasePassCount,
+                        }
                       ),
                       ...(guestResidentPatch || {}),
                     }),
@@ -2123,9 +2128,15 @@ export default function ReservationForm({
               nonResidentUnder16Count,
               nonResidentPurchasePassCount,
               passCoveredCount,
-              undecidedResidentCount: leftoverUndecidedResidentCount(
+              undecidedResidentCount: leftoverUndecidedFromResidentLines(
                 loadedTotalPeople,
-                incomingAssigned
+                {
+                  usResidentCount,
+                  nonResidentCount,
+                  nonResidentUnder16Count,
+                  nonResidentWithPassCount,
+                  nonResidentPurchasePassCount,
+                }
               ),
               ...(guestResidentPatch || {}),
             }
@@ -7798,8 +7809,9 @@ export default function ReservationForm({
                             || (() => {
                               const choice = formData.productChoices?.find((c: { id: string }) => c.id === sc.choice_id)
                               const option = choice?.options?.find((o: { id: string }) => o.id === sc.option_id)
-                              return (option as { option_name_ko?: string; option_key?: string })?.option_name_ko || (option as { option_key?: string })?.option_key || sc.option_id
+                              return (option as { option_name_ko?: string; option_key?: string })?.option_name_ko || (option as { option_key?: string })?.option_key || ''
                             })())
+                          if (!label || /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(label)) return null
                           return (
                             <span key={`${sc.choice_id}-${sc.option_id}`} className="inline-flex items-center px-3 py-1.5 rounded-lg bg-amber-100 text-amber-800 border border-amber-200 text-xs font-medium truncate max-w-[120px]" title={label}>
                               {label}

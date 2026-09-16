@@ -7,7 +7,7 @@ import {
   assignedResidentPeopleFromForm,
   fetchLatestResidentCheckGuestRecord,
   guestResidentCountsToFormPatch,
-  leftoverUndecidedResidentCount,
+  leftoverUndecidedFromResidentLines,
   residentStatusCountsFromGuestSubmission,
   type ResidentCheckGuestRecord,
 } from '@/lib/residentCheckReservationSync'
@@ -96,7 +96,7 @@ export function useGuestResidentCheckSync(args: {
       return
     }
 
-    const leftover = leftoverUndecidedResidentCount(totalPeople, assigned)
+    const leftover = leftoverUndecidedFromResidentLines(totalPeople, formDataRef.current)
     const currentUndecided = formDataRef.current.undecidedResidentCount || 0
     appliedRef.current = true
     if (currentUndecided > leftover) {

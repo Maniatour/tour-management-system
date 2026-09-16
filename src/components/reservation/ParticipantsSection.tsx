@@ -15,6 +15,7 @@ import {
   residentLineDefaultAmountUsd,
   type ResidentLineKey,
 } from '@/utils/usResidentChoiceSync'
+import { leftoverUndecidedFromResidentLines } from '@/lib/residentCheckGuestMapping'
 
 interface ParticipantsSectionProps {
   /** 미국 거주자 구분 연동 블록(거주 상태별 인원·금액) — 지정 상품 코드에서만 true */
@@ -272,8 +273,13 @@ export default function ParticipantsSection({
                     under,
                     formData.totalPeople
                   )
-                  const othersSum = us + non + under + purchasePass + passCovered
-                  const newUndecided = Math.max(0, formData.totalPeople - othersSum)
+                  const newUndecided = leftoverUndecidedFromResidentLines(formData.totalPeople, {
+                    usResidentCount: us,
+                    nonResidentCount: non,
+                    nonResidentUnder16Count: under,
+                    nonResidentWithPassCount: passCount,
+                    nonResidentPurchasePassCount: purchasePass,
+                  })
 
                   apply({
                     [row.countField]: newCount,

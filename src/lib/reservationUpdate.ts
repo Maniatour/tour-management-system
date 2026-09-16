@@ -41,6 +41,7 @@ import {
 } from '@/lib/cancelDepositRefundPaymentRecord'
 import { applyNoShowReservationSideEffects } from '@/lib/reservationNoShowEffects'
 import { resolveTourLanguageForReservationWrite } from '@/lib/reservationTourLanguage'
+import { filterReservationChoicesForOptionFk } from '@/utils/usResidentChoiceSync'
 
 const UNDECIDED_OPTION_ID = '__undecided__'
 const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
@@ -314,26 +315,29 @@ export async function updateReservation(
     if (choicesToSave.length > 0) {
       const optionIds = [...new Set(choicesToSave.map((c) => c.option_id).filter(Boolean))]
       if (optionIds.length > 0) {
-        const { data: optionMeta } = await (supabase as any)
+        const { data: optionMeta, error: optionMetaError } = await (supabase as any)
           .from('choice_options')
           .select('id, option_key')
           .in('id', optionIds)
-        const keyById = new Map<string, string>(
-          ((optionMeta || []) as Array<{ id: string; option_key?: string | null }>).map((o) => [
-            o.id,
-            String(o.option_key || ''),
-          ])
-        )
-        choicesToSave = choicesToSave.map((row) => ({
-          ...row,
-          option_key: keyById.get(row.option_id) || null,
-        }))
+        if (!optionMetaError) {
+          const rows = (optionMeta || []) as Array<{ id: string; option_key?: string | null }>
+          const keyById = new Map<string, string>(rows.map((o) => [o.id, String(o.option_key || '')]))
+          choicesToSave = filterReservationChoicesForOptionFk(
+            choicesToSave,
+            rows.map((o) => o.id)
+          ).map((row) => ({
+            ...row,
+            option_key: keyById.get(row.option_id) || null,
+          }))
+        }
       }
-      const { error: choicesError } = await (supabase as any)
-        .from('reservation_choices')
-        .insert(choicesToSave)
-      if (choicesError) {
-        return { success: false, error: '초이스 저장: ' + choicesError.message }
+      if (choicesToSave.length > 0) {
+        const { error: choicesError } = await (supabase as any)
+          .from('reservation_choices')
+          .insert(choicesToSave)
+        if (choicesError) {
+          return { success: false, error: '초이스 저장: ' + choicesError.message }
+        }
       }
     }
 

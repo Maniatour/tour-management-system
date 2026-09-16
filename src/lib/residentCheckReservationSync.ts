@@ -6,6 +6,7 @@ import { residentStatusCountsFromGuestSubmission } from '@/lib/residentCheckGues
 export {
   assignedResidentPeopleFromForm,
   guestResidentCountsToFormPatch,
+  leftoverUndecidedFromResidentLines,
   leftoverUndecidedResidentCount,
   residentStatusCountsFromGuestSubmission,
   isGuestResidentCheckFilledByCustomer,

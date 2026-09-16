@@ -71,6 +71,36 @@ export function residentStatusCountsFromGuestSubmission(
   }
 }
 
+/** 이미 배정된 인원을 제외한 미정 잔여. 배정이 총원을 넘으면 0. */
+export function leftoverUndecidedResidentCount(totalPeople: number, assigned: number): number {
+  const total = Math.max(0, Math.floor(Number(totalPeople) || 0))
+  const used = Math.max(0, Math.floor(Number(assigned) || 0))
+  return Math.max(0, total - used)
+}
+
+/**
+ * 패스 장수는 인원이 아니라 커버 인원으로 뺀 미정 잔여.
+ * 예: 총 2인 + 패스 1장 → 패스가 2인 커버, 미정 0.
+ */
+export function leftoverUndecidedFromResidentLines(
+  totalPeople: number,
+  form: {
+    usResidentCount?: number
+    nonResidentCount?: number
+    nonResidentUnder16Count?: number
+    nonResidentPurchasePassCount?: number
+    nonResidentWithPassCount?: number
+  }
+): number {
+  const us = Math.max(0, Math.floor(Number(form.usResidentCount) || 0))
+  const non = Math.max(0, Math.floor(Number(form.nonResidentCount) || 0))
+  const under = Math.max(0, Math.floor(Number(form.nonResidentUnder16Count) || 0))
+  const purchase = Math.max(0, Math.floor(Number(form.nonResidentPurchasePassCount) || 0))
+  const passCount = Math.max(0, Math.floor(Number(form.nonResidentWithPassCount) || 0))
+  const passCovered = computePassCoveredCount(passCount, us, non, under, totalPeople)
+  return leftoverUndecidedResidentCount(totalPeople, us + non + under + purchase + passCovered)
+}
+
 export function guestResidentCountsToFormPatch(
   counts: GuestResidentStatusCounts,
   totalPeople: number
@@ -82,13 +112,13 @@ export function guestResidentCountsToFormPatch(
     counts.nonResidentUnder16,
     totalPeople
   )
-  const assigned =
-    counts.usResident +
-    counts.nonResident +
-    counts.nonResidentUnder16 +
-    counts.nonResidentWithPass +
-    passCovered
-  const undecided = Math.max(0, totalPeople - assigned)
+  const undecided = leftoverUndecidedFromResidentLines(totalPeople, {
+    usResidentCount: counts.usResident,
+    nonResidentCount: counts.nonResident,
+    nonResidentUnder16Count: counts.nonResidentUnder16,
+    nonResidentWithPassCount: counts.nonResidentWithPass,
+    nonResidentPurchasePassCount: 0,
+  })
   const amounts = { ...emptyResidentStatusAmounts(), ...counts.residentStatusAmounts }
   return {
     usResidentCount: counts.usResident,
@@ -116,13 +146,6 @@ export function assignedResidentPeopleFromForm(form: {
     (form.nonResidentWithPassCount || 0) +
     (form.nonResidentPurchasePassCount || 0)
   )
-}
-
-/** 이미 배정된 인원을 제외한 미정 잔여. 배정이 총원을 넘으면 0. */
-export function leftoverUndecidedResidentCount(totalPeople: number, assigned: number): number {
-  const total = Math.max(0, Math.floor(Number(totalPeople) || 0))
-  const used = Math.max(0, Math.floor(Number(assigned) || 0))
-  return Math.max(0, total - used)
 }
 
 /** 고객이 거주 확인 폼을 실제로 작성했는지 (토큰만 있고 미작성인 경우 제외) */

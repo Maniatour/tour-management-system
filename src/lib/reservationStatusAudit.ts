@@ -38,6 +38,35 @@ export function statusFromReservationAuditJson(json: unknown): string | null {
   return typeof v === 'string' && v.trim() ? v.trim() : null
 }
 
+function isIntoCancelledStatus(from: string, to: string): boolean {
+  const fromNorm = from.toLowerCase().trim()
+  const toNorm = to.toLowerCase().trim()
+  const toCancel = toNorm === 'cancelled' || toNorm === 'canceled'
+  const fromCancel = fromNorm === 'cancelled' || fromNorm === 'canceled'
+  return toCancel && !fromCancel
+}
+
+/** 최근 취소 전환 시각이 늦은 예약 id부터. 단순 수정(`updated_at`)은 무시한다. */
+export function orderReservationIdsByLatestCancelTransition(
+  rows: ReservationStatusAuditRow[]
+): string[] {
+  const latestById = new Map<string, number>()
+  for (const row of rows) {
+    const id = String(row.record_id ?? '').trim()
+    if (!id) continue
+    const to = statusFromReservationAuditJson(row.new_values)
+    const from = statusFromReservationAuditJson(row.old_values) ?? ''
+    if (!to || !isIntoCancelledStatus(from, to)) continue
+    const t = new Date(row.created_at).getTime()
+    if (!Number.isFinite(t)) continue
+    const prev = latestById.get(id)
+    if (prev == null || t > prev) latestById.set(id, t)
+  }
+  return [...latestById.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => id)
+}
+
 /**
  * 심플 카드 「상태 변경」·헤더에 노출할 전환.
  * 실제 상태 변경(from ≠ to)은 모두 표시 — completed→cancelled 포함.

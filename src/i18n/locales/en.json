@@ -4075,7 +4075,7 @@
     "cancelReasonQueue": {
       "headerButton": "Cancel follow-up",
       "title": "Missing cancellation reason — follow-up needed",
-      "subtitle": "Cancelled in the last 30 days with no cancellation reason recorded. Workflow: cancel/rebook notice → customer reply → record reason.",
+      "subtitle": "Status changed to cancelled in the last 30 days, with no cancellation reason recorded. Last-modified time is ignored. Workflow: cancel/rebook notice → customer reply → record reason.",
       "workflowTitle": "Recommended workflow",
       "workflowNotice": "Cancel & rebook outreach notice",
       "workflowResponse": "Customer reply",

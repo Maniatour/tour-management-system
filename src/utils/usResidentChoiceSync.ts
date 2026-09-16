@@ -264,6 +264,67 @@ export function sumResidentFeeAmountsUsd(
   return Math.round(s * 100) / 100
 }
 
+function knownChoiceOptionIdSet(productChoices: unknown): Set<string> {
+  const set = new Set<string>()
+  if (!Array.isArray(productChoices)) return set
+  for (const choice of productChoices) {
+    if (!choice || typeof choice !== 'object') continue
+    const options = (choice as { options?: unknown }).options
+    if (!Array.isArray(options)) continue
+    for (const opt of options) {
+      if (!opt || typeof opt !== 'object') continue
+      const id = (opt as { id?: unknown }).id
+      const s = id == null ? '' : String(id).trim()
+      if (s) set.add(s)
+    }
+  }
+  return set
+}
+
+/** choice_options FK에 넣을 수 있는 option_id인지 (미정 placeholder 제외) */
+export function isPersistedChoiceOptionId(optionId: string | null | undefined): boolean {
+  const id = optionId == null ? '' : String(optionId).trim()
+  return !!id && id !== UNDECIDED_OPTION_ID
+}
+
+/** reservation_choices insert 전: DB에 없는 option_id·미정은 제외해 FK 오류를 막는다 */
+export function filterReservationChoicesForOptionFk<T extends { option_id?: string | null }>(
+  rows: T[],
+  existingOptionIds: Iterable<string>
+): T[] {
+  const known = new Set<string>()
+  for (const raw of existingOptionIds) {
+    const id = String(raw || '').trim()
+    if (id) known.add(id)
+  }
+  return rows.filter((row) => {
+    const id = String(row.option_id || '').trim()
+    return isPersistedChoiceOptionId(id) && known.has(id)
+  })
+}
+
+/** 미국 거주자 구분·기타 입장료 그룹에서 상품에 없는 option_id 행 제거 */
+export function dropStaleUsResidentClassificationRows<
+  T extends { choice_id: string; option_id: string }
+>(
+  productChoices: Parameters<typeof findUsResidentClassificationChoice>[0],
+  selectedChoices: T[]
+): T[] {
+  if (!productChoices?.length) return selectedChoices
+  const residentIds = new Set<string>()
+  for (const c of productChoices) {
+    if (isUsResidentClassificationProductChoice(c)) residentIds.add(c.id)
+  }
+  if (residentIds.size === 0) return selectedChoices
+  const known = knownChoiceOptionIdSet(productChoices)
+  return selectedChoices.filter((s) => {
+    if (!residentIds.has(s.choice_id)) return true
+    const id = String(s.option_id || '').trim()
+    if (!id || id === UNDECIDED_OPTION_ID) return true
+    return known.has(id)
+  })
+}
+
 function optionMeta(
   choice: { options?: Array<Record<string, unknown>> },
   optionId: string
@@ -414,9 +475,8 @@ export function mergeResidentRowsIntoSelectedChoices<
   residentRows: ResidentChoiceRow[]
 ): { selectedChoices: T[]; choicesTotal: number } {
   const choice = findUsResidentClassificationChoice(productChoices)
-  const without = !choice
-    ? [...selectedChoices]
-    : selectedChoices.filter((s) => s.choice_id !== choice.id)
+  const cleaned = dropStaleUsResidentClassificationRows(productChoices, selectedChoices)
+  const without = !choice ? cleaned : cleaned.filter((s) => s.choice_id !== choice.id)
   const merged = [...without, ...(residentRows as T[])]
   const choicesTotal = merged.reduce((sum, c) => sum + (Number(c.total_price) || 0), 0)
   return { selectedChoices: merged, choicesTotal }
@@ -571,9 +631,14 @@ export function overlayResidentRowsFromPricingJson<
 ): T[] {
   const choice = findUsResidentClassificationChoice(productChoices)
   if (!choice) return selectedChoices
-  const jsonRows = selectedChoiceRowsFromReservationPricingChoices(choicesJson).filter(
-    (row) => row.choice_id === choice.id
-  )
+  const known = knownChoiceOptionIdSet(productChoices)
+  const jsonRows = selectedChoiceRowsFromReservationPricingChoices(choicesJson).filter((row) => {
+    if (row.choice_id !== choice.id) return false
+    const id = String(row.option_id || '').trim()
+    if (!id) return false
+    if (id === UNDECIDED_OPTION_ID) return true
+    return known.has(id)
+  })
   const hasConcrete = jsonRows.some((row) => row.option_id && String(row.option_id) !== UNDECIDED_OPTION_ID)
   if (!hasConcrete) return selectedChoices
   const without = selectedChoices.filter((s) => s.choice_id !== choice.id)

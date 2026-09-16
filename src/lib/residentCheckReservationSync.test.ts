@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   assignedResidentPeopleFromForm,
   guestResidentCountsToFormPatch,
+  leftoverUndecidedFromResidentLines,
   leftoverUndecidedResidentCount,
   residentStatusCountsFromGuestSubmission,
   isGuestResidentCheckFilledByCustomer,
@@ -101,6 +102,39 @@ test('leftover undecided is zero once assigned people cover the party', () => {
   assert.equal(leftoverUndecidedResidentCount(1, 1), 0)
   assert.equal(leftoverUndecidedResidentCount(1, 2), 0)
   assert.equal(leftoverUndecidedResidentCount(3, 1), 2)
+})
+
+test('one annual pass covers the remaining party so leftover undecided is zero', () => {
+  assert.equal(
+    leftoverUndecidedFromResidentLines(2, {
+      usResidentCount: 0,
+      nonResidentCount: 0,
+      nonResidentUnder16Count: 0,
+      nonResidentWithPassCount: 1,
+      nonResidentPurchasePassCount: 0,
+    }),
+    0
+  )
+  assert.equal(
+    leftoverUndecidedFromResidentLines(5, {
+      usResidentCount: 0,
+      nonResidentCount: 0,
+      nonResidentUnder16Count: 0,
+      nonResidentWithPassCount: 1,
+      nonResidentPurchasePassCount: 0,
+    }),
+    1
+  )
+  assert.equal(
+    leftoverUndecidedFromResidentLines(3, {
+      usResidentCount: 1,
+      nonResidentCount: 0,
+      nonResidentUnder16Count: 0,
+      nonResidentWithPassCount: 0,
+      nonResidentPurchasePassCount: 0,
+    }),
+    2
+  )
 })
 
 test('guest form icon only appears after the customer filled residency', () => {
