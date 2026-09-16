@@ -2,13 +2,16 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   addScheduleProductCellPulseReason,
+  collectGuideLanguageMismatchByTourId,
   collectStaffScheduleLocales,
   customerLanguageToScheduleBucket,
   findTourGuideLanguageMismatch,
   reservationToScheduleBucket,
+  scheduleAssignedTourLanguageMismatchAlert,
   scheduleGuideLanguageMismatchLine,
   scheduleProductCellLangBgClass,
   scheduleProductCellPulseReasonLabel,
+  type ScheduleGuideLanguageMismatch,
 } from './scheduleGuideLanguageMatch'
 
 test('customerLanguageToScheduleBucket maps Korean, Japanese, and fallback English', () => {
@@ -31,6 +34,16 @@ test('reservationToScheduleBucket uses stored tour language, not customer nation
 test('collectStaffScheduleLocales reads KR/EN/JP team codes', () => {
   const locales = collectStaffScheduleLocales([{ languages: ['KR', 'EN'] }, { languages: ['JP'] }])
   assert.deepEqual(locales, ['ko', 'ja', 'en'])
+})
+
+test('ES/FR/DE/RU team languages are not treated as Korean or English', () => {
+  const locales = collectStaffScheduleLocales([{ languages: ['ES', 'FR', 'DE', 'RU'] }])
+  assert.deepEqual(locales, [])
+})
+
+test('Spanish plus Korean still counts Korean only from KR', () => {
+  const locales = collectStaffScheduleLocales([{ languages: ['ES', 'KR', 'FR'] }])
+  assert.deepEqual(locales, ['ko'])
 })
 
 test('Japanese guests with Korean-only guide are a mismatch', () => {
@@ -165,6 +178,43 @@ test('pulse reason badges put guide language first and keep labels', () => {
   const reasons = map.get('p1|2026-09-16') || []
   assert.equal(reasons[0]?.kind, 'guide_language')
   assert.equal(scheduleProductCellPulseReasonLabel(reasons[0], 'ko'), '가이드 언어 · 일본어')
+})
+
+test('collectGuideLanguageMismatchByTourId skips past dates and merges missing locales', () => {
+  const mismatchJa: ScheduleGuideLanguageMismatch = {
+    tourId: 't1',
+    teamIndex: 1,
+    guideName: 'Alex',
+    assistantName: '—',
+    guestLocales: ['ja'],
+    staffLocales: ['en'],
+    missingLocales: ['ja'],
+    guestPeople: { ko: 0, ja: 4, en: 0 },
+  }
+  const mismatchKo: ScheduleGuideLanguageMismatch = {
+    ...mismatchJa,
+    missingLocales: ['ko'],
+    guestLocales: ['ko'],
+    guestPeople: { ko: 2, ja: 0, en: 0 },
+  }
+  const map = collectGuideLanguageMismatchByTourId(
+    [
+      {
+        dailyData: {
+          '2020-01-01': { guideLanguageMismatches: [{ ...mismatchJa, tourId: 'old' }] },
+          '2099-01-01': { guideLanguageMismatches: [mismatchJa, mismatchKo] },
+        },
+      },
+    ],
+    '2026-09-15',
+  )
+  assert.equal(map.has('old'), false)
+  assert.deepEqual(map.get('t1'), ['ko', 'ja'])
+})
+
+test('assigned tour mismatch alert names the missing guest language', () => {
+  assert.equal(scheduleAssignedTourLanguageMismatchAlert(['ja'], 'ko'), '배정 변경 필요 · 일본어')
+  assert.equal(scheduleAssignedTourLanguageMismatchAlert(['ko', 'ja'], 'en'), 'Reassign needed · Korean/Japanese')
 })
 
 test('mismatch line is short: Japanese needed, no spoken-language clause', () => {

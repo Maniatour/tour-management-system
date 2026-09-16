@@ -1,6 +1,6 @@
 'use client'
 
-import { Car, Users } from 'lucide-react'
+import { AlertTriangle, Car, Users } from 'lucide-react'
 import type { ReactNode } from 'react'
 import dayjs from 'dayjs'
 import { ScheduleLangFlagsHoverLine } from '@/lib/scheduleProductGridHelpers'
@@ -12,6 +12,10 @@ import {
   tourChoiceCountsDisplayKeys,
   type TourChoiceCounts,
 } from '@/lib/tourChoiceCounts'
+import {
+  scheduleAssignedTourLanguageMismatchAlert,
+  type ScheduleRequiredGuideLang,
+} from '@/lib/scheduleGuideLanguageMatch'
 
 type ScheduleTourHoverTooltipContentProps = {
   productName: string
@@ -27,6 +31,7 @@ type ScheduleTourHoverTooltipContentProps = {
   assignedEn: number
   assignedJa?: number
   choiceCounts?: TourChoiceCounts | null
+  languageMismatchMissingLocales?: ScheduleRequiredGuideLang[] | undefined
 }
 
 function isPresentName(value: string | null | undefined): value is string {
@@ -48,6 +53,7 @@ export default function ScheduleTourHoverTooltipContent({
   assignedEn,
   assignedJa = 0,
   choiceCounts,
+  languageMismatchMissingLocales,
 }: ScheduleTourHoverTooltipContentProps) {
   const staffNames = [guideName, assistantName].filter(isPresentName)
   const vehicleLabel = isPresentName(vehicleNumber) ? vehicleNumber : null
@@ -119,6 +125,14 @@ export default function ScheduleTourHoverTooltipContent({
           </span>
         ) : null}
       </div>
+      {languageMismatchMissingLocales && languageMismatchMissingLocales.length > 0 ? (
+        <div className="flex items-start gap-1 font-semibold text-yellow-300">
+          <AlertTriangle className="mt-px h-3 w-3 shrink-0" aria-hidden />
+          <span>
+            {scheduleAssignedTourLanguageMismatchAlert(languageMismatchMissingLocales, locale)}
+          </span>
+        </div>
+      ) : null}
     </div>
   )
 }

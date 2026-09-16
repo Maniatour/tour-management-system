@@ -210,6 +210,50 @@ export function scheduleProductCellPulseReasonLabel(
   return isKo ? '가이드 언어 불일치' : 'Guide language mismatch'
 }
 
+export const SCHEDULE_ASSIGNED_TOUR_LANG_MISMATCH_CLASS =
+  'animate-schedule-health-cell-blink'
+
+export function scheduleAssignedTourLanguageMismatchAlert(
+  missingLocales: ScheduleRequiredGuideLang[] | undefined,
+  uiLocale: string,
+): string {
+  const isKo = uiLocale === 'ko'
+  const missing = (missingLocales || []).map((locale) => scheduleGuestLangLabel(locale, uiLocale))
+  if (missing.length === 0) {
+    return isKo ? '배정 변경 필요 · 고객 투어 언어 불일치' : 'Reassign needed · tour language mismatch'
+  }
+  return isKo
+    ? `배정 변경 필요 · ${missing.join('·')}`
+    : `Reassign needed · ${missing.join('/')}`
+}
+
+export function collectGuideLanguageMismatchByTourId(
+  rows: Iterable<{
+    dailyData?: Record<string, { guideLanguageMismatches?: ScheduleGuideLanguageMismatch[] } | undefined>
+  }>,
+  fromDateInclusive: string,
+): Map<string, ScheduleRequiredGuideLang[]> {
+  const map = new Map<string, ScheduleRequiredGuideLang[]>()
+  for (const row of rows) {
+    for (const [dateString, dayData] of Object.entries(row.dailyData || {})) {
+      if (dateString < fromDateInclusive) continue
+      for (const mismatch of dayData?.guideLanguageMismatches || []) {
+        const tourId = String(mismatch.tourId || '')
+        if (!tourId) continue
+        const existing = map.get(tourId)
+        map.set(
+          tourId,
+          unionMissingGuideLocales([
+            ...(existing ? [{ missingLocales: existing }] : []),
+            mismatch,
+          ]),
+        )
+      }
+    }
+  }
+  return map
+}
+
 export function scheduleGuideLanguageMismatchLine(
   mismatch: ScheduleGuideLanguageMismatch,
   uiLocale: string,

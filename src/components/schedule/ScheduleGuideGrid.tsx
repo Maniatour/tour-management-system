@@ -30,6 +30,7 @@ type PendingOffChange = {
   action: 'approve' | 'delete' | 'reject'
 }
 
+import type { ScheduleRequiredGuideLang } from '@/lib/scheduleGuideLanguageMatch'
 import type { ScheduleDateNoteEntry } from '@/lib/scheduleDateNotes'
 import { GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS } from '@/lib/guideToursVisibleUntil'
 
@@ -108,6 +109,7 @@ export type ScheduleGuideGridProps = {
   showGuideModalContent: (title: string, content: string, tourId?: string) => void
   getTourSummary: (tour: Tour) => string
   getGuideScheduleTourHoverText: (tour: Tour) => ReactNode
+  guideLanguageMismatchByTourId: ReadonlyMap<string, ScheduleRequiredGuideLang[]>
 }
 
 export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
@@ -167,6 +169,7 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
     showGuideModalContent,
     getTourSummary,
     getGuideScheduleTourHoverText,
+    guideLanguageMismatchByTourId,
   } = props
 
 
@@ -238,6 +241,7 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
     showGuideModalContent,
     getTourSummary,
     getGuideScheduleTourHoverText,
+    guideLanguageMismatchByTourId,
     useContentVisibility: !virtualizeGuideRows,
   }
 

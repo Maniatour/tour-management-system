@@ -83,6 +83,7 @@ export type ScheduleGuideGridRowProps = Pick<
   | 'showGuideModalContent'
   | 'getTourSummary'
   | 'getGuideScheduleTourHoverText'
+  | 'guideLanguageMismatchByTourId'
 > & {
   teamMemberId: string
   guide: ScheduleGuideScheduleRow
@@ -148,6 +149,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
     showGuideModalContent,
     getTourSummary,
     getGuideScheduleTourHoverText,
+    guideLanguageMismatchByTourId,
     isToday,
     isGuideVisibleUntilCutoff,
   } = props
@@ -582,6 +584,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                             getTourSummary={getTourSummary}
                             getGuideScheduleTourHoverText={getGuideScheduleTourHoverText}
                             tooltipFallback={guide.team_member_name}
+                            guideLanguageMismatchByTourId={guideLanguageMismatchByTourId}
                           />
                         )
                       })()}
@@ -622,6 +625,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                             getTourSummary={getTourSummary}
                             getGuideScheduleTourHoverText={getGuideScheduleTourHoverText}
                             tooltipFallback={guide.team_member_name}
+                            guideLanguageMismatchByTourId={guideLanguageMismatchByTourId}
                           />
                         )
                       })()}
@@ -719,6 +723,9 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                 ? String(tourItem.tour_guide_id || '').trim() === teamMemberId
                 : String(tourItem.assistant_id || '').trim() === teamMemberId)
             )
+            const mdHasLanguageMismatch = mdRowTours.some((tourItem) =>
+              guideLanguageMismatchByTourId.has(String(tourItem.id)),
+            )
             return (
               <div
                 key={`md-overlay-${idx}-${tour.startDate}`}
@@ -733,18 +740,22 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                   }
                 >
                 <div
-                  className={`relative w-full h-full rounded px-2 py-0 text-[10px] flex items-center justify-center gap-1 cursor-pointer hover:opacity-90 transition-opacity text-white ${tour.dayData.assignedPeople === 0 ? 'bg-gray-400' : ''}`}
+                  className={`relative w-full h-full rounded px-2 py-0 text-[10px] flex items-center justify-center gap-1 cursor-pointer hover:opacity-90 transition-opacity text-white ${tour.dayData.assignedPeople === 0 ? 'bg-gray-400' : ''} ${mdHasLanguageMismatch ? 'animate-schedule-health-cell-blink' : ''}`}
                   style={{
                     background:
-                      tour.dayData.assignedPeople === 0
-                        ? '#9ca3af'
-                        : hasColors
-                          ? gradient
-                          : undefined,
+                      mdHasLanguageMismatch
+                        ? undefined
+                        : tour.dayData.assignedPeople === 0
+                          ? '#9ca3af'
+                          : hasColors
+                            ? gradient
+                            : undefined,
                     color:
-                      tour.dayData.assignedPeople > 0 && hasColors && colorValues[0]
-                        ? getProductDisplayProps(colorValues[0]).style?.color
-                        : undefined,
+                      mdHasLanguageMismatch
+                        ? undefined
+                        : tour.dayData.assignedPeople > 0 && hasColors && colorValues[0]
+                          ? getProductDisplayProps(colorValues[0]).style?.color
+                          : undefined,
                   }}
                   draggable
                   onDragStart={(e) => {

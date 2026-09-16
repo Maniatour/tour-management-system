@@ -16,6 +16,11 @@ import {
 } from '@/lib/scheduleGuideTourCell'
 import { isAssistantAssignmentLocked, isGuideAssignmentLocked } from '@/lib/staffAssignmentLock'
 import { normalizeTourDateKey } from '@/utils/tourUtils'
+import {
+  SCHEDULE_ASSIGNED_TOUR_LANG_MISMATCH_CLASS,
+  scheduleAssignedTourLanguageMismatchAlert,
+  type ScheduleRequiredGuideLang,
+} from '@/lib/scheduleGuideLanguageMatch'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Tour = any
@@ -55,6 +60,7 @@ type GuideScheduleAssignedTourBoxesProps = {
   getTourSummary: (tour: Tour) => string
   getGuideScheduleTourHoverText: (tour: Tour) => ReactNode
   tooltipFallback: string
+  guideLanguageMismatchByTourId: ReadonlyMap<string, ScheduleRequiredGuideLang[]>
 }
 
 function tourMatchesScheduleDate(tour: Tour, dateString: string): boolean {
@@ -124,6 +130,7 @@ export default function GuideScheduleAssignedTourBoxes({
   getTourSummary,
   getGuideScheduleTourHoverText,
   tooltipFallback,
+  guideLanguageMismatchByTourId,
 }: GuideScheduleAssignedTourBoxesProps) {
   const getProductDisplayProps = getScheduleProductDisplayProps
 
@@ -169,6 +176,11 @@ export default function GuideScheduleAssignedTourBoxes({
           !isEmptyTour && colorClass
             ? getProductDisplayProps(colorClass).style?.color
             : undefined
+        const missingLocales = guideLanguageMismatchByTourId.get(String(tour.id))
+        const isLanguageMismatch = Boolean(missingLocales && missingLocales.length > 0)
+        const mismatchAlert = isLanguageMismatch
+          ? scheduleAssignedTourLanguageMismatchAlert(missingLocales, locale)
+          : ''
 
         return (
           <ScheduleHoverTooltip
@@ -178,17 +190,21 @@ export default function GuideScheduleAssignedTourBoxes({
             <div
               className={`relative flex min-w-0 flex-1 items-center justify-center gap-0.5 px-0.5 py-0 text-[10px] cursor-pointer hover:opacity-80 transition-opacity text-white ${
                 isEmptyTour ? 'bg-gray-400' : ''
-              } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''} ${borderColor ? 'border-2 border-white' : ''} ${roleTours.length === 1 ? 'h-full w-full rounded' : 'h-full'}`}
+              } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''} ${borderColor ? 'border-2 border-white' : ''} ${roleTours.length === 1 ? 'h-full w-full rounded' : 'h-full'} ${
+                isLanguageMismatch ? SCHEDULE_ASSIGNED_TOUR_LANG_MISMATCH_CLASS : ''
+              }`}
               style={{
-                // 인원 0명: 가이드·어시 모두 회색 (inline으로 확실히 표시)
-                backgroundColor: isEmptyTour
-                  ? '#9ca3af'
-                  : colorClass
-                    ? getColorFromClass(colorClass)
-                    : undefined,
-                color: textColor,
+                backgroundColor: isLanguageMismatch
+                  ? undefined
+                  : isEmptyTour
+                    ? '#9ca3af'
+                    : colorClass
+                      ? getColorFromClass(colorClass)
+                      : undefined,
+                color: isLanguageMismatch ? undefined : textColor,
                 boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined,
               }}
+              aria-label={mismatchAlert || undefined}
               draggable
               onDragStart={(e) => {
                 setDraggedRole(role)

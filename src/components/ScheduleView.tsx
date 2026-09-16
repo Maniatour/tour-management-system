@@ -192,8 +192,10 @@ import {
   collectStaffScheduleLocales,
   collectTourLanguageStaffEmails,
   customerLanguageToScheduleBucket,
+  collectGuideLanguageMismatchByTourId,
   findTourGuideLanguageMismatch,
   reservationToScheduleBucket,
+  scheduleAssignedTourLanguageMismatchAlert,
   type ScheduleGuideLanguageMismatch,
   type ScheduleGuestLangBucket,
   type ScheduleProductCellPulseReason,
@@ -4005,6 +4007,15 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     locale,
   ])
 
+  const guideLanguageMismatchByTourId = useMemo(
+    () =>
+      collectGuideLanguageMismatchByTourId(
+        Object.values(productScheduleData),
+        dayjs().format('YYYY-MM-DD'),
+      ),
+    [productScheduleData],
+  )
+
   /** 디스플레이: 공유 설정에 팀원이 없으면 표시 기간 투어의 가이드/어시스턴트로 자동 채움 */
   const effectiveSelectedTeamMembers = useMemo(() => {
     if (selectedTeamMembers.length > 0) return selectedTeamMembers
@@ -5255,12 +5266,18 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         assignedEn={c.assignedEn}
         assignedJa={c.assignedJa}
         choiceCounts={c.choiceCounts}
+        languageMismatchMissingLocales={guideLanguageMismatchByTourId.get(String(tour.id))}
       />
     )
   }
 
   const getTourSummary = (tour: Tour) => {
     const c = getTourSummaryCore(tour)
+    const mismatchAlert = scheduleAssignedTourLanguageMismatchAlert(
+      guideLanguageMismatchByTourId.get(String(tour.id)),
+      locale,
+    )
+    const hasLanguageMismatch = guideLanguageMismatchByTourId.has(String(tour.id))
     const lines = [
       `투어: ${c.productName}${c.isPrivateTour ? ' (단독투어)' : ''}`,
       `날짜: ${c.tourDate}`,
@@ -5272,7 +5289,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       `어시스턴트: ${c.assistantName}`,
       `차량: ${c.vehicleNumber}`,
       `배차: ${c.vehicleAssigned ? '배차 완료' : '미배차'}`,
-      `Confirm EA: ${c.confirmedEa}`
+      `Confirm EA: ${c.confirmedEa}`,
+      ...(hasLanguageMismatch ? [mismatchAlert] : []),
     ]
     return lines.join('\n')
   }
@@ -7791,6 +7809,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             showGuideModalContent={showGuideModalContent}
             getTourSummary={getTourSummary}
             getGuideScheduleTourHoverText={getGuideScheduleTourHoverText}
+            guideLanguageMismatchByTourId={guideLanguageMismatchByTourId}
           />
 
           {/* 부킹 테이블 */}

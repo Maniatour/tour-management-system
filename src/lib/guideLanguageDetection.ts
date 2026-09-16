@@ -8,39 +8,51 @@ export interface TeamLanguageData {
   languages?: string[] | string | null
 }
 
+const APP_LOCALE_BY_CODE: Record<string, SupportedLocale> = {
+  KR: 'ko',
+  KO: 'ko',
+  KOR: 'ko',
+  KOREAN: 'ko',
+  EN: 'en',
+  ENG: 'en',
+  ENGLISH: 'en',
+  JP: 'ja',
+  JA: 'ja',
+  JPN: 'ja',
+  JAPANESE: 'ja',
+  CN: 'zh',
+  ZH: 'zh',
+  CHINESE: 'zh',
+}
+
+/**
+ * 앱 로케일로 매핑되는 코드만 반환합니다.
+ * 팀 언어 ES/FR/DE/RU 등은 지원 로케일이 아니므로 null입니다.
+ */
+export function tryConvertLanguageCodeToLocale(
+  languageCode: string | null | undefined
+): SupportedLocale | null {
+  if (!languageCode || typeof languageCode !== 'string') {
+    return null
+  }
+
+  const normalizedCode = languageCode.trim().toUpperCase()
+  if (!normalizedCode) return null
+
+  const direct = APP_LOCALE_BY_CODE[normalizedCode]
+  if (direct) return direct
+
+  const primary = normalizedCode.split(/[-_]/)[0]
+  return APP_LOCALE_BY_CODE[primary] ?? null
+}
+
 /**
  * 언어 코드를 locale로 변환하는 함수
  * @param languageCode 언어 코드 (예: 'ko', 'en', 'KR', 'EN' 등)
  * @returns 지원되는 locale 또는 기본값 'ko'
  */
 export function convertLanguageCodeToLocale(languageCode: string): SupportedLocale {
-  if (!languageCode || typeof languageCode !== 'string') {
-    return 'ko'
-  }
-
-  const normalizedCode = languageCode.trim().toUpperCase()
-  
-  switch (normalizedCode) {
-    case 'KR':
-    case 'KO':
-    case 'KOREAN':
-      return 'ko'
-    case 'EN':
-    case 'ENG':
-    case 'ENGLISH':
-      return 'en'
-    case 'JP':
-    case 'JA':
-    case 'JAPANESE':
-      return 'ja'
-    case 'CN':
-    case 'ZH':
-    case 'CHINESE':
-      return 'zh'
-    default:
-      console.warn(`Unknown language code: ${languageCode}, using default 'ko'`)
-      return 'ko'
-  }
+  return tryConvertLanguageCodeToLocale(languageCode) ?? 'ko'
 }
 
 /**
@@ -117,13 +129,7 @@ export function doesGuideSupportLanguage(
       return false
     }
 
-    return languages.some((lang) => {
-      if (targetLocale === 'ko') {
-        return isKoreanLanguageCode(String(lang))
-      }
-      const convertedLocale = convertLanguageCodeToLocale(String(lang))
-      return convertedLocale === targetLocale
-    })
+    return languages.some((lang) => tryConvertLanguageCodeToLocale(String(lang)) === targetLocale)
   } catch (error) {
     console.error('[GuideLanguageDetection] Error checking language support:', error)
     return false
@@ -175,8 +181,9 @@ export function getGuideSupportedLocales(
     }
 
     const locales = languages
-      .map(lang => convertLanguageCodeToLocale(lang))
-      .filter((locale, index, array) => array.indexOf(locale) === index) // 중복 제거
+      .map((lang) => tryConvertLanguageCodeToLocale(lang))
+      .filter((locale): locale is SupportedLocale => locale != null)
+      .filter((locale, index, array) => array.indexOf(locale) === index)
 
     return locales.length > 0 ? locales : ['ko']
   } catch (error) {
