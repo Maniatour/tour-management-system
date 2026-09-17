@@ -37,6 +37,39 @@ test('취소 메일은 예약 접수 뱃지에서 제외한다', () => {
   assert.equal(isBookingReceiptImportNotifyRow(cancel), false)
 })
 
+test('GYG 변경 메일은 관련 알림은 하되 신규 접수 뱃지에서는 제외한다', () => {
+  const change = row({
+    subject: 'Booking changed - S382661 - GYGN6B2ZHXQM',
+    platform_key: 'getyourguide',
+    source_email: 'supplier@getyourguide.com',
+    extracted_data: { is_booking_change: true, is_booking_confirmed: false },
+  })
+  assert.equal(isReservationRelatedImportNotifyRow(change), true)
+  assert.equal(isBookingReceiptImportNotifyRow(change), false)
+  assert.equal(isUnprocessedBookingImportListRow({ ...change, status: 'pending' }), false)
+})
+
+test('Viator Amendment Request는 관련 알림은 하되 신규 접수 뱃지에서는 제외한다', () => {
+  const change = row({
+    subject: 'Please Respond: Amendment Request for Booking: Mon, Oct 12, 2026 (#BR-1330282749)',
+    platform_key: 'viator',
+    source_email: 'partners@viator.com',
+  })
+  assert.equal(isReservationRelatedImportNotifyRow(change), true)
+  assert.equal(isBookingReceiptImportNotifyRow(change), false)
+  assert.equal(isUnprocessedBookingImportListRow({ ...change, status: 'pending' }), false)
+})
+
+test('Viator Amended Booking도 신규 접수 뱃지에서 제외한다', () => {
+  const change = row({
+    subject: 'Amended Booking: Mon, Apr 05, 2027 (#BR-1443337285)',
+    platform_key: 'viator',
+    source_email: 'partners@viator.com',
+  })
+  assert.equal(isReservationRelatedImportNotifyRow(change), true)
+  assert.equal(isBookingReceiptImportNotifyRow(change), false)
+})
+
 test('Zelle·ATM 메일은 예약 접수 뱃지에서 제외한다', () => {
   assert.equal(isBookingReceiptImportNotifyRow(row({ platform_key: 'zelle' })), false)
   assert.equal(isBookingReceiptImportNotifyRow(row({ platform_key: 'wells-fargo-atm' })), false)

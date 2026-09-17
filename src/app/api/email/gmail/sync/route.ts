@@ -15,7 +15,7 @@ import {
   type GmailPart,
 } from '@/lib/gmailMessageBody'
 import type { Json } from '@/lib/database.types'
-import { tryAutoConfirmReservationImport } from '@/lib/autoConfirmReservationImport'
+import { processReservationImportAfterSave } from '@/lib/reservationImportBookingChange'
 
 export const maxDuration = 120
 
@@ -267,9 +267,9 @@ export async function POST(request: Request) {
     }
     if (inserted?.id && !zelleMail && !atmMail) {
       try {
-        const auto = await tryAutoConfirmReservationImport(client as never, inserted.id)
-        if (auto.attempted && !auto.ok) {
-          console.warn('[gmail/sync] auto-confirm skipped/failed:', auto.reason)
+        const processed = await processReservationImportAfterSave(client as never, inserted.id)
+        if (processed.kind === 'auto_confirm' && processed.reason && processed.reason !== 'ok') {
+          console.warn('[gmail/sync] auto-confirm skipped/failed:', processed.reason)
         }
       } catch (e) {
         console.error('[gmail/sync] auto-confirm error:', e)

@@ -4,10 +4,11 @@ import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
-import { Mail, ChevronLeft, ChevronRight, Loader2, FileText, RefreshCw, GripVertical, Inbox, Search, Filter, Ban, ListChecks } from 'lucide-react'
+import { Mail, ChevronLeft, ChevronRight, Loader2, FileText, RefreshCw, GripVertical, Inbox, Search, Filter, Ban, ListChecks, MapPin } from 'lucide-react'
 import {
   isManiatourHomepageBookingEmail,
   isCancellationRequestEmailSubject,
+  isReservationImportBookingChange,
   isViatorBookingRequestEmailSubject,
   isTidesquareChannelEmailSubject,
   isTidesquareNewBookingEmailSubject,
@@ -30,6 +31,7 @@ import { useReservationData } from '@/hooks/useReservationData'
 import type { ExtractedReservationData } from '@/types/reservationImport'
 import type { Product } from '@/types/reservation'
 import { ReservationCancellationImportModal } from '@/components/reservation/ReservationCancellationImportModal'
+import { ReservationBookingChangeImportModal } from '@/components/reservation/ReservationBookingChangeImportModal'
 import { ReservationImportParseCoverageModal } from '@/components/reservation/ReservationImportParseCoverageModal'
 import {
   GMAIL_RESERVATION_SYNC_COMPLETE,
@@ -61,6 +63,8 @@ interface ImportItem {
   reservation_exists_by_customer_match?: boolean
   /** 취소 메일만: 채널 RN으로 예약 상태 조회 결과 */
   cancellation_list_badge?: 'needed' | 'done' | null
+  /** 변경 메일: 픽업 반영 여부 */
+  pickup_change_list_badge?: 'needed' | 'done' | null
   created_at: string | null
 }
 
@@ -97,6 +101,64 @@ function CancellationImportListBadge({ row }: { row: ImportItem }) {
       title="채널 RN 미매칭·또는 예약이 아직 취소 상태가 아님. 모달에서 처리하세요."
     >
       취소 필요
+    </span>
+  )
+}
+
+function PickupChangeImportListBadge({ row }: { row: ImportItem }) {
+  if (!isReservationImportBookingChange({ subject: row.subject, extracted: row.extracted_data })) return null
+  const isRequest = row.extracted_data?.is_booking_change_request === true
+  const fields = row.extracted_data?.booking_change_fields || []
+  const requestedDate = String(row.extracted_data?.requested_tour_date || '').trim()
+  const dateRequested = fields.includes('tour_date') || Boolean(requestedDate)
+  const pickupField = fields.includes('pickup_hotel')
+  const peopleField = fields.includes('people')
+  const pickupDone =
+    (row.pickup_change_list_badge ?? (row.extracted_data?.pickup_change_applied ? 'done' : 'needed')) ===
+    'done'
+  const extractedPickup = String(row.extracted_data?.pickup_hotel || '').trim()
+  const showPickupNeeded = !pickupDone && (pickupField || (!dateRequested && Boolean(extractedPickup)))
+
+  return (
+    <span className="inline-flex items-center gap-1 shrink-0">
+      {dateRequested ? (
+        <span
+          className="text-[10px] font-semibold text-amber-900 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded"
+          title="투어일은 자동 반영하지 않습니다. 눌러서 확인하세요."
+        >
+          {isRequest ? '날짜 변경 요청' : '날짜 변경'}
+        </span>
+      ) : null}
+      {peopleField ? (
+        <span
+          className="text-[10px] font-semibold text-violet-800 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded"
+          title="인원 변경 메일"
+        >
+          인원 변경
+        </span>
+      ) : null}
+      {pickupDone ? (
+        <span
+          className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded"
+          title="픽업 호텔이 기존 예약에 반영됨"
+        >
+          픽업 반영됨
+        </span>
+      ) : showPickupNeeded ? (
+        <span
+          className="text-[10px] font-semibold text-sky-800 bg-sky-100 px-1.5 py-0.5 rounded"
+          title="픽업 호텔 변경 메일. 눌러서 기존 예약에 반영하세요."
+        >
+          픽업 변경
+        </span>
+      ) : !dateRequested && !peopleField ? (
+        <span
+          className="text-[10px] font-semibold text-sky-800 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded"
+          title="예약 변경 메일. 눌러서 기존 예약을 확인하세요."
+        >
+          {isRequest ? '변경 요청' : '변경'}
+        </span>
+      ) : null}
     </span>
   )
 }
@@ -199,7 +261,7 @@ function productInternalName(extracted: ExtractedReservationData, products: Prod
   return matched ? ((matched.name ?? matched.name_ko ?? '').trim() || name) : name
 }
 
-type ReservationImportListTab = 'all' | 'booking' | 'cancellation'
+type ReservationImportListTab = 'all' | 'booking' | 'cancellation' | 'change'
 
 const LIST_PAGE_SIZE = 25
 
@@ -207,6 +269,7 @@ const DEFAULT_LIST_PAGE_BY_TAB: Record<ReservationImportListTab, number> = {
   all: 1,
   booking: 1,
   cancellation: 1,
+  change: 1,
 }
 
 const RESERVATION_IMPORTS_UI_DEFAULT = {
@@ -248,12 +311,17 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const { isSyncing: gmailSyncing, startGmailImportSync } = useGmailReservationImportSync()
   const [optimisticConnected, setOptimisticConnected] = useState(false)
   const [cancellationModalId, setCancellationModalId] = useState<string | null>(null)
+  const [changeModalId, setChangeModalId] = useState<string | null>(null)
 
   const cancellationImportFromUrl = searchParams.get('cancellationImport')
+  const changeImportFromUrl = searchParams.get('changeImport')
 
   const summary = (extracted: ExtractedReservationData) => {
     const parts = []
     if (extracted.tour_date) parts.push(extracted.tour_date)
+    if (extracted.requested_tour_date && extracted.requested_tour_date !== extracted.tour_date) {
+      parts.push(`요청일 ${extracted.requested_tour_date}`)
+    }
     const productLabel = productInternalName(extracted, productsList)
     if (productLabel) parts.push(productLabel)
     const headcountParts = []
@@ -263,6 +331,13 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     if (headcountParts.length) parts.push(headcountParts.join(' · '))
     if (extracted.customer_name) parts.push(normalizeCustomerNameFromImport(extracted.customer_name) || extracted.customer_name)
     if (extracted.customer_email) parts.push(extracted.customer_email)
+    if (
+      extracted.pickup_hotel &&
+      !/not decided/i.test(extracted.pickup_hotel) &&
+      (extracted.is_booking_change || isReservationImportBookingChange({ extracted }))
+    ) {
+      parts.push(`픽업 ${extracted.pickup_hotel}`)
+    }
     return parts.length ? parts.join(' · ') : '-'
   }
 
@@ -291,10 +366,20 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     router.replace(`/${locale}/admin/reservation-imports`, { scroll: false })
   }, [cancellationImportFromUrl, locale, router])
 
+  useEffect(() => {
+    if (!changeImportFromUrl) return
+    setChangeModalId(changeImportFromUrl)
+    router.replace(`/${locale}/admin/reservation-imports`, { scroll: false })
+  }, [changeImportFromUrl, locale, router])
+
   const openImportRow = useCallback(
     (row: ImportItem) => {
       if (isCancellationRequestEmailSubject(row.subject)) {
         setCancellationModalId(row.id)
+        return
+      }
+      if (isReservationImportBookingChange({ subject: row.subject, extracted: row.extracted_data })) {
+        setChangeModalId(row.id)
         return
       }
       router.push(`/${locale}/admin/reservation-imports/${row.id}`)
@@ -403,7 +488,10 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     isTripComRow(row) && isTripComNewOrderEmailSubject(row.subject)
 
   /** 예약 접수 여부 (파서 자동 + 목록 API의 Klook 보강 + 사용자 드래그 + KKday/Viator/maniatour/GYG 제목 보정) */
-  const isBookingConfirmed = (row: ImportItem) =>
+  const isBookingConfirmed = (row: ImportItem) => {
+    if (isReservationImportBookingChange({ subject: row.subject, extracted: row.extracted_data })) return false
+    if (isCancellationRequestEmailSubject(row.subject)) return false
+    return (
     Boolean(row.extracted_data?.is_booking_confirmed === true) ||
     isKlookOrderEmailSubjectForReservation(row.subject) ||
     (isKKdayRow(row) && isKKdayBookingSubject(row)) ||
@@ -415,12 +503,19 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     isTripComBookingRow(row) ||
     isZoomZoomRow(row) ||
     (isNolTripleRow(row) && isNolTripleNewBookingEmailSubject(row.subject))
+    )
+  }
+
+  const isChangeImportRow = (row: ImportItem) =>
+    isReservationImportBookingChange({ subject: row.subject, extracted: row.extracted_data })
 
   const filteredItems = (
     activeTab === 'booking'
       ? items.filter((row) => isBookingConfirmed(row))
       : activeTab === 'cancellation'
         ? items.filter((row) => isCancellationRequestEmailSubject(row.subject))
+        : activeTab === 'change'
+          ? items.filter((row) => isChangeImportRow(row))
         : items
   ).filter((row) => !isZellePaymentSentEmail(row.subject) && row.platform_key !== 'zelle')
 
@@ -515,6 +610,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
 
   const bookingCount = items.filter((row) => isBookingConfirmed(row)).length
   const cancellationCount = items.filter((row) => isCancellationRequestEmailSubject(row.subject)).length
+  const changeCount = items.filter((row) => isChangeImportRow(row)).length
 
   /** 플랫폼 필터 옵션 (전체 + 주요 플랫폼 + 기타) */
   const PLATFORM_FILTER_OPTIONS: { value: string; label: string }[] = [
@@ -914,6 +1010,20 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           취소 관련
           <span className="text-gray-500 font-normal">({cancellationCount})</span>
         </button>
+        <button
+          type="button"
+          onClick={() => setListUi((prev) => ({ ...prev, activeTab: 'change' as const }))}
+          title="GetYourGuide 픽업 변경, Viator Amendment Request 등. 행을 누르면 기존 예약을 확인합니다."
+          className={`flex-1 sm:flex-none min-h-[44px] px-3 sm:px-4 py-3 text-sm font-medium rounded-t-lg border-b-2 transition-colors flex items-center justify-center gap-1.5 touch-manipulation ${
+            activeTab === 'change'
+              ? 'border-sky-600 text-sky-700 bg-sky-50/60'
+              : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          }`}
+        >
+          <MapPin className="w-4 h-4 shrink-0" aria-hidden />
+          변경
+          <span className="text-gray-500 font-normal">({changeCount})</span>
+        </button>
       </div>
       {(searchQuery.trim() || platformFilter) && (
         <p className="text-xs text-gray-500">
@@ -938,6 +1048,8 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
               ? '예약 접수로 분류된 메일이 없습니다. 목록에서 항목을 드래그해 이 탭에 놓아 보관하세요.'
               : activeTab === 'cancellation'
                 ? '취소 관련 제목(cancelled/canceled) 메일이 없습니다.'
+                : activeTab === 'change'
+                  ? '예약 변경 메일이 없습니다. (예: GetYourGuide booking has changed, Viator Amendment Request)'
                 : '표시할 항목이 없습니다.'}
           </p>
         </div>
@@ -1020,6 +1132,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                       <td className="px-4 py-3 text-sm text-gray-900 min-w-[320px] max-w-[480px]" title={row.subject ?? ''}>
                         <div className="flex items-center gap-2 min-w-0">
                           <CancellationImportListBadge row={row} />
+                          <PickupChangeImportListBadge row={row} />
                           <AutoConfirmedImportBadge row={row} />
                           <span className="truncate">{row.subject ?? '-'}</span>
                         </div>
@@ -1071,6 +1184,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start gap-2">
                         <CancellationImportListBadge row={row} />
+                        <PickupChangeImportListBadge row={row} />
                         <AutoConfirmedImportBadge row={row} />
                         <p className="text-sm font-medium text-gray-900 line-clamp-2 flex-1">{row.subject ?? '-'}</p>
                       </div>
@@ -1122,6 +1236,12 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
         locale={locale}
         products={productsList ?? []}
         onClose={() => setCancellationModalId(null)}
+        onResolved={loadList}
+      />
+      <ReservationBookingChangeImportModal
+        importId={changeModalId}
+        locale={locale}
+        onClose={() => setChangeModalId(null)}
         onResolved={loadList}
       />
       <ReservationImportParseCoverageModal open={coverageOpen} onClose={() => setCoverageOpen(false)} />

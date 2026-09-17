@@ -30,7 +30,11 @@ type PendingOffChange = {
   action: 'approve' | 'delete' | 'reject'
 }
 
-import type { ScheduleRequiredGuideLang } from '@/lib/scheduleGuideLanguageMatch'
+import type { ScheduleRequiredGuideLang, ScheduleProductCellPulseReason } from '@/lib/scheduleGuideLanguageMatch'
+import { collectScheduleProductCellPulseReasonsForDate } from '@/lib/scheduleGuideLanguageMatch'
+import type { ScheduleAssignedTourPulseIssue } from '@/lib/scheduleAssignedTourPulse'
+import { ScheduleProductCellPulseReasonBadges } from '@/lib/scheduleProductGridHelpers'
+import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import type { ScheduleDateNoteEntry } from '@/lib/scheduleDateNotes'
 import { GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS } from '@/lib/guideToursVisibleUntil'
 
@@ -110,6 +114,8 @@ export type ScheduleGuideGridProps = {
   getTourSummary: (tour: Tour) => string
   getGuideScheduleTourHoverText: (tour: Tour) => ReactNode
   guideLanguageMismatchByTourId: ReadonlyMap<string, ScheduleRequiredGuideLang[]>
+  assignedTourConfirmationPulseByTourId: ReadonlyMap<string, ScheduleAssignedTourPulseIssue[]>
+  scheduleHealthProductCellAlerts: Map<string, ScheduleProductCellPulseReason[]>
 }
 
 export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
@@ -170,6 +176,8 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
     getTourSummary,
     getGuideScheduleTourHoverText,
     guideLanguageMismatchByTourId,
+    assignedTourConfirmationPulseByTourId,
+    scheduleHealthProductCellAlerts,
   } = props
 
 
@@ -242,6 +250,7 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
     getTourSummary,
     getGuideScheduleTourHoverText,
     guideLanguageMismatchByTourId,
+    assignedTourConfirmationPulseByTourId,
     useContentVisibility: !virtualizeGuideRows,
   }
 
@@ -343,6 +352,10 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
                 {monthDays.map(({ dateString }) => {
                   const dayTotal = guideTotals[dateString]
                   const isMismatch = guideVsProductDailyTotalMismatch.byDate[dateString]
+                  const datePulseReasons = collectScheduleProductCellPulseReasonsForDate(
+                    scheduleHealthProductCellAlerts,
+                    dateString,
+                  )
                   const todayBorderClass = isToday(dateString) ? 'border-l-2 border-r-2 border-red-500' : ''
                   const cellWrapClass = isMismatch
                     ? `bg-red-600 text-yellow-300 animate-schedule-health-cell-blink font-bold ${todayBorderClass}`
@@ -358,6 +371,22 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
                             ? 'text-primary'
                             : 'text-red-600'
                       } ${isToday(dateString) ? 'text-red-700' : ''}`
+                  const hoverContent =
+                    isMismatch || datePulseReasons.length > 0 ? (
+                      <>
+                        {isMismatch ? (
+                          <div className="mb-1 font-semibold text-yellow-300">
+                            {locale === 'ko'
+                              ? '가이드 합계와 상품 합계가 다릅니다'
+                              : 'Guide total does not match product total'}
+                          </div>
+                        ) : null}
+                        <ScheduleProductCellPulseReasonBadges
+                          reasons={datePulseReasons}
+                          uiLocale={locale}
+                        />
+                      </>
+                    ) : null
                   return (
                     <td
                       key={dateString}
@@ -366,9 +395,14 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
                       }`}
                       style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                     >
-                      <div className={`px-1 py-0.5 ${cellWrapClass} ${valueClass}`}>
-                        {dayTotal.assignedPeople}
-                      </div>
+                      <ScheduleHoverTooltip
+                        disabled={!hoverContent}
+                        content={hoverContent}
+                      >
+                        <div className={`px-1 py-0.5 ${cellWrapClass} ${valueClass}`}>
+                          {dayTotal.assignedPeople}
+                        </div>
+                      </ScheduleHoverTooltip>
                     </td>
                   )
                 })}

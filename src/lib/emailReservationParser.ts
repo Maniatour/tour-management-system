@@ -48,6 +48,104 @@ export function isCancellationRequestEmailSubject(subject: string | null | undef
   return /\b(cancelled|canceled)\b/.test(s)
 }
 
+/** Viator 제목: Amendment Request for Booking / Tripadvisor Experiences Amendment Request */
+export function isViatorAmendmentRequestEmailSubject(subject: string | null | undefined): boolean {
+  const s = normalizeEmailSubjectForMatch(subject)
+  return /\bamendment\s+request\b/.test(s)
+}
+
+/** Viator 제목: Amended Booking: Mon, Apr 05, 2027 (#BR-…) — 이미 반영된 확정 변경 */
+export function isViatorAmendedBookingEmailSubject(subject: string | null | undefined): boolean {
+  const s = normalizeEmailSubjectForMatch(subject)
+  return /\bamended\s+booking\b/.test(s)
+}
+
+/** Tripadvisor/Viator Experiences Amendment(확정) 제목. Amendment Request 는 요청으로 별도 처리 */
+export function isTripadvisorExperiencesAmendmentEmailSubject(
+  subject: string | null | undefined
+): boolean {
+  const s = normalizeEmailSubjectForMatch(subject)
+  if (!s) return false
+  if (/\bamendment\s+request\b/.test(s)) return false
+  return /\b(?:tripadvisor|viator)\s+experiences\s+amendment\b/.test(s)
+}
+
+/** 제목으로 예약 변경 알림인지 (GYG Booking changed, Viator Amendment Request 등). 취소 제목은 제외 */
+export function isBookingChangeEmailSubject(subject: string | null | undefined): boolean {
+  const s = normalizeEmailSubjectForMatch(subject)
+  if (!s) return false
+  if (/\b(cancelled|canceled)\b/.test(s)) return false
+  return (
+    isViatorAmendmentRequestEmailSubject(subject) ||
+    isViatorAmendedBookingEmailSubject(subject) ||
+    isTripadvisorExperiencesAmendmentEmailSubject(subject) ||
+    /\bamend(?:ment)?\s+(?:their\s+)?booking\b/.test(s) ||
+    /\bbooking\s+detail\s+change\b/.test(s) ||
+    /\bbooking\s+changed\b/.test(s) ||
+    /\bbooking\s+has\s+(?:been\s+)?(?:changed|updated|modified)\b/.test(s) ||
+    /\bbooking\s+(?:update|modification)\b/.test(s)
+  )
+}
+
+/** GYG 본문: "the following booking has changed" */
+export function isGygBookingChangeEmailBody(text: string | null | undefined): boolean {
+  const t = (text ?? '').replace(/\s+/g, ' ')
+  if (!t) return false
+  return (
+    /the following booking has changed/i.test(t) ||
+    /we would like to inform you that the following booking has changed/i.test(t) ||
+    /this booking has been changed/i.test(t)
+  )
+}
+
+/** Viator 본문: Amendment Request (수락 전) */
+export function isViatorAmendmentRequestEmailBody(text: string | null | undefined): boolean {
+  const t = (text ?? '').replace(/\s+/g, ' ')
+  if (!t) return false
+  return (
+    /wants to amend their booking/i.test(t) ||
+    /here are the requested changes/i.test(t) ||
+    /the customer has requested to amend this booking/i.test(t) ||
+    /requested to amend this booking from/i.test(t) ||
+    /\bamendment\s+request\b/i.test(t)
+  )
+}
+
+/** Viator/Tripadvisor 본문: 이미 반영된 확정 변경 */
+export function isViatorAmendedBookingEmailBody(text: string | null | undefined): boolean {
+  const t = (text ?? '').replace(/\s+/g, ' ')
+  if (!t) return false
+  return (
+    /no action is required\.?\s*this booking has been amended/i.test(t) ||
+    /this booking has been amended/i.test(t) ||
+    /we already\s+amended this booking/i.test(t) ||
+    /\bbooking amended\b/i.test(t)
+  )
+}
+
+/** 제목 또는 본문으로 GYG/OTA 예약 변경 메일인지 */
+export function isGygBookingChangeEmail(
+  subject: string | null | undefined,
+  bodyText?: string | null
+): boolean {
+  if (isCancellationRequestEmailSubject(subject)) return false
+  return (
+    isBookingChangeEmailSubject(subject) ||
+    isGygBookingChangeEmailBody(bodyText) ||
+    isViatorAmendmentRequestEmailBody(bodyText) ||
+    isViatorAmendedBookingEmailBody(bodyText)
+  )
+}
+
+/** 목록·알림: extracted_data 또는 제목으로 변경 메일 여부 */
+export function isReservationImportBookingChange(args: {
+  subject?: string | null
+  extracted?: { is_booking_change?: unknown } | null | undefined
+}): boolean {
+  if (args.extracted?.is_booking_change === true) return true
+  return isBookingChangeEmailSubject(args.subject)
+}
+
 /**
  * 취소 알림 등에서 채널 예약번호(RN)만 뽑아 기존 예약(reservations.channel_rn) 조회에 사용
  * (본문·제목 공통 패턴; 플랫폼별 파서가 RN을 못 넣었을 때 보조)
@@ -66,6 +164,10 @@ export function extractChannelRnForCancellationLookup(
 
   let m: RegExpMatchArray | null
 
+  // Viator 제목: "… (#BR-1330282749)" / "Amended Booking … (#BR-…)" / "Tripadvisor Experiences Amendment: BR-1372241553"
+  m = sub.match(/#\s*(BR-\d{6,})/i) || sub.match(/\b(BR-\d{6,})\b/i)
+  if (m?.[1]) return m[1].trim()
+
   // Viator 등: "Booking Reference: #BR-1339230347" — # 뒤 전체 참조 (expandChannelRnMatchVariants 로 숫자만도 매칭)
   m = combined.match(/booking\s+reference\s*:?\s*(?:#\s*)?([A-Za-z0-9][A-Za-z0-9_-]{3,39})/i)
   if (m?.[1] && !invalidToken(m[1])) return m[1].trim()
@@ -73,6 +175,12 @@ export function extractChannelRnForCancellationLookup(
   // GetYourGuide: "Booking cancelled - S382661 - GYGZGZ56LA5F"
   m = sub.match(
     /Booking\s+(?:cancelled|canceled)\s*[-–]\s*[A-Z0-9]+\s*[-–]\s*([A-Z0-9]{8,24})/i
+  )
+  if (m?.[1]) return m[1].trim()
+
+  // GetYourGuide: "Booking changed - S382661 - GYGN6B2ZHXQM" / "Booking detail change: - S382661 - GYG48YKXW2AA"
+  m = sub.match(
+    /Booking\s+(?:detail\s+)?change:?\s*[-–]\s*[A-Z0-9]+\s*[-–]\s*([A-Z0-9]{8,24})/i
   )
   if (m?.[1]) return m[1].trim()
 
@@ -148,6 +256,7 @@ export function isViatorUrgentBookingRequestEmailSubject(subject: string | null 
 export function isViatorBookingRequestEmailSubject(subject: string | null | undefined): boolean {
   const t = (subject ?? '').trim()
   const lower = t.toLowerCase()
+  if (isBookingChangeEmailSubject(subject)) return false
   if (isViatorUrgentBookingRequestEmailSubject(subject)) return true
   if (lower.includes('please respond: new booking request:')) return true
   if (/^new booking\s+for\b/i.test(t)) return true
@@ -952,26 +1061,54 @@ function applyGygMappedProduct(
   if (extras?.tourTime) out.tour_time = extras.tourTime
 }
 
+function collectGygBookingChangeFields(text: string): string[] {
+  const flat = text.replace(/\s+/g, ' ')
+  const fields: string[] = []
+  if (/pickup\s+location\s+new\b/i.test(flat)) fields.push('pickup_hotel')
+  if (/\bdate\s+new\b/i.test(flat)) fields.push('tour_date')
+  if (/number\s+of\s+participants\s+new\b/i.test(flat)) fields.push('people')
+  if (/\blanguage\s+new\b/i.test(flat)) fields.push('language')
+  return fields
+}
+
 /**
  * GYG 본문 픽업 추출.
- * toPlainText 가 한 줄로 붙이면 상품명 "… with Hotel Pickup" 이 실제 Pickup 라벨보다 먼저 매칭되므로
- * "Hotel Pickup" 은 건너뛰고, "Pickup Hotel Apache, Fremont … Open in Google Maps" 만 잡는다.
+ * - 변경 메일: "Pickup location New Excalibur Hotel & Casino, … Open in Google Maps"
+ * - 신규 메일: "Pickup Hotel Apache, Fremont … Open in Google Maps"
+ * 상품명 "… with Hotel Pickup" 은 건너뛴다.
  */
 function extractGygPickupHotelFromText(text: string): string | undefined {
   if (!text) return undefined
-  const m = text.match(
-    /(?<!hotel\s)\b(?:pick-?up)\b\s*:?\s*(.+?)(?=\s*(?:open\s*in\s*google(?:\s*maps)?|\bprice\b|$))/i
+  const oneLine = text.replace(/\s+/g, ' ')
+  const locationMatch = oneLine.match(
+    /pickup\s+location(?:\s+new)?\s*:?\s*(.+?)(?=\s*(?:\(coordinates:|open\s*in\s*google(?:\s*maps)?|number\s*of\s*participants|\blanguage\b|customer\s+hasn|contact\s+customer|$))/i
   )
+  const genericMatch =
+    /pickup\s+location/i.test(oneLine)
+      ? null
+      : text.match(
+          /(?<!hotel\s)\b(?:pick-?up)\b\s*:?\s*(.+?)(?=\s*(?:open\s*in\s*google(?:\s*maps)?|\bprice\b|$))/i
+        )
+  const m = locationMatch || genericMatch
   if (!m?.[1]) return undefined
   let raw = m[1].replace(/\s+/g, ' ').trim()
+  raw = raw.replace(/^location\b\s*/i, '')
+  raw = raw.replace(/^new\b\s*/i, '')
+  raw = raw.replace(/\(coordinates:[^)]*\)/gi, '').trim()
   raw = raw.replace(/\s*open\s*in\s*google(?:\s*maps)?.*$/i, '').trim()
+  raw = raw.replace(/\s*customer\s+hasn['’]?t\s+specified[\s\S]*$/i, '').trim()
   raw = raw
     .split(
-      /\s+(?:Reference\s*number|Number\s*of\s*participants|Main\s*customer|Tour\s*language|Customer\s*language|Date)\s*:?\s+/i
+      /\s+(?:Reference\s*number|Booking\s*reference|Number\s*of\s*participants|Main\s*customer|Tour\s*language|Customer\s*language|Date|Contact\s+customer)\s*:?\s+/i
     )[0]
     .trim()
   if (!raw) return undefined
-  if (/^(reference|number\s*of|main\s*customer|date|tour\s*language)/i.test(raw)) return undefined
+  if (/^(reference|booking\s*reference|number\s*of|main\s*customer|date|tour\s*language|location)$/i.test(raw)) {
+    return undefined
+  }
+  if (/customer\s+hasn['’]?t\s+specified|hasn['’]?t\s+specified\s+a\s+pickup/i.test(raw)) {
+    return undefined
+  }
   const hotelNamePart = raw.split(',')[0].trim()
   const value = normalizePickupHotelFromEmail(hotelNamePart || raw)
   return value.length >= 3 ? value : undefined
@@ -1003,13 +1140,22 @@ function extractGetYourGuide(
 
   // 예약 접수 이메일: 발신 GetYourGuide + 제목 "Booking - …" 또는 "Urgent : New Booking received - …"
   const fromGyG = (sourceEmail || '').toLowerCase().includes('getyourguide')
+  const isChangeEmail = isGygBookingChangeEmail(subject, text)
   const subTrim = (subject || '').trimStart()
   const subjectBooking = subTrim.toLowerCase().startsWith('booking -')
   const subjectUrgentNew = /^urgent\s*:\s*new\s*booking\s*received\s*-/i.test(subTrim)
-  if (fromGyG && (subjectBooking || subjectUrgentNew)) out.is_booking_confirmed = true
+  if (isChangeEmail) {
+    out.is_booking_change = true
+    const changeFields = collectGygBookingChangeFields(text)
+    if (changeFields.length) out.booking_change_fields = changeFields
+  } else if (fromGyG && (subjectBooking || subjectUrgentNew)) {
+    out.is_booking_confirmed = true
+  }
 
-  // 제목 "Booking - S382661 - GYGZGZ56LA5F" → GYGZGZ56LA5F = channel_rn (S382661은 vendor code, 상품은 본문 상품명으로 매칭)
-  const subjectMatch = subject.match(/Booking\s*[-–]\s*[A-Z0-9]+\s*[-–]\s*([A-Z0-9]{8,20})/i)
+  // 제목 "Booking - S382661 - GYGZGZ56LA5F" / "Booking changed - …" / "Booking detail change: - S382661 - GYG48YKXW2AA"
+  const subjectMatch =
+    subject.match(/Booking\s+(?:detail\s+)?change:?\s*[-–]\s*[A-Z0-9]+\s*[-–]\s*([A-Z0-9]{8,20})/i) ||
+    subject.match(/Booking\s*[-–]\s*[A-Z0-9]+\s*[-–]\s*([A-Z0-9]{8,20})/i)
   if (subjectMatch) out.channel_rn = subjectMatch[1].trim()
   // "Urgent : New Booking received - S382661 - GYGN6N7ZBWF8" 동일 구조
   if (!out.channel_rn) {
@@ -1019,9 +1165,11 @@ function extractGetYourGuide(
     if (urgentSubjectRef) out.channel_rn = urgentSubjectRef[1].trim()
   }
 
-  // Reference number: 본문 "Reference number: GYGZGZ56LA5F"
+  // Reference number / Booking reference: 본문 "Reference number: GYGZGZ56LA5F" 또는 "Booking reference GYGN6B2ZHXQM"
   if (!out.channel_rn) {
-    const refGyG = text.match(/(?:reference\s*number|reference\s*#?)\s*:?\s*([A-Z0-9]{8,20})/i)
+    const refGyG = text.match(
+      /(?:booking\s*reference|reference\s*number|reference\s*#?)\s*:?\s*([A-Z0-9]{8,20})/i
+    )
     if (refGyG) out.channel_rn = refGyG[1].trim()
   }
   if (!out.channel_rn) {
@@ -1977,16 +2125,170 @@ function extractKKday(
   return out
 }
 
+const VIATOR_EN_MONTH: Record<string, string> = {
+  jan: '01',
+  january: '01',
+  feb: '02',
+  february: '02',
+  mar: '03',
+  march: '03',
+  apr: '04',
+  april: '04',
+  may: '05',
+  jun: '06',
+  june: '06',
+  jul: '07',
+  july: '07',
+  aug: '08',
+  august: '08',
+  sep: '09',
+  sept: '09',
+  september: '09',
+  oct: '10',
+  october: '10',
+  nov: '11',
+  november: '11',
+  dec: '12',
+  december: '12',
+}
+
+/** Viator 본문 날짜: "12 Oct 2026", "Mon, Oct 12, 2026", "26 Apr 2027", "April 7, 2026" */
+function parseViatorEnglishDateToYmd(raw: string): string | undefined {
+  const t = (raw || '').replace(/,/g, ' ').replace(/\s+/g, ' ').trim()
+  if (!t) return undefined
+  const weekday =
+    '(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\s+'
+  const mdy = t.match(new RegExp(`^(?:${weekday})?([A-Za-z]{3,9})\\s+(\\d{1,2})\\s+(20\\d{2})\\b`, 'i'))
+  if (mdy) {
+    const mo = VIATOR_EN_MONTH[mdy[1].toLowerCase()]
+    if (mo) return `${mdy[3]}-${mo}-${mdy[2].padStart(2, '0')}`
+  }
+  const dmy = t.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\s+(20\d{2})\b/i)
+  if (dmy) {
+    const mo = VIATOR_EN_MONTH[dmy[2].toLowerCase()]
+    if (mo) return `${dmy[3]}-${mo}-${dmy[1].padStart(2, '0')}`
+  }
+  return undefined
+}
+
+function parseViatorTravelDateChanged(text: string): { from: string; to: string } | null {
+  const flat = decodeBasicHtmlEntities(text.replace(/\s+/g, ' '))
+  const m =
+    flat.match(/travel\s+date\s+changed\s+from\s+(.+?)\s+to\s+(.+?)(?:\.|$)/i) ||
+    flat.match(
+      /(?:requested to amend|amended)\s+this\s+booking\s+from\s+(.+?)\s+to\s+(.+?)(?:\.|$)/i
+    )
+  if (!m) return null
+  const from = parseViatorEnglishDateToYmd(m[1])
+  const to = parseViatorEnglishDateToYmd(m[2])
+  if (!from || !to) return null
+  return { from, to }
+}
+
+function collectViatorAmendmentChangeFields(text: string): string[] {
+  const flat = decodeBasicHtmlEntities(text.replace(/\s+/g, ' '))
+  const fields: string[] = []
+  if (
+    /travel\s+date\s+changed\s+from/i.test(flat) ||
+    /(?:requested to amend|amended)\s+this\s+booking\s+from\s+/i.test(flat)
+  ) {
+    fields.push('tour_date')
+  }
+  if (
+    /pick(?:\s*-?\s*up|\s+up)\s+point(?!\s+type)\s+changed\s+from/i.test(flat) ||
+    /(?:hotel\s+pickup|pickup\s+location)\s+changed\s+from/i.test(flat)
+  ) {
+    fields.push('pickup_hotel')
+  }
+  if (
+    /travell?ers?\s+.+\s+has been (?:added|removed)/i.test(flat) ||
+    /(?:travelers?|participants?|adults?)\s+changed\s+from/i.test(flat)
+  ) {
+    fields.push('people')
+  }
+  if (/tour\s+grade\s+changed\s+from/i.test(flat)) fields.push('product_option')
+  if (/lead\s+travell?er\s+changed\s+from/i.test(flat)) fields.push('customer_name')
+  return fields
+}
+
+function decodeBasicHtmlEntities(s: string): string {
+  let out = s
+  for (let i = 0; i < 3; i++) {
+    const next = out
+      .replace(/&amp;/gi, '&')
+      .replace(/&#39;|&apos;/gi, "'")
+      .replace(/&quot;/gi, '"')
+      .replace(/&nbsp;/gi, ' ')
+    if (next === out) break
+    out = next
+  }
+  return out
+}
+
+/** "Pickup point changed from A to B." → B 호텔명. type 변경(HOTEL→HOTEL)은 무시 */
+function parseViatorPickupPointChangedTo(text: string): string | undefined {
+  const flat = decodeBasicHtmlEntities(text.replace(/\s+/g, ' '))
+  const m = flat.match(
+    /pick(?:\s*-?\s*up|\s+up)\s+point(?!\s+type)\s+changed\s+from\s+.+?\s+to\s+(.+?)(?:\.|$)/i
+  )
+  if (!m?.[1]) return undefined
+  let raw = m[1].replace(/\s*\(ph:.*$/i, '').trim()
+  raw = raw.replace(/,+\s*$/g, '').trim()
+  const hotel = raw.split(',')[0].trim()
+  if (!hotel) return undefined
+  if (/select my pickup location later|unspecified|later$/i.test(hotel)) return undefined
+  const value = normalizePickupHotelFromEmail(hotel)
+  return value.length >= 3 ? value : undefined
+}
+
+function clipViatorPickupHotelLabel(raw: string): string | undefined {
+  let full = decodeBasicHtmlEntities(raw).replace(/\s+/g, ' ').trim()
+  full = full.replace(/\s*\(ph:.*$/i, '').trim()
+  if (/select my pickup location later/i.test(full)) return undefined
+  const hotelNamePart = full.split(',')[0].trim()
+  const value = normalizePickupHotelFromEmail(hotelNamePart || full)
+  return value.length >= 3 ? value : undefined
+}
+
 /** Viator 이메일 본문에서 레이블: 값 형식 추출 (Lead Traveler Name, Phone, Tour Language, Tour Name, Tour Option, Hotel Pickup 등) */
 function extractViator(
   text: string,
-  _subject: string,
+  subject: string,
   _sourceEmail: string | null
 ): Partial<ExtractedReservationData> {
   const out: Partial<ExtractedReservationData> = {}
   if (!text || text.length < 10) return out
 
   const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+  const isRequest =
+    isViatorAmendmentRequestEmailSubject(subject) || isViatorAmendmentRequestEmailBody(normalized)
+  const isConfirmedChange =
+    isViatorAmendedBookingEmailSubject(subject) ||
+    isTripadvisorExperiencesAmendmentEmailSubject(subject) ||
+    isViatorAmendedBookingEmailBody(normalized)
+  if (isRequest || isConfirmedChange) {
+    out.is_booking_change = true
+    if (isRequest && !isConfirmedChange) out.is_booking_change_request = true
+    const changeFields = collectViatorAmendmentChangeFields(normalized)
+    if (changeFields.length) out.booking_change_fields = changeFields
+    const dateChange = parseViatorTravelDateChanged(normalized)
+    if (dateChange) {
+      out.original_tour_date = dateChange.from
+      out.requested_tour_date = dateChange.to
+    }
+  }
+
+  const subjectRn = subject.match(/#\s*(BR-\d{6,})/i) || subject.match(/\b(BR-\d{6,})\b/i)
+  if (subjectRn?.[1]) out.channel_rn = subjectRn[1].trim()
+  if (!out.channel_rn) {
+    const bodyRn =
+      normalized.match(/Booking\s*Reference\s*:?\s*#?\s*(BR-\d{6,})/i) ||
+      normalized.match(/Booking\s*Reference\s*:?\s*#?\s*(\d{8,})/i)
+    if (bodyRn?.[1]) {
+      const token = bodyRn[1].trim()
+      out.channel_rn = /^\d+$/.test(token) ? `BR-${token}` : token
+    }
+  }
 
   /** HTML/공백 정리 후 한 줄로 붙은 Viator 본문: 값이 Travelers: 까지 이어지는 경우가 있어 다음 레이블 전까지만 캡처 */
   const viatorStopAfterLeadOrSingular =
@@ -2060,6 +2362,12 @@ function extractViator(
     const tourOptionLine = normalized.match(/Tour\s*Option\s*:?\s*([^\n]+?)(?=\s*(?:Hotel\s*Pickup|Pickup|\n\n|$))/im)
     if (tourOptionLine) optionRaw = tourOptionLine[1].trim()
   }
+  if (!rawName && (isRequest || isConfirmedChange)) {
+    const amendFor = normalized.match(
+      /amend their booking for\s+(.+?)\s+on\s+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i
+    )
+    if (amendFor?.[1]) rawName = amendFor[1].replace(/\s+/g, ' ').trim()
+  }
 
   const viatorGcAntelopeHorseshoeTourName =
     /Grand\s*Canyon.*Antelope.*Horseshoe\s*Bend|Antelope\s*Canyon.*Horseshoe\s*Bend/i.test(rawName) ||
@@ -2115,13 +2423,16 @@ function extractViator(
     }
   }
 
-  // Hotel Pickup: Mandalay Bay Resort & Casino, 3950 S Las Vegas Blvd... → 픽업 호텔 (첫 번째 쉼표 앞 호텔명으로 매칭)
-  const pickupMatch = normalized.match(/(?:Hotel\s*Pickup|Pickup\s*Location)\s*:?\s*([^\n]+?)(?=\s*(?:$|\n\n))/im)
-  if (pickupMatch) {
-    const full = pickupMatch[1].trim()
-    const hotelNamePart = full.split(',')[0].trim()
-    out.pickup_hotel = normalizePickupHotelFromEmail(hotelNamePart || full)
+  // Hotel Pickup: 레이블만 사용. "pickup location later to …" 변경 문구는 오탐이므로 제외
+  const labeledPickup = normalized.match(
+    /(?:Hotel\s*Pickup|Pickup\s*Location)\s*:\s*(.+?)(?=\s*(?:Special\s*Requirements|Phone\s*:|Optional:|Lead\s+traveler|Traveler\s+names|$))/i
+  )
+  if (labeledPickup?.[1]) {
+    const clipped = clipViatorPickupHotelLabel(labeledPickup[1])
+    if (clipped) out.pickup_hotel = clipped
   }
+  const changedToPickup = parseViatorPickupPointChangedTo(normalized)
+  if (changedToPickup) out.pickup_hotel = changedToPickup
 
   // Travelers: 2 Adults → 성인 인원 (Traveler Names 와 구분: 뒤에 Adults)
   const travelersAdults = normalized.match(/\bTravelers\s*:\s*(\d+)\s*Adults?\b/i)
@@ -2138,6 +2449,25 @@ function extractViator(
   if (netRateMatch?.[1]) {
     const num = netRateMatch[1].replace(/,/g, '')
     out.viator_net_rate_usd = `$${num}`
+  }
+
+  // Travel Date: Mon, Oct 12, 2026 — 현재(확정) 투어일. Amendment 요청일은 requested_tour_date 로 별도 보관
+  const travelDateM = normalized.match(/Travel\s*Date\s*:?\s*([^\n]+)/i)
+  if (travelDateM?.[1]) {
+    const ymd = parseViatorEnglishDateToYmd(travelDateM[1])
+    if (ymd) out.tour_date = ymd
+  }
+  if (!out.tour_date && out.original_tour_date) {
+    out.tour_date = out.original_tour_date
+  }
+  if (!out.tour_date) {
+    const subDate = subject.match(
+      /\b((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+[A-Za-z]{3,9}\s+\d{1,2},?\s+20\d{2})/i
+    )
+    if (subDate?.[1]) {
+      const ymd = parseViatorEnglishDateToYmd(subDate[1])
+      if (ymd) out.tour_date = ymd
+    }
   }
 
   // Viator도 미국 거주자 구분·기타 입장료는 미정 기본
@@ -2684,6 +3014,14 @@ export function extractReservationFromEmail(options: {
   if (!platform_key && isKlookOrderEmailSubjectForReservation(subject)) {
     platform_key = 'klook'
   }
+  if (
+    (!platform_key || platform_key === 'tripadvisor') &&
+    (isViatorAmendmentRequestEmailSubject(subject) ||
+      isViatorAmendedBookingEmailSubject(subject) ||
+      isTripadvisorExperiencesAmendmentEmailSubject(subject))
+  ) {
+    platform_key = 'viator'
+  }
   const parser = platform_key ? CHANNEL_PARSERS[platform_key] : undefined
   const rawTextForKlookBooking = (text && text.trim()) || ''
   const rawHtmlForKlookBooking = (html && html.trim()) || null
@@ -2818,6 +3156,16 @@ export function extractReservationFromEmail(options: {
     const cur = merged.channel_rn?.trim()
     if (cancelRn && (!cur || cur.length < 4 || cur.toLowerCase() === 'id')) {
       merged = { ...merged, channel_rn: cancelRn }
+    }
+  }
+
+  // 변경 알림: 신규 접수로 오인되지 않게 하고, RN이 비었으면 제목/본문에서 보강
+  if (isGygBookingChangeEmail(subject, plainText) || merged.is_booking_change === true) {
+    merged = { ...merged, is_booking_change: true, is_booking_confirmed: false }
+    const cur = merged.channel_rn?.trim()
+    if (!cur || cur.length < 4 || cur.toLowerCase() === 'id') {
+      const changeRn = extractChannelRnForCancellationLookup(subject, plainText)
+      if (changeRn) merged = { ...merged, channel_rn: changeRn }
     }
   }
 

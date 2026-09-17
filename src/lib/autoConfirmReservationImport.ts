@@ -42,6 +42,7 @@ import {
 import { expandChannelRnMatchVariants } from '@/utils/channelRnMatch'
 import {
   isCancellationRequestEmailSubject,
+  isReservationImportBookingChange,
   isZoomZoomTourNewBookingEmailSubject,
 } from '@/lib/emailReservationParser'
 import { isZellePaymentSentEmail } from '@/lib/zellePaymentEmail'
@@ -166,6 +167,9 @@ export async function tryAutoConfirmReservationImport(
   }
 
   const ext = asExtracted(row.extracted_data)
+  if (isReservationImportBookingChange({ subject: row.subject, extracted: ext })) {
+    return { attempted: false, reason: 'booking_change' }
+  }
   const amountFromBody =
     ext.amount ||
     extractPriceFromEmailBodyForImport(row.raw_body_text) ||

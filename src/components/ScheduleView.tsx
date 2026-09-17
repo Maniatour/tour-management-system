@@ -201,6 +201,12 @@ import {
   type ScheduleProductCellPulseReason,
 } from '@/lib/scheduleGuideLanguageMatch'
 import type { ScheduleGuideDailyData, ScheduleGuideScheduleRow } from '@/lib/scheduleGuideGridTypes'
+import {
+  collectTourConfirmationPulseIssues,
+  scheduleAssignedTourPulseAlertLine,
+  scheduleTourConfirmationPulseWindowEnd,
+  type ScheduleAssignedTourPulseIssue,
+} from '@/lib/scheduleAssignedTourPulse'
 import type { TourQuickPrintRequest } from '@/components/admin/todo/TourQuickPrintHost'
 import { isSuperAdminActor } from '@/lib/superAdmin'
 import { isManagerTeamPosition } from '@/lib/roles'
@@ -3663,6 +3669,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 spotsLeft: number
                 assignmentStatusLabel: string
                 assignmentStatus: string
+                vehicleAssigned: boolean
+                tourStatus: string | null
+                tourStatusLabel: string
               }>
               totalAssigned: number
               totalMax: number
@@ -3729,6 +3738,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               spotsLeft: number
               assignmentStatusLabel: string
               assignmentStatus: string
+              vehicleAssigned: boolean
+              tourStatus: string | null
+              tourStatusLabel: string
             }>
             totalAssigned: number
             totalMax: number
@@ -3882,6 +3894,9 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               locale,
             ),
             assignmentStatus: resolveTourDisplayAssignmentStatus(tour),
+            vehicleAssigned: Boolean(tour.tour_car_id && String(tour.tour_car_id).trim()),
+            tourStatus: tour.tour_status || null,
+            tourStatusLabel: getTourStatusLabel(tour.tour_status, locale),
           }
         })
         const capTotalAssigned = tourCapacityRows.reduce((s, r) => s + r.assigned, 0)
@@ -4015,6 +4030,30 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       ),
     [productScheduleData],
   )
+
+  const assignedTourConfirmationPulseByTourId = useMemo(() => {
+    const todayStr = dayjs().format('YYYY-MM-DD')
+    const windowEnd = scheduleTourConfirmationPulseWindowEnd(todayStr)
+    const map = new Map<string, ScheduleAssignedTourPulseIssue[]>()
+    for (const tour of tours) {
+      const issues = collectTourConfirmationPulseIssues({
+        tourDate: String(tour.tour_date || '').slice(0, 10),
+        tourStatus: tour.tour_status,
+        assignmentStatus: resolveTourDisplayAssignmentStatus(tour),
+        tourCarId: tour.tour_car_id,
+        assignedPeople: computeTourAssignedPeopleForScheduleTooltip(tour, reservations),
+        today: todayStr,
+        windowEnd,
+        tourStatusLabel: getTourStatusLabel(tour.tour_status, locale),
+        assignmentStatusLabel: getAssignmentStatusLabel(
+          resolveTourDisplayAssignmentStatus(tour),
+          locale,
+        ),
+      })
+      if (issues.length > 0) map.set(String(tour.id), issues)
+    }
+    return map
+  }, [tours, reservations, locale])
 
   /** 디스플레이: 공유 설정에 팀원이 없으면 표시 기간 투어의 가이드/어시스턴트로 자동 채움 */
   const effectiveSelectedTeamMembers = useMemo(() => {
@@ -5260,13 +5299,17 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         guideName={c.guideName}
         assistantName={c.assistantName}
         vehicleNumber={c.vehicleNumber}
+        vehicleAssigned={c.vehicleAssigned}
         assignmentStatus={c.assignmentStatus}
+        tourStatus={c.tourStatus}
+        tourStatusLabel={getTourStatusLabel(c.tourStatus, locale)}
         locale={locale}
         assignedKo={c.assignedKo}
         assignedEn={c.assignedEn}
         assignedJa={c.assignedJa}
         choiceCounts={c.choiceCounts}
         languageMismatchMissingLocales={guideLanguageMismatchByTourId.get(String(tour.id))}
+        confirmationIssues={assignedTourConfirmationPulseByTourId.get(String(tour.id))}
       />
     )
   }
@@ -5278,6 +5321,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       locale,
     )
     const hasLanguageMismatch = guideLanguageMismatchByTourId.has(String(tour.id))
+    const confirmationIssues = assignedTourConfirmationPulseByTourId.get(String(tour.id)) || []
     const lines = [
       `투어: ${c.productName}${c.isPrivateTour ? ' (단독투어)' : ''}`,
       `날짜: ${c.tourDate}`,
@@ -5289,8 +5333,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       `어시스턴트: ${c.assistantName}`,
       `차량: ${c.vehicleNumber}`,
       `배차: ${c.vehicleAssigned ? '배차 완료' : '미배차'}`,
+      `상태: ${getTourStatusLabel(c.tourStatus, locale)}`,
       `Confirm EA: ${c.confirmedEa}`,
       ...(hasLanguageMismatch ? [mismatchAlert] : []),
+      ...confirmationIssues.map((issue) => scheduleAssignedTourPulseAlertLine(issue, locale)),
     ]
     return lines.join('\n')
   }
@@ -6101,10 +6147,21 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       if (d) s.add(d)
     }
     for (const x of scheduleGuideLanguageMismatchItems) s.add(x.dateString)
+    for (const tour of tours) {
+      if (!assignedTourConfirmationPulseByTourId.has(String(tour.id))) continue
+      const d = String(tour.tour_date || '').slice(0, 10)
+      if (d) s.add(d)
+    }
     return s
-  }, [scheduleCapacityOverflowItems, scheduleHealthFromFetch, scheduleGuideLanguageMismatchItems])
+  }, [
+    scheduleCapacityOverflowItems,
+    scheduleHealthFromFetch,
+    scheduleGuideLanguageMismatchItems,
+    assignedTourConfirmationPulseByTourId,
+    tours,
+  ])
 
-  /** 상품별 스케줄 테이블: 정원 초과·5일 이내 미확정 투어·가이드 언어 불일치 셀 */
+  /** 상품별 스케줄 테이블: 정원 초과·미배차·배정/상태 미확정·가이드 언어 불일치 셀 */
   const scheduleHealthProductCellAlerts = useMemo(() => {
     const map = new Map<string, ScheduleProductCellPulseReason[]>()
     for (const x of scheduleCapacityOverflowItems) {
@@ -6116,6 +6173,29 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         addScheduleProductCellPulseReason(map, x.productId, d, { kind: 'unconfirmed_tour' })
       }
     }
+    const todayStr = dayjs().format('YYYY-MM-DD')
+    const windowEnd = scheduleTourConfirmationPulseWindowEnd(todayStr)
+    for (const [productId, prod] of Object.entries(productScheduleData)) {
+      for (const { dateString, isEdgePadding } of monthDays) {
+        if (isEdgePadding) continue
+        if (dateString < todayStr || dateString > windowEnd) continue
+        const rows = prod.dailyData[dateString]?.tourCapacityBreakdown?.rows || []
+        for (const row of rows) {
+          if ((row.assigned || 0) <= 0) continue
+          if (!row.vehicleAssigned) {
+            addScheduleProductCellPulseReason(map, productId, dateString, { kind: 'missing_dispatch' })
+          }
+          if (row.assignmentStatus !== 'confirmed') {
+            addScheduleProductCellPulseReason(map, productId, dateString, {
+              kind: 'unconfirmed_assignment',
+            })
+          }
+          if (!isTourConfirmedStatus(row.tourStatus)) {
+            addScheduleProductCellPulseReason(map, productId, dateString, { kind: 'unconfirmed_tour' })
+          }
+        }
+      }
+    }
     for (const x of scheduleGuideLanguageMismatchItems) {
       addScheduleProductCellPulseReason(map, x.productId, x.dateString, {
         kind: 'guide_language',
@@ -6123,7 +6203,13 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       })
     }
     return map
-  }, [scheduleCapacityOverflowItems, scheduleHealthFromFetch, scheduleGuideLanguageMismatchItems])
+  }, [
+    scheduleCapacityOverflowItems,
+    scheduleHealthFromFetch,
+    productScheduleData,
+    monthDays,
+    scheduleGuideLanguageMismatchItems,
+  ])
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -7810,6 +7896,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             getTourSummary={getTourSummary}
             getGuideScheduleTourHoverText={getGuideScheduleTourHoverText}
             guideLanguageMismatchByTourId={guideLanguageMismatchByTourId}
+            assignedTourConfirmationPulseByTourId={assignedTourConfirmationPulseByTourId}
+            scheduleHealthProductCellAlerts={scheduleHealthProductCellAlerts}
           />
 
           {/* 부킹 테이블 */}

@@ -21,6 +21,10 @@ import {
   scheduleAssignedTourLanguageMismatchAlert,
   type ScheduleRequiredGuideLang,
 } from '@/lib/scheduleGuideLanguageMatch'
+import {
+  scheduleAssignedTourPulseAriaLabel,
+  type ScheduleAssignedTourPulseIssue,
+} from '@/lib/scheduleAssignedTourPulse'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Tour = any
@@ -61,6 +65,7 @@ type GuideScheduleAssignedTourBoxesProps = {
   getGuideScheduleTourHoverText: (tour: Tour) => ReactNode
   tooltipFallback: string
   guideLanguageMismatchByTourId: ReadonlyMap<string, ScheduleRequiredGuideLang[]>
+  assignedTourConfirmationPulseByTourId: ReadonlyMap<string, ScheduleAssignedTourPulseIssue[]>
 }
 
 function tourMatchesScheduleDate(tour: Tour, dateString: string): boolean {
@@ -131,6 +136,7 @@ export default function GuideScheduleAssignedTourBoxes({
   getGuideScheduleTourHoverText,
   tooltipFallback,
   guideLanguageMismatchByTourId,
+  assignedTourConfirmationPulseByTourId,
 }: GuideScheduleAssignedTourBoxesProps) {
   const getProductDisplayProps = getScheduleProductDisplayProps
 
@@ -178,9 +184,13 @@ export default function GuideScheduleAssignedTourBoxes({
             : undefined
         const missingLocales = guideLanguageMismatchByTourId.get(String(tour.id))
         const isLanguageMismatch = Boolean(missingLocales && missingLocales.length > 0)
+        const confirmationIssues = assignedTourConfirmationPulseByTourId.get(String(tour.id)) || []
+        const shouldPulse = isLanguageMismatch || confirmationIssues.length > 0
         const mismatchAlert = isLanguageMismatch
           ? scheduleAssignedTourLanguageMismatchAlert(missingLocales, locale)
           : ''
+        const confirmationAlert = scheduleAssignedTourPulseAriaLabel(confirmationIssues, locale)
+        const pulseAriaLabel = [mismatchAlert, confirmationAlert].filter(Boolean).join(', ')
 
         return (
           <ScheduleHoverTooltip
@@ -191,20 +201,20 @@ export default function GuideScheduleAssignedTourBoxes({
               className={`relative flex min-w-0 flex-1 items-center justify-center gap-0.5 px-0.5 py-0 text-[10px] cursor-pointer hover:opacity-80 transition-opacity text-white ${
                 isEmptyTour ? 'bg-gray-400' : ''
               } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''} ${borderColor ? 'border-2 border-white' : ''} ${roleTours.length === 1 ? 'h-full w-full rounded' : 'h-full'} ${
-                isLanguageMismatch ? SCHEDULE_ASSIGNED_TOUR_LANG_MISMATCH_CLASS : ''
+                shouldPulse ? SCHEDULE_ASSIGNED_TOUR_LANG_MISMATCH_CLASS : ''
               }`}
               style={{
-                backgroundColor: isLanguageMismatch
+                backgroundColor: shouldPulse
                   ? undefined
                   : isEmptyTour
                     ? '#9ca3af'
                     : colorClass
                       ? getColorFromClass(colorClass)
                       : undefined,
-                color: isLanguageMismatch ? undefined : textColor,
+                color: shouldPulse ? undefined : textColor,
                 boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined,
               }}
-              aria-label={mismatchAlert || undefined}
+              aria-label={pulseAriaLabel || undefined}
               draggable
               onDragStart={(e) => {
                 setDraggedRole(role)

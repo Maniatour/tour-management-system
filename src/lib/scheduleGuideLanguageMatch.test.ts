@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   addScheduleProductCellPulseReason,
   collectGuideLanguageMismatchByTourId,
+  collectScheduleProductCellPulseReasonsForDate,
   collectStaffScheduleLocales,
   customerLanguageToScheduleBucket,
   findTourGuideLanguageMismatch,
@@ -175,9 +176,15 @@ test('pulse reason badges put guide language first and keep labels', () => {
     kind: 'guide_language',
     missingLocales: ['ja'],
   })
+  addScheduleProductCellPulseReason(map, 'p1', '2026-09-16', { kind: 'missing_dispatch' })
+  addScheduleProductCellPulseReason(map, 'p1', '2026-09-16', { kind: 'unconfirmed_assignment' })
+  addScheduleProductCellPulseReason(map, 'p1', '2026-09-16', { kind: 'unconfirmed_tour' })
   const reasons = map.get('p1|2026-09-16') || []
   assert.equal(reasons[0]?.kind, 'guide_language')
   assert.equal(scheduleProductCellPulseReasonLabel(reasons[0], 'ko'), '가이드 언어 · 일본어')
+  assert.equal(scheduleProductCellPulseReasonLabel({ kind: 'missing_dispatch' }, 'ko'), '미배차')
+  assert.equal(scheduleProductCellPulseReasonLabel({ kind: 'unconfirmed_assignment' }, 'ko'), '배정 미확정')
+  assert.equal(scheduleProductCellPulseReasonLabel({ kind: 'unconfirmed_tour' }, 'ko'), '상태 미확정')
 })
 
 test('collectGuideLanguageMismatchByTourId skips past dates and merges missing locales', () => {
@@ -233,4 +240,16 @@ test('mismatch line is short: Japanese needed, no spoken-language clause', () =>
   )
   assert.equal(line, '팀2 Patricia, Jesus (헤이수스): 일본어 필요')
   assert.equal(line.includes('구사'), false)
+})
+
+test('collectScheduleProductCellPulseReasonsForDate merges kinds across products', () => {
+  const map = new Map()
+  addScheduleProductCellPulseReason(map, 'p1', '2026-09-16', { kind: 'missing_dispatch' })
+  addScheduleProductCellPulseReason(map, 'p2', '2026-09-16', { kind: 'unconfirmed_assignment' })
+  addScheduleProductCellPulseReason(map, 'p2', '2026-09-17', { kind: 'unconfirmed_tour' })
+  const reasons = collectScheduleProductCellPulseReasonsForDate(map, '2026-09-16')
+  assert.deepEqual(
+    reasons.map((reason) => reason.kind),
+    ['missing_dispatch', 'unconfirmed_assignment'],
+  )
 })

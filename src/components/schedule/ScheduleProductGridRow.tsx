@@ -11,6 +11,7 @@ import {
 } from '@/lib/scheduleMiscTourGroup'
 import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import { getAssignmentStatusTooltipColorClass } from '@/lib/guideAssignmentStatus'
+import { isTourConfirmedStatus } from '@/utils/tourStatusUtils'
 import { tourChoiceCountsDisplayKeys } from '@/lib/tourChoiceCounts'
 import {
   aggregateScheduleBreakdownFromDailyData,
@@ -290,7 +291,25 @@ export default function ScheduleProductGridRow({
                                 </div>
                                 <div className="text-[11px] font-medium leading-snug">
                                   <span className="text-gray-400">
-                                    {locale === 'ko' ? '배정 상태' : 'Assignment'}:{' '}
+                                    {locale === 'ko' ? '배차' : 'Dispatch'}:{' '}
+                                  </span>
+                                  <span
+                                    className={
+                                      row.vehicleAssigned ? 'text-emerald-400' : 'text-amber-300 font-semibold'
+                                    }
+                                  >
+                                    {row.vehicleAssigned
+                                      ? locale === 'ko'
+                                        ? '배차 완료'
+                                        : 'Dispatched'
+                                      : locale === 'ko'
+                                        ? '미배차'
+                                        : 'No vehicle'}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] font-medium leading-snug">
+                                  <span className="text-gray-400">
+                                    {locale === 'ko' ? '배정' : 'Assignment'}:{' '}
                                   </span>
                                   <span
                                     className={getAssignmentStatusTooltipColorClass({
@@ -298,6 +317,30 @@ export default function ScheduleProductGridRow({
                                     })}
                                   >
                                     {row.assignmentStatusLabel}
+                                    {row.assignmentStatus !== 'confirmed'
+                                      ? locale === 'ko'
+                                        ? ' · 미확정'
+                                        : ' · not confirmed'
+                                      : ''}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] font-medium leading-snug">
+                                  <span className="text-gray-400">
+                                    {locale === 'ko' ? '상태' : 'Status'}:{' '}
+                                  </span>
+                                  <span
+                                    className={
+                                      isTourConfirmedStatus(row.tourStatus)
+                                        ? 'text-emerald-400'
+                                        : 'text-orange-300 font-semibold'
+                                    }
+                                  >
+                                    {row.tourStatusLabel || (locale === 'ko' ? '미정' : 'Unset')}
+                                    {isTourConfirmedStatus(row.tourStatus)
+                                      ? ''
+                                      : locale === 'ko'
+                                        ? ' · 미확정'
+                                        : ' · not confirmed'}
                                   </span>
                                 </div>
                                 <div className="text-[11px] text-gray-100 font-medium tabular-nums">

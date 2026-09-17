@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { extractReservationFromEmail } from '@/lib/emailReservationParser'
+import { tryApplyReservationImportPickupChange } from '@/lib/reservationImportBookingChange'
 
 /**
  * POST /api/reservation-imports/[id]/reparse
@@ -51,6 +52,12 @@ export async function POST(
 
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 })
+  }
+
+  try {
+    await tryApplyReservationImportPickupChange(client as never, id)
+  } catch (e) {
+    console.warn('[reservation-imports/reparse] pickup-change:', e)
   }
 
   const { data: updated } = await client

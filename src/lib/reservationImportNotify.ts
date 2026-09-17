@@ -4,6 +4,7 @@ import {
   isManiatourHomepageBookingEmail,
   isMyrealtripNewBookingEmailSubject,
   isNolTripleNewBookingEmailSubject,
+  isReservationImportBookingChange,
   isTidesquareNewBookingEmailSubject,
   isTripComNewOrderEmailSubject,
   isViatorBookingRequestEmailSubject,
@@ -21,6 +22,7 @@ export type ReservationImportNotifyRow = {
   created_at: string | null
   extracted_data?: {
     is_booking_confirmed?: boolean
+    is_booking_change?: boolean
     product_id?: string
     product_name?: string
     tour_date?: string
@@ -73,6 +75,7 @@ export function isReservationRelatedImportNotifyRow(row: ReservationImportNotify
   const platform = (row.platform_key || '').toLowerCase()
   if (platform === ZELLE_PAYMENT_PLATFORM_KEY || platform === WELLS_FARGO_ATM_PLATFORM_KEY) return false
   if (isCancellationRequestEmailSubject(row.subject)) return true
+  if (isReservationImportBookingChange({ subject: row.subject, extracted: row.extracted_data })) return true
   return isBookingReceiptImportNotifyRow(row)
 }
 
@@ -113,6 +116,7 @@ export function isBookingReceiptImportNotifyRow(row: ReservationImportNotifyRow)
   const platform = (row.platform_key || '').toLowerCase()
   if (platform === ZELLE_PAYMENT_PLATFORM_KEY || platform === WELLS_FARGO_ATM_PLATFORM_KEY) return false
   if (isCancellationRequestEmailSubject(row.subject)) return false
+  if (isReservationImportBookingChange({ subject: row.subject, extracted: row.extracted_data })) return false
   if (row.extracted_data?.is_booking_confirmed === true) return true
   if (isKlookOrderEmailSubjectForReservation(row.subject)) return true
   if (isKKdayBookingSubject(row.subject)) return true

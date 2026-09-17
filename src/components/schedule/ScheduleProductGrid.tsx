@@ -4,7 +4,9 @@ import { useMemo } from 'react'
 import type { RefObject, DragEvent, UIEvent } from 'react'
 import dayjs from 'dayjs'
 import type { ScheduleProductCellPulseReason } from '@/lib/scheduleGuideLanguageMatch'
+import { collectScheduleProductCellPulseReasonsForDate } from '@/lib/scheduleGuideLanguageMatch'
 import {
+  ScheduleProductCellPulseReasonBadges,
   ScheduleTotalColumnWithTooltip,
   type ScheduleProductDayTotal,
   type ScheduleProductGridProductRow,
@@ -232,6 +234,10 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
                 const hasNote = dateNotes[dateString]?.note
                 const healthHeaderAlert =
                   !isEdgePadding && scheduleHealthHighlightDateSet.has(dateString)
+                const datePulseReasons = collectScheduleProductCellPulseReasonsForDate(
+                  scheduleHealthProductCellAlerts,
+                  dateString,
+                )
                 return (
                   <th
                     key={dateString}
@@ -251,16 +257,26 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
                   >
                     <ScheduleHoverTooltip
                       disabled={scheduleInteractionDragging}
-                      maxWidth={320}
+                      maxWidth={360}
                       content={
-                        hasNote ? (
-                          <>
-                            <div className="font-semibold mb-1">{dateString}</div>
-                            <div className="whitespace-pre-wrap break-words">{dateNotes[dateString].note}</div>
-                          </>
-                        ) : (
-                          '클릭하여 날짜 노트 작성'
-                        )
+                        <>
+                          {datePulseReasons.length > 0 ? (
+                            <ScheduleProductCellPulseReasonBadges
+                              reasons={datePulseReasons}
+                              uiLocale={locale}
+                            />
+                          ) : null}
+                          {hasNote ? (
+                            <>
+                              <div className="font-semibold mb-1">{dateString}</div>
+                              <div className="whitespace-pre-wrap break-words">{dateNotes[dateString].note}</div>
+                            </>
+                          ) : (
+                            <div className={datePulseReasons.length > 0 ? 'text-gray-300' : ''}>
+                              {locale === 'ko' ? '클릭하여 날짜 노트 작성' : 'Click to add a date note'}
+                            </div>
+                          )}
+                        </>
                       }
                     >
                       <div

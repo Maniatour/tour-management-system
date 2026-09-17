@@ -44,6 +44,20 @@ export interface ExtractedReservationData {
   channel_variant_label?: string
   /** 예약 접수 이메일 여부 (GetYourGuide: "Booking -", Klook: Order Received / Order Confirmed|Confimed — 파서 참고) */
   is_booking_confirmed?: boolean
+  /** OTA 예약 변경 알림 (GetYourGuide: booking has changed, Viator: Amendment Request) — 신규 예약 생성 대상 아님 */
+  is_booking_change?: boolean
+  /** 변경 메일에서 New 뱃지가 붙은 필드 (tour_date, pickup_hotel 등) */
+  booking_change_fields?: string[]
+  /** Viator Amendment Request 등: 요청된 투어일 (YYYY-MM-DD). 확정이 아니므로 자동 반영하지 않음 */
+  requested_tour_date?: string
+  /** 변경 요청 메일의 기존(현재) 투어일 */
+  original_tour_date?: string
+  /** true면 공급사 수락 전 변경 요청. 픽업·날짜 자동 반영하지 않음 */
+  is_booking_change_request?: boolean
+  /** 픽업 호텔을 기존 예약에 반영했는지 */
+  pickup_change_applied?: boolean
+  pickup_change_applied_at?: string
+  pickup_change_applied_hotel_id?: string
   /** 이메일에서 파싱한 초이스 옵션명 (상품 초이스 매칭용, 예: "Lower Antelope Canyon") */
   import_choice_option_names?: string[]
   /** "미정"으로 저장할 초이스 그룹명 (예: "미국 거주자 구분", "기타 입장료") */

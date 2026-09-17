@@ -59,6 +59,9 @@ export type ScheduleProductGridDailyCell = {
       spotsLeft: number
       assignmentStatusLabel: string
       assignmentStatus: string
+      vehicleAssigned?: boolean
+      tourStatus?: string | null
+      tourStatusLabel?: string
     }>
     totalAssigned: number
     totalMax: number
@@ -159,9 +162,13 @@ export function ScheduleProductCellPulseReasonBadges({
         const kindClass =
           reason.kind === 'capacity_overflow'
             ? 'bg-red-500 text-white'
-            : reason.kind === 'unconfirmed_tour'
-              ? 'bg-orange-500 text-white'
-              : 'bg-violet-500 text-white'
+            : reason.kind === 'missing_dispatch'
+              ? 'bg-amber-500 text-white'
+              : reason.kind === 'unconfirmed_assignment'
+                ? 'bg-yellow-400 text-gray-900'
+                : reason.kind === 'unconfirmed_tour'
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-violet-500 text-white'
         return (
           <span
             key={reason.kind}

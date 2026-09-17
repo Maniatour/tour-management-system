@@ -17,6 +17,8 @@ export type ScheduleGuideLanguageMismatch = {
 
 export type ScheduleProductCellPulseReasonKind =
   | 'capacity_overflow'
+  | 'missing_dispatch'
+  | 'unconfirmed_assignment'
   | 'unconfirmed_tour'
   | 'guide_language'
 
@@ -202,7 +204,9 @@ export function scheduleProductCellPulseReasonLabel(
 ): string {
   const isKo = uiLocale === 'ko'
   if (reason.kind === 'capacity_overflow') return isKo ? '정원 초과' : 'Over capacity'
-  if (reason.kind === 'unconfirmed_tour') return isKo ? '미확정 투어' : 'Tour not confirmed'
+  if (reason.kind === 'missing_dispatch') return isKo ? '미배차' : 'No vehicle'
+  if (reason.kind === 'unconfirmed_assignment') return isKo ? '배정 미확정' : 'Assignment not confirmed'
+  if (reason.kind === 'unconfirmed_tour') return isKo ? '상태 미확정' : 'Status not confirmed'
   const missing = (reason.missingLocales || []).map((locale) => scheduleGuestLangLabel(locale, uiLocale))
   if (missing.length > 0) {
     return isKo ? `가이드 언어 · ${missing.join('·')}` : `Guide language · ${missing.join('/')}`
@@ -296,5 +300,34 @@ export function addScheduleProductCellPulseReason(
 function pulseReasonSortIndex(kind: ScheduleProductCellPulseReasonKind): number {
   if (kind === 'guide_language') return 0
   if (kind === 'capacity_overflow') return 1
-  return 2
+  if (kind === 'missing_dispatch') return 2
+  if (kind === 'unconfirmed_assignment') return 3
+  return 4
+}
+
+export function collectScheduleProductCellPulseReasonsForDate(
+  map: Map<string, ScheduleProductCellPulseReason[]>,
+  dateString: string,
+): ScheduleProductCellPulseReason[] {
+  const merged = new Map<string, ScheduleProductCellPulseReason>()
+  const suffix = `|${dateString}`
+  for (const [key, reasons] of map) {
+    if (!key.endsWith(suffix)) continue
+    for (const reason of reasons) {
+      const existing = merged.get(reason.kind)
+      if (!existing) {
+        merged.set(reason.kind, { ...reason })
+        continue
+      }
+      if (reason.kind === 'guide_language') {
+        merged.set(reason.kind, {
+          ...existing,
+          missingLocales: unionMissingGuideLocales([existing, reason]),
+        })
+      }
+    }
+  }
+  return [...merged.values()].sort(
+    (a, b) => pulseReasonSortIndex(a.kind) - pulseReasonSortIndex(b.kind),
+  )
 }

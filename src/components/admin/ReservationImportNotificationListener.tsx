@@ -9,7 +9,7 @@ import { useReportAdminAlert } from '@/contexts/AdminAlertInboxContext'
 import { makeAdminAlertDraft } from '@/lib/adminAlertInbox'
 import { asAdminAlertPayload, unshiftUniqueAlert } from '@/lib/adminAlertReplay'
 import { useAdminAlertReplay } from '@/hooks/useAdminAlertReplay'
-import { isCancellationRequestEmailSubject } from '@/lib/emailReservationParser'
+import { isCancellationRequestEmailSubject, isReservationImportBookingChange } from '@/lib/emailReservationParser'
 import {
   formatExtractedImportPartyLabel,
   isReservationRelatedImportNotifyRow,
@@ -63,14 +63,20 @@ export default function ReservationImportNotificationListener({ locale }: { loca
     if (!replay && dismissedRef.current.has(next.id)) return
     if (!isReservationRelatedImportNotifyRow(next)) return
     const isCancel = isCancellationRequestEmailSubject(next.subject)
+    const isChange = isReservationImportBookingChange({
+      subject: next.subject,
+      extracted: next.extracted_data,
+    })
     const createdAt = next.created_at || next.received_at || ''
     if (!replay) {
       report(
         makeAdminAlertDraft('reservation_import', next.id, {
-          title: isCancel ? '취소 메일 접수' : '예약 메일 접수',
+          title: isCancel ? '취소 메일 접수' : isChange ? '예약 변경 메일' : '예약 메일 접수',
           body: next.subject?.trim() || '(제목 없음)',
           href: isCancel
             ? `/${locale}/admin/reservation-imports?cancellationImport=${encodeURIComponent(next.id)}`
+            : isChange
+              ? `/${locale}/admin/reservation-imports?changeImport=${encodeURIComponent(next.id)}`
             : `/${locale}/admin/reservation-imports/${next.id}`,
           ...(createdAt ? { createdAt } : {}),
           payload: next,

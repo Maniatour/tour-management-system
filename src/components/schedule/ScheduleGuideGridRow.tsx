@@ -84,6 +84,7 @@ export type ScheduleGuideGridRowProps = Pick<
   | 'getTourSummary'
   | 'getGuideScheduleTourHoverText'
   | 'guideLanguageMismatchByTourId'
+  | 'assignedTourConfirmationPulseByTourId'
 > & {
   teamMemberId: string
   guide: ScheduleGuideScheduleRow
@@ -150,6 +151,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
     getTourSummary,
     getGuideScheduleTourHoverText,
     guideLanguageMismatchByTourId,
+    assignedTourConfirmationPulseByTourId,
     isToday,
     isGuideVisibleUntilCutoff,
   } = props
@@ -585,6 +587,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                             getGuideScheduleTourHoverText={getGuideScheduleTourHoverText}
                             tooltipFallback={guide.team_member_name}
                             guideLanguageMismatchByTourId={guideLanguageMismatchByTourId}
+                            assignedTourConfirmationPulseByTourId={assignedTourConfirmationPulseByTourId}
                           />
                         )
                       })()}
@@ -626,6 +629,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                             getGuideScheduleTourHoverText={getGuideScheduleTourHoverText}
                             tooltipFallback={guide.team_member_name}
                             guideLanguageMismatchByTourId={guideLanguageMismatchByTourId}
+                            assignedTourConfirmationPulseByTourId={assignedTourConfirmationPulseByTourId}
                           />
                         )
                       })()}
@@ -726,6 +730,10 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
             const mdHasLanguageMismatch = mdRowTours.some((tourItem) =>
               guideLanguageMismatchByTourId.has(String(tourItem.id)),
             )
+            const mdHasConfirmationPulse = mdRowTours.some((tourItem) =>
+              (assignedTourConfirmationPulseByTourId.get(String(tourItem.id)) || []).length > 0,
+            )
+            const mdShouldPulse = mdHasLanguageMismatch || mdHasConfirmationPulse
             return (
               <div
                 key={`md-overlay-${idx}-${tour.startDate}`}
@@ -740,10 +748,10 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                   }
                 >
                 <div
-                  className={`relative w-full h-full rounded px-2 py-0 text-[10px] flex items-center justify-center gap-1 cursor-pointer hover:opacity-90 transition-opacity text-white ${tour.dayData.assignedPeople === 0 ? 'bg-gray-400' : ''} ${mdHasLanguageMismatch ? 'animate-schedule-health-cell-blink' : ''}`}
+                  className={`relative w-full h-full rounded px-2 py-0 text-[10px] flex items-center justify-center gap-1 cursor-pointer hover:opacity-90 transition-opacity text-white ${tour.dayData.assignedPeople === 0 ? 'bg-gray-400' : ''} ${mdShouldPulse ? 'animate-schedule-health-cell-blink' : ''}`}
                   style={{
                     background:
-                      mdHasLanguageMismatch
+                      mdShouldPulse
                         ? undefined
                         : tour.dayData.assignedPeople === 0
                           ? '#9ca3af'
@@ -751,7 +759,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                             ? gradient
                             : undefined,
                     color:
-                      mdHasLanguageMismatch
+                      mdShouldPulse
                         ? undefined
                         : tour.dayData.assignedPeople > 0 && hasColors && colorValues[0]
                           ? getProductDisplayProps(colorValues[0]).style?.color

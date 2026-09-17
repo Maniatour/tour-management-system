@@ -8,13 +8,14 @@ import {
   isKlookOrderEmailSubjectForReservation,
   isZoomZoomTourNewBookingEmailSubject,
   isNolTripleNewBookingEmailSubject,
+  isReservationImportBookingChange,
 } from '@/lib/emailReservationParser'
 import { isZellePaymentSentEmail, ZELLE_PAYMENT_PLATFORM_KEY } from '@/lib/zellePaymentEmail'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Json } from '@/lib/database.types'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import type { ReservationImportInsert, ExtractedReservationData } from '@/types/reservationImport'
-import { tryAutoConfirmReservationImport } from '@/lib/autoConfirmReservationImport'
+import { processReservationImportAfterSave } from '@/lib/reservationImportBookingChange'
 import { normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
 import { expandChannelRnMatchVariants } from '@/utils/channelRnMatch'
 
@@ -213,13 +214,21 @@ export async function POST(request: NextRequest) {
   let reservationId: string | null = null
   if (!isZellePaymentSentEmail(subject)) {
     try {
-      const auto = await tryAutoConfirmReservationImport(client as never, inserted.id)
-      if (auto.attempted && auto.ok) {
+      const processed = await processReservationImportAfterSave(client as never, inserted.id)
+      if (processed.kind === 'auto_confirm' && processed.reason === 'ok') {
         status = 'confirmed'
-        reservationId = auto.reservation_id
-      } else if (auto.attempted && !auto.ok) {
-        console.warn('[reservation-imports] auto-confirm failed:', auto.reason)
+      } else if (processed.kind === 'pickup_change' && processed.reason?.startsWith('applied')) {
+        status = 'confirmed'
+      } else if (processed.kind === 'auto_confirm' && processed.reason && processed.reason !== 'ok') {
+        console.warn('[reservation-imports] auto-confirm failed:', processed.reason)
       }
+      const { data: after } = await client
+        .from('reservation_imports')
+        .select('status, reservation_id')
+        .eq('id', inserted.id)
+        .maybeSingle()
+      if (after?.status === 'confirmed') status = 'confirmed'
+      if (after?.reservation_id) reservationId = after.reservation_id
     } catch (e) {
       console.error('[reservation-imports] auto-confirm error:', e)
     }
@@ -621,6 +630,15 @@ export async function GET(request: NextRequest) {
       const cancellationListBadge = isCancellationRequestEmailSubject(r.subject)
         ? (cancellationBadgeByImportId.get(r.id) ?? 'needed')
         : null
+      const pickupChangeListBadge = isReservationImportBookingChange({
+        subject: r.subject,
+        extracted: extracted_data ?? parseExtractedData(r.extracted_data),
+      })
+        ? (extracted_data?.pickup_change_applied === true ||
+          String(r.confirmed_by || '').includes('pickup-change')
+          ? 'done'
+          : 'needed')
+        : null
       return {
         ...r,
         platform_key:
@@ -632,6 +650,7 @@ export async function GET(request: NextRequest) {
         reservation_exists_by_channel_rn: existsByChannelRn,
         reservation_exists_by_customer_match: existsByCustomerMatch,
         cancellation_list_badge: cancellationListBadge,
+        pickup_change_list_badge: pickupChangeListBadge,
       }
     })
 

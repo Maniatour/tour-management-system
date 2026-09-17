@@ -16,6 +16,11 @@ export function normalizeAssignmentStatus(status: string | null | undefined): st
   return s
 }
 
+/** 가이드 배정 응답이 확정(confirmed)인지 */
+export function isAssignmentStatusConfirmed(status: string | null | undefined): boolean {
+  return normalizeAssignmentStatus(status) === 'confirmed'
+}
+
 export function shouldShowAssignmentStatusIcon(status: string | null | undefined): boolean {
   const n = normalizeAssignmentStatus(status)
   return n === 'pending' || n === 'assigned' || n === 'confirmed' || n === 'rejected'

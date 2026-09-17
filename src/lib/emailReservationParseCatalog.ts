@@ -73,7 +73,7 @@ export const OTA_PLATFORM_CATALOG: OtaPlatformCatalogMeta[] = [
     hasDedicatedParser: true,
     price: PRICE_AMOUNT,
     fieldCoverage: { product: 'strong', people: 'strong', date: 'strong', customer: 'strong', price: 'strong' },
-    notes: '본문 상품명 패턴 + Price',
+    notes: '본문 상품명 패턴 + Price. 변경 메일(booking has changed)은 신규 생성 없이 픽업 호텔만 기존 예약에 반영',
   },
   {
     key: 'viator',

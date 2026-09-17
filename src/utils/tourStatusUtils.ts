@@ -109,7 +109,9 @@ export const getStatusText = (status: string | null, locale: string = 'ko') => {
       cancel: '취소',
       cancelled: '취소',
       complete: '완료',
-      completed: '완료'
+      completed: '완료',
+      scheduled: '예정',
+      Scheduled: '예정',
     },
     en: {
       undefined: 'Undefined',
@@ -135,7 +137,9 @@ export const getStatusText = (status: string | null, locale: string = 'ko') => {
       cancel: 'Cancelled',
       cancelled: 'Cancelled',
       complete: 'Completed',
-      completed: 'Completed'
+      completed: 'Completed',
+      scheduled: 'Scheduled',
+      Scheduled: 'Scheduled',
     }
   }
   
