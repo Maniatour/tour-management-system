@@ -175,7 +175,11 @@ export async function fetchProductPageData(
           
           return {
             ...item,
-            tour_course: tourCourse
+            tour_course: tourCourse,
+            report_stop_role:
+              item.report_stop_role === 'required' || item.report_stop_role === 'alternate'
+                ? item.report_stop_role
+                : null,
           }
         }).filter(item => item.tour_course !== null && item.tour_course !== undefined) // tour_course가 없는 항목 제거
         

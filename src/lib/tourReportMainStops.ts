@@ -1,4 +1,4 @@
-/** 투어 리포트「주요 방문지」: 상품에 연결된 투어 코스 중 투어 포인트만, leaf면 형제 포인트까지 펼침 */
+/** 투어 리포트「주요 방문지」: 상품에 연결된 투어 코스 중 투어 포인트만 (정차·픽업/드롭 제외) */
 
 /**
  * DB에 저장된 키가 UUID 대소문자·하이픈 유무 등으로 달라도 매칭되게 후보 목록 확장.
@@ -113,7 +113,85 @@ function normalizedCategoryJoin(
   return row?.name_ko ? row : null
 }
 
+function normalizeStopName(value: string | null | undefined): string {
+  return (value || '').trim().toLowerCase().replace(/[\s_-]+/g, ' ')
+}
+
+export function isHotelPickupOrDropCourse(course: CourseForMainStops): boolean {
+  const names = [
+    course.name_ko,
+    course.name_en,
+    course.customer_name_ko,
+    course.customer_name_en,
+  ]
+  return names.some((name) => {
+    const normalized = normalizeStopName(name)
+    return (
+      normalized === '호텔 픽업' ||
+      normalized === '호텔픽업' ||
+      normalized === '호텔 드롭' ||
+      normalized === '호텔드롭' ||
+      normalized === '호텔 드랍' ||
+      normalized === '호텔드랍' ||
+      normalized === '호텔 하차' ||
+      normalized === '호텔하차' ||
+      normalized === 'hotel pickup' ||
+      normalized === 'hotel pick up' ||
+      normalized === 'hotel drop off' ||
+      normalized === 'hotel dropoff'
+    )
+  })
+}
+
+function categoryLabels(course: CourseForMainStops): { ko: string; en: string; legacy: string } {
+  const cat = normalizedCategoryJoin(course)
+  return {
+    ko: (cat?.name_ko || '').trim(),
+    en: (cat?.name_en || '').trim().toLowerCase(),
+    legacy: (course.category || '').trim(),
+  }
+}
+
+/** 관광지가 아닌 정차(픽업·드롭 등) */
+export function isOperationalStopCourse(course: CourseForMainStops): boolean {
+  if (isHotelPickupOrDropCourse(course)) return true
+  const { ko, en, legacy } = categoryLabels(course)
+  if (ko === '정차' || ko.includes('정차')) return true
+  if (en === 'stop' || en === 'operational stop' || en.includes('operational stop')) return true
+  if (legacy === '정차') return true
+  if (legacy.toLowerCase() === 'stop' || legacy.toLowerCase() === 'operational stop') return true
+  return false
+}
+
+/** 휴게소·식사 등 관광지가 아닌 중간 정차 */
+export function isRestOrMealStopCourse(course: CourseForMainStops): boolean {
+  const { ko, en, legacy } = categoryLabels(course)
+  if (ko === '휴게소' || ko.includes('휴게')) return true
+  if (ko === '식사' || ko.includes('식사')) return true
+  if (
+    en === 'restroom break' ||
+    en.includes('rest stop') ||
+    en.includes('restroom') ||
+    en.includes('meal stop') ||
+    en === 'meal'
+  ) {
+    return true
+  }
+  const legacyLower = legacy.toLowerCase()
+  if (legacy === '휴게소' || legacy.includes('휴게')) return true
+  if (legacy === '식사' || legacy.includes('식사')) return true
+  if (legacyLower.includes('rest stop') || legacyLower.includes('restroom') || legacyLower.includes('meal')) {
+    return true
+  }
+  return false
+}
+
+export function isNonAttractionReportStop(course: CourseForMainStops): boolean {
+  return isOperationalStopCourse(course) || isRestOrMealStopCourse(course)
+}
+
 export function isTourPointCategory(course: CourseForMainStops): boolean {
+  if (isNonAttractionReportStop(course)) return false
   const cat = normalizedCategoryJoin(course)
   if (cat) {
     const ko = (cat.name_ko || '').trim()
@@ -162,7 +240,7 @@ export function hasChildInMap(courseId: string, byId: Map<string, CourseForMainS
 
 /**
  * product_tour_courses에 포함된 코스 ID 집합 중, 투어 포인트만 반영.
- * 선택된 노드가 leaf 투어 포인트면 같은 parent 아래 투어 포인트 전부 포함.
+ * 형제 코스(다른 지역 변형 등)는 상품에 직접 연결되지 않으면 넣지 않는다.
  */
 export function buildMainStopCourseIds(
   selectedLinkCourseIds: Set<string>,
@@ -171,26 +249,53 @@ export function buildMainStopCourseIds(
   const result = new Set<string>()
 
   for (const id of selectedLinkCourseIds) {
-    const c = coursesById.get(id)
+    const c = getCourseFromByIdMap(coursesById, id)
     if (!c || !isTourPointCategory(c)) continue
-
-    if (!hasChildInMap(c.id, coursesById)) {
-      const pid = c.parent_id
-      if (pid) {
-        for (const s of coursesById.values()) {
-          if (s.parent_id === pid && isTourPointCategory(s)) {
-            result.add(s.id)
-          }
-        }
-      } else {
-        result.add(c.id)
-      }
-    } else {
-      result.add(c.id)
-    }
+    result.add(c.id)
   }
 
   return [...result]
+}
+
+/** 자식 방문지가 같이 있으면 그랜드캐년·사우스림 같은 상위 폴더는 빼 실제 포인트만 남긴다. */
+export function excludeAncestorStopsWhenChildrenPresent(
+  ids: string[],
+  byId: Map<string, CourseForMainStops>
+): string[] {
+  const canonical = [...new Set(ids.map((id) => getCourseFromByIdMap(byId, id)?.id ?? id))]
+  const selected = new Set(canonical)
+  return canonical.filter((id) => {
+    const course = getCourseFromByIdMap(byId, id)
+    if (!course) return true
+    for (const otherId of selected) {
+      if (otherId === id) continue
+      let cur = getCourseFromByIdMap(byId, otherId)
+      while (cur?.parent_id) {
+        const parent = getCourseFromByIdMap(byId, cur.parent_id)
+        if (!parent) break
+        if (parent.id === course.id) return false
+        cur = parent
+      }
+    }
+    return true
+  })
+}
+
+/** 상품에 연결된 코스(또는 가장 가까운 연결 조상)의 순서 */
+export function productOrderForCourse(
+  courseId: string,
+  byId: Map<string, CourseForMainStops>,
+  linkedOrder: Map<string, number>
+): number {
+  let cur: CourseForMainStops | null | undefined = getCourseFromByIdMap(byId, courseId)
+  while (cur) {
+    for (const key of expandDbKeyCandidates(cur.id)) {
+      const order = linkedOrder.get(key)
+      if (order != null) return order
+    }
+    cur = cur.parent_id ? getCourseFromByIdMap(byId, cur.parent_id) ?? null : null
+  }
+  return 10_000
 }
 
 function courseAncestorChain(
@@ -206,11 +311,18 @@ function courseAncestorChain(
   return chain
 }
 
-/** 주요 방문지: 부모→자식 순으로 정렬 + 들여쓰기용 depth(0=최상위) */
+export type MainStopOption = {
+  id: string
+  course: CourseForMainStops
+  sort_order: number
+  product_order?: number
+}
+
+/** 주요 방문지: 상품 코스 순서 우선, 같으면 부모→자식 순 + 들여쓰기용 depth(0=최상위) */
 export function sortMainStopsIndented(
   byId: Map<string, CourseForMainStops>,
-  options: { id: string; course: CourseForMainStops; sort_order: number }[]
-): { id: string; course: CourseForMainStops; sort_order: number; depth: number }[] {
+  options: MainStopOption[]
+): (MainStopOption & { depth: number })[] {
   return [...options]
     .map((o) => {
       const chain = courseAncestorChain(byId, o.id)
@@ -220,6 +332,9 @@ export function sortMainStopsIndented(
       }
     })
     .sort((a, b) => {
+      const pa = a.product_order ?? 10_000
+      const pb = b.product_order ?? 10_000
+      if (pa !== pb) return pa - pb
       const ca = courseAncestorChain(byId, a.id)
       const cb = courseAncestorChain(byId, b.id)
       const minLen = Math.min(ca.length, cb.length)
@@ -233,4 +348,90 @@ export function sortMainStopsIndented(
       }
       return ca.length - cb.length
     })
+}
+
+export type MainStopGroup = {
+  id: string
+  title: string
+  productOrder: number
+  stops: (MainStopOption & { depth: number })[]
+}
+
+export type MainStopGroupRow = {
+  groups: MainStopGroup[]
+}
+
+function groupKeyForStop(
+  course: CourseForMainStops,
+  byId: Map<string, CourseForMainStops>
+): { id: string; titleCourse: CourseForMainStops } {
+  const parent = course.parent_id ? getCourseFromByIdMap(byId, course.parent_id) : undefined
+  if (parent) return { id: parent.id, titleCourse: parent }
+  return { id: course.id, titleCourse: course }
+}
+
+function siblingFamilyId(
+  groupId: string,
+  byId: Map<string, CourseForMainStops>
+): string | null {
+  const node = getCourseFromByIdMap(byId, groupId)
+  if (!node?.parent_id) return null
+  const grand = getCourseFromByIdMap(byId, node.parent_id)
+  return grand?.id ?? node.parent_id
+}
+
+/**
+ * 사우스림 | 이스트림처럼 같은 상위 아래 형제 그룹은 한 행에 나란히 둔다.
+ */
+export function groupMainStopsForReport(
+  byId: Map<string, CourseForMainStops>,
+  options: MainStopOption[],
+  locale: string
+): MainStopGroupRow[] {
+  const sorted = sortMainStopsIndented(byId, options)
+  const groupMap = new Map<string, MainStopGroup>()
+  const groupOrder: string[] = []
+
+  for (const stop of sorted) {
+    const { id, titleCourse } = groupKeyForStop(stop.course, byId)
+    let group = groupMap.get(id)
+    if (!group) {
+      group = {
+        id,
+        title: displayCourseName(titleCourse, locale),
+        productOrder: stop.product_order ?? 10_000,
+        stops: [],
+      }
+      groupMap.set(id, group)
+      groupOrder.push(id)
+    }
+    group.stops.push(stop)
+    group.productOrder = Math.min(group.productOrder, stop.product_order ?? 10_000)
+  }
+
+  const groups = groupOrder.map((id) => groupMap.get(id)!)
+  const familyMembers = new Map<string, MainStopGroup[]>()
+  for (const group of groups) {
+    const family = siblingFamilyId(group.id, byId)
+    if (!family) continue
+    const list = familyMembers.get(family) ?? []
+    list.push(group)
+    familyMembers.set(family, list)
+  }
+
+  const used = new Set<string>()
+  const rows: MainStopGroupRow[] = []
+  for (const group of groups) {
+    if (used.has(group.id)) continue
+    const family = siblingFamilyId(group.id, byId)
+    const siblings = family ? familyMembers.get(family) : undefined
+    if (siblings && siblings.length >= 2) {
+      for (const sibling of siblings) used.add(sibling.id)
+      rows.push({ groups: siblings })
+      continue
+    }
+    used.add(group.id)
+    rows.push({ groups: [group] })
+  }
+  return rows
 }

@@ -34,6 +34,8 @@ import {
   getPerPersonChargePax,
   getSinglePriceBillingPax,
   isChannelSinglePrice,
+  resolveCouponDiscountBase,
+  calculateCouponDiscountAmount,
 } from '@/lib/productPriceTotal'
 import {
   channelIsOtaForPricingSection,
@@ -342,9 +344,7 @@ interface PricingSectionProps {
 export default function PricingSection({
   formData,
   setFormData,
-  calculateProductPriceTotal,
   calculateChoiceTotal,
-  calculateCouponDiscount,
   coupons,
   autoSelectCoupon,
   onCouponDropdownUserInput,
@@ -439,6 +439,8 @@ export default function PricingSection({
   const [isChannelSettlementAmountFocused, setIsChannelSettlementAmountFocused] = useState(false)
   /** 채널 정산 금액을 사용자가 직접 넣은 뒤에는 omit·타 필드 연쇄로 폼 값을 지우거나 산식이 덮어쓰지 않음 */
   const channelSettlementUserEditedRef = useRef(false)
+  /** 쿠폰 할인 $ 를 관리자가 직접 수정하면, 인원·단가 변경 시 자동 덮어쓰지 않음 */
+  const couponDiscountManuallyEditedRef = useRef(false)
 
   const stripChannelSettlementUnlessLocked = (prev: typeof formData): typeof formData => {
     if (channelSettlementUserEditedRef.current) return { ...prev }
@@ -455,6 +457,7 @@ export default function PricingSection({
     depositAmountUserEditedRef.current = false
     channelSettlementUserEditedRef.current = false
     hasPaymentRecordsRef.current = false
+    couponDiscountManuallyEditedRef.current = false
     setCalculatedDepositTotalNet(0)
     setCalculatedBalanceReceivedTotal(0)
     setRefundedAmount(0)
@@ -981,10 +984,13 @@ export default function PricingSection({
     (formData as { status?: string }).status,
   ])
 
-  /** 표시·포커스: DB에 잔액이 있으면 저장된 값을 유지하고, 계산값은 옆에만 표시 */
+  /** 표시·포커스: 잔금 수령 입금이 있으면 계산 잔액(①−보증금−잔금 수령). 없으면 DB 저장값 유지 */
   const displayedOnSiteBalance = useCallback(() => {
     const defaultBalance = computeOnSiteBalanceAmount()
     const stored = formData.onSiteBalanceAmount
+    if (calculatedBalanceReceivedTotal > 0.005) {
+      return defaultBalance
+    }
     if (stored === undefined || stored === null) return defaultBalance
     if (pricingFieldsFromDb.onSiteBalanceAmount) {
       if (isPhantomNegativeOnSiteBalance(stored, formData.depositAmount)) {
@@ -999,6 +1005,7 @@ export default function PricingSection({
     formData.onSiteBalanceAmount,
     formData.depositAmount,
     pricingFieldsFromDb.onSiteBalanceAmount,
+    calculatedBalanceReceivedTotal,
   ])
 
   // 입금 내역 조회 및 자동 계산 (formData는 formDataRef로만 참조해 의존성 루프 방지)
@@ -1170,7 +1177,12 @@ export default function PricingSection({
     if (productSalePriceFocusDepthRef.current > 0) {
       return
     }
-    if (isExistingPricingLoaded && pricingFieldsFromDb.onSiteBalanceAmount === true) {
+    const hasBalanceReceived = calculatedBalanceReceivedTotal > 0.005
+    if (
+      isExistingPricingLoaded &&
+      pricingFieldsFromDb.onSiteBalanceAmount === true &&
+      !hasBalanceReceived
+    ) {
       if (
         !isPhantomNegativeOnSiteBalance(formData.onSiteBalanceAmount, formData.depositAmount)
       ) {
@@ -1237,6 +1249,7 @@ export default function PricingSection({
     const manualRefundAmount = Math.max(0, Number(formData.refundAmount) || 0)
     const additionalDiscMag = Math.abs(Number(formData.additionalDiscount) || 0)
     const preserveExistingPositiveBalance =
+      !hasBalanceReceived &&
       calculatedBalance === 0 &&
       currentBalance > 0.01 &&
       manualRefundAmount <= 0 &&
@@ -1521,6 +1534,46 @@ export default function PricingSection({
   const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
   const isOTAChannel = channelIsOtaForPricingSection(selectedChannel)
   const isHomepageBooking = isHomepageBookingChannel(formData.channelId, channels)
+  const isSinglePrice = isChannelSinglePrice(selectedChannel)
+
+  const couponDiscountBase = useMemo(
+    () =>
+      resolveCouponDiscountBase({
+        isSinglePrice,
+        isOta: Boolean(isOTAChannel),
+        adultProductPrice: formData.adultProductPrice,
+        childProductPrice: formData.childProductPrice,
+        infantProductPrice: formData.infantProductPrice,
+        pricingAdults: formData.pricingAdults,
+        reservationAdults: formData.adults,
+        child: formData.child,
+        infant: formData.infant,
+        requiredOptionTotal: isOTAChannel ? 0 : calculateChoiceTotal(),
+      }),
+    [
+      isSinglePrice,
+      isOTAChannel,
+      formData.adultProductPrice,
+      formData.childProductPrice,
+      formData.infantProductPrice,
+      formData.pricingAdults,
+      formData.adults,
+      formData.child,
+      formData.infant,
+      calculateChoiceTotal,
+    ]
+  )
+
+  const calculatedCouponDiscount = useMemo(() => {
+    if (!formData.couponCode) return 0
+    const selectedCoupon = coupons.find(
+      (c) =>
+        c.coupon_code &&
+        c.coupon_code.trim().toLowerCase() === formData.couponCode.trim().toLowerCase()
+    )
+    if (!selectedCoupon) return 0
+    return calculateCouponDiscountAmount(selectedCoupon, couponDiscountBase)
+  }, [coupons, formData.couponCode, couponDiscountBase])
 
   const otaAdditionalDiscountSplit = useMemo(() => {
     const disc = Math.abs(Number(formData.additionalDiscount) || 0)
@@ -2480,7 +2533,7 @@ export default function PricingSection({
           Number.isFinite(Number(formData.channelSettlementAmount))
             ? Number(formData.channelSettlementAmount)
             : null,
-        balanceAmountStored: formData.onSiteBalanceAmount ?? formData.balanceAmount ?? null,
+        balanceAmountStored: displayedOnSiteBalance(),
         totalPriceStored:
           formData.totalPrice != null && Number.isFinite(Number(formData.totalPrice))
             ? Number(formData.totalPrice)
@@ -2510,6 +2563,7 @@ export default function PricingSection({
       optionCancelRefundUsd,
       tourExpensesTotal,
       partnerReceivedForSettlement,
+      displayedOnSiteBalance,
     ]
   )
 
@@ -2778,8 +2832,6 @@ export default function PricingSection({
   // 채널 변경 시 commission_percent 초기화 (채널이 변경되면 새로운 채널의 commission_percent를 사용)
   const prevChannelIdRef = useRef<string | undefined>(undefined)
   
-  // 채널의 pricing_type 확인 (단일 가격 모드 체크)
-  const isSinglePrice = isChannelSinglePrice(selectedChannel)
   const singlePriceBillingPax = useMemo(
     () =>
       getSinglePriceBillingPax({
@@ -3133,49 +3185,31 @@ export default function PricingSection({
     }
   }, [formData.channelId, formData.couponCode, coupons, channels, hasDbReservationPricingRow, setFormData])
 
-  // 인원 변경 시 쿠폰 할인 재계산 (percentage 타입 쿠폰만)
+  // 퍼센트 쿠폰: 단가×인원 기준으로 할인 $ 를 맞춤. 관리자가 입력칸을 직접 수정한 뒤에는 유지.
   useEffect(() => {
-    if (hasDbReservationPricingRow) return
-    if (formData.couponCode) {
-      const selectedCoupon = coupons.find(c => 
-        c.coupon_code && 
-        c.coupon_code.trim().toLowerCase() === formData.couponCode.trim().toLowerCase()
-      )
-      
-      // percentage 타입 쿠폰인 경우에만 재계산 (fixed 타입은 금액이 고정이므로 재계산 불필요)
-      if (selectedCoupon && selectedCoupon.discount_type === 'percentage') {
-        // 불포함 가격 계산 (쿠폰 할인 계산에서 제외)
-        const notIncludedPrice = notIncludedBreakdown.totalUsd
-        // OTA 채널일 때는 OTA 판매가에 직접 쿠폰 할인 적용 (불포함 가격 제외)
-        const subtotal = isOTAChannel 
-          ? formData.productPriceTotal - notIncludedPrice
-          : calculateProductPriceTotal() + calculateChoiceTotal() - notIncludedPrice
-        const newCouponDiscount = calculateCouponDiscount(selectedCoupon, subtotal)
-        
-        // 할인 금액이 변경된 경우에만 업데이트
-        if (Math.abs(newCouponDiscount - formData.couponDiscount) > 0.01) {
-          setFormData((prev: typeof formData) => ({
-            ...prev,
-            couponDiscount: newCouponDiscount
-          }))
-        }
-      }
+    if (!formData.couponCode) return
+    if (couponDiscountManuallyEditedRef.current) return
+    const selectedCoupon = coupons.find(c => 
+      c.coupon_code && 
+      c.coupon_code.trim().toLowerCase() === formData.couponCode.trim().toLowerCase()
+    )
+    if (!selectedCoupon || selectedCoupon.discount_type !== 'percentage') return
+    if (couponDiscountBase < 0.005) return
+    const newCouponDiscount = calculateCouponDiscountAmount(selectedCoupon, couponDiscountBase)
+    if (Math.abs(newCouponDiscount - formData.couponDiscount) > 0.01) {
+      markPricingEdited('couponDiscount', 'totalPrice', 'onSiteBalanceAmount')
+      setFormData((prev: typeof formData) => ({
+        ...prev,
+        couponDiscount: newCouponDiscount
+      }))
     }
   }, [
     formData.couponCode,
-    formData.productPriceTotal,
-    formData.pricingAdults,
-    formData.child,
-    formData.infant,
-    isOTAChannel,
-    calculateProductPriceTotal,
-    calculateChoiceTotal,
-    calculateCouponDiscount,
-    coupons,
     formData.couponDiscount,
-    hasDbReservationPricingRow,
+    couponDiscountBase,
+    coupons,
     setFormData,
-    notIncludedBreakdown.totalUsd,
+    markPricingEdited,
   ])
 
   // 채널 수수료율 로드 확인 및 설정
@@ -3617,13 +3651,16 @@ export default function PricingSection({
                             'totalPrice',
                             'onSiteBalanceAmount'
                           )
-                          const adultTotalPrice = (formData.adultProductPrice || 0) + (formData.not_included_price || 0)
-                          const childTotalPrice = newPrice + (formData.not_included_price || 0)
-                          const infantTotalPrice = (formData.infantProductPrice || 0) + (formData.not_included_price || 0)
-                          // 상품 가격 총합 계산 (불포함 가격 포함)
-                          const newProductPriceTotal = (adultTotalPrice * formData.pricingAdults) + 
-                                                       (childTotalPrice * formData.child) + 
-                                                       (infantTotalPrice * formData.infant)
+                          const newProductPriceTotal = computeProductPriceTotal({
+                            isSinglePrice,
+                            adultProductPrice: formData.adultProductPrice || 0,
+                            childProductPrice: newPrice,
+                            infantProductPrice: formData.infantProductPrice || 0,
+                            pricingAdults: formData.pricingAdults,
+                            reservationAdults: formData.adults,
+                            child: formData.child,
+                            infant: formData.infant,
+                          })
                           setFormData({ 
                             ...formData, 
                             childProductPrice: newPrice,
@@ -3662,13 +3699,16 @@ export default function PricingSection({
                             'totalPrice',
                             'onSiteBalanceAmount'
                           )
-                          const adultTotalPrice = (formData.adultProductPrice || 0) + (formData.not_included_price || 0)
-                          const childTotalPrice = (formData.childProductPrice || 0) + (formData.not_included_price || 0)
-                          const infantTotalPrice = newPrice + (formData.not_included_price || 0)
-                          // 상품 가격 총합 계산 (불포함 가격 포함)
-                          const newProductPriceTotal = (adultTotalPrice * formData.pricingAdults) + 
-                                                       (childTotalPrice * formData.child) + 
-                                                       (infantTotalPrice * formData.infant)
+                          const newProductPriceTotal = computeProductPriceTotal({
+                            isSinglePrice,
+                            adultProductPrice: formData.adultProductPrice || 0,
+                            childProductPrice: formData.childProductPrice || 0,
+                            infantProductPrice: newPrice,
+                            pricingAdults: formData.pricingAdults,
+                            reservationAdults: formData.adults,
+                            child: formData.child,
+                            infant: formData.infant,
+                          })
                           setFormData({ 
                             ...formData, 
                             infantProductPrice: newPrice,
@@ -3692,16 +3732,20 @@ export default function PricingSection({
                   </div>
                 </>
               )}
-              <div className="border-t pt-1 flex justify-between items-center">
-                <span className="text-sm font-medium text-gray-900">상품 가격 합계</span>
-                <span className="text-sm font-bold text-primary">
-                  ${(() => {
-                    // 판매가 + 불포함 가격 = 상품 가격 합계
-                    const salePriceTotal = formData.productPriceTotal || 0
-                    const notIncludedTotal = notIncludedBreakdown.totalUsd
-                    return (salePriceTotal + notIncludedTotal).toFixed(2)
-                  })()}
-                </span>
+              <div className="border-t pt-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-900">상품 가격 합계</span>
+                  <span className={`text-sm font-bold ${priceTextClass('productPriceTotal')}`}>
+                    ${canonicalOtaProductTotal.toFixed(2)}
+                  </span>
+                </div>
+                {notIncludedBreakdown.totalUsd > 0.005 ? (
+                  <p className="mt-1 text-[10px] leading-snug text-gray-500">
+                    {isKorean
+                      ? `불포함·비거주자 $${notIncludedBreakdown.totalUsd.toFixed(2)} 는 합계에 넣지 않고 ① 고객 결제에 별도 합산합니다.`
+                      : `Not-included / non-resident $${notIncludedBreakdown.totalUsd.toFixed(2)} is added in customer payment (①), not here.`}
+                  </p>
+                ) : null}
               </div>
             </div>
           </div>
@@ -3814,19 +3858,14 @@ export default function PricingSection({
                       자동 선택
                     </button>
                   </div>
-                  {formData.couponCode && (
-                    <div className="text-xs text-red-600 font-medium">
-                      -${formData.couponDiscount.toFixed(2)}
-                    </div>
-                  )}
                 </div>
                 <select
                   value={formData.couponCode}
                   onChange={(e) => {
                     onCouponDropdownUserInput?.()
+                    couponDiscountManuallyEditedRef.current = false
                     markPricingEdited('couponDiscount', 'totalPrice', 'onSiteBalanceAmount')
                     const selectedCouponCode = e.target.value
-                    const notIncludedPrice = notIncludedBreakdown.totalUsd
                     setFormData((prev: typeof formData) => {
                       const t = selectedCouponCode.trim()
                       if (!t) {
@@ -3844,9 +3883,6 @@ export default function PricingSection({
                         coupon.coupon_code && 
                         coupon.coupon_code.trim().toLowerCase() === selectedCouponCode.trim().toLowerCase()
                       )
-                      const subtotal = isOTAChannel 
-                        ? prev.productPriceTotal - notIncludedPrice
-                        : calculateProductPriceTotal() + calculateChoiceTotal() - notIncludedPrice
                       // coupons 마스터에 없는 저장 코드만 재선택 시 금액 유지
                       if (
                         !selectedCoupon &&
@@ -3854,7 +3890,10 @@ export default function PricingSection({
                       ) {
                         return prev
                       }
-                      const couponDiscount = calculateCouponDiscount(selectedCoupon, subtotal)
+                      const couponDiscount = calculateCouponDiscountAmount(
+                        selectedCoupon,
+                        couponDiscountBase
+                      )
                       return {
                         ...prev,
                         couponCode: selectedCoupon?.coupon_code || '',
@@ -3882,25 +3921,63 @@ export default function PricingSection({
                       )
                     })}
                 </select>
-                {/* 선택된 쿠폰 정보 표시 */}
-                {formData.couponCode && (() => {
-                  const selectedCoupon = coupons.find(c => 
-                    c.coupon_code && 
-                    c.coupon_code.trim().toLowerCase() === formData.couponCode.trim().toLowerCase()
-                  )
-                  if (selectedCoupon) {
-                    return (
-                      <div className="mt-1 text-xs text-primary bg-primary/5 px-2 py-1 rounded">
-                        선택된 쿠폰: {selectedCoupon.coupon_code} (할인: ${formData.couponDiscount.toFixed(2)})
-                      </div>
-                    )
-                  }
-                  return (
-                    <div className="mt-1 text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded">
-                      저장/입력 코드: {formData.couponCode} (할인: ${formData.couponDiscount.toFixed(2)}, 쿠폰 마스터에 없음)
+                {formData.couponCode ? (
+                  <div className="mt-1.5">
+                    <label className="block text-xs text-gray-600 mb-1">
+                      {isKorean ? '쿠폰 할인 금액' : 'Coupon discount'}
+                      <span className="ml-1 font-normal text-gray-400">
+                        {isKorean ? '(자동 계산, 수정 가능)' : '(auto, editable)'}
+                      </span>
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        value={formData.couponDiscount || ''}
+                        onChange={(e) => {
+                          couponDiscountManuallyEditedRef.current = true
+                          markPricingEdited('couponDiscount', 'totalPrice', 'onSiteBalanceAmount')
+                          setFormData({
+                            ...formData,
+                            couponDiscount: Math.max(0, Number(e.target.value) || 0),
+                          })
+                        }}
+                        className={`w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-ring ${priceTextClass('couponDiscount')}`}
+                        step="0.01"
+                        min="0"
+                      />
                     </div>
-                  )
-                })()}
+                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                      <PriceCalcHint
+                        stored={formData.couponDiscount || 0}
+                        calculated={calculatedCouponDiscount}
+                        isKorean={isKorean}
+                      />
+                      {calculatedCouponDiscount > 0.005 &&
+                      Math.abs(calculatedCouponDiscount - (formData.couponDiscount || 0)) > 0.02 ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            couponDiscountManuallyEditedRef.current = false
+                            markPricingEdited('couponDiscount', 'totalPrice', 'onSiteBalanceAmount')
+                            setFormData({
+                              ...formData,
+                              couponDiscount: calculatedCouponDiscount,
+                            })
+                          }}
+                          className="text-[10px] text-primary hover:underline"
+                        >
+                          {isKorean ? '계산값 적용' : 'Apply calculated'}
+                        </button>
+                      ) : null}
+                    </div>
+                    <p className="mt-0.5 text-[10px] text-gray-500">
+                      {isKorean
+                        ? `기준 $${couponDiscountBase.toFixed(2)} (단가×인원)`
+                        : `Base $${couponDiscountBase.toFixed(2)} (unit × pax)`}
+                    </p>
+                  </div>
+                ) : null}
               </div>
 
               {/* 추가 할인 및 비용 */}
@@ -4147,11 +4224,7 @@ export default function PricingSection({
               <div className="flex justify-between items-center mb-1.5">
                 <span className="text-xs text-gray-700">{isKorean ? 'OTA 판매가' : 'OTA Sale Price'}</span>
                 <span className={`text-xs font-medium ${priceTextClass('productPriceTotal')}`}>
-                  ${(() => {
-                    // OTA 판매가 = productPriceTotal (판매가 * 인원, 불포함 가격 제외)
-                    // productPriceTotal은 이미 판매가만 포함하고 있음
-                    return formData.productPriceTotal.toFixed(2)
-                  })()}
+                  ${canonicalOtaProductTotal.toFixed(2)}
                 </span>
               </div>
               

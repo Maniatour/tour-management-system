@@ -4,12 +4,13 @@ import { useTranslations, useLocale } from 'next-intl'
 import { ReservationSection } from './ReservationSection'
 import { supabase, getStoredAccessTokenIfValid } from '@/lib/supabase'
 import { receiveReservationBalanceCash } from '@/lib/receiveReservationBalanceCash'
+import { computeAssignedReservationDisplayBalance } from '@/lib/assignedReservationBalance'
 import { fetchTeamDisplayNameByEmail } from '@/utils/paymentRecordNoteDisplay'
 import { Sparkles, Wallet, X } from 'lucide-react'
 import { getStatusColor, getStatusText, getAssignmentStatusColor, getAssignmentStatusText } from '@/utils/tourStatusUtils'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import { exclusiveAssignReservationsToTour } from '@/lib/exclusiveTourReservationAssignment'
-import { getStoredReservationPricingAmounts, withNormalizedBalanceAmountForDisplay } from '@/utils/reservationPricingBalance'
+import type { PaymentRecordLike } from '@/utils/reservationPricingBalance'
 import { getReservationPartySize } from '@/utils/reservationUtils'
 import type { PickupHotelAssignmentOption } from '@/utils/pickupHotelUtils'
 import AutoAssignModal from './modals/AutoAssignModal'
@@ -167,10 +168,16 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
     }
 
     try {
-      const { data: pricingRows, error: pErr } = await supabase
-        .from('reservation_pricing')
-        .select('reservation_id, total_price, deposit_amount, balance_amount')
-        .in('reservation_id', reservationIds)
+      const [{ data: pricingRows, error: pErr }, { data: payRows, error: payErr }] = await Promise.all([
+        supabase
+          .from('reservation_pricing')
+          .select('*')
+          .in('reservation_id', reservationIds),
+        supabase
+          .from('payment_records')
+          .select('reservation_id, payment_status, amount')
+          .in('reservation_id', reservationIds),
+      ])
 
       if (pErr) {
         console.error('배정 예약 잔금 합계 조회 오류:', pErr)
@@ -178,11 +185,26 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
         setAssignedBalanceById(new Map())
         return
       }
+      if (payErr) {
+        console.warn('배정 예약 입금 내역 조회 오류:', payErr)
+      }
 
       const pricingById = new Map<string, Record<string, unknown>>()
       for (const row of pricingRows || []) {
         const id = String((row as { reservation_id: string }).reservation_id)
         pricingById.set(id, row as Record<string, unknown>)
+      }
+
+      const paymentsById = new Map<string, PaymentRecordLike[]>()
+      for (const row of payRows || []) {
+        const id = String((row as { reservation_id?: string }).reservation_id || '')
+        if (!id) continue
+        const list = paymentsById.get(id) || []
+        list.push({
+          payment_status: String((row as { payment_status?: string | null }).payment_status || ''),
+          amount: Number((row as { amount?: unknown }).amount) || 0,
+        })
+        paymentsById.set(id, list)
       }
 
       const resById = new Map(assignedReservations.map((r) => [String(r.id), r]))
@@ -194,10 +216,21 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
         const res = resById.get(id)
         if (!pricing || !res) continue
 
-        const b = getStoredReservationPricingAmounts(
-          withNormalizedBalanceAmountForDisplay(pricing),
-          { reservationStatus: res.status ?? null }
-        ).balanceAmount
+        const childCount = res.children ?? res.child
+        const infantCount = res.infants ?? res.infant
+        const b = computeAssignedReservationDisplayBalance({
+          reservation: {
+            id: res.id,
+            status: res.status ?? null,
+            adults: res.adults ?? null,
+            children: typeof childCount === 'number' ? childCount : Number(childCount) || null,
+            child: typeof res.child === 'number' ? res.child : null,
+            infants: typeof infantCount === 'number' ? infantCount : Number(infantCount) || null,
+            infant: typeof res.infant === 'number' ? res.infant : null,
+          },
+          pricing,
+          paymentRecords: paymentsById.get(id) || [],
+        })
         balanceById.set(id, b)
         total += b
       }

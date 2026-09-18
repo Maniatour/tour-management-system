@@ -15,9 +15,12 @@ import TourReportNarrationSection from '@/components/tour/TourReportNarrationSec
 import TourReportNumberStepper from '@/components/TourReportNumberStepper'
 import TourReportIssuePhotos from '@/components/TourReportIssuePhotos'
 import TourReportSkippedStops from '@/components/TourReportSkippedStops'
+import TourReportQuotaSkip from '@/components/TourReportQuotaSkip'
+import TourReportPartnerEval, { emptyPartnerEvaluation } from '@/components/TourReportPartnerEval'
 import TourReportPaceToggle, { type TourReportPace } from '@/components/TourReportPaceToggle'
 import {
   displayDrivingSegmentLabel,
+  shouldShowTourReportDriving,
   type TourReportDrivingSegment,
 } from '@/lib/tourReportDrivingSegments'
 import TourReportDrivingRoster from '@/components/TourReportDrivingRoster'
@@ -28,6 +31,7 @@ import {
   assignmentFromRoster,
   flippedAssignmentFromPartner,
   isHorseshoeBendCourse,
+  isPartnerEvaluationEmpty,
   parseActivityDetails,
   partnerAssignedToMeSegmentIds,
   partnerSelfSegmentIds,
@@ -39,6 +43,7 @@ import {
   type DrivingSeat,
   type HorseshoeBendActivity,
   type PartnerDrivingReport,
+  type PartnerEvaluation,
   type SunriseActivity,
   type SunrisePointKey,
   type TourReportActivityDetails,
@@ -81,13 +86,30 @@ import {
   displayCourseName,
   expandDbKeyCandidates,
   expandManyDbKeyCandidates,
+  getCourseFromByIdMap,
   hasChildInMap,
+  isNonAttractionReportStop,
   isTourPointCategory,
   navajoPointMainStopCourse,
+  productOrderForCourse,
   resolveCanonicalCourseIds,
   sortMainStopsIndented,
   type CourseForMainStops,
+  type MainStopOption,
 } from '@/lib/tourReportMainStops'
+import {
+  countQualifyingVisitedStops,
+  countRequiredReportStops,
+  filterMainStopIdsByReportRoles,
+  hasConfiguredReportStopRoles,
+  hasQuotaSkipReason,
+  isQuotaSkipKey,
+  parseReportStopRole,
+  reportStopQuotaShortfall,
+  reportStopRoleFromMap,
+  TOUR_REPORT_QUOTA_SKIP_KEY,
+  type ReportStopRole,
+} from '@/lib/tourReportStopRoles'
 
 interface TourReportFormProps {
   tourId: string
@@ -187,6 +209,10 @@ export default function TourReportForm({
         '오늘 자신이 진행한 관광지를 선택해 주세요.',
         'Select the attractions you actually led today.'
       ),
+      mainStopsHintConfigured: getText(
+        '필수·대체 포인트를 선택하세요. 대체 방문은 필수 숫자에 포함됩니다.',
+        'Select required or alternate viewpoints. Alternates count toward the required total.'
+      ),
       mainStopsLoading: getText('주요 방문지 불러오는 중…', 'Loading main stops…'),
       mainStopsFromCourseEmpty: getText('연결된 코스 방문지가 없습니다.', 'No linked course stops found.'),
       activitiesCompleted: getText('완료된 활동', 'Activities Completed'),
@@ -210,7 +236,7 @@ export default function TourReportForm({
         '아래에 다시 그리면 기존 서명이 바뀝니다.',
         'Draw below to replace the saved signature.'
       ),
-      markAllStops: getText('오늘 코스 전부 방문', 'Mark all stops visited'),
+      markAllStops: getText('오늘 필수코스 전부 방문', 'Mark all required stops visited'),
       allClearVehicle: getText(
         '차량은 이상 없음으로 저장됩니다. 이상이 있으면 위에서 「이슈·특이사항 있음」을 선택하세요.',
         'Vehicle will be saved as no issues. If something is wrong, choose “Something to report” above.'
@@ -242,6 +268,7 @@ export default function TourReportForm({
       drivingLoading: getText('운전 구간 불러오는 중…', 'Loading driving segments…'),
       drivingEmpty: getText('등록된 운전 구간이 없습니다.', 'No driving segments are set up yet.'),
       skippedStops: getText('스킵한 포인트와 이유', 'Skipped stops & reasons'),
+      skippedQuota: getText('필수 방문 미달 사유', 'Required viewpoints not met'),
       vehicleCondition: getText('차량 상태', 'Vehicle condition'),
       vehicleConditionHint: getText(
         '회사 차량만 해당합니다. 이상이 있으면 선택해 주세요.',
@@ -287,11 +314,22 @@ export default function TourReportForm({
     },
     stepTitles: [
       getText('기본 정보', 'Basics'),
+      getText('방문·분위기', 'Stops & mood'),
+      getText('고객·이슈', 'Guest & issues'),
+      getText('평가·메모·제출', 'Ratings & submit')
+    ],
+    stepTitlesWithDriving: [
+      getText('기본 정보', 'Basics'),
       getText('방문·운전·분위기', 'Stops, driving & mood'),
       getText('고객·이슈', 'Guest & issues'),
       getText('평가·메모·제출', 'Ratings & submit')
     ],
     stepTitlesAllClear: [
+      getText('기본 정보', 'Basics'),
+      getText('방문', 'Stops'),
+      getText('서명·제출', 'Sign & submit')
+    ],
+    stepTitlesAllClearWithDriving: [
       getText('기본 정보', 'Basics'),
       getText('방문·운전', 'Stops & driving'),
       getText('서명·제출', 'Sign & submit')
@@ -330,6 +368,10 @@ export default function TourReportForm({
         '드라이빙 구간을 빠짐없이 자신 또는 파트너에게 나눠 주세요.',
         'Assign every driving segment to you or your partner. No gaps.'
       ),
+      quotaSkipRequired: getText(
+        '필수 방문 숫자가 부족합니다. 사유를 선택해 주세요.',
+        'Required viewpoints were not all visited. Please choose a reason.'
+      ),
       drivingClaimConfirm: (partnerName: string, label: string) =>
         getText(
           `${partnerName}이(가) 「${label}」를 운전했다고 제출했습니다.\n본인이 운전했다면 클레임하고 수정합니다.`,
@@ -358,24 +400,25 @@ export default function TourReportForm({
   const [mobileStep, setMobileStep] = useState(0)
   const [useMobileWizard, setUseMobileWizard] = useState(false)
   const [mainStopsLoading, setMainStopsLoading] = useState(false)
-  const [mainStopOptions, setMainStopOptions] = useState<
-    { id: string; course: CourseForMainStops; sort_order: number }[]
-  >([])
+  const [mainStopOptions, setMainStopOptions] = useState<MainStopOption[]>([])
   const [courseById, setCourseById] = useState<Map<string, CourseForMainStops>>(new Map())
+  const [reportStopRoles, setReportStopRoles] = useState<Map<string, ReportStopRole>>(new Map())
   const [isRentalVehicle, setIsRentalVehicle] = useState(false)
   const [isCompanyVehicle, setIsCompanyVehicle] = useState(false)
-  const [isGoblinTour, setIsGoblinTour] = useState(false)
+  const [isGoblinTour, setIsGoblinTour] = useState(() => isGoblinTourProduct(null, productIdProp))
   const [bookedCustomerCount, setBookedCustomerCount] = useState<number | null>(null)
   const [drivingSegments, setDrivingSegments] = useState<TourReportDrivingSegment[]>([])
   const [drivingSegmentsLoading, setDrivingSegmentsLoading] = useState(false)
   const [horseshoeBend, setHorseshoeBend] = useState<Record<string, HorseshoeBendActivity>>({})
   const [sunrisePointKey, setSunrisePointKey] = useState<SunrisePointKey | null>(null)
   const [sunriseActivity, setSunriseActivity] = useState<SunriseActivity | null>(null)
+  const [partnerEval, setPartnerEval] = useState<PartnerEvaluation>(emptyPartnerEvaluation())
   const [drivingAssignment, setDrivingAssignment] = useState<Record<string, DrivingSeat>>({})
   const [partnerReports, setPartnerReports] = useState<PartnerDrivingReport[]>([])
   const [myDisplayName, setMyDisplayName] = useState('')
   const [assignedPartnerName, setAssignedPartnerName] = useState('')
   const [assignedPartnerEmail, setAssignedPartnerEmail] = useState('')
+  const [hasTwoPersonStaff, setHasTwoPersonStaff] = useState(false)
   const originalPartnerSelfIdsRef = useRef<string[]>([])
   const previousDrivingClaimsRef = useRef<DrivingClaim[]>([])
   const drivingHydratedKeyRef = useRef('')
@@ -458,6 +501,7 @@ export default function TourReportForm({
     setHorseshoeBend(details.horseshoeBend ?? {})
     setSunrisePointKey(details.sunrise?.pointKey ?? null)
     setSunriseActivity(details.sunrise?.activity ?? null)
+    setPartnerEval(details.partnerEval ?? emptyPartnerEvaluation())
     previousDrivingClaimsRef.current = details.drivingRoster?.claims ?? []
   }, [initialData, reportId, tourId])
 
@@ -601,6 +645,11 @@ export default function TourReportForm({
   }, [tourId, reportId, productIdProp])
 
   useEffect(() => {
+    if (!shouldShowTourReportDriving(isGoblinTour)) {
+      setDrivingSegments([])
+      setDrivingSegmentsLoading(false)
+      return
+    }
     let cancelled = false
     async function loadDrivingSegments() {
       setDrivingSegmentsLoading(true)
@@ -622,7 +671,7 @@ export default function TourReportForm({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [isGoblinTour])
 
   useEffect(() => {
     let cancelled = false
@@ -630,6 +679,7 @@ export default function TourReportForm({
       if (!tourId || !user?.email) {
         setPartnerReports([])
         setMyDisplayName('')
+        setHasTwoPersonStaff(false)
         return
       }
       try {
@@ -658,6 +708,8 @@ export default function TourReportForm({
         const assignedEmails = [tourStaff?.tour_guide_id, tourStaff?.assistant_id]
           .map((value) => normalizeTourReportEmail(String(value || '')))
           .filter(Boolean)
+        const uniqueStaff = [...new Set(assignedEmails)]
+        const twoPersonStaff = uniqueStaff.length >= 2
         for (const email of assignedEmails) {
           if (!emails.some((item) => normalizeTourReportEmail(item) === email)) emails.push(email)
         }
@@ -675,6 +727,7 @@ export default function TourReportForm({
         }
         if (!cancelled) {
           setMyDisplayName(nameByEmail.get(myEmail) || user.email.split('@')[0] || getText('자신', 'Me'))
+          setHasTwoPersonStaff(twoPersonStaff)
           const assignedPartnerEmail = assignedEmails.find((email) => email && email !== myEmail) || ''
           setAssignedPartnerEmail(assignedPartnerEmail)
           setAssignedPartnerName(
@@ -708,6 +761,7 @@ export default function TourReportForm({
           setPartnerReports([])
           setAssignedPartnerEmail('')
           setAssignedPartnerName('')
+          setHasTwoPersonStaff(false)
         }
       }
     }
@@ -722,7 +776,7 @@ export default function TourReportForm({
   }, [tourId, reportId])
 
   useEffect(() => {
-    if (drivingSegmentsLoading) return
+    if (!shouldShowTourReportDriving(isGoblinTour) || drivingSegmentsLoading) return
     const scheduleIds = drivingSegments
       .filter((seg) => seg.is_active)
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -761,6 +815,7 @@ export default function TourReportForm({
     reportId,
     initialData,
     formData.driving_segment_ids,
+    isGoblinTour,
   ])
 
   useEffect(() => {
@@ -848,14 +903,26 @@ export default function TourReportForm({
         }
 
         let selectedIds: string[] = []
+        let reportRoles = new Map<string, ReportStopRole>()
 
         // 1) product_tour_courses + embed(조인): 별도 tour_courses.in()과 다른 응답을 주는 경우 대비
         for (const cand of expandDbKeyCandidates(pid)) {
           let { data: ptcRows, error: eEmbed } = await supabase
             .from('product_tour_courses')
-            .select(`tour_course_id, tour_courses(${embedCourseSelect})`)
+            .select(`tour_course_id, report_stop_role, tour_courses(${embedCourseSelect})`)
             .eq('product_id', cand)
             .order('order', { ascending: true })
+          if (eEmbed) {
+            const r = await supabase
+              .from('product_tour_courses')
+              .select(`tour_course_id, tour_courses(${embedCourseSelect})`)
+              .eq('product_id', cand)
+              .order('order', { ascending: true })
+            if (!r.error) {
+              ptcRows = r.data as typeof ptcRows
+              eEmbed = null
+            }
+          }
           if (eEmbed) {
             const r = await supabase
               .from('product_tour_courses')
@@ -870,12 +937,16 @@ export default function TourReportForm({
           if (eEmbed) throw eEmbed
 
           const ids: string[] = []
+          const loadedRoles = new Map<string, ReportStopRole>()
           for (const r of ptcRows || []) {
             const row = r as {
               tour_course_id: string
+              report_stop_role?: unknown
               tour_courses: CourseForMainStops | CourseForMainStops[] | null
             }
             ids.push(row.tour_course_id)
+            const role = parseReportStopRole(row.report_stop_role)
+            if (role) loadedRoles.set(row.tour_course_id, role)
             const tc = row.tour_courses
             const course = Array.isArray(tc) ? tc[0] : tc
             if (course && typeof course === 'object' && course.id) {
@@ -886,21 +957,40 @@ export default function TourReportForm({
             }
           }
           selectedIds = [...new Set(ids)]
-          if (selectedIds.length > 0) break
+          if (selectedIds.length > 0) {
+            reportRoles = loadedRoles
+            break
+          }
         }
 
         // 2) embed 없이 연결 id만
         if (selectedIds.length === 0) {
           for (const cand of expandDbKeyCandidates(pid)) {
-            const { data: ptc, error: e1 } = await supabase
+            let { data: ptc, error: e1 } = await supabase
               .from('product_tour_courses')
-              .select('tour_course_id')
+              .select('tour_course_id, report_stop_role')
               .eq('product_id', cand)
               .order('order', { ascending: true })
+            if (e1) {
+              const fallback = await supabase
+                .from('product_tour_courses')
+                .select('tour_course_id')
+                .eq('product_id', cand)
+                .order('order', { ascending: true })
+              if (fallback.error) throw e1
+              ptc = fallback.data as typeof ptc
+              e1 = null
+            }
             if (e1) throw e1
             const ids = [...new Set((ptc || []).map((r: { tour_course_id: string }) => r.tour_course_id))]
             if (ids.length > 0) {
               selectedIds = ids
+              const loadedRoles = new Map<string, ReportStopRole>()
+              for (const row of ptc || []) {
+                const role = parseReportStopRole((row as { report_stop_role?: unknown }).report_stop_role)
+                if (role) loadedRoles.set(row.tour_course_id, role)
+              }
+              reportRoles = loadedRoles
               break
             }
           }
@@ -926,6 +1016,7 @@ export default function TourReportForm({
           if (!cancelled) {
             setMainStopOptions([])
             setCourseById(new Map())
+            setReportStopRoles(new Map())
           }
           return
         }
@@ -1010,60 +1101,43 @@ export default function TourReportForm({
           frontier = next
         }
 
-        const siblingParents = new Set<string>()
-        for (const id of selectedScope) {
-          const c = byId.get(id)
-          if (!c) continue
-          if (!isTourPointCategory(c)) continue
-          if (!hasChildInMap(c.id, byId) && c.parent_id) siblingParents.add(c.parent_id)
-        }
-
-        if (siblingParents.size > 0) {
-          const parentKeys = expandManyDbKeyCandidates([...siblingParents])
-          let { data: sibs, error: e2 } = await supabase
-            .from('tour_courses')
-            .select(embedCourseSelect)
-            .in('parent_id', parentKeys)
-          if (e2) {
-            const r = await supabase.from('tour_courses').select(baseCourseSelect).in('parent_id', parentKeys)
-            if (r.error) throw e2
-            sibs = (r.data ?? []).map(row => ({ ...row, tour_course_categories: null }))
-          }
-          for (const row of sibs || []) {
-            byId.set(row.id, {
-              ...row,
-              tour_course_categories: (row as CourseForMainStops).tour_course_categories ?? null,
-            })
-            if (row.parent_id && siblingParents.has(row.parent_id) && isTourPointCategory(row as CourseForMainStops)) {
-              selectedScope.add(row.id)
-            }
-          }
-        }
-
         let optionIds = buildMainStopCourseIds(selectedScope, byId)
+        optionIds = filterMainStopIdsByReportRoles(optionIds, byId, reportRoles)
 
         if (optionIds.length === 0) {
-          const scopeRows = [...selectedScope].map((id) => byId.get(id)).filter(Boolean) as CourseForMainStops[]
+          const scopeRows = [...selectedScope]
+            .map((id) => getCourseFromByIdMap(byId, id))
+            .filter(Boolean) as CourseForMainStops[]
           const tourPts = scopeRows.filter(isTourPointCategory).map((c) => c.id)
           if (tourPts.length > 0) {
-            optionIds = tourPts
+            optionIds = filterMainStopIdsByReportRoles(tourPts, byId, reportRoles)
           } else {
-            optionIds = scopeRows.filter((c) => !hasChildInMap(c.id, byId)).map((c) => c.id)
+            optionIds = filterMainStopIdsByReportRoles(
+              scopeRows.filter((c) => !hasChildInMap(c.id, byId) && !isNonAttractionReportStop(c)).map((c) => c.id),
+              byId,
+              reportRoles
+            )
           }
         }
+        const linkedOrder = new Map<string, number>()
+        selectedIds.forEach((id, index) => {
+          for (const key of expandDbKeyCandidates(id)) linkedOrder.set(key, index)
+        })
         const opts = optionIds
-          .map((id) => {
-            const course = byId.get(id)
+          .map((id): MainStopOption | null => {
+            const course = getCourseFromByIdMap(byId, id)
             if (!course) return null
             return {
-              id,
+              id: course.id,
               course,
               sort_order: course.sort_order ?? 0,
+              product_order: productOrderForCourse(course.id, byId, linkedOrder),
             }
           })
-          .filter((x): x is { id: string; course: CourseForMainStops; sort_order: number } => x !== null)
+          .filter((x): x is MainStopOption => x !== null)
           .sort(
             (a, b) =>
+              (a.product_order ?? 10_000) - (b.product_order ?? 10_000) ||
               a.sort_order - b.sort_order ||
               displayCourseName(a.course, locale).localeCompare(displayCourseName(b.course, locale))
           )
@@ -1071,12 +1145,14 @@ export default function TourReportForm({
         if (!cancelled) {
           setCourseById(byId)
           setMainStopOptions(opts)
+          setReportStopRoles(reportRoles)
         }
       } catch (e) {
         console.error('Tour report main stops load error:', e)
         if (!cancelled) {
           setMainStopOptions([])
           setCourseById(new Map())
+          setReportStopRoles(new Map())
           toast.error(
             getText('투어 코스(방문지)를 불러오지 못했습니다.', 'Could not load tour course stops.')
           )
@@ -1094,6 +1170,7 @@ export default function TourReportForm({
 
   const resolvedMainStops = useMemo(() => {
     if (
+      hasConfiguredReportStopRoles(reportStopRoles) ||
       !isGoblinTour ||
       mainStopOptions.some((row) => sunrisePointKeyFromCourse(row.course) === 'navajo')
     ) {
@@ -1105,11 +1182,11 @@ export default function TourReportForm({
     return {
       options: [
         ...mainStopOptions,
-        { id: extra.id, course: extra, sort_order: extra.sort_order ?? 10_000 },
+        { id: extra.id, course: extra, sort_order: extra.sort_order ?? 10_000, product_order: 10_000 },
       ],
       byId,
     }
-  }, [isGoblinTour, mainStopOptions, courseById])
+  }, [isGoblinTour, mainStopOptions, courseById, reportStopRoles])
 
   useEffect(() => {
     if (resolvedMainStops.options.length === 0) return
@@ -1118,6 +1195,11 @@ export default function TourReportForm({
       const nextStops = prev.main_stops_visited.filter((id) => allowed.has(id))
       const nextSkipped: SkippedStopsMap = {}
       for (const [id, entry] of Object.entries(prev.skipped_stops)) {
+        if (isQuotaSkipKey(id)) {
+          nextSkipped[id] = entry
+          continue
+        }
+        if (hasConfiguredReportStopRoles(reportStopRoles)) continue
         if (allowed.has(id) && !nextStops.includes(id)) nextSkipped[id] = entry
       }
       const stopsSame = nextStops.length === prev.main_stops_visited.length
@@ -1125,10 +1207,46 @@ export default function TourReportForm({
       if (stopsSame && skipSame) return prev
       return { ...prev, main_stops_visited: nextStops, skipped_stops: nextSkipped }
     })
-  }, [resolvedMainStops])
+  }, [resolvedMainStops, reportStopRoles])
+
+  const reportQuota = useMemo(() => {
+    const requiredCount = countRequiredReportStops(
+      reportStopRoles,
+      resolvedMainStops.options.map((row) => row.id),
+      resolvedMainStops.byId
+    )
+    const qualifyingVisited = countQualifyingVisitedStops(
+      formData.main_stops_visited,
+      reportStopRoles,
+      resolvedMainStops.byId
+    )
+    return {
+      configured: hasConfiguredReportStopRoles(reportStopRoles),
+      requiredCount,
+      qualifyingVisited,
+      shortfall: reportStopQuotaShortfall(requiredCount, qualifyingVisited),
+    }
+  }, [formData.main_stops_visited, reportStopRoles, resolvedMainStops.byId])
+
+  useEffect(() => {
+    if (!reportQuota.configured || reportQuota.shortfall > 0) return
+    setFormData((prev) => {
+      if (!prev.skipped_stops[TOUR_REPORT_QUOTA_SKIP_KEY]) return prev
+      const { [TOUR_REPORT_QUOTA_SKIP_KEY]: _removed, ...rest } = prev.skipped_stops
+      return { ...prev, skipped_stops: rest }
+    })
+  }, [reportQuota.configured, reportQuota.shortfall])
 
   const totalSteps = reportPace === 'all_clear' ? 3 : 4
-  const visibleStepTitles = reportPace === 'all_clear' ? t.stepTitlesAllClear : t.stepTitles
+  const showDriving = shouldShowTourReportDriving(isGoblinTour)
+  const visibleStepTitles =
+    reportPace === 'all_clear'
+      ? showDriving
+        ? t.stepTitlesAllClearWithDriving
+        : t.stepTitlesAllClear
+      : showDriving
+        ? t.stepTitlesWithDriving
+        : t.stepTitles
   const nestedBodyScroll = variant === 'modal'
 
   const mobileStepVisible = (section: 0 | 1 | 2 | 3) => {
@@ -1264,6 +1382,23 @@ export default function TourReportForm({
     [resolvedMainStops]
   )
 
+  const sunrisePointChoices = useMemo(() => {
+    const seen = new Set<SunrisePointKey>()
+    const fromSaved: { key: SunrisePointKey; ko: string; en: string }[] = []
+    for (const row of resolvedMainStops.options) {
+      const key = sunrisePointKeyFromCourse(row.course)
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      fromSaved.push({
+        key,
+        ko: displayCourseName(row.course, 'ko'),
+        en: displayCourseName(row.course, 'en'),
+      })
+    }
+    const extras = SUNRISE_POINTS.filter((point) => !seen.has(point.key))
+    return fromSaved.length > 0 ? [...fromSaved, ...extras] : SUNRISE_POINTS
+  }, [resolvedMainStops])
+
   const hasSignature = !signatureEmpty || Boolean(formData.sign?.trim())
 
   const horseshoeIds = useMemo(
@@ -1284,7 +1419,14 @@ export default function TourReportForm({
       }
       if (isGoblinTour && !sunrisePointKey) missing.push(t.messages.sunrisePointRequired)
       if (isGoblinTour && !sunriseActivity) missing.push(t.messages.sunriseActivityRequired)
-      if (drivingUnassignedIds.length > 0) missing.push(t.messages.drivingGapsRequired)
+      if (showDriving && drivingUnassignedIds.length > 0) missing.push(t.messages.drivingGapsRequired)
+      if (
+        reportQuota.configured &&
+        reportQuota.shortfall > 0 &&
+        !hasQuotaSkipReason(formData.skipped_stops)
+      ) {
+        missing.push(t.messages.quotaSkipRequired)
+      }
     }
     if (stepIndex === signStep) {
       if (!hasSignature) missing.push(t.messages.signatureRequired)
@@ -1366,26 +1508,38 @@ export default function TourReportForm({
         return
       }
 
-      if (drivingUnassignedIds.length > 0) {
+      if (showDriving && drivingUnassignedIds.length > 0) {
         toast.error(t.messages.drivingGapsRequired)
         if (useMobileWizard) setMobileStep(1)
         return
       }
 
-      const drivingRoster = rosterFromAssignment(
-        drivingAssignment,
-        originalPartnerSelfIdsRef.current,
-        partnerEmail,
-        partnerName,
-        previousDrivingClaimsRef.current
-      )
+      if (
+        reportQuota.configured &&
+        reportQuota.shortfall > 0 &&
+        !hasQuotaSkipReason(formData.skipped_stops)
+      ) {
+        toast.error(t.messages.quotaSkipRequired)
+        if (useMobileWizard) setMobileStep(1)
+        return
+      }
+
+      const drivingRoster = showDriving
+        ? rosterFromAssignment(
+            drivingAssignment,
+            originalPartnerSelfIdsRef.current,
+            partnerEmail,
+            partnerName,
+            previousDrivingClaimsRef.current
+          )
+        : undefined
       const activityDetails: TourReportActivityDetails = {
         horseshoeBend: Object.fromEntries(
           visitedHorseshoe
             .map((id) => [id, horseshoeBend[id]] as const)
             .filter((entry): entry is readonly [string, HorseshoeBendActivity] => Boolean(entry[1]))
         ),
-        drivingRoster,
+        ...(drivingRoster ? { drivingRoster } : {}),
       }
       if (isGoblinTour && sunrisePointKey && sunriseActivity) {
         activityDetails.sunrise = {
@@ -1397,8 +1551,24 @@ export default function TourReportForm({
           activity: sunriseActivity,
         }
       }
+      if (hasTwoPersonStaff && !isPartnerEvaluationEmpty(partnerEval)) {
+        activityDetails.partnerEval = {
+          ratings: partnerEval.ratings,
+          issues: partnerEval.issues.trim(),
+        }
+      }
 
       const narrationSkip = serializeNarrationSkip(formData)
+
+      const skippedForSave = Object.fromEntries(
+        Object.entries(formData.skipped_stops).filter(([id]) => {
+          if (isQuotaSkipKey(id)) {
+            return reportQuota.configured && reportQuota.shortfall > 0
+          }
+          if (reportQuota.configured) return false
+          return !formData.main_stops_visited.includes(id)
+        })
+      )
 
       const payload = {
         end_mileage: isRentalVehicle ? null : formData.end_mileage,
@@ -1407,21 +1577,10 @@ export default function TourReportForm({
         booked_customer_count: bookedCustomerCount ?? formData.booked_customer_count,
         weather: formData.weather,
         main_stops_visited: formData.main_stops_visited,
-        driving_segment_ids: drivingRoster.selfSegmentIds,
+        driving_segment_ids: drivingRoster?.selfSegmentIds ?? [],
         activity_details: activityDetails,
-        skipped_stops: Object.fromEntries(
-          Object.entries(formData.skipped_stops).filter(
-            ([id]) => !formData.main_stops_visited.includes(id)
-          )
-        ),
-        main_stop_substitutions: skippedStopsToSubstitutionNotes(
-          Object.fromEntries(
-            Object.entries(formData.skipped_stops).filter(
-              ([id]) => !formData.main_stops_visited.includes(id)
-            )
-          ),
-          locale
-        ),
+        skipped_stops: skippedForSave,
+        main_stop_substitutions: skippedStopsToSubstitutionNotes(skippedForSave, locale),
         vehicle_condition_tags: isCompanyVehicle ? formData.vehicle_condition_tags : [],
         vehicle_condition_note: isCompanyVehicle
           ? formData.vehicle_condition_note?.trim() || null
@@ -1464,6 +1623,11 @@ export default function TourReportForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    e.stopPropagation()
+    if (useMobileWizard && mobileStep < totalSteps - 1) {
+      goToNextStep()
+      return
+    }
     await submitReport()
   }
 
@@ -1487,7 +1651,7 @@ export default function TourReportForm({
         <CardHeader
           className={cn(
             'px-2.5 py-4 sm:px-3 md:px-6 md:py-6',
-            useMobileWizard ? 'hidden shrink-0 lg:block' : 'shrink-0'
+            variant === 'modal' || useMobileWizard ? 'hidden' : 'shrink-0'
           )}
         >
           <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
@@ -1497,22 +1661,25 @@ export default function TourReportForm({
         </CardHeader>
         <CardContent
           className={cn(
-            variant === 'modal' && useMobileWizard ? 'px-0 py-2' : 'px-0 py-3 md:px-6 md:py-6',
+            variant === 'modal' ? 'px-0 py-1 md:px-6 md:py-4' : 'px-0 py-3 md:px-6 md:py-6',
             (useMobileWizard || nestedBodyScroll) && 'flex min-h-0 flex-col',
             nestedBodyScroll && 'min-h-0 flex-1 overflow-hidden'
           )}
         >
           <form
+            action="#"
+            method="post"
+            noValidate
             onSubmit={handleSubmit}
             className={cn(
               shellPad,
               nestedBodyScroll
-                ? 'flex h-full min-h-0 flex-1 flex-col gap-4 overflow-hidden pb-1'
+                ? 'flex h-full min-h-0 flex-1 flex-col gap-3 overflow-hidden pb-1'
                 : cn(blockY, useMobileWizard && 'flex min-h-0 flex-col pb-1')
             )}
           >
             {useMobileWizard && (
-              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-100 pb-3">
+              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-100 py-1.5">
                 <p className="text-sm font-medium leading-snug text-gray-900">
                   {visibleStepTitles[mobileStep]}
                 </p>
@@ -1543,12 +1710,14 @@ export default function TourReportForm({
                 </ul>
               </div>
             )}
-            <div className={cn(!mobileStepVisible(0) && 'hidden', 'divide-y divide-gray-200')}>
+            {mobileStepVisible(0) ? (
+            <div className="divide-y divide-gray-200">
             <div className="space-y-3 py-5 first:pt-1">
               <TourReportPaceToggle
                 value={reportPace}
                 onChange={setReportPace}
                 locale={locale}
+                showDriving={showDriving}
               />
             </div>
             {reportPace === 'has_issues' && (
@@ -1602,8 +1771,16 @@ export default function TourReportForm({
                   id="cash_balance"
                   type="number"
                   step="0.01"
-                  value={formData.cash_balance || ''}
-                  onChange={(e) => handleInputChange('cash_balance', parseFloat(e.target.value) || null)}
+                  value={formData.cash_balance ?? ''}
+                  onChange={(e) => {
+                    const raw = e.target.value
+                    if (raw.trim() === '') {
+                      handleInputChange('cash_balance', null)
+                      return
+                    }
+                    const next = Number(raw)
+                    handleInputChange('cash_balance', Number.isFinite(next) ? next : null)
+                  }}
                   placeholder={t.placeholders.cashBalance}
                   className="h-11 md:h-10"
                 />
@@ -1699,9 +1876,11 @@ export default function TourReportForm({
               </div>
             )}
             </div>
+            ) : null}
 
             {/* Step 1 — 방문·활동·분위기 */}
-            <div className={cn(!mobileStepVisible(1) && 'hidden', 'divide-y divide-gray-200 border-t border-gray-200')}>
+            {mobileStepVisible(1) ? (
+            <div className="divide-y divide-gray-200 border-t border-gray-200">
             <div
               className="space-y-3 py-5 first:pt-1"
               data-missing={
@@ -1716,19 +1895,23 @@ export default function TourReportForm({
                 <MapPin className="h-4 w-4 shrink-0" />
                 {t.fields.mainStopsVisited}
               </Label>
-              <p className="text-sm text-muted-foreground">{t.fields.mainStopsHint}</p>
-              {reportPace === 'all_clear' && resolvedMainStops.options.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                {reportQuota.configured ? t.fields.mainStopsHintConfigured : t.fields.mainStopsHint}
+              </p>
+              {reportPace === 'all_clear' && reportQuota.requiredCount > 0 && (
                 <Button
                   type="button"
                   variant="secondary"
                   className="h-11 w-full rounded-xl sm:w-auto"
-                  onClick={() =>
+                  onClick={() => {
+                    const requiredIds = resolvedMainStops.options
+                      .filter((row) => reportStopRoleFromMap(reportStopRoles, row.id) === 'required')
+                      .map((row) => row.id)
                     setFormData((prev) => ({
                       ...prev,
-                      main_stops_visited: resolvedMainStops.options.map((o) => o.id),
-                      skipped_stops: {},
+                      main_stops_visited: [...new Set([...prev.main_stops_visited, ...requiredIds])],
                     }))
-                  }
+                  }}
                 >
                   {t.fields.markAllStops}
                 </Button>
@@ -1749,6 +1932,7 @@ export default function TourReportForm({
                     const label = displayCourseName(course, locale)
                     const indentPx = Math.min(depth, 12) * 14
                     const horseshoe = isHorseshoeBendCourse(course)
+                    const reportRole = reportStopRoleFromMap(reportStopRoles, id)
                     const horseshoeIcon = (value: HorseshoeBendActivity) => {
                       if (value === 'hiking') return Footprints
                       if (value === 'parking_wait') return CircleParking
@@ -1784,6 +1968,15 @@ export default function TourReportForm({
                             )}
                           </span>
                           <span className="whitespace-normal text-left font-medium leading-snug">{label}</span>
+                          {reportRole === 'required' ? (
+                            <span className="ml-auto shrink-0 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                              {getText('필수', 'Required')}
+                            </span>
+                          ) : reportRole === 'alternate' ? (
+                            <span className="ml-auto shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                              {getText('대체', 'Alternate')}
+                            </span>
+                          ) : null}
                         </Button>
                         {horseshoe && visited ? (
                           <div className="mb-2 ml-6 space-y-1.5">
@@ -1838,7 +2031,24 @@ export default function TourReportForm({
               )}
             </div>
 
-            {resolvedMainStops.options.length > 0 && (
+            {reportQuota.configured ? (
+              reportQuota.shortfall > 0 ? (
+                <div className="space-y-3 py-5">
+                  <Label className={cn('flex items-center gap-2', labelMb)}>
+                    <SkipForward className="h-4 w-4 shrink-0" />
+                    {t.fields.skippedQuota}
+                  </Label>
+                  <TourReportQuotaSkip
+                    locale={locale}
+                    requiredCount={reportQuota.requiredCount}
+                    qualifyingVisited={reportQuota.qualifyingVisited}
+                    shortfall={reportQuota.shortfall}
+                    skipped={formData.skipped_stops}
+                    onChange={(next) => handleInputChange('skipped_stops', next)}
+                  />
+                </div>
+              ) : null
+            ) : resolvedMainStops.options.length > 0 ? (
               <div className="space-y-3 py-5">
                 <Label className={cn('flex items-center gap-2', labelMb)}>
                   <SkipForward className="h-4 w-4 shrink-0" />
@@ -1856,7 +2066,7 @@ export default function TourReportForm({
                   onChange={(next) => handleInputChange('skipped_stops', next)}
                 />
               </div>
-            )}
+            ) : null}
 
             {isGoblinTour && (
               <div
@@ -1883,7 +2093,7 @@ export default function TourReportForm({
                   <p className="text-sm font-semibold text-foreground">{t.fields.sunrisePointLabel}</p>
                   <p className="text-xs text-muted-foreground">{t.fields.sunrisePointHint}</p>
                   <div className="grid grid-cols-2 gap-2">
-                    {SUNRISE_POINTS.map((point) => {
+                    {sunrisePointChoices.map((point) => {
                       const selected = sunrisePointKey === point.key
                       return (
                         <Button
@@ -1944,6 +2154,7 @@ export default function TourReportForm({
               </div>
             )}
 
+            {showDriving && (
             <div
               className="space-y-3 py-5"
               data-missing={drivingUnassignedIds.length > 0 && stepErrors.length > 0 ? 'true' : undefined}
@@ -1966,6 +2177,7 @@ export default function TourReportForm({
                 onToggle={toggleDrivingSeat}
               />
             </div>
+            )}
 
             {/* 전체적인 분위기 */}
             {reportPace === 'has_issues' && (
@@ -1992,9 +2204,11 @@ export default function TourReportForm({
             </div>
             )}
             </div>
+            ) : null}
 
             {/* Step 2 — 고객·이슈 */}
-            <div className={cn((!mobileStepVisible(2) || reportPace === 'all_clear') && 'hidden', 'divide-y divide-gray-200 border-t border-gray-200')}>
+            {mobileStepVisible(2) && reportPace !== 'all_clear' ? (
+            <div className="divide-y divide-gray-200 border-t border-gray-200">
             <div className="space-y-3 py-5 first:pt-1">
               <Label htmlFor="guest_comments" className={cn('flex items-center gap-2', labelMb)}>
                 <MessageSquare className="h-4 w-4 shrink-0" />
@@ -2125,9 +2339,11 @@ export default function TourReportForm({
               />
             </div>
             </div>
+            ) : null}
 
             {/* Step 3 — 평가·메모·제출 */}
-            <div className={cn(!mobileStepVisible(3) && 'hidden', 'divide-y divide-gray-200 border-t border-gray-200')}>
+            {mobileStepVisible(3) ? (
+            <div className="divide-y divide-gray-200 border-t border-gray-200">
               {reportPace === 'has_issues' && (
               <>
               <div className={fieldY}>
@@ -2208,6 +2424,15 @@ export default function TourReportForm({
               </>
               )}
 
+            {hasTwoPersonStaff ? (
+            <TourReportPartnerEval
+              locale={locale}
+              partnerName={assignedPartnerName || partnerName}
+              value={partnerEval}
+              onChange={setPartnerEval}
+            />
+            ) : null}
+
             <TourReportNarrationSection
               tourId={tourId}
               locale={locale}
@@ -2265,16 +2490,13 @@ export default function TourReportForm({
               />
             </div>
             </div>
+            ) : null}
 
             </div>
 
-            {/* 데스크톱: 제출 */}
-            <div
-              className={cn(
-                'flex shrink-0 flex-col gap-3 pt-2 sm:flex-row md:pt-4',
-                useMobileWizard && 'hidden'
-              )}
-            >
+            {/* 데스크톱: 제출 — 위저드 중에는 DOM에서 제거해 숨은 submit이 페이지를 이동시키지 않게 함 */}
+            {!useMobileWizard ? (
+            <div className="flex shrink-0 flex-col gap-3 pt-2 sm:flex-row md:pt-4">
               <Button
                 type="submit"
                 disabled={loading || !hasSignature}
@@ -2293,12 +2515,10 @@ export default function TourReportForm({
                 </Button>
               )}
             </div>
-
-            {/* 모바일 위저드: 진행 + 이전/다음/제출 — 모달에서는 mt-auto로 시트 하단에 고정 */}
-            {useMobileWizard && (
+            ) : (
               <div
                 className={cn(
-                  'shrink-0 space-y-3 border-t border-gray-200 bg-white pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]',
+                  'shrink-0 space-y-2 border-t border-gray-200 bg-white pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]',
                   variant === 'modal' ? 'mt-auto' : 'mt-3'
                 )}
               >
@@ -2346,7 +2566,10 @@ export default function TourReportForm({
                     <Button
                       type="button"
                       className="flex-1 h-11 gap-1"
-                      onClick={goToNextStep}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        goToNextStep()
+                      }}
                     >
                       {t.buttons.next}
                       <ChevronRight className="w-4 h-4 shrink-0" />

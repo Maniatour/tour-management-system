@@ -273,14 +273,15 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex shrink-0 items-center justify-between p-6 border-b">
-          <h3 className="text-xl font-semibold text-gray-900 flex items-center">
-            <FileText className="w-6 h-6 mr-2 text-red-500" />
+    <div className="fixed inset-0 z-[110] flex flex-col bg-black/50 sm:items-center sm:justify-center sm:p-4">
+      <div className="flex h-full max-h-full w-full flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top,0px)] sm:h-[min(90vh,calc(100dvh-2rem))] sm:max-w-4xl sm:rounded-lg sm:pt-0 sm:shadow-xl">
+        <div className="flex shrink-0 items-center justify-between border-b px-3 py-2 sm:px-4 sm:py-3">
+          <h3 className="flex items-center text-base font-semibold text-gray-900 sm:text-lg">
+            <FileText className="mr-2 h-5 w-5 text-red-500" />
             {getText('투어 리포트 작성', 'Tour Report')}
           </h3>
           <button
+            type="button"
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600"
           >
@@ -291,8 +292,8 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
         <div
           className={
             showReportForm
-              ? 'flex min-h-0 flex-1 flex-col overflow-hidden p-4 sm:p-6'
-              : 'min-h-0 flex-1 overflow-y-auto p-6'
+              ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
+              : 'min-h-0 flex-1 overflow-y-auto p-4 sm:p-6'
           }
         >
           {!showReportForm ? (
@@ -479,29 +480,33 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
             </div>
           ) : (
             // 리포트 작성 폼 (기존 TourReportForm 컴포넌트 사용)
-            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
-              <div className="shrink-0 bg-green-50 border border-green-200 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-semibold text-green-900">
-                    리포트 작성 중: {locale === 'en' ? (currentEditingTour?.product_name_en || currentEditingTour?.product_name || currentEditingTour?.product_id) : (currentEditingTour?.product_name || currentEditingTour?.product_id)}
-                  </h4>
-                  <button
-                    onClick={() => setShowReportForm(false)}
-                    className="text-sm text-green-600 hover:text-green-800 underline"
-                  >
-                    다른 투어 선택
-                  </button>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="flex shrink-0 items-center gap-2 border-b border-emerald-100 bg-emerald-50/90 px-3 py-1.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-gray-900">
+                    {locale === 'en'
+                      ? (currentEditingTour?.product_name_en || currentEditingTour?.product_name || currentEditingTour?.product_id)
+                      : (currentEditingTour?.product_name || currentEditingTour?.product_id)}
+                  </p>
+                  <p className="flex min-w-0 items-center gap-2 truncate text-xs text-gray-600">
+                    <span className="inline-flex items-center">
+                      <Calendar className="mr-1 h-3.5 w-3.5" />
+                      {currentEditingTour && formatDateWithDay(currentEditingTour.tour_date)}
+                    </span>
+                    <span className="inline-flex items-center">
+                      <Users className="mr-1 h-3.5 w-3.5" />
+                      {currentEditingTour?.assigned_people || 0}
+                      {locale === 'en' ? '' : '명'}
+                    </span>
+                  </p>
                 </div>
-                <div className="flex flex-wrap gap-4 text-sm text-green-700">
-                  <span className="flex items-center">
-                    <Calendar className="w-4 h-4 mr-1" />
-                    {currentEditingTour && formatDateWithDay(currentEditingTour.tour_date)}
-                  </span>
-                  <span className="flex items-center">
-                    <Users className="w-4 h-4 mr-1" />
-                    {currentEditingTour?.assigned_people || 0}명
-                  </span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowReportForm(false)}
+                  className="shrink-0 text-xs text-emerald-700 underline"
+                >
+                  {getText('다른 투어', 'Other tour')}
+                </button>
               </div>
               
               {/* 실제 리포트 폼 컴포넌트 */}

@@ -155,7 +155,7 @@ import {
 import { findSimilarCustomersInList } from '@/lib/customerSimilarity'
 import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
 import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
-import { computeProductPriceTotal, isChannelSinglePrice, getPerPersonChargePax } from '@/lib/productPriceTotal'
+import { computeProductPriceTotal, isChannelSinglePrice, getPerPersonChargePax, resolveCouponDiscountBase, calculateCouponDiscountAmount } from '@/lib/productPriceTotal'
 import {
   emptyResidentStatusAmounts,
   findUsResidentClassificationChoice,
@@ -4509,11 +4509,18 @@ export default function ReservationForm({
               Math.abs(
                 dbPpt - Math.round((computedProductPriceTotal + notIncludedFieldTotal) * 100) / 100
               ) <= 0.02
-            const newProductPriceTotal = dbPptIncludesNotIncluded
-              ? computedProductPriceTotal
-              : hasDbPpt
-                ? dbPpt
-                : computedProductPriceTotal
+            /** 폼 productPriceTotal 은 항상 단가×인원. DB가 불포함을 포함했거나 레거시 합계여도 단가로 재계산 */
+            const newProductPriceTotal =
+              computedProductPriceTotal > 0.005
+                ? computedProductPriceTotal
+                : dbPptIncludesNotIncluded
+                  ? Math.max(
+                      0,
+                      Math.round((dbPpt - notIncludedFieldTotal) * 100) / 100
+                    )
+                  : hasDbPpt
+                    ? dbPpt
+                    : 0
             
             // requiredOptionTotal 계산
             let requiredOptionTotal = 0
@@ -5050,36 +5057,35 @@ export default function ReservationForm({
     return total
   }, [formData.requiredOptions, formData.selectedOptions, formData.pricingAdults, formData.child, formData.infant])
 
-  // PricingSection과 동일: 쿠폰 할인 적용 전 기준 금액 (OTA는 productPriceTotal 기준, 그 외는 상품+필수옵션; 초이스 판매총액은 불포함과 중복이므로 제외)
+  // 쿠폰 % 기준: 단가×인원 (불포함·비거주자 제외). OTA 외 채널은 필수옵션 포함.
   const getCouponDiscountSubtotal = useCallback(() => {
     const selectedChannel = channels.find(c => c.id === formData.channelId)
-    const pax = getPerPersonChargePax({
-      isSinglePrice: isChannelSinglePrice(selectedChannel),
-      pricingAdults: formData.pricingAdults,
-      reservationAdults: formData.adults,
-      child: formData.child,
-      infant: formData.infant,
-    })
-    const notIncludedPrice = (formData.not_included_price || 0) * pax
     const isOTAChannel = selectedChannel && (
       (selectedChannel as { type?: string; category?: string })?.type?.toLowerCase() === 'ota' ||
       (selectedChannel as { category?: string })?.category === 'OTA'
     )
-    if (isOTAChannel) {
-      return Math.max(0, (formData.productPriceTotal || 0) - notIncludedPrice)
-    }
-    const requiredOptionTotal = calculateRequiredOptionTotal()
-    return Math.max(0, calculateProductPriceTotal() + requiredOptionTotal - notIncludedPrice)
+    return resolveCouponDiscountBase({
+      isSinglePrice: isChannelSinglePrice(selectedChannel),
+      isOta: Boolean(isOTAChannel),
+      adultProductPrice: formData.adultProductPrice,
+      childProductPrice: formData.childProductPrice,
+      infantProductPrice: formData.infantProductPrice,
+      pricingAdults: formData.pricingAdults,
+      reservationAdults: formData.adults,
+      child: formData.child,
+      infant: formData.infant,
+      requiredOptionTotal: isOTAChannel ? 0 : calculateRequiredOptionTotal(),
+    })
   }, [
+    formData.adultProductPrice,
+    formData.childProductPrice,
+    formData.infantProductPrice,
     formData.pricingAdults,
     formData.adults,
     formData.child,
     formData.infant,
-    formData.not_included_price,
     formData.channelId,
-    formData.productPriceTotal,
     channels,
-    calculateProductPriceTotal,
     calculateRequiredOptionTotal,
   ])
 
@@ -5139,18 +5145,7 @@ export default function ReservationForm({
 
   // 쿠폰 할인 계산 함수
   const calculateCouponDiscount = useCallback((coupon: CouponRow, subtotal: number) => {
-    if (!coupon) return 0
-    
-    console.log('쿠폰 할인 계산:', { coupon, subtotal }) // 디버깅용
-    
-    // 새로운 스키마 사용: discount_type, percentage_value, fixed_value
-    if (coupon.discount_type === 'percentage' && coupon.percentage_value) {
-      return (subtotal * (Number(coupon.percentage_value) || 0)) / 100
-    } else if (coupon.discount_type === 'fixed' && coupon.fixed_value) {
-      return Number(coupon.fixed_value) || 0
-    }
-    
-    return 0
+    return calculateCouponDiscountAmount(coupon, subtotal)
   }, [])
 
   // 쿠폰 자동 선택 함수 (이메일 금액 없을 때: 채널·상품·날짜에 맞는 쿠폰 중 고정 우선)
@@ -5734,7 +5729,7 @@ export default function ReservationForm({
         subtotal: newSubtotal
       }))
     }
-  }, [channels, formData.channelId, formData.adults, formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.pricingAdults, formData.child, formData.infant, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateOptionTotal])
+  }, [channels, formData.channelId, formData.adults, formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.pricingAdults, formData.child, formData.infant, formData.choiceNotIncludedTotal, formData.productPriceTotal, calculateRequiredOptionTotal, calculateOptionTotal])
 
   // 예약 옵션·쿠폰·할인 등으로 총액이 바뀔 때 Grand Total 동기화 (DB 예약 편집만 제외)
   useEffect(() => {

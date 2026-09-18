@@ -282,13 +282,33 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 
   const computedDisplayBalance = useMemo(() => {
     if (!reservationPricing) return 0
+    const paymentRecordLikes = paymentRecords.map((r) => ({
+      payment_status: r.payment_status || '',
+      amount: Number(r.amount) || 0,
+    }))
+    const childCount = reservation.children ?? reservation.child
+    const infantCount = reservation.infants ?? reservation.infant
     return getBalanceAmountForDisplay(
       withNormalizedBalanceAmountForDisplay(reservationPricing as unknown as Record<string, unknown>),
       null,
-      {},
-      { reservationStatus: reservation.status }
+      {
+        adults: reservation.adults,
+        children: typeof childCount === 'number' ? childCount : Number(childCount) || null,
+        infants: typeof infantCount === 'number' ? infantCount : Number(infantCount) || null,
+      },
+      {
+        reservationStatus: reservation.status,
+        ...(paymentRecordLikes.length > 0 ? { paymentRecords: paymentRecordLikes } : {}),
+      }
     )
-  }, [reservationPricing, reservation.status])
+  }, [
+    reservationPricing,
+    reservation.status,
+    reservation.adults,
+    reservation.child,
+    reservation.infant,
+    paymentRecords,
+  ])
 
   const displayBalanceAmount =
     reservationPricing == null &&
@@ -1135,10 +1155,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       email = (data?.email || '').trim()
       const name = (data?.name || customerName || '').trim()
       const phone = (data?.phone || data?.emergency_contact || '').trim()
-      const balance = reservationPricing?.balance_amount
       const balanceNum =
-        balance != null && Number.isFinite(Number(balance)) && Number(balance) > 0
-          ? Number(balance)
+        Number.isFinite(displayBalanceAmount) && displayBalanceAmount > 0
+          ? displayBalanceAmount
           : undefined
       const tourDate = reservation.tour_date || ''
       const description = [customerName, tourDate, reservation.id].filter(Boolean).join(' · ')
@@ -2885,7 +2904,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 
       <QuickPaymentRequestModal
         open={quickPaymentOpen}
-        onClose={() => setQuickPaymentOpen(false)}
+        onClose={() => {
+          setQuickPaymentOpen(false)
+          void fetchPaymentRecords()
+          void fetchReservationPricing()
+          onRefresh?.()
+        }}
         locale={locale === 'en' ? 'en' : 'ko'}
         initials={quickPaymentInitials}
       />

@@ -41,6 +41,15 @@ test('detects horseshoe bend and sunrise viewpoint names', () => {
   )
   assert.equal(
     sunrisePointKeyFromCourse({
+      name_ko: '브라이트 엔젤 포인트',
+      name_en: 'Bright Angel point',
+      customer_name_ko: null,
+      customer_name_en: null,
+    }),
+    'bright_angel'
+  )
+  assert.equal(
+    sunrisePointKeyFromCourse({
       name_ko: '매더 - 야바파이 림 트레일',
       name_en: 'Rim Trails(Mather - Yavapai)',
       customer_name_ko: null,
@@ -106,6 +115,18 @@ test('assignment hydrates from partner report and detects gaps', () => {
   assert.equal(assignment.b, 'none')
   assert.deepEqual(unassignedDrivingIds(['a', 'b', 'c'], assignment), ['b', 'c'])
   assert.deepEqual(overlapDrivingIds(['a'], ['a', 'b']), ['a'])
+})
+
+test('parseActivityDetails keeps partner star ratings and issue notes', () => {
+  const parsed = parseActivityDetails({
+    partnerEval: {
+      ratings: { communication: 5, teamwork: 3, overall: 4 },
+      issues: 'Late to the pickup.',
+    },
+  })
+  assert.equal(parsed.partnerEval?.ratings.communication, 5)
+  assert.equal(parsed.partnerEval?.ratings.teamwork, 3)
+  assert.equal(parsed.partnerEval?.issues, 'Late to the pickup.')
 })
 
 test('parseActivityDetails keeps sunrise and horseshoe choices', () => {

@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { isGoblinTourProduct } from '@/lib/goblinTour'
 import {
   approxDrivingMinutesForSegment,
   formatApproxDrivingDuration,
+  shouldShowTourReportDriving,
   sumApproxDrivingMinutes,
   type TourReportDrivingSegment,
 } from '@/lib/tourReportDrivingSegments'
@@ -93,6 +95,21 @@ test('formatApproxDrivingDuration uses approximate wording', () => {
   assert.equal(formatApproxDrivingDuration(375, 'en'), 'approx. 6h 15m')
   assert.equal(formatApproxDrivingDuration(45, 'ko'), '대략 45분')
   assert.equal(formatApproxDrivingDuration(120, 'ko'), '대략 2시간')
+})
+
+test('driving roster is only shown for goblin tours for now', () => {
+  assert.equal(isGoblinTourProduct(null, 'MDGCSUNRISE'), true)
+  assert.equal(
+    isGoblinTourProduct({ name_ko: '밤도깨비 그랜드캐년 일출 투어' }, 'MDGCSUNRISE'),
+    true
+  )
+  assert.equal(shouldShowTourReportDriving(true), true)
+  assert.equal(isGoblinTourProduct(null, 'MDLVN'), false)
+  assert.equal(
+    isGoblinTourProduct({ name_ko: '라스베가스 야경투어', name_en: 'Las Vegas Night Tour' }, 'MDLVN'),
+    false
+  )
+  assert.equal(shouldShowTourReportDriving(false), false)
 })
 
 test('opaque ids are hidden when course names are missing', () => {

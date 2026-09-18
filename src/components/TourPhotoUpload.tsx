@@ -18,8 +18,10 @@ import {
   tourMediaFileStem,
 } from '@/lib/tourPhotoUploadUtils'
 import { useTourDetailSectionChrome } from '@/components/tour/TourDetailModalChromeContext'
-import { TourPhotoMediaThumb, TourPhotoMediaViewer, isTourPhotoVideoItem } from '@/components/tour/TourPhotoMedia'
+import { TourPhotoMediaThumb, TourPhotoMediaViewer, isTourPhotoVideoItem, tourPhotoPublicUrl } from '@/components/tour/TourPhotoMedia'
 import { TourPhotoThumbOverflowMenu } from '@/components/tour/TourPhotoThumbOverflowMenu'
+import ZoomablePhoto from '@/components/guide/ZoomablePhoto'
+import { TOUR_DETAIL_NESTED_PICKER_Z_INDEX } from '@/lib/dialogZIndex'
 import { setTourPhotoHiddenByAdmin } from '@/lib/tourPhotoVisibility'
 import { moveTourPhotoToReceipt } from '@/lib/moveTourPhotoToReceipt'
 import { deleteTourPhotoFromStorageAndDb } from '@/lib/deleteTourPhoto'
@@ -1122,7 +1124,8 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
       {/* 사진 모달 갤러리 */}
       {showModal && selectedPhoto && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 flex items-center justify-center bg-black"
+          style={{ zIndex: TOUR_DETAIL_NESTED_PICKER_Z_INDEX + 50 }}
           onKeyDown={handleKeyDown}
           tabIndex={-1}
         >
@@ -1175,13 +1178,32 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
             )}
 
             {/* 메인 이미지 */}
-            <div className="flex items-center justify-center w-full h-full">
-              <TourPhotoMediaViewer
-                filePath={selectedPhoto.file_path}
-                fileName={selectedPhoto.file_name}
-                mimeType={selectedPhoto.mime_type || selectedPhoto.file_type || null}
-                alt={selectedPhoto.file_name}
-              />
+            <div className="relative z-[1] flex h-full w-full items-center justify-center">
+              {isTourPhotoVideoItem(selectedPhoto.file_name, selectedPhoto.mime_type || selectedPhoto.file_type) ? (
+                <TourPhotoMediaViewer
+                  filePath={selectedPhoto.file_path}
+                  fileName={selectedPhoto.file_name}
+                  mimeType={selectedPhoto.mime_type || selectedPhoto.file_type || null}
+                  alt={selectedPhoto.file_name}
+                />
+              ) : (
+                <ZoomablePhoto
+                  src={tourPhotoPublicUrl(selectedPhoto.file_path)}
+                  alt={selectedPhoto.file_name}
+                  onSwipeLeft={() => {
+                    const currentIndex = photos.findIndex((p: TourPhoto) => p.id === selectedPhoto.id)
+                    if (currentIndex >= 0 && currentIndex < photos.length - 1) {
+                      setSelectedPhoto(photos[currentIndex + 1])
+                    }
+                  }}
+                  onSwipeRight={() => {
+                    const currentIndex = photos.findIndex((p: TourPhoto) => p.id === selectedPhoto.id)
+                    if (currentIndex > 0) {
+                      setSelectedPhoto(photos[currentIndex - 1])
+                    }
+                  }}
+                />
+              )}
             </div>
 
             {/* 이미지 정보 */}
@@ -1192,6 +1214,7 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
                   <p className="text-sm text-gray-300">
                     {formatFileSize(selectedPhoto.file_size)} • {selectedPhoto.file_type || selectedPhoto.mime_type}
                   </p>
+                  <p className="mt-1 text-xs text-white/70">{t('zoomHint')}</p>
                   {selectedPhoto.uploaded_by_name && (
                     <span className="mt-1.5 inline-block max-w-full truncate rounded-full bg-white/20 px-2 py-0.5 text-xs font-medium text-white backdrop-blur-sm">
                       {selectedPhoto.uploaded_by_name}

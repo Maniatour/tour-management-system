@@ -1,6 +1,6 @@
 /**
  * 배정 카드·Balance 봉투·투어 인쇄 등에서 동일하게 사용하는 잔액 표시.
- * 표시 잔금은 reservation_pricing에 저장된 `balance_amount`를 쓴다.
+ * 잔금 수령 입금이 있으면 입금 반영 미수금, 없으면 저장 `balance_amount`.
  * 저장값이 없을 때만 라인·입금 산식으로 보정한다.
  */
 
@@ -1068,6 +1068,40 @@ export function getBalanceAmountForDisplay(
   const excludeNotIncluded = isNotIncludedExcludedReservationStatus(opts?.reservationStatus)
   if (excludeNotIncluded) return 0
 
+  const records = opts?.paymentRecords
+  const { balanceReceivedTotal } = summarizePaymentRecordsForBalance(records || [])
+  /** 잔금 수령 입금이 있으면 저장 잔액이 아니라 입금 반영 잔액(①−보증금순액−잔금 수령)을 쓴다 */
+  if (records && records.length > 0 && balanceReceivedTotal > 0.005) {
+    const optsOnly =
+      optionsTotalFromOptions !== null && optionsTotalFromOptions !== undefined
+    const pricingForReceived = {
+      ...(pricing as PricingBalanceFields & {
+        required_option_total?: unknown
+        choices_total?: unknown
+        private_tour_additional_cost?: unknown
+      }),
+      required_option_total: optsOnly
+        ? 0
+        : (pricing as { required_option_total?: unknown }).required_option_total,
+      option_total:
+        optionsTotalFromOptions !== null && optionsTotalFromOptions !== undefined
+          ? optionsTotalFromOptions
+          : pricing.option_total,
+    } as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]
+    return Math.max(
+      0,
+      roundUsd2(
+        computeDisplayedOnSiteBalanceLikePricingSection(
+          pricingForReceived,
+          optionsTotalFromOptions,
+          party,
+          records,
+          opts?.residentFeeUsd
+        )
+      )
+    )
+  }
+
   const rawStored = pricing.balance_amount
   const hasStored = rawStored !== undefined && rawStored !== null && rawStored !== ''
   if (hasStored) {
@@ -1092,7 +1126,6 @@ export function getBalanceAmountForDisplay(
         : pricing.option_total,
   } as Parameters<typeof computeCustomerPaymentTotalLineFormula>[0]
 
-  const records = opts?.paymentRecords
   const residentFeeUsd = opts?.residentFeeUsd
   if (records && records.length > 0) {
     return computeDisplayedOnSiteBalanceLikePricingSection(

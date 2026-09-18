@@ -20,6 +20,49 @@ test('card balance keeps stored $100 even when live calculation would differ', (
   assert.equal(amount, 100)
 })
 
+test('잔금 수령 입금이 있으면 저장 잔액 $100이 아니라 미수 $0을 보여준다', () => {
+  const amount = getBalanceAmountForDisplay(
+    {
+      total_price: 449,
+      product_price_total: 349,
+      deposit_amount: 349,
+      balance_amount: 100,
+    },
+    null,
+    party,
+    {
+      paymentRecords: [
+        { payment_status: 'Deposit Received', amount: 349 },
+        { payment_status: 'Balance Received', amount: 100 },
+      ],
+    }
+  )
+  assert.equal(amount, 0)
+})
+
+test('GYG 잔금 수령 $210이 있으면 저장 잔액 $210이 아니라 미수 $0을 보여준다', () => {
+  const amount = getBalanceAmountForDisplay(
+    {
+      total_price: 908.88,
+      product_price_total: 768,
+      coupon_discount: 69.12,
+      card_fee: 10,
+      additional_cost: 200,
+      deposit_amount: 698.88,
+      balance_amount: 210,
+    },
+    null,
+    { adults: 2, children: 0, infants: 0 },
+    {
+      paymentRecords: [
+        { payment_status: 'Deposit Received', amount: 698.88 },
+        { payment_status: 'Balance Received', amount: 210 },
+      ],
+    }
+  )
+  assert.equal(amount, 0)
+})
+
 test('card balance uses stored $0 instead of recomputing a non-resident fee', () => {
   const amount = getBalanceAmountForDisplay(
     {

@@ -63,12 +63,22 @@ export default function WaiverSignaturePad({
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const ratio = Math.min(window.devicePixelRatio || 1, 2)
-    const width = Math.floor(canvas.clientWidth * ratio)
-    const height = Math.floor(180 * ratio)
-    canvas.width = Math.max(width, 600)
-    canvas.height = Math.max(height, 280)
-    redraw()
+
+    const applySize = () => {
+      if (canvas.clientWidth < 8) return
+      const ratio = Math.min(window.devicePixelRatio || 1, 2)
+      const width = Math.max(1, Math.floor(canvas.clientWidth * ratio))
+      const height = Math.max(1, Math.floor(180 * ratio))
+      if (canvas.width === width && canvas.height === height) return
+      canvas.width = width
+      canvas.height = height
+      redraw()
+    }
+
+    applySize()
+    const observer = new ResizeObserver(applySize)
+    observer.observe(canvas)
+    return () => observer.disconnect()
   }, [redraw])
 
   const start = (x: number, y: number) => {

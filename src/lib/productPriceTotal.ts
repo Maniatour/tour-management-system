@@ -42,6 +42,10 @@ export function getPerPersonChargePax(opts: {
   return pa + ch + inf
 }
 
+function roundUsd2(n: number): number {
+  return Math.round((Number(n) || 0) * 100) / 100
+}
+
 export function computeProductPriceTotal(opts: {
   isSinglePrice: boolean
   adultProductPrice: number
@@ -73,4 +77,53 @@ export function computeProductPriceTotal(opts: {
     (childProductPrice || 0) * (child || 0) +
     (infantProductPrice || 0) * (infant || 0)
   )
+}
+
+/**
+ * 쿠폰 % 적용 기준 금액.
+ * 판매가×인원만 사용한다. 불포함(입장권)·비거주자 비용은 쿠폰 대상이 아니다.
+ * (폼 productPriceTotal 이 DB 레거시로 불포함을 포함하고 있어도 단가×인원으로 재계산)
+ */
+export function resolveCouponDiscountBase(opts: {
+  isSinglePrice: boolean
+  isOta: boolean
+  adultProductPrice: number
+  childProductPrice: number
+  infantProductPrice: number
+  pricingAdults: number
+  reservationAdults: number
+  child: number
+  infant: number
+  requiredOptionTotal?: number
+}): number {
+  const saleTimesPax = computeProductPriceTotal({
+    isSinglePrice: opts.isSinglePrice,
+    adultProductPrice: opts.adultProductPrice,
+    childProductPrice: opts.childProductPrice,
+    infantProductPrice: opts.infantProductPrice,
+    pricingAdults: opts.pricingAdults,
+    reservationAdults: opts.reservationAdults,
+    child: opts.child,
+    infant: opts.infant,
+  })
+  if (opts.isOta) return Math.max(0, roundUsd2(saleTimesPax))
+  return Math.max(0, roundUsd2(saleTimesPax + (Number(opts.requiredOptionTotal) || 0)))
+}
+
+export function calculateCouponDiscountAmount(
+  coupon: {
+    discount_type?: string | null
+    percentage_value?: number | null
+    fixed_value?: number | null
+  } | null | undefined,
+  base: number
+): number {
+  if (!coupon) return 0
+  if (coupon.discount_type === 'percentage' && coupon.percentage_value) {
+    return roundUsd2((Math.max(0, Number(base) || 0) * (Number(coupon.percentage_value) || 0)) / 100)
+  }
+  if (coupon.discount_type === 'fixed' && coupon.fixed_value) {
+    return roundUsd2(Number(coupon.fixed_value) || 0)
+  }
+  return 0
 }

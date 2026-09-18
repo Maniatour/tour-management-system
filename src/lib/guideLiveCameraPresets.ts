@@ -11,6 +11,28 @@ import {
 export const CAMERA_PRESETS = ['auto', 'night', 'stars'] as const
 export type CameraPreset = (typeof CAMERA_PRESETS)[number]
 
+const PRESET_STORAGE_KEY = 'kovegas.guide.liveCameraPreset'
+
+export function readStoredCameraPreset(): CameraPreset {
+  if (typeof window === 'undefined') return 'auto'
+  try {
+    const raw = window.localStorage.getItem(PRESET_STORAGE_KEY)
+    if (raw === 'auto' || raw === 'night' || raw === 'stars') return raw
+  } catch {
+    // ignore storage failures
+  }
+  return 'auto'
+}
+
+export function storeCameraPreset(preset: CameraPreset): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(PRESET_STORAGE_KEY, preset)
+  } catch {
+    // ignore storage failures
+  }
+}
+
 type Range = { min?: number; max?: number; step?: number }
 
 type CameraCapabilities = {

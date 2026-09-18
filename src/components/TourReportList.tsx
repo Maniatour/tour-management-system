@@ -40,6 +40,7 @@ import {
   isOpaqueRecordId,
   type CourseForMainStops,
 } from '@/lib/tourReportMainStops'
+import { displaySkippedStopLabel } from '@/lib/tourReportStopRoles'
 import {
   displayDrivingSegmentLabel,
   formatApproxDrivingDuration,
@@ -48,9 +49,11 @@ import {
 } from '@/lib/tourReportDrivingSegments'
 import {
   displayHorseshoeBendActivity,
+  displayPartnerEvalCriterion,
   displaySunriseActivity,
   displaySunrisePoint,
   parseActivityDetails,
+  PARTNER_EVAL_CRITERIA,
 } from '@/lib/tourReportActivityDetails'
 import { normalizeTourReportEmail } from '@/lib/tourReportMissing'
 import { teamMemberNameForLocale } from '@/lib/teamMemberDisplayName'
@@ -702,6 +705,39 @@ export default function TourReportList({
                   )}
                 </div>
 
+                {details.partnerEval ? (
+                  <div className="mb-4 rounded-lg border border-border/70 bg-muted/30 px-3 py-2.5">
+                    <p className="mb-2 flex items-center gap-1.5 text-sm font-medium">
+                      <Users className="h-4 w-4 text-gray-500" />
+                      {getText('파트너 평가', 'Partner evaluation')}
+                    </p>
+                    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                      {PARTNER_EVAL_CRITERIA.map((item) => {
+                        const stars = details.partnerEval?.ratings[item.key]
+                        if (!stars) return null
+                        return (
+                          <div key={item.key} className="flex items-center justify-between gap-2 text-sm">
+                            <span>{displayPartnerEvalCriterion(item.key, locale)}</span>
+                            <span className="flex items-center gap-0.5 text-amber-500">
+                              {Array.from({ length: 5 }, (_, index) => (
+                                <Star
+                                  key={index}
+                                  className={`h-3.5 w-3.5 ${index < stars ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}`}
+                                />
+                              ))}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {details.partnerEval.issues ? (
+                      <p className="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-sm text-amber-950">
+                        {details.partnerEval.issues}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 {visibleStops.length > 0 && (
                   <div className="mb-4">
                     <p className="text-sm font-medium mb-2">{getText('주요 정류장:', 'Main stops:')}</p>
@@ -814,7 +850,7 @@ export default function TourReportList({
                       <ul className="space-y-1 text-sm text-gray-700">
                         {skippedIds.map((cid) => {
                           const entry = skipped[cid]
-                          const point = displayMainStopLabel(cid, stopCourseById, locale)
+                          const point = displaySkippedStopLabel(cid, stopCourseById, locale)
                           if (!point) return null
                           const reason = entry.reason
                             ? displaySkipReasonLabel(entry.reason, locale)
@@ -846,7 +882,7 @@ export default function TourReportList({
                       <ul className="space-y-1 text-sm text-gray-700">
                         {Object.entries(report.main_stop_substitutions).map(([cid, note]) => {
                           if (!note?.trim()) return null
-                          const point = displayMainStopLabel(cid, stopCourseById, locale)
+                          const point = displaySkippedStopLabel(cid, stopCourseById, locale)
                           if (!point) return null
                           return (
                             <li key={cid} className="rounded bg-amber-50/80 px-2 py-1">

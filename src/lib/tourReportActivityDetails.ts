@@ -4,7 +4,7 @@ import { isEnglishTourReportLocale } from '@/lib/tourReportExtras'
 import { normalizeTourReportEmail } from '@/lib/tourReportMissing'
 
 export type HorseshoeBendActivity = 'hiking' | 'parking_wait' | 'antelope_checkin'
-export type SunrisePointKey = 'grandview' | 'mather' | 'navajo' | 'yavapai'
+export type SunrisePointKey = 'grandview' | 'mather' | 'navajo' | 'yavapai' | 'bright_angel'
 export type SunriseActivity = 'vehicle_wait' | 'photography'
 export type DrivingSeat = 'me' | 'partner' | 'none'
 
@@ -21,6 +21,24 @@ export type DrivingRoster = {
   claims: DrivingClaim[]
 }
 
+export const PARTNER_EVAL_CRITERIA = [
+  { key: 'communication', ko: '소통', en: 'Communication' },
+  { key: 'teamwork', ko: '협업', en: 'Teamwork' },
+  { key: 'guest_service', ko: '고객 응대', en: 'Guest service' },
+  { key: 'punctuality', ko: '시간 약속', en: 'Punctuality' },
+  { key: 'driving', ko: '운전', en: 'Driving' },
+  { key: 'explanation', ko: '설명', en: 'Explanation' },
+  { key: 'overall', ko: '전반', en: 'Overall' },
+] as const
+
+export type PartnerEvalCriterionKey = (typeof PARTNER_EVAL_CRITERIA)[number]['key']
+export type PartnerEvalRatings = Partial<Record<PartnerEvalCriterionKey, number>>
+
+export type PartnerEvaluation = {
+  ratings: PartnerEvalRatings
+  issues: string
+}
+
 export type TourReportActivityDetails = {
   horseshoeBend?: Record<string, HorseshoeBendActivity>
   sunrise?: {
@@ -29,6 +47,7 @@ export type TourReportActivityDetails = {
     activity: SunriseActivity
   }
   drivingRoster?: DrivingRoster
+  partnerEval?: PartnerEvaluation
 }
 
 export type PartnerDrivingReport = {
@@ -60,6 +79,7 @@ export const SUNRISE_POINTS: {
   { key: 'mather', ko: '마더 포인트', en: 'Mather Point' },
   { key: 'navajo', ko: '나바호 포인트', en: 'Navajo Point' },
   { key: 'yavapai', ko: '야바파이 포인트', en: 'Yavapai Point' },
+  { key: 'bright_angel', ko: '브라이트 엔젤 포인트', en: 'Bright Angel Point' },
 ]
 
 export const SUNRISE_ACTIVITIES: {
@@ -92,6 +112,7 @@ export function sunrisePointKeyFromCourse(
   const text = joinedCourseText(course)
   if (!text) return null
   if (/림\s*트레일|rim\s*trail/i.test(text)) return null
+  if (/브라이트\s*엔젤|bright\s*angel/i.test(text)) return 'bright_angel'
   if (/그랜드\s*뷰|grand\s*view|grandview/i.test(text)) return 'grandview'
   if (/매더|마더|mather/i.test(text)) return 'mather'
   if (/나바호|navajo/i.test(text)) return 'navajo'
@@ -156,6 +177,36 @@ function parseClaims(raw: unknown): DrivingClaim[] {
   return out
 }
 
+function parsePartnerEval(raw: unknown): PartnerEvaluation | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const rec = raw as Record<string, unknown>
+  const allowed = new Set<string>(PARTNER_EVAL_CRITERIA.map((item) => item.key))
+  const ratings: PartnerEvalRatings = {}
+  const ratingsRaw = rec.ratings
+  if (ratingsRaw && typeof ratingsRaw === 'object' && !Array.isArray(ratingsRaw)) {
+    for (const [key, value] of Object.entries(ratingsRaw as Record<string, unknown>)) {
+      if (!allowed.has(key)) continue
+      const stars = Number(value)
+      if (!Number.isInteger(stars) || stars < 1 || stars > 5) continue
+      ratings[key as PartnerEvalCriterionKey] = stars
+    }
+  }
+  const issues = String(rec.issues || '').trim()
+  if (Object.keys(ratings).length === 0 && !issues) return undefined
+  return { ratings, issues }
+}
+
+export function isPartnerEvaluationEmpty(evalData: PartnerEvaluation | null | undefined): boolean {
+  if (!evalData) return true
+  return Object.keys(evalData.ratings).length === 0 && !evalData.issues.trim()
+}
+
+export function displayPartnerEvalCriterion(key: string, locale: string): string {
+  const item = PARTNER_EVAL_CRITERIA.find((row) => row.key === key)
+  if (!item) return key
+  return isEnglishTourReportLocale(locale) ? item.en : item.ko
+}
+
 export function parseActivityDetails(raw: unknown): TourReportActivityDetails {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
   const rec = raw as Record<string, unknown>
@@ -186,6 +237,9 @@ export function parseActivityDetails(raw: unknown): TourReportActivityDetails {
       claims: parseClaims(roster.claims),
     }
   }
+
+  const partnerEval = parsePartnerEval(rec.partnerEval)
+  if (partnerEval) out.partnerEval = partnerEval
 
   return out
 }

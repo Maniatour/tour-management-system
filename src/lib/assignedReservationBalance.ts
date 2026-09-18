@@ -1,5 +1,6 @@
 import {
   getBalanceAmountForDisplay,
+  residentFeesUsdFromCustomerRows,
   withNormalizedBalanceAmountForDisplay,
   type PaymentRecordLike,
 } from '@/utils/reservationPricingBalance'
@@ -20,7 +21,7 @@ export type AssignedBalanceReservationInput = {
   infant?: number | null
 }
 
-/** 배정 관리 헤더·카드 잔액: reservation_pricing에 저장된 balance_amount */
+/** 배정 관리 헤더·카드 잔액: 저장 잔액. 잔금 수령 입금이 있으면 입금 반영 미수금 */
 export function computeAssignedReservationDisplayBalance(args: {
   reservation: AssignedBalanceReservationInput
   pricing: Record<string, unknown> | undefined
@@ -28,12 +29,24 @@ export function computeAssignedReservationDisplayBalance(args: {
   optionRows?: AssignedBalanceOptionRow[]
   customerRows?: Array<{ resident_status?: string | null }>
 }): number {
-  const { reservation, pricing } = args
+  const { reservation, pricing, paymentRecords, customerRows } = args
   if (!pricing) return 0
   return getBalanceAmountForDisplay(
     withNormalizedBalanceAmountForDisplay(pricing),
     null,
-    {},
-    { reservationStatus: reservation.status ?? null }
+    {
+      adults: reservation.adults ?? null,
+      children: reservation.children ?? reservation.child ?? null,
+      infants: reservation.infants ?? reservation.infant ?? null,
+      child: reservation.child ?? null,
+      infant: reservation.infant ?? null,
+    },
+    {
+      reservationStatus: reservation.status ?? null,
+      ...(paymentRecords && paymentRecords.length > 0 ? { paymentRecords } : {}),
+      ...(customerRows && customerRows.length > 0
+        ? { residentFeeUsd: residentFeesUsdFromCustomerRows(customerRows) }
+        : {}),
+    }
   )
 }

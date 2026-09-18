@@ -53,12 +53,12 @@ export default function TourReportWriteModal({
         forceZIndex={TOUR_DETAIL_NESTED_PICKER_Z_INDEX}
         hideCloseButton
         overlayClassName="bg-black/50"
-        className="flex h-[min(90vh,calc(100dvh-1.5rem))] w-[calc(100vw-1.5rem)] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl"
+        className="flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-[min(90vh,calc(100dvh-1.5rem))] sm:w-[calc(100vw-1.5rem)] sm:max-w-4xl sm:rounded-2xl sm:border"
         onOpenAutoFocus={(event) => event.preventDefault()}
         aria-describedby={undefined}
       >
-        <DialogHeader className="flex shrink-0 flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 sm:px-6">
-          <DialogTitle className="text-base sm:text-lg">{t('writeReport')}</DialogTitle>
+        <DialogHeader className="flex shrink-0 flex-row items-center justify-between space-y-0 border-b border-gray-200 px-3 py-2 sm:px-6 sm:py-3">
+          <DialogTitle className="text-sm sm:text-lg">{t('writeReport')}</DialogTitle>
           <button
             type="button"
             onClick={onClose}

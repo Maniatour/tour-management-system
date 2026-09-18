@@ -214,6 +214,7 @@ export type ProductTourCourse = {
   product_id: string
   tour_course_id: string
   tour_course: TourCourse
+  report_stop_role?: 'required' | 'alternate' | null
 }
 
 export type ProductDetailsFields = {

@@ -2600,14 +2600,13 @@ export default function GuideTourDetailPage() {
       />
       {isReportModalOpen && (
         <div
-          className="modal-inset-below-chrome bg-black/50"
+          className="fixed inset-0 z-[110] flex flex-col bg-white sm:bg-black/50 sm:items-center sm:justify-center sm:p-4"
           aria-modal="true"
           role="presentation"
         >
-          {/* 헤더·모바일 푸터 바깥 영역만 사용 / sm+: 카드형 */}
-          <div className="flex h-full max-h-full w-full max-w-none flex-col overflow-hidden bg-white sm:mx-auto sm:h-[min(90vh,calc(100dvh-var(--header-height)-1.5rem))] sm:max-w-4xl sm:rounded-lg sm:shadow-xl">
-            <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-3 py-3 sm:px-4 md:px-6 md:py-4">
-              <h3 className="text-lg font-semibold text-gray-900">{t('addTourReport')}</h3>
+          <div className="flex h-full max-h-full w-full max-w-none flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top,0px)] sm:mx-auto sm:h-[min(90vh,calc(100dvh-2rem))] sm:max-w-4xl sm:rounded-lg sm:pt-0 sm:shadow-xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-3 py-2 sm:px-4 sm:py-3">
+              <h3 className="text-base font-semibold text-gray-900 sm:text-lg">{t('addTourReport')}</h3>
               <button
                 type="button"
                 onClick={() => setIsReportModalOpen(false)}

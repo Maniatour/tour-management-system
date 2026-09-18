@@ -10,10 +10,12 @@ export default function TourReportPaceToggle({
   value,
   onChange,
   locale = 'ko',
+  showDriving = false,
 }: {
   value: TourReportPace
   onChange: (next: TourReportPace) => void
   locale?: string
+  showDriving?: boolean
 }) {
   const isEn = isEnglishTourReportLocale(locale)
 
@@ -44,9 +46,13 @@ export default function TourReportPaceToggle({
               {isEn ? 'No issues today' : '오늘 이상 없음'}
             </span>
             <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-              {isEn
-                ? 'Saves vehicle OK, no incidents, no lost items. Check guests, weather, stops, driving, then sign.'
-                : '차량·사고·분실 없음으로 저장됩니다. 인원·날씨·방문·운전만 확인하고 서명하세요.'}
+              {showDriving
+                ? isEn
+                  ? 'Saves vehicle OK, no incidents, no lost items. Check guests, weather, stops, driving, then sign.'
+                  : '차량·사고·분실 없음으로 저장됩니다. 인원·날씨·방문·운전만 확인하고 서명하세요.'
+                : isEn
+                  ? 'Saves vehicle OK, no incidents, no lost items. Check guests, weather, stops, then sign.'
+                  : '차량·사고·분실 없음으로 저장됩니다. 인원·날씨·방문만 확인하고 서명하세요.'}
             </span>
           </span>
         </button>

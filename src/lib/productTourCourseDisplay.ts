@@ -175,6 +175,7 @@ export function getValidTourCourses(
   localeOrIsEnglish: string | boolean
 ): TourCourse[] {
   const validCourses = tourCourses
+    .filter((ptc) => ptc.report_stop_role !== 'alternate')
     .map((ptc) => ptc.tour_course)
     .filter((course): course is TourCourse => {
       if (!course || isExcludedCustomerTourCourse(course)) return false

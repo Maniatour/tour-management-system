@@ -9,6 +9,14 @@ export type TourReportDrivingSegment = {
   is_active: boolean
 }
 
+/**
+ * Driving 배정은 밤도깨비 투어만 우선 표시.
+ * 라스베가스 야경투어 등 다른 상품은 이후 상품별로 확장.
+ */
+export function shouldShowTourReportDriving(isGoblinTour: boolean): boolean {
+  return isGoblinTour
+}
+
 /** OP, office manager, super — Driving 구간 목록 CRUD */
 export function canManageTourReportDrivingSegments(
   position: string | null | undefined,

@@ -94,6 +94,10 @@ function mapTourCourseRow(item: Record<string, unknown>): ProductTourCourse | nu
     product_id: String(item.product_id ?? ''),
     tour_course_id: String(item.tour_course_id ?? tourCourse.id ?? ''),
     tour_course: tourCourse as ProductTourCourse['tour_course'],
+    report_stop_role:
+      item.report_stop_role === 'required' || item.report_stop_role === 'alternate'
+        ? item.report_stop_role
+        : null,
   }
 }
 

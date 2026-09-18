@@ -34,6 +34,7 @@ export type ImageCaptureConstraintSet = MediaTrackConstraintSet & {
   iso?: number
   exposureCompensation?: number
   brightness?: number
+  torch?: boolean
 }
 
 type FocusCapabilities = {

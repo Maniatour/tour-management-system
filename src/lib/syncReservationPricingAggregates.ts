@@ -206,10 +206,13 @@ export async function syncReservationPricingAggregates(
         residentFeeUsd
       )
       const customerNet = Math.max(0, roundUsd2(dueForBalance - returnedTotal))
-      balance_amount = roundUsd2(
-        customerNet -
-          depositNetForBalanceSettlement(depositTotalNet, pricingMerged.prepayment_tip) -
-          balanceReceivedTotal
+      balance_amount = Math.max(
+        0,
+        roundUsd2(
+          customerNet -
+            depositNetForBalanceSettlement(depositTotalNet, pricingMerged.prepayment_tip) -
+            balanceReceivedTotal
+        )
       )
       deposit_amount = depositBucketGross
     }

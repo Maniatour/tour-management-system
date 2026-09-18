@@ -6313,6 +6313,7 @@ export type Database = {
           id: string
           order: number | null
           product_id: string
+          report_stop_role: string | null
           tour_course_id: string
           updated_at: string | null
         }
@@ -6321,6 +6322,7 @@ export type Database = {
           id?: string
           order?: number | null
           product_id: string
+          report_stop_role?: string | null
           tour_course_id: string
           updated_at?: string | null
         }
@@ -6329,6 +6331,7 @@ export type Database = {
           id?: string
           order?: number | null
           product_id?: string
+          report_stop_role?: string | null
           tour_course_id?: string
           updated_at?: string | null
         }

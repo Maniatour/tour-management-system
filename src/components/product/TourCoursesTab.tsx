@@ -2,10 +2,18 @@
 import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect, type ComponentProps } from 'react'
-import { MapPin, Search, Check, X, Folder, FolderOpen, ChevronRight, ChevronDown, Edit, ArrowUp, ArrowDown } from 'lucide-react'
+import { MapPin, Search, Check, X, Folder, FolderOpen, ChevronRight, ChevronDown, Edit, ArrowUp, ArrowDown, GripVertical } from 'lucide-react'
+import { DragDropContext, Draggable, Droppable, type DropResult } from '@hello-pangea/dnd'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import TourCourseEditModal from '@/components/TourCourseEditModal'
+import ProductTourCourseReportRoleToggle from '@/components/product/ProductTourCourseReportRoleToggle'
+import ProductTourCourseCustomerHint from '@/components/product/ProductTourCourseCustomerHint'
+import { parseReportStopRole, type ReportStopRole } from '@/lib/tourReportStopRoles'
+import PanelHeightResizeHandle, { clampPanelHeight } from '@/components/ui/PanelHeightResizeHandle'
+
+const SELECTED_LIST_HEIGHT_KEY = 'kovegas.product-tour-courses.selected-list-height'
+const DEFAULT_SELECTED_LIST_HEIGHT = 500
 
 type TourCourse = Database['public']['Tables']['tour_courses']['Row'] & {
   parent?: TourCourse
@@ -15,6 +23,11 @@ type TourCourse = Database['public']['Tables']['tour_courses']['Row'] & {
 interface TourCoursesTabProps {
   productId: string
   isNewProduct: boolean
+}
+
+function isTourPointCategoryLabel(category: string | null | undefined): boolean {
+  const value = (category || '').trim().toLowerCase()
+  return value.includes('투어 포인트') || value.includes('tour point')
 }
 
 // 계층적 구조를 위한 함수들
@@ -189,6 +202,8 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
   const [tourCourses, setTourCourses] = useState<TourCourse[]>([])
   const [selectedCourses, setSelectedCourses] = useState<Set<string>>(new Set())
   const [selectedCoursesOrder, setSelectedCoursesOrder] = useState<string[]>([])
+  const [reportStopRoles, setReportStopRoles] = useState<Record<string, ReportStopRole>>({})
+  const [selectedListHeight, setSelectedListHeight] = useState(DEFAULT_SELECTED_LIST_HEIGHT)
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
@@ -219,24 +234,64 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
     loadTourCourses()
   }, [])
 
+  useEffect(() => {
+    try {
+      const stored = Number(localStorage.getItem(SELECTED_LIST_HEIGHT_KEY))
+      if (Number.isFinite(stored) && stored > 0) {
+        setSelectedListHeight(clampPanelHeight(stored))
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  const handleSelectedListHeightChange = (next: number) => {
+    const height = clampPanelHeight(next)
+    setSelectedListHeight(height)
+    try {
+      localStorage.setItem(SELECTED_LIST_HEIGHT_KEY, String(height))
+    } catch {
+      // ignore
+    }
+  }
+
   // 상품에 연결된 투어 코스 로드
   useEffect(() => {
     if (isNewProduct) return
 
     const loadProductTourCourses = async () => {
       try {
-        const { data, error } = await supabase
+        let { data, error } = await supabase
           .from('product_tour_courses')
-          .select('tour_course_id, order')
+          .select('tour_course_id, order, report_stop_role')
           .eq('product_id', productId)
           .order('order', { ascending: true })
+
+        if (error) {
+          const fallback = await supabase
+            .from('product_tour_courses')
+            .select('tour_course_id, order')
+            .eq('product_id', productId)
+            .order('order', { ascending: true })
+          if (fallback.error) throw error
+          data = fallback.data as typeof data
+          error = null
+        }
 
         if (error) throw error
 
         const selectedIds = new Set(data?.map(item => item.tour_course_id) || [])
         const order = data?.map(item => item.tour_course_id) || []
+        const roles: Record<string, ReportStopRole> = {}
+        for (const item of data ?? []) {
+          const role = parseReportStopRole(
+            (item as { report_stop_role?: unknown }).report_stop_role
+          )
+          if (role) roles[item.tour_course_id] = role
+        }
         setSelectedCourses(selectedIds)
         setSelectedCoursesOrder(order)
+        setReportStopRoles(roles)
       } catch (error) {
         console.error('상품 투어 코스 로드 오류:', error)
       }
@@ -304,6 +359,12 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
     newSelected.delete(courseId)
     setSelectedCourses(newSelected)
     setSelectedCoursesOrder(prev => prev.filter(id => id !== courseId))
+    setReportStopRoles(prev => {
+      if (!(courseId in prev)) return prev
+      const next = { ...prev }
+      delete next[courseId]
+      return next
+    })
   }
 
   // 전체 선택/해제
@@ -325,6 +386,20 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
   const handleDeselectAll = () => {
     setSelectedCourses(new Set())
     setSelectedCoursesOrder([])
+    setReportStopRoles({})
+  }
+
+  const handleReportStopRoleChange = (courseId: string, role: ReportStopRole | null) => {
+    setReportStopRoles((prev) => {
+      if (!role) {
+        if (!(courseId in prev)) return prev
+        const next = { ...prev }
+        delete next[courseId]
+        return next
+      }
+      if (prev[courseId] === role) return prev
+      return { ...prev, [courseId]: role }
+    })
   }
 
   // 순서 변경 함수들
@@ -344,6 +419,16 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
     newOrder[index] = newOrder[index + 1]
     newOrder[index + 1] = temp
     setSelectedCoursesOrder(newOrder)
+  }
+
+  const handleSelectedCoursesDragEnd = (result: DropResult) => {
+    if (!result.destination) return
+    if (result.destination.index === result.source.index) return
+    const next = [...selectedCoursesOrder]
+    const [moved] = next.splice(result.source.index, 1)
+    if (!moved) return
+    next.splice(result.destination.index, 0, moved)
+    setSelectedCoursesOrder(next)
   }
 
   // 투어 코스 편집 모달 열기
@@ -409,7 +494,8 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
         const insertData = selectedCoursesOrder.map((courseId, index) => ({
           product_id: productId,
           tour_course_id: courseId,
-          order: index
+          order: index,
+          report_stop_role: reportStopRoles[courseId] ?? null,
         }))
 
         const { error: insertError } = await supabase
@@ -454,6 +540,7 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
         <h3 className="text-lg font-medium text-gray-900 mb-2">투어 코스 선택</h3>
         <p className="text-gray-600 mb-4">
           이 상품에 포함될 투어 코스를 선택하세요. 다중 선택이 가능합니다.
+          가이드 리포트용 필수·대체 포인트는 오른쪽 목록에서 따로 지정합니다. 대체 포인트는 고객 코스에는 보이지 않습니다.
         </p>
       </div>
 
@@ -550,104 +637,141 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
                 <Check className="w-4 h-4 text-green-500" />
                 선택된 투어 코스 ({selectedCourses.size}개)
               </h4>
+              <p className="mt-1 text-xs text-muted-foreground">
+                필수 {Object.values(reportStopRoles).filter((role) => role === 'required').length} ·
+                대체 {Object.values(reportStopRoles).filter((role) => role === 'alternate').length}
+                {' '}· 드래그해서 순서를 바꿀 수 있습니다.
+              </p>
             </div>
             
-            <div className="h-[500px] overflow-y-auto">
+            <div className="overflow-y-auto" style={{ height: selectedListHeight }}>
               {selectedCoursesOrder.length > 0 ? (
-                <div className="p-4 space-y-3">
-                  {selectedCoursesOrder.map((courseId, index) => {
-                    const course = tourCourses.find(c => c.id === courseId)
-                    if (!course) return null
-                    
-                    return (
-                      <div key={courseId} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-start gap-2 flex-1 min-w-0">
-                            {/* 순서 번호 */}
-                            <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold">
-                              {index + 1}
-                            </div>
-                            
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium text-gray-900 truncate">
-                                {course.team_name_ko || course.name_ko}
-                              </div>
-                              {course.team_name_en && course.team_name_en !== course.team_name_ko && (
-                                <div className="text-xs text-gray-500 truncate">
-                                  {course.team_name_en}
+                <DragDropContext onDragEnd={handleSelectedCoursesDragEnd}>
+                  <Droppable droppableId="selected-tour-courses">
+                    {(provided) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        className="flex flex-col gap-3 p-4"
+                      >
+                        {selectedCoursesOrder.map((courseId, index) => {
+                          const course = tourCourses.find((c) => c.id === courseId)
+                          return (
+                            <Draggable key={courseId} draggableId={courseId} index={index}>
+                              {(dragProvided, snapshot) => (
+                                <div
+                                  ref={dragProvided.innerRef}
+                                  {...dragProvided.draggableProps}
+                                  style={dragProvided.draggableProps.style as React.CSSProperties | undefined}
+                                  className={`rounded-lg border border-gray-200 bg-gray-50 p-3 ${
+                                    snapshot.isDragging ? 'shadow-lg ring-2 ring-primary/30' : ''
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex min-w-0 flex-1 items-start gap-2">
+                                      <div
+                                        className="flex shrink-0 cursor-grab items-center gap-1 pt-0.5 text-gray-400 active:cursor-grabbing"
+                                        {...dragProvided.dragHandleProps}
+                                        aria-label="드래그해서 순서 변경"
+                                        title="드래그해서 순서 변경"
+                                      >
+                                        <GripVertical className="h-4 w-4" aria-hidden />
+                                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                                          {index + 1}
+                                        </div>
+                                      </div>
+
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex min-w-0 items-center gap-1.5">
+                                          <div className="truncate text-sm font-medium text-gray-900">
+                                            {course?.team_name_ko || course?.name_ko || courseId}
+                                          </div>
+                                          {isTourPointCategoryLabel(course?.category) && (
+                                            <span className="shrink-0 rounded-md bg-primary px-2 py-1 text-[10px] font-semibold leading-none text-white shadow-sm">
+                                              투어 포인트
+                                            </span>
+                                          )}
+                                          <ProductTourCourseCustomerHint
+                                            customerNameKo={course?.customer_name_ko ?? null}
+                                            customerNameEn={course?.customer_name_en ?? null}
+                                          />
+                                        </div>
+                                        {course?.team_name_en && course.team_name_en !== course.team_name_ko && (
+                                          <div className="truncate text-xs text-gray-500">
+                                            {course.team_name_en}
+                                          </div>
+                                        )}
+                                        {course?.location && (
+                                          <div className="mt-1 flex items-center gap-1 truncate text-xs text-gray-400">
+                                            <MapPin className="h-3 w-3" />
+                                            {course.location}
+                                          </div>
+                                        )}
+                                        <ProductTourCourseReportRoleToggle
+                                          value={reportStopRoles[courseId] ?? null}
+                                          onChange={(role) => handleReportStopRoleChange(courseId, role)}
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="flex shrink-0 items-center gap-1">
+                                      <div className="mr-1 flex flex-col gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            moveCourseUp(index)
+                                          }}
+                                          disabled={index === 0}
+                                          className="rounded p-1 text-gray-400 hover:bg-muted/50 hover:text-primary disabled:cursor-not-allowed disabled:opacity-30"
+                                          title="위로 이동"
+                                        >
+                                          <ArrowUp className="h-3 w-3" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            moveCourseDown(index)
+                                          }}
+                                          disabled={index === selectedCoursesOrder.length - 1}
+                                          className="rounded p-1 text-gray-400 hover:bg-muted/50 hover:text-primary disabled:cursor-not-allowed disabled:opacity-30"
+                                          title="아래로 이동"
+                                        >
+                                          <ArrowDown className="h-3 w-3" />
+                                        </button>
+                                      </div>
+
+                                      {course ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenEditModal(course)}
+                                          className="rounded p-1 text-gray-400 hover:bg-muted/50 hover:text-primary"
+                                          title="편집"
+                                        >
+                                          <Edit className="h-4 w-4" />
+                                        </button>
+                                      ) : null}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeselectCourse(courseId)}
+                                        className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                                        title="선택 해제"
+                                      >
+                                        <X className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  </div>
                                 </div>
                               )}
-                              {course.customer_name_ko && (
-                                <div className="text-xs text-primary truncate mt-1">
-                                  고객용: {course.customer_name_ko}
-                                </div>
-                              )}
-                              {course.customer_name_en && (
-                                <div className="text-xs text-primary truncate">
-                                  고객용(EN): {course.customer_name_en}
-                                </div>
-                              )}
-                              {course.location && (
-                                <div className="text-xs text-gray-400 truncate flex items-center gap-1 mt-1">
-                                  <MapPin className="w-3 h-3" />
-                                  {course.location}
-                                </div>
-                              )}
-                              {course.category && (
-                                <div className="text-xs text-primary mt-1">
-                                  카테고리: {course.category}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            {/* 순서 변경 버튼 */}
-                            <div className="flex flex-col gap-1 mr-1">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  moveCourseUp(index)
-                                }}
-                                disabled={index === 0}
-                                className="p-1 text-gray-400 hover:text-primary hover:bg-muted/50 rounded disabled:opacity-30 disabled:cursor-not-allowed"
-                                title="위로 이동"
-                              >
-                                <ArrowUp className="w-3 h-3" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  moveCourseDown(index)
-                                }}
-                                disabled={index === selectedCoursesOrder.length - 1}
-                                className="p-1 text-gray-400 hover:text-primary hover:bg-muted/50 rounded disabled:opacity-30 disabled:cursor-not-allowed"
-                                title="아래로 이동"
-                              >
-                                <ArrowDown className="w-3 h-3" />
-                              </button>
-                            </div>
-                            
-                            <button
-                              onClick={() => handleOpenEditModal(course)}
-                              className="p-1 text-gray-400 hover:text-primary hover:bg-muted/50 rounded"
-                              title="편집"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeselectCourse(courseId)}
-                              className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
-                              title="선택 해제"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
+                            </Draggable>
+                          )
+                        })}
+                        {provided.placeholder}
                       </div>
-                    )
-                  })}
-                </div>
+                    )}
+                  </Droppable>
+                </DragDropContext>
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-center p-8">
                   <Check className="w-8 h-8 text-gray-300 mb-2" />
@@ -656,6 +780,11 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
                 </div>
               )}
             </div>
+            <PanelHeightResizeHandle
+              height={selectedListHeight}
+              onHeightChange={handleSelectedListHeightChange}
+              label="선택된 투어 코스 목록 높이 조절"
+            />
           </div>
         </div>
       </div>
