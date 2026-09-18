@@ -3,9 +3,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ExternalLink, Loader2, Sparkles, Star, X } from 'lucide-react'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { toLasVegasDateKey } from '@/lib/dailyReport/dateUtils'
 import type { GoogleReviewImportNotifyRow } from '@/lib/googleReviewImportNotify'
 import GoogleReviewImportClassifyRow from '@/components/admin/google-reviews/GoogleReviewImportClassifyRow'
 import type { AdminGoogleReviewListItem } from '@/types/googleBusiness'
+
+const TOUR_LINK_START_DATE = '2026-08-01'
+const CLASSIFY_PAGE_SIZE = 100
+const CLASSIFY_MAX_PAGES = 5
+
+function shouldShowInImportClassifyModal(review: AdminGoogleReviewListItem): boolean {
+  if (review.excludeStaffRating) return false
+  const dateKey = toLasVegasDateKey(review.reviewCreatedAt)
+  if (dateKey && dateKey < TOUR_LINK_START_DATE) return false
+  return true
+}
 
 type ReviewsResponse = {
   ok?: boolean
@@ -31,30 +43,36 @@ export default function GoogleReviewImportClassifyModal({
 }: Props) {
   const isKo = locale === 'ko'
   const [reviews, setReviews] = useState<AdminGoogleReviewListItem[]>([])
-  const [unclassifiedTotal, setUnclassifiedTotal] = useState(0)
   const [loadingReviews, setLoadingReviews] = useState(false)
   const [classifying, setClassifying] = useState(false)
   const [savingProductId, setSavingProductId] = useState<string | null>(null)
   const [savingTourId, setSavingTourId] = useState<string | null>(null)
+  const [savingExcludeStaffId, setSavingExcludeStaffId] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
-  const loadUnclassified = useCallback(async () => {
-    setLoadingReviews(true)
+  const loadUnclassified = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setLoadingReviews(true)
     try {
-      const params = new URLSearchParams({
-        unclassified: '1',
-        source: 'google',
-        sort: 'imported_at',
-        page: '1',
-        limit: '20',
-      })
-      const res = await fetchApiWithAuth(`/api/admin/google-business/reviews?${params.toString()}`)
-      const data = (await res.json()) as ReviewsResponse
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'list_failed')
+      const collected: AdminGoogleReviewListItem[] = []
+      for (let page = 1; page <= CLASSIFY_MAX_PAGES; page += 1) {
+        const params = new URLSearchParams({
+          unclassified: '1',
+          source: 'google',
+          sort: 'review_created_at',
+          page: String(page),
+          limit: String(CLASSIFY_PAGE_SIZE),
+        })
+        const res = await fetchApiWithAuth(`/api/admin/google-business/reviews?${params.toString()}`)
+        const data = (await res.json()) as ReviewsResponse
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || 'list_failed')
+        }
+        const batch = data.reviews ?? []
+        collected.push(...batch.filter(shouldShowInImportClassifyModal))
+        if (batch.length < CLASSIFY_PAGE_SIZE) break
+        if (collected.length >= 40) break
       }
-      setReviews(data.reviews ?? [])
-      setUnclassifiedTotal(data.total ?? 0)
+      setReviews(collected)
     } catch (error) {
       console.error('[GoogleReviewImportClassifyModal]', error)
       setMessage(isKo ? '미분류 리뷰를 불러오지 못했습니다.' : 'Failed to load unclassified reviews.')
@@ -111,7 +129,7 @@ export default function GoogleReviewImportClassifyModal({
       })
       const data = (await res.json()) as { ok?: boolean; error?: string }
       if (!res.ok || !data.ok) throw new Error(data.error || 'update_failed')
-      await loadUnclassified()
+      await loadUnclassified({ silent: true })
     } catch (error) {
       setMessage(
         isKo
@@ -154,16 +172,56 @@ export default function GoogleReviewImportClassifyModal({
       })
       const data = (await res.json()) as { ok?: boolean; error?: string }
       if (!res.ok || !data.ok) throw new Error(data.error || 'update_failed')
-      await loadUnclassified()
+      await loadUnclassified({ silent: true })
     } catch (error) {
       setMessage(
         isKo
           ? `투어 연결 실패: ${error instanceof Error ? error.message : 'unknown'}`
           : `Tour link failed: ${error instanceof Error ? error.message : 'unknown'}`
       )
-      await loadUnclassified()
+      await loadUnclassified({ silent: true })
     } finally {
       setSavingTourId(null)
+    }
+  }
+
+  const updateExcludeStaffRating = async (reviewId: string, excludeStaffRating: boolean) => {
+    setSavingExcludeStaffId(reviewId)
+    setReviews((prev) =>
+      prev
+        .map((review) => {
+          if (review.id !== reviewId) return review
+          return {
+            ...review,
+            excludeStaffRating,
+            ...(excludeStaffRating
+              ? { tourId: null, tourDate: null, tourProductName: null, tourMatchMethod: null, staff: [] }
+              : {}),
+          }
+        })
+        .filter(shouldShowInImportClassifyModal)
+    )
+    try {
+      const res = await fetchApiWithAuth(`/api/admin/google-business/reviews/${reviewId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          excludeStaffRating,
+          ...(excludeStaffRating ? { tourId: null } : {}),
+        }),
+      })
+      const data = (await res.json()) as { ok?: boolean; error?: string }
+      if (!res.ok || !data.ok) throw new Error(data.error || 'update_failed')
+      await loadUnclassified({ silent: true })
+    } catch (error) {
+      setMessage(
+        isKo
+          ? `가이드 평점 설정 실패: ${error instanceof Error ? error.message : 'unknown'}`
+          : `Staff rating update failed: ${error instanceof Error ? error.message : 'unknown'}`
+      )
+      await loadUnclassified({ silent: true })
+    } finally {
+      setSavingExcludeStaffId(null)
     }
   }
 
@@ -204,8 +262,8 @@ export default function GoogleReviewImportClassifyModal({
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
           <p className="text-sm text-gray-700">
             {isKo
-              ? '라스베이거스 오후 9시 자동 가져오기가 끝났습니다. 미분류 리뷰를 상품·투어에 연결해 주세요.'
-              : 'The 9 PM Las Vegas auto-import finished. Classify unmapped reviews by product and tour.'}
+              ? '라스베이거스 오후 9시 자동 가져오기가 끝났습니다. 8월 이후 미분류 리뷰를 상품·투어에 연결해 주세요.'
+              : 'The 9 PM Las Vegas auto-import finished. Classify unmapped reviews from August onward.'}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -218,7 +276,7 @@ export default function GoogleReviewImportClassifyModal({
               {isKo ? '미분류 자동 분류' : 'Auto-classify'}
             </button>
             <span className="text-xs text-muted-foreground">
-              {isKo ? `미분류 ${unclassifiedTotal}건` : `${unclassifiedTotal} unclassified`}
+              {isKo ? `미분류 ${reviews.length}건` : `${reviews.length} unclassified`}
             </span>
           </div>
           {message ? <p className="text-sm text-gray-600">{message}</p> : null}
@@ -239,8 +297,12 @@ export default function GoogleReviewImportClassifyModal({
                   review={review}
                   savingProduct={savingProductId === review.id}
                   savingTour={savingTourId === review.id}
+                  savingExcludeStaff={savingExcludeStaffId === review.id}
                   onProductChange={(productId) => void updateProduct(review.id, productId)}
                   onTourChange={(tourId, tourProduct) => void updateTour(review.id, tourId, tourProduct)}
+                  onExcludeStaffRatingChange={(excludeStaffRating) =>
+                    void updateExcludeStaffRating(review.id, excludeStaffRating)
+                  }
                 />
               ))}
             </div>

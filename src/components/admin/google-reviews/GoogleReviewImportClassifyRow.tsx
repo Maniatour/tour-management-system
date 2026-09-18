@@ -12,11 +12,13 @@ type Props = {
   review: AdminGoogleReviewListItem
   savingProduct: boolean
   savingTour: boolean
+  savingExcludeStaff: boolean
   onProductChange: (productId: string | null) => void
   onTourChange: (
     tourId: string | null,
     tourProduct?: { productId: string | null; productName: string | null } | null
   ) => void
+  onExcludeStaffRatingChange: (excludeStaffRating: boolean) => void
 }
 
 export default function GoogleReviewImportClassifyRow({
@@ -24,11 +26,13 @@ export default function GoogleReviewImportClassifyRow({
   review,
   savingProduct,
   savingTour,
+  savingExcludeStaff,
   onProductChange,
   onTourChange,
+  onExcludeStaffRatingChange,
 }: Props) {
   const isKo = locale === 'ko'
-  const busy = savingProduct || savingTour
+  const busy = savingProduct || savingTour || savingExcludeStaff
 
   return (
     <article className="space-y-3 rounded-xl border border-border/60 bg-white p-4">
@@ -66,8 +70,24 @@ export default function GoogleReviewImportClassifyRow({
             inputClass="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm h-10"
           />
         </div>
-        <div className="min-w-0">
-          <label className="text-xs font-medium text-muted-foreground">{isKo ? '투어' : 'Tour'}</label>
+        <div className="min-w-0 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <label className="text-xs font-medium text-muted-foreground">{isKo ? '투어' : 'Tour'}</label>
+            <label className="flex shrink-0 cursor-pointer items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={review.excludeStaffRating}
+                disabled={busy}
+                onChange={(e) => {
+                  onExcludeStaffRatingChange(e.target.checked)
+                }}
+                className="h-4 w-4 rounded border-border"
+              />
+              <span className="whitespace-nowrap text-xs text-muted-foreground">
+                {isKo ? '가이드 평점 미반영' : 'Exclude staff rating'}
+              </span>
+            </label>
+          </div>
           <GoogleReviewTourSelect
             locale={locale}
             reviewDate={review.reviewCreatedAt}
@@ -76,7 +96,7 @@ export default function GoogleReviewImportClassifyRow({
             {...(review.tourDate && review.tourProductName
               ? { selectedLabel: `${review.tourDate} · ${review.tourProductName}` }
               : {})}
-            disabled={busy}
+            disabled={busy || review.excludeStaffRating}
             onChange={(tourId, tourProduct) => {
               if (tourId !== review.tourId) {
                 onTourChange(tourId, tourProduct)
