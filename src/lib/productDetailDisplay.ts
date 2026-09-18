@@ -4,7 +4,7 @@ import {
   type ProductFieldTranslationRow,
   type ProductLegacyI18nSource,
 } from '@/lib/productFieldTranslations'
-import { normalizeSiteLocale, resolveFileMessageLocale } from '@/lib/siteLocales'
+import { normalizeSiteLocale, resolveFileMessageLocale, isSiteLocale, getSiteLocaleMeta, type SiteLocale } from '@/lib/siteLocales'
 
 const CATEGORY_LABELS_EN: Record<string, string> = {
   city: 'City',
@@ -373,4 +373,57 @@ export function formatProductDepartureArrivalHighlight(
   if (!departure && !arrival) return null
   if (departure && arrival) return `${departure} → ${arrival}`
   return departure || arrival || null
+}
+
+const LANGUAGE_ALIASES: Record<string, SiteLocale> = {
+  ko: 'ko',
+  kr: 'ko',
+  korean: 'ko',
+  한국어: 'ko',
+  한글: 'ko',
+  en: 'en',
+  us: 'en',
+  uk: 'en',
+  english: 'en',
+  영어: 'en',
+  ja: 'ja',
+  jp: 'ja',
+  japanese: 'ja',
+  일본어: 'ja',
+  'zh-cn': 'zh-CN',
+  zh: 'zh-CN',
+  cn: 'zh-CN',
+  chinese: 'zh-CN',
+  중국어: 'zh-CN',
+  简体中文: 'zh-CN',
+  'zh-tw': 'zh-TW',
+  tw: 'zh-TW',
+  繁體中文: 'zh-TW',
+  es: 'es',
+  spanish: 'es',
+  스페인어: 'es',
+  fr: 'fr',
+  french: 'fr',
+  프랑스어: 'fr',
+  de: 'de',
+  german: 'de',
+  독일어: 'de',
+}
+
+export type ProductLanguageDisplay = {
+  code: string
+  countryCode: string
+  label: string
+}
+
+/** 고객 페이지 지원 언어 — 코드 대신 국기 + 언어명 */
+export function resolveProductLanguageDisplay(value: string): ProductLanguageDisplay {
+  const raw = value.trim()
+  const key = raw.toLowerCase()
+  const locale = (isSiteLocale(raw) ? raw : LANGUAGE_ALIASES[key]) ?? null
+  if (locale) {
+    const meta = getSiteLocaleMeta(locale)
+    return { code: locale, countryCode: meta.countryCode, label: meta.label }
+  }
+  return { code: raw, countryCode: '', label: raw }
 }

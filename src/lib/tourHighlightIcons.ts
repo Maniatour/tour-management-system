@@ -324,7 +324,7 @@ export const TOUR_HIGHLIGHT_ITEM_LABELS: Record<TourHighlightItemId, string> = {
   duration: '소요 시간',
   groupSize: '그룹 규모',
   category: '카테고리 · 출발 도시',
-  languages: '지원 언어',
+  languages: '투어 진행 가능 언어',
   departureArrival: '출발 / 도착',
   trustLicensedOperator: '공식 라이선스',
   trustSmallGroup: '소그룹 투어',

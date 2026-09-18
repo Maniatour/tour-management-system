@@ -6,12 +6,12 @@ import {
   Car,
   ChevronDown,
   ChevronUp,
-  Clock3,
   Flag,
   Info,
   MapPin,
   Navigation,
-  Ticket,
+  Pencil,
+  Trash2,
   Utensils,
 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -42,6 +42,7 @@ export type CustomerScheduleItem = {
   content_i18n?: ScheduleContentI18n | null
   thumbnail_url: string | null
   google_maps_link: string | null
+  show_to_customers?: boolean | null
 }
 
 type TourScheduleCustomerItineraryViewProps = {
@@ -66,6 +67,14 @@ type TourScheduleCustomerItineraryViewProps = {
     fallback: string | null,
     fieldName?: string
   ) => string
+  interactive?: boolean
+  hideChrome?: boolean
+  hiddenFromCustomerIds?: ReadonlySet<string>
+  hiddenLabel?: string
+  clickToEditLabel?: string
+  deleteLabel?: string
+  onEditItem?: (id: string) => void
+  onDeleteItem?: (id: string) => void
 }
 
 function resolveThumbnailUrl(thumbnailUrl: string | null) {
@@ -80,31 +89,6 @@ function getScheduleIcon(schedule: CustomerScheduleItem) {
   return <MapPin className="h-4 w-4" />
 }
 
-function getScheduleMeta(
-  schedule: CustomerScheduleItem,
-  getText: TourScheduleCustomerItineraryViewProps['getText'],
-  showDurationOnly: boolean
-) {
-  const items: Array<{ icon: typeof Clock3; label: string }> = []
-
-  if (showDurationOnly && schedule.duration_minutes && schedule.duration_minutes > 0) {
-    items.push({
-      icon: Clock3,
-      label: getText(`${schedule.duration_minutes}분`, `${schedule.duration_minutes} min(s)`),
-    })
-  }
-
-  if (schedule.is_tour) {
-    items.push({ icon: Flag, label: getText('가이드 동행', 'Guided') })
-  }
-
-  if (schedule.is_transport) {
-    items.push({ icon: Ticket, label: getText('픽업/이동', 'Transfer') })
-  }
-
-  return items
-}
-
 export default function TourScheduleCustomerItineraryView({
   schedules,
   locale,
@@ -116,6 +100,14 @@ export default function TourScheduleCustomerItineraryView({
   onToggleSchedule,
   getText,
   getLocalizedText,
+  interactive = false,
+  hideChrome = false,
+  hiddenFromCustomerIds,
+  hiddenLabel,
+  clickToEditLabel,
+  deleteLabel,
+  onEditItem,
+  onDeleteItem,
 }: TourScheduleCustomerItineraryViewProps) {
   const t = useTranslations('productDetail')
   const isEnglish = locale.trim().toLowerCase() === 'en'
@@ -142,23 +134,25 @@ export default function TourScheduleCustomerItineraryView({
 
   return (
     <div className="airbnb-itinerary">
-      <div className="airbnb-itinerary-schedule-toggle">
-        <h3 className="airbnb-detail-section-title">
-          {getText('여행 일정', 'Itinerary')}
-        </h3>
-        <button
-          type="button"
-          className="airbnb-itinerary-detail-toggle-btn"
-          onClick={onToggleAll}
-          aria-expanded={allSchedulesExpanded}
-        >
-          {allSchedulesExpanded
-            ? getText('간략히 보기', 'Show less')
-            : getText('자세히 보기', 'View details')}
-        </button>
-      </div>
+      {hideChrome ? null : (
+        <div className="airbnb-itinerary-schedule-toggle">
+          <h3 className="airbnb-detail-section-title">
+            {getText('여행 일정', 'Itinerary')}
+          </h3>
+          <button
+            type="button"
+            className="airbnb-itinerary-detail-toggle-btn"
+            onClick={onToggleAll}
+            aria-expanded={allSchedulesExpanded}
+          >
+            {allSchedulesExpanded
+              ? getText('간략히 보기', 'Show less')
+              : getText('자세히 보기', 'View details')}
+          </button>
+        </div>
+      )}
 
-      {sunriseSummary?.showDifferentDatesWarning ? (
+      {!hideChrome && sunriseSummary?.showDifferentDatesWarning ? (
         <section className="airbnb-itinerary-sunrise-alert" aria-live="polite">
           <p className="airbnb-itinerary-sunrise-alert-title">
             {t('sunrisePickupDifferentDateTitle')}
@@ -184,26 +178,30 @@ export default function TourScheduleCustomerItineraryView({
         </section>
       ) : null}
 
-      {loadingSunrise ? (
+      {!hideChrome && loadingSunrise ? (
         <p className="airbnb-itinerary-sunrise-loading">{t('sunriseScheduleLoading')}</p>
       ) : null}
 
-      <ProductDetailDeparturePointModal
-        open={departureModalOpen}
-        onOpenChange={setDepartureModalOpen}
-        locale={locale}
-      />
+      {hideChrome ? null : (
+        <>
+          <ProductDetailDeparturePointModal
+            open={departureModalOpen}
+            onOpenChange={setDepartureModalOpen}
+            locale={locale}
+          />
 
-      <div className="airbnb-itinerary-timeline-toolbar">
-        <button
-          type="button"
-          className="airbnb-itinerary-departure-link"
-          onClick={() => setDepartureModalOpen(true)}
-        >
-          {getText('출발 위치 확인', 'Find your departure point')}
-          <Navigation className="h-4 w-4" aria-hidden />
-        </button>
-      </div>
+          <div className="airbnb-itinerary-timeline-toolbar">
+            <button
+              type="button"
+              className="airbnb-itinerary-departure-link"
+              onClick={() => setDepartureModalOpen(true)}
+            >
+              {getText('출발 위치 확인', 'Find your departure point')}
+              <Navigation className="h-4 w-4" aria-hidden />
+            </button>
+          </div>
+        </>
+      )}
 
       <div className="airbnb-itinerary-timeline">
         {dayEntries.map(([dayNumber, daySchedules]) => {
@@ -235,7 +233,13 @@ export default function TourScheduleCustomerItineraryView({
                 const isExpanded =
                   allSchedulesExpanded || (hasDescription && expandedSchedules.has(schedule.id))
                 const thumbnailUrl = resolveThumbnailUrl(schedule.thumbnail_url)
-                const metaItems = getScheduleMeta(schedule, getText, Boolean(timeRangeLabel))
+                const durationLabel =
+                  schedule.duration_minutes && schedule.duration_minutes > 0
+                    ? getText(`${schedule.duration_minutes}분`, `${schedule.duration_minutes} min`)
+                    : null
+                const hiddenFromCustomer =
+                  schedule.show_to_customers === false ||
+                  Boolean(hiddenFromCustomerIds?.has(schedule.id))
 
                 return (
                   <div key={schedule.id} className="airbnb-itinerary-step">
@@ -243,51 +247,96 @@ export default function TourScheduleCustomerItineraryView({
                       {getScheduleIcon(schedule)}
                     </div>
 
-                    <article className="airbnb-itinerary-card">
+                    <article
+                      className={`airbnb-itinerary-card ${interactive ? 'is-editable group relative' : ''} ${
+                        hiddenFromCustomer ? 'is-hidden-from-customer' : ''
+                      }`}
+                      {...(interactive && onEditItem
+                        ? { onClick: () => onEditItem(schedule.id) }
+                        : {})}
+                    >
+                      {interactive ? (
+                        <div
+                          className="airbnb-itinerary-card-edit-bar"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {onEditItem ? (
+                            <button
+                              type="button"
+                              onClick={() => onEditItem(schedule.id)}
+                              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                              aria-label={clickToEditLabel || getText('수정', 'Edit')}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                          ) : null}
+                          {onDeleteItem ? (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteItem(schedule.id)}
+                              className="rounded-md p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+                              aria-label={deleteLabel || getText('삭제', 'Delete')}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
                       <button
                         type="button"
-                        className={`airbnb-itinerary-card-header ${hasDescription ? 'is-clickable' : ''}`}
-                        onClick={() => hasDescription && onToggleSchedule(schedule.id)}
-                        disabled={!hasDescription}
+                        className={`airbnb-itinerary-card-header ${
+                          hasDescription || interactive ? 'is-clickable' : ''
+                        }`}
+                        onClick={(event) => {
+                          if (interactive) {
+                            event.stopPropagation()
+                            onEditItem?.(schedule.id)
+                            return
+                          }
+                          if (hasDescription) onToggleSchedule(schedule.id)
+                        }}
+                        disabled={!hasDescription && !interactive}
                         aria-expanded={isExpanded}
                       >
                         <div className="min-w-0 flex-1 text-left">
-                          {title || timeRangeLabel ? (
+                          {title || timeRangeLabel || durationLabel ? (
                             <h4 className="airbnb-itinerary-card-title">
                               {timeRangeLabel ? (
-                                <>
-                                  <span className="airbnb-itinerary-card-time">{timeRangeLabel}</span>
-                                  {title ? (
-                                    <>
-                                      <span className="airbnb-itinerary-card-separator" aria-hidden>
-                                        |
-                                      </span>
-                                      <span>{title}</span>
-                                    </>
-                                  ) : null}
-                                </>
-                              ) : (
-                                title
-                              )}
+                                <span className="airbnb-itinerary-card-time">{timeRangeLabel}</span>
+                              ) : null}
+                              {timeRangeLabel && title ? (
+                                <span className="airbnb-itinerary-card-separator" aria-hidden>
+                                  |
+                                </span>
+                              ) : null}
+                              {title ? (
+                                <span className="airbnb-itinerary-card-title-text">{title}</span>
+                              ) : null}
+                              {durationLabel ? (
+                                <span className="airbnb-itinerary-duration-badge">{durationLabel}</span>
+                              ) : null}
                             </h4>
                           ) : null}
-                          {metaItems.length > 0 ? (
-                            <div className="airbnb-itinerary-meta">
-                              {metaItems.map((item) => {
-                                const Icon = item.icon
-                                return (
-                                  <span key={item.label}>
-                                    <Icon className="h-4 w-4" aria-hidden />
-                                    {item.label}
-                                  </span>
-                                )
-                              })}
-                            </div>
+                          {hiddenFromCustomer && hiddenLabel ? (
+                            <span className="mt-1 inline-flex rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                              {hiddenLabel}
+                            </span>
+                          ) : null}
+                          {interactive && !hasDescription && clickToEditLabel ? (
+                            <p className="mt-1 text-xs text-muted-foreground">{clickToEditLabel}</p>
                           ) : null}
                         </div>
 
                         {hasDescription && !allSchedulesExpanded ? (
-                          <span className="airbnb-itinerary-card-chevron" aria-hidden>
+                          <span
+                            className="airbnb-itinerary-card-chevron"
+                            aria-hidden
+                            onClick={(event) => {
+                              if (!interactive) return
+                              event.stopPropagation()
+                              onToggleSchedule(schedule.id)
+                            }}
+                          >
                             {isExpanded ? (
                               <ChevronUp className="h-4 w-4" />
                             ) : (
@@ -332,10 +381,12 @@ export default function TourScheduleCustomerItineraryView({
         })}
       </div>
 
-      <p className="airbnb-itinerary-disclaimer">
-        <Info className="h-4 w-4 shrink-0" aria-hidden />
-        <span>{t('tourScheduleDisclaimer')}</span>
-      </p>
+      {hideChrome ? null : (
+        <p className="airbnb-itinerary-disclaimer">
+          <Info className="h-4 w-4 shrink-0" aria-hidden />
+          <span>{t('tourScheduleDisclaimer')}</span>
+        </p>
+      )}
     </div>
   )
 }

@@ -70,6 +70,18 @@ test('Viator Amended Booking도 신규 접수 뱃지에서 제외한다', () => 
   assert.equal(isBookingReceiptImportNotifyRow(change), false)
 })
 
+test('Klook Order Received는 본문이 변경으로 오인되어도 신규 접수 뱃지에 남긴다', () => {
+  const klook = row({
+    subject:
+      'Klook Order Received - [한국어 가이드] 라스베가스 > 그랜드캐년 일출+앤텔롭캐년+홀슈밴드 도깨비 당일투어 | 소규모 프리미엄 - 2026-10-02 - jo hajin - GPW748162',
+    platform_key: 'klook',
+    extracted_data: { is_booking_change: true, is_booking_confirmed: false },
+  })
+  assert.equal(isReservationRelatedImportNotifyRow(klook), true)
+  assert.equal(isBookingReceiptImportNotifyRow(klook), true)
+  assert.equal(isUnprocessedBookingImportListRow({ ...klook, status: 'pending' }), true)
+})
+
 test('Zelle·ATM 메일은 예약 접수 뱃지에서 제외한다', () => {
   assert.equal(isBookingReceiptImportNotifyRow(row({ platform_key: 'zelle' })), false)
   assert.equal(isBookingReceiptImportNotifyRow(row({ platform_key: 'wells-fargo-atm' })), false)

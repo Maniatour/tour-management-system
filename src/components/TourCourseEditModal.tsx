@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { 
   X, 
   Globe, 
@@ -794,9 +795,10 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
   }, [tourCourses])
 
   if (!isOpen) return null
+  if (typeof document === 'undefined') return null
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+  return createPortal(
+    <div className="fixed inset-0 z-[10100] flex items-center justify-center bg-black bg-opacity-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-7xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-900">
@@ -1611,6 +1613,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           />
         )
       })()}
-    </div>
+    </div>,
+    document.body
   )
 }

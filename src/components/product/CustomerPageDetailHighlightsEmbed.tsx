@@ -342,7 +342,7 @@ export default function CustomerPageDetailHighlightsEmbed({
             : id === 'category'
               ? '카테고리를 선택하세요'
               : id === 'languages'
-                ? '지원 언어를 선택하세요'
+                ? '투어 진행 가능 언어를 선택하세요'
                 : id === 'departureArrival'
                   ? '출발·도착 도시를 입력하세요'
                   : getTourHighlightItemTitle(id)
@@ -846,7 +846,7 @@ export default function CustomerPageDetailHighlightsEmbed({
 
         {item.id === 'languages' ? (
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">지원 언어</label>
+            <label className="mb-1 block text-xs font-medium text-gray-700">투어 진행 가능 언어</label>
             <div className="rounded-lg border border-border/60 bg-background p-3">
               <TourHighlightLanguagesEditor
                 value={form.languages}

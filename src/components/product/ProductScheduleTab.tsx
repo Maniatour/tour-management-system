@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import { Calendar, Plus, Eye, Users, MapPin } from 'lucide-react'
+import ProductScheduleWorkspace from '@/components/product/ProductScheduleWorkspace'
 import { supabase } from '@/lib/supabase'
 import TableScheduleAdd from '../TableScheduleAdd'
 
@@ -151,12 +152,6 @@ export default function ProductScheduleTab({
     // 기존 데이터를 tableSchedules에 로드
     setTableSchedules([...schedules])
     setShowTableAdd(true)
-  }
-
-  // 뷰 모드에 따라 필터링된 일정 반환
-  const getFilteredSchedules = () => {
-    // 어드민에서는 고객뷰 모드에서도 모든 일정을 보여줌 (고객이 보는 것과 동일하게)
-    return schedules
   }
 
   // 일차별로 그룹화하는 함수
@@ -455,7 +450,7 @@ export default function ProductScheduleTab({
             className="flex items-center px-3 py-2 rounded-lg text-sm bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="h-4 w-4 mr-1" />
-            테이블로 추가/수정
+            {getText('테이블로 일괄 편집', 'Advanced table edit')}
           </button>
         </div>
       </div>
@@ -463,74 +458,12 @@ export default function ProductScheduleTab({
       {/* 일정 목록 */}
       <div className="space-y-6">
         {viewMode === 'customer' ? (
-          // 고객뷰
-          <div className="space-y-4">
-            {groupSchedulesByDay(getFilteredSchedules()).map(({ day, schedules }) => (
-              <div key={day} className="space-y-2">
-                <h5 className="text-md font-semibold text-gray-800 mb-2">{day}{getText('일차', ' Day')}</h5>
-                <div className="space-y-2">
-                  {schedules.map((schedule) => (
-                    <div key={schedule.id} className="bg-white border border-gray-200 rounded-lg p-3">
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                        {/* 썸네일 */}
-                        <div className="w-full sm:w-12 h-20 sm:h-8 flex-shrink-0 flex items-center justify-center">
-                          {schedule.thumbnail_url ? (
-                            <Image 
-                              src={schedule.thumbnail_url} 
-                              alt="썸네일" 
-                              width={48}
-                              height={32}
-                              className="w-full h-full sm:w-12 sm:h-8 object-cover rounded border"
-                              style={{ width: 'auto', height: 'auto' }}
-                            />
-                          ) : (
-                            <div className="w-full h-full bg-gray-100 rounded border flex items-center justify-center">
-                              <span className="text-xs text-gray-400">이미지</span>
-                            </div>
-                          )}
-                        </div>
-                        
-                        {/* 시간과 소요시간 */}
-                        <div className="flex items-center gap-3 sm:gap-0 sm:flex-col sm:w-28 flex-shrink-0">
-                          <div className="flex items-center justify-center">
-                            <span className="text-sm text-gray-600 font-medium whitespace-nowrap">
-                              {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
-                              {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
-                            </span>
-                          </div>
-                          {schedule.duration_minutes && schedule.duration_minutes > 0 && (
-                            <div className="flex items-center justify-center">
-                              <span className="text-xs sm:text-sm text-gray-500">
-                                {schedule.duration_minutes}분
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        
-                        {/* 제목과 설명 */}
-                        <div className="flex-1 min-w-0 w-full sm:w-auto">
-                          <div className="font-medium text-gray-900 text-sm leading-tight">
-                            {getScheduleText(schedule, 'title')}
-                          </div>
-                          {getScheduleText(schedule, 'description') && (
-                            <div className="text-xs text-gray-600 mt-1 whitespace-pre-line">
-                              {getScheduleText(schedule, 'description')}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-            
-            {getFilteredSchedules().length === 0 && (
-              <div className="text-center py-8 text-gray-500">
-                고객에게 표시할 일정이 없습니다.
-              </div>
-            )}
-          </div>
+          <ProductScheduleWorkspace
+            productId={productId}
+            isNewProduct={isNewProduct}
+            locale={language}
+            onSaved={() => void fetchSchedules()}
+          />
         ) : (
           // 가이드뷰
           <div className="space-y-6">

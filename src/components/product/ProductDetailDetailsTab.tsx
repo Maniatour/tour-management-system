@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, type ComponentProps } from 'react'
+import ReactCountryFlag from 'react-country-flag'
 import {
   MapPin,
   Users,
@@ -10,6 +11,7 @@ import {
   Shield,
   Megaphone,
   ClipboardList,
+  Info,
   type LucideIcon,
 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -20,9 +22,9 @@ import {
   getProductArrivalCountry,
   getProductDepartureCity,
   getProductDepartureCountry,
-  formatProductGroupSize,
+  resolveProductLanguageDisplay,
 } from '@/lib/productDetailDisplay'
-import { resolveTagLabel, type TagLabelMap } from '@/lib/productTagDisplay'
+import type { TagLabelMap } from '@/lib/productTagDisplay'
 import type { ProductDetailsFields, ProductDetailsTabProduct } from '@/components/product/productDetailTypes'
 import CustomerPageZone from '@/components/product/CustomerPageZone'
 import ProductTourAudienceDisplay from '@/components/product/ProductTourAudienceDisplay'
@@ -113,18 +115,12 @@ export default function ProductDetailDetailsTab({
   product,
   productId,
   productDetails,
-  categoryLabel,
   durationLabel,
   locale,
-  tagLabelMap,
   section,
   variant = 'default',
 }: ProductDetailDetailsTabProps) {
   const t = useTranslations('productDetail')
-  const isEnglish = locale === 'en'
-  const groupSizeLabel = product.group_size
-    ? formatProductGroupSize(product.group_size, isEnglish)
-    : null
 
   const InfoBlock = (
     props: Omit<ComponentProps<typeof DetailInfoBlock>, 'variant'>
@@ -168,14 +164,6 @@ export default function ProductDetailDetailsTab({
                             <h4 className="mb-2 text-sm font-medium text-gray-900 sm:mb-3">{t('keyInformation')}</h4>
                             <dl className="space-y-2.5 text-xs sm:space-y-3 sm:text-sm">
                               <div className="flex justify-between">
-                                <dt className="text-gray-600">{t('category')}</dt>
-                                <dd className="text-gray-900">{categoryLabel}</dd>
-                              </div>
-                              <div className="flex justify-between">
-                                <dt className="text-gray-600">{t('subcategory')}</dt>
-                                <dd className="text-gray-900">{product.sub_category || t('notSpecified')}</dd>
-                              </div>
-                              <div className="flex justify-between">
                                 <dt className="text-gray-600">{t('duration')}</dt>
                                 <dd className="text-gray-900">{durationLabel}</dd>
                               </div>
@@ -186,16 +174,6 @@ export default function ProductDetailDetailsTab({
                                   {t('peopleUnit')}
                                 </dd>
                               </div>
-                              <div className="flex justify-between">
-                                <dt className="text-gray-600">{t('status')}</dt>
-                                <dd className="text-gray-900">{product.status || t('notSpecified')}</dd>
-                              </div>
-                              {product.group_size && groupSizeLabel && (
-                                <div className="flex justify-between">
-                                  <dt className="text-gray-600">{t('groupSize')}</dt>
-                                  <dd className="text-gray-900">{groupSizeLabel}</dd>
-                                </div>
-                              )}
                             </dl>
                           </div>
 
@@ -237,16 +215,31 @@ export default function ProductDetailDetailsTab({
                         {product.languages && product.languages.length > 0 && (
                           <div>
                             <h4 className="mb-2 text-sm font-medium text-gray-900 sm:mb-3">{t('supportedLanguages')}</h4>
-                            <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                              {product.languages.map((language, index) => (
-                                <span
-                                  key={index}
-                                  className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 sm:px-3 sm:py-1 sm:text-sm"
-                                >
-                                  {language}
-                                </span>
-                              ))}
+                            <div className="flex flex-wrap gap-2">
+                              {product.languages.map((language, index) => {
+                                const display = resolveProductLanguageDisplay(language)
+                                return (
+                                  <span
+                                    key={`${display.code}-${index}`}
+                                    className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-white px-3 py-1.5 text-sm font-medium text-foreground shadow-sm"
+                                  >
+                                    {display.countryCode ? (
+                                      <ReactCountryFlag
+                                        countryCode={display.countryCode}
+                                        svg
+                                        aria-hidden
+                                        style={{ width: '18px', height: '13px', borderRadius: '2px' }}
+                                      />
+                                    ) : null}
+                                    {display.label}
+                                  </span>
+                                )
+                              })}
                             </div>
+                            <p className="mt-2.5 flex items-start gap-2 text-xs leading-relaxed text-muted-foreground sm:text-sm">
+                              <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                              <span>{t('tourLanguageAvailabilityNote')}</span>
+                            </p>
                           </div>
                         )}
 
@@ -287,22 +280,6 @@ export default function ProductDetailDetailsTab({
                             </div>
                           </div>
                         )}
-
-                        {(product.tags && product.tags.length > 0) || (productDetails?.tags && productDetails.tags.length > 0) ? (
-                          <div>
-                            <h4 className="mb-2 text-sm font-medium text-gray-900 sm:mb-3">{t('tags')}</h4>
-                            <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                              {(productDetails?.tags || product.tags || []).map((tag, index) => (
-                                <span
-                                  key={index}
-                                  className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800 sm:px-3 sm:py-1 sm:text-sm"
-                                >
-                                  {resolveTagLabel(tag, locale, tagLabelMap)}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
                       </div>
                     )}
 

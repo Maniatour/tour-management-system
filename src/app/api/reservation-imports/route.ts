@@ -601,11 +601,9 @@ export async function GET(request: NextRequest) {
       let extracted_data = parseExtractedData(r.extracted_data) ?? undefined
       const looksKlook =
         r.platform_key === 'klook' || isKlookOrderEmailSubjectForReservation(r.subject)
-      if (looksKlook) {
+      if (looksKlook && isKlookOrderEmailSubjectForReservation(r.subject)) {
         const ext = extracted_data ?? ({} as ExtractedReservationData)
-        if (ext.is_booking_confirmed !== true && isKlookOrderEmailSubjectForReservation(r.subject)) {
-          extracted_data = { ...ext, is_booking_confirmed: true }
-        }
+        extracted_data = { ...ext, is_booking_confirmed: true, is_booking_change: false }
       }
       const looksZoomZoom = isZoomZoomTourNewBookingEmailSubject(r.subject)
       if (looksZoomZoom) {

@@ -264,6 +264,44 @@ Hotel Pickup: Mandalay Bay Resort & Casino, 3950 S Las Vegas Blvd, Las Vegas, NV
   assert.equal(extracted_data.tour_date, '2026-04-07')
 })
 
+const KLOOK_ORDER_RECEIVED_SUBJECT =
+  'Klook Order Received - [한국어 가이드] 라스베가스 > 그랜드캐년 일출+앤텔롭캐년+홀슈밴드 도깨비 당일투어 | 소규모 프리미엄 - 2026-10-02 - jo hajin - GPW748162'
+
+const KLOOK_ORDER_RECEIVED_BODY = `Hey there Wooyong Shim,
+Klook has received an order for [한국어 가이드] 라스베가스 > 그랜드캐년 일출+앤텔롭캐년+홀슈밴드 도깨비 당일투어 | 소규모 프리미엄. Please confirm availability with us ASAP - see below order details:
+
+Booking reference ID: GPW748162
+Date Request: 2026-10-02
+Lead participant: ()jo hajin
+Participant: 2 x Person
+Departure location: 더코스모폴리탄 호텔
+Activity URL: https://www.klook.com/ko/activity/206813
+
+If you cannot confirm this booking, please send an amendment request or contact the customer to discuss alternatives
+`
+
+test('Klook Order Received는 본문 amendment request 안내가 있어도 신규 접수다', () => {
+  assert.equal(isBookingChangeEmailSubject(KLOOK_ORDER_RECEIVED_SUBJECT), false)
+  assert.equal(isGygBookingChangeEmail(KLOOK_ORDER_RECEIVED_SUBJECT, KLOOK_ORDER_RECEIVED_BODY), false)
+  assert.equal(
+    isReservationImportBookingChange({
+      subject: KLOOK_ORDER_RECEIVED_SUBJECT,
+      extracted: { is_booking_change: true },
+    }),
+    false
+  )
+  const { platform_key, extracted_data } = extractReservationFromEmail({
+    subject: KLOOK_ORDER_RECEIVED_SUBJECT,
+    sourceEmail: 'operator@klook.com',
+    text: KLOOK_ORDER_RECEIVED_BODY,
+  })
+  assert.equal(platform_key, 'klook')
+  assert.equal(extracted_data.is_booking_change, undefined)
+  assert.equal(extracted_data.is_booking_confirmed, true)
+  assert.equal(extracted_data.channel_rn, 'GPW748162')
+  assert.equal(extracted_data.customer_name, 'jo hajin')
+})
+
 test('Viator Amended Booking 인원 추가는 people 필드로 표시한다', () => {
   const { extracted_data } = extractReservationFromEmail({
     subject: 'Amended Booking: Wed, Oct 14, 2026 (#BR-1416980871)',

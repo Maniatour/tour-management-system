@@ -8,6 +8,7 @@ import { fetchProductDetailsForAdminEdit } from '@/lib/fetchProductDetail'
 import type { DetailFieldKey } from '@/lib/customerPageZoneEditMap'
 import { useCustomerPageEditLabels } from '@/hooks/useCustomerPageEditLabels'
 import { useModalEditorHeight } from '@/hooks/useModalEditorHeight'
+import { useTranslations } from 'next-intl'
 import {
   getAdminEditLocaleLabel,
   normalizeAdminEditLocale,
@@ -26,6 +27,8 @@ import {
 import { isLegacyColumnLocale } from '@/lib/siteLocales'
 import { supabase } from '@/lib/supabase'
 import CustomerPageTourAudienceEmbed from '@/components/product/CustomerPageTourAudienceEmbed'
+import TourHighlightLanguagesEditor from '@/components/product/TourHighlightLanguagesEditor'
+import { parseTourLanguagesInput } from '@/lib/tourHighlightLanguages'
 import {
   THINGS_TO_KNOW_ADMIN_SECTION_IDS,
   THINGS_TO_KNOW_DETAIL_FIELDS_BY_GROUP,
@@ -72,7 +75,7 @@ type BasicForm = {
   sub_category: string
   max_participants: string
   group_size: string[]
-  languages: string
+  languages: string[]
   departure_city: string
   arrival_city: string
   departure_country: string
@@ -119,6 +122,7 @@ export default function CustomerPageThingsToKnowEmbed({
     contentPlaceholder,
     editorUiLocale,
   } = useCustomerPageEditLabels()
+  const tProductDetail = useTranslations('productDetail')
   const { height: editorHeight, measureRef: editorMeasureRef } = useModalEditorHeight(120)
   const sectionLabel = (id: SectionId) => {
     if (isThingsToKnowOperationField(id)) {
@@ -161,7 +165,7 @@ export default function CustomerPageThingsToKnowEmbed({
     sub_category: '',
     max_participants: '',
     group_size: [],
-    languages: '',
+    languages: [],
     departure_city: '',
     arrival_city: '',
     departure_country: '',
@@ -244,8 +248,8 @@ export default function CustomerPageThingsToKnowEmbed({
           ? String(productRow.group_size).split(',').map((s) => s.trim()).filter(Boolean)
           : [],
         languages: Array.isArray(productRow.languages)
-          ? (productRow.languages as string[]).join(', ')
-          : '',
+          ? parseTourLanguagesInput((productRow.languages as string[]).join(','))
+          : parseTourLanguagesInput(String(productRow.languages ?? '')),
         departure_city: pickLocation('departure_city'),
         arrival_city: pickLocation('arrival_city'),
         departure_country: pickLocation('departure_country'),
@@ -385,10 +389,7 @@ export default function CustomerPageThingsToKnowEmbed({
           : null,
         group_size:
           basicForm.group_size.length > 0 ? basicForm.group_size.join(',') : null,
-        languages: basicForm.languages
-          .split(',')
-          .map((lang) => lang.trim())
-          .filter(Boolean),
+        languages: basicForm.languages,
         ...locationLegacyPatch,
         adult_age: basicForm.adult_age ? Number(basicForm.adult_age) : null,
         child_age_min: basicForm.child_age_min ? Number(basicForm.child_age_min) : null,
@@ -587,17 +588,21 @@ export default function CustomerPageThingsToKnowEmbed({
                 ))}
               </div>
             </label>
-            <label className="block space-y-1 sm:col-span-2">
-              <span className="text-xs font-medium">지원 언어 (languages, 쉼표 구분)</span>
-              <input
-                value={basicForm.languages}
-                onChange={(e) =>
-                  setBasicForm((prev) => ({ ...prev, languages: e.target.value }))
-                }
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                placeholder="ko, en, ja"
-              />
-            </label>
+            <div className="space-y-1 sm:col-span-2">
+              <span className="text-xs font-medium">투어 진행 가능 언어</span>
+              <div className="rounded-lg border border-border/60 bg-background p-3">
+                <TourHighlightLanguagesEditor
+                  value={basicForm.languages}
+                  locale={editLocale}
+                  onChange={(languages) =>
+                    setBasicForm((prev) => ({ ...prev, languages }))
+                  }
+                />
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {tProductDetail('tourLanguageAvailabilityNote')}
+              </p>
+            </div>
             <label className="block space-y-1">
               <span className="text-xs font-medium">
                 출발 도시 ({getAdminEditLocaleLabel(editLocale)})

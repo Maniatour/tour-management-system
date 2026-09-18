@@ -1217,15 +1217,17 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 />
                 </>
               )}
-              <ReservationCardWaiverButton
-                reservationId={reservation.id}
-                customer={customers.find((c) => c.id === reservation.customerId)}
-                locale={locale === 'en' ? 'en' : 'ko'}
-                bookingNumber={(reservation.channelRN || '').trim() || reservation.id}
-                tourDate={reservation.tourDate ?? ''}
-                tourName={getProductName(reservation.productId, (products as any) || [])}
-                totalPeople={reservation.totalPeople || 0}
-              />
+              {!isReservationCancelled && reservationStatusLower !== 'cancelled_rebooking' ? (
+                <ReservationCardWaiverButton
+                  reservationId={reservation.id}
+                  customer={customers.find((c) => c.id === reservation.customerId)}
+                  locale={locale === 'en' ? 'en' : 'ko'}
+                  bookingNumber={(reservation.channelRN || '').trim() || reservation.id}
+                  tourDate={reservation.tourDate ?? ''}
+                  tourName={getProductName(reservation.productId, (products as any) || [])}
+                  totalPeople={reservation.totalPeople || 0}
+                />
+              ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-0.5">
               <div className="relative shrink-0" ref={simpleMoreMenuRef}>

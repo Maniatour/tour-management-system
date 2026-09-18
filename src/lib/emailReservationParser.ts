@@ -102,13 +102,15 @@ export function isGygBookingChangeEmailBody(text: string | null | undefined): bo
 export function isViatorAmendmentRequestEmailBody(text: string | null | undefined): boolean {
   const t = (text ?? '').replace(/\s+/g, ' ')
   if (!t) return false
-  return (
+  const hasStrongViatorChange =
     /wants to amend their booking/i.test(t) ||
     /here are the requested changes/i.test(t) ||
     /the customer has requested to amend this booking/i.test(t) ||
-    /requested to amend this booking from/i.test(t) ||
-    /\bamendment\s+request\b/i.test(t)
-  )
+    /requested to amend this booking from/i.test(t)
+  if (hasStrongViatorChange) return true
+  // Klook 신규 주문 안내: "please send an amendment request or contact the customer…"
+  if (/please send an amendment request/i.test(t)) return false
+  return /\bamendment\s+request\b/i.test(t)
 }
 
 /** Viator/Tripadvisor 본문: 이미 반영된 확정 변경 */
@@ -129,6 +131,7 @@ export function isGygBookingChangeEmail(
   bodyText?: string | null
 ): boolean {
   if (isCancellationRequestEmailSubject(subject)) return false
+  if (isKlookOrderEmailSubjectForReservation(subject)) return false
   return (
     isBookingChangeEmailSubject(subject) ||
     isGygBookingChangeEmailBody(bodyText) ||
@@ -142,6 +145,7 @@ export function isReservationImportBookingChange(args: {
   subject?: string | null
   extracted?: { is_booking_change?: unknown } | null | undefined
 }): boolean {
+  if (isKlookOrderEmailSubjectForReservation(args.subject)) return false
   if (args.extracted?.is_booking_change === true) return true
   return isBookingChangeEmailSubject(args.subject)
 }
@@ -3160,7 +3164,11 @@ export function extractReservationFromEmail(options: {
   }
 
   // 변경 알림: 신규 접수로 오인되지 않게 하고, RN이 비었으면 제목/본문에서 보강
-  if (isGygBookingChangeEmail(subject, plainText) || merged.is_booking_change === true) {
+  // Klook Order Received/Confirmed 는 본문 안내("please send an amendment request")가 있어도 신규 접수
+  if (
+    !isKlookOrderEmailSubjectForReservation(subject) &&
+    (isGygBookingChangeEmail(subject, plainText) || merged.is_booking_change === true)
+  ) {
     merged = { ...merged, is_booking_change: true, is_booking_confirmed: false }
     const cur = merged.channel_rn?.trim()
     if (!cur || cur.length < 4 || cur.toLowerCase() === 'id') {

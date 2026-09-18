@@ -433,14 +433,14 @@ export const CUSTOMER_PAGE_ZONE_EDIT_MAP: Record<CustomerPageZone, ZoneEditConfi
     editType: 'admin-tab',
     adminTab: 'detail-tour-courses',
     requiresProduct: true,
-    note: '이 상품에 연결된 코스의 고객용 이름·설명을 편집합니다. 코스 연결·순서는 투어 코스 탭에서 관리합니다.',
+    note: '고객 페이지와 같은 코스 목록에서 클릭해 수정·추가·연결 해제합니다. 코스 라이브러리는 투어 코스 관리에서 다룹니다.',
   },
   'detail-tab-schedule': {
     label: '투어 일정',
     editType: 'admin-tab',
     adminTab: 'detail-schedule',
     requiresProduct: true,
-    note: '일정 항목·픽업·드롭 안내를 직접 편집합니다. 일정 추가·삭제는 전체 화면 투어 일정 탭을 이용하세요.',
+    note: '고객 페이지와 같은 일정 카드에서 클릭해 수정·추가·삭제합니다.',
   },
   'detail-tab-details': {
     label: '알아두실 사항',
