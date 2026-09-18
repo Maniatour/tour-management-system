@@ -19,7 +19,9 @@ import {
   Heart,
 } from 'lucide-react'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
-import { childModalZIndex, DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
+import { DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
+import CardFeeChargePreview, { cardFeeChargeTotals } from '@/components/payment/CardFeeChargePreview'
+import { actualAmountFromChargedTotal } from '@/lib/choiceProcessingFee'
 import { isGetYourGuideReplyEmail } from '@/lib/otaDirectCustomerEmail'
 import {
   buildQuickPaymentRequestSmsText,
@@ -27,10 +29,7 @@ import {
   parseRecipientEmail,
 } from '@/lib/quickPaymentRequestMessage'
 import { resolveSmsPhone } from '@/utils/formatPhoneToE164'
-import {
-  useReservationFormChildOverlayZIndex,
-  useReservationFormGrandchildOverlayZIndex,
-} from '@/components/reservation/ReservationFormModalStackContext'
+import { useReservationFormChildOverlayZIndex } from '@/components/reservation/ReservationFormModalStackContext'
 
 function WhatsAppGlyph({ className }: { className?: string }) {
   return (
@@ -82,7 +81,7 @@ type QuickPaymentRequestFormProps = {
   /** page: 독립 페이지 / modal: 모달 본문 */
   variant?: 'page' | 'modal'
   onClose?: () => void
-  /** 빠른 금액 청구 모달 오버레이 z-index. 수수료 확인창은 이 위에 띄움 */
+  /** 빠른 금액 청구 모달 오버레이 z-index */
   overlayZIndex?: number
   onCustomerContactUpdated?: (payload: QuickPaymentCustomerContactUpdate) => void
 }
@@ -92,15 +91,11 @@ export default function QuickPaymentRequestForm({
   initials,
   variant = 'page',
   onClose,
-  overlayZIndex,
   onCustomerContactUpdated,
 }: QuickPaymentRequestFormProps) {
   const params = useParams()
   const locale = (localeProp ?? (params?.locale === 'en' ? 'en' : 'ko')) as 'ko' | 'en'
   const isModal = variant === 'modal'
-  const stackedConfirmZIndex = useReservationFormGrandchildOverlayZIndex(DIALOG_Z_INDEX.elevated)
-  const confirmZIndex =
-    overlayZIndex != null ? childModalZIndex(overlayZIndex) : stackedConfirmZIndex
 
   const [email, setEmail] = useState(initials?.email ?? '')
   const [recipientName, setRecipientName] = useState(initials?.recipientName ?? '')
@@ -120,7 +115,6 @@ export default function QuickPaymentRequestForm({
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<QuickPaymentResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [showCardFeeConfirm, setShowCardFeeConfirm] = useState(false)
   const [savingCustomerEmail, setSavingCustomerEmail] = useState(false)
   const [customerEmailSaved, setCustomerEmailSaved] = useState(false)
   const [smsSending, setSmsSending] = useState(false)
@@ -144,23 +138,10 @@ export default function QuickPaymentRequestForm({
     setSendSms(false)
     setOpenWhatsAppAfterCreate(false)
     setRequestKind(initials?.openAmount ? 'tip_open' : 'fixed')
-    setShowCardFeeConfirm(false)
     setCustomerEmailSaved(false)
     setCopiedKind(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- remount via key handles open; avoid wiping result on parent re-renders
   }, [initials?.email, initials?.recipientName, initials?.description, initials?.amountUsd, initials?.reservationId, initials?.phone])
-
-  useEffect(() => {
-    if (!showCardFeeConfirm) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      e.preventDefault()
-      e.stopPropagation()
-      setShowCardFeeConfirm(false)
-    }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [showCardFeeConfirm])
 
   const resetForm = () => {
     setEmail(initials?.email ?? '')
@@ -178,7 +159,6 @@ export default function QuickPaymentRequestForm({
     setRequestKind(initials?.openAmount ? 'tip_open' : 'fixed')
     setResult(null)
     setError(null)
-    setShowCardFeeConfirm(false)
     setCustomerEmailSaved(false)
     setCopiedKind(null)
   }
@@ -230,11 +210,6 @@ export default function QuickPaymentRequestForm({
     if (submitting) return
 
     if (validateBeforeSubmit() == null) return
-
-    if (requestKind !== 'tip_open' && (sendEmail || sendSms || openWhatsAppAfterCreate)) {
-      setShowCardFeeConfirm(true)
-      return
-    }
     void submitPaymentRequest()
   }
 
@@ -309,11 +284,11 @@ export default function QuickPaymentRequestForm({
   const submitPaymentRequest = async () => {
     if (submitting) return
 
-    const amountUsd = validateBeforeSubmit()
-    if (amountUsd == null) return
+    const baseAmountUsd = validateBeforeSubmit()
+    if (baseAmountUsd == null) return
     const isTipOpen = requestKind === 'tip_open'
+    const amountUsd = isTipOpen ? 0 : cardFeeChargeTotals(baseAmountUsd).total
 
-    setShowCardFeeConfirm(false)
     setSubmitting(true)
     try {
       const response = await fetchApiWithAuth('/api/invoices/quick-payment-request', {
@@ -562,6 +537,7 @@ export default function QuickPaymentRequestForm({
     !isOtaTempEmail &&
     Boolean(email.trim()) &&
     !customerEmailSaved
+  const chargeTotalUsd = requestKind === 'fixed' ? cardFeeChargeTotals(Number(amount)).total : 0
 
   const body = (
     <>
@@ -956,15 +932,8 @@ export default function QuickPaymentRequestForm({
 
           {requestKind === 'fixed' ? (
           <div className="space-y-2">
-            <label htmlFor="qp-amount" className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm font-medium text-foreground">
-              <span>{locale === 'ko' ? '금액 (USD)' : 'Amount (USD)'}</span>
-              {amount.trim() !== '' ? (
-                <span className="text-xs font-medium text-red-600">
-                  {locale === 'ko'
-                    ? '수수료 포함 금액인지 확인하세요'
-                    : 'Confirm this amount includes the fee'}
-                </span>
-              ) : null}
+            <label htmlFor="qp-amount" className="text-sm font-medium text-foreground">
+              {locale === 'ko' ? '실 금액 (USD)' : 'Actual amount (USD)'}
             </label>
             <div className="relative">
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
@@ -982,6 +951,12 @@ export default function QuickPaymentRequestForm({
                 placeholder="199.00"
               />
             </div>
+            <p className="text-xs leading-5 text-muted-foreground">
+              {locale === 'ko'
+                ? '실 금액을 입력하면 카드수수료 5%가 자동으로 추가됩니다.'
+                : 'Enter the actual amount. A 5% card fee is added automatically.'}
+            </p>
+            <CardFeeChargePreview baseAmountUsd={Number(amount)} locale={locale} />
           </div>
           ) : (
             <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-950">
@@ -1115,77 +1090,12 @@ export default function QuickPaymentRequestForm({
                   : locale === 'ko'
                     ? '결제 링크만 만들기'
                     : 'Create payment link only'}
+                {chargeTotalUsd > 0 ? ` · $${chargeTotalUsd.toFixed(2)}` : ''}
               </>
             )}
           </button>
         </form>
       )}
-
-      {showCardFeeConfirm
-        ? createPortal(
-            <div
-              className="fixed inset-0 flex items-center justify-center bg-black/50 p-4 pointer-events-auto"
-              style={{ zIndex: confirmZIndex }}
-              data-quick-payment-card-fee-confirm
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                setShowCardFeeConfirm(false)
-              }}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="qp-card-fee-confirm-title"
-            >
-              <div
-                className="relative w-full max-w-sm rounded-xl border border-border bg-background p-5 shadow-lg"
-                onClick={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                <h3
-                  id="qp-card-fee-confirm-title"
-                  className="text-base font-semibold tracking-tight text-foreground"
-                >
-                  {locale === 'ko' ? '카드 수수료 확인' : 'Confirm card fee'}
-                </h3>
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                  {locale === 'ko'
-                    ? '청구 금액에 카드 수수료(5%)가 포함되어 있는지 확인하셨나요? 확인 후 결제 요청을 보냅니다.'
-                    : 'Have you confirmed that this amount includes the 5% card fee? The payment request will be sent after you confirm.'}
-                </p>
-                <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setShowCardFeeConfirm(false)}
-                    className="inline-flex h-11 items-center justify-center rounded-xl border border-border bg-background px-4 text-sm font-medium hover:bg-muted"
-                  >
-                    {locale === 'ko' ? '돌아가기' : 'Go back'}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={() => {
-                      void submitPaymentRequest()
-                    }}
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                  >
-                    {submitting ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                        {locale === 'ko' ? '처리 중…' : 'Processing…'}
-                      </>
-                    ) : (
-                      <>
-                        <Send className="h-4 w-4" aria-hidden />
-                        {locale === 'ko' ? '확인 후 보내기' : 'Confirm & send'}
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body
-          )
-        : null}
     </>
   )
 
@@ -1479,7 +1389,6 @@ export function QuickPaymentRequestModal({
     if (!open) return
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      if (document.querySelector('[data-quick-payment-card-fee-confirm]')) return
       e.preventDefault()
       e.stopPropagation()
       onClose()
@@ -1569,7 +1478,7 @@ export function QuickPaymentRequestModal({
                 next.openAmount = true
                 next.description = item.description || 'Guide Tip'
               } else if (item.total > 0) {
-                next.amountUsd = item.total
+                next.amountUsd = actualAmountFromChargedTotal(item.total)
               }
               if (item.reservationId?.trim()) next.reservationId = item.reservationId.trim()
               setFormInitials(next)

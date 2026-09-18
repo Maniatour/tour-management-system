@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react'
 import QrCodeSvg from '@/components/QrCodeSvg'
+import CardFeeChargePreview, { cardFeeChargeTotals } from '@/components/payment/CardFeeChargePreview'
 import { fetchApiWithAuthWhenReady } from '@/lib/api-client-bearer'
 import { DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
 
@@ -127,6 +128,7 @@ export default function GuidePickupChargeModal({
   }, [open, result?.invoiceId, paid, isKo, onPaid])
 
   const amountUsd = parseUsdAmount(amount)
+  const { total: chargeAmountUsd } = cardFeeChargeTotals(amountUsd)
 
   const createCharge = useCallback(async () => {
     if (!target) return
@@ -134,7 +136,7 @@ export default function GuidePickupChargeModal({
       setError(t('offline'))
       return
     }
-    if (amountUsd <= 0) {
+    if (amountUsd <= 0 || chargeAmountUsd <= 0) {
       setError(t('invalidAmount'))
       return
     }
@@ -151,7 +153,7 @@ export default function GuidePickupChargeModal({
           sendSms: false,
           reservationId: target.reservationId,
           recipientName: target.customerName,
-          amountUsd,
+          amountUsd: chargeAmountUsd,
           description: note.trim() || defaultNote,
           locale: 'en',
         }),
@@ -175,7 +177,7 @@ export default function GuidePickupChargeModal({
       setResult({
         invoiceId: data.invoiceId,
         sitePayUrl: payUrl,
-        amountUsd: Number(data.amountUsd) || amountUsd,
+        amountUsd: Number(data.amountUsd) || chargeAmountUsd,
         description: String(data.description || note.trim() || defaultNote),
       })
     } catch (err) {
@@ -183,7 +185,7 @@ export default function GuidePickupChargeModal({
     } finally {
       setSubmitting(false)
     }
-  }, [amountUsd, defaultNote, isKo, note, t, target])
+  }, [amountUsd, chargeAmountUsd, defaultNote, isKo, note, t, target])
 
   const copyLink = useCallback(async () => {
     const url = result?.sitePayUrl
@@ -314,6 +316,7 @@ export default function GuidePickupChargeModal({
                 placeholder="0.00"
               />
               <p className="text-xs leading-5 text-muted-foreground">{t('amountHint')}</p>
+              <CardFeeChargePreview baseAmountUsd={amountUsd} locale={locale} />
               {Math.abs(amountUsd - target.recordedBalanceUsd) > 0.005 ? (
                 <button
                   type="button"
@@ -356,7 +359,11 @@ export default function GuidePickupChargeModal({
               ) : (
                 <QrCode className="h-4 w-4" aria-hidden />
               )}
-              {submitting ? t('generating') : t('generateQr')}
+              {submitting
+                ? t('generating')
+                : chargeAmountUsd > 0
+                  ? `${t('generateQr')} · ${formatUsd(chargeAmountUsd)}`
+                  : t('generateQr')}
             </button>
           </div>
         )}

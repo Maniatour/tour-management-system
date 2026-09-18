@@ -15,6 +15,10 @@ import {
 import { notifyFieldChargePaid } from '@/lib/fieldChargePaidNotify'
 import { parseRecipientEmail } from '@/lib/quickPaymentRequestMessage'
 import { isSiteLocale, type SiteLocale } from '@/lib/siteLocales'
+import {
+  actualAmountFromChargedTotal,
+  cardFeeFromChargedTotal,
+} from '@/lib/choiceProcessingFee'
 
 export const STAFF_PAYABLE_INVOICE_PURPOSE = 'staff_payable_invoice'
 export const STAFF_PAYABLE_CHECKOUT_PURPOSE = 'staff_payable_invoice_checkout'
@@ -159,6 +163,8 @@ type InvoiceItemRow = {
   itemType?: string | null
   openAmount?: boolean | null
   fieldCharge?: boolean | null
+  baseAmountUsd?: number | null
+  cardFeeUsd?: number | null
 }
 
 export function isTipOpenAmountInvoiceItems(items: unknown): boolean {
@@ -649,6 +655,43 @@ function descriptionFromInvoiceItemsQuick(items: unknown): string {
   return (first.description || first.productName || '').trim()
 }
 
+function cardFeeUsdFromInvoiceItems(items: unknown): number {
+  if (!Array.isArray(items) || isTipOpenAmountInvoiceItems(items)) return 0
+  let sum = 0
+  for (const raw of items) {
+    const fee = Number((raw as InvoiceItemRow)?.cardFeeUsd)
+    if (Number.isFinite(fee) && fee > 0) sum += fee
+  }
+  return roundMoney(sum)
+}
+
+async function addCardFeeToReservationPricing(
+  admin: AdminClient,
+  reservationId: string,
+  cardFeeUsd: number
+): Promise<void> {
+  const extra = roundMoney(cardFeeUsd)
+  if (extra <= 0) return
+  const { data: pricing, error } = await admin
+    .from('reservation_pricing')
+    .select('id, card_fee')
+    .eq('reservation_id', reservationId)
+    .maybeSingle()
+  if (error) {
+    console.error('[payableInvoice] card_fee lookup failed', error)
+    return
+  }
+  if (!pricing?.id) return
+  const next = roundMoney((Number(pricing.card_fee) || 0) + extra)
+  const { error: updateError } = await admin
+    .from('reservation_pricing')
+    .update({ card_fee: next, updated_at: new Date().toISOString() } as never)
+    .eq('id', pricing.id)
+  if (updateError) {
+    console.error('[payableInvoice] card_fee update failed', updateError)
+  }
+}
+
 function stripeInvoicePaidAmountUsd(stripeInvoice: Stripe.Invoice, fallbackTotal: number): number {
   const paid =
     typeof stripeInvoice.amount_paid === 'number'
@@ -854,8 +897,10 @@ export async function applyPaidStaffInvoiceToReservation(
   const paymentMethod = await resolveStripePaymentMethodValue(admin)
   const operatorId = await lookupReservationOperatorId(admin, resolved.reservationId)
   const paymentId = `payment_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+  const cardFeeUsd = cardFeeUsdFromInvoiceItems(params.items)
   const note = [
     description,
+    cardFeeUsd > 0 ? `card_fee:${cardFeeUsd.toFixed(2)}` : '',
     noteMarker,
     `invoice_id:${params.invoiceId}`,
     email ? `email:${email}` : '',
@@ -885,6 +930,9 @@ export async function applyPaidStaffInvoiceToReservation(
   }
 
   try {
+    if (cardFeeUsd > 0) {
+      await addCardFeeToReservationPricing(admin, resolved.reservationId, cardFeeUsd)
+    }
     await syncReservationPricingAggregates(admin, resolved.reservationId)
   } catch (err) {
     console.error('[payableInvoice] syncReservationPricingAggregates failed', err)
@@ -1220,6 +1268,8 @@ export async function createQuickPayableInvoice(
 
   const invoiceDate = lasVegasDateString()
   const dueDate = lasVegasDateString(7)
+  const baseAmountUsd = openAmount ? 0 : actualAmountFromChargedTotal(amountUsd)
+  const cardFeeUsd = openAmount ? 0 : cardFeeFromChargedTotal(amountUsd)
 
   const items = [
     {
@@ -1233,7 +1283,7 @@ export async function createQuickPayableInvoice(
       total: amountUsd,
       editable: true,
       itemType: openAmount ? TIP_OPEN_AMOUNT_ITEM_TYPE : 'product',
-      ...(openAmount ? { openAmount: true } : {}),
+      ...(openAmount ? { openAmount: true } : { baseAmountUsd, cardFeeUsd }),
       ...(reservationId ? { reservationId } : {}),
       ...(preserveReservationCustomer ? { fieldCharge: true } : {}),
     },
