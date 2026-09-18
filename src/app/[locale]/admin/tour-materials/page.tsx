@@ -15,8 +15,11 @@ import {
   MapPin,
   Clock,
   Globe,
+  RotateCcw,
+  Archive,
 } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
+import { useLocale } from 'next-intl'
 import { useAudioPlayer } from '@/contexts/AudioPlayerContext'
 import { toast } from 'sonner'
 import TourMaterialUploadModal from '@/components/TourMaterialUploadModal'
@@ -25,6 +28,20 @@ import GuideQuizModal from '@/components/GuideQuizModal'
 import AttractionModal from '@/components/AttractionModal'
 import { TourNarrationPlayTile } from '@/components/tour/TourNarrationPlayTile'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
+import { useAuth } from '@/contexts/AuthContext'
+import { isSuperAdminActor } from '@/lib/superAdmin'
+import {
+  hardDeleteTourMaterial,
+  isTourMaterialSoftDeleted,
+  restoreTourMaterial,
+  softDeleteTourMaterial,
+} from '@/lib/tourMaterialSoftDelete'
+import {
+  buildNarrationLanguageTabs,
+  narrationLanguageFlagCode,
+  normalizeNarrationLanguage,
+  preferredNarrationLanguageFromLocale,
+} from '@/lib/tourNarrationLanguage'
 import type { Database } from '@/lib/database.types'
 
 const UNCATEGORIZED_CATEGORY_ID = '__uncategorized__'
@@ -58,6 +75,7 @@ type TourMaterial = {
   attraction_id?: string | null
   category_id?: string | null
   tags?: string[] | null
+  is_active?: boolean | null
   created_at: string | null
   updated_at: string | null
 }
@@ -89,19 +107,26 @@ type GuideQuiz = {
 
 export default function TourMaterialsManagementPage() {
   const supabase = createClientSupabase()
+  const locale = useLocale()
   const { playTrack, currentTrack, isPlaying } = useAudioPlayer()
+  const { authUser, userPosition } = useAuth()
+  const canHardDelete = isSuperAdminActor(authUser?.email, userPosition)
   
   const TOUR_MATERIALS_UI_DEFAULT = {
     activeTab: 'materials' as 'materials' | 'quizzes' | 'attractions',
     searchTerm: '',
     selectedAttraction: '',
     selectedCategory: '',
+    selectedLanguage: '',
+    showDeleted: false,
   }
   const [tmUi, setTmUi] = useRoutePersistedState('tour-materials', TOUR_MATERIALS_UI_DEFAULT)
-  const { activeTab, searchTerm, selectedAttraction, selectedCategory } = tmUi
+  const { activeTab, searchTerm, selectedAttraction, selectedCategory, selectedLanguage, showDeleted } = tmUi
   const setSearchTerm = (v: SetStateAction<string>) =>
     setTmUi((u) => ({ ...u, searchTerm: typeof v === 'function' ? (v as (s: string) => string)(u.searchTerm) : v }))
   const setSelectedCategory = (v: string) => setTmUi((u) => ({ ...u, selectedCategory: v }))
+  const setSelectedLanguage = (v: string) => setTmUi((u) => ({ ...u, selectedLanguage: v }))
+  const setShowDeleted = (v: boolean) => setTmUi((u) => ({ ...u, showDeleted: v }))
   const [materials, setMaterials] = useState<TourMaterial[]>([])
   const [quizzes, setQuizzes] = useState<GuideQuiz[]>([])
   const [attractions, setAttractions] = useState<TourAttraction[]>([])
@@ -112,6 +137,7 @@ export default function TourMaterialsManagementPage() {
   const [showAttractionModal, setShowAttractionModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [selectedMaterial, setSelectedMaterial] = useState<TourMaterial | null>(null)
+  const [busyMaterialId, setBusyMaterialId] = useState<string | null>(null)
 
   useEffect(() => {
     loadData()
@@ -173,22 +199,6 @@ export default function TourMaterialsManagementPage() {
     }
   }
 
-  // 언어를 국기 아이콘으로 표시
-  const getLanguageFlag = (language: string | null | undefined) => {
-    switch (language?.toLowerCase()) {
-      case 'ko':
-        return 'KR'
-      case 'en':
-        return 'US'
-      case 'ja':
-        return 'JP'
-      case 'zh':
-        return 'CN'
-      default:
-        return 'KR'
-    }
-  }
-
   // 파일 URL 가져오기
   const getFileUrl = (filePath: string) => {
     const { data } = supabase.storage
@@ -231,32 +241,120 @@ export default function TourMaterialsManagementPage() {
     loadData()
   }
 
+  const handleSoftDelete = async (material: TourMaterial) => {
+    if (!confirm(`「${material.title}」을(를) 삭제할까요?\n가이드 페이지에서 숨겨지며, 삭제된 파일에서 복구할 수 있습니다.`)) {
+      return
+    }
+    try {
+      setBusyMaterialId(material.id)
+      await softDeleteTourMaterial(supabase, material.id)
+      toast.success('자료를 삭제했습니다. 가이드에게는 보이지 않습니다.')
+      await loadData()
+    } catch (error) {
+      console.error('투어 자료 삭제 오류:', error)
+      toast.error(error instanceof Error ? error.message : '자료 삭제 중 오류가 발생했습니다.')
+    } finally {
+      setBusyMaterialId(null)
+    }
+  }
+
+  const handleRestore = async (material: TourMaterial) => {
+    try {
+      setBusyMaterialId(material.id)
+      await restoreTourMaterial(supabase, material.id)
+      toast.success('자료를 다시 표시합니다.')
+      await loadData()
+    } catch (error) {
+      console.error('투어 자료 복구 오류:', error)
+      toast.error(error instanceof Error ? error.message : '자료 복구 중 오류가 발생했습니다.')
+    } finally {
+      setBusyMaterialId(null)
+    }
+  }
+
+  const handleHardDelete = async (material: TourMaterial) => {
+    if (!canHardDelete) {
+      toast.error('영구 삭제는 슈퍼 관리자만 할 수 있습니다.')
+      return
+    }
+    if (!confirm(`「${material.title}」을(를) 완전히 삭제할까요?\n파일과 기록이 삭제되며 되돌릴 수 없습니다.`)) {
+      return
+    }
+    try {
+      setBusyMaterialId(material.id)
+      await hardDeleteTourMaterial(supabase, {
+        id: material.id,
+        file_path: material.file_path,
+      })
+      toast.success('자료를 완전히 삭제했습니다.')
+      await loadData()
+    } catch (error) {
+      console.error('투어 자료 영구 삭제 오류:', error)
+      toast.error(error instanceof Error ? error.message : '영구 삭제 중 오류가 발생했습니다.')
+    } finally {
+      setBusyMaterialId(null)
+    }
+  }
+
   const audioMaterials = useMemo(
     () => materials.filter((material) => material.file_type === 'audio'),
     [materials]
   )
 
+  const visibleAudioMaterials = useMemo(
+    () =>
+      audioMaterials.filter((material) =>
+        showDeleted
+          ? isTourMaterialSoftDeleted(material.is_active)
+          : !isTourMaterialSoftDeleted(material.is_active)
+      ),
+    [audioMaterials, showDeleted]
+  )
+
+  const deletedCount = useMemo(
+    () => audioMaterials.filter((material) => isTourMaterialSoftDeleted(material.is_active)).length,
+    [audioMaterials]
+  )
+
+  const languageTabs = useMemo(
+    () => buildNarrationLanguageTabs(visibleAudioMaterials),
+    [visibleAudioMaterials]
+  )
+  const preferredLang = preferredNarrationLanguageFromLocale(locale)
+  const activeLang =
+    selectedLanguage && languageTabs.some((tab) => tab.code === selectedLanguage)
+      ? selectedLanguage
+      : (languageTabs.find((tab) => tab.code === preferredLang)?.code ?? languageTabs[0]?.code ?? 'en')
+
+  const languageFilteredMaterials = useMemo(
+    () =>
+      visibleAudioMaterials.filter(
+        (material) => normalizeNarrationLanguage(material.language) === activeLang
+      ),
+    [visibleAudioMaterials, activeLang]
+  )
+
   const categoryTabs = useMemo(() => {
     const tabs = [
-      { id: '', label: '전체', count: audioMaterials.length },
+      { id: '', label: '전체', count: languageFilteredMaterials.length },
       ...categories.map((category) => ({
         id: category.id,
         label: category.name_ko,
-        count: audioMaterials.filter((material) => material.category_id === category.id).length,
+        count: languageFilteredMaterials.filter((material) => material.category_id === category.id).length,
       })),
     ]
-    const uncategorizedCount = audioMaterials.filter((material) => !material.category_id).length
+    const uncategorizedCount = languageFilteredMaterials.filter((material) => !material.category_id).length
     if (uncategorizedCount > 0) {
       tabs.push({ id: UNCATEGORIZED_CATEGORY_ID, label: '미분류', count: uncategorizedCount })
     }
     return tabs
-  }, [audioMaterials, categories])
+  }, [languageFilteredMaterials, categories])
 
   const activeCategoryId = categoryTabs.some((tab) => tab.id === selectedCategory)
     ? selectedCategory
     : ''
 
-  const filteredMaterials = audioMaterials.filter((material) => {
+  const filteredMaterials = languageFilteredMaterials.filter((material) => {
     const matchesSearch =
       material.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       Boolean(material.description?.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -296,6 +394,19 @@ export default function TourMaterialsManagementPage() {
             <p className="text-gray-600 mt-0.5 sm:mt-1 text-xs sm:text-sm hidden sm:block">가이드가 사용할 투어 자료들을 관리합니다</p>
           </div>
           <div className="flex flex-wrap gap-2 sm:gap-3 flex-shrink-0">
+            <button
+              onClick={() => setShowDeleted(!showDeleted)}
+              className={`flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 py-2 sm:px-4 sm:py-2 text-sm rounded-lg ${
+                showDeleted
+                  ? 'bg-red-600 text-white hover:bg-red-700'
+                  : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+              }`}
+              title="삭제된 파일"
+            >
+              <Archive className="w-4 h-4 flex-shrink-0" />
+              <span className="sm:hidden">삭제됨 {deletedCount}</span>
+              <span className="hidden sm:inline">삭제된 파일 {deletedCount}</span>
+            </button>
             <button
               onClick={() => setShowUploadModal(true)}
               className="flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 py-2 sm:px-4 sm:py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
@@ -341,6 +452,41 @@ export default function TourMaterialsManagementPage() {
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
             />
           </div>
+          {activeTab === 'materials' && languageTabs.length > 0 && (
+            <div
+              className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              role="tablist"
+              aria-label="언어"
+            >
+              {languageTabs.map((tab) => {
+                const active = tab.code === activeLang
+                return (
+                  <button
+                    key={tab.code}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    aria-label={`${tab.label} ${tab.count}`}
+                    onClick={() => setSelectedLanguage(tab.code)}
+                    className={`inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                      active
+                        ? 'border-primary bg-primary text-primary-foreground shadow-sm'
+                        : 'border-border/60 bg-muted/50 text-gray-700 hover:bg-muted'
+                    }`}
+                  >
+                    <ReactCountryFlag
+                      countryCode={tab.flag}
+                      svg
+                      style={{ width: '22px', height: '16px', borderRadius: '3px' }}
+                    />
+                    <span className={active ? 'text-primary-foreground/80' : 'text-gray-500'}>
+                      {tab.count}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
           {activeTab === 'materials' && categoryTabs.length > 0 && (
             <div
               className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -380,14 +526,29 @@ export default function TourMaterialsManagementPage() {
               {filteredMaterials.length === 0 ? (
                 <div className="text-center py-12">
                   <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">투어 자료가 없습니다</h3>
-                  <p className="text-gray-600 mb-4">새로운 투어 자료를 업로드해보세요.</p>
-                  <button
-                    onClick={() => setShowUploadModal(true)}
-                    className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90"
-                  >
-                    자료 업로드
-                  </button>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    {showDeleted ? '삭제된 파일이 없습니다' : '투어 자료가 없습니다'}
+                  </h3>
+                  <p className="text-gray-600 mb-4">
+                    {showDeleted
+                      ? '삭제된 자료는 여기에 모입니다. 가이드 페이지에는 보이지 않습니다.'
+                      : '새로운 투어 자료를 업로드해보세요.'}
+                  </p>
+                  {showDeleted ? (
+                    <button
+                      onClick={() => setShowDeleted(false)}
+                      className="bg-gray-100 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-200"
+                    >
+                      자료 목록으로
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowUploadModal(true)}
+                      className="bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90"
+                    >
+                      자료 업로드
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 sm:gap-3 lg:grid-cols-6">
@@ -419,7 +580,7 @@ export default function TourMaterialsManagementPage() {
                           }}
                           topLeft={
                             <ReactCountryFlag
-                              countryCode={getLanguageFlag(material.language)}
+                              countryCode={narrationLanguageFlagCode(normalizeNarrationLanguage(material.language))}
                               svg
                               style={{ width: '18px', height: '13px', borderRadius: '2px' }}
                             />
@@ -435,23 +596,54 @@ export default function TourMaterialsManagementPage() {
                           >
                             <Download className="h-3.5 w-3.5" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => handleEdit(material)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-primary hover:bg-muted/50"
-                            title="수정"
-                            aria-label={`${material.title} 수정`}
-                          >
-                            <Edit className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-600 hover:bg-red-50"
-                            title="삭제"
-                            aria-label={`${material.title} 삭제`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          {showDeleted ? (
+                            <>
+                              <button
+                                type="button"
+                                disabled={busyMaterialId === material.id}
+                                onClick={() => void handleRestore(material)}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-primary hover:bg-muted/50 disabled:opacity-50"
+                                title="복구"
+                                aria-label={`${material.title} 복구`}
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" />
+                              </button>
+                              {canHardDelete ? (
+                                <button
+                                  type="button"
+                                  disabled={busyMaterialId === material.id}
+                                  onClick={() => void handleHardDelete(material)}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-700 hover:bg-red-50 disabled:opacity-50"
+                                  title="영구 삭제"
+                                  aria-label={`${material.title} 영구 삭제`}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              ) : null}
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleEdit(material)}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-primary hover:bg-muted/50"
+                                title="수정"
+                                aria-label={`${material.title} 수정`}
+                              >
+                                <Edit className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busyMaterialId === material.id}
+                                onClick={() => void handleSoftDelete(material)}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                title="삭제"
+                                aria-label={`${material.title} 삭제`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                     )

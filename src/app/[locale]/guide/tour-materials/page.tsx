@@ -23,55 +23,11 @@ import {
   syncGuideNarrationOffline,
   type GuideNarrationMaterial,
 } from '@/lib/guideNarrationOffline'
-
-const LANGUAGE_TAB_ORDER = ['en', 'ko', 'ja', 'zh'] as const
-
-function normalizeNarrationLanguage(language: string | null | undefined): string {
-  const raw = (language || '').trim().toLowerCase()
-  if (!raw) return 'ko'
-  if (raw.startsWith('en')) return 'en'
-  if (raw.startsWith('ko') || raw === 'kr') return 'ko'
-  if (raw.startsWith('ja')) return 'ja'
-  if (raw.startsWith('zh') || raw === 'cn') return 'zh'
-  return raw
-}
-
-function languageFlagCode(language: string): string {
-  switch (language) {
-    case 'ko':
-      return 'KR'
-    case 'en':
-      return 'US'
-    case 'ja':
-      return 'JP'
-    case 'zh':
-      return 'CN'
-    default:
-      return 'US'
-  }
-}
-
-function languageTabLabel(language: string): string {
-  switch (language) {
-    case 'en':
-      return 'English'
-    case 'ko':
-      return '한국어'
-    case 'ja':
-      return '日本語'
-    case 'zh':
-      return '中文'
-    default:
-      return language.toUpperCase()
-  }
-}
-
-function preferredLanguageFromLocale(locale: string): string {
-  if (locale === 'en') return 'en'
-  if (locale === 'ja') return 'ja'
-  if (locale.startsWith('zh')) return 'zh'
-  return 'ko'
-}
+import {
+  buildNarrationLanguageTabs,
+  normalizeNarrationLanguage,
+  preferredNarrationLanguageFromLocale,
+} from '@/lib/tourNarrationLanguage'
 
 export default function GuideTourMaterialsPage() {
   const t = useTranslations('guide')
@@ -140,25 +96,12 @@ export default function GuideTourMaterialsPage() {
     })
   }
 
-  const languageTabs = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const material of materials || []) {
-      if (material.file_type !== 'audio') continue
-      const code = normalizeNarrationLanguage(material.language)
-      counts.set(code, (counts.get(code) || 0) + 1)
-    }
-    const known = LANGUAGE_TAB_ORDER.filter((code) => counts.has(code))
-    const extra = [...counts.keys()].filter((code) => !(LANGUAGE_TAB_ORDER as readonly string[]).includes(code))
-    extra.sort()
-    return [...known, ...extra].map((code) => ({
-      code,
-      count: counts.get(code) || 0,
-      label: languageTabLabel(code),
-      flag: languageFlagCode(code),
-    }))
-  }, [materials])
+  const languageTabs = useMemo(
+    () => buildNarrationLanguageTabs(materials || []),
+    [materials]
+  )
 
-  const preferredLang = preferredLanguageFromLocale(locale)
+  const preferredLang = preferredNarrationLanguageFromLocale(locale)
   const activeLang =
     langTab && languageTabs.some((tab) => tab.code === langTab)
       ? langTab
