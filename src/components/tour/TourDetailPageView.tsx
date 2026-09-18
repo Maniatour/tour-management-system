@@ -82,8 +82,8 @@ const TourNarrationHistoryModal = dynamic(
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
 import {
-  normalizeReservationIds,
   isTourDeletedStatus,
+  reservationIdsForTourBatchPrint,
   resolveTeamTypeForTourCreate,
 } from '@/utils/tourUtils'
 import { upsertReservationCancellationReason } from '@/lib/reservationCancellationReason'
@@ -1222,6 +1222,12 @@ export function TourDetailPageView({
       return `${baseLabel} (${start}~${end})`
     }
     return baseLabel
+  }
+
+  const getVehicleNick = (vehicleId: string) => {
+    if (!vehicleId) return null
+    const vehicle = tourData.vehicles.find((v) => v.id === vehicleId) as { nick?: string | null } | undefined
+    return vehicle?.nick?.trim() || null
   }
 
   // 채널 정보 가져오기 함수
@@ -2440,6 +2446,16 @@ export function TourDetailPageView({
     tourData.tour?.product_id,
   ])
 
+  const batchPrintReservationIds = useMemo(
+    () =>
+      reservationIdsForTourBatchPrint({
+        assignedReservations: tourData.assignedReservations || [],
+        tourReservationIds: tourData.tour?.reservation_ids,
+        statusByReservationId: tourData.allReservations || [],
+      }),
+    [tourData.assignedReservations, tourData.tour?.reservation_ids, tourData.allReservations]
+  )
+
   const setToolbarContent = modalChrome?.setToolbarContent
   const onCloseModal = modalChrome?.onClose
   const convertLowerToXRef = useRef(handleConvertLowerToX)
@@ -2714,47 +2730,33 @@ export function TourDetailPageView({
       />
       ) : null}
 
-      {/* 영수증 일괄 인쇄: 픽업 스케줄/배정 관리와 동일한 목록 사용(assignedReservations 우선) */}
-      {(() => {
-        const fromAssigned = (tourData.assignedReservations || []).map((r: { id: string }) => r.id).filter(Boolean)
-        const fromTour = normalizeReservationIds(tourData.tour?.reservation_ids)
-        const receiptReservationIds = fromAssigned.length > 0 ? fromAssigned : fromTour
-        return (
-          <CustomerReceiptModal
-            isOpen={showBatchReceiptModal}
-            onClose={() => setShowBatchReceiptModal(false)}
-            reservationId={receiptReservationIds[0] || ''}
-            reservationIds={receiptReservationIds}
-          />
-        )
-      })()}
+      {/* 영수증 일괄 인쇄: 픽업 스케줄/배정 관리와 동일한 목록(취소·삭제 제외) */}
+      <CustomerReceiptModal
+        isOpen={showBatchReceiptModal}
+        onClose={() => setShowBatchReceiptModal(false)}
+        reservationId={batchPrintReservationIds[0] || ''}
+        reservationIds={batchPrintReservationIds}
+      />
 
       {/* 투어 봉투 일괄 인쇄 모달: 배정된 예약 목록 우선 사용 */}
-      {(() => {
-        const fromAssigned = (tourData.assignedReservations || []).map((r: { id: string }) => r.id).filter(Boolean)
-        const fromTour = normalizeReservationIds(tourData.tour?.reservation_ids)
-        const envelopeReservationIds = fromAssigned.length > 0 ? fromAssigned : fromTour
-        return (
-          <TourEnvelopeModal
-            isOpen={envelopeModalVariant !== null}
-            onClose={() => setEnvelopeModalVariant(null)}
-            variant={envelopeModalVariant ?? 'tip'}
-            reservationIds={envelopeReservationIds}
-            tourDate={tourData.tour?.tour_date || ''}
-            productNameKo={tourData.product?.name_ko || tourData.product?.name_en || ''}
-            productNameEn={tourData.product?.name_en || tourData.product?.name_ko || ''}
-            guideAndAssistantKo={[
-              tourData.selectedGuide ? tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'ko') : null,
-              tourData.selectedAssistant ? tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'ko') : null,
-            ].filter(Boolean).join(' & ') || '—'}
-            guideAndAssistantEn={[
-              tourData.selectedGuide ? tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'en') : null,
-              tourData.selectedAssistant ? tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'en') : null,
-            ].filter(Boolean).join(' & ') || '—'}
-            locale={locale}
-          />
-        )
-      })()}
+      <TourEnvelopeModal
+        isOpen={envelopeModalVariant !== null}
+        onClose={() => setEnvelopeModalVariant(null)}
+        variant={envelopeModalVariant ?? 'tip'}
+        reservationIds={batchPrintReservationIds}
+        tourDate={tourData.tour?.tour_date || ''}
+        productNameKo={tourData.product?.name_ko || tourData.product?.name_en || ''}
+        productNameEn={tourData.product?.name_en || tourData.product?.name_ko || ''}
+        guideAndAssistantKo={[
+          tourData.selectedGuide ? tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'ko') : null,
+          tourData.selectedAssistant ? tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'ko') : null,
+        ].filter(Boolean).join(' & ') || '—'}
+        guideAndAssistantEn={[
+          tourData.selectedGuide ? tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'en') : null,
+          tourData.selectedAssistant ? tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'en') : null,
+        ].filter(Boolean).join(' & ') || '—'}
+        locale={locale}
+      />
 
       {/* 투어 정보 인쇄 모달 (팀/픽업/부킹, Letter) */}
       <TourPrintModal
@@ -2771,6 +2773,7 @@ export function TourDetailPageView({
           tourData.selectedAssistant ? tourData.getTeamMemberName(tourData.selectedAssistant) : null
         }
         vehicleLabel={tourData.selectedVehicleId ? getVehicleName(tourData.selectedVehicleId) : null}
+        vehicleNick={tourData.selectedVehicleId ? getVehicleNick(tourData.selectedVehicleId) : null}
         assignedReservations={tourData.assignedReservations}
         pickupHotels={tourData.pickupHotels}
         useRepresentativePickup={pickupResolveContext.useRepresentativePickup === true || !!pickupResolveContext.preset}

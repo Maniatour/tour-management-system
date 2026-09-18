@@ -80,6 +80,7 @@ import GuidePickupChargeModal, {
   GuidePickupChargeButton,
   type GuidePickupChargeTarget,
 } from '@/components/guide/GuidePickupChargeModal'
+import { GUIDE_FIELD_CHARGE_PAID_EVENT } from '@/components/guide/GuideFieldChargePaidNotificationLayer'
 import { TOUR_REPORT_REQUIRED_FROM } from '@/lib/tourReportExtras'
 
 // 타입 정의 (DB 스키마 기반) — 픽업 잔액 헬퍼보다 먼저 두어 타입 순서 유지
@@ -542,6 +543,23 @@ export default function GuideTourDetailPage() {
     window.addEventListener('online', onOnline)
     return () => window.removeEventListener('online', onOnline)
   }, [])
+
+  const refreshPickupBalances = useCallback(() => {
+    const ids = reservations.map((r) => r.id)
+    if (ids.length === 0) return
+    void computeGuidePickupBalanceBreakdowns(
+      supabase,
+      ids,
+      reservations,
+      guidePickupUseEnvelopeEnglish(locale)
+    ).then(setPickupBalanceBreakdownByReservationId)
+  }, [locale, reservations])
+
+  useEffect(() => {
+    const onPaid = () => refreshPickupBalances()
+    window.addEventListener(GUIDE_FIELD_CHARGE_PAID_EVENT, onPaid)
+    return () => window.removeEventListener(GUIDE_FIELD_CHARGE_PAID_EVENT, onPaid)
+  }, [refreshPickupBalances])
   
   // balance 정보를 가져오는 함수 (픽업 내역 로드 후에는 봉투와 동일 표시 잔액)
   const getReservationBalance = (reservationId: string) => {
@@ -2639,16 +2657,7 @@ export default function GuideTourDetailPage() {
         onClose={() => setFieldChargeTarget(null)}
         locale={locale}
         target={fieldChargeTarget}
-        onPaid={() => {
-          const ids = reservations.map((r) => r.id)
-          if (ids.length === 0) return
-          void computeGuidePickupBalanceBreakdowns(
-            supabase,
-            ids,
-            reservations,
-            guidePickupUseEnvelopeEnglish(locale)
-          ).then(setPickupBalanceBreakdownByReservationId)
-        }}
+        onPaid={refreshPickupBalances}
       />
 
       {tour.tour_date && currentUserEmail ? (

@@ -231,6 +231,45 @@ export function isReservationDeletedStatus(status: string | null | undefined): b
   return (status || '').toString().toLowerCase().trim() === 'deleted'
 }
 
+/** 투어 영수증·봉투 일괄 인쇄에서 제외 (취소·삭제) */
+export function reservationExcludedFromTourBatchPrint(status: string | null | undefined): boolean {
+  return isReservationCancelledStatus(status) || isReservationDeletedStatus(status)
+}
+
+/**
+ * 투어 상세 일괄 인쇄 ID: 배정 목록(취소 제외) 우선.
+ * 배정이 아직 없으면 reservation_ids를 쓰되, 상태가 알려진 취소·삭제는 빼서
+ * 미리보기와 실제 인쇄가 어긋나지 않게 한다.
+ */
+export function reservationIdsForTourBatchPrint(opts: {
+  assignedReservations: Array<{ id?: string | null; status?: string | null }>
+  tourReservationIds?: unknown
+  statusByReservationId?: Array<{ id?: string | null; status?: string | null }>
+}): string[] {
+  const fromAssigned = [...new Set(
+    (opts.assignedReservations || [])
+      .filter((row) => !reservationExcludedFromTourBatchPrint(row.status))
+      .map((row) => String(row.id ?? '').trim())
+      .filter(Boolean)
+  )]
+  if (fromAssigned.length > 0) return fromAssigned
+
+  const fromTour = normalizeReservationIds(opts.tourReservationIds)
+  const statusRows = opts.statusByReservationId || []
+  if (statusRows.length === 0) return fromTour
+
+  const statusById = new Map<string, string | null | undefined>()
+  for (const row of statusRows) {
+    const id = String(row.id ?? '').trim()
+    if (!id) continue
+    statusById.set(id, row.status)
+  }
+  return fromTour.filter((id) => {
+    if (!statusById.has(id)) return true
+    return !reservationExcludedFromTourBatchPrint(statusById.get(id))
+  })
+}
+
 /** 투어 상태가 삭제(deleted)인지 (tour_status 또는 레거시 status) */
 export function isTourDeletedStatus(status: string | null | undefined): boolean {
   return (status || '').toString().toLowerCase().trim() === 'deleted'

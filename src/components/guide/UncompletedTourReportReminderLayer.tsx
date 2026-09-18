@@ -107,21 +107,21 @@ export function UncompletedTourReportReminderModal({
           ) : null}
         </div>
 
-        <div className="flex flex-col gap-2 border-t bg-gray-50 px-5 py-4 sm:flex-row">
+        <div className="grid grid-cols-2 gap-3 border-t bg-gray-50 px-5 py-4">
           <button
             type="button"
             onClick={onWriteNow}
-            className="inline-flex h-12 min-h-12 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 sm:flex-1"
+            className="inline-flex h-12 min-h-12 min-w-0 items-center justify-center gap-2 rounded-xl bg-primary px-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
           >
-            <FileText className="h-4 w-4" />
-            {isEn ? 'Write report now' : '지금 작성하기'}
+            <FileText className="h-4 w-4 shrink-0" aria-hidden />
+            <span className="truncate">{isEn ? 'Write now' : '지금 작성'}</span>
           </button>
           <button
             type="button"
             onClick={onDismiss}
-            className="inline-flex h-12 min-h-12 w-full shrink-0 items-center justify-center rounded-xl border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-white sm:min-w-[7rem] sm:flex-none"
+            className="inline-flex h-12 min-h-12 min-w-0 items-center justify-center rounded-xl border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            {isEn ? 'Later' : '나중에'}
+            <span className="truncate">{isEn ? 'Later' : '나중에'}</span>
           </button>
         </div>
       </div>

@@ -66,10 +66,16 @@ export default function CustomerPaymentNotificationListener({ locale }: { locale
   const notification = queue[0] ?? null
 
   const enqueue = useCallback((next: CustomerPaymentNotification) => {
-    const isResidentCheck = customerPaymentNotifyKindFromMessage(next.message) === 'resident_check'
+    const kind = customerPaymentNotifyKindFromMessage(next.message)
+    const isResidentCheck = kind === 'resident_check'
+    const isFieldCharge = kind === 'field_charge'
     report(
       makeAdminAlertDraft('customer_payment', next.id, {
-        title: isResidentCheck ? '거주·패스 안내 결제' : '고객 결제 완료',
+        title: isFieldCharge
+          ? '가이드 현장 청구 결제'
+          : isResidentCheck
+            ? '거주·패스 안내 결제'
+            : '고객 결제 완료',
         body: [next.customer_name, formatMoney(next.amount, next.currency), next.product_name]
           .filter(Boolean)
           .join(' · '),
@@ -161,11 +167,19 @@ export default function CustomerPaymentNotificationListener({ locale }: { locale
   if (!enabled || !notification) return null
 
   const remaining = Math.max(0, queue.length - 1)
-  const isResidentCheck = customerPaymentNotifyKindFromMessage(notification.message) === 'resident_check'
-  const title = isResidentCheck ? '거주·패스 안내 결제' : '고객 결제 완료'
-  const headline = isResidentCheck
-    ? '고객이 거주·연간 패스 안내에서 카드 결제를 완료했습니다.'
-    : '고객이 웹에서 결제를 완료했습니다.'
+  const kind = customerPaymentNotifyKindFromMessage(notification.message)
+  const isResidentCheck = kind === 'resident_check'
+  const isFieldCharge = kind === 'field_charge'
+  const title = isFieldCharge
+    ? '가이드 현장 청구 결제'
+    : isResidentCheck
+      ? '거주·패스 안내 결제'
+      : '고객 결제 완료'
+  const headline = isFieldCharge
+    ? '가이드가 청구한 금액을 고객이 결제했습니다.'
+    : isResidentCheck
+      ? '고객이 거주·연간 패스 안내에서 카드 결제를 완료했습니다.'
+      : '고객이 웹에서 결제를 완료했습니다.'
 
   return (
     <div className="fixed inset-0 z-[10060] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[1px]">

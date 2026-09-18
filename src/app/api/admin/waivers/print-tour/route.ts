@@ -20,6 +20,7 @@ import {
   countryFromCustomerLanguage,
   pickEnglishPrintName,
   pickReusableWaiverSignature,
+  printNameForPartySlot,
   type CanyonWaiverPrintPacket,
   type CanyonWaiverPrintTourPayload,
 } from '@/lib/canyonWaiverPrintForms'
@@ -108,6 +109,14 @@ async function selectInChunks<T>(
   return parts.flat()
 }
 
+function storagePathKey(value: string): string {
+  try {
+    return decodeURIComponent(String(value || '').replace(/^\/+/, '')).replace(/\\/g, '/')
+  } catch {
+    return String(value || '')
+  }
+}
+
 async function signedUrlsForSignatures(
   rows: Array<{ id: string; storage_key: string }>
 ): Promise<Record<string, string>> {
@@ -115,23 +124,30 @@ async function signedUrlsForSignatures(
   const unique = [...new Map(rows.filter((r) => r.id && r.storage_key).map((r) => [r.id, r])).values()]
   if (!client || unique.length === 0) return {}
   const urls: Record<string, string> = {}
-  const { data, error } = await client.storage
-    .from('waiver-signatures')
-    .createSignedUrls(
-      unique.map((r) => r.storage_key),
-      60 * 60
-    )
-  if (!error && data?.length) {
-    const byPath = new Map<string, string>()
-    for (const item of data) {
-      const url = item.signedUrl || (item as { signedURL?: string }).signedURL
-      if (item.path && url) byPath.set(item.path, url)
-    }
-    for (const row of unique) {
-      const url = byPath.get(row.storage_key)
-      if (url) urls[row.id] = url
-    }
+  const byPath = new Map<string, string>()
+
+  const chunks = chunkStrings(
+    unique.map((r) => r.storage_key),
+    40
+  )
+  await Promise.all(
+    chunks.map(async (keys) => {
+      const { data, error } = await client.storage.from('waiver-signatures').createSignedUrls(keys, 60 * 60)
+      if (error || !data?.length) return
+      for (const item of data) {
+        const url = item.signedUrl || (item as { signedURL?: string }).signedURL
+        if (!item.path || !url) continue
+        byPath.set(item.path, url)
+        byPath.set(storagePathKey(item.path), url)
+      }
+    })
+  )
+
+  for (const row of unique) {
+    const url = byPath.get(row.storage_key) || byPath.get(storagePathKey(row.storage_key))
+    if (url) urls[row.id] = url
   }
+
   const missing = unique.filter((r) => !urls[r.id])
   if (missing.length === 0) return urls
   await Promise.all(
@@ -209,27 +225,60 @@ export async function GET(request: NextRequest) {
   const assignedIds = normalizeReservationIds(tour.reservation_ids)
   const guideEmail = parseTourAssignmentEmails(String(tour.tour_guide_id ?? ''))[0]
 
-  const [rawReservations, ticketsByTour, teamMember] = await Promise.all([
-    selectInChunks<RezRow>(
-      'reservations',
-      'id, customer_id, channel_rn, tour_date, tour_time, product_id, canyon_choice, choices, adults, child, infant, total_people, status',
-      'id',
-      assignedIds
-    ),
-    fromUntypedTable(supabaseAdmin, 'ticket_bookings')
-      .select(
-        'id, reservation_id, tour_id, company, category, check_in_date, time, rn_number, vendor_confirmation_number, invoice_number, status, booking_status'
-      )
-      .eq('tour_id', tourId)
-      .then((res) => (res.data ?? []) as TicketRow[]),
-    guideEmail
-      ? fromUntypedTable(supabaseAdmin, 'team')
-          .select('name_en, name_ko, nick_name, phone, email')
-          .ilike('email', guideEmail)
-          .maybeSingle()
-          .then((res) => res.data)
-      : Promise.resolve(null),
-  ])
+  const ticketSelect =
+    'id, reservation_id, tour_id, company, category, check_in_date, time, rn_number, vendor_confirmation_number, invoice_number, status, booking_status'
+
+  const [rawReservations, ticketsByTour, ticketsByRes, teamMember, participants, acceptances, rcRows, guideSigRows, submissions] =
+    await Promise.all([
+      selectInChunks<RezRow>(
+        'reservations',
+        'id, customer_id, channel_rn, tour_date, tour_time, product_id, canyon_choice, choices, adults, child, infant, total_people, status',
+        'id',
+        assignedIds
+      ),
+      fromUntypedTable(supabaseAdmin, 'ticket_bookings')
+        .select(ticketSelect)
+        .eq('tour_id', tourId)
+        .then((res) => (res.data ?? []) as TicketRow[]),
+      selectInChunks<TicketRow>('ticket_bookings', ticketSelect, 'reservation_id', assignedIds),
+      guideEmail
+        ? fromUntypedTable(supabaseAdmin, 'team')
+            .select('name_en, name_ko, nick_name, phone, email')
+            .ilike('email', guideEmail)
+            .maybeSingle()
+            .then((res) => res.data)
+        : Promise.resolve(null),
+      selectInChunks<ParticipantRow>(
+        'waiver_participants',
+        'id, reservation_id, slot_index, full_legal_name, placeholder_label, participant_type, date_of_birth',
+        'reservation_id',
+        assignedIds
+      ),
+      selectInChunks<AcceptanceRow>(
+        'waiver_acceptances',
+        'participant_id, reservation_id, document_code, signature_id, status',
+        'reservation_id',
+        assignedIds
+      ),
+      selectInChunks<RcRow>(
+        'reservation_customers',
+        'reservation_id, order_index, name, name_en, name_ko',
+        'reservation_id',
+        assignedIds
+      ),
+      selectInChunks<{
+        reservation_id: string
+        signature_id: string | null
+        guide_name: string | null
+        guide_phone: string | null
+      }>('waiver_guide_signatures', 'reservation_id, signature_id, guide_name, guide_phone', 'reservation_id', assignedIds),
+      selectInChunks<{ id: string; reservation_id: string }>(
+        'waiver_submissions',
+        'id, reservation_id',
+        'reservation_id',
+        assignedIds
+      ),
+    ])
 
   const reservations = rawReservations.filter(
     (r) => !isReservationCancelledStatus(r.status) && !isReservationDeletedStatus(r.status)
@@ -246,20 +295,35 @@ export async function GET(request: NextRequest) {
   if (reservations.length === 0) return NextResponse.json(empty)
 
   const activeIds = reservations.map((r) => r.id)
+  const activeIdSet = new Set(activeIds)
   const customerIds = [
     ...new Set(reservations.map((r) => r.customer_id).filter((id): id is string => Boolean(id))),
   ]
+  const signedAcceptances = acceptances.filter(
+    (a) => activeIdSet.has(a.reservation_id) && String(a.status ?? '').toLowerCase() === 'signed'
+  )
+  const needsGuardian = participants.some(
+    (p) => activeIdSet.has(p.reservation_id) && p.participant_type === 'MINOR'
+  )
+  const submissionIds = needsGuardian
+    ? submissions.filter((s) => activeIdSet.has(s.reservation_id)).map((s) => s.id)
+    : []
+  const earlySigIds = [
+    ...new Set(
+      [
+        ...signedAcceptances.map((a) => a.signature_id),
+        ...guideSigRows.map((g) => g.signature_id),
+      ].filter((id): id is string => Boolean(id))
+    ),
+  ]
 
-  const [
-    canyonRowsByResId,
-    participants,
-    acceptances,
-    rcRows,
-    ticketsByRes,
-    guideSigRows,
-    customers,
-    submissions,
-  ] = await Promise.all([
+  const [customers, canyonRowsByResId, guardians, earlySignatureRows] = await Promise.all([
+    selectInChunks<{ id: string; name: string | null; language: string | null }>(
+      'customers',
+      'id, name, language',
+      'id',
+      customerIds
+    ),
     loadCalendarChoiceRows(
       supabaseAdmin,
       reservations.map((r) => ({
@@ -268,53 +332,22 @@ export async function GET(request: NextRequest) {
         choices: r.choices,
       }))
     ),
-    selectInChunks<ParticipantRow>(
-      'waiver_participants',
-      'id, reservation_id, slot_index, full_legal_name, placeholder_label, participant_type, date_of_birth',
-      'reservation_id',
-      activeIds
-    ),
-    selectInChunks<AcceptanceRow>(
-      'waiver_acceptances',
-      'participant_id, reservation_id, document_code, signature_id, status',
-      'reservation_id',
-      activeIds
-    ),
-    selectInChunks<RcRow>(
-      'reservation_customers',
-      'reservation_id, order_index, name, name_en, name_ko',
-      'reservation_id',
-      activeIds
-    ),
-    selectInChunks<TicketRow>(
-      'ticket_bookings',
-      'id, reservation_id, tour_id, company, category, check_in_date, time, rn_number, vendor_confirmation_number, invoice_number, status, booking_status',
-      'reservation_id',
-      activeIds
-    ),
-    selectInChunks<{
-      reservation_id: string
-      signature_id: string | null
-      guide_name: string | null
-      guide_phone: string | null
-    }>(
-      'waiver_guide_signatures',
-      'reservation_id, signature_id, guide_name, guide_phone',
-      'reservation_id',
-      activeIds
-    ),
-    selectInChunks<{ id: string; name: string | null; language: string | null }>(
-      'customers',
-      'id, name, language',
-      'id',
-      customerIds
-    ),
-    selectInChunks<{ id: string; reservation_id: string }>(
-      'waiver_submissions',
-      'id, reservation_id',
-      'reservation_id',
-      activeIds
-    ),
+    submissionIds.length
+      ? selectInChunks<{
+          submission_id: string
+          guardian_full_legal_name: string | null
+          signature_id: string | null
+          minor_participant_ids: string[] | null
+        }>(
+          'waiver_guardian_authorizations',
+          'submission_id, guardian_full_legal_name, signature_id, minor_participant_ids',
+          'submission_id',
+          submissionIds
+        )
+      : Promise.resolve([]),
+    earlySigIds.length
+      ? selectInChunks<{ id: string; storage_key: string }>('waiver_signatures', 'id, storage_key', 'id', earlySigIds)
+      : Promise.resolve([]),
   ])
 
   const rezByCanyon: Record<CanyonPrintKey, RezRow[]> = { X: [], L: [] }
@@ -324,8 +357,6 @@ export async function GET(request: NextRequest) {
     canyonKeysByReservationId[rez.id] = keys
     for (const key of keys) rezByCanyon[key].push(rez)
   }
-  const activeIdSet = new Set(activeIds)
-
   const ticketMap = new Map<string, TicketRow>()
   for (const ticket of [...ticketsByTour, ...ticketsByRes]) {
     if (!isActiveTicket(ticket)) continue
@@ -333,8 +364,6 @@ export async function GET(request: NextRequest) {
     ticketMap.set(key, ticket)
   }
   const tickets = [...ticketMap.values()]
-
-  const signedAcceptances = acceptances.filter((a) => String(a.status ?? '').toLowerCase() === 'signed')
 
   const participantsByRes = new Map<string, ParticipantRow[]>()
   for (const p of participants) {
@@ -346,26 +375,6 @@ export async function GET(request: NextRequest) {
   for (const list of participantsByRes.values()) {
     list.sort((a, b) => a.slot_index - b.slot_index)
   }
-
-  const needsGuardian = reservations.some((rez) =>
-    (participantsByRes.get(rez.id) || []).some((p) => p.participant_type === 'MINOR')
-  )
-  const submissionIds = needsGuardian
-    ? submissions.filter((s) => activeIdSet.has(s.reservation_id)).map((s) => s.id)
-    : []
-  const guardians = submissionIds.length
-    ? await selectInChunks<{
-        submission_id: string
-        guardian_full_legal_name: string | null
-        signature_id: string | null
-        minor_participant_ids: string[] | null
-      }>(
-        'waiver_guardian_authorizations',
-        'submission_id, guardian_full_legal_name, signature_id, minor_participant_ids',
-        'submission_id',
-        submissionIds
-      )
-    : []
 
   const acceptByParticipant = new Map<string, AcceptanceRow[]>()
   for (const a of signedAcceptances) {
@@ -421,28 +430,32 @@ export async function GET(request: NextRequest) {
       if (id) neededSigIds.add(id)
     }
   }
-  for (const rez of rezByCanyon.L) {
-    const lead = participantsByRes.get(rez.id)?.[0]
-    const id = lead ? signatureIdForParticipant(lead, 'L') : null
-    if (id) neededSigIds.add(id)
-  }
-  for (const rez of rezByCanyon.X) {
-    const lead = participantsByRes.get(rez.id)?.[0]
-    const id = lead ? signatureIdForParticipant(lead, 'X') : null
-    if (id) neededSigIds.add(id)
+  for (const canyon of ['L', 'X'] as const) {
+    for (const rez of rezByCanyon[canyon]) {
+      for (const participant of participantsByRes.get(rez.id) || []) {
+        const id = signatureIdForParticipant(participant, canyon)
+        if (id) neededSigIds.add(id)
+      }
+    }
   }
   for (const g of guideSigRows) {
     if (g.signature_id) neededSigIds.add(g.signature_id)
   }
 
-  const signatureRows = neededSigIds.size
+  const signatureById = new Map(earlySignatureRows.map((row) => [row.id, row]))
+  const extraSigIds = [...neededSigIds].filter((id) => !signatureById.has(id))
+  const extraSignatureRows = extraSigIds.length
     ? await selectInChunks<{ id: string; storage_key: string }>(
         'waiver_signatures',
         'id, storage_key',
         'id',
-        [...neededSigIds]
+        extraSigIds
       )
     : []
+  for (const row of extraSignatureRows) signatureById.set(row.id, row)
+  const signatureRows = [...neededSigIds]
+    .map((id) => signatureById.get(id))
+    .filter((row): row is { id: string; storage_key: string } => Boolean(row))
   const signatureUrls = await signedUrlsForSignatures(signatureRows)
 
   const customerById = new Map(customers.map((c) => [c.id, c]))
@@ -458,32 +471,10 @@ export async function GET(request: NextRequest) {
     list.sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
   }
 
-  function guestsForReservation(rez: RezRow, canyon: CanyonPrintKey) {
-    const customer = rez.customer_id ? customerById.get(rez.customer_id) : undefined
-    const slots = participantsByRes.get(rez.id) || []
-    const rcs = rcByRes.get(rez.id) || []
-    const tourDate = String(rez.tour_date || tourDateYmd)
-    const leadSlot = slots[0] ?? null
-    const leadRc = (leadSlot ? rcs[leadSlot.slot_index] : null) || rcs[0] || null
-    const guardian = leadSlot ? guardianByParticipant.get(leadSlot.id) : undefined
-    const sigId = leadSlot ? signatureIdForParticipant(leadSlot, canyon) : null
-    return buildLeadCompanionRoster({
-      reservationId: rez.id,
-      partySize: partySize(rez),
-      leadId: leadSlot?.id,
-      leadName: pickEnglishPrintName({
-        fullLegalName: leadSlot?.full_legal_name,
-        nameEn: leadRc?.name_en ?? null,
-        name: leadRc?.name || leadRc?.name_ko || customer?.name || null,
-      }),
-      leadSignatureUrl: sigId ? signatureUrls[sigId] ?? null : null,
-      leadIsMinor: leadSlot?.participant_type === 'MINOR',
-      leadAge: ageOnTourDate(leadSlot?.date_of_birth, tourDate),
-      leadGuardianName: guardian?.name ?? null,
-    })
-  }
-
-  function maniaGuestsForReservation(rez: RezRow) {
+  function partyGuestsForReservation(
+    rez: RezRow,
+    signatureIdOf: (participant: ParticipantRow) => string | null
+  ) {
     const customer = rez.customer_id ? customerById.get(rez.customer_id) : undefined
     const country = countryFromCustomerLanguage(customer?.language)
     const slots = participantsByRes.get(rez.id) || []
@@ -499,24 +490,39 @@ export async function GET(request: NextRequest) {
           nameEn: leadRc?.name_en ?? null,
           name: leadRc?.name || leadRc?.name_ko || customer?.name || null,
         }),
-      }).map((guest) => ({ ...guest, country }))
+      }).map((guest, index) => ({ ...guest, country: index === 0 ? country : '' }))
     }
-    const guests = slots.map((slot) => {
-      const rc = rcs[slot.slot_index] || rcs[0] || null
+    const rcForSlot = (slotIndex: number | undefined, allowLeadFallback: boolean) =>
+      rcs.find((row) => (row.order_index ?? -1) === slotIndex) || (allowLeadFallback ? rcs[0] || null : null)
+    const leadSlot = slots[0]
+    const leadRc = rcForSlot(leadSlot?.slot_index, true)
+    const leadPrintName = pickEnglishPrintName({
+      fullLegalName: leadSlot?.full_legal_name,
+      nameEn: leadRc?.name_en ?? null,
+      name: leadRc?.name || leadRc?.name_ko || customer?.name || null,
+      placeholder: leadSlot?.placeholder_label,
+    })
+    const guests = slots.map((slot, index) => {
+      const isLead = index === 0
+      const rc = rcForSlot(slot.slot_index, isLead)
       const guardian = guardianByParticipant.get(slot.id)
-      const sigId = maniaSignatureIdForParticipant(slot)
+      const sigId = signatureIdOf(slot)
+      const printName = printNameForPartySlot({
+        isLead,
+        hasSignature: Boolean(sigId),
+        leadPrintName,
+        fullLegalName: slot.full_legal_name,
+        nameEn: rc?.name_en ?? null,
+        name: isLead ? rc?.name || rc?.name_ko || customer?.name || null : rc?.name || rc?.name_ko || null,
+        placeholder: slot.placeholder_label,
+      })
       return {
         id: slot.id,
         reservationId: rez.id,
-        printName: pickEnglishPrintName({
-          fullLegalName: slot.full_legal_name,
-          nameEn: rc?.name_en ?? null,
-          name: rc?.name || rc?.name_ko || customer?.name || null,
-          placeholder: slot.placeholder_label,
-        }),
-        signatureUrl: sigId ? signatureUrls[sigId] ?? null : null,
-        country,
-        receiptNumber: String(rez.channel_rn || '').trim(),
+        printName,
+        signatureUrl: printName && sigId ? signatureUrls[sigId] ?? null : null,
+        country: isLead || printName ? country : '',
+        receiptNumber: printName ? String(rez.channel_rn || '').trim() : '',
         isMinor: slot.participant_type === 'MINOR',
         age: ageOnTourDate(slot.date_of_birth, tourDate),
         guardianName: guardian?.name ?? null,
@@ -536,6 +542,14 @@ export async function GET(request: NextRequest) {
       })
     }
     return guests
+  }
+
+  function guestsForReservation(rez: RezRow, canyon: CanyonPrintKey) {
+    return partyGuestsForReservation(rez, (participant) => signatureIdForParticipant(participant, canyon))
+  }
+
+  function maniaGuestsForReservation(rez: RezRow) {
+    return partyGuestsForReservation(rez, maniaSignatureIdForParticipant)
   }
 
   let guideName = String(

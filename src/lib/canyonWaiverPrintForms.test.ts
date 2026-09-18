@@ -11,6 +11,7 @@ import {
   padPrintRows,
   pickEnglishPrintName,
   pickReusableWaiverSignature,
+  printNameForPartySlot,
   antelopeXDuplexPageNumber,
 } from '@/lib/canyonWaiverPrintForms'
 
@@ -44,6 +45,44 @@ test('pickEnglishPrintName ignores Guest N placeholders', () => {
       nameEn: 'Minsoo Kim',
     }),
     'MINSOO KIM'
+  )
+})
+
+test('printNameForPartySlot keeps lead name and blanks unsigned companions', () => {
+  const lead = printNameForPartySlot({
+    isLead: true,
+    hasSignature: false,
+    nameEn: 'Minsoo Kim',
+    name: '김민수',
+  })
+  assert.equal(lead, 'MINSOO KIM')
+  assert.equal(
+    printNameForPartySlot({
+      isLead: false,
+      hasSignature: false,
+      leadPrintName: lead,
+      name: '김민수',
+      nameEn: 'Minsoo Kim',
+    }),
+    ''
+  )
+  assert.equal(
+    printNameForPartySlot({
+      isLead: false,
+      hasSignature: true,
+      leadPrintName: lead,
+      fullLegalName: 'Minsoo Kim',
+    }),
+    ''
+  )
+  assert.equal(
+    printNameForPartySlot({
+      isLead: false,
+      hasSignature: true,
+      leadPrintName: lead,
+      fullLegalName: 'Jane Doe',
+    }),
+    'JANE DOE'
   )
 })
 

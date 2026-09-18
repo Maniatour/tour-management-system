@@ -14,7 +14,7 @@ import {
   normalizeGroupRepresentativeOverrides,
   type PickupGroupPresetWithReps,
 } from '@/lib/pickupGroupPreset'
-import { normalizeReservationIds } from '@/utils/tourUtils'
+import { reservationIdsForTourBatchPrint } from '@/utils/tourUtils'
 import type { EnvelopeVariant } from '@/components/receipt/TourEnvelopeModal'
 
 const CustomerReceiptModal = dynamic(() => import('@/components/receipt/CustomerReceiptModal'), {
@@ -192,14 +192,30 @@ export function TourQuickPrintHost({ locale, request, onClose }: TourQuickPrintH
     }
   }, [request, loadBookings])
 
-  const receiptReservationIds = useMemo(() => {
-    const fromAssigned = (tourData.assignedReservations || []).map((r: { id: string }) => r.id).filter(Boolean)
-    const fromTour = normalizeReservationIds(tourData.tour?.reservation_ids)
-    return fromAssigned.length > 0 ? fromAssigned : fromTour
-  }, [tourData.assignedReservations, tourData.tour?.reservation_ids])
+  const receiptReservationIds = useMemo(
+    () =>
+      reservationIdsForTourBatchPrint({
+        assignedReservations: tourData.assignedReservations || [],
+        tourReservationIds: tourData.tour?.reservation_ids,
+        statusByReservationId: tourData.allReservations || [],
+      }),
+    [tourData.assignedReservations, tourData.tour?.reservation_ids, tourData.allReservations]
+  )
 
   const tourReady = Boolean(tourData.tour?.id)
-  const reservationsReady = !tourData.pageLoading
+  const hasTourReservationIds = Boolean(
+    tourData.tour &&
+      (Array.isArray(tourData.tour.reservation_ids)
+        ? tourData.tour.reservation_ids.length > 0
+        : String(tourData.tour.reservation_ids || '').trim().length > 0)
+  )
+  const assignmentSnapshotReady =
+    !hasTourReservationIds ||
+    (tourData.assignedReservations || []).length > 0 ||
+    (tourData.allReservations || []).length > 0
+  const reservationsReady =
+    !tourData.pageLoading &&
+    (request?.kind === 'tourInfo' || assignmentSnapshotReady)
 
   useEffect(() => {
     if (!request || opened || !tourReady || !reservationsReady) return
@@ -239,6 +255,13 @@ export function TourQuickPrintHost({ locale, request, onClose }: TourQuickPrintH
     return [v.vehicle_type, v.vehicle_number].filter(Boolean).join(' ') || vehicleId
   }
 
+  const getVehicleNick = (vehicleId: string) => {
+    const vehicle = tourData.vehicles?.find((v: { id: string }) => v.id === vehicleId) as
+      | { nick?: string | null }
+      | undefined
+    return vehicle?.nick?.trim() || null
+  }
+
   const filteredTicketBookings = useMemo(
     () => aggregateTicketBookingsForPrint(ticketBookings),
     [ticketBookings]
@@ -255,6 +278,8 @@ export function TourQuickPrintHost({ locale, request, onClose }: TourQuickPrintH
     Boolean(request) &&
     !opened &&
     (tourData.pageLoading ||
+      ((request?.kind === 'receipts' || request?.kind === 'tip' || request?.kind === 'balance') &&
+        !assignmentSnapshotReady) ||
       (request?.kind === 'tourInfo' && (bookingsLoading || !bookingsLoaded || tourData.loadingStates.reservations)))
 
   if (!request) return null
@@ -322,6 +347,7 @@ export function TourQuickPrintHost({ locale, request, onClose }: TourQuickPrintH
           tourData.selectedAssistant ? tourData.getTeamMemberName(tourData.selectedAssistant) : null
         }
         vehicleLabel={tourData.selectedVehicleId ? getVehicleName(tourData.selectedVehicleId) : null}
+        vehicleNick={tourData.selectedVehicleId ? getVehicleNick(tourData.selectedVehicleId) : null}
         assignedReservations={tourData.assignedReservations}
         pickupHotels={tourData.pickupHotels}
         useRepresentativePickup={

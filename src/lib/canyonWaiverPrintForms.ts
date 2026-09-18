@@ -2,7 +2,7 @@
 
 export const LOWER_ANTELOPE_ROWS_PER_PAGE = 25
 export const ANTELOPE_X_ROWS_PER_PAGE = 18
-export const MANIA_WAIVER_ROWS_PER_PAGE = 18
+export const MANIA_WAIVER_ROWS_PER_PAGE = 13
 export const CANYON_WAIVER_COMPANY_NAME = 'LAS VEGAS MANIA TOUR'
 
 export type CanyonWaiverPrintGuest = {
@@ -64,10 +64,10 @@ function extractParentheticalLatin(value: string): string | null {
 
 /** PRINT NAME 칸: 영문 법적 이름·name_en을 우선하고, 없으면 괄호 영문/기존 이름 */
 export function pickEnglishPrintName(input: {
-  fullLegalName?: string | null
-  nameEn?: string | null
-  name?: string | null
-  placeholder?: string | null
+  fullLegalName?: string | null | undefined
+  nameEn?: string | null | undefined
+  name?: string | null | undefined
+  placeholder?: string | null | undefined
 }): string {
   const legal = trimPrintText(input.fullLegalName)
   const nameEn = trimPrintText(input.nameEn)
@@ -83,6 +83,34 @@ export function pickEnglishPrintName(input: {
 
 export function isPlaceholderGuestLabel(value: string | null | undefined): boolean {
   return /^guest\s*\d+$/i.test(trimPrintText(value))
+}
+
+export function samePrintGuestName(a: string | null | undefined, b: string | null | undefined): boolean {
+  const left = trimPrintText(a).toUpperCase()
+  const right = trimPrintText(b).toUpperCase()
+  return Boolean(left) && left === right
+}
+
+/** 대표자는 예약 이름으로 채우고, 동행자는 본인 서명이 있을 때만 이름을 넣는다. */
+export function printNameForPartySlot(input: {
+  isLead: boolean
+  hasSignature: boolean
+  leadPrintName?: string | null
+  fullLegalName?: string | null
+  nameEn?: string | null
+  name?: string | null
+  placeholder?: string | null
+}): string {
+  const ownName = pickEnglishPrintName({
+    fullLegalName: input.fullLegalName,
+    nameEn: input.nameEn,
+    name: input.name,
+    placeholder: input.placeholder,
+  })
+  if (input.isLead) return ownName
+  if (!input.hasSignature || !ownName) return ''
+  if (samePrintGuestName(ownName, input.leadPrintName)) return ''
+  return ownName
 }
 
 /** 대표자 1행 + 동행자 수만큼 빈 칸 */
@@ -229,6 +257,7 @@ export function getCanyonWaiverPrintStyles(): string {
       background: transparent;
       filter: none;
       mix-blend-mode: multiply;
+      image-rendering: auto;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
@@ -246,15 +275,87 @@ export function getCanyonWaiverPrintStyles(): string {
     .mania-doc ul { margin: 0 0 8px; padding-left: 16px; }
     .mania-doc li { margin: 0 0 3px; color: #111; }
     .mania-meta { font-size: 12px; margin: 0 0 12px; font-family: "Times New Roman", Times, serif; }
-    .mania-sig-page { padding-top: 4px; font-family: "Times New Roman", Times, serif; }
-    .mania-sig-page h2 { font-size: 16px; font-weight: 800; margin: 0 0 10px; letter-spacing: 0.04em; }
-    .mania-sig-table { width: 100%; border-collapse: collapse; background: #fff; }
-    .mania-sig-table th, .mania-sig-table td { border: 1px solid #111; padding: 3px 6px; height: 36px; font-size: 11px; vertical-align: middle; }
-    .mania-sig-table th { font-weight: 700; text-align: center; height: 24px; }
-    .mania-sig-table td.mania-num { width: 32px; text-align: center; }
-    .mania-sig-table td.mania-name { font-weight: 700; letter-spacing: 0.02em; }
-    .mania-sig-table td.mania-sig { width: 220px; }
-    .mania-sig-table .cwf-sig { max-height: 30px; }
+    .mania-sig-page {
+      padding: 0.12in 0.08in 0.2in;
+      font-family: "Malgun Gothic", "Apple SD Gothic Neo", "Times New Roman", Times, sans-serif;
+      color: #111;
+    }
+    .mania-sig-head { margin: 0 0 0.28in; font-size: 13px; line-height: 1.7; }
+    .mania-sig-head-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      margin: 0 0 7px;
+      min-height: 1.35em;
+    }
+    .mania-sig-head-label { flex-shrink: 0; white-space: nowrap; }
+    .mania-sig-head-value {
+      flex: 1;
+      border-bottom: 1px solid #111;
+      min-height: 1.2em;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      padding: 0 4px 1px;
+      line-height: 1.2;
+    }
+    .mania-sig-head-value.mania-sig-blank { font-weight: 400; }
+    .mania-sig-mileage {
+      color: #d00000;
+      font-weight: 700;
+      flex: 0 0 auto;
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      min-width: 2.8in;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .mania-sig-mileage .mania-sig-head-value {
+      min-width: 1.5in;
+      border-bottom-color: #d00000;
+    }
+    .mania-sig-balance-amount {
+      color: #d00000;
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .mania-sig-staff { align-items: flex-end; }
+    .mania-sig-staff .mania-sig-head-value { flex: 1.15; }
+    .mania-sig-sign-only {
+      flex: 1;
+      border-bottom: 1px solid #111;
+      min-height: 1.2em;
+    }
+    .mania-sign-list { margin: 0.08in 0 0; }
+    .mania-sign-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.45in;
+      align-items: flex-end;
+      margin: 0 0 9px;
+    }
+    .mania-sign-field {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      min-width: 0;
+    }
+    .mania-sign-label { flex-shrink: 0; font-size: 13px; }
+    .mania-sign-line {
+      flex: 1;
+      border-bottom: 1px solid #111;
+      min-height: 28px;
+      display: flex;
+      align-items: flex-end;
+      padding: 0 4px 1px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      font-size: 13px;
+    }
+    .mania-sign-line .cwf-sig { max-height: 26px; }
 
     .lac-page {
       width: 100%;
@@ -343,8 +444,8 @@ export function getCanyonWaiverPrintStyles(): string {
       box-shadow: none !important;
     }
     .lac-table .lac-sig-img {
-      max-height: 0.62cm;
-      height: 0.62cm;
+      max-height: 0.3in;
+      height: 0.3in;
       max-width: 100%;
       width: auto;
       mix-blend-mode: multiply;
@@ -375,6 +476,109 @@ export function getCanyonWaiverPrintStyles(): string {
     .acx-guest .cwf-sig { max-height: 26px; }
     .acx-page-num { text-align: right; margin-top: 14px; font-size: 12px; }
     .acx-guide-sig { max-height: 32px; }
+    .acx-overlay-page {
+      position: relative;
+      background: #e8eefc;
+      --acx-ink-shift-x: 0px;
+      --acx-ink-shift-y: 0px;
+      --acx-overlay-pad-top: 0.40in;
+      --acx-overlay-field-h: 0.24in;
+      --acx-overlay-note-h: 1.12in;
+      --acx-overlay-date-x: 0.42in;
+      --acx-overlay-time-x: 0.55in;
+      --acx-overlay-name-x: 0.12in;
+      --acx-guest-row: 8mm;
+      padding: var(--acx-overlay-pad-top) 0.5in 0.32in;
+    }
+    .acx-overlay-page .acx-preview-note {
+      position: absolute;
+      top: 4px;
+      left: 18px;
+      right: 18px;
+      margin: 0;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #3b5bdb;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      pointer-events: none;
+    }
+    .acx-overlay-page .acx-title {
+      margin: 0 0 0.14in;
+      min-height: 0.22in;
+      font-size: 16px;
+    }
+    .acx-overlay-page .acx-field {
+      margin: 0;
+      min-height: var(--acx-overlay-field-h);
+      line-height: var(--acx-overlay-field-h);
+      font-size: 14px;
+    }
+    .acx-overlay-page .acx-row { gap: 0.28in; }
+    .acx-overlay-page .acx-note {
+      min-height: var(--acx-overlay-note-h);
+      margin: 0.08in 0 0.1in;
+      font-size: 12px;
+      line-height: 1.3;
+    }
+    .acx-overlay-page .acx-guest-list {
+      margin-top: 0.04in;
+      position: relative;
+      top: -16mm;
+    }
+    .acx-overlay-page .acx-guest {
+      align-items: flex-end;
+      min-height: var(--acx-guest-row);
+      height: var(--acx-guest-row);
+      margin: 0;
+      font-size: 13px;
+      gap: 6px;
+    }
+    .acx-overlay-page .acx-guest .acx-fill { min-height: 0.2in; }
+    .acx-overlay-page .acx-guest .cwf-sig { max-height: 0.3in; }
+    .acx-overlay-page .acx-ink {
+      position: relative;
+      left: var(--acx-ink-shift-x);
+      top: var(--acx-ink-shift-y);
+    }
+    .acx-overlay-page .acx-overlay-company .acx-ink {
+      top: calc(var(--acx-ink-shift-y) - var(--acx-overlay-field-h) + 2mm);
+      left: calc(var(--acx-ink-shift-x) + 4ch);
+    }
+    .acx-overlay-page .acx-overlay-datetime-top .acx-overlay-date .acx-ink {
+      top: calc(var(--acx-ink-shift-y) - 2mm);
+      left: calc(var(--acx-ink-shift-x) + var(--acx-overlay-date-x));
+    }
+    .acx-overlay-page .acx-overlay-datetime-top .acx-overlay-time .acx-ink {
+      left: calc(var(--acx-ink-shift-x) + var(--acx-overlay-time-x));
+    }
+    .acx-overlay-page .acx-overlay-adults .acx-ink,
+    .acx-overlay-page .acx-overlay-minors .acx-ink {
+      top: calc(var(--acx-ink-shift-y) - 6mm);
+      left: calc(var(--acx-ink-shift-x) + 10ch + 50mm);
+    }
+    .acx-overlay-page .acx-overlay-guide-name .acx-ink {
+      left: calc(var(--acx-ink-shift-x) + 10ch);
+      top: calc(var(--acx-ink-shift-y) + 1mm - 6mm);
+    }
+    .acx-overlay-page .acx-overlay-guide-phone .acx-ink {
+      left: calc(var(--acx-ink-shift-x) + 10ch);
+      top: calc(var(--acx-ink-shift-y) + 4mm - 6mm);
+    }
+    .acx-overlay-page .acx-overlay-datetime-bottom .acx-overlay-date .acx-ink {
+      top: calc(var(--acx-ink-shift-y) - 14mm);
+      left: calc(var(--acx-ink-shift-x) + var(--acx-overlay-date-x));
+    }
+    .acx-overlay-page .acx-overlay-datetime-bottom .acx-overlay-time .acx-ink {
+      top: calc(var(--acx-ink-shift-y) - 14mm);
+      left: calc(var(--acx-ink-shift-x) + var(--acx-overlay-time-x) - 1.5cm - 15mm);
+    }
+    .acx-overlay-page .acx-guest .acx-name .acx-ink,
+    .acx-overlay-page .acx-guest .acx-sig .acx-ink {
+      left: calc(var(--acx-ink-shift-x) + var(--acx-overlay-name-x));
+      top: calc(var(--acx-ink-shift-y) + 0.04in);
+    }
 
     .acx-waiver-page {
       width: 100%;
@@ -520,10 +724,18 @@ export function getCanyonWaiverPrintStyles(): string {
       .lac-ops { grid-area: ops; margin-bottom: 6px; }
       .lac-table { grid-area: table; }
       .lac-foot { grid-area: foot; }
+      .acx-overlay-page { padding-top: calc(var(--acx-overlay-pad-top) + 22px); }
     }
 
     @media print {
       .lac-page, .acx-page, .acx-waiver-page, .mania-page { min-height: auto; }
+      .mania-sig-balance-amount {
+        color: #d00000 !important;
+        font-size: 22px !important;
+        font-weight: 800 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
       .acx-waiver-page { position: relative; }
       .acx-waiver-page .acx-page-num {
         position: absolute;
@@ -562,6 +774,8 @@ export function getCanyonWaiverPrintStyles(): string {
         background: transparent !important;
         mix-blend-mode: multiply;
         filter: none !important;
+        max-height: 0.3in !important;
+        height: 0.3in !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
@@ -602,12 +816,35 @@ export function getCanyonWaiverPrintStyles(): string {
       .acx-waiver-official li { margin: 0 0 6pt; }
       .acx-waiver-official .acx-waiver-closing { margin: 4pt 0 0; font-size: 11pt; }
       .acx-sheet-side { display: none !important; }
+      .acx-overlay-page { background: transparent !important; }
+      .acx-overlay-page .acx-preview-note { display: none !important; }
+      .acx-overlay-page .acx-chrome,
+      .acx-overlay-page .acx-chrome-rule {
+        visibility: hidden !important;
+      }
+      .acx-overlay-page .acx-line,
+      .acx-overlay-page .acx-fill {
+        border-color: transparent !important;
+        box-shadow: none !important;
+      }
+      .acx-overlay-page .acx-ink,
+      .acx-overlay-page .acx-ink .cwf-sig,
+      .acx-overlay-page .acx-ink .cwf-sig-ink {
+        visibility: visible !important;
+        color: #000 !important;
+        background: transparent !important;
+        mix-blend-mode: multiply;
+        filter: none !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
       .cwf-sig {
         filter: none !important;
         mix-blend-mode: multiply;
         background: transparent !important;
       }
       .acx-guest .cwf-sig { max-height: 26px !important; }
+      .acx-overlay-page .acx-guest .cwf-sig { max-height: 0.3in !important; }
     }
   `
 }

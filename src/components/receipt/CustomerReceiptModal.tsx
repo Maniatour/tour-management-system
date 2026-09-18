@@ -11,6 +11,7 @@ import { inferPricingAdultsWhenUnset } from '@/utils/inferPricingAdults'
 import { splitNotIncludedForDisplay } from '@/utils/pricingSectionDisplay'
 import { loadResidentStatusAmountsForReservation } from '@/lib/saveResidentStatusWithPricing'
 import { printHtmlDocument } from '@/lib/printHtmlDocument'
+import { reservationExcludedFromTourBatchPrint } from '@/utils/tourUtils'
 import {
   buildResidentFeeDisplayLines,
   countResidentLinesFromCustomers,
@@ -607,6 +608,7 @@ export default function CustomerReceiptModal({
 
   useEffect(() => {
     if (!isOpen) return
+    let aborted = false
     setError(null)
     if (ids.length === 0) {
       setLoading(false)
@@ -629,6 +631,7 @@ export default function CustomerReceiptModal({
         type ReceiptChannel = { name?: string | null }
 
         for (const id of ids) {
+          if (aborted) return
           let rez: Record<string, unknown> | null = null
           let customer: ReceiptCustomer | null = null
           let product: ReceiptProduct | null = null
@@ -669,6 +672,7 @@ export default function CustomerReceiptModal({
               .eq('id', id)
               .single()
             if (rezErr || !rezRow) {
+              if (aborted) return
               setError('Reservation not found')
               setLoading(false)
               return
@@ -700,6 +704,11 @@ export default function CustomerReceiptModal({
             product = (pRes.data as ReceiptProduct | null) ?? null
             pickupHotel = (phRes.data as ReceiptPickupHotel | null) ?? null
             channel = (chRes.data as ReceiptChannel | null) ?? null
+          }
+          const rezStatus = ((rez as Record<string, unknown>).status ?? null) as string | null
+          // 투어 일괄 인쇄: 취소·삭제 건은 미리보기·인쇄 모두에서 제외 (단건 예약 영수증은 그대로)
+          if (isBatch && reservationExcludedFromTourBatchPrint(rezStatus)) {
+            continue
           }
           let pricingRow: Record<string, unknown> | null = null
           const pr = await supabase.from('reservation_pricing').select('*').eq('reservation_id', id).maybeSingle()
@@ -861,20 +870,26 @@ export default function CustomerReceiptModal({
             },
           })
         }
+        if (aborted) return
         if (results.length === 1) {
           setData(results[0])
           setBatchData(results)
         } else {
+          setData(null)
           setBatchData(results)
         }
-        if (results.length > 0) setSelectedReservationIds(new Set(results.map((r) => r.reservation.id)))
+        setSelectedReservationIds(new Set(results.map((r) => r.reservation.id)))
       } catch (e) {
+        if (aborted) return
         setError(e instanceof Error ? e.message : 'Failed to load')
       } finally {
-        setLoading(false)
+        if (!aborted) setLoading(false)
       }
     }
-    load()
+    void load()
+    return () => {
+      aborted = true
+    }
   }, [isOpen, reservationId, isBatch, ids.join(',')])
 
   const handlePrint = (singleData?: ReceiptData) => {
@@ -979,7 +994,9 @@ export default function CustomerReceiptModal({
   if (!isOpen) return null
   if (!portalReady) return null
 
-  const list = isBatch ? batchData : data ? [data] : []
+  const list = (isBatch ? batchData : data ? [data] : []).filter((d) =>
+    isBatch ? !reservationExcludedFromTourBatchPrint(d.reservation.status) : true
+  )
   const listToShow = isBatch && list.length > 0
     ? list.filter((d) => selectedReservationIds.has(d.reservation.id))
     : list
@@ -997,7 +1014,7 @@ export default function CustomerReceiptModal({
             <X className="w-6 h-6" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 bg-white min-w-0 flex flex-col items-center">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-6 bg-white min-w-0 flex flex-col items-center">
           {loading && <p className="text-gray-500 py-8">{locale === 'ko' ? '로딩 중...' : 'Loading...'}</p>}
           {error && <p className="text-red-600 py-8">{error}</p>}
           {!loading && !error && list.length === 0 && <p className="text-gray-500 py-8">{locale === 'ko' ? '데이터 없음' : 'No data'}</p>}

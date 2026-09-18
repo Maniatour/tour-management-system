@@ -87,59 +87,125 @@ function ManiaWaiverBack() {
   )
 }
 
+export type ManiaSignatureSheetInfo = {
+  tourDate: string
+  vehicleLabel: string
+  tourName: string
+  peopleCount: number
+  guideName: string
+  driverName: string
+  balanceLabel: string
+}
+
+function HeadValue({
+  value,
+  blank = false,
+  className,
+}: {
+  value: string
+  blank?: boolean
+  className?: string
+}) {
+  return (
+    <span
+      className={[blank ? 'mania-sig-head-value mania-sig-blank' : 'mania-sig-head-value', className]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {value || '\u00a0'}
+    </span>
+  )
+}
+
 function ManiaSignaturePage({
   packet,
   guests,
   pageIndex,
   pageCount,
+  sheet,
 }: {
   packet: CanyonWaiverPrintPacket
   guests: CanyonWaiverPrintGuest[]
   pageIndex: number
   pageCount: number
+  sheet: ManiaSignatureSheetInfo
 }) {
   const rows = padPrintRows(guests, MANIA_WAIVER_ROWS_PER_PAGE)
   const start = pageIndex * MANIA_WAIVER_ROWS_PER_PAGE
+  const peopleLabel = sheet.peopleCount > 0 ? String(sheet.peopleCount) : ''
+  const tourAndPeople = [sheet.tourName, peopleLabel].filter(Boolean).join(' / ')
   return (
     <section
       className="mania-page mania-sig-page"
       data-print-section="mania-signatures"
       aria-label="Mania tour waiver signatures"
     >
-      <h2>LAS VEGAS MANIA TOUR — PARTICIPANT SIGNATURES</h2>
-      <p className="mania-meta">
-        Date: {packet.date || '________'}
-        {packet.tourTime ? ` · Time: ${packet.tourTime}` : ''} · Page {pageIndex + 1} of {pageCount}
-      </p>
-      <p className="mania-meta">
-        I have read the Acknowledgment of Risk, Release of Liability, Waiver &amp; Assumption of
-        Risk Agreement and agree to its terms.
-      </p>
-      <table className="mania-sig-table">
-        <thead>
-          <tr>
-            <th />
-            <th>Print Name</th>
-            <th>Signature</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((guest, i) => (
-            <tr key={guest?.id ?? `empty-${start + i}`}>
-              <td className="mania-num">{start + i + 1}</td>
-              <td className="mania-name">{guest?.printName || ''}</td>
-              <td className="mania-sig">
+      <div className="mania-sig-head">
+        <div className="mania-sig-head-row">
+          <span className="mania-sig-head-label">투어 날짜 (Date of Tour):</span>
+          <HeadValue value={sheet.tourDate || packet.date} />
+        </div>
+        <div className="mania-sig-head-row">
+          <span className="mania-sig-head-label">투어 차량 (Tour Vehicle) :</span>
+          <HeadValue value={sheet.vehicleLabel} />
+          <span className="mania-sig-mileage">
+            종료 마일리지 (End Mileage) :
+            <HeadValue value="" blank />
+          </span>
+        </div>
+        <div className="mania-sig-head-row">
+          <span className="mania-sig-head-label">
+            투어 명 (Name of Tour) / 투어 인원 (Number of people):
+          </span>
+          <HeadValue value={tourAndPeople} />
+        </div>
+        <div className="mania-sig-head-row mania-sig-staff">
+          <span className="mania-sig-head-label">투어 가이드 / 서명 (Tour Guide Name / Signature) :</span>
+          <HeadValue value={sheet.guideName || packet.guideName} />
+          <span className="mania-sig-sign-only" aria-label="Tour guide signature" />
+        </div>
+        <div className="mania-sig-head-row mania-sig-staff">
+          <span className="mania-sig-head-label">투어 드라이버 / 서명(Tour Driver / Signature) :</span>
+          <HeadValue value={sheet.driverName} />
+          <span className="mania-sig-sign-only" aria-label="Tour driver signature" />
+        </div>
+        <div className="mania-sig-head-row mania-sig-balance">
+          <span className="mania-sig-head-label">투어 잔금 (Balance) : $</span>
+          <HeadValue
+            value={sheet.balanceLabel.replace(/^\$/, '')}
+            className="mania-sig-balance-amount"
+          />
+        </div>
+      </div>
+
+      <div className="mania-sign-list">
+        {rows.map((guest, i) => (
+          <div key={guest?.id ?? `empty-${start + i}`} className="mania-sign-row">
+            <div className="mania-sign-field">
+              <span className="mania-sign-label">NAME :</span>
+              <span className="mania-sign-line">{guest?.printName || '\u00a0'}</span>
+            </div>
+            <div className="mania-sign-field">
+              <span className="mania-sign-label">SIGN :</span>
+              <span className="mania-sign-line">
                 {guest?.printName && guest.signatureUrl ? (
                   <PrintSignatureImage
                     src={guest.signatureUrl}
                     alt={`Signature of ${guest.printName}`}
                   />
-                ) : null}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                ) : (
+                  '\u00a0'
+                )}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+      {pageCount > 1 ? (
+        <div className="mania-page-num">
+          {pageIndex + 1} / {pageCount}
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -149,11 +215,13 @@ export default function ManiaTourWaiverPrintPages({
   includeWaiver,
   includeSignatures,
   isFirstPrintedBlock,
+  sheet,
 }: {
   packet: CanyonWaiverPrintPacket | null
   includeWaiver: boolean
   includeSignatures: boolean
   isFirstPrintedBlock: boolean
+  sheet: ManiaSignatureSheetInfo
 }) {
   if (!packet) return null
   if (!includeWaiver && !includeSignatures) return null
@@ -184,6 +252,7 @@ export default function ManiaTourWaiverPrintPages({
                 guests={guests}
                 pageIndex={pageIndex}
                 pageCount={chunks.length}
+                sheet={sheet}
               />
             </div>
           ))

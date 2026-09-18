@@ -1,7 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { inkifySignatureFromUrl } from '@/lib/inkifySignatureImage'
+import {
+  PRINT_SIGNATURE_TARGET_HEIGHT,
+  inkifySignatureFromUrl,
+} from '@/lib/inkifySignatureImage'
 
 export default function PrintSignatureImage({
   src,
@@ -16,7 +19,7 @@ export default function PrintSignatureImage({
 
   useEffect(() => {
     let cancelled = false
-    void inkifySignatureFromUrl(src, 48).then((next) => {
+    void inkifySignatureFromUrl(src, PRINT_SIGNATURE_TARGET_HEIGHT).then((next) => {
       if (!cancelled) setInkSrc(next)
     })
     return () => {

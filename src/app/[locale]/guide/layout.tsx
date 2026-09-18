@@ -26,6 +26,7 @@ import { GuideReviewNotificationLayer } from '@/components/guide/GuideReviewNoti
 import { GuideScheduleConfirmPopupLayer } from '@/components/guide/GuideScheduleConfirmPopupLayer'
 import { StaffSiteAlertPopupLayer } from '@/components/admin/staff-site-alert/StaffSiteAlertPopupLayer'
 import { UncompletedTourReportReminderLayer } from '@/components/guide/UncompletedTourReportReminderLayer'
+import { GuideFieldChargePaidNotificationLayer } from '@/components/guide/GuideFieldChargePaidNotificationLayer'
 import VoiceCallCrossTabListener from '@/components/guide/VoiceCallCrossTabListener'
 import GuideOfflineBanner from '@/components/guide/GuideOfflineBanner'
 import GuideNarrationOfflineSync from '@/components/guide/GuideNarrationOfflineSync'
@@ -715,6 +716,11 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
       />
 
       <GuideReviewNotificationLayer
+        userEmail={isSimulating && simulatedUser ? simulatedUser.email : user?.email}
+        locale={locale === 'en' ? 'en' : 'ko'}
+      />
+
+      <GuideFieldChargePaidNotificationLayer
         userEmail={isSimulating && simulatedUser ? simulatedUser.email : user?.email}
         locale={locale === 'en' ? 'en' : 'ko'}
       />

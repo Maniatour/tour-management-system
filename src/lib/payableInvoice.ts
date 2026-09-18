@@ -12,6 +12,7 @@ import {
   appendOtaTempEmailToSpecialRequests,
   isGetYourGuideReplyEmail,
 } from '@/lib/otaDirectCustomerEmail'
+import { notifyFieldChargePaid } from '@/lib/fieldChargePaidNotify'
 import { parseRecipientEmail } from '@/lib/quickPaymentRequestMessage'
 import { isSiteLocale, type SiteLocale } from '@/lib/siteLocales'
 
@@ -157,6 +158,7 @@ type InvoiceItemRow = {
   reservationId?: string | null
   itemType?: string | null
   openAmount?: boolean | null
+  fieldCharge?: boolean | null
 }
 
 export function isTipOpenAmountInvoiceItems(items: unknown): boolean {
@@ -543,7 +545,7 @@ export async function markInvoicePaidFromStripeWebhook(
 
   const { data: existing } = await admin
     .from('invoices')
-    .select('id, status, notes, total, items, customer_id, stripe_invoice_id')
+    .select('id, status, notes, total, items, customer_id, stripe_invoice_id, created_by')
     .eq('id', invoiceId)
     .maybeSingle()
 
@@ -554,7 +556,7 @@ export async function markInvoicePaidFromStripeWebhook(
   if (!existing) {
     const { data: byStripe } = await admin
       .from('invoices')
-      .select('id, status, notes, total, items, customer_id, stripe_invoice_id')
+      .select('id, status, notes, total, items, customer_id, stripe_invoice_id, created_by')
       .eq('stripe_invoice_id', stripeInvoice.id)
       .maybeSingle()
     if (!byStripe) return { ok: false }
@@ -586,6 +588,18 @@ export async function markInvoicePaidFromStripeWebhook(
     customerId: invoiceRow.customer_id,
     stripeInvoice,
   })
+
+  if (!alreadyPaid) {
+    await notifyFieldChargePaid(admin, {
+      invoiceId: targetId,
+      createdBy: (invoiceRow as { created_by?: string | null }).created_by ?? null,
+      customerId: invoiceRow.customer_id,
+      reservationId: apply.reservationId,
+      amountUsd: stripeInvoicePaidAmountUsd(stripeInvoice, Number(invoiceRow.total) || 0),
+      items: invoiceRow.items,
+      notes: invoiceRow.notes,
+    })
+  }
 
   return {
     ok: true,
@@ -1221,6 +1235,7 @@ export async function createQuickPayableInvoice(
       itemType: openAmount ? TIP_OPEN_AMOUNT_ITEM_TYPE : 'product',
       ...(openAmount ? { openAmount: true } : {}),
       ...(reservationId ? { reservationId } : {}),
+      ...(preserveReservationCustomer ? { fieldCharge: true } : {}),
     },
   ]
 
@@ -1746,7 +1761,7 @@ export async function markInvoicePaidFromCheckoutSession(
 
   const { data: invoice } = await admin
     .from('invoices')
-    .select('id, status, notes, total, items, customer_id, stripe_invoice_id')
+    .select('id, status, notes, total, items, customer_id, stripe_invoice_id, created_by')
     .eq('id', invoiceId)
     .maybeSingle()
 
@@ -1829,6 +1844,18 @@ export async function markInvoicePaidFromCheckoutSession(
     tipApplied = tip.applied
     if (!reservationId) reservationId = tip.reservationId
     if (!paymentSkippedReason) paymentSkippedReason = tip.skippedReason
+  }
+
+  if (!alreadyPaid) {
+    await notifyFieldChargePaid(admin, {
+      invoiceId: invoice.id,
+      createdBy: (invoice as { created_by?: string | null }).created_by ?? null,
+      customerId: invoice.customer_id,
+      reservationId,
+      amountUsd: openAmount ? paidTotalUsd : invoiceAmountUsd,
+      items: openAmount ? withPaidOpenAmountItems(invoice.items, paidTotalUsd) : invoice.items,
+      notes: invoice.notes,
+    })
   }
 
   return {
