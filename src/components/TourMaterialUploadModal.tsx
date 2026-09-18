@@ -13,7 +13,6 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
-type TourAttraction = Database['public']['Tables']['tour_attractions']['Row']
 type TourMaterialCategory = Database['public']['Tables']['tour_material_categories']['Row']
 
 interface UploadModalProps {
@@ -27,12 +26,10 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
   const fileInputRef = useRef<HTMLInputElement>(null)
   
   const [loading, setLoading] = useState(false)
-  const [attractions, setAttractions] = useState<TourAttraction[]>([])
   const [categories, setCategories] = useState<TourMaterialCategory[]>([])
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    attraction_id: '',
     category_id: '',
     language: 'ko',
     tags: [] as string[],
@@ -166,7 +163,7 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
         .insert({
           title: formData.title,
           description: formData.description || null,
-          attraction_id: formData.attraction_id || null,
+          attraction_id: null,
           category_id: formData.category_id || null,
           file_name: formData.file.name,
           file_path: filePath,
@@ -219,7 +216,6 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
     setFormData({
       title: '',
       description: '',
-      attraction_id: '',
       category_id: '',
       language: 'ko',
       tags: [],
@@ -229,19 +225,16 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
     onClose()
   }
 
-  // 관광지와 카테고리 로드
   const loadData = async () => {
     try {
-      const [attractionsRes, categoriesRes] = await Promise.all([
-        supabase.from('tour_attractions').select('*').eq('is_active', true).order('name_ko'),
-        supabase.from('tour_material_categories').select('*').eq('is_active', true).order('sort_order')
-      ])
+      const { data, error } = await supabase
+        .from('tour_material_categories')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order')
 
-      if (attractionsRes.error) throw attractionsRes.error
-      if (categoriesRes.error) throw categoriesRes.error
-
-      setAttractions(attractionsRes.data || [])
-      setCategories(categoriesRes.data || [])
+      if (error) throw error
+      setCategories(data || [])
     } catch (error) {
       console.error('데이터 로드 오류:', error)
       toast.error('데이터를 불러오는 중 오류가 발생했습니다.')
@@ -368,42 +361,22 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
             />
           </div>
 
-          {/* 관광지 및 카테고리 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                관광지
-              </label>
-              <select
-                value={formData.attraction_id}
-                onChange={(e) => setFormData(prev => ({ ...prev, attraction_id: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-              >
-                <option value="">관광지 선택 (선택사항)</option>
-                {attractions.map(attraction => (
-                  <option key={attraction.id} value={attraction.id}>
-                    {attraction.name_ko}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                카테고리
-              </label>
-              <select
-                value={formData.category_id}
-                onChange={(e) => setFormData(prev => ({ ...prev, category_id: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-              >
-                <option value="">카테고리 선택 (선택사항)</option>
-                {categories.map(category => (
-                  <option key={category.id} value={category.id}>
-                    {category.name_ko}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              카테고리
+            </label>
+            <select
+              value={formData.category_id}
+              onChange={(e) => setFormData(prev => ({ ...prev, category_id: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
+            >
+              <option value="">카테고리 선택 (선택사항)</option>
+              {categories.map(category => (
+                <option key={category.id} value={category.id}>
+                  {category.name_ko}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* 태그 */}

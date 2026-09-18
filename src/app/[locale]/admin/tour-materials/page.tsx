@@ -103,7 +103,6 @@ export default function TourMaterialsManagementPage() {
   const { activeTab, searchTerm, selectedAttraction, selectedCategory } = tmUi
   const setSearchTerm = (v: SetStateAction<string>) =>
     setTmUi((u) => ({ ...u, searchTerm: typeof v === 'function' ? (v as (s: string) => string)(u.searchTerm) : v }))
-  const setSelectedAttraction = (v: string) => setTmUi((u) => ({ ...u, selectedAttraction: v }))
   const setSelectedCategory = (v: string) => setTmUi((u) => ({ ...u, selectedCategory: v }))
   const [materials, setMaterials] = useState<TourMaterial[]>([])
   const [quizzes, setQuizzes] = useState<GuideQuiz[]>([])
@@ -259,10 +258,9 @@ export default function TourMaterialsManagementPage() {
   const filteredMaterials = materials.filter(material => {
     const matchesSearch = material.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          material.description?.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesAttraction = !selectedAttraction || material.attraction_id === selectedAttraction
     const matchesCategory = !selectedCategory || material.category_id === selectedCategory
     // 오디오 파일만 표시
-    return matchesSearch && matchesAttraction && matchesCategory && material.file_type === 'audio'
+    return matchesSearch && matchesCategory && material.file_type === 'audio'
   })
 
   const filteredQuizzes = quizzes.filter(quiz => {
@@ -341,34 +339,20 @@ export default function TourMaterialsManagementPage() {
                 />
               </div>
             </div>
-            <div className="flex gap-4">
+            {activeTab === 'materials' && (
               <select
-                value={selectedAttraction}
-                onChange={(e) => setSelectedAttraction(e.target.value)}
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
               >
-                <option value="">모든 관광지</option>
-                {attractions.map(attraction => (
-                  <option key={attraction.id} value={attraction.id}>
-                    {attraction.name_ko}
+                <option value="">모든 카테고리</option>
+                {categories.map(category => (
+                  <option key={category.id} value={category.id}>
+                    {category.name_ko}
                   </option>
                 ))}
               </select>
-              {activeTab === 'materials' && (
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-                >
-                  <option value="">모든 카테고리</option>
-                  {categories.map(category => (
-                    <option key={category.id} value={category.id}>
-                      {category.name_ko}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
+            )}
           </div>
         </div>
 
@@ -467,10 +451,6 @@ export default function TourMaterialsManagementPage() {
                               <div className="pt-3 space-y-2">
                                 {/* 기본 정보 */}
                                 <div className="flex items-center space-x-3 text-xs text-gray-500">
-                                  <span className="flex items-center space-x-1">
-                                    <MapPin className="w-3 h-3" />
-                                    <span className="truncate">{(material as TourMaterial & { tour_attractions?: { name_ko: string } }).tour_attractions?.name_ko || '관광지 없음'}</span>
-                                  </span>
                                   <span className="flex items-center space-x-1">
                                     <Tag className="w-3 h-3" />
                                     <span className="truncate">{(material as TourMaterial & { tour_material_categories?: { name_ko: string } }).tour_material_categories?.name_ko || '카테고리 없음'}</span>

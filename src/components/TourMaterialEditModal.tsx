@@ -6,7 +6,6 @@ import { createClientSupabase } from '@/lib/supabase'
 import { Database } from '@/lib/database.types'
 import { toast } from 'sonner'
 
-type TourAttraction = Database['public']['Tables']['tour_attractions']['Row']
 type TourMaterialCategory = Database['public']['Tables']['tour_material_categories']['Row']
 type TourMaterial = Database['public']['Tables']['tour_materials']['Row']
 
@@ -20,12 +19,10 @@ interface EditModalProps {
 export default function TourMaterialEditModal({ isOpen, onClose, material, onSuccess }: EditModalProps) {
   const supabase = createClientSupabase()
   const [loading, setLoading] = useState(false)
-  const [attractions, setAttractions] = useState<TourAttraction[]>([])
   const [categories, setCategories] = useState<TourMaterialCategory[]>([])
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    attraction_id: '',
     category_id: '',
     language: 'ko',
     tags: [] as string[],
@@ -39,7 +36,6 @@ export default function TourMaterialEditModal({ isOpen, onClose, material, onSuc
       setFormData({
         title: material.title || '',
         description: material.description || '',
-        attraction_id: material.attraction_id || '',
         category_id: material.category_id || '',
         language: material.language || 'ko',
         tags: material.tags || [],
@@ -49,19 +45,16 @@ export default function TourMaterialEditModal({ isOpen, onClose, material, onSuc
     }
   }, [isOpen, material])
 
-  // 관광지와 카테고리 로드
   const loadData = async () => {
     try {
-      const [attractionsRes, categoriesRes] = await Promise.all([
-        supabase.from('tour_attractions').select('*').eq('is_active', true).order('name_ko'),
-        supabase.from('tour_material_categories').select('*').eq('is_active', true).order('sort_order')
-      ])
+      const { data, error } = await supabase
+        .from('tour_material_categories')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order')
 
-      if (attractionsRes.error) throw attractionsRes.error
-      if (categoriesRes.error) throw categoriesRes.error
-
-      setAttractions(attractionsRes.data || [])
-      setCategories(categoriesRes.data || [])
+      if (error) throw error
+      setCategories(data || [])
     } catch (error) {
       console.error('데이터 로드 오류:', error)
       toast.error('데이터를 불러오는 중 오류가 발생했습니다.')
@@ -151,7 +144,6 @@ export default function TourMaterialEditModal({ isOpen, onClose, material, onSuc
       let updateData: any = {
         title: formData.title,
         description: formData.description || null,
-        attraction_id: formData.attraction_id || null,
         category_id: formData.category_id || null,
         language: formData.language,
         tags: formData.tags.length > 0 ? formData.tags : null,
@@ -220,7 +212,6 @@ export default function TourMaterialEditModal({ isOpen, onClose, material, onSuc
     setFormData({
       title: '',
       description: '',
-      attraction_id: '',
       category_id: '',
       language: 'ko',
       tags: [],
@@ -272,25 +263,6 @@ export default function TourMaterialEditModal({ isOpen, onClose, material, onSuc
               rows={3}
               placeholder="투어 자료 설명을 입력하세요"
             />
-          </div>
-
-          {/* 관광지 선택 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              관광지
-            </label>
-            <select
-              value={formData.attraction_id}
-              onChange={(e) => setFormData(prev => ({ ...prev, attraction_id: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-ring focus:border-transparent"
-            >
-              <option value="">관광지를 선택하세요</option>
-              {attractions.map(attraction => (
-                <option key={attraction.id} value={attraction.id}>
-                  {attraction.name_ko}
-                </option>
-              ))}
-            </select>
           </div>
 
           {/* 카테고리 선택 */}
