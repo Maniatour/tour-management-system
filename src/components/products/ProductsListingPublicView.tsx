@@ -7,6 +7,7 @@ import CustomerPageZone from '@/components/product/CustomerPageZone'
 import HomeSearchBar from '@/components/home/HomeSearchBar'
 import ProductsGygCard, { type ProductsGygCardProduct } from '@/components/products/ProductsGygCard'
 import ProductsHorizontalScroll from '@/components/products/ProductsHorizontalScroll'
+import ProductItineraryMatcher from '@/components/products/ProductItineraryMatcher'
 
 type ProductGroup = {
   id: string
@@ -126,6 +127,10 @@ export default function ProductsListingPublicView({
           </div>
         </section>
       </CustomerPageZone>
+
+      <div className="gyg-container pt-5 md:pt-6">
+        <ProductItineraryMatcher locale={locale} />
+      </div>
 
       <div className="gyg-container py-6 md:py-8">
         <CustomerPageZone zone="listing-page-header">
