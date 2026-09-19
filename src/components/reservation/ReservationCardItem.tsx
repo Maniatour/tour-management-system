@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Plus, Users, DollarSign, Eye, Clock, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal, CalendarPlus, CalendarX, CalendarClock, Send, Wallet } from 'lucide-react'
+import { Plus, Users, DollarSign, Eye, Clock, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal, CalendarPlus, CalendarX, CalendarClock, Send, Wallet, RefreshCw } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - react-country-flag may lack types
@@ -95,7 +95,10 @@ function reservationStatusIcon(statusRaw: string, className = 'h-4 w-4'): React.
   if (s === 'pending') return <Clock className={`${className} text-amber-700`} aria-hidden />
   if (s === 'confirmed') return <CheckCircle2 className={`${className} text-emerald-700`} aria-hidden />
   if (s === 'completed') return <CircleCheck className={`${className} text-primary`} aria-hidden />
-  if (s === 'cancelled' || s === 'canceled' || s === 'cancelled_rebooking') {
+  if (s === 'cancelled_rebooking') {
+    return <RefreshCw className={`${className} text-fuchsia-700`} aria-hidden />
+  }
+  if (s === 'cancelled' || s === 'canceled') {
     return <XCircle className={`${className} text-red-700`} aria-hidden />
   }
   if (s === 'no_show' || s === 'noshow') return <UserX className={`${className} text-orange-700`} aria-hidden />
@@ -715,6 +718,13 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     }
   }, [isReservationCancelled, reservation.id, cancelReasonFetchIx])
 
+  const cardStatusKey =
+    reservationStatusLower === 'cancelled_rebooking' ||
+    ((reservationStatusLower === 'cancelled' || reservationStatusLower === 'canceled') &&
+      isRebookingCancellationReason(cancelReasonBadge))
+      ? 'cancelled_rebooking'
+      : String(reservation.status ?? '')
+
   const statusOptions = [
     { value: 'inquiry', labelKey: 'status.inquiry' },
     { value: 'pending', labelKey: 'status.pending' },
@@ -814,19 +824,19 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   type="button"
                   onClick={() => setStatusModalOpen(true)}
                   disabled={statusUpdating}
-                  title={getStatusLabel(reservation.status, t)}
-                  aria-label={getStatusLabel(reservation.status, t)}
-                  className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full cursor-pointer hover:opacity-90 disabled:opacity-70 ${getStatusColor(reservation.status)}`}
+                  title={getStatusLabel(cardStatusKey, t)}
+                  aria-label={getStatusLabel(cardStatusKey, t)}
+                  className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full cursor-pointer hover:opacity-90 disabled:opacity-70 ${getStatusColor(cardStatusKey)}`}
                 >
-                  {reservationStatusIcon(String(reservation.status), 'h-4 w-4')}
+                  {reservationStatusIcon(cardStatusKey, 'h-4 w-4')}
                 </button>
               ) : (
                 <span
-                  title={getStatusLabel(reservation.status, t)}
-                  aria-label={getStatusLabel(reservation.status, t)}
-                  className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${getStatusColor(reservation.status)}`}
+                  title={getStatusLabel(cardStatusKey, t)}
+                  aria-label={getStatusLabel(cardStatusKey, t)}
+                  className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${getStatusColor(cardStatusKey)}`}
                 >
-                  {reservationStatusIcon(String(reservation.status), 'h-4 w-4')}
+                  {reservationStatusIcon(cardStatusKey, 'h-4 w-4')}
                 </span>
               )}
               {reservation.importNeedsReview ? (

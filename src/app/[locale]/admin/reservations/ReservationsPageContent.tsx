@@ -75,6 +75,7 @@ import {
   isReservationDeletedStatus,
 } from '@/utils/tourUtils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
+import { reservationExcludedFromTourAssignment } from '@/lib/reservationStatus'
 import type { 
   Customer, 
   Reservation,
@@ -1523,13 +1524,55 @@ export default function AdminReservations() {
           }
         })
 
+        type AssignedPartyRow = {
+          id: string
+          status?: string | null
+          adults?: number | null
+          child?: number | null
+          infant?: number | null
+          total_people?: number | null
+        }
+        const extraAssignedById = new Map<string, AssignedPartyRow>()
+        const assignedReservationIds = new Set<string>()
+        toursForInfoBuild.forEach((tour) => {
+          for (const rawId of tour.reservation_ids || []) {
+            const id = String(rawId ?? '').trim()
+            if (id) assignedReservationIds.add(id)
+          }
+        })
+        const missingAssignedIds = [...assignedReservationIds].filter((id) => !reservationById.has(id))
+        if (missingAssignedIds.length > 0) {
+          for (let i = 0; i < missingAssignedIds.length; i += chunkSize) {
+            const chunk = missingAssignedIds.slice(i, i + chunkSize)
+            const { data: extraAssigned } = await supabase
+              .from('reservations')
+              .select('id, status, adults, child, infant, total_people')
+              .in('id', chunk)
+            for (const row of extraAssigned || []) {
+              const typed = row as AssignedPartyRow
+              const id = String(typed.id ?? '').trim()
+              if (id) extraAssignedById.set(id, typed)
+            }
+          }
+        }
+
         // 투어 배정 인원은 tours.reservation_ids 안의 실제 활성 예약만 집계
-        const isActiveAssignedReservation = (reservation: Reservation) => {
-          const status = String(reservation.status || '').toLowerCase().trim()
-          return (
-            !isReservationCancelledStatus(status) &&
-            !isReservationDeletedStatus(status)
-          )
+        // (현재 목록에 없는 배정 예약도 extraAssignedById에서 인원을 합산)
+        const isActiveAssignedStatus = (status: string | null | undefined) =>
+          !isReservationCancelledStatus(status) &&
+          !isReservationDeletedStatus(status) &&
+          !reservationExcludedFromTourAssignment(status)
+
+        const assignedPartySizeForId = (id: string): number => {
+          const reservation = reservationById.get(id)
+          if (reservation) {
+            if (!isActiveAssignedStatus(reservation.status)) return 0
+            return getReservationPartySize(reservation as unknown as Record<string, unknown>)
+          }
+          const extra = extraAssignedById.get(id)
+          if (!extra) return 0
+          if (!isActiveAssignedStatus(extra.status)) return 0
+          return getReservationPartySize(extra as unknown as Record<string, unknown>)
         }
 
         // ??? ??? TourHeader?? ???: ??= ??????(confirmed/recruiting) ???, ?? = ??? ????(?????????????
@@ -1575,14 +1618,11 @@ export default function AdminReservations() {
             vehicleName = vehicleMap.get(tour.tour_car_id) || '-'
           }
 
-          // 해당 투어에 실제 배정된 활성 예약 인원만 합산 (취소/삭제 예약 제외)
+          // 해당 투어에 실제 배정된 활성 예약 인원만 합산 (취소/삭제/날짜변경 제외, 목록 밖 배정도 포함)
           if (tour.reservation_ids && tour.reservation_ids.length > 0) {
-            const uniqueReservationIds = [...new Set(tour.reservation_ids)]
+            const uniqueReservationIds = [...new Set(tour.reservation_ids.map((id) => String(id ?? '').trim()).filter(Boolean))]
             totalPeople = uniqueReservationIds.reduce((sum: number, id: string) => {
-              const reservation = reservationById.get(id)
-              if (!reservation) return sum
-              if (!isActiveAssignedReservation(reservation)) return sum
-              return sum + getReservationPartySize(reservation as unknown as Record<string, unknown>)
+              return sum + assignedPartySizeForId(id)
             }, 0)
           }
 

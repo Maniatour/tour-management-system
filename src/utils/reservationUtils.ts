@@ -354,7 +354,7 @@ export const getStatusColor = (status: string) => {
     case 'Pending': return 'bg-yellow-100 text-yellow-800'
     case 'completed': return 'bg-primary/10 text-primary'
     case 'cancelled': return 'bg-red-100 text-red-800'
-    case 'cancelled_rebooking': return 'bg-red-100 text-red-800'
+    case 'cancelled_rebooking': return 'bg-fuchsia-100 text-fuchsia-800'
     case 'Canceled': return 'bg-red-100 text-red-800'
     case 'no_show': return 'bg-orange-100 text-orange-800'
     case 'No Show': return 'bg-orange-100 text-orange-800'
@@ -625,7 +625,7 @@ export function getReservationPartySize(r: Record<string, unknown>): number {
   const infant = Number(r.infants ?? r.infant ?? 0) || 0
   const sum = adults + child + infant
   if (sum > 0) return sum
-  const tp = r.total_people
+  const tp = r.total_people ?? r.totalPeople
   if (tp != null && Number(tp) > 0) return Number(tp)
   return 0
 }
