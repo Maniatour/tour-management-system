@@ -46,6 +46,7 @@ import {
 } from '@/lib/admin-site-access-tree'
 import { mergePersonaCrudWithPatches } from '@/lib/site-access-matrix-overrides'
 import { resolveSiteAccessPersona } from '@/lib/site-access-persona'
+import { canOpenGuidePage, markStaffOpenGuidePage } from '@/lib/staffLanding'
 import { useSiteAccessMatrixPatchContext } from '@/contexts/SiteAccessMatrixPatchContext'
 import { canUseAuthenticatedRest, supabase } from '@/lib/supabase'
 import { describeError, serializeError } from '@/lib/errorSerialization'
@@ -1321,11 +1322,14 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                             {t('customerPage')}
                           </Link>
                           
-                          {/* 가이드 페이지 (팀원만) */}
-                          {userRole === 'team_member' && (
+                          {/* 가이드 페이지 (관리자·매니저·가이드) */}
+                          {canOpenGuidePage(userRole) && (
                             <Link
                               href={`/${locale}/guide`}
-                              onClick={handleUserMenuClick}
+                              onClick={() => {
+                                markStaffOpenGuidePage()
+                                handleUserMenuClick()
+                              }}
                               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                             >
                               <UserCheck className="w-4 h-4 mr-2" />

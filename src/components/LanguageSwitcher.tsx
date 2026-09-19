@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { withSimulationBackendMeta } from '@/lib/simulationBackend'
 import {
   normalizeSiteLocale,
+  persistUserSelectedLocale,
   replacePathLocale,
   type SiteLocale,
 } from '@/lib/siteLocales'
@@ -51,6 +52,7 @@ const LanguageSwitcher = ({
 
     localStorage.removeItem('locale')
     localStorage.removeItem('preferred-locale')
+    persistUserSelectedLocale(newLocale)
     document.cookie = `NEXT_LOCALE=${newLocale}; path=/; max-age=31536000; SameSite=Lax`
 
     if (simulationData) {

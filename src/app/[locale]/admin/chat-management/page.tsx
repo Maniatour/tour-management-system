@@ -44,6 +44,7 @@ import {
 } from '@/lib/pickupChatShare'
 import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
 import { useChatParticipants } from '@/hooks/useChatParticipants'
+import { countOnlineParticipants } from '@/lib/chatCustomerPresence'
 import {
   commitOptimisticChatMessage,
   upsertIncomingChatMessage
@@ -422,6 +423,10 @@ export default function ChatManagementPage() {
     ...(user?.email ? { guideEmail: user.email } : {}),
     messagesRef,
   })
+  const onlineParticipantCount = useMemo(
+    () => countOnlineParticipants(onlineParticipants.values()),
+    [onlineParticipants]
+  )
 
   // 비활성화된 채팅방 로딩 함수
   const fetchInactiveRooms = useCallback(async () => {
@@ -2787,6 +2792,8 @@ export default function ChatManagementPage() {
               onClose={() => setShowParticipantsList(false)}
               participants={onlineParticipants}
               selectedLanguage={selectedLanguage}
+              canManageMembers
+              roomId={selectedRoom.id}
             />
             {/* 채팅 헤더 */}
             <div className="bg-white/90 backdrop-blur-sm border-b border-gray-200 p-4 shadow-sm">
@@ -2818,9 +2825,9 @@ export default function ChatManagementPage() {
                   >
                     <Users size={16} />
                     <span className="hidden sm:inline">Online</span>
-                    {onlineParticipants.size > 0 ? (
+                    {onlineParticipantCount > 0 ? (
                       <span className="bg-green-500 text-white text-[10px] font-semibold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">
-                        {onlineParticipants.size > 99 ? '99+' : onlineParticipants.size}
+                        {onlineParticipantCount > 99 ? '99+' : onlineParticipantCount}
                       </span>
                     ) : null}
                   </button>

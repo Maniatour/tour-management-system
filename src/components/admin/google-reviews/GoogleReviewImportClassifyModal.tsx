@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { ExternalLink, Loader2, Sparkles, Star, X } from 'lucide-react'
+import { Calendar, ExternalLink, Loader2, Sparkles, Star, X } from 'lucide-react'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
 import { toLasVegasDateKey } from '@/lib/dailyReport/dateUtils'
 import type { GoogleReviewImportNotifyRow } from '@/lib/googleReviewImportNotify'
@@ -31,6 +31,7 @@ type Props = {
   notification: GoogleReviewImportNotifyRow
   onLater: () => void
   onDone: () => void
+  onDismissToday: () => void
   onOpenPage: () => void
 }
 
@@ -39,6 +40,7 @@ export default function GoogleReviewImportClassifyModal({
   notification,
   onLater,
   onDone,
+  onDismissToday,
   onOpenPage,
 }: Props) {
   const isKo = locale === 'ko'
@@ -309,29 +311,39 @@ export default function GoogleReviewImportClassifyModal({
           )}
         </div>
 
-        <div className="flex flex-wrap justify-end gap-2 border-t border-border/60 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 p-4">
           <button
             type="button"
-            onClick={onLater}
-            className="min-h-[44px] rounded-xl px-4 text-sm text-gray-600 hover:bg-gray-50"
+            onClick={onDismissToday}
+            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl px-3 text-sm text-gray-600 hover:bg-gray-50"
           >
-            {isKo ? '나중에' : 'Later'}
+            <Calendar className="h-4 w-4" aria-hidden />
+            {isKo ? '오늘은 다시 보지 않기' : "Don't show again today"}
           </button>
-          <button
-            type="button"
-            onClick={onOpenPage}
-            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-border px-4 text-sm font-medium text-foreground hover:bg-muted/50"
-          >
-            {isKo ? '리뷰 페이지에서 보기' : 'Open reviews page'}
-            <ExternalLink className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={onDone}
-            className="inline-flex min-h-[44px] items-center rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            {isKo ? '확인' : 'Done'}
-          </button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={onLater}
+              className="min-h-[44px] rounded-xl px-4 text-sm text-gray-600 hover:bg-gray-50"
+            >
+              {isKo ? '나중에' : 'Later'}
+            </button>
+            <button
+              type="button"
+              onClick={onOpenPage}
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-border px-4 text-sm font-medium text-foreground hover:bg-muted/50"
+            >
+              {isKo ? '리뷰 페이지에서 보기' : 'Open reviews page'}
+              <ExternalLink className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={onDone}
+              className="inline-flex min-h-[44px] items-center rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              {isKo ? '확인' : 'Done'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

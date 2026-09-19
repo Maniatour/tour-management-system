@@ -37,6 +37,10 @@
     {
       "path": "/api/cron/google-reviews-import",
       "schedule": "0 4,5 * * *"
+    },
+    {
+      "path": "/api/cron/competitor-price-check",
+      "schedule": "0 7 * * *"
     }
   ]
 }

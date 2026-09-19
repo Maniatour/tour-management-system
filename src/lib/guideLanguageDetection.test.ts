@@ -4,6 +4,7 @@ import {
   convertLanguageCodeToLocale,
   doesGuideSupportLanguage,
   getGuideSupportedLocales,
+  resolveGuideAppLocale,
   tryConvertLanguageCodeToLocale,
 } from './guideLanguageDetection'
 
@@ -33,4 +34,13 @@ test('doesGuideSupportLanguage does not count ES/FR as Korean', () => {
 test('getGuideSupportedLocales keeps English when mixed with Spanish', () => {
   assert.deepEqual(getGuideSupportedLocales({ languages: ['ES', 'EN'] }), ['en'])
   assert.deepEqual(getGuideSupportedLocales({ languages: ['KR', 'ES'] }), ['ko'])
+})
+
+test('resolveGuideAppLocale prefers header selection over team profile language', () => {
+  const koreanGuide = { languages: ['KR'] }
+  assert.equal(resolveGuideAppLocale(koreanGuide, 'guide@test.com', 'en'), 'en')
+  assert.equal(resolveGuideAppLocale(koreanGuide, 'guide@test.com', 'ko'), 'ko')
+  assert.equal(resolveGuideAppLocale(koreanGuide, 'guide@test.com', null), 'ko')
+  assert.equal(resolveGuideAppLocale({ languages: ['EN'] }, 'guide@test.com', null), 'en')
+  assert.equal(resolveGuideAppLocale({ languages: ['EN'] }, 'guide@test.com', 'ko'), 'ko')
 })

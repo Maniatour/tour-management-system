@@ -34,8 +34,15 @@ import GuideNarrationPlayLogger from '@/components/guide/GuideNarrationPlayLogge
 import { supabase } from '@/lib/supabase'
 import { createClientSupabase } from '@/lib/supabase'
 import { GuidePickupGeofenceProvider } from '@/contexts/GuidePickupGeofenceContext'
-import { guidePathWithAppLocale, guidePreferredAppLocale } from '@/lib/guideLanguageDetection'
+import { guidePathWithAppLocale, resolveGuideAppLocale } from '@/lib/guideLanguageDetection'
+import { readUserSelectedLocale } from '@/lib/siteLocales'
 import { persistPwaStartPath } from '@/lib/pwaStartUrl'
+import {
+  hasStaffOpenGuidePage,
+  isGuideHomePath,
+  isOfficeStaffRole,
+  officeStaffHomePath,
+} from '@/lib/staffLanding'
 import { tourReportRequiredDateRange } from '@/lib/tourReportExtras'
 import { assignedToursOrFilter } from '@/lib/guideAssignedToursFilter'
 
@@ -90,8 +97,12 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
 
   // 홈 화면에 추가 시 복원용: 가이드 구간 URL을 localStorage + 쿠키에 저장
   // (manifest start_url이 `/`였던 기존 바로가기가 `/` → 고객홈으로 가는 것 방지)
+  // 관리자·매니저가 가이드를 둘러봐도 다음 실행이 가이드로 열리지 않게 저장하지 않음
   useEffect(() => {
     if (typeof window === 'undefined') return
+    if (!isInitialized || isLoading || isSimulationRestoring) return
+    const role = isSimulating && simulatedUser ? simulatedUser.role : userRole
+    if (role !== 'team_member') return
     const path = window.location.pathname
     if (!/^\/(ko|en|ja|zh-CN|zh-TW|es|fr|de)\/guide(\/|$)/.test(path)) return
     persistPwaStartPath(path)
@@ -100,15 +111,48 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
     }
     window.addEventListener('pageshow', onPageShow)
     return () => window.removeEventListener('pageshow', onPageShow)
-  }, [pathname])
+  }, [pathname, isInitialized, isLoading, isSimulationRestoring, isSimulating, simulatedUser, userRole])
 
-  // 팀 멤버(가이드): 프로필 첫 언어와 URL 로케일이 다르면 `/(ko|en)/guide/...`로 맞춤
+  // 슈퍼·관리자·매니저: PWA/사이트 시작으로 가이드 홈이 열리면 관리자 홈으로
+  // (로그인 메뉴에서 가이드를 직접 연 세션은 유지)
+  useEffect(() => {
+    if (!isInitialized || isLoading || isSimulationRestoring) return
+    if (isSimulating) return
+    if (!isOfficeStaffRole(userRole)) return
+    if (!isGuideHomePath(pathname)) return
+    if (hasStaffOpenGuidePage()) return
+    const loc = pathname.split('/').filter(Boolean)[0] || 'ko'
+    const adminPath = officeStaffHomePath(loc)
+    persistPwaStartPath(adminPath)
+    router.replace(adminPath)
+  }, [
+    pathname,
+    router,
+    userRole,
+    isInitialized,
+    isLoading,
+    isSimulationRestoring,
+    isSimulating,
+  ])
+
+  // 팀 멤버(가이드): 헤더에서 한/영을 직접 고르지 않은 경우에만 프로필 첫 언어로 URL을 맞춤
   useEffect(() => {
     if (!isInitialized || isLoading || isSimulationRestoring) return
     if (userRole !== 'team_member') return
 
     const currentUser = isSimulating && simulatedUser ? simulatedUser : user
     if (!currentUser?.email) return
+
+    const pathLocale = pathname.split('/').filter(Boolean)[0]
+    if (pathLocale !== 'ko' && pathLocale !== 'en') return
+
+    const selected = readUserSelectedLocale()
+    if (selected === 'ko' || selected === 'en') {
+      if (pathLocale === selected) return
+      const next = guidePathWithAppLocale(pathname, selected)
+      if (next !== pathname) router.replace(next)
+      return
+    }
 
     let cancelled = false
     ;(async () => {
@@ -120,9 +164,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
         .maybeSingle()
       if (cancelled) return
 
-      const preferred = guidePreferredAppLocale(row, currentUser.email)
-      const pathLocale = pathname.split('/').filter(Boolean)[0]
-      if (pathLocale !== 'ko' && pathLocale !== 'en') return
+      const preferred = resolveGuideAppLocale(row, currentUser.email, selected)
       if (pathLocale === preferred) return
 
       const next = guidePathWithAppLocale(pathname, preferred)

@@ -1,16 +1,33 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Participant } from '@/types/chat'
+import {
+  customerChatIdentityKey,
+  upsertCustomerParticipant,
+} from '@/lib/chatCustomerPresence'
 
 function makeParticipant(
   id: string,
   name: string,
   type: Participant['type'],
-  email?: string | null
+  email?: string | null,
+  online = true
 ): Participant {
-  const participant: Participant = { id, name, type, lastSeen: new Date() }
+  const participant: Participant = { id, name, type, lastSeen: new Date(), online }
   if (email) participant.email = email
   return participant
+}
+
+function presenceKey(presence: {
+  userId?: string
+  userName?: string
+  userType?: string
+}): string {
+  if (presence.userType === 'customer' || (!presence.userType && presence.userName)) {
+    const nameKey = customerChatIdentityKey(presence.userName || presence.userId)
+    if (nameKey) return nameKey
+  }
+  return String(presence.userId || presence.userName || '').trim()
 }
 
 interface UseChatParticipantsProps {
@@ -37,50 +54,48 @@ export function useChatParticipants({
 
   const loadChatParticipants = useCallback(async (roomIdParam: string) => {
     try {
-      const { data: participants, error } = await supabase
-        .from('chat_participants')
-        .select('participant_id, participant_name, participant_type, is_active')
-        .eq('room_id', roomIdParam)
-        .eq('is_active', true)
+      const [{ data: customers, error: customerError }, { data: customerMessages, error: messageError }] =
+        await Promise.all([
+          supabase
+            .from('chat_participants')
+            .select('participant_id, participant_name, participant_type, is_active')
+            .eq('room_id', roomIdParam)
+            .eq('participant_type', 'customer'),
+          supabase
+            .from('chat_messages')
+            .select('sender_name')
+            .eq('room_id', roomIdParam)
+            .eq('sender_type', 'customer')
+            .limit(1000),
+        ])
 
-      if (error) {
-        console.error('Error loading chat participants:', error)
-        return
+      if (customerError) {
+        console.error('Error loading chat participants:', customerError)
       }
-
-      if (!participants || participants.length === 0) {
-        return
+      if (messageError) {
+        console.warn('Error loading customer chat names:', messageError)
       }
 
       setOnlineParticipants((prev) => {
-        const updated = new Map<string, Participant>()
+        const updated = new Map(prev)
 
-        participants.forEach((participant) => {
-          if (participant.is_active === false) return
-          const key = participant.participant_id
-          const entry: Participant = {
-            id: key,
-            name: participant.participant_name || key,
-            type: participant.participant_type === 'customer' ? 'customer' : 'guide',
-            lastSeen: new Date(),
-          }
-          if (participant.participant_type === 'guide' && key) {
-            entry.email = key
-          }
-          updated.set(key, entry)
-        })
+        const rememberCustomer = (name: string, id?: string) => {
+          const key = customerChatIdentityKey(name)
+          if (!key) return
+          const existing = updated.get(key)
+          upsertCustomerParticipant(updated, name, {
+            ...(id ? { id } : {}),
+            online: existing?.online === true,
+          })
+        }
 
-        prev.forEach((value, key) => {
-          if (updated.has(key)) {
-            const existing = updated.get(key)!
-            updated.set(key, {
-              ...existing,
-              lastSeen: value.lastSeen,
-            })
-          } else {
-            updated.set(key, value)
-          }
-        })
+        for (const row of customers || []) {
+          rememberCustomer(row.participant_name || row.participant_id, row.participant_id)
+        }
+
+        for (const row of customerMessages || []) {
+          rememberCustomer(row.sender_name || '')
+        }
 
         return updated
       })
@@ -110,99 +125,125 @@ export function useChatParticipants({
     })
     presenceChannelRef.current = channel
 
+    const markPresence = (
+      presence: {
+        userId?: string
+        userName?: string
+        userType?: string
+        userEmail?: string
+      },
+      online: boolean
+    ) => {
+      const key = presenceKey(presence)
+      if (!key) return
+      if (key === customerChatIdentityKey(userId) || key === userId) return
+      setOnlineParticipants((prev) => {
+        const updated = new Map(prev)
+        const currentMessages = messagesRef.current
+        const userMessage = currentMessages.find(
+          (m: { sender_email?: string; sender_name?: string }) =>
+            presence.userId === m.sender_email ||
+            presence.userId === m.sender_name ||
+            presence.userName === m.sender_name
+        )
+        const type: Participant['type'] =
+          userMessage?.sender_type === 'system' || userMessage?.sender_type === 'admin'
+            ? 'guide'
+            : ((userMessage?.sender_type || presence.userType || 'guide') as Participant['type'])
+        const name = userMessage?.sender_name || presence.userName || presence.userId || key
+        if (type === 'customer') {
+          upsertCustomerParticipant(updated, name, {
+            id: presence.userId || name,
+            online,
+          })
+        } else if (online) {
+          updated.set(
+            key,
+            makeParticipant(
+              presence.userId || key,
+              name,
+              'guide',
+              userMessage?.sender_email || presence.userEmail,
+              true
+            )
+          )
+        } else {
+          const existing = updated.get(key)
+          if (existing) {
+            updated.set(key, { ...existing, online: false })
+          }
+        }
+        return updated
+      })
+    }
+
     channel
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState()
+        const presentKeys = new Set<string>()
 
         setOnlineParticipants((prev) => {
           const updated = new Map(prev)
-          const currentMessages = messagesRef.current
-
           Object.entries(state).forEach(([, presences]) => {
-            if (Array.isArray(presences) && presences.length > 0) {
-              const presence = presences[0] as {
-                userId?: string
-                userName?: string
-                userType?: string
-                userEmail?: string
-              }
-              const participantUserId = presence?.userId
-              if (participantUserId && participantUserId !== userId) {
-                const userMessage = currentMessages.find(
-                  (m: { sender_email?: string; sender_name?: string }) =>
-                    participantUserId === m.sender_email ||
-                    participantUserId === m.sender_name
+            if (!Array.isArray(presences) || presences.length === 0) return
+            const presence = presences[0] as {
+              userId?: string
+              userName?: string
+              userType?: string
+              userEmail?: string
+            }
+            const key = presenceKey(presence)
+            if (!key) return
+            presentKeys.add(key)
+            const isSelf = key === customerChatIdentityKey(userId) || key === userId
+            if (isSelf) return
+            const userMessage = messagesRef.current.find(
+              (m: { sender_email?: string; sender_name?: string }) =>
+                presence.userId === m.sender_email ||
+                presence.userId === m.sender_name ||
+                presence.userName === m.sender_name
+            )
+            const type: Participant['type'] =
+              presence.userType === 'customer' || userMessage?.sender_type === 'customer'
+                ? 'customer'
+                : 'guide'
+            const name = userMessage?.sender_name || presence.userName || presence.userId || key
+            if (type === 'customer') {
+              upsertCustomerParticipant(updated, name, {
+                id: presence.userId || name,
+                online: true,
+              })
+            } else {
+              updated.set(
+                key,
+                makeParticipant(
+                  presence.userId || key,
+                  name,
+                  'guide',
+                  presence.userEmail,
+                  true
                 )
-
-                if (userMessage) {
-                  updated.set(
-                    participantUserId,
-                    makeParticipant(
-                      participantUserId,
-                      userMessage.sender_name,
-                      userMessage.sender_type === 'system' ||
-                        userMessage.sender_type === 'admin'
-                        ? 'guide'
-                        : userMessage.sender_type,
-                      userMessage.sender_email
-                    )
-                  )
-                } else if (presence.userName) {
-                  updated.set(
-                    participantUserId,
-                    makeParticipant(
-                      participantUserId,
-                      presence.userName || participantUserId,
-                      (presence.userType as Participant['type']) || 'guide',
-                      presence.userEmail
-                    )
-                  )
-                }
-              }
+              )
             }
           })
 
+          updated.forEach((value, key) => {
+            if (value.online === true && !presentKeys.has(key) && key !== customerChatIdentityKey(userId) && key !== userId) {
+              updated.set(key, { ...value, online: false })
+            }
+          })
           return updated
         })
       })
       .on('presence', { event: 'join' }, ({ newPresences }) => {
         if (Array.isArray(newPresences) && newPresences.length > 0) {
-          const presence = newPresences[0] as {
-            userId?: string
-            userName?: string
-            userType?: string
-            userEmail?: string
-          }
-          const participantUserId = presence?.userId
-          if (participantUserId && participantUserId !== userId) {
-            setOnlineParticipants((prev) => {
-              const updated = new Map(prev)
-              const currentMessages = messagesRef.current
-              const userMessage = currentMessages.find(
-                (m: { sender_email?: string; sender_name?: string }) =>
-                  participantUserId === m.sender_email ||
-                  participantUserId === m.sender_name
-              )
-
-              updated.set(
-                participantUserId,
-                makeParticipant(
-                  participantUserId,
-                  userMessage?.sender_name || presence.userName || participantUserId,
-                  userMessage?.sender_type === 'system' ||
-                    userMessage?.sender_type === 'admin'
-                    ? 'guide'
-                    : (userMessage?.sender_type || presence.userType || 'guide') as Participant['type'],
-                  userMessage?.sender_email || presence.userEmail
-                )
-              )
-              return updated
-            })
-          }
+          markPresence(newPresences[0] as never, true)
         }
       })
-      .on('presence', { event: 'leave' }, () => {
-        // 참여자를 삭제하지 않고 유지
+      .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+        if (Array.isArray(leftPresences) && leftPresences.length > 0) {
+          markPresence(leftPresences[0] as never, false)
+        }
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
@@ -215,15 +256,17 @@ export function useChatParticipants({
           })
           setOnlineParticipants((prev) => {
             const updated = new Map(prev)
-            updated.set(
-              userId,
-              makeParticipant(
+            if (isPublicView) {
+              upsertCustomerParticipant(updated, userName, {
+                id: userId,
+                online: true,
+              })
+            } else {
+              updated.set(
                 userId,
-                userName,
-                isPublicView ? 'customer' : 'guide',
-                isPublicView ? null : guideEmail
+                makeParticipant(userId, userName, 'guide', guideEmail, true)
               )
-            )
+            }
             return updated
           })
         }

@@ -20,11 +20,29 @@ import {
   pickLatestGoogleReviewImportNotification,
 } from '@/lib/googleReviewImportNotifyQueue'
 import GoogleReviewImportClassifyModal from '@/components/admin/google-reviews/GoogleReviewImportClassifyModal'
+import { todayInLasVegas } from '@/lib/dailyReport/dateUtils'
 
 const SESSION_KEY = 'tms-google-review-import-notify-session'
 const FOREVER_KEY = 'tms-google-review-import-notify-seen'
+const HIDE_TODAY_KEY = 'tms-google-review-import-notify-hide-today'
 const POLL_MS = 30_000
 const LOOKBACK_DAYS = 7
+
+function readHiddenToday(): boolean {
+  try {
+    return localStorage.getItem(HIDE_TODAY_KEY) === todayInLasVegas()
+  } catch {
+    return false
+  }
+}
+
+function writeHiddenToday() {
+  try {
+    localStorage.setItem(HIDE_TODAY_KEY, todayInLasVegas())
+  } catch {
+    /* quota */
+  }
+}
 
 function readIdSet(key: string): Set<string> {
   try {
@@ -53,6 +71,8 @@ export default function GoogleReviewImportNotificationListener({ locale }: { loc
   const [notification, setNotification] = useState<GoogleReviewImportNotifyRow | null>(null)
   const sessionDismissedRef = useRef<Set<string>>(new Set())
   const foreverDismissedRef = useRef<Set<string>>(new Set())
+  const hideTodayRef = useRef(false)
+  const openedFromInboxRef = useRef(false)
   const knownRowsRef = useRef<GoogleReviewImportNotifyRow[]>([])
 
   const dismissedIds = useCallback(() => {
@@ -78,6 +98,10 @@ export default function GoogleReviewImportNotificationListener({ locale }: { loc
   )
 
   const showLatest = useCallback(() => {
+    if (hideTodayRef.current && !openedFromInboxRef.current) {
+      setNotification(null)
+      return
+    }
     setNotification(pickLatestGoogleReviewImportNotification(knownRowsRef.current, dismissedIds()))
   }, [dismissedIds])
 
@@ -95,6 +119,7 @@ export default function GoogleReviewImportNotificationListener({ locale }: { loc
     const row = asAdminAlertPayload<GoogleReviewImportNotifyRow>(item.payload)
     if (!row?.id) return
     knownRowsRef.current = mergeGoogleReviewImportNotifyRows(knownRowsRef.current, [row])
+    openedFromInboxRef.current = true
     setNotification(row)
   })
 
@@ -102,6 +127,7 @@ export default function GoogleReviewImportNotificationListener({ locale }: { loc
     if (!enabled) return
     sessionDismissedRef.current = readIdSet(SESSION_KEY)
     foreverDismissedRef.current = readIdSet(FOREVER_KEY)
+    hideTodayRef.current = readHiddenToday()
 
     let cancelled = false
     let channel: ReturnType<typeof supabase.channel> | null = null
@@ -158,6 +184,7 @@ export default function GoogleReviewImportNotificationListener({ locale }: { loc
   }, [enabled, enqueue, showLatest, dismissedIds, reportRow])
 
   const dismissThroughCurrent = (forever: boolean) => {
+    openedFromInboxRef.current = false
     const current = notification
     if (!current?.id) {
       setNotification(null)
@@ -175,6 +202,13 @@ export default function GoogleReviewImportNotificationListener({ locale }: { loc
 
   const dismissForever = () => dismissThroughCurrent(true)
 
+  const dismissToday = () => {
+    openedFromInboxRef.current = false
+    hideTodayRef.current = true
+    writeHiddenToday()
+    setNotification(null)
+  }
+
   const handleOpenPage = () => {
     dismissSession()
     router.push(`/${locale}/admin/google-reviews?tab=google&unclassified=1`)
@@ -188,6 +222,7 @@ export default function GoogleReviewImportNotificationListener({ locale }: { loc
       notification={notification}
       onLater={dismissSession}
       onDone={dismissForever}
+      onDismissToday={dismissToday}
       onOpenPage={handleOpenPage}
     />
   )

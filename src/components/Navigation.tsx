@@ -16,6 +16,7 @@ import CustomerSiteHeader from '@/components/customer/CustomerSiteHeader'
 import { AuthContext } from '@/contexts/AuthContext'
 import { CartIcon, CartSidebar } from '@/components/cart/CartProvider'
 import { isCustomerFacingPath } from '@/lib/customerSiteRoutes'
+import { canOpenGuidePage, markStaffOpenGuidePage } from '@/lib/staffLanding'
 import { Button } from '@/components/ui/button'
 
 const NavigationContent = () => {
@@ -254,11 +255,14 @@ const NavigationContent = () => {
                               </Link>
                             )}
                             
-                            {/* 가이드 페이지 (팀원만) */}
-                            {currentUserRole === 'team_member' && (
+                            {/* 가이드 페이지 (관리자·매니저·가이드) */}
+                            {canOpenGuidePage(currentUserRole) && (
                               <Link
                                 href={`/${locale}/guide`}
-                                onClick={handleUserMenuClick}
+                                onClick={() => {
+                                  markStaffOpenGuidePage()
+                                  handleUserMenuClick()
+                                }}
                                 className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                               >
                                 <UserCheck className="w-4 h-4 mr-2" />
@@ -545,12 +549,15 @@ const NavigationContent = () => {
                     </Link>
                   )}
                   
-                  {/* 가이드 페이지 링크 (팀원만) */}
-                  {currentUserRole === 'team_member' && (
+                  {/* 가이드 페이지 링크 (관리자·매니저·가이드) */}
+                  {canOpenGuidePage(currentUserRole) && (
                     <Link
                       href={`/${locale}/guide`}
                       className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"
-                      onClick={() => setIsMobileMenuOpen(false)}
+                      onClick={() => {
+                        markStaffOpenGuidePage()
+                        setIsMobileMenuOpen(false)
+                      }}
                     >
                       <UserCheck className="w-4 h-4 mr-3" />
                       {t('guidePage')}

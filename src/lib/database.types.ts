@@ -871,6 +871,7 @@ export type Database = {
           is_active: boolean | null
           joined_at: string | null
           last_read_at: string | null
+          membership_source: string
           participant_id: string
           participant_name: string
           participant_type: string
@@ -881,6 +882,7 @@ export type Database = {
           is_active?: boolean | null
           joined_at?: string | null
           last_read_at?: string | null
+          membership_source?: string
           participant_id: string
           participant_name: string
           participant_type: string
@@ -891,6 +893,7 @@ export type Database = {
           is_active?: boolean | null
           joined_at?: string | null
           last_read_at?: string | null
+          membership_source?: string
           participant_id?: string
           participant_name?: string
           participant_type?: string
@@ -13497,6 +13500,10 @@ export type Database = {
       reset_monthly_usage: { Args: never; Returns: undefined }
       reset_weekly_todos: { Args: never; Returns: undefined }
       reset_yearly_todos: { Args: never; Returns: undefined }
+      sync_tour_chat_guide_participants: {
+        Args: { p_tour_id: string }
+        Returns: undefined
+      }
       set_product_guide_costs: {
         Args: {
           p_assistant_fee: number

@@ -15,6 +15,8 @@ import {
   fetchGuideToursVisibleUntil,
   filterToursByGuideVisibleUntil,
 } from '@/lib/guideToursVisibleUntil'
+import { assignedToursOrFilter } from '@/lib/guideAssignedToursFilter'
+import { normalizeStaffEmail } from '@/lib/tourChatGuideMembers'
 import ChatImageBubble from '@/components/chat/ChatImageBubble'
 import { chatMessagePreviewText, isChatImageMessage } from '@/lib/tourChatImage'
 import type { SupportedLanguage } from '@/lib/translation'
@@ -243,7 +245,7 @@ export default function GuideChatPage() {
         let toursQuery = supabaseClient
           .from('tours')
           .select('*')
-          .or(`tour_guide_id.eq.${currentUserEmail},assistant_id.eq.${currentUserEmail}`)
+          .or(assignedToursOrFilter(currentUserEmail))
           .gte('tour_date', thirtyDaysAgoStr)
         if (guideVisibleUntil) {
           toursQuery = toursQuery.lte('tour_date', guideVisibleUntil)
@@ -258,7 +260,46 @@ export default function GuideChatPage() {
           return []
         }
 
-        const toursData = filterToursByGuideVisibleUntil(toursDataRaw || [], guideVisibleUntil)
+        const invitedEmail = normalizeStaffEmail(currentUserEmail)
+        const { data: invitedRows } = invitedEmail
+          ? await supabaseClient
+              .from('chat_participants')
+              .select('room_id, chat_rooms!inner(tour_id, is_active)')
+              .eq('participant_type', 'guide')
+              .eq('is_active', true)
+              .ilike('participant_id', invitedEmail)
+          : { data: [] as Array<{ chat_rooms: { tour_id: string } | { tour_id: string }[] | null }> }
+
+        const assignedIds = new Set((toursDataRaw || []).map((tour) => tour.id))
+        const invitedTourIds = [...new Set(
+          (invitedRows || [])
+            .flatMap((row) => {
+              const rooms = (row as { chat_rooms?: { tour_id?: string } | { tour_id?: string }[] | null }).chat_rooms
+              if (!rooms) return []
+              return Array.isArray(rooms) ? rooms : [rooms]
+            })
+            .map((room) => String(room.tour_id || '').trim())
+            .filter((tourId) => tourId && !assignedIds.has(tourId))
+        )]
+
+        let invitedTours: typeof toursDataRaw = []
+        if (invitedTourIds.length > 0) {
+          let invitedQuery = supabaseClient
+            .from('tours')
+            .select('*')
+            .in('id', invitedTourIds)
+            .gte('tour_date', thirtyDaysAgoStr)
+          if (guideVisibleUntil) {
+            invitedQuery = invitedQuery.lte('tour_date', guideVisibleUntil)
+          }
+          const { data: extraTours } = await invitedQuery
+          invitedTours = extraTours || []
+        }
+
+        const toursData = filterToursByGuideVisibleUntil(
+          [...(toursDataRaw || []), ...invitedTours],
+          guideVisibleUntil
+        )
 
         // 상품 정보 가져오기
         const productIds = [...new Set(toursData.map(tour => tour.product_id).filter((id): id is string => id != null))]

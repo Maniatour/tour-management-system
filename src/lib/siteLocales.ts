@@ -90,6 +90,20 @@ export function isLegacyColumnLocale(value: string): value is LegacyColumnLocale
   return value === 'ko' || value === 'en'
 }
 
+/** Header language switcher: explicit user choice, not inferred from profile. */
+export const USER_SELECTED_LOCALE_STORAGE_KEY = 'user-selected-locale'
+
+export function persistUserSelectedLocale(locale: SiteLocale): void {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(USER_SELECTED_LOCALE_STORAGE_KEY, locale)
+}
+
+export function readUserSelectedLocale(): SiteLocale | null {
+  if (typeof window === 'undefined') return null
+  const value = localStorage.getItem(USER_SELECTED_LOCALE_STORAGE_KEY)
+  return isSiteLocale(value) ? value : null
+}
+
 /** UI message JSON files that exist on disk (others fall back to English). */
 export const FILE_MESSAGE_LOCALES = ['ko', 'en'] as const
 

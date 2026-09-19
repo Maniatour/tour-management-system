@@ -4,10 +4,11 @@ import { useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { signOut } from '@/lib/auth'
 import { getRoleDisplayName } from '@/lib/roles'
-import { User, LogOut, ChevronDown, Shield, Home, FileText } from 'lucide-react'
+import { User, LogOut, ChevronDown, Shield, Home, FileText, UserCheck } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
+import { canOpenGuidePage, markStaffOpenGuidePage } from '@/lib/staffLanding'
 
 interface UserProfileProps {
   className?: string
@@ -110,6 +111,20 @@ export default function UserProfile({ className = '' }: UserProfileProps) {
                     <Home className="w-4 h-4 mr-2" />
                     {t('customerPage')}
                   </Link>
+
+                  {canOpenGuidePage(userRole) && (
+                    <Link
+                      href={`/${locale}/guide`}
+                      onClick={() => {
+                        markStaffOpenGuidePage()
+                        handleMenuClick()
+                      }}
+                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                    >
+                      <UserCheck className="w-4 h-4 mr-2" />
+                      {t('guidePage')}
+                    </Link>
+                  )}
                   
                   <div className="border-t border-gray-100 my-1"></div>
                 </>

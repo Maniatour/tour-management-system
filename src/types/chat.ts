@@ -60,5 +60,7 @@ export interface Participant {
   type: 'guide' | 'customer'
   email?: string
   lastSeen: Date
+  /** true면 지금 채팅방에 접속 중. 없으면 비활성(오프라인)으로 본다. */
+  online?: boolean
 }
 

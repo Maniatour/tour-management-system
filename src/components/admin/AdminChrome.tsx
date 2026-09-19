@@ -14,6 +14,8 @@ import GlobalAudioPlayer from '@/components/GlobalAudioPlayer'
 import AdminPageTitle from '@/components/admin/AdminPageTitle'
 import { SiteAccessMatrixPatchProvider } from '@/contexts/SiteAccessMatrixPatchContext'
 import { AdminAlertInboxProvider } from '@/contexts/AdminAlertInboxContext'
+import { persistPwaStartPath } from '@/lib/pwaStartUrl'
+import { officeStaffHomePath } from '@/lib/staffLanding'
 
 const AdminTodoRoot = dynamic(() => import('@/components/admin/todo/AdminTodoRoot'), {
   ssr: false,
@@ -52,6 +54,10 @@ export default function AdminChrome({ locale, children }: AdminChromeProps) {
       root.classList.remove('is-admin-route')
     }
   }, [])
+
+  useEffect(() => {
+    persistPwaStartPath(officeStaffHomePath(locale))
+  }, [locale])
 
   if (bareChrome) {
     return (

@@ -40,6 +40,7 @@ import { fetchPickupScheduleForTour } from '@/lib/fetchPickupScheduleForTour'
 import { guideChatSendTextMessage } from '@/lib/guideChatSendTextMessage'
 import { getVoiceCallTabBroadcastChannel } from '@/lib/voiceCallTabBroadcast'
 import { commitOptimisticChatMessage } from '@/lib/chatMessageMerge'
+import { countOnlineParticipants } from '@/lib/chatCustomerPresence'
 import {
   prepareTourChatImageForUpload,
   snapshotChatImageFiles,
@@ -233,6 +234,50 @@ export default function TourChatRoom({
     guideEmail,
     messagesRef
   })
+
+  useEffect(() => {
+    if (!isPublicView || !room?.id || !customerName?.trim()) return
+    const name = customerName.trim()
+    let cancelled = false
+
+    void (async () => {
+      const { data: existing } = await supabase
+        .from('chat_participants')
+        .select('id')
+        .eq('room_id', room.id)
+        .eq('participant_type', 'customer')
+        .eq('participant_id', name)
+        .maybeSingle()
+
+      if (cancelled) return
+
+      if (existing?.id) {
+        await supabase
+          .from('chat_participants')
+          .update({
+            participant_name: name,
+            is_active: true,
+          } as never)
+          .eq('id', existing.id)
+      } else {
+        await supabase.from('chat_participants').insert({
+          room_id: room.id,
+          participant_type: 'customer',
+          participant_id: name,
+          participant_name: name,
+          is_active: true,
+        } as never)
+      }
+
+      if (!cancelled) {
+        await loadChatParticipants(room.id)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isPublicView, room?.id, customerName, loadChatParticipants])
   
   const [newMessage, setNewMessage] = useState('')
   
@@ -1354,155 +1399,37 @@ export default function TourChatRoom({
   useEffect(() => {
     customerNameRef.current = customerName
   }, [customerName])
-  const autoAddTeamMembers = useCallback(async (roomId: string, tourIdParam?: string) => {
+  const autoAddTeamMembers = useCallback(async (roomId: string) => {
     try {
-      const targetTourId = tourIdParam || tourId
-      if (!targetTourId || isPublicView) return // 고객 뷰에서는 실행하지 않음
-      
-      // 중복 실행 방지: 같은 roomId에 대해 이미 실행 중이면 무시
-      const key = `${roomId}_${targetTourId}`
+      if (!roomId || isPublicView) return
+
+      const key = roomId
       if (autoAddTeamMembersRef.current[key]) {
         return
       }
       autoAddTeamMembersRef.current[key] = true
 
-      // 투어 정보 가져오기
-      const { data: tour, error: tourError } = await supabase
-        .from('tours')
-        .select('tour_guide_id, assistant_id, tour_car_id')
-        .eq('id', targetTourId)
-        .single<{ tour_guide_id: string | null; assistant_id: string | null; tour_car_id: string | null }>()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
 
-      if (tourError || !tour) {
-        console.error('Error loading tour for auto-add team members:', tourError)
-        return
-      }
-
-      // 현재 배정된 팀원 ID 목록 생성
-      const assignedTeamMemberIds = new Set<string>()
-      
-      // 가이드 ID 추가
-      if (tour.tour_guide_id) {
-        assignedTeamMemberIds.add(tour.tour_guide_id)
-      }
-      
-      // 어시스턴트 ID 추가
-      if (tour.assistant_id) {
-        assignedTeamMemberIds.add(tour.assistant_id)
-      }
-      
-      // 드라이버 정보는 tours 테이블에 저장되지 않으므로 스킵
-
-      // 현재 참여자 목록 가져오기 (가이드 타입만)
-      const { data: existingParticipants, error: participantsError } = await supabase
-        .from('chat_participants')
-        .select('id, participant_id, participant_type')
-        .eq('room_id', roomId)
-        .eq('participant_type', 'guide')
-
-      if (participantsError) {
-        console.error('Error loading existing participants:', participantsError)
-        return
-      }
-
-      const existingParticipantsList = (existingParticipants || []) as Array<{ id: string; participant_id: string; participant_type: string }>
-      const existingParticipantIds = new Set(
-        existingParticipantsList.map(p => p.participant_id)
-      )
-
-      // 새로 배정된 사람 추가
-      const participantsToAdd: Array<{
-        room_id: string
-        participant_type: 'guide'
-        participant_id: string
-        participant_name: string
-        is_active: boolean
-      }> = []
-
-      // 가이드 추가
-      if (tour.tour_guide_id && !existingParticipantIds.has(tour.tour_guide_id)) {
-        const { data: guideData } = await supabase
-          .from('team')
-          .select('email, name_ko, name_en')
-          .eq('email', tour.tour_guide_id)
-          .maybeSingle<{ email: string; name_ko: string | null; name_en: string | null }>()
-
-        if (guideData) {
-          participantsToAdd.push({
-            room_id: roomId,
-            participant_type: 'guide',
-            participant_id: tour.tour_guide_id,
-            participant_name: guideData.name_ko || guideData.name_en || tour.tour_guide_id,
-            is_active: true
-          })
-        }
-      }
-
-      // 어시스턴트 추가
-      if (tour.assistant_id && !existingParticipantIds.has(tour.assistant_id)) {
-        const { data: assistantData } = await supabase
-          .from('team')
-          .select('email, name_ko, name_en')
-          .eq('email', tour.assistant_id)
-          .maybeSingle<{ email: string; name_ko: string | null; name_en: string | null }>()
-
-        if (assistantData) {
-          participantsToAdd.push({
-            room_id: roomId,
-            participant_type: 'guide',
-            participant_id: tour.assistant_id,
-            participant_name: assistantData.name_ko || assistantData.name_en || tour.assistant_id,
-            is_active: true
-          })
-        }
-      }
-
-      // 드라이버 정보는 tours 테이블에 저장되지 않으므로 스킵
-
-      // 더 이상 배정되지 않은 사람 제거 (is_active = false로 설정)
-      const participantsToDeactivate: string[] = []
-      
-      for (const participant of existingParticipantsList) {
-        // 고객 타입은 제외하고, 가이드 타입만 처리
-        if (participant.participant_type === 'guide' && !assignedTeamMemberIds.has(participant.participant_id)) {
-          participantsToDeactivate.push(participant.id)
-        }
-      }
-
-      // 배정이 변경된 사람들 처리
-      if (participantsToDeactivate.length > 0) {
-        const { error: deactivateError } = await (supabase
-          .from('chat_participants') as any)
-          .update({ is_active: false })
-          .in('id', participantsToDeactivate)
-
-        if (deactivateError) {
-          console.error('Error deactivating removed team members:', deactivateError)
-        } else {
-          console.log(`Deactivated ${participantsToDeactivate.length} removed team member(s) from chat room`)
-        }
-      }
-
-      // 새로 배정된 사람 추가
-      if (participantsToAdd.length > 0) {
-        const { error: insertError } = await (supabase
-          .from('chat_participants') as any)
-          .insert(participantsToAdd)
-
-        if (insertError) {
-          console.error('Error auto-adding team members:', insertError)
-        } else {
-          console.log(`Auto-added ${participantsToAdd.length} team member(s) to chat room`)
-        }
+      const response = await fetch('/api/chat-rooms/participants', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ room_id: roomId, action: 'sync' }),
+      })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        console.error('Error syncing tour chat guides:', payload)
       }
     } catch (error) {
       console.error('Error in autoAddTeamMembers:', error)
     } finally {
-      // 실행 완료 후 플래그 제거
-      const key = `${roomId}_${tourIdParam || tourId}`
-      delete autoAddTeamMembersRef.current[key]
+      delete autoAddTeamMembersRef.current[roomId]
     }
-  }, [tourId, isPublicView])
+  }, [isPublicView])
   
   // autoAddTeamMembers를 ref에 저장하여 loadRoom에서 사용
   useEffect(() => {
@@ -1653,6 +1580,11 @@ export default function TourChatRoom({
     return () => {
       supabase.removeChannel(channel)
     }
+  }, [room?.id, tourId, isPublicView])
+
+  useEffect(() => {
+    if (!room?.id || !tourId || isPublicView) return
+    void autoAddTeamMembersFnRef.current?.(room.id, tourId)
   }, [room?.id, tourId, isPublicView])
 
   const [totalChatMessageCount, setTotalChatMessageCount] = useState(0)
@@ -2639,7 +2571,7 @@ export default function TourChatRoom({
           selectedLanguage={selectedLanguage}
           callStatus={callStatus}
           availableCallUsersCount={availableCallUsers.length}
-          onlineParticipantsCount={onlineParticipants.size}
+          onlineParticipantsCount={countOnlineParticipants(onlineParticipants.values())}
           isPushSupported={isPushSupported}
           isPushSubscribed={isPushSubscribed}
           isPushLoading={isPushLoading}
@@ -2683,6 +2615,8 @@ export default function TourChatRoom({
         onClose={() => setShowParticipantsList(false)}
         participants={onlineParticipants}
         selectedLanguage={selectedLanguage}
+        canManageMembers={!isPublicView}
+        roomId={room?.id ?? null}
       />
 
       {/* 메시지 목록 */}

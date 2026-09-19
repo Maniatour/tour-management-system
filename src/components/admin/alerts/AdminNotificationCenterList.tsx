@@ -14,6 +14,7 @@ import {
   Megaphone,
   MessageCircle,
   Star,
+  TrendingUp,
   type LucideIcon,
 } from 'lucide-react'
 import { AdminNotificationCenterPagination } from '@/components/admin/alerts/AdminNotificationCenterPagination'
@@ -46,6 +47,7 @@ const KIND_ICON: Record<AdminAlertKind, LucideIcon> = {
   op_todo: ListTodo,
   weather_reminder: Cloud,
   goblin_narration: Headphones,
+  competitor_price: TrendingUp,
 }
 
 const KIND_TONE: Record<AdminAlertKind, string> = {
@@ -61,6 +63,7 @@ const KIND_TONE: Record<AdminAlertKind, string> = {
   op_todo: 'bg-amber-500',
   weather_reminder: 'bg-sky-500',
   goblin_narration: 'bg-indigo-600',
+  competitor_price: 'bg-blue-700',
 }
 
 type AdminNotificationCenterListProps = {

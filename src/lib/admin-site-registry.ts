@@ -154,7 +154,7 @@ export const ADMIN_SIDEBAR_GROUPS: readonly AdminSidebarGroupEntry[] = [
     panelHintKey: 'groupSalesHint',
     icon: Share2,
     visibility: { type: 'always' },
-    childIds: ['channels', 'coupons', 'operator-b-manual', 'operators', 'commerce-ota-mappings'],
+    childIds: ['channels', 'coupons', 'operator-b-manual', 'operators', 'commerce-ota-mappings', 'market-research'],
   },
   {
     id: 'operations',
@@ -287,6 +287,14 @@ export const ADMIN_SIDEBAR_REGISTRY: readonly AdminSidebarRegistryEntry[] = [
     path: 'commerce/ota-mappings',
     sidebarTranslationKey: 'otaDistribution',
     icon: Share2,
+    visibility: { type: 'admin_or_manager' },
+    groupId: 'sales',
+  },
+  {
+    id: 'market-research',
+    path: 'market-research',
+    sidebarTranslationKey: 'marketResearch',
+    icon: TrendingUp,
     visibility: { type: 'admin_or_manager' },
     groupId: 'sales',
   },

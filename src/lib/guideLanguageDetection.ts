@@ -150,6 +150,18 @@ export function guidePreferredAppLocale(
   return p === 'en' ? 'en' : 'ko'
 }
 
+/** 헤더에서 한/영을 직접 고르면 그 값을 쓰고, 없으면 프로필 첫 언어를 씁니다. */
+export function resolveGuideAppLocale(
+  teamData: TeamLanguageData | null | undefined,
+  email?: string,
+  userSelectedLocale?: string | null
+): 'ko' | 'en' {
+  if (userSelectedLocale === 'en' || userSelectedLocale === 'ko') {
+    return userSelectedLocale
+  }
+  return guidePreferredAppLocale(teamData, email)
+}
+
 /** URL의 `/(ko|en)/guide/...` 앞 세그먼트만 선호 로케일로 바꿉니다. */
 export function guidePathWithAppLocale(pathname: string, appLocale: 'ko' | 'en'): string {
   const clean = pathname.split('?')[0].split('#')[0]
