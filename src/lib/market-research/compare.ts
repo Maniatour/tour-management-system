@@ -1,13 +1,20 @@
 import type {
   MarketCanyonVariant,
   MarketCompetitor,
+  MarketExcludedItem,
   MarketListing,
   MarketOfferType,
   MarketSnapshot,
   OurPriceOverlay,
 } from './types'
-import { MARKET_PRICE_AXES, marketPriceAxisKey } from './types'
-import { latestSnapshotsByAxis, priceDelta, snapshotKey } from './prices'
+import { marketPriceAxisKey } from './types'
+import {
+  collectExcludedItemIds,
+  excludedAmountFor,
+  excludedItemLabel,
+  snapshotExcludedItems,
+} from './excludedItems'
+import { listingAxes, latestSnapshotsByAxis, priceDelta, snapshotKey } from './prices'
 
 export type CompareCell = {
   listingId: string | null
@@ -20,36 +27,59 @@ export type CompareCell = {
   ourTotal: number | null
   deltaAmount: number | null
   deltaPercent: number | null
+  excludedItems: MarketExcludedItem[]
 }
 
 export type CompareRow = {
   canyon: MarketCanyonVariant
   offer: MarketOfferType
   axisKey: string
+  excludedItemId: string | null
+  excludedItemLabel: string | null
   cells: Record<string, CompareCell>
 }
 
-export function axisLabel(canyon: MarketCanyonVariant, offer: MarketOfferType, isKo: boolean): string {
+export function axisLabel(
+  canyon: MarketCanyonVariant,
+  offer: MarketOfferType,
+  isKo: boolean,
+  excluded?: { id: string; label: string } | null
+): string {
   const canyonLabel =
     canyon === 'lower'
-      ? isKo
-        ? 'Lower'
-        : 'Lower'
+      ? 'Lower'
       : canyon === 'antelope_x'
-        ? isKo
-          ? 'Antelope X'
-          : 'Antelope X'
+        ? 'Antelope X'
         : isKo
           ? '캐년 미구분'
           : 'Canyon unspecified'
+  if (excluded) {
+    if (excluded.id === 'total') {
+      return isKo ? `${canyonLabel} · 불포함 합계` : `${canyonLabel} · excluded total`
+    }
+    const itemLabel = excludedItemLabel(excluded, isKo)
+    return isKo ? `${canyonLabel} · 불포함 · ${itemLabel}` : `${canyonLabel} · excl. · ${itemLabel}`
+  }
+  if (offer === 'listing_from') return isKo ? 'From · 1인' : 'From / person'
   const offerLabel = offer === 'all_inclusive'
     ? isKo
-      ? '전체포함'
-      : 'All-inclusive'
+      ? '옵션 판매가'
+      : 'Option sale'
     : isKo
-      ? '판매가+불포함'
-      : 'Sale + excluded'
+      ? '옵션 판매가+불포함'
+      : 'Option sale + excluded'
   return `${canyonLabel} · ${offerLabel}`
+}
+
+export function compareRowLabel(row: CompareRow, isKo: boolean): string {
+  return axisLabel(
+    row.canyon,
+    row.offer,
+    isKo,
+    row.excludedItemId
+      ? { id: row.excludedItemId, label: row.excludedItemLabel || row.excludedItemId }
+      : null
+  )
 }
 
 export function otaPlatformLabel(platform: string, isKo: boolean): string {
@@ -67,6 +97,22 @@ export function otaPlatformLabel(platform: string, isKo: boolean): string {
   const row = labels[platform]
   if (!row) return platform
   return isKo ? row.ko : row.en
+}
+
+function emptyCell(): CompareCell {
+  return {
+    listingId: null,
+    sale: null,
+    notIncluded: null,
+    total: null,
+    currency: 'USD',
+    observedOn: null,
+    source: null,
+    ourTotal: null,
+    deltaAmount: null,
+    deltaPercent: null,
+    excludedItems: [],
+  }
 }
 
 function cellFromSnapshot(
@@ -90,43 +136,135 @@ function cellFromSnapshot(
     ourTotal,
     deltaAmount: delta.amount,
     deltaPercent: delta.percent,
+    excludedItems: snapshotExcludedItems(snapshot),
   }
 }
 
-/** OTA별 비교: 열 = 선택한 리스팅, 행 = Lower/X × 전체포함/판매+불포함 */
+function optionSnapshot(
+  latest: Map<string, MarketSnapshot>,
+  listingId: string,
+  canyon: MarketCanyonVariant,
+  offer: MarketOfferType
+): MarketSnapshot | undefined {
+  if (canyon === 'unspecified' && offer === 'listing_from') {
+    return (
+      latest.get(snapshotKey(listingId, 'unspecified', 'listing_from')) ??
+      latest.get(snapshotKey(listingId, 'unspecified', 'all_inclusive'))
+    )
+  }
+  const other = offer === 'sale_plus_excluded' ? 'all_inclusive' : 'sale_plus_excluded'
+  return (
+    latest.get(snapshotKey(listingId, canyon, offer)) ??
+    latest.get(snapshotKey(listingId, canyon, other)) ??
+    latest.get(snapshotKey(listingId, 'unspecified', offer))
+  )
+}
+
+function makeRow(
+  canyon: MarketCanyonVariant,
+  offer: MarketOfferType,
+  axisKey: string,
+  cells: Record<string, CompareCell>,
+  excluded?: { id: string; label: string }
+): CompareRow {
+  return {
+    canyon,
+    offer,
+    axisKey,
+    excludedItemId: excluded?.id ?? null,
+    excludedItemLabel: excluded?.label ?? null,
+    cells,
+  }
+}
+
+/** OTA별 비교: 열 = 선택한 리스팅, 행 = From + Lower/X + 불포함 항목 */
 export function buildOtaCompareRows(
   listings: MarketListing[],
   snapshots: MarketSnapshot[],
   ourByListing: Record<string, OurPriceOverlay>
 ): CompareRow[] {
   const latest = latestSnapshotsByAxis(snapshots)
-  return MARKET_PRICE_AXES.filter((axis) =>
-    listings.some((listing) => {
-      if (axis.canyon === 'lower' && !listing.has_lower) return false
-      if (axis.canyon === 'antelope_x' && !listing.has_antelope_x) return false
-      if (axis.offer === 'all_inclusive' && !listing.has_all_inclusive) return false
-      if (axis.offer === 'sale_plus_excluded' && !listing.has_sale_plus_excluded) return false
-      return true
-    })
-  ).map((axis) => {
+  const seen = new Set<string>()
+  const axes: Array<{ canyon: MarketCanyonVariant; offer: MarketOfferType }> = []
+  for (const listing of listings) {
+    for (const axis of listingAxes(listing)) {
+      const key = marketPriceAxisKey(axis.canyon, axis.offer)
+      if (seen.has(key)) continue
+      seen.add(key)
+      axes.push(axis)
+    }
+  }
+
+  const rows: CompareRow[] = axes.map((axis) => {
     const cells: Record<string, CompareCell> = {}
     for (const listing of listings) {
-      const exact = latest.get(snapshotKey(listing.id, axis.canyon, axis.offer))
-      const unspecified = latest.get(snapshotKey(listing.id, 'unspecified', axis.offer))
       cells[listing.id] = cellFromSnapshot(
-        exact ?? unspecified,
+        optionSnapshot(latest, listing.id, axis.canyon, axis.offer),
         ourByListing[listing.id],
         axis.canyon,
         axis.offer
       )
     }
-    return {
-      canyon: axis.canyon,
-      offer: axis.offer,
-      axisKey: marketPriceAxisKey(axis.canyon, axis.offer),
-      cells,
-    }
+    return makeRow(axis.canyon, axis.offer, marketPriceAxisKey(axis.canyon, axis.offer), cells)
   })
+
+  const optionAxes = axes.filter((axis) => axis.offer !== 'listing_from' && axis.canyon !== 'unspecified')
+  for (const axis of optionAxes) {
+    const optionSnaps = listings.map((listing) => optionSnapshot(latest, listing.id, axis.canyon, axis.offer))
+    const hasExcluded = optionSnaps.some(
+      (snap) => (snap?.adult_not_included || 0) > 0 || snapshotExcludedItems(snap).length > 0
+    )
+    if (!hasExcluded) continue
+
+    const totalCells: Record<string, CompareCell> = {}
+    for (let i = 0; i < listings.length; i += 1) {
+      const listing = listings[i]
+      const snap = optionSnaps[i]
+      const items = snapshotExcludedItems(snap)
+      const amount = items.length ? items.reduce((sum, item) => sum + item.amount, 0) : snap?.adult_not_included ?? null
+      totalCells[listing.id] = {
+        ...emptyCell(),
+        listingId: snap?.listing_id ?? null,
+        notIncluded: amount,
+        total: amount,
+        currency: snap?.currency ?? 'USD',
+        observedOn: snap?.observed_on ?? null,
+        source: snap?.source ?? null,
+        excludedItems: items,
+      }
+    }
+    rows.push(
+      makeRow(axis.canyon, axis.offer, `excluded:${axis.canyon}:total`, totalCells, {
+        id: 'total',
+        label: 'total',
+      })
+    )
+
+    for (const item of collectExcludedItemIds(optionSnaps)) {
+      const itemCells: Record<string, CompareCell> = {}
+      for (let i = 0; i < listings.length; i += 1) {
+        const listing = listings[i]
+        const snap = optionSnaps[i]
+        const items = snapshotExcludedItems(snap)
+        const amount = excludedAmountFor(items, item.id)
+        itemCells[listing.id] = {
+          ...emptyCell(),
+          listingId: snap?.listing_id ?? null,
+          notIncluded: amount,
+          total: amount,
+          currency: snap?.currency ?? 'USD',
+          observedOn: snap?.observed_on ?? null,
+          source: snap?.source ?? null,
+          excludedItems: items.filter((row) => row.id === item.id),
+        }
+      }
+      rows.push(
+        makeRow(axis.canyon, axis.offer, `excluded:${axis.canyon}:${item.id}`, itemCells, item)
+      )
+    }
+  }
+
+  return rows
 }
 
 /** 경쟁사별 비교: 열 = 그 업체의 OTA 리스팅 */
@@ -155,7 +293,7 @@ export function compareGridCsv(
   ]
   const lines = [header.join(',')]
   for (const row of rows) {
-    const label = axisLabel(row.canyon, row.offer, isKo)
+    const label = compareRowLabel(row, isKo)
     const cells = columns.flatMap((col) => {
       const cell = row.cells[col.id]
       return [

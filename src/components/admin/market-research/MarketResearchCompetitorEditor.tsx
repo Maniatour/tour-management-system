@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { MarketCompetitor } from '@/lib/market-research/types'
 
 export function MarketResearchCompetitorEditor({
@@ -25,13 +24,7 @@ export function MarketResearchCompetitorEditor({
   const [saving, setSaving] = useState(false)
 
   return (
-    <Card className="rounded-2xl border-border/60 shadow-sm">
-      <CardHeader>
-        <CardTitle className="text-lg">
-          {competitor ? (isKo ? '경쟁사 수정' : 'Edit competitor') : isKo ? '경쟁사 추가' : 'Add competitor'}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <div className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="comp-name">{isKo ? '회사명' : 'Name'}</Label>
           <Input id="comp-name" value={name} onChange={(e) => setName(e.target.value)} className="h-11 rounded-xl" />
@@ -67,7 +60,6 @@ export function MarketResearchCompetitorEditor({
             {isKo ? '취소' : 'Cancel'}
           </Button>
         </div>
-      </CardContent>
-    </Card>
+    </div>
   )
 }

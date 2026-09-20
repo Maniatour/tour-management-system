@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/api-security'
-import { runCompetitorPriceCheck } from '@/lib/market-research/job'
+import { runCompetitorPriceCheck } from '@/lib/market-research/competitorPriceJob'
 import { KOVEgAS_OPERATOR_ID } from '@/lib/operatorConstants'
 
 export const maxDuration = 120

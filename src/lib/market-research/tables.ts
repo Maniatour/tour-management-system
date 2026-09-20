@@ -2,6 +2,10 @@ export const MARKET_COMPETITORS_TABLE = 'market_competitors'
 export const MARKET_LISTINGS_TABLE = 'market_competitor_listings'
 export const MARKET_SNAPSHOTS_TABLE = 'market_competitor_price_snapshots'
 export const MARKET_ALERTS_TABLE = 'market_competitor_price_alerts'
+export const MARKET_FOCUS_PRODUCTS_TABLE = 'market_research_focus_products'
+export const MARKET_BADGES_TABLE = 'market_research_badges'
+export const MARKET_COMPARE_ITEMS_TABLE = 'market_research_compare_items'
+export const MARKET_OUR_OFFERS_TABLE = 'market_research_our_offers'
 
 export const MARKET_COMPETITOR_COLUMNS =
   'id, operator_id, name, website_url, notes, is_active, created_at, updated_at'
@@ -31,6 +35,7 @@ export const MARKET_LISTING_COLUMNS = [
   'language_note',
   'itinerary_note',
   'diff_notes',
+  'inclusion_items',
   'created_at',
   'updated_at',
 ].join(', ')
@@ -45,6 +50,9 @@ export const MARKET_SNAPSHOT_COLUMNS = [
   'offer_type',
   'currency',
   'adult_sale_price',
+  'discount_enabled',
+  'discount_percent',
+  'adult_discounted_price',
   'adult_not_included',
   'adult_total',
   'child_sale_price',
@@ -68,3 +76,14 @@ export const MARKET_ALERT_COLUMNS = [
   'new_adult_total',
   'created_at',
 ].join(', ')
+
+export const MARKET_FOCUS_PRODUCT_COLUMNS = 'operator_id, product_id, sort_order, created_at'
+
+export const MARKET_BADGE_COLUMNS =
+  'operator_id, badge_id, label_ko, label_en, sort_order, is_preset, created_at'
+
+export const MARKET_COMPARE_ITEM_COLUMNS =
+  'operator_id, item_id, label_ko, label_en, sort_order, is_preset, created_at'
+
+export const MARKET_OUR_OFFER_COLUMNS =
+  'operator_id, product_id, ota_platform, inclusion_items, excluded_items, created_at, updated_at'

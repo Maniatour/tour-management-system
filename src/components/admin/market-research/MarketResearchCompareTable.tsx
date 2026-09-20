@@ -8,7 +8,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { axisLabel, type CompareRow } from '@/lib/market-research/compare'
+import { compareRowLabel, type CompareRow } from '@/lib/market-research/compare'
+import { excludedItemLabel } from '@/lib/market-research/excludedItems'
 import { formatUsd } from './helpers'
 
 export function MarketResearchCompareTable({
@@ -44,23 +45,45 @@ export function MarketResearchCompareTable({
         <TableBody>
           {rows.map((row) => (
             <TableRow key={row.axisKey}>
-              <TableCell className="font-medium">{axisLabel(row.canyon, row.offer, isKo)}</TableCell>
+              <TableCell className="font-medium">{compareRowLabel(row, isKo)}</TableCell>
               {columns.map((col) => {
                 const cell = row.cells[col.id]
                 const delta = cell?.deltaAmount
                 const deltaText =
                   delta == null ? '' : `${delta > 0 ? '+' : ''}${formatUsd(delta)}`
+                const isExcludedRow = Boolean(row.excludedItemId)
                 return (
                   <TableCell key={col.id}>
-                    <div className="text-base font-semibold">{formatUsd(cell?.total)}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {isKo ? '판매' : 'Sale'} {formatUsd(cell?.sale)}
-                      {cell?.notIncluded ? ` · ${isKo ? '불포함' : 'excl.'} ${formatUsd(cell.notIncluded)}` : ''}
+                    <div className="text-base font-semibold">
+                      {row.offer === 'listing_from' && cell?.total != null
+                        ? `From ${formatUsd(cell.total)}`
+                        : formatUsd(cell?.total)}
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      {isKo ? '자사' : 'Ours'} {formatUsd(cell?.ourTotal)}
-                      {deltaText ? ` · ${deltaText}` : ''}
-                    </div>
+                    {row.offer === 'listing_from' ? (
+                      <div className="text-xs text-muted-foreground">{isKo ? '1인 기준가' : 'Per person'}</div>
+                    ) : isExcludedRow ? (
+                      <div className="text-xs text-muted-foreground">{isKo ? '1인 불포함' : 'Per person excluded'}</div>
+                    ) : (
+                      <>
+                        <div className="text-xs text-muted-foreground">
+                          {isKo ? '판매' : 'Sale'} {formatUsd(cell?.sale)}
+                          {cell?.notIncluded ? ` · ${isKo ? '불포함' : 'excl.'} ${formatUsd(cell.notIncluded)}` : ''}
+                        </div>
+                        {cell?.excludedItems?.length ? (
+                          <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                            {cell.excludedItems.map((item) => (
+                              <div key={item.id}>
+                                {excludedItemLabel(item, isKo)} {formatUsd(item.amount)}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                        <div className="text-xs text-muted-foreground">
+                          {isKo ? '자사' : 'Ours'} {formatUsd(cell?.ourTotal)}
+                          {deltaText ? ` · ${deltaText}` : ''}
+                        </div>
+                      </>
+                    )}
                   </TableCell>
                 )
               })}

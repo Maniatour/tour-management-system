@@ -2,16 +2,26 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireStaffApiAuth } from '@/lib/api-security'
 import { readActiveOperatorIdFromRequestLike } from '@/lib/operators/activeOperatorCookie'
 import {
+  addFocusProduct,
+  addMarketBadge,
+  addMarketCompareItem,
   createCompetitor,
   createListing,
   deleteCompetitor,
+  deleteFocusProduct,
   deleteListing,
+  deleteMarketBadge,
+  deleteMarketCompareItem,
   loadMarketResearchBundle,
   parseSnapshotInput,
+  saveOurOffer,
   updateCompetitor,
   updateListing,
 } from '@/lib/market-research/store'
-import { runCompetitorPriceCheck, saveManualSnapshot } from '@/lib/market-research/job'
+import { runCompetitorPriceCheck, saveManualSnapshot, saveTodayPrices } from '@/lib/market-research/competitorPriceJob'
+import { parseExcludedItems, parseInclusionMap } from '@/lib/market-research/excludedItems'
+import { parseListingBadges } from '@/lib/market-research/badges'
+
 
 function operatorFrom(request: NextRequest): string | null {
   return (
@@ -84,7 +94,7 @@ export async function POST(request: NextRequest) {
         hasLower: body.hasLower !== false,
         hasAntelopeX: body.hasAntelopeX !== false,
         hasAllInclusive: body.hasAllInclusive !== false,
-        hasSalePlusExcluded: body.hasSalePlusExcluded !== false,
+        hasSalePlusExcluded: body.hasSalePlusExcluded === true,
         watchEnabled: body.watchEnabled !== false,
         durationNote: body.durationNote == null ? null : String(body.durationNote),
         pickupNote: body.pickupNote == null ? null : String(body.pickupNote),
@@ -93,6 +103,7 @@ export async function POST(request: NextRequest) {
         languageNote: body.languageNote == null ? null : String(body.languageNote),
         itineraryNote: body.itineraryNote == null ? null : String(body.itineraryNote),
         diffNotes: body.diffNotes == null ? null : String(body.diffNotes),
+        inclusionItems: parseInclusionMap(body.inclusionItems, body.hasSalePlusExcluded !== true),
       })
       return NextResponse.json({ ok: true, listing: row })
     }
@@ -134,6 +145,10 @@ export async function POST(request: NextRequest) {
         languageNote: body.languageNote === undefined ? undefined : body.languageNote == null ? null : String(body.languageNote),
         itineraryNote: body.itineraryNote === undefined ? undefined : body.itineraryNote == null ? null : String(body.itineraryNote),
         diffNotes: body.diffNotes === undefined ? undefined : body.diffNotes == null ? null : String(body.diffNotes),
+        inclusionItems:
+          body.inclusionItems === undefined
+            ? undefined
+            : parseInclusionMap(body.inclusionItems, body.hasSalePlusExcluded !== true),
       })
       return NextResponse.json({ ok: true, listing: row })
     }
@@ -149,12 +164,97 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, ...result })
     }
 
+    if (action === 'save_today_prices') {
+      const optionalMoney = (value: unknown): number | null => {
+        if (value == null || value === '') return null
+        const n = Number(value)
+        return Number.isFinite(n) && n >= 0 ? n : null
+      }
+      const result = await saveTodayPrices({
+        operatorId,
+        listingId: String(body.listingId || ''),
+        fromPrice: optionalMoney(body.fromPrice),
+        lowerSale: optionalMoney(body.lowerSale),
+        antelopeXSale: optionalMoney(body.antelopeXSale),
+        lowerNotIncluded: optionalMoney(body.lowerNotIncluded),
+        antelopeXNotIncluded: optionalMoney(body.antelopeXNotIncluded),
+        lowerExcludedItems: parseExcludedItems(body.lowerExcludedItems),
+        antelopeXExcludedItems: parseExcludedItems(body.antelopeXExcludedItems),
+        rating: optionalMoney(body.rating),
+        reviewCount: optionalMoney(body.reviewCount),
+        badges: parseListingBadges(body.badges),
+        offer: body.offer === 'sale_plus_excluded' ? 'sale_plus_excluded' : 'all_inclusive',
+        discountEnabled: body.discountEnabled === true || Number(body.discountPercent) > 0,
+        discountPercent: Number(body.discountPercent) || 0,
+      })
+      return NextResponse.json({ ok: true, ...result })
+    }
+
     if (action === 'fetch' || action === 'fetch_one') {
       const summary = await runCompetitorPriceCheck({
         operatorId,
         listingId: action === 'fetch_one' ? String(body.listingId || '') : undefined,
       })
       return NextResponse.json({ ok: true, summary })
+    }
+
+    if (action === 'add_focus_product') {
+      const row = await addFocusProduct({
+        operatorId,
+        productId: String(body.productId || ''),
+      })
+      return NextResponse.json({ ok: true, focusProduct: row })
+    }
+
+    if (action === 'delete_focus_product') {
+      await deleteFocusProduct({
+        operatorId,
+        productId: String(body.productId || ''),
+      })
+      return NextResponse.json({ ok: true })
+    }
+
+    if (action === 'add_badge') {
+      const row = await addMarketBadge({
+        operatorId,
+        label: String(body.label || ''),
+      })
+      return NextResponse.json({ ok: true, badge: row })
+    }
+
+    if (action === 'delete_badge') {
+      await deleteMarketBadge({
+        operatorId,
+        badgeId: String(body.badgeId || ''),
+      })
+      return NextResponse.json({ ok: true })
+    }
+
+    if (action === 'add_compare_item') {
+      const row = await addMarketCompareItem({
+        operatorId,
+        label: String(body.label || ''),
+      })
+      return NextResponse.json({ ok: true, compareItem: row })
+    }
+
+    if (action === 'delete_compare_item') {
+      await deleteMarketCompareItem({
+        operatorId,
+        itemId: String(body.itemId || ''),
+      })
+      return NextResponse.json({ ok: true })
+    }
+
+    if (action === 'save_our_offer') {
+      const row = await saveOurOffer({
+        operatorId,
+        productId: String(body.productId || ''),
+        otaPlatform: String(body.otaPlatform || ''),
+        inclusionItems: parseInclusionMap(body.inclusionItems, true),
+        excludedItems: parseExcludedItems(body.excludedItems),
+      })
+      return NextResponse.json({ ok: true, ourOffer: row })
     }
 
     return NextResponse.json({ error: 'unknown action' }, { status: 400 })

@@ -1,10 +1,14 @@
 import type {
+  MarketBadgeCatalogItem,
   MarketCatalogChannel,
   MarketCatalogProduct,
+  MarketCompareItemCatalog,
   MarketCompetitor,
   MarketListing,
   MarketPriceAlert,
   MarketSnapshot,
+  MarketFocusProduct,
+  MarketOurOffer,
   OurPriceOverlay,
 } from '@/lib/market-research/types'
 
@@ -16,7 +20,12 @@ export type MarketResearchBundle = {
   alerts: MarketPriceAlert[]
   products: MarketCatalogProduct[]
   channels: MarketCatalogChannel[]
+  focusProducts: MarketFocusProduct[]
+  badges: MarketBadgeCatalogItem[]
+  compareItems: MarketCompareItemCatalog[]
+  ourOffers: MarketOurOffer[]
   ourPrices: Record<string, OurPriceOverlay>
+  ourPlatformPrices: Record<string, OurPriceOverlay>
 }
 
 export function productLabel(product: MarketCatalogProduct | undefined, isKo: boolean): string {
@@ -27,5 +36,9 @@ export function productLabel(product: MarketCatalogProduct | undefined, isKo: bo
 
 export function formatUsd(value: number | null | undefined): string {
   if (value == null) return '—'
-  return `$${value.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+  const hasCents = Math.round(value * 100) % 100 !== 0
+  return `$${value.toLocaleString('en-US', {
+    minimumFractionDigits: hasCents ? 2 : 0,
+    maximumFractionDigits: 2,
+  })}`
 }

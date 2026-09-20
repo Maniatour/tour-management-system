@@ -1,22 +1,38 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { Loader2, RefreshCw } from 'lucide-react'
+import { History, Loader2, Plus, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
-import type { MarketCompetitor, MarketListing } from '@/lib/market-research/types'
-import { MarketResearchRegisterSection } from './MarketResearchRegisterSection'
-import { MarketResearchOtaCompareSection } from './MarketResearchOtaCompareSection'
-import { MarketResearchCompetitorCompareSection } from './MarketResearchCompetitorCompareSection'
+import { otaPlatformLabel } from '@/lib/market-research/compare'
+import {
+  UNMAPPED_PRODUCT_ID,
+  buildOurPricingBoardColumns,
+  buildPricingBoardColumns,
+  competitorsForProduct,
+  listingsForProduct,
+  otasForProduct,
+  pricingBoardRows,
+  toggleAllOrItem,
+} from '@/lib/market-research/pricingBoard'
+import { MARKET_OTA_PLATFORMS, type MarketBadgeCatalogItem, type MarketListing, type MarketOtaPlatform } from '@/lib/market-research/types'
+import { compareItemDefsFromCatalog, inclusionHasExcluded } from '@/lib/market-research/excludedItems'
+import { MarketResearchCompareItemsManager } from './MarketResearchCompareItemsManager'
+import { MarketResearchCompetitorManager } from './MarketResearchCompetitorManager'
+import { MarketResearchDialog } from './MarketResearchDialog'
+import { MarketResearchFilterChips } from './MarketResearchFilterChips'
+import { MarketResearchFocusProductModal } from './MarketResearchFocusProductModal'
 import { MarketResearchHistorySection } from './MarketResearchHistorySection'
-import { MarketResearchPriceEntryForm } from './MarketResearchPriceEntryForm'
-import { MarketResearchCompetitorEditor } from './MarketResearchCompetitorEditor'
 import { MarketResearchListingEditor, type ListingDraft } from './MarketResearchListingEditor'
-import type { MarketResearchBundle } from './helpers'
+import { MarketResearchOurOfferEditor } from './MarketResearchOurOfferEditor'
+import { MarketResearchPriceEntryForm } from './MarketResearchPriceEntryForm'
+import { MarketResearchPricingBoard } from './MarketResearchPricingBoard'
+import { MarketResearchRegisterSection } from './MarketResearchRegisterSection'
+import { productLabel, type MarketResearchBundle } from './helpers'
 
-type TabId = 'register' | 'ota' | 'competitor' | 'history' | 'entry'
+type ModalId = 'competitor' | 'listing' | 'price' | 'products' | 'history' | 'listings' | 'compareItems' | 'ourOffer' | null
 
 const emptyBundle: MarketResearchBundle = {
   today: '',
@@ -26,7 +42,12 @@ const emptyBundle: MarketResearchBundle = {
   alerts: [],
   products: [],
   channels: [],
+  focusProducts: [],
+  badges: [],
+  compareItems: [],
+  ourOffers: [],
   ourPrices: {},
+  ourPlatformPrices: {},
 }
 
 export default function MarketResearchAdmin() {
@@ -34,10 +55,14 @@ export default function MarketResearchAdmin() {
   const isKo = params?.locale !== 'en'
   const [bundle, setBundle] = useState<MarketResearchBundle>(emptyBundle)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<TabId>('register')
-  const [editingCompetitor, setEditingCompetitor] = useState<MarketCompetitor | null | 'new'>(null)
-  const [editingListing, setEditingListing] = useState<MarketListing | null | 'new'>(null)
-  const [newListingCompetitorId, setNewListingCompetitorId] = useState<string | undefined>()
+  const [productId, setProductId] = useState('')
+  const [selectedOtas, setSelectedOtas] = useState<MarketOtaPlatform[]>([])
+  const [selectedCompetitorIds, setSelectedCompetitorIds] = useState<string[]>([])
+  const [modal, setModal] = useState<ModalId>(null)
+  const [editingListing, setEditingListing] = useState<MarketListing | null | 'new'>('new')
+  const [listingCompetitorId, setListingCompetitorId] = useState<string | undefined>()
+  const [priceListingId, setPriceListingId] = useState<string | undefined>()
+  const [ourOfferPlatform, setOurOfferPlatform] = useState<MarketOtaPlatform | null>(null)
 
   const load = useCallback(async () => {
     const res = await fetchApiWithAuth('/api/admin/market-research')
@@ -71,59 +96,192 @@ export default function MarketResearchAdmin() {
     return json
   }
 
-  const tabs: Array<{ id: TabId; label: string }> = [
-    { id: 'register', label: isKo ? '등록' : 'Setup' },
-    { id: 'ota', label: isKo ? 'OTA별 비교' : 'By OTA' },
-    { id: 'competitor', label: isKo ? '경쟁사별 비교' : 'By competitor' },
-    { id: 'history', label: isKo ? '이력' : 'History' },
-    { id: 'entry', label: isKo ? '오늘 가격' : 'Enter price' },
-  ]
+  const productTabs = useMemo(() => {
+    const tabs = bundle.focusProducts.map((row) => {
+      const product = bundle.products.find((item) => item.id === row.product_id)
+      return { id: row.product_id, label: productLabel(product, isKo) || row.product_id }
+    })
+    if (bundle.listings.some((row) => !row.mapped_product_id)) {
+      tabs.push({ id: UNMAPPED_PRODUCT_ID, label: isKo ? '미매핑' : 'Unmapped' })
+    }
+    return tabs
+  }, [bundle.focusProducts, bundle.products, bundle.listings, isKo])
+
+  const activeProductId = productTabs.some((tab) => tab.id === productId)
+    ? productId
+    : productTabs[0]?.id || ''
+
+  const productListings = listingsForProduct(bundle.listings, activeProductId)
+  const productOtas = otasForProduct(bundle.listings, activeProductId)
+  const productCompetitors = competitorsForProduct(
+    bundle.listings,
+    bundle.competitors,
+    activeProductId
+  )
+  const otaFilter = selectedOtas.filter((platform) =>
+    MARKET_OTA_PLATFORMS.includes(platform)
+  )
+  const competitorFilter = selectedCompetitorIds.filter((id) =>
+    productCompetitors.some((row) => row.id === id)
+  )
+  const activeOta = otaFilter[0] || productOtas[0] || 'getyourguide'
+
+  const columns = useMemo(() => {
+    if (!activeProductId) return []
+    const compareItems = compareItemDefsFromCatalog(bundle.compareItems)
+    const filter = {
+      otas: otaFilter,
+      competitorIds: competitorFilter,
+      otaLabel: (platform: MarketOtaPlatform) => otaPlatformLabel(platform, isKo),
+      compareItems,
+    }
+    const ours =
+      activeProductId === UNMAPPED_PRODUCT_ID
+        ? []
+        : buildOurPricingBoardColumns({
+            productId: activeProductId,
+            listings: bundle.listings,
+            offers: bundle.ourOffers,
+            overlays: bundle.ourPlatformPrices,
+            otas: otaFilter,
+            otaLabel: filter.otaLabel,
+            compareItems,
+            oursLabel: isKo ? '자사' : 'Kovegas',
+          })
+    return [
+      ...ours,
+      ...buildPricingBoardColumns(
+        bundle.listings,
+        bundle.competitors,
+        bundle.snapshots,
+        activeProductId,
+        filter
+      ),
+    ]
+  }, [
+    bundle.listings,
+    bundle.competitors,
+    bundle.snapshots,
+    bundle.ourOffers,
+    bundle.ourPlatformPrices,
+    bundle.compareItems,
+    activeProductId,
+    otaFilter,
+    competitorFilter,
+    isKo,
+  ])
+  const rows = useMemo(
+    () => pricingBoardRows(columns, isKo, compareItemDefsFromCatalog(bundle.compareItems)),
+    [columns, isKo, bundle.compareItems]
+  )
+
+  const closeModal = () => {
+    setModal(null)
+    setPriceListingId(undefined)
+    setListingCompetitorId(undefined)
+    setOurOfferPlatform(null)
+  }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight lg:text-4xl">
-            {isKo ? '시장조사' : 'Market research'}
-          </h1>
-          <p className="mt-2 max-w-2xl text-muted-foreground">
-            {isKo
-              ? '경쟁사 OTA 리스팅 기준가를 Lower / Antelope X, 전체포함가와 판매가+불포함으로 기록하고 자사 가격과 비교합니다.'
-              : 'Track competitor OTA from-prices by canyon and inclusive vs sale-plus-excluded, then compare with ours.'}
-          </p>
+    <div className="w-full min-w-0 space-y-6 px-4 lg:px-0">
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            <h1 className="text-3xl font-semibold tracking-tight lg:text-4xl">
+              {isKo ? '시장조사' : 'Market research'}
+            </h1>
+            <div className="flex flex-wrap items-center gap-1 rounded-2xl bg-white p-1 shadow-sm ring-1 ring-slate-200">
+              {productTabs.map((tab) => (
+                <Button
+                  key={tab.id}
+                  variant={activeProductId === tab.id ? 'default' : 'ghost'}
+                  className="h-10 rounded-xl"
+                  onClick={() => {
+                    setProductId(tab.id)
+                    setSelectedOtas([])
+                    setSelectedCompetitorIds([])
+                  }}
+                >
+                  {tab.label}
+                </Button>
+              ))}
+            </div>
+            <Button variant="outline" className="h-10 rounded-xl" onClick={() => setModal('products')}>
+              <Plus className="mr-1 h-4 w-4" />
+              {isKo ? '상품' : 'Product'}
+            </Button>
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" className="h-11 rounded-xl" onClick={() => setModal('competitor')}>
+              {isKo ? '경쟁사' : 'Competitors'}
+            </Button>
+            <Button variant="outline" className="h-11 rounded-xl" onClick={() => { setEditingListing('new'); setListingCompetitorId(undefined); setModal('listing') }}>
+              {isKo ? '리스팅 추가' : 'Add listing'}
+            </Button>
+            <Button className="h-11 rounded-xl" onClick={() => { setPriceListingId(undefined); setModal('price') }}>
+              {isKo ? '오늘 가격' : 'Today’s price'}
+            </Button>
+            <Button variant="outline" className="h-11 rounded-xl" onClick={() => setModal('listings')}>
+              {isKo ? '등록 관리' : 'Manage'}
+            </Button>
+            <Button variant="outline" className="h-11 rounded-xl" onClick={() => setModal('history')}>
+              <History className="mr-1 h-4 w-4" />
+              {isKo ? '이력' : 'History'}
+            </Button>
+            <Button variant="outline" className="h-11 rounded-xl" onClick={() => load()}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              {isKo ? '새로고침' : 'Refresh'}
+            </Button>
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl"
+              onClick={async () => {
+                try {
+                  await post({ action: 'fetch' })
+                  toast.success(isKo ? '수집을 실행했습니다.' : 'Fetch started.')
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'fetch failed')
+                }
+              }}
+            >
+              {isKo ? '전체 수집' : 'Fetch all'}
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" className="h-11 rounded-xl" onClick={() => load()}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            {isKo ? '새로고침' : 'Refresh'}
-          </Button>
-          <Button
-            className="h-11 rounded-xl"
-            onClick={async () => {
-              try {
-                await post({ action: 'fetch' })
-                toast.success(isKo ? '수집을 실행했습니다.' : 'Fetch started.')
-              } catch (err) {
-                toast.error(err instanceof Error ? err.message : 'fetch failed')
-              }
-            }}
-          >
-            {isKo ? '전체 수집' : 'Fetch all'}
-          </Button>
-        </div>
+        <p className="max-w-2xl text-muted-foreground">
+          {isKo
+            ? '상품별로 경쟁사 표시가격, Lower / X 판매가, 불포함 항목, 최종 고객 결제가를 한 화면에서 비교합니다.'
+            : 'Compare listed From prices, Lower / X sale prices, excluded fees, and what the customer pays.'}
+        </p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {tabs.map((item) => (
-          <Button
-            key={item.id}
-            variant={tab === item.id ? 'default' : 'outline'}
-            className="h-11 rounded-xl"
-            onClick={() => setTab(item.id)}
-          >
-            {item.label}
-          </Button>
-        ))}
+      <div className="space-y-3">
+        <MarketResearchFilterChips
+          allLabel={isKo ? '전체' : 'All'}
+          selected={otaFilter}
+          onSelectAll={() => setSelectedOtas([])}
+          onToggle={(id) =>
+            setSelectedOtas(toggleAllOrItem(otaFilter, id as MarketOtaPlatform))
+          }
+          options={MARKET_OTA_PLATFORMS.map((platform) => ({
+            id: platform,
+            label: otaPlatformLabel(platform, isKo),
+            count: productListings.filter((row) => row.ota_platform === platform).length,
+          }))}
+        />
+        {productCompetitors.length > 0 ? (
+          <MarketResearchFilterChips
+            allLabel={isKo ? '전체 경쟁사' : 'All competitors'}
+            selected={competitorFilter}
+            onSelectAll={() => setSelectedCompetitorIds([])}
+            onToggle={(id) => setSelectedCompetitorIds(toggleAllOrItem(competitorFilter, id))}
+            options={productCompetitors.map((row) => ({
+              id: row.id,
+              label: row.name,
+              count: productListings.filter((listing) => listing.competitor_id === row.id).length,
+            }))}
+          />
+        ) : null}
       </div>
 
       {loading ? (
@@ -132,103 +290,303 @@ export default function MarketResearchAdmin() {
           {isKo ? '불러오는 중' : 'Loading'}
         </div>
       ) : (
-        <>
-          {editingCompetitor !== null && (
-            <MarketResearchCompetitorEditor
-              competitor={editingCompetitor === 'new' ? null : editingCompetitor}
-              isKo={isKo}
-              onCancel={() => setEditingCompetitor(null)}
-              onSave={async (input) => {
-                if (editingCompetitor === 'new') {
-                  await post({ action: 'create_competitor', ...input })
-                } else {
-                  await post({ action: 'update_competitor', id: editingCompetitor.id, ...input })
-                }
-                setEditingCompetitor(null)
-                toast.success(isKo ? '저장했습니다.' : 'Saved.')
-              }}
-            />
-          )}
-          {editingListing !== null && (
-            <MarketResearchListingEditor
-              listing={editingListing === 'new' ? null : editingListing}
-              defaultCompetitorId={newListingCompetitorId}
-              competitors={bundle.competitors}
-              products={bundle.products}
-              channels={bundle.channels}
-              isKo={isKo}
-              onCancel={() => setEditingListing(null)}
-              onSave={async (draft: ListingDraft) => {
-                const payload = {
-                  competitorId: draft.competitorId,
-                  otaPlatform: draft.otaPlatform,
-                  listingUrl: draft.listingUrl,
-                  listingTitle: draft.listingTitle,
-                  mappedProductId: draft.mappedProductId || null,
-                  mappedChannelId: draft.mappedChannelId || null,
-                  hasLower: draft.hasLower,
-                  hasAntelopeX: draft.hasAntelopeX,
-                  hasAllInclusive: draft.hasAllInclusive,
-                  hasSalePlusExcluded: draft.hasSalePlusExcluded,
-                  watchEnabled: draft.watchEnabled,
-                  durationNote: draft.durationNote,
-                  pickupNote: draft.pickupNote,
-                  groupSizeNote: draft.groupSizeNote,
-                  cancellationNote: draft.cancellationNote,
-                  languageNote: draft.languageNote,
-                  itineraryNote: draft.itineraryNote,
-                  diffNotes: draft.diffNotes,
-                }
-                if (editingListing === 'new') {
-                  await post({ action: 'create_listing', ...payload })
-                } else {
-                  await post({ action: 'update_listing', id: editingListing.id, ...payload })
-                }
-                setEditingListing(null)
-                toast.success(isKo ? '저장했습니다.' : 'Saved.')
-              }}
-            />
-          )}
-          {tab === 'register' && (
-            <MarketResearchRegisterSection
-              bundle={bundle}
-              isKo={isKo}
-              onAddCompetitor={() => setEditingCompetitor('new')}
-              onEditCompetitor={setEditingCompetitor}
-              onDeleteCompetitor={async (id) => {
-                if (!window.confirm(isKo ? '이 경쟁사와 리스팅을 삭제할까요?' : 'Delete this competitor and its listings?')) return
-                await post({ action: 'delete_competitor', id })
-              }}
-              onAddListing={(competitorId) => {
-                setNewListingCompetitorId(competitorId)
-                setEditingListing('new')
-              }}
-              onEditListing={setEditingListing}
-              onDeleteListing={async (id) => {
-                if (!window.confirm(isKo ? '이 리스팅을 삭제할까요?' : 'Delete this listing?')) return
-                await post({ action: 'delete_listing', id })
-              }}
-              onFetchOne={async (id) => {
-                await post({ action: 'fetch_one', listingId: id })
-                toast.success(isKo ? '수집을 실행했습니다.' : 'Fetched.')
-              }}
-            />
-          )}
-          {tab === 'ota' && <MarketResearchOtaCompareSection bundle={bundle} isKo={isKo} />}
-          {tab === 'competitor' && <MarketResearchCompetitorCompareSection bundle={bundle} isKo={isKo} />}
-          {tab === 'history' && <MarketResearchHistorySection bundle={bundle} isKo={isKo} />}
-          {tab === 'entry' && (
-            <MarketResearchPriceEntryForm
-              bundle={bundle}
-              isKo={isKo}
-              onSave={async (input) => {
-                await post({ action: 'save_snapshot', ...input })
-                toast.success(isKo ? '가격을 저장했습니다.' : 'Price saved.')
-              }}
-            />
-          )}
-        </>
+        <MarketResearchPricingBoard
+          columns={columns}
+          rows={rows}
+          isKo={isKo}
+          onEditListing={(row) => {
+            setEditingListing(row)
+            setModal('listing')
+          }}
+          onDeleteListing={async (id) => {
+            if (!window.confirm(isKo ? '이 리스팅을 삭제할까요?' : 'Delete this listing?')) return
+            await post({ action: 'delete_listing', id })
+          }}
+          onEnterPrice={(id) => {
+            setPriceListingId(id)
+            setModal('price')
+          }}
+          onFetchOne={async (id) => {
+            const json = (await post({ action: 'fetch_one', listingId: id })) as {
+              summary?: { saved?: number; failed?: number }
+            }
+            if ((json.summary?.saved || 0) > 0) {
+              toast.success(isKo ? 'From 가격을 수집했습니다.' : 'From price saved.')
+              return
+            }
+            toast.error(isKo ? '자동 수집이 실패했습니다. 오늘 가격에서 입력하세요.' : 'Fetch failed. Enter prices manually.')
+          }}
+          onManageCompareItems={() => setModal('compareItems')}
+          onEditOurs={(platform) => {
+            setOurOfferPlatform(platform)
+            setModal('ourOffer')
+          }}
+        />
       )}
+
+      <MarketResearchDialog
+        open={modal === 'competitor'}
+        title={isKo ? '경쟁사' : 'Competitors'}
+        onClose={closeModal}
+      >
+        {modal === 'competitor' ? (
+          <MarketResearchCompetitorManager
+            competitors={bundle.competitors}
+            listingCountById={Object.fromEntries(
+              bundle.competitors.map((row) => [
+                row.id,
+                bundle.listings.filter((listing) => listing.competitor_id === row.id).length,
+              ])
+            )}
+            isKo={isKo}
+            onSave={async (input, existing) => {
+              if (existing) {
+                await post({ action: 'update_competitor', id: existing.id, ...input })
+              } else {
+                await post({ action: 'create_competitor', ...input })
+              }
+              toast.success(isKo ? '저장했습니다.' : 'Saved.')
+            }}
+            onDelete={async (id) => {
+              await post({ action: 'delete_competitor', id })
+              toast.success(isKo ? '삭제했습니다.' : 'Deleted.')
+            }}
+          />
+        ) : null}
+      </MarketResearchDialog>
+
+      <MarketResearchDialog
+        open={modal === 'listing'}
+        title={editingListing === 'new' || !editingListing ? (isKo ? '리스팅 추가' : 'Add listing') : isKo ? '리스팅 수정' : 'Edit listing'}
+        onClose={closeModal}
+        wide
+      >
+        {modal === 'listing' ? (
+          <MarketResearchListingEditor
+            listing={editingListing === 'new' ? null : editingListing}
+            defaultCompetitorId={listingCompetitorId || bundle.competitors[0]?.id}
+            defaultProductId={activeProductId === UNMAPPED_PRODUCT_ID ? undefined : activeProductId}
+            defaultOtaPlatform={activeOta}
+            snapshots={bundle.snapshots}
+            competitors={bundle.competitors}
+            products={bundle.products}
+            channels={bundle.channels}
+            compareItems={compareItemDefsFromCatalog(bundle.compareItems)}
+            isKo={isKo}
+            onCancel={closeModal}
+            onSave={async (draft: ListingDraft) => {
+              const payload = {
+                competitorId: draft.competitorId,
+                otaPlatform: draft.otaPlatform,
+                listingUrl: draft.listingUrl,
+                listingTitle: draft.listingTitle,
+                mappedProductId: draft.mappedProductId || null,
+                mappedChannelId: draft.mappedChannelId || null,
+                hasLower: draft.hasLower,
+                hasAntelopeX: draft.hasAntelopeX,
+                hasAllInclusive: draft.hasAllInclusive,
+                hasSalePlusExcluded: draft.hasSalePlusExcluded,
+                watchEnabled: draft.watchEnabled,
+                durationNote: draft.durationNote,
+                pickupNote: draft.pickupNote,
+                groupSizeNote: draft.groupSizeNote,
+                cancellationNote: draft.cancellationNote,
+                languageNote: draft.languageNote,
+                itineraryNote: draft.itineraryNote,
+                diffNotes: draft.diffNotes,
+                inclusionItems: draft.inclusionItems,
+              }
+              const json = (
+                editingListing === 'new' || !editingListing
+                  ? await post({ action: 'create_listing', ...payload })
+                  : await post({ action: 'update_listing', id: editingListing.id, ...payload })
+              ) as { listing?: { id: string } }
+              const listingId =
+                (editingListing !== 'new' && editingListing?.id) || json.listing?.id
+              const fromPrice = draft.fromPrice.trim() === '' ? null : Number(draft.fromPrice)
+              const lowerSale = draft.lowerSale.trim() === '' ? null : Number(draft.lowerSale)
+              const antelopeXSale = draft.antelopeXSale.trim() === '' ? null : Number(draft.antelopeXSale)
+              if (
+                listingId &&
+                (fromPrice != null || lowerSale != null || antelopeXSale != null)
+              ) {
+                const allInclusive = !inclusionHasExcluded(draft.inclusionItems)
+                const items = allInclusive
+                  ? []
+                  : draft.excludedItems.filter((item) => draft.inclusionItems[item.id] === 'excluded')
+                await post({
+                  action: 'save_today_prices',
+                  listingId,
+                  fromPrice,
+                  lowerSale: draft.hasLower ? lowerSale : null,
+                  antelopeXSale: draft.hasAntelopeX ? antelopeXSale : null,
+                  lowerNotIncluded: allInclusive ? 0 : null,
+                  antelopeXNotIncluded: allInclusive ? 0 : null,
+                  lowerExcludedItems: items,
+                  antelopeXExcludedItems: items,
+                  offer: allInclusive ? 'all_inclusive' : 'sale_plus_excluded',
+                  discountEnabled: draft.discountEnabled,
+                  discountPercent: Number(draft.discountPercent) || 0,
+                })
+              }
+              closeModal()
+              toast.success(isKo ? '저장했습니다.' : 'Saved.')
+            }}
+          />
+        ) : null}
+      </MarketResearchDialog>
+
+      <MarketResearchDialog
+        open={modal === 'price'}
+        title={isKo ? '오늘 가격' : 'Today’s price'}
+        onClose={closeModal}
+        wide
+      >
+        {modal === 'price' ? (
+          <MarketResearchPriceEntryForm
+            bundle={bundle}
+            isKo={isKo}
+            defaultListingId={priceListingId}
+            onCreateBadge={async (label) => {
+              const res = await fetchApiWithAuth('/api/admin/market-research', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'add_badge', label }),
+              })
+              const json = (await res.json()) as {
+                ok?: boolean
+                error?: string
+                badge?: MarketBadgeCatalogItem
+              }
+              if (!res.ok || json.ok === false || !json.badge) {
+                throw new Error(json.error || 'badge save failed')
+              }
+              const badge = json.badge
+              setBundle((prev) => {
+                if (prev.badges.some((row) => row.badge_id === badge.badge_id)) return prev
+                return { ...prev, badges: [...prev.badges, badge] }
+              })
+              return badge.badge_id
+            }}
+            onSave={async (input) => {
+              await post({ action: 'save_today_prices', ...input })
+              await post({
+                action: 'update_listing',
+                id: input.listingId,
+                inclusionItems: input.inclusionItems,
+                hasAllInclusive: input.offer !== 'sale_plus_excluded',
+                hasSalePlusExcluded: input.offer === 'sale_plus_excluded',
+              })
+              closeModal()
+              toast.success(isKo ? '가격을 저장했습니다.' : 'Price saved.')
+            }}
+          />
+        ) : null}
+      </MarketResearchDialog>
+
+      <MarketResearchDialog
+        open={modal === 'products'}
+        title={isKo ? '시장조사 상품' : 'Research products'}
+        onClose={closeModal}
+      >
+        <MarketResearchFocusProductModal
+          products={bundle.products}
+          focusProducts={bundle.focusProducts}
+          isKo={isKo}
+          onAdd={async (id) => {
+            await post({ action: 'add_focus_product', productId: id })
+            toast.success(isKo ? '상품을 추가했습니다.' : 'Product added.')
+          }}
+          onDelete={async (id) => {
+            await post({ action: 'delete_focus_product', productId: id })
+            toast.success(isKo ? '상품 탭을 제거했습니다.' : 'Product tab removed.')
+          }}
+        />
+      </MarketResearchDialog>
+
+      <MarketResearchDialog
+        open={modal === 'history'}
+        title={isKo ? '가격 이력' : 'Price history'}
+        onClose={closeModal}
+        wide
+      >
+        {modal === 'history' ? <MarketResearchHistorySection bundle={bundle} isKo={isKo} /> : null}
+      </MarketResearchDialog>
+
+      <MarketResearchDialog
+        open={modal === 'listings'}
+        title={isKo ? '등록 관리' : 'Listings'}
+        onClose={closeModal}
+        wide
+      >
+        {modal === 'listings' ? (
+          <MarketResearchRegisterSection
+            bundle={bundle}
+            isKo={isKo}
+            onAddCompetitor={() => setModal('competitor')}
+            onEditCompetitor={() => setModal('competitor')}
+            onDeleteCompetitor={async (id) => {
+              if (!window.confirm(isKo ? '이 경쟁사와 리스팅을 삭제할까요?' : 'Delete this competitor and its listings?')) return
+              await post({ action: 'delete_competitor', id })
+            }}
+            onAddListing={(competitorId) => {
+              setEditingListing('new')
+              setListingCompetitorId(competitorId)
+              setModal('listing')
+            }}
+            onEditListing={(row) => { setEditingListing(row); setModal('listing') }}
+            onDeleteListing={async (id) => {
+              if (!window.confirm(isKo ? '이 리스팅을 삭제할까요?' : 'Delete this listing?')) return
+              await post({ action: 'delete_listing', id })
+            }}
+            onFetchOne={async (id) => {
+              await post({ action: 'fetch_one', listingId: id })
+            }}
+          />
+        ) : null}
+      </MarketResearchDialog>
+
+      <MarketResearchDialog
+        open={modal === 'compareItems'}
+        title={isKo ? '불포함 항목' : 'Not-included items'}
+        onClose={closeModal}
+      >
+        {modal === 'compareItems' ? (
+          <MarketResearchCompareItemsManager
+            items={bundle.compareItems}
+            isKo={isKo}
+            onAdd={async (label) => {
+              await post({ action: 'add_compare_item', label })
+              toast.success(isKo ? '항목을 추가했습니다.' : 'Item added.')
+            }}
+            onDelete={async (itemId) => {
+              await post({ action: 'delete_compare_item', itemId })
+              toast.success(isKo ? '항목을 삭제했습니다.' : 'Item removed.')
+            }}
+          />
+        ) : null}
+      </MarketResearchDialog>
+
+      <MarketResearchDialog
+        open={modal === 'ourOffer'}
+        title={isKo ? '자사 포함 / 불포함' : 'Our include / exclude'}
+        onClose={closeModal}
+      >
+        {modal === 'ourOffer' && ourOfferPlatform && activeProductId && activeProductId !== UNMAPPED_PRODUCT_ID ? (
+          <MarketResearchOurOfferEditor
+            bundle={bundle}
+            productId={activeProductId}
+            otaPlatform={ourOfferPlatform}
+            isKo={isKo}
+            onCancel={closeModal}
+            onSave={async (input) => {
+              await post({ action: 'save_our_offer', ...input })
+              closeModal()
+              toast.success(isKo ? '자사 포함 항목을 저장했습니다.' : 'Our include/exclude saved.')
+            }}
+          />
+        ) : null}
+      </MarketResearchDialog>
     </div>
   )
 }

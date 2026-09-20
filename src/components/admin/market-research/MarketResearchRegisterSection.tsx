@@ -3,9 +3,11 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { otaPlatformLabel } from '@/lib/market-research/compare'
+import { listingLanguageLabel, parseListingLanguages } from '@/lib/market-research/listingLanguages'
+import { listingRecordedPrices } from '@/lib/market-research/prices'
 import type { MarketCompetitor, MarketListing } from '@/lib/market-research/types'
 import { MarketResearchStatusBadge } from './MarketResearchStatusBadge'
-import { productLabel, type MarketResearchBundle } from './helpers'
+import { formatUsd, productLabel, type MarketResearchBundle } from './helpers'
 
 export function MarketResearchRegisterSection({
   bundle,
@@ -70,7 +72,10 @@ export function MarketResearchRegisterSection({
               {listings.length === 0 ? (
                 <p className="text-sm text-muted-foreground">{isKo ? '등록된 리스팅이 없습니다.' : 'No listings yet.'}</p>
               ) : (
-                listings.map((listing) => (
+                listings.map((listing) => {
+                  const languages = parseListingLanguages(listing.language_note)
+                  const recorded = listingRecordedPrices(bundle.snapshots, listing.id)
+                  return (
                   <div
                     key={listing.id}
                     className="flex flex-col gap-3 rounded-xl border border-border/60 p-4 sm:flex-row sm:items-center sm:justify-between"
@@ -87,14 +92,41 @@ export function MarketResearchRegisterSection({
                       <a href={listing.listing_url} target="_blank" rel="noreferrer" className="block truncate text-sm text-primary underline-offset-2 hover:underline">
                         {listing.listing_title || listing.listing_url}
                       </a>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <span className="rounded-full border border-border/70 bg-muted/40 px-2.5 py-1 text-xs font-medium">
+                          From {formatUsd(recorded.from?.adult_total)} / person
+                        </span>
+                        {listing.has_lower !== false ? (
+                          <span className="rounded-full border border-border/70 bg-muted/40 px-2.5 py-1 text-xs font-medium">
+                            Lower {formatUsd(recorded.lower?.adult_sale_price)}
+                            {recorded.lower?.adult_not_included
+                              ? ` · 불포함 ${formatUsd(recorded.lower.adult_not_included)}`
+                              : ''}
+                          </span>
+                        ) : null}
+                        {listing.has_antelope_x !== false ? (
+                          <span className="rounded-full border border-border/70 bg-muted/40 px-2.5 py-1 text-xs font-medium">
+                            Antelope X {formatUsd(recorded.antelopeX?.adult_sale_price)}
+                            {recorded.antelopeX?.adult_not_included
+                              ? ` · 불포함 ${formatUsd(recorded.antelopeX.adult_not_included)}`
+                              : ''}
+                          </span>
+                        ) : null}
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         {listing.mapped_product_id
                           ? productLabel(productById.get(listing.mapped_product_id), isKo) || listing.mapped_product_id
                           : isKo
                             ? '자사 상품 미매핑'
                             : 'Unmapped'}
+                        {languages.length
+                          ? ` · ${languages.map((id) => listingLanguageLabel(id, isKo)).join(', ')}`
+                          : ''}
                         {listing.diff_notes ? ` · ${listing.diff_notes}` : ''}
                       </p>
+                      {listing.last_fetch_error ? (
+                        <p className="text-xs text-destructive">{listing.last_fetch_error}</p>
+                      ) : null}
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button variant="outline" size="sm" className="rounded-xl" onClick={() => onFetchOne(listing.id)}>
@@ -108,7 +140,8 @@ export function MarketResearchRegisterSection({
                       </Button>
                     </div>
                   </div>
-                ))
+                  )
+                })
               )}
             </CardContent>
           </Card>

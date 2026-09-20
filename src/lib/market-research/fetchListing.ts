@@ -29,7 +29,10 @@ export async function fetchPublicListing(
         ok: false,
         reason: 'http_error',
         status: response.status,
-        message: `HTTP ${response.status}`,
+        message:
+          response.status === 403
+            ? 'OTA가 페이지를 차단했습니다 (HTTP 403). 오늘 가격에서 From / Lower / X를 입력하세요.'
+            : `HTTP ${response.status}`,
       }
     }
     const html = await response.text()
@@ -39,7 +42,7 @@ export async function fetchPublicListing(
         ok: false,
         reason: 'parse_failed',
         status: response.status,
-        message: 'JSON-LD Offer not found',
+        message: 'From price not found',
       }
     }
     return { ok: true, offer, status: response.status }

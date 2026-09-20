@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { axisLabel, otaPlatformLabel } from '@/lib/market-research/compare'
+import { excludedItemLabel, snapshotExcludedItems } from '@/lib/market-research/excludedItems'
 import type { MarketListing } from '@/lib/market-research/types'
 import { formatUsd, type MarketResearchBundle } from './helpers'
 
@@ -77,7 +78,18 @@ export function MarketResearchHistorySection({
                   <TableCell>{axisLabel(row.canyon_variant, row.offer_type, isKo)}</TableCell>
                   <TableCell className="font-semibold">{formatUsd(row.adult_total)}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {formatUsd(row.adult_sale_price)} / {formatUsd(row.adult_not_included)}
+                    <div>
+                      {formatUsd(row.adult_sale_price)} / {formatUsd(row.adult_not_included)}
+                    </div>
+                    {snapshotExcludedItems(row).length ? (
+                      <div className="mt-1 space-y-0.5">
+                        {snapshotExcludedItems(row).map((item) => (
+                          <div key={item.id}>
+                            {excludedItemLabel(item, isKo)} {formatUsd(item.amount)}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </TableCell>
                   <TableCell>{row.source === 'manual' ? (isKo ? '수동' : 'Manual') : isKo ? '자동' : 'Auto'}</TableCell>
                 </TableRow>

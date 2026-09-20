@@ -15,7 +15,7 @@ export type MarketOtaPlatform = (typeof MARKET_OTA_PLATFORMS)[number]
 export const MARKET_CANYON_VARIANTS = ['lower', 'antelope_x', 'unspecified'] as const
 export type MarketCanyonVariant = (typeof MARKET_CANYON_VARIANTS)[number]
 
-export const MARKET_OFFER_TYPES = ['all_inclusive', 'sale_plus_excluded'] as const
+export const MARKET_OFFER_TYPES = ['all_inclusive', 'sale_plus_excluded', 'listing_from'] as const
 export type MarketOfferType = (typeof MARKET_OFFER_TYPES)[number]
 
 export const MARKET_FETCH_STATUSES = [
@@ -34,6 +34,7 @@ export const MARKET_ALERT_KINDS = ['price_changed', 'fetch_failed', 'stale'] as 
 export type MarketAlertKind = (typeof MARKET_ALERT_KINDS)[number]
 
 export const MARKET_PRICE_AXES = [
+  { canyon: 'unspecified', offer: 'listing_from' },
   { canyon: 'lower', offer: 'all_inclusive' },
   { canyon: 'lower', offer: 'sale_plus_excluded' },
   { canyon: 'antelope_x', offer: 'all_inclusive' },
@@ -78,6 +79,51 @@ export type MarketListing = {
   language_note: string | null
   itinerary_note: string | null
   diff_notes: string | null
+  inclusion_items: MarketInclusionMap
+  created_at: string
+  updated_at: string
+}
+
+export type MarketExcludedItem = {
+  id: string
+  label: string
+  amount: number
+}
+
+export type MarketInclusionStatus = 'included' | 'excluded'
+export type MarketInclusionMap = Record<string, MarketInclusionStatus>
+
+export type MarketListingBadge = {
+  id: string
+  label: string
+}
+
+export type MarketBadgeCatalogItem = {
+  operator_id: string
+  badge_id: string
+  label_ko: string
+  label_en: string
+  sort_order: number
+  is_preset: boolean
+  created_at: string
+}
+
+export type MarketCompareItemCatalog = {
+  operator_id: string
+  item_id: string
+  label_ko: string
+  label_en: string
+  sort_order: number
+  is_preset: boolean
+  created_at: string
+}
+
+export type MarketOurOffer = {
+  operator_id: string
+  product_id: string
+  ota_platform: MarketOtaPlatform
+  inclusion_items: MarketInclusionMap
+  excluded_items: MarketExcludedItem[]
   created_at: string
   updated_at: string
 }
@@ -92,12 +138,17 @@ export type MarketSnapshot = {
   offer_type: MarketOfferType
   currency: string
   adult_sale_price: number
+  discount_enabled?: boolean
+  discount_percent?: number
+  adult_discounted_price?: number | null
   adult_not_included: number
   adult_total: number
   child_sale_price: number | null
   child_not_included: number | null
   rating: number | null
   review_count: number | null
+  badges: MarketListingBadge[]
+  excluded_items: MarketExcludedItem[]
   raw_extract: Record<string, unknown>
   created_at: string
 }
@@ -116,6 +167,13 @@ export type MarketPriceAlert = {
   created_at: string
 }
 
+export type MarketFocusProduct = {
+  operator_id: string
+  product_id: string
+  sort_order: number
+  created_at: string
+}
+
 export type MarketCatalogProduct = {
   id: string
   name: string | null
@@ -130,6 +188,8 @@ export type MarketCatalogChannel = {
 
 export type OurPricePoint = {
   sale: number | null
+  discounted?: number | null
+  discountPercent?: number | null
   notIncluded: number | null
   total: number | null
   source: 'dynamic' | 'choice' | 'product' | 'none'

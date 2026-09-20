@@ -8,6 +8,14 @@ import type {
   MarketSnapshot,
 } from './types'
 import { isMarketCanyonVariant, isMarketOfferType, isMarketOtaPlatform } from './types'
+import {
+  parseExcludedItems,
+  parseInclusionMap,
+  sumExcludedItems,
+  type MarketCompareItemDef,
+} from './excludedItems'
+import { parseListingBadges } from './badges'
+import { parseSnapshotDiscount } from './prices'
 
 function asString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null
@@ -45,7 +53,10 @@ export function mapMarketCompetitor(row: Record<string, unknown>): MarketCompeti
   }
 }
 
-export function mapMarketListing(row: Record<string, unknown>): MarketListing | null {
+export function mapMarketListing(
+  row: Record<string, unknown>,
+  items?: readonly MarketCompareItemDef[] | null
+): MarketListing | null {
   const id = asString(row.id)
   const competitorId = asString(row.competitor_id)
   const url = asString(row.listing_url)
@@ -89,6 +100,11 @@ export function mapMarketListing(row: Record<string, unknown>): MarketListing | 
     language_note: asString(row.language_note),
     itinerary_note: asString(row.itinerary_note),
     diff_notes: asString(row.diff_notes),
+    inclusion_items: parseInclusionMap(
+      row.inclusion_items,
+      !(asBool(row.has_sale_plus_excluded, false) && !asBool(row.has_all_inclusive, true)),
+      items
+    ),
     created_at: createdAt,
     updated_at: updatedAt,
   }
@@ -117,9 +133,13 @@ export function mapMarketSnapshot(row: Record<string, unknown>): MarketSnapshot 
   ) {
     return null
   }
-  const notIncluded = asNumber(row.adult_not_included) ?? 0
-  const total = asNumber(row.adult_total) ?? sale + notIncluded
   const raw = row.raw_extract
+  const rawExtract = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+  const excludedItems = parseExcludedItems(rawExtract)
+  const notIncluded =
+    asNumber(row.adult_not_included) ?? (excludedItems.length ? sumExcludedItems(excludedItems) : 0)
+  const total = asNumber(row.adult_total) ?? sale + notIncluded
+  const discount = parseSnapshotDiscount(row, rawExtract)
   return {
     id,
     operator_id: asString(row.operator_id) || '',
@@ -130,13 +150,18 @@ export function mapMarketSnapshot(row: Record<string, unknown>): MarketSnapshot 
     offer_type: offer,
     currency: asString(row.currency) || 'USD',
     adult_sale_price: sale,
+    discount_enabled: discount.enabled,
+    discount_percent: discount.percent,
+    adult_discounted_price: discount.discounted,
     adult_not_included: notIncluded,
     adult_total: total,
     child_sale_price: asNumber(row.child_sale_price),
     child_not_included: asNumber(row.child_not_included),
     rating: asNumber(row.rating),
     review_count: asNumber(row.review_count),
-    raw_extract: raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {},
+    badges: parseListingBadges(rawExtract),
+    excluded_items: excludedItems,
+    raw_extract: rawExtract,
     created_at: createdAt,
   }
 }
@@ -156,4 +181,70 @@ export function mapCatalogChannel(row: Record<string, unknown>): MarketCatalogCh
   const id = asString(row.id)
   if (!id) return null
   return { id, name: asString(row.name) }
+}
+
+export function mapFocusProduct(row: Record<string, unknown>): import('./types').MarketFocusProduct | null {
+  const productId = asString(row.product_id)
+  const createdAt = asString(row.created_at)
+  if (!productId || !createdAt) return null
+  return {
+    operator_id: asString(row.operator_id) || '',
+    product_id: productId,
+    sort_order: asNumber(row.sort_order) ?? 0,
+    created_at: createdAt,
+  }
+}
+
+export function mapMarketBadge(row: Record<string, unknown>): import('./types').MarketBadgeCatalogItem | null {
+  const badgeId = asString(row.badge_id)
+  const labelKo = asString(row.label_ko)
+  const labelEn = asString(row.label_en)
+  const createdAt = asString(row.created_at)
+  if (!badgeId || !labelKo || !labelEn || !createdAt) return null
+  return {
+    operator_id: asString(row.operator_id) || '',
+    badge_id: badgeId,
+    label_ko: labelKo,
+    label_en: labelEn,
+    sort_order: asNumber(row.sort_order) ?? 0,
+    is_preset: asBool(row.is_preset, false),
+    created_at: createdAt,
+  }
+}
+
+export function mapMarketCompareItem(row: Record<string, unknown>): import('./types').MarketCompareItemCatalog | null {
+  const itemId = asString(row.item_id)
+  const labelKo = asString(row.label_ko)
+  const labelEn = asString(row.label_en)
+  const createdAt = asString(row.created_at)
+  if (!itemId || !labelKo || !labelEn || !createdAt) return null
+  return {
+    operator_id: asString(row.operator_id) || '',
+    item_id: itemId,
+    label_ko: labelKo,
+    label_en: labelEn,
+    sort_order: asNumber(row.sort_order) ?? 0,
+    is_preset: asBool(row.is_preset, false),
+    created_at: createdAt,
+  }
+}
+
+export function mapMarketOurOffer(
+  row: Record<string, unknown>,
+  items?: readonly MarketCompareItemDef[] | null
+): import('./types').MarketOurOffer | null {
+  const productId = asString(row.product_id)
+  const platform = asString(row.ota_platform)
+  const createdAt = asString(row.created_at)
+  const updatedAt = asString(row.updated_at)
+  if (!productId || !platform || !isMarketOtaPlatform(platform) || !createdAt || !updatedAt) return null
+  return {
+    operator_id: asString(row.operator_id) || '',
+    product_id: productId,
+    ota_platform: platform,
+    inclusion_items: parseInclusionMap(row.inclusion_items, true, items),
+    excluded_items: parseExcludedItems(row.excluded_items),
+    created_at: createdAt,
+    updated_at: updatedAt,
+  }
 }

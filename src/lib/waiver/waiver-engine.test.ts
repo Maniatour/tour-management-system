@@ -13,6 +13,7 @@ import { LOWER_ANTELOPE_WAIVER_EN } from '@/lib/waiver/documents/lowerAntelope/e
 import { WAIVER_DOCUMENT_CATALOG } from '@/lib/waiver/documents/catalog'
 import { resolveRequiredWaivers, signingRequiredCodes } from '@/lib/waiver/requiredWaivers'
 import { generateWaiverRawToken, hashWaiverToken, isPlausibleWaiverToken, waiverTokensEqual, buildStableWaiverSigningToken, parseStableWaiverSigningToken } from '@/lib/waiver/tokens'
+import { pickCanonicalWaiverInvitation } from '@/lib/waiver/invitationCanonical'
 import { isMinorAgeOnTourDate, parsePngBase64, submitWaiverSchema } from '@/lib/waiver/validation'
 import { emptyWaiverContent, suggestedWaiverVersion, validateGoverningWaiverContent } from '@/lib/waiver/documentEditor'
 import { buildWaiverEmailCtaHtml, isSampleReservationId } from '@/lib/waiver/emailCtaHtml'
@@ -154,6 +155,38 @@ test('suggested waiver versions increment by date', () => {
   assert.equal(suggestedWaiverVersion(['2026-08-30-v1'], new Date('2026-08-30T20:00:00-07:00')), '2026-08-30-v2')
   const empty = emptyWaiverContent('LAS_VEGAS_MANIA', 'en')
   assert.equal(typeof validateGoverningWaiverContent(empty), 'string')
+})
+
+test('canonical invitation prefers the link the guest opened', () => {
+  const opened = pickCanonicalWaiverInvitation([
+    {
+      id: 'with-participants',
+      createdAtMs: 1,
+      hasParticipants: true,
+      lastOpenedAtMs: null,
+    },
+    {
+      id: 'emailed-and-opened',
+      createdAtMs: 3,
+      hasParticipants: false,
+      lastOpenedAtMs: 100,
+    },
+    {
+      id: 'unused-extra',
+      createdAtMs: 2,
+      hasParticipants: false,
+      lastOpenedAtMs: null,
+    },
+  ])
+  assert.equal(opened?.id, 'emailed-and-opened')
+})
+
+test('canonical invitation falls back to the participant-linked invite', () => {
+  const picked = pickCanonicalWaiverInvitation([
+    { id: 'extra', createdAtMs: 1, hasParticipants: false, lastOpenedAtMs: null },
+    { id: 'participants', createdAtMs: 2, hasParticipants: true, lastOpenedAtMs: null },
+  ])
+  assert.equal(picked?.id, 'participants')
 })
 
 test('empty signature payload is rejected', () => {

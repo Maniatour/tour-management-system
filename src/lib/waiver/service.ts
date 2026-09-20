@@ -16,6 +16,19 @@ import { resolveRequiredWaivers, signingRequiredCodes } from '@/lib/waiver/requi
 import type { RequiredWaiverResolution, WaiverDocumentCode, WaiverLocale } from '@/lib/waiver/types'
 import { isMinorAgeOnTourDate, parsePngBase64, submitWaiverSchema } from '@/lib/waiver/validation'
 
+type InvitationLookupRow = {
+  id: string
+  reservation_id: string
+  status: string
+  expires_at: string | null
+}
+
+function isUniqueViolation(error: { code?: string; message?: string } | null | undefined): boolean {
+  const code = String(error?.code || '')
+  const message = String(error?.message || '').toLowerCase()
+  return code === '23505' || message.includes('duplicate key') || message.includes('unique constraint')
+}
+
 export type PublicParticipantSummary = {
   id: string
   slotIndex: number
@@ -126,15 +139,8 @@ export async function ensureInvitationForReservation(reservationId: string, crea
     .maybeSingle()
   if (error || !reservation) return null
 
-  const { data: existing } = await fromUntypedTable(db(), 'waiver_invitations')
-    .select('id, token_hash, status')
-    .eq('reservation_id', reservationId)
-    .eq('status', 'active')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  let invitationId = existing?.id as string | undefined
+  let existing = await loadActiveInvitationForReservation(reservationId)
+  let invitationId = existing?.id
   let rawToken: string | null = null
   if (!invitationId) {
     rawToken = generateWaiverRawToken()
@@ -148,20 +154,29 @@ export async function ensureInvitationForReservation(reservationId: string, crea
       })
       .select('id')
       .single()
-    if (insErr || !inserted) return null
-    invitationId = inserted.id
-    await audit({
-      reservationId,
-      invitationId: invitationId ?? null,
-      eventType: 'INVITATION_CREATED',
-      actorType: createdBy ? 'staff' : 'system',
-      actorId: createdBy ?? null,
-    })
+    if (insErr || !inserted) {
+      if (!isUniqueViolation(insErr)) return null
+      existing = await loadActiveInvitationForReservation(reservationId)
+      invitationId = existing?.id
+      rawToken = null
+      if (!invitationId) return null
+    } else {
+      const createdId = String(inserted.id)
+      invitationId = createdId
+      await audit({
+        reservationId,
+        invitationId: createdId,
+        eventType: 'INVITATION_CREATED',
+        actorType: createdBy ? 'staff' : 'system',
+        actorId: createdBy ?? null,
+      })
+    }
   }
 
-  await ensureParticipants(reservationId, invitationId!, guestCountFromReservation(reservation), reservation.customer_id)
-  const url = `${getAppOrigin()}/waiver/${buildStableWaiverSigningToken(invitationId!)}`
-  return { invitationId: invitationId!, rawToken, url }
+  if (!invitationId) return null
+  await ensureParticipants(reservationId, invitationId, guestCountFromReservation(reservation), reservation.customer_id)
+  const url = `${getAppOrigin()}/waiver/${buildStableWaiverSigningToken(invitationId)}`
+  return { invitationId, rawToken, url }
 }
 
 async function ensureParticipants(
@@ -195,9 +210,15 @@ async function ensureParticipants(
     })
   }
   if (inserts.length) {
-    await fromUntypedTable(db(), 'waiver_participants').insert(inserts)
-    await audit({ reservationId, invitationId, eventType: 'WAIVER_CREATED', metadata: { slots: inserts.length } })
+    const { error: insErr } = await fromUntypedTable(db(), 'waiver_participants').insert(inserts)
+    if (!insErr) {
+      await audit({ reservationId, invitationId, eventType: 'WAIVER_CREATED', metadata: { slots: inserts.length } })
+    }
   }
+
+  await fromUntypedTable(db(), 'waiver_participants')
+    .update({ invitation_id: invitationId })
+    .eq('reservation_id', reservationId)
 }
 
 function isActiveInvitation(row: { status: string; expires_at: string | null } | null) {
@@ -206,14 +227,33 @@ function isActiveInvitation(row: { status: string; expires_at: string | null } |
   return true
 }
 
+async function loadActiveInvitationForReservation(reservationId: string): Promise<InvitationLookupRow | null> {
+  const { data } = await fromUntypedTable(db(), 'waiver_invitations')
+    .select('id, reservation_id, status, expires_at')
+    .eq('reservation_id', reservationId)
+    .eq('status', 'active')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  if (!isActiveInvitation(data)) return null
+  return data as InvitationLookupRow
+}
+
+async function resolveUsableInvitation(row: InvitationLookupRow | null): Promise<InvitationLookupRow | null> {
+  if (isActiveInvitation(row)) return row
+  if (!row?.reservation_id) return null
+  return loadActiveInvitationForReservation(row.reservation_id)
+}
+
 export async function getInvitationByRawToken(rawToken: string) {
   const tokenHash = hashWaiverToken(rawToken)
   const { data: hashed } = await fromUntypedTable(db(), 'waiver_invitations')
     .select('id, reservation_id, status, expires_at')
     .eq('token_hash', tokenHash)
     .maybeSingle()
-  if (isActiveInvitation(hashed)) {
-    return hashed as { id: string; reservation_id: string; status: string; expires_at: string | null }
+  if (hashed) {
+    const usable = await resolveUsableInvitation(hashed as InvitationLookupRow)
+    if (usable) return usable
   }
 
   const invitationId = parseStableWaiverSigningToken(rawToken)
@@ -222,8 +262,7 @@ export async function getInvitationByRawToken(rawToken: string) {
     .select('id, reservation_id, status, expires_at')
     .eq('id', invitationId)
     .maybeSingle()
-  if (!isActiveInvitation(invitation)) return null
-  return invitation as { id: string; reservation_id: string; status: string; expires_at: string | null }
+  return resolveUsableInvitation((invitation as InvitationLookupRow | null) ?? null)
 }
 
 async function loadRequiredForReservation(reservation: {
@@ -347,12 +386,18 @@ export async function buildPublicSession(invitation: {
 }
 
 export async function loadParticipantForToken(invitationId: string, participantId: string) {
+  const { data: invitation } = await fromUntypedTable(db(), 'waiver_invitations')
+    .select('reservation_id')
+    .eq('id', invitationId)
+    .maybeSingle()
+  const reservationId = invitation?.reservation_id as string | undefined
+  if (!reservationId) return null
   const { data } = await fromUntypedTable(db(), 'waiver_participants')
     .select(
       'id, reservation_id, invitation_id, slot_index, placeholder_label, participant_type, full_legal_name, date_of_birth, email, phone, emergency_contact_name, emergency_contact_phone, identity_locked'
     )
     .eq('id', participantId)
-    .eq('invitation_id', invitationId)
+    .eq('reservation_id', reservationId)
     .maybeSingle()
   return data
 }

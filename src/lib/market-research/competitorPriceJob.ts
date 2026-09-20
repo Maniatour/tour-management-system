@@ -11,8 +11,10 @@ import {
   MARKET_SNAPSHOT_COLUMNS,
   MARKET_SNAPSHOTS_TABLE,
 } from './tables'
-import { inferAutoSnapshotAxis, isListingStale, pricesChanged } from './prices'
-import type { MarketListing, MarketSnapshot } from './types'
+import { inferAutoSnapshotAxis, isListingStale, pricesChanged, serializeSnapshotDiscount } from './prices'
+import { serializeExcludedItems, sumExcludedItems } from './excludedItems'
+import { parseListingBadges, serializeListingBadges } from './badges'
+import type { MarketListing, MarketListingBadge, MarketSnapshot } from './types'
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -30,14 +32,14 @@ export type CompetitorPriceCheckSummary = {
   stale: number
 }
 
-async function loadWatchedListings(operatorId: string, listingId?: string): Promise<MarketListing[]> {
+async function loadWatchedListings(operatorId: string, listingId?: string | undefined): Promise<MarketListing[]> {
   if (!supabaseAdmin) throw new Error('SUPABASE_SERVICE_ROLE_KEY is required')
   let query = fromUntypedTable(supabaseAdmin, MARKET_LISTINGS_TABLE)
     .select(MARKET_LISTING_COLUMNS)
     .eq('operator_id', operatorId)
-    .eq('watch_enabled', true)
     .order('created_at', { ascending: true })
   if (listingId) query = query.eq('id', listingId)
+  else query = query.eq('watch_enabled', true)
   const { data, error } = await query
   if (error) throw new Error(error.message)
   return (data || [])
@@ -73,11 +75,28 @@ async function upsertSnapshot(input: {
   currency: string
   sale: number
   notIncluded: number
+  discountEnabled?: boolean | undefined
+  discountPercent?: number | undefined
   rating?: number | null | undefined
   reviewCount?: number | null | undefined
+  badges?: MarketListingBadge[] | undefined
   rawExtract?: Record<string, unknown> | undefined
+  excludedItems?: MarketSnapshot['excluded_items'] | undefined
 }): Promise<MarketSnapshot | null> {
   if (!supabaseAdmin) throw new Error('SUPABASE_SERVICE_ROLE_KEY is required')
+  const excludedItems = serializeExcludedItems(input.excludedItems || [])
+  const badges = input.badges !== undefined ? serializeListingBadges(input.badges) : parseListingBadges(input.rawExtract)
+  const discount = serializeSnapshotDiscount({
+    enabled: Boolean(input.discountEnabled),
+    percent: input.discountPercent ?? 0,
+    list: input.sale,
+  })
+  const rawExtract = {
+    ...(input.rawExtract || {}),
+    ...(excludedItems.length ? { excludedItems } : {}),
+    ...(badges.length ? { badges } : {}),
+    ...(discount.enabled ? { discount: discount.raw } : {}),
+  }
   const { data, error } = await fromUntypedTable(supabaseAdmin, MARKET_SNAPSHOTS_TABLE)
     .upsert(
       {
@@ -89,10 +108,13 @@ async function upsertSnapshot(input: {
         offer_type: input.offer,
         currency: input.currency,
         adult_sale_price: input.sale,
+        discount_enabled: discount.enabled,
+        discount_percent: discount.percent,
+        adult_discounted_price: discount.discounted,
         adult_not_included: input.notIncluded,
         rating: input.rating ?? null,
         review_count: input.reviewCount ?? null,
-        raw_extract: input.rawExtract || {},
+        raw_extract: rawExtract,
       } as never,
       { onConflict: 'listing_id,observed_on,canyon_variant,offer_type' }
     )
@@ -123,11 +145,19 @@ export async function saveManualSnapshot(input: {
   currency?: string | undefined
   sale: number
   notIncluded?: number | undefined
+  discountEnabled?: boolean | undefined
+  discountPercent?: number | undefined
   rating?: number | null | undefined
   reviewCount?: number | null | undefined
+  badges?: MarketListingBadge[] | undefined
+  excludedItems?: MarketSnapshot['excluded_items'] | undefined
 }): Promise<{ snapshot: MarketSnapshot; changed: boolean }> {
   const operatorId = resolveOperatorId(input.operatorId)
   const observedOn = input.observedOn || todayInLasVegas()
+  const excludedItems = serializeExcludedItems(input.excludedItems || [])
+  const badges = serializeListingBadges(input.badges || [])
+  const notIncluded =
+    excludedItems.length > 0 ? sumExcludedItems(excludedItems) : input.notIncluded ?? 0
   const prev = await loadPreviousSnapshot(input.listingId, input.canyon, input.offer)
   const snapshot = await upsertSnapshot({
     operatorId,
@@ -138,9 +168,13 @@ export async function saveManualSnapshot(input: {
     offer: input.offer,
     currency: input.currency || 'USD',
     sale: input.sale,
-    notIncluded: input.notIncluded ?? 0,
+    notIncluded,
+    discountEnabled: input.discountEnabled,
+    discountPercent: input.discountPercent,
     rating: input.rating,
     reviewCount: input.reviewCount,
+    badges,
+    excludedItems,
     rawExtract: { source: 'manual' },
   })
   if (!snapshot) throw new Error('snapshot save failed')
@@ -149,7 +183,7 @@ export async function saveManualSnapshot(input: {
     prev
       ? { sale: prev.adult_sale_price, notIncluded: prev.adult_not_included }
       : null,
-    { sale: input.sale, notIncluded: input.notIncluded ?? 0 }
+    { sale: input.sale, notIncluded }
   )
   await updateListingFetch(input.listingId, {
     last_fetch_status: 'ok',
@@ -171,6 +205,98 @@ export async function saveManualSnapshot(input: {
     })
   }
   return { snapshot, changed }
+}
+
+export async function saveTodayPrices(input: {
+  operatorId?: string | null | undefined
+  listingId: string
+  fromPrice?: number | null | undefined
+  lowerSale?: number | null | undefined
+  antelopeXSale?: number | null | undefined
+  lowerNotIncluded?: number | null | undefined
+  antelopeXNotIncluded?: number | null | undefined
+  lowerExcludedItems?: MarketSnapshot['excluded_items'] | undefined
+  antelopeXExcludedItems?: MarketSnapshot['excluded_items'] | undefined
+  discountEnabled?: boolean | undefined
+  discountPercent?: number | undefined
+  rating?: number | null | undefined
+  reviewCount?: number | null | undefined
+  badges?: MarketListingBadge[] | undefined
+  offer?: MarketSnapshot['offer_type'] | undefined
+}): Promise<{ saved: number }> {
+  const listingId = input.listingId.trim()
+  if (!listingId) throw new Error('listingId required')
+  const lowerItems = serializeExcludedItems(input.lowerExcludedItems || [])
+  const antelopeXItems = serializeExcludedItems(input.antelopeXExcludedItems || [])
+  const hasExcluded =
+    lowerItems.length > 0 ||
+    antelopeXItems.length > 0 ||
+    (input.lowerNotIncluded != null && input.lowerNotIncluded > 0) ||
+    (input.antelopeXNotIncluded != null && input.antelopeXNotIncluded > 0)
+  const optionOffer =
+    input.offer === 'sale_plus_excluded' || hasExcluded ? 'sale_plus_excluded' : 'all_inclusive'
+  const points: Array<{
+    canyon: MarketSnapshot['canyon_variant']
+    offer: MarketSnapshot['offer_type']
+    sale: number
+    notIncluded: number
+    excludedItems: MarketSnapshot['excluded_items']
+  }> = []
+  if (input.fromPrice != null && Number.isFinite(input.fromPrice)) {
+    points.push({
+      canyon: 'unspecified',
+      offer: 'listing_from',
+      sale: input.fromPrice,
+      notIncluded: 0,
+      excludedItems: [],
+    })
+  }
+  if (input.lowerSale != null && Number.isFinite(input.lowerSale)) {
+    points.push({
+      canyon: 'lower',
+      offer: optionOffer,
+      sale: input.lowerSale,
+      notIncluded:
+        optionOffer === 'sale_plus_excluded'
+          ? lowerItems.length
+            ? sumExcludedItems(lowerItems)
+            : input.lowerNotIncluded || 0
+          : 0,
+      excludedItems: optionOffer === 'sale_plus_excluded' ? lowerItems : [],
+    })
+  }
+  if (input.antelopeXSale != null && Number.isFinite(input.antelopeXSale)) {
+    points.push({
+      canyon: 'antelope_x',
+      offer: optionOffer,
+      sale: input.antelopeXSale,
+      notIncluded:
+        optionOffer === 'sale_plus_excluded'
+          ? antelopeXItems.length
+            ? sumExcludedItems(antelopeXItems)
+            : input.antelopeXNotIncluded || 0
+          : 0,
+      excludedItems: optionOffer === 'sale_plus_excluded' ? antelopeXItems : [],
+    })
+  }
+  if (points.length === 0) throw new Error('at least one price required')
+  for (const point of points) {
+    await saveManualSnapshot({
+      operatorId: input.operatorId,
+      listingId,
+      canyon: point.canyon,
+      offer: point.offer,
+      sale: point.sale,
+      notIncluded: point.notIncluded,
+      excludedItems: point.excludedItems,
+      discountEnabled: input.discountEnabled,
+      discountPercent: input.discountPercent,
+      rating: input.rating,
+      reviewCount: input.reviewCount,
+      badges: input.badges,
+    })
+  }
+  return { saved: points.length }
 }
 
 export async function runCompetitorPriceCheck(input: {
@@ -212,7 +338,7 @@ export async function runCompetitorPriceCheck(input: {
         })
       }
     } else {
-      const axis = inferAutoSnapshotAxis(listing)
+      const axis = inferAutoSnapshotAxis()
       const prev = await loadPreviousSnapshot(listing.id, axis.canyon, axis.offer)
       const snapshot = await upsertSnapshot({
         operatorId,
@@ -229,6 +355,7 @@ export async function runCompetitorPriceCheck(input: {
         rawExtract: {
           title: result.offer.title,
           adapter: 'jsonld',
+          badges: prev?.badges || [],
         },
       })
       summary.saved += 1
@@ -240,10 +367,10 @@ export async function runCompetitorPriceCheck(input: {
       )
       if (changed) summary.changed += 1
       await updateListingFetch(listing.id, {
-        last_fetch_status: axis.needsManualSplit || changed ? 'needs_manual' : 'ok',
+        last_fetch_status: 'ok',
         last_fetched_at: fetchedAt,
         last_success_at: fetchedAt,
-        last_fetch_error: axis.needsManualSplit ? 'multiple_price_axes' : null,
+        last_fetch_error: null,
         listing_title: listing.listing_title || result.offer.title,
       })
       if (changed && prev && snapshot) {
@@ -252,25 +379,20 @@ export async function runCompetitorPriceCheck(input: {
           listingId: listing.id,
           kind: 'price_changed',
           title: '경쟁사 가격 변경',
-          body: `${listing.listing_title || result.offer.title || listing.listing_url}\n$${prev.adult_total} → $${snapshot.adult_total}`,
+          body: `${listing.listing_title || result.offer.title || listing.listing_url}\nFrom $${prev.adult_total} → $${snapshot.adult_total}`,
           canyonVariant: axis.canyon,
           offerType: axis.offer,
           oldAdultTotal: prev.adult_total,
           newAdultTotal: snapshot.adult_total,
         })
-      } else if (axis.needsManualSplit && listing.last_fetch_status !== 'needs_manual') {
-        await insertMarketPriceAlert(supabaseAdmin, {
-          operatorId,
-          listingId: listing.id,
-          kind: 'fetch_failed',
-          title: '경쟁사 가격 수동 확인',
-          body: `${listing.listing_title || result.offer.title || listing.listing_url}\nFrom $${result.offer.price} — Lower/X 또는 포함가 구분이 필요해 수동 확인하세요.`,
-        })
       }
     }
 
-    const successAt = result.ok ? fetchedAt : listing.last_success_at
-    if (!result.ok && isListingStale(successAt, now, 2) && listing.last_fetch_status !== 'never') {
+    if (
+      !result.ok &&
+      listing.last_success_at &&
+      isListingStale(listing.last_success_at, now, 2)
+    ) {
       summary.stale += 1
       await insertMarketPriceAlert(supabaseAdmin, {
         operatorId,
@@ -286,3 +408,5 @@ export async function runCompetitorPriceCheck(input: {
 
   return summary
 }
+
+

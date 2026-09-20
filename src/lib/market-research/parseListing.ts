@@ -126,7 +126,7 @@ export function parseListingHtml(html: string): ParsedListingOffer | null {
     }
   }
 
-  if (!best) return null
+  if (!best) return parseVisibleFromPrice(html)
   return {
     title,
     currency: best.currency,
@@ -134,4 +134,26 @@ export function parseListingHtml(html: string): ParsedListingOffer | null {
     rating,
     reviewCount,
   }
+}
+
+function parseVisibleFromPrice(html: string): ParsedListingOffer | null {
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+  const patterns = [
+    /From\s*\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:per\s*person)?/i,
+    /\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:per\s*person|\/\s*person)/i,
+    /from\s*USD\s*([0-9][0-9,]*(?:\.[0-9]+)?)/i,
+  ]
+  for (const pattern of patterns) {
+    const match = text.match(pattern)
+    const price = parseMoney(match?.[1])
+    if (price != null) {
+      return { title: null, currency: 'USD', price, rating: null, reviewCount: null }
+    }
+  }
+  return null
 }
