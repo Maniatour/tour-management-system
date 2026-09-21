@@ -23,6 +23,7 @@ import {
 import { mapCatalogChannel, mapCatalogProduct, mapFocusProduct, mapMarketBadge, mapMarketCompareItem, mapMarketCompetitor, mapMarketListing, mapMarketOurOffer, mapMarketSnapshot } from './mappers'
 import { mapMarketPriceAlertRow } from './notify'
 import { loadOurPriceOverlays, loadOurProductPlatformOverlays } from './ourPrice'
+import { parseOurChannelSettings } from './ourChannelSettings'
 import { isMarketCanyonVariant, isMarketOfferType, isMarketOtaPlatform } from './types'
 import type { MarketBadgeCatalogItem, MarketCompareItemCatalog, MarketCompetitor, MarketFocusProduct, MarketListing, MarketOurOffer } from './types'
 import { MARKET_BADGE_PRESETS, badgeIdFromLabel, findCatalogBadgeByLabel, sortBadgeCatalog } from './badges'
@@ -584,6 +585,7 @@ export async function saveOurOffer(input: {
   otaPlatform: string
   inclusionItems?: MarketInclusionMap | undefined
   excludedItems?: unknown
+  channelSettings?: unknown
 }): Promise<MarketOurOffer> {
   const admin = requireAdmin()
   const operatorId = resolveOperatorId(input.operatorId)
@@ -607,6 +609,7 @@ export async function saveOurOffer(input: {
         ota_platform: input.otaPlatform,
         inclusion_items: inclusionItems,
         excluded_items: excludedItems,
+        channel_settings: parseOurChannelSettings(input.channelSettings),
         updated_at: now,
       } as never,
       { onConflict: 'operator_id,product_id,ota_platform' }

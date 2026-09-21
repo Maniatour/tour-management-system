@@ -303,6 +303,12 @@ test('ours pricing column uses overlay sale and saved include/exclude', () => {
         ota_platform: 'getyourguide',
         inclusion_items: { grand_canyon: 'included', guide_tip: 'excluded' },
         excluded_items: [{ id: 'guide_tip', label: '가이드 팁', amount: 10 }],
+        channel_settings: {
+          discountMode: 'inherit',
+          discountPercent: null,
+          lowerSale: null,
+          antelopeXSale: null,
+        },
         created_at: '2026-09-19T00:00:00.000Z',
         updated_at: '2026-09-19T00:00:00.000Z',
       },
@@ -367,6 +373,89 @@ test('ours pricing column shows list and coupon discounted sale', () => {
   assert.equal(columns[0]?.lowerSale, 384)
   assert.equal(columns[0]?.lowerDiscounted, 349.44)
   assert.equal(columns[0]?.lowerFinal, 349.44)
+})
+
+test('our channel settings can drop Viator discount and override the list price', () => {
+  const overlay = {
+    productId: 'MDGCSUNRISE',
+    channelId: 'Partner6',
+    date: '2026-09-20',
+    points: {
+      'lower:all_inclusive': {
+        sale: 384,
+        discounted: 349.44,
+        discountPercent: 9,
+        notIncluded: 0,
+        total: 349.44,
+        source: 'dynamic' as const,
+      },
+      'antelope_x:all_inclusive': {
+        sale: 361,
+        discounted: 328.51,
+        discountPercent: 9,
+        notIncluded: 0,
+        total: 328.51,
+        source: 'dynamic' as const,
+      },
+    },
+  }
+  const offerBase = {
+    operator_id: 'op',
+    product_id: 'MDGCSUNRISE',
+    ota_platform: 'viator' as const,
+    inclusion_items: {},
+    excluded_items: [],
+    created_at: '2026-09-21T00:00:00.000Z',
+    updated_at: '2026-09-21T00:00:00.000Z',
+  }
+  const withoutDiscount = buildOurPricingBoardColumns({
+    productId: 'MDGCSUNRISE',
+    listings: [],
+    offers: [
+      {
+        ...offerBase,
+        channel_settings: {
+          discountMode: 'none',
+          discountPercent: null,
+          lowerSale: null,
+          antelopeXSale: null,
+        },
+      },
+    ],
+    overlays: { 'MDGCSUNRISE:viator': overlay },
+    otas: ['viator'],
+    oursLabel: '자사',
+  })
+  assert.equal(withoutDiscount[0]?.lowerSale, 384)
+  assert.equal(withoutDiscount[0]?.lowerDiscounted, null)
+  assert.equal(withoutDiscount[0]?.discountPercent, null)
+  assert.equal(withoutDiscount[0]?.lowerFinal, 384)
+  assert.equal(withoutDiscount[0]?.fromPrice, 361)
+  assert.equal(withoutDiscount[0]?.fromDiscounted, null)
+
+  const custom = buildOurPricingBoardColumns({
+    productId: 'MDGCSUNRISE',
+    listings: [],
+    offers: [
+      {
+        ...offerBase,
+        channel_settings: {
+          discountMode: 'custom',
+          discountPercent: 10,
+          lowerSale: 400,
+          antelopeXSale: null,
+        },
+      },
+    ],
+    overlays: { 'MDGCSUNRISE:viator': overlay },
+    otas: ['viator'],
+    oursLabel: '자사',
+  })
+  assert.equal(custom[0]?.lowerSale, 400)
+  assert.equal(custom[0]?.lowerDiscounted, 360)
+  assert.equal(custom[0]?.antelopeXSale, 361)
+  assert.equal(custom[0]?.antelopeXDiscounted, 324.9)
+  assert.equal(custom[0]?.discountPercent, 10)
 })
 
 test('resolveOtaChannelId uses channels.name when PLATFORM_CHANNEL_MAP id is missing', () => {

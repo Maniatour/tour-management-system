@@ -10,8 +10,11 @@ import {
   type MarketInclusionMap,
 } from '@/lib/market-research/excludedItems'
 import { otaPlatformLabel } from '@/lib/market-research/compare'
-import type { MarketExcludedItem, MarketOtaPlatform } from '@/lib/market-research/types'
+import { defaultOurChannelSettings } from '@/lib/market-research/ourChannelSettings'
+import { overlayAxisPoint, ourProductPlatformKey } from '@/lib/market-research/ourPrice'
+import type { MarketExcludedItem, MarketOtaPlatform, OurChannelSettings } from '@/lib/market-research/types'
 import { MarketResearchInclusionItemsEditor } from './MarketResearchInclusionItemsEditor'
+import { MarketResearchOurChannelSettingsFields } from './MarketResearchOurChannelSettingsFields'
 import { productLabel, type MarketResearchBundle } from './helpers'
 
 export function MarketResearchOurOfferEditor({
@@ -31,6 +34,7 @@ export function MarketResearchOurOfferEditor({
     otaPlatform: MarketOtaPlatform
     inclusionItems: MarketInclusionMap
     excludedItems: MarketExcludedItem[]
+    channelSettings: OurChannelSettings
   }) => Promise<void>
   onCancel: () => void
 }) {
@@ -42,7 +46,14 @@ export function MarketResearchOurOfferEditor({
     parseInclusionMap(offer?.inclusion_items, true, compareItems)
   )
   const [excludedItems, setExcludedItems] = useState<MarketExcludedItem[]>(() => offer?.excluded_items || [])
+  const [channelSettings, setChannelSettings] = useState<OurChannelSettings>(
+    () => offer?.channel_settings || defaultOurChannelSettings()
+  )
   const [saving, setSaving] = useState(false)
+  const overlay = bundle.ourPlatformPrices[ourProductPlatformKey(productId, otaPlatform)]
+  const lowerPoint = overlayAxisPoint(overlay, 'lower', 'all_inclusive')
+  const antelopePoint = overlayAxisPoint(overlay, 'antelope_x', 'all_inclusive')
+  const dynamicPercent = lowerPoint?.discountPercent ?? antelopePoint?.discountPercent ?? null
   const product = bundle.products.find((row) => row.id === productId)
 
   return (
@@ -53,10 +64,18 @@ export function MarketResearchOurOfferEditor({
         </p>
         <p className="mt-1 text-sm text-blue-800/80">
           {isKo
-            ? '판매가·From 가격은 자사 OTA 동적가격에서 가져옵니다. 여기에서는 포함/불포함과 불포함 금액만 정리합니다.'
-            : 'Sale and From prices come from our OTA dynamic pricing. Record include/exclude items and fee amounts here.'}
+            ? '채널마다 할인, 판매가, 포함 항목을 따로 맞출 수 있습니다.'
+            : 'Set discount, sale price, and included items separately for each channel.'}
         </p>
       </div>
+      <MarketResearchOurChannelSettingsFields
+        settings={channelSettings}
+        onChange={setChannelSettings}
+        dynamicLower={lowerPoint?.sale ?? null}
+        dynamicAntelopeX={antelopePoint?.sale ?? null}
+        dynamicPercent={dynamicPercent}
+        isKo={isKo}
+      />
       <MarketResearchInclusionItemsEditor
         values={inclusionItems}
         onChange={setInclusionItems}
@@ -92,6 +111,7 @@ export function MarketResearchOurOfferEditor({
                 excludedItems: serializeExcludedItems(
                   excludedItems.filter((row) => inclusionItems[row.id] === 'excluded')
                 ),
+                channelSettings,
               })
             } finally {
               setSaving(false)

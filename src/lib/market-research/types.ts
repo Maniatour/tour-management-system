@@ -118,12 +118,24 @@ export type MarketCompareItemCatalog = {
   created_at: string
 }
 
+export const OUR_CHANNEL_DISCOUNT_MODES = ['inherit', 'none', 'custom'] as const
+export type OurChannelDiscountMode = (typeof OUR_CHANNEL_DISCOUNT_MODES)[number]
+
+/** 시장조사 비교 전용. 예약·동적가격 계약과 무관하다. */
+export type OurChannelSettings = {
+  discountMode: OurChannelDiscountMode
+  discountPercent: number | null
+  lowerSale: number | null
+  antelopeXSale: number | null
+}
+
 export type MarketOurOffer = {
   operator_id: string
   product_id: string
   ota_platform: MarketOtaPlatform
   inclusion_items: MarketInclusionMap
   excluded_items: MarketExcludedItem[]
+  channel_settings: OurChannelSettings
   created_at: string
   updated_at: string
 }

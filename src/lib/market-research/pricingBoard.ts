@@ -21,6 +21,7 @@ import {
   type MarketCompareItemDef,
 } from './excludedItems'
 import { discountedPrice, effectiveSalePrice, listingObservedMeta, listingRecordedPrices } from './prices'
+import { applyOurChannelSettings, parseOurChannelSettings } from './ourChannelSettings'
 import { overlayAxisPoint, ourProductPlatformKey } from './ourPrice'
 
 export const UNMAPPED_PRODUCT_ID = '__unmapped'
@@ -296,10 +297,15 @@ export function buildOurPricingBoardColumns(input: {
       (row) => row.product_id === input.productId && row.ota_platform === platform
     )
     const inclusionItems = parseInclusionMap(offer?.inclusion_items, true, compareItems)
+    const settings = parseOurChannelSettings(offer?.channel_settings)
     const overlay = input.overlays[ourProductPlatformKey(input.productId, platform)]
     const saleOffer = inclusionHasExcluded(inclusionItems) ? 'sale_plus_excluded' : 'all_inclusive'
-    const lower = overlayAxisPoint(overlay, 'lower', saleOffer)
-    const antelopeX = overlayAxisPoint(overlay, 'antelope_x', saleOffer)
+    const lower = applyOurChannelSettings(overlayAxisPoint(overlay, 'lower', saleOffer), settings, 'lower')
+    const antelopeX = applyOurChannelSettings(
+      overlayAxisPoint(overlay, 'antelope_x', saleOffer),
+      settings,
+      'antelope_x'
+    )
     const lowerSale = lower?.sale ?? null
     const antelopeXSale = antelopeX?.sale ?? null
     const lowerDiscounted = lower?.discounted ?? null

@@ -16,6 +16,7 @@ import {
 } from './excludedItems'
 import { parseListingBadges } from './badges'
 import { parseSnapshotDiscount } from './prices'
+import { parseOurChannelSettings } from './ourChannelSettings'
 
 function asString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null
@@ -244,6 +245,7 @@ export function mapMarketOurOffer(
     ota_platform: platform,
     inclusion_items: parseInclusionMap(row.inclusion_items, true, items),
     excluded_items: parseExcludedItems(row.excluded_items),
+    channel_settings: parseOurChannelSettings(row.channel_settings),
     created_at: createdAt,
     updated_at: updatedAt,
   }

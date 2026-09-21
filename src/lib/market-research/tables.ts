@@ -86,4 +86,4 @@ export const MARKET_COMPARE_ITEM_COLUMNS =
   'operator_id, item_id, label_ko, label_en, sort_order, is_preset, created_at'
 
 export const MARKET_OUR_OFFER_COLUMNS =
-  'operator_id, product_id, ota_platform, inclusion_items, excluded_items, created_at, updated_at'
+  'operator_id, product_id, ota_platform, inclusion_items, excluded_items, channel_settings, created_at, updated_at'

@@ -569,7 +569,8 @@ export default function MarketResearchAdmin() {
 
       <MarketResearchDialog
         open={modal === 'ourOffer'}
-        title={isKo ? '자사 포함 / 불포함' : 'Our include / exclude'}
+        title={isKo ? '자사 채널 설정' : 'Our channel settings'}
+        wide
         onClose={closeModal}
       >
         {modal === 'ourOffer' && ourOfferPlatform && activeProductId && activeProductId !== UNMAPPED_PRODUCT_ID ? (
@@ -582,7 +583,7 @@ export default function MarketResearchAdmin() {
             onSave={async (input) => {
               await post({ action: 'save_our_offer', ...input })
               closeModal()
-              toast.success(isKo ? '자사 포함 항목을 저장했습니다.' : 'Our include/exclude saved.')
+              toast.success(isKo ? '자사 채널 설정을 저장했습니다.' : 'Our channel settings saved.')
             }}
           />
         ) : null}

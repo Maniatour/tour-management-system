@@ -112,7 +112,8 @@ export function MarketResearchPricingBoard({
                         className="h-8 rounded-lg px-2"
                         onClick={() => onEditOurs?.(col.otaPlatform)}
                       >
-                        {isKo ? '포함' : 'Included'}
+                        <Settings2 className="mr-1 h-3.5 w-3.5" />
+                        {isKo ? '설정' : 'Settings'}
                       </Button>
                     ) : col.listing ? (
                       <>

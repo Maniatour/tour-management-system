@@ -1,0 +1,30 @@
+---
+description: Kovegas 부서 서브에이전트 위임 순서
+alwaysApply: true
+---
+
+# 부서 운영
+
+메인 채팅이 Chief of Staff다. 구현 전에 범위를 정하고, 필요한 부서만 Task로 부른다. 서브에이전트끼리는 서로 호출하지 않는다. 답변은 한국어로 한다.
+
+부서 파일: `.cursor/agents/`
+
+- `chief-of-staff`: 여러 부서가 필요하거나 범위가 불명확할 때 브리핑만. 코드 수정 없음.
+- `frontend-developer`: 레이아웃, 카피, 컴포넌트, 반응형.
+- `backend-architect`: 사용자가 데이터·API·Supabase 변경을 명문으로 요청한 경우만.
+- `qa-reality-checker`: 화면·동작 변경 또는 버그 이후 재현·회귀.
+- `security-auditor`: 인증, 결제, 예약, 시크릿, RLS, 권한이 닿으면 마지막. 읽기 전용.
+
+## 부를 때
+
+한 줄 문구·오타 수정은 부서를 부르지 않고 메인 채팅이 직접 처리한다.
+
+화면 작업은 frontend-developer 다음 qa-reality-checker.
+
+데이터·API는 사용자 명문 요청이 있을 때만 backend-architect 다음 qa-reality-checker.
+
+인증·결제·예약·시크릿·RLS가 닿으면 security-auditor를 마지막에 둔다.
+
+다섯 명을 매번 전부 부르지 않는다.
+
+예약, 결제, 가용성, 취소, API 계약, Supabase 쿼리는 사용자가 명문으로 바꾸라고 한 경우가 아니면 모든 부서가 유지한다.

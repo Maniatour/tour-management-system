@@ -253,6 +253,7 @@ export async function POST(request: NextRequest) {
         otaPlatform: String(body.otaPlatform || ''),
         inclusionItems: parseInclusionMap(body.inclusionItems, true),
         excludedItems: parseExcludedItems(body.excludedItems),
+        channelSettings: body.channelSettings,
       })
       return NextResponse.json({ ok: true, ourOffer: row })
     }
