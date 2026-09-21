@@ -18,6 +18,8 @@ export type WaiverUiCopy = {
   guestPlaceholder: string
   participantInfo: string
   fullLegalName: string
+  fullLegalNameHint: string
+  fullLegalNamePlaceholder: string
   dateOfBirth: string
   tourDate: string
   bookingNumber: string
@@ -29,6 +31,7 @@ export type WaiverUiCopy = {
   adult: string
   minor: string
   guardianName: string
+  guardianNameHint: string
   relationshipToMinor: string
   guardianAck: string
   continue: string
@@ -64,6 +67,7 @@ export type WaiverUiCopy = {
   saving: string
   errorGeneric: string
   validationRequired: string
+  validationEnglishName: string
   validationEmail: string
   validationPhone: string
   validationDob: string
@@ -73,6 +77,9 @@ export type WaiverUiCopy = {
   pending: string
   previewOnly: string
   voided: string
+  signingClosedTitle: string
+  signingClosedBody: string
+  signingDeadlineNote: string
 }
 
 const EN: WaiverUiCopy = {
@@ -92,7 +99,10 @@ const EN: WaiverUiCopy = {
   of: 'of',
   guestPlaceholder: 'Guest',
   participantInfo: 'Participant information',
-  fullLegalName: 'Full legal name',
+  fullLegalName: 'Full legal name (English)',
+  fullLegalNameHint:
+    'Please write your name in English letters only (example: Kim Minjun). Korean, Chinese, and other scripts are not accepted.',
+  fullLegalNamePlaceholder: 'Kim Minjun',
   dateOfBirth: 'Date of birth',
   tourDate: 'Tour date',
   bookingNumber: 'Booking / reservation number',
@@ -103,7 +113,8 @@ const EN: WaiverUiCopy = {
   participantType: 'Participant type',
   adult: 'Adult',
   minor: 'Minor',
-  guardianName: 'Parent / legal guardian full legal name',
+  guardianName: 'Parent / legal guardian full legal name (English)',
+  guardianNameHint: 'Please write the guardian’s name in English letters only (example: Kim Minjun).',
   relationshipToMinor: 'Relationship to minor',
   guardianAck:
     'I represent that I am the parent or legal guardian of the minor participant(s) identified and have authority to execute this Agreement on the minor’s behalf to the extent permitted by applicable law.',
@@ -148,6 +159,7 @@ const EN: WaiverUiCopy = {
   saving: 'Saving…',
   errorGeneric: 'Something went wrong. Please try again.',
   validationRequired: 'This field is required.',
+  validationEnglishName: 'Please enter this name in English letters only (example: Kim Minjun).',
   validationEmail: 'Enter a valid email address.',
   validationPhone: 'Enter a valid phone number.',
   validationDob: 'Enter a valid date of birth.',
@@ -157,6 +169,11 @@ const EN: WaiverUiCopy = {
   pending: 'Pending',
   voided: 'Voided',
   previewOnly: 'Preview only. Signatures are not saved.',
+  signingClosedTitle: 'Online waiver signing is closed',
+  signingClosedBody:
+    'Online signing closed at 6:00 PM Las Vegas time the day before your tour. If you were unable to sign, or you are opening this after the deadline, please sign the printed waiver our guide will bring on the tour day.',
+  signingDeadlineNote:
+    'Please complete this form by 6:00 PM Las Vegas time the day before your tour. After that, our guide will bring a printed copy for you to sign.',
 }
 
 export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
@@ -178,7 +195,10 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     of: '/',
     guestPlaceholder: '게스트',
     participantInfo: '참가자 정보',
-    fullLegalName: '법적 성명',
+    fullLegalName: '법적 성명 (영문)',
+    fullLegalNameHint:
+      '성명은 영문으로만 작성해 주세요. 예: Kim Minjun. 한글, 한자 등 다른 문자는 사용할 수 없습니다.',
+    fullLegalNamePlaceholder: 'Kim Minjun',
     dateOfBirth: '생년월일',
     tourDate: '투어 날짜',
     bookingNumber: '예약 번호',
@@ -189,7 +209,8 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     participantType: '참가자 유형',
     adult: '성인',
     minor: '미성년자',
-    guardianName: '부모 / 법정 후견인 법적 성명',
+    guardianName: '부모 / 법정 후견인 법적 성명 (영문)',
+    guardianNameHint: '보호자 이름도 영문으로만 작성해 주세요. 예: Kim Minjun',
     relationshipToMinor: '미성년자와의 관계',
     guardianAck:
       '본인은 위에 확인된 미성년 참가자의 부모 또는 법정 후견인이며, 적용 법령이 허용하는 범위 내에서 미성년자를 대신하여 본 약정을 체결할 권한이 있음을 진술합니다.',
@@ -232,6 +253,7 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     saving: '저장 중…',
     errorGeneric: '문제가 발생했습니다. 다시 시도해 주세요.',
     validationRequired: '필수 항목입니다.',
+    validationEnglishName: '성명은 영문으로만 입력해 주세요. 예: Kim Minjun',
     validationEmail: '올바른 이메일을 입력해 주세요.',
     validationPhone: '올바른 전화번호를 입력해 주세요.',
     validationDob: '올바른 생년월일을 입력해 주세요.',
@@ -241,6 +263,11 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     pending: '대기',
     voided: '무효',
     previewOnly: '미리보기입니다. 서명은 저장되지 않습니다.',
+    signingClosedTitle: '온라인 면책 동의서 작성이 마감되었습니다',
+    signingClosedBody:
+      '온라인 면책 동의서는 투어 전날 라스베이거스 시간 오후 6시에 마감됩니다. 서명을 완료하지 못했거나 마감 이후에 접속하신 경우, 가이드가 인쇄한 면책 동의서를 가져가니 투어 당일 인쇄물에 서명해 주세요.',
+    signingDeadlineNote:
+      '온라인 작성은 투어 전날 라스베이거스 시간 오후 6시까지입니다. 그 이후에는 가이드가 인쇄한 면책 동의서를 가져가니 인쇄물에 서명하시면 됩니다.',
   },
   ja: {
     ...EN,
@@ -258,7 +285,10 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     completed: '完了',
     guestPlaceholder: 'ゲスト',
     participantInfo: '参加者情報',
-    fullLegalName: '法的氏名',
+    fullLegalName: '法的氏名（英語）',
+    fullLegalNameHint:
+      '氏名は英語のアルファベットのみでご記入ください（例: Kim Minjun）。韓国語・中国語などの文字は使用できません。',
+    fullLegalNamePlaceholder: 'Kim Minjun',
     dateOfBirth: '生年月日',
     tourDate: 'ツアー日',
     bookingNumber: '予約番号',
@@ -269,7 +299,8 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     participantType: '参加者の区分',
     adult: '成人',
     minor: '未成年者',
-    guardianName: '親／法定後見人の法的氏名',
+    guardianName: '親／法定後見人の法的氏名（英語）',
+    guardianNameHint: '保護者の氏名も英語のアルファベットのみでご記入ください（例: Kim Minjun）。',
     relationshipToMinor: '未成年者との関係',
     guardianAck:
       '私は、特定された未成年参加者の親または法定後見人であり、適用法が認める範囲で未成年者に代わって本合意を締結する権限を有することを表明します。',
@@ -311,6 +342,7 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     saving: '保存中…',
     errorGeneric: '問題が発生しました。もう一度お試しください。',
     validationRequired: 'この項目は必須です。',
+    validationEnglishName: '氏名は英語のアルファベットのみで入力してください（例: Kim Minjun）。',
     validationEmail: '有効なメールアドレスを入力してください。',
     validationPhone: '有効な電話番号を入力してください。',
     validationDob: '有効な生年月日を入力してください。',
@@ -320,6 +352,11 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     pending: '未完了',
     voided: '無効',
     previewOnly: 'プレビューです。署名は保存されません。',
+    signingClosedTitle: 'オンライン免責同意の受付は終了しました',
+    signingClosedBody:
+      'オンライン署名はツアー前日のラスベガス時間午後6時に締め切ります。署名できなかった場合、または締め切り後にアクセスした場合は、ガイドが印刷した免責同意書をお持ちしますので、ツアー当日に紙面へご署名ください。',
+    signingDeadlineNote:
+      'オンライン記入はツアー前日のラスベガス時間午後6時までです。それ以降はガイドが印刷した免責同意書をお持ちしますので、紙面に署名してください。',
   },
   zh: {
     ...EN,
@@ -337,7 +374,10 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     completed: '已完成',
     guestPlaceholder: '客人',
     participantInfo: '参加者信息',
-    fullLegalName: '法定全名',
+    fullLegalName: '法定全名（英文）',
+    fullLegalNameHint:
+      '请仅用英文字母填写姓名（例如：Kim Minjun）。不可使用韩文、中文或其他文字。',
+    fullLegalNamePlaceholder: 'Kim Minjun',
     dateOfBirth: '出生日期',
     tourDate: '行程日期',
     bookingNumber: '预订／预约编号',
@@ -348,7 +388,8 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     participantType: '参加者类型',
     adult: '成人',
     minor: '未成年人',
-    guardianName: '父母／法定监护人法定全名',
+    guardianName: '父母／法定监护人法定全名（英文）',
+    guardianNameHint: '请仅用英文字母填写监护人姓名（例如：Kim Minjun）。',
     relationshipToMinor: '与未成年人的关系',
     guardianAck:
       '本人声明本人是上述未成年参加者的父母或法定监护人，并在适用法律允许的范围内有权代表该未成年人签署本协议。',
@@ -388,6 +429,7 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     saving: '保存中…',
     errorGeneric: '出现问题，请重试。',
     validationRequired: '此项为必填。',
+    validationEnglishName: '请仅用英文字母填写此姓名（例如：Kim Minjun）。',
     validationEmail: '请输入有效的电子邮件地址。',
     validationPhone: '请输入有效的电话号码。',
     validationDob: '请输入有效的出生日期。',
@@ -397,6 +439,11 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     pending: '待完成',
     voided: '已作废',
     previewOnly: '预览模式。签名不会被保存。',
+    signingClosedTitle: '在线弃权书签署已截止',
+    signingClosedBody:
+      '在线签署于行程前一天拉斯维加斯时间下午 6 点截止。如未能完成签署，或在截止后打开此页面，请在行程当天签署导游带来的纸质弃权书。',
+    signingDeadlineNote:
+      '请于行程前一天拉斯维加斯时间下午 6 点前完成此表格。之后导游会带来纸质弃权书，请在印刷件上签名。',
   },
   es: {
     ...EN,
@@ -414,7 +461,10 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     completed: 'Completado',
     guestPlaceholder: 'Huésped',
     participantInfo: 'Información del participante',
-    fullLegalName: 'Nombre legal completo',
+    fullLegalName: 'Nombre legal completo (inglés)',
+    fullLegalNameHint:
+      'Escriba su nombre solo con letras inglesas (ejemplo: Kim Minjun). No se aceptan coreano, chino u otros alfabetos.',
+    fullLegalNamePlaceholder: 'Kim Minjun',
     dateOfBirth: 'Fecha de nacimiento',
     tourDate: 'Fecha del tour',
     bookingNumber: 'Número de reserva',
@@ -425,7 +475,8 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     participantType: 'Tipo de participante',
     adult: 'Adulto',
     minor: 'Menor',
-    guardianName: 'Nombre legal completo del padre / tutor legal',
+    guardianName: 'Nombre legal completo del padre / tutor legal (inglés)',
+    guardianNameHint: 'Escriba el nombre del tutor solo con letras inglesas (ejemplo: Kim Minjun).',
     relationshipToMinor: 'Relación con el menor',
     guardianAck:
       'Declaro que soy el padre, la madre o el tutor legal del menor o menores identificados y que tengo autoridad para otorgar este Acuerdo en su nombre en la medida permitida por la ley aplicable.',
@@ -470,6 +521,7 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     saving: 'Guardando…',
     errorGeneric: 'Algo salió mal. Inténtelo de nuevo.',
     validationRequired: 'Este campo es obligatorio.',
+    validationEnglishName: 'Introduzca este nombre solo con letras inglesas (ejemplo: Kim Minjun).',
     validationEmail: 'Introduzca un correo electrónico válido.',
     validationPhone: 'Introduzca un número de teléfono válido.',
     validationDob: 'Introduzca una fecha de nacimiento válida.',
@@ -479,6 +531,11 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     pending: 'Pendiente',
     voided: 'Anulado',
     previewOnly: 'Solo vista previa. Las firmas no se guardan.',
+    signingClosedTitle: 'La firma en línea de la exención está cerrada',
+    signingClosedBody:
+      'La firma en línea se cierra a las 6:00 p. m., hora de Las Vegas, el día anterior al tour. Si no pudo firmar o abre este enlace después del plazo, firme la exención impresa que traerá el guía el día del tour.',
+    signingDeadlineNote:
+      'Complete este formulario antes de las 6:00 p. m., hora de Las Vegas, el día anterior al tour. Después, el guía traerá una copia impresa para que firme.',
   },
   fr: {
     ...EN,
@@ -496,7 +553,10 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     completed: 'Terminé',
     guestPlaceholder: 'Client',
     participantInfo: 'Informations du participant',
-    fullLegalName: 'Nom légal complet',
+    fullLegalName: 'Nom légal complet (anglais)',
+    fullLegalNameHint:
+      'Veuillez écrire votre nom uniquement en lettres anglaises (exemple : Kim Minjun). Le coréen, le chinois et les autres écritures ne sont pas acceptés.',
+    fullLegalNamePlaceholder: 'Kim Minjun',
     dateOfBirth: 'Date de naissance',
     tourDate: 'Date de la visite',
     bookingNumber: 'Numéro de réservation',
@@ -507,7 +567,8 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     participantType: 'Type de participant',
     adult: 'Adulte',
     minor: 'Mineur',
-    guardianName: 'Nom légal complet du parent / tuteur légal',
+    guardianName: 'Nom légal complet du parent / tuteur légal (anglais)',
+    guardianNameHint: 'Veuillez écrire le nom du tuteur uniquement en lettres anglaises (exemple : Kim Minjun).',
     relationshipToMinor: 'Lien avec le mineur',
     guardianAck:
       'Je déclare être le parent ou le tuteur légal du ou des participants mineurs identifiés et avoir le pouvoir d’exécuter le présent Accord en leur nom dans la mesure permise par le droit applicable.',
@@ -552,6 +613,7 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     saving: 'Enregistrement…',
     errorGeneric: 'Une erreur s’est produite. Veuillez réessayer.',
     validationRequired: 'Ce champ est obligatoire.',
+    validationEnglishName: 'Saisissez ce nom uniquement en lettres anglaises (exemple : Kim Minjun).',
     validationEmail: 'Saisissez une adresse e-mail valide.',
     validationPhone: 'Saisissez un numéro de téléphone valide.',
     validationDob: 'Saisissez une date de naissance valide.',
@@ -561,6 +623,11 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     pending: 'En attente',
     voided: 'Annulé',
     previewOnly: 'Aperçu uniquement. Les signatures ne sont pas enregistrées.',
+    signingClosedTitle: 'La signature en ligne de la décharge est close',
+    signingClosedBody:
+      'La signature en ligne se termine à 18 h, heure de Las Vegas, la veille de la visite. Si vous n’avez pas pu signer ou si vous ouvrez ce lien après l’échéance, veuillez signer la décharge imprimée que le guide apportera le jour de la visite.',
+    signingDeadlineNote:
+      'Veuillez remplir ce formulaire avant 18 h, heure de Las Vegas, la veille de la visite. Ensuite, le guide apportera une copie imprimée à signer.',
   },
   de: {
     ...EN,
@@ -578,7 +645,10 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     completed: 'Abgeschlossen',
     guestPlaceholder: 'Gast',
     participantInfo: 'Teilnehmerangaben',
-    fullLegalName: 'Vollständiger rechtlicher Name',
+    fullLegalName: 'Vollständiger rechtlicher Name (Englisch)',
+    fullLegalNameHint:
+      'Bitte schreiben Sie Ihren Namen nur in englischen Buchstaben (Beispiel: Kim Minjun). Koreanisch, Chinesisch und andere Schriften werden nicht akzeptiert.',
+    fullLegalNamePlaceholder: 'Kim Minjun',
     dateOfBirth: 'Geburtsdatum',
     tourDate: 'Tourdatum',
     bookingNumber: 'Buchungs- / Reservierungsnummer',
@@ -589,7 +659,8 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     participantType: 'Teilnehmertyp',
     adult: 'Erwachsener',
     minor: 'Minderjähriger',
-    guardianName: 'Vollständiger rechtlicher Name des Elternteils / gesetzlichen Vormunds',
+    guardianName: 'Vollständiger rechtlicher Name des Elternteils / gesetzlichen Vormunds (Englisch)',
+    guardianNameHint: 'Bitte schreiben Sie den Namen des Vormunds nur in englischen Buchstaben (Beispiel: Kim Minjun).',
     relationshipToMinor: 'Beziehung zum Minderjährigen',
     guardianAck:
       'Ich erkläre, dass ich Elternteil oder gesetzlicher Vormund des oder der genannten minderjährigen Teilnehmer bin und befugt bin, diese Vereinbarung im gesetzlich zulässigen Umfang in deren Namen abzuschließen.',
@@ -634,6 +705,7 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     saving: 'Speichern…',
     errorGeneric: 'Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.',
     validationRequired: 'Dieses Feld ist erforderlich.',
+    validationEnglishName: 'Bitte geben Sie diesen Namen nur in englischen Buchstaben ein (Beispiel: Kim Minjun).',
     validationEmail: 'Geben Sie eine gültige E-Mail-Adresse ein.',
     validationPhone: 'Geben Sie eine gültige Telefonnummer ein.',
     validationDob: 'Geben Sie ein gültiges Geburtsdatum ein.',
@@ -643,6 +715,11 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     pending: 'Ausstehend',
     voided: 'Ungültig',
     previewOnly: 'Nur Vorschau. Unterschriften werden nicht gespeichert.',
+    signingClosedTitle: 'Die Online-Unterzeichnung des Haftungsausschlusses ist geschlossen',
+    signingClosedBody:
+      'Die Online-Unterzeichnung endet um 18:00 Uhr Las-Vegas-Zeit am Vortag der Tour. Wenn Sie nicht unterzeichnen konnten oder diesen Link danach öffnen, unterschreiben Sie bitte den gedruckten Haftungsausschluss, den der Guide am Tourtag mitbringt.',
+    signingDeadlineNote:
+      'Bitte füllen Sie dieses Formular bis 18:00 Uhr Las-Vegas-Zeit am Vortag der Tour aus. Danach bringt der Guide eine gedruckte Kopie zur Unterschrift mit.',
   },
 }
 

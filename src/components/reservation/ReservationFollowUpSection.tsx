@@ -529,8 +529,8 @@ export default function ReservationFollowUpSection({
   const title = 'Follow up'
 
   return (
-    <div id="follow-up-section" className="space-y-3 max-lg:overflow-y-auto lg:overflow-visible border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50">
-      <h3 className="text-sm font-medium text-gray-900 flex items-center gap-2">
+    <div id="follow-up-section" className="space-y-3 max-lg:overflow-y-visible lg:overflow-visible border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:bg-white max-lg:rounded-2xl max-lg:shadow-sm max-lg:scroll-mt-36">
+      <h3 className="text-sm font-medium text-gray-900 flex items-center gap-2 max-lg:text-base max-lg:font-semibold max-lg:tracking-tight max-lg:pb-3 max-lg:mb-1 max-lg:border-b max-lg:border-slate-100">
         <MessageSquare className="w-4 h-4" />
         {title}
       </h3>

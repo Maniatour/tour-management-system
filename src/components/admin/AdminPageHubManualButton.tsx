@@ -24,6 +24,7 @@ type Props = {
   fallbackTitle?: { ko: string; en: string }
   storageKey?: string
   className?: string
+  showLabel?: boolean
 }
 
 export default function AdminPageHubManualButton({
@@ -32,6 +33,7 @@ export default function AdminPageHubManualButton({
   fallbackTitle,
   storageKey = 'admin-page-hub-manual-modal-v1',
   className,
+  showLabel = false,
 }: Props) {
   const locale = useLocale()
   const isEn = locale === 'en'
@@ -88,16 +90,19 @@ export default function AdminPageHubManualButton({
       <Button
         type="button"
         variant="ghost"
-        size="icon"
+        size={showLabel ? 'default' : 'icon'}
         className={cn(
-          'h-8 w-8 shrink-0 touch-manipulation text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700 sm:h-9 sm:w-9',
+          showLabel
+            ? 'h-11 w-full justify-start gap-2 px-3.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800'
+            : 'h-8 w-8 shrink-0 touch-manipulation text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700 sm:h-9 sm:w-9',
           className
         )}
         title={buttonLabel}
         aria-label={buttonLabel}
         onClick={() => setOpen(true)}
       >
-        <BookOpen className="h-4 w-4 sm:h-[1.125rem] sm:w-[1.125rem]" aria-hidden />
+        <BookOpen className="h-4 w-4 shrink-0 sm:h-[1.125rem] sm:w-[1.125rem]" aria-hidden />
+        {showLabel ? <span>{isEn ? 'Manual' : '메뉴얼'}</span> : null}
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>

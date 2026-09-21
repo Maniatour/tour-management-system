@@ -1354,7 +1354,12 @@ export function generatePickupScheduleEmailContent(
           </div>
 
           ${waiverCta?.url
-            ? buildWaiverEmailCtaHtml({ isEnglish, url: waiverCta.url, mode: waiverCta.mode })
+            ? buildWaiverEmailCtaHtml({
+                isEnglish,
+                url: waiverCta.url,
+                mode: waiverCta.mode,
+                signingClosed: waiverCta.signingClosed === true,
+              })
             : ''}
 
           ${pickupHotel && pickupHotel.media && Array.isArray(pickupHotel.media) && pickupHotel.media.length > 0 ? `

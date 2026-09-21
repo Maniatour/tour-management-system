@@ -1,12 +1,20 @@
 import { z } from 'zod'
+import { isEnglishLegalName } from '@/lib/waiver/englishName'
 import { WAIVER_LOCALES, WAIVER_PARTICIPANT_TYPES } from '@/lib/waiver/types'
 
 const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD')
 
+const englishLegalName = z
+  .string()
+  .trim()
+  .min(2)
+  .max(200)
+  .refine(isEnglishLegalName, 'English letters only')
+
 export const participantIdentitySchema = z.object({
-  fullLegalName: z.string().trim().min(2).max(200),
+  fullLegalName: englishLegalName,
   dateOfBirth: isoDate,
   participantType: z.enum(WAIVER_PARTICIPANT_TYPES),
   email: z.string().trim().email().max(255).optional().or(z.literal('')),
@@ -16,7 +24,7 @@ export const participantIdentitySchema = z.object({
 })
 
 export const minorGuardianSchema = z.object({
-  guardianFullLegalName: z.string().trim().min(2).max(200),
+  guardianFullLegalName: englishLegalName,
   relationshipToMinor: z.string().trim().min(2).max(80),
   minorParticipantIds: z.array(z.string().uuid()).min(1),
 })

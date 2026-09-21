@@ -16,7 +16,13 @@ type ImportEmailRow = {
   raw_body_html: string | null
 }
 
-export function ReservationImportEmailViewButton({ reservationId }: { reservationId: string }) {
+export function ReservationImportEmailViewButton({
+  reservationId,
+  showLabel = false,
+}: {
+  reservationId: string
+  showLabel?: boolean
+}) {
   const locale = useLocale()
   const overlayZIndex = useReservationFormChildOverlayZIndex(1300)
   const isEn = locale.startsWith('en')
@@ -184,11 +190,12 @@ export function ReservationImportEmailViewButton({ reservationId }: { reservatio
       <button
         type="button"
         onClick={handleOpen}
-        className="inline-flex shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-1.5 text-gray-700 transition-colors hover:bg-gray-100"
+        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-1.5 text-gray-700 transition-colors hover:bg-gray-100"
         title={labels.button}
         aria-label={labels.button}
       >
-        <MailOpen className="h-4 w-4" />
+        <MailOpen className="h-4 w-4 shrink-0" />
+        {showLabel ? <span>{labels.button}</span> : null}
       </button>
       {modal}
     </>

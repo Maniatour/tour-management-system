@@ -204,6 +204,60 @@ async function bulkUpdateChatRoomsActive(
   return { error: null }
 }
 
+type TourStaffNameLookup = {
+  email: string
+  name: string
+}
+
+/** team.email 조회. RLS/JWT로 SELECT가 비면 DEFINER RPC로 폴백. 0건은 에러가 아님. */
+async function fetchTourStaffNameByEmail(
+  email: string | null | undefined
+): Promise<TourStaffNameLookup | null> {
+  const value = String(email || '').trim()
+  if (!value) return null
+
+  const fallback: TourStaffNameLookup = { email: value, name: value }
+
+  try {
+    const { data: directData, error: directError } = await supabase
+      .from('team')
+      .select('email, name_ko')
+      .eq('email', value)
+      .maybeSingle()
+
+    if (!directError && directData) {
+      return {
+        email: (directData as { email: string }).email,
+        name: (directData as { name_ko?: string; email: string }).name_ko || (directData as { email: string }).email
+      }
+    }
+
+    const { data: rpcData, error: rpcError } = await supabase.rpc('get_team_member_info', {
+      p_email: value
+    })
+    const rpcRow = Array.isArray(rpcData) ? rpcData[0] : rpcData
+    if (!rpcError && rpcRow) {
+      return {
+        email: rpcRow.email || value,
+        name: rpcRow.name_ko || rpcRow.email || value
+      }
+    }
+
+    if (directError || rpcError) {
+      console.error('Team member lookup failed:', {
+        email: value,
+        directError: directError?.message ?? directError,
+        rpcError: rpcError?.message ?? rpcError
+      })
+    }
+
+    return fallback
+  } catch (error) {
+    console.error('Error fetching team member info:', error)
+    return fallback
+  }
+}
+
 interface TourInfo {
   id: string
   product_id: string
@@ -241,6 +295,7 @@ interface TourInfo {
       hotel: string
       pick_up_location: string
     }
+    tour_language?: string | null
           customer?: {
             id?: string
             name: string
@@ -1390,104 +1445,12 @@ export default function ChatManagementPage() {
       }
 
       // 2.5단계: 가이드와 어시스턴트 정보 가져오기 (team 테이블에서 name_ko 조회)
-      let tourGuideData = null
-      let assistantData = null
-
-      if ((tourData as { tour_guide_id?: string }).tour_guide_id) {
-        try {
-          // 먼저 직접 조회 시도 (더 안전한 방식)
-          const { data: directGuide, error: directError } = await supabase
-            .from('team')
-            .select('email, name_ko')
-            .eq('email', (tourData as { tour_guide_id: string }).tour_guide_id)
-            .maybeSingle()
-
-          if (!directError && directGuide) {
-            tourGuideData = {
-              email: (directGuide as { email: string }).email,
-              name: (directGuide as { name_ko?: string; email: string }).name_ko || (directGuide as { email: string }).email
-            }
-          } else {
-            // 직접 조회 실패 시 RPC 함수 시도 (fallback)
-            console.log('Direct query failed, trying RPC function...', directError)
-            
-            const { data: guideData, error: guideError } = await supabase
-              .from('team')
-              .select('email, name_ko')
-              .eq('email', (tourData as { tour_guide_id: string }).tour_guide_id)
-              .maybeSingle()
-
-            if (!guideError && guideData) {
-              tourGuideData = {
-                email: (guideData as { email: string }).email,
-                name: (guideData as { name_ko?: string; email: string }).name_ko || (guideData as { email: string }).email
-              }
-            } else {
-              console.error('Both direct query and RPC failed:', { directError, guideError })
-              // team 테이블에서 찾을 수 없는 경우 이메일을 이름으로 사용
-              tourGuideData = {
-                email: (tourData as { tour_guide_id: string }).tour_guide_id,
-                name: (tourData as { tour_guide_id: string }).tour_guide_id
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching guide info:', error)
-          // 오류 발생 시 이메일을 이름으로 사용
-          tourGuideData = {
-            email: (tourData as { tour_guide_id: string }).tour_guide_id,
-            name: (tourData as { tour_guide_id: string }).tour_guide_id
-          }
-        }
-      }
-
-      if ((tourData as { assistant_id?: string }).assistant_id) {
-        try {
-          // 먼저 직접 조회 시도 (더 안전한 방식)
-          const { data: directAssistant, error: directError } = await supabase
-            .from('team')
-            .select('email, name_ko')
-            .eq('email', (tourData as { assistant_id: string }).assistant_id)
-            .maybeSingle()
-
-          if (!directError && directAssistant) {
-            assistantData = {
-              email: (directAssistant as { email: string }).email,
-              name: (directAssistant as { name_ko?: string; email: string }).name_ko || (directAssistant as { email: string }).email
-            }
-          } else {
-            // 직접 조회 실패 시 RPC 함수 시도 (fallback)
-            console.log('Direct query failed, trying RPC function...', directError)
-            
-            const { data: assistantRpcData, error: assistantError } = await supabase
-              .from('team')
-              .select('email, name_ko')
-              .eq('email', (tourData as { assistant_id: string }).assistant_id)
-              .maybeSingle()
-
-            if (!assistantError && assistantRpcData) {
-              assistantData = {
-                email: (assistantRpcData as { email: string }).email,
-                name: (assistantRpcData as { name_ko?: string; email: string }).name_ko || (assistantRpcData as { email: string }).email
-              }
-            } else {
-              console.error('Both direct query and RPC failed:', { directError, assistantError })
-              // team 테이블에서 찾을 수 없는 경우 이메일을 이름으로 사용
-              assistantData = {
-                email: (tourData as { assistant_id: string }).assistant_id,
-                name: (tourData as { assistant_id: string }).assistant_id
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching assistant info:', error)
-          // 오류 발생 시 이메일을 이름으로 사용
-          assistantData = {
-            email: (tourData as { assistant_id: string }).assistant_id,
-            name: (tourData as { assistant_id: string }).assistant_id
-          }
-        }
-      }
+      const tourGuideData = await fetchTourStaffNameByEmail(
+        (tourData as { tour_guide_id?: string }).tour_guide_id
+      )
+      const assistantData = await fetchTourStaffNameByEmail(
+        (tourData as { assistant_id?: string }).assistant_id
+      )
 
       // 3단계: 예약 정보 가져오기 (reservation_ids 사용 - 투어 상세 페이지와 동일)
       const assignedReservationIds = (tourData as { reservation_ids?: string[] | string }).reservation_ids || []
@@ -1527,7 +1490,7 @@ export default function ChatManagementPage() {
       }
 
       // 4단계: 고객 정보 가져오기 (예약이 있는 경우에만)
-      let customersData: Array<{ id: string; name: string; email: string; phone?: string }> = []
+      let customersData: Array<{ id: string; name: string; email: string; phone?: string; language?: string }> = []
       if (reservationsData && reservationsData.length > 0) {
         const customerIds = reservationsData.map((r: Record<string, unknown>) => r.customer_id as string).filter(Boolean) as string[]
         if (customerIds.length > 0) {
@@ -1537,11 +1500,12 @@ export default function ChatManagementPage() {
             .in('id', customerIds)
 
           if (!customersError) {
-            customersData = (customers || []).map((c: { id: string; name: string; email: string | null; phone?: string | null }) => ({
+            customersData = (customers || []).map((c: { id: string; name: string; email: string | null; phone?: string | null; language?: string | null }) => ({
               id: c.id,
               name: c.name,
               email: c.email ?? '',
-              ...(c.phone != null && c.phone !== '' ? { phone: c.phone } : {})
+              ...(c.phone != null && c.phone !== '' ? { phone: c.phone } : {}),
+              ...(c.language != null && String(c.language).trim() !== '' ? { language: String(c.language) } : {}),
             }))
           }
         }
@@ -1656,6 +1620,7 @@ export default function ChatManagementPage() {
           pickup_hotel: trimmedHotelId || undefined,
           pickup_time: (reservation.pickup_time && typeof reservation.pickup_time === 'string') ? reservation.pickup_time.trim() : undefined,
           pickup_notification_sent: reservation.pickup_notification_sent as boolean || false,
+          tour_language: (reservation.tour_language as string | null | undefined) ?? null,
           pickup_hotel_info: pickupHotel ? {
             hotel: pickupHotel.hotel,
             pick_up_location: pickupHotel.pick_up_location
@@ -3122,7 +3087,8 @@ export default function ChatManagementPage() {
                     children: res.child || 0,
                     infants: res.infant || 0,
                     tour_date: tourInfo.tour_date || null,
-                    pickup_notification_sent: res.pickup_notification_sent || false
+                    pickup_notification_sent: res.pickup_notification_sent || false,
+                    tour_language: res.tour_language || null,
                   }
                 })}
                 pickupHotels={pickupHotels}

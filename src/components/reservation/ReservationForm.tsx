@@ -33,6 +33,10 @@ import { DIALOG_Z_INDEX, childModalZIndex, type DialogStackLevel } from '@/lib/d
 import { ResizableModalFrame } from '@/components/ui/ResizableModalFrame'
 import { ReservationFormModalStackProvider } from '@/components/reservation/ReservationFormModalStackContext'
 import {
+  ReservationFormMobileChrome,
+  ReservationFormMobileFooter,
+} from '@/components/reservation/ReservationFormMobileChrome'
+import {
   QuickPaymentRequestModal,
   type QuickPaymentFormInitials,
 } from '@/components/customer/QuickPaymentRequestForm'
@@ -7177,20 +7181,155 @@ export default function ReservationForm({
   const effectiveModalRectStorageKey =
     modalRectStorageKey ?? (isModal ? RESERVATION_EDIT_MODAL_RECT_KEY : undefined)
   const useResizableModal = isModal && Boolean(effectiveModalRectStorageKey)
+  const mobileCardClass = isModal
+    ? ' max-lg:bg-white max-lg:rounded-2xl max-lg:border-slate-200 max-lg:shadow-sm max-lg:p-4 max-lg:scroll-mt-40'
+    : ''
+  const mobileHeadingClass = isModal
+    ? ' max-lg:text-base max-lg:font-semibold max-lg:tracking-tight max-lg:text-slate-900 max-lg:mb-3 max-lg:pb-3 max-lg:border-b max-lg:border-slate-100'
+    : ''
+  const mobileCompactFieldClass = isModal
+    ? ' max-lg:[&_input:not([type=checkbox]):not([type=radio]):not([type=hidden])]:!h-8 max-lg:[&_input:not([type=checkbox]):not([type=radio]):not([type=hidden])]:min-h-0 max-lg:[&_input:not([type=checkbox]):not([type=radio]):not([type=hidden])]:py-0 max-lg:[&_input:not([type=checkbox]):not([type=radio]):not([type=hidden])]:text-xs max-lg:[&_select]:!h-8 max-lg:[&_select]:min-h-0 max-lg:[&_select]:py-0 max-lg:[&_select]:text-xs max-lg:[&_textarea]:min-h-[3.25rem] max-lg:[&_textarea]:py-1.5 max-lg:[&_textarea]:text-xs'
+    : ''
+  const mobileSections = [
+    { id: 'customer-section', label: locale === 'en' ? 'Customer' : '고객' },
+    { id: 'reservation-info-section', label: locale === 'en' ? 'Booking' : '예약' },
+    { id: 'pricing-section', label: locale === 'en' ? 'Pricing' : '가격' },
+    ...(reservation && !isImportMode && effectiveReservationId
+      ? [
+          { id: 'options-section', label: locale === 'en' ? 'Options' : '옵션' },
+          { id: 'payment-section', label: locale === 'en' ? 'Payments' : '입금' },
+          { id: 'expense-section', label: locale === 'en' ? 'Expenses' : '지출' },
+          { id: 'assigned-tour-section', label: locale === 'en' ? 'Tour' : '투어' },
+        ]
+      : []),
+    ...(reservation && effectiveReservationId
+      ? [{ id: 'follow-up-section', label: locale === 'en' ? 'Follow-up' : '팔로업' }]
+      : []),
+  ]
+  const saveButtonLabel = !isNewReservation && reservation?.id && !pricingLoadComplete
+    ? '가격 로딩 중...'
+    : isSubmitting
+      ? tCommon('saving') || '저장 중...'
+      : reservation
+        ? tCommon('save')
+        : tCommon('add')
+  const saveButtonDisabled = importSubmitDisabled || isSubmitting || (!isNewReservation && !!reservation?.id && !pricingLoadComplete)
+  const saveButtonTitle = importSubmitDisabled
+    ? '이미 처리된 예약 가져오기 항목은 저장할 수 없습니다.'
+    : !isNewReservation && reservation?.id && !pricingLoadComplete
+      ? '가격 정보 로딩 중입니다. 잠시 후 저장해 주세요.'
+      : undefined
+  const handleDeleteReservation = () => {
+    if (!reservation) return
+    if (confirm(t('deleteConfirm'))) {
+      onDelete(reservation.id)
+      onCancel()
+    }
+  }
   const shellClassName = useResizableModal
-    ? 'flex h-full min-h-0 w-full flex-col overflow-y-auto bg-white p-0 sm:p-4'
+    ? 'flex h-full min-h-0 w-full flex-col overflow-hidden bg-white p-0 lg:overflow-y-auto lg:p-4'
     : isModal
-      ? 'reservation-form-modal-shell bg-white rounded-none sm:rounded-lg p-0 sm:p-4 w-full max-w-full h-full max-h-full max-lg:h-[100dvh] max-lg:max-h-[100dvh] max-lg:flex max-lg:flex-col max-lg:overflow-hidden sm:w-[min(90vw,1400px)] sm:max-h-[90vh] lg:block lg:overflow-y-auto'
+      ? 'reservation-form-modal-shell bg-white rounded-none lg:rounded-lg p-0 lg:p-4 w-full max-w-full h-full max-h-full max-lg:h-[100dvh] max-lg:max-h-[100dvh] max-lg:flex max-lg:flex-col max-lg:overflow-hidden sm:w-[min(90vw,1400px)] sm:max-h-[90vh] lg:block lg:overflow-y-auto'
       : 'bg-white rounded-lg p-2 sm:p-4 w-full min-h-0 flex-1 flex flex-col overflow-hidden'
 
   const formShell = (
     <ReservationFormModalStackProvider parentZIndex={resolvedModalZIndex}>
     <>
     <div className={shellClassName}>
-        {/* 헤더: 모바일에서 스티키, 데스크톱 기존 */}
+        {isModal ? (
+          <ReservationFormMobileChrome
+            title={formTitleOverride ?? (isNewReservation ? t('form.title') : (reservation ? t('form.editTitle') : t('form.title')))}
+            status={formData.status}
+            statusDisabled={isDateChangedReservationStatus(formData.status)}
+            statusOptions={reservationStatusSelectOptions(formData.status).map((opt) => ({
+              value: opt.value,
+              label: t(opt.labelKey),
+            }))}
+            onStatusChange={(nextStatus) =>
+              setFormData((prev: any) => ({ ...prev, status: nextStatus }))
+            }
+            onClose={handleCancelWithDraftAbandon}
+            sections={mobileSections}
+            moreActions={
+              <>
+                <p>작업</p>
+                {reservation?.id && !isNewReservation ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowEditHistoryModal(true)}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-700"
+                  >
+                    <History className="h-3.5 w-3.5 shrink-0" />
+                    {locale === 'en' ? 'Edit history' : '수정 이력'}
+                  </button>
+                ) : null}
+                {reservation?.id && !isNewReservation && !isImportMode ? (
+                  <ReservationImportEmailViewButton reservationId={reservation.id} showLabel />
+                ) : null}
+                {reservation?.id && !isNewReservation && !isImportMode ? (
+                  <button
+                    type="button"
+                    onClick={openQuickPayment}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 text-teal-700"
+                  >
+                    <CreditCard className="h-3.5 w-3.5 shrink-0" />
+                    {locale === 'en' ? 'Quick Payment' : '빠른 금액 청구'}
+                  </button>
+                ) : null}
+                {!isNewReservation && reservation?.id && !isImportMode && !isDateChangedReservationStatus(formData.status) ? (
+                  <button
+                    type="button"
+                    onClick={() => setNoShowDateChangeOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white text-gray-700"
+                  >
+                    <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+                    {locale === 'en' ? 'No-show date change' : '노쇼 날짜 변경'}
+                  </button>
+                ) : null}
+                {!isNewReservation && reservation?.id && !isImportMode ? (
+                  <AdminPageHubManualButton
+                    slug={NO_SHOW_DATE_CHANGE_MANUAL_SLUG}
+                    fallbackDoc={noShowDateChangeManualDocument}
+                    fallbackTitle={noShowDateChangeManualTitles}
+                    storageKey="no-show-date-change-manual"
+                    className="!h-11 !w-full justify-start rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-800"
+                    showLabel
+                  />
+                ) : null}
+                {onViewCustomer ? (
+                  <button
+                    type="button"
+                    onClick={onViewCustomer}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-purple-200 bg-purple-50 text-purple-700"
+                  >
+                    <Eye className="h-3.5 w-3.5 shrink-0" />
+                    고객 보기
+                  </button>
+                ) : null}
+                {reservation && titleAction ? (
+                  <>
+                    <p>연락</p>
+                    <div className="flex w-full flex-col gap-2 [&>div]:flex [&>div]:w-full [&>div]:flex-col [&>div]:flex-nowrap [&>div]:items-stretch [&>div]:gap-2 [&>div>div]:flex [&>div>div]:w-full [&>div>div]:flex-col [&>div>div]:gap-2">
+                      {titleAction}
+                    </div>
+                  </>
+                ) : null}
+                <p>이동</p>
+                <button
+                  type="button"
+                  onClick={() => window.history.back()}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white text-gray-700"
+                >
+                  목록으로
+                </button>
+              </>
+            }
+          />
+        ) : null}
+        {/* 헤더: 데스크톱 기존 / 페이지 레이아웃 */}
         <div
           data-dialog-drag-handle={useResizableModal ? true : undefined}
-          className={`flex flex-col sm:flex-row sm:justify-between sm:items-center flex-shrink-0 p-3 sm:p-0 sm:mb-2 sm:space-y-0 space-y-3 border-b border-gray-200 max-lg:bg-white max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:shadow-sm${useResizableModal ? ' sm:cursor-grab sm:active:cursor-grabbing' : ''}`}
+          className={`${isModal ? 'hidden lg:flex' : 'flex'} flex-col sm:flex-row sm:justify-between sm:items-center flex-shrink-0 p-3 sm:p-0 sm:mb-2 sm:space-y-0 space-y-3 border-b border-gray-200 max-lg:bg-white max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:shadow-sm${useResizableModal ? ' sm:cursor-grab sm:active:cursor-grabbing' : ''}`}
         >
           <div className="flex items-center justify-between gap-2 min-w-0">
             <div className="flex items-center gap-2 min-w-0">
@@ -7378,7 +7517,7 @@ export default function ReservationForm({
           }}
           className="flex-1 min-h-0 flex flex-col overflow-hidden"
         >
-          <div className={`flex-1 min-h-0 overflow-x-hidden p-3 sm:p-0 sm:space-y-6 ${isModal ? 'overflow-y-auto' : 'lg:overflow-hidden lg:flex lg:flex-col lg:min-h-0'} ${isModal ? '' : 'lg:pb-0'} pb-2`}>
+          <div className={`flex-1 min-h-0 overflow-x-hidden p-3 sm:p-0 sm:space-y-6 ${isModal ? `overflow-y-auto max-lg:px-4 max-lg:py-4 max-lg:space-y-4${mobileCompactFieldClass}` : 'lg:overflow-hidden lg:flex lg:flex-col lg:min-h-0'} ${isModal ? '' : 'lg:pb-0'} pb-2`}>
           {(isDateChangedReservationStatus(formData.status) || reservation?.dateChangeLiveReservationId || reservation?.dateChangePlaceholderReservationId) && (
             <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-950 flex flex-wrap items-center gap-2">
               {isDateChangedReservationStatus(formData.status) ? (
@@ -7417,9 +7556,9 @@ export default function ReservationForm({
           <div className={`grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-4 lg:grid-rows-1 lg:min-h-0 ${isModal ? 'lg:h-auto' : 'lg:flex-1 lg:h-[calc(100vh-var(--header-height,4rem)-6rem)] lg:max-h-[calc(100vh-var(--header-height,4rem)-6rem)]'}`}>
             {/* 1열: 고객 정보 + Follow up */}
             <div className="lg:col-span-1 lg:flex lg:flex-col lg:gap-4 lg:min-h-0 lg:h-full lg:overflow-y-auto max-lg:contents">
-            <div id="customer-section" className={`space-y-4 max-lg:overflow-y-auto lg:overflow-visible border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-1 lg:h-auto lg:flex-none`}>
+            <div id="customer-section" className={`space-y-4 max-lg:overflow-y-visible lg:overflow-visible border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-1 lg:h-auto lg:flex-none${mobileCardClass}`}>
               <div>
-                <h3 className="text-sm font-medium text-gray-900 mb-2">
+                <h3 className={`text-sm font-medium text-gray-900 mb-2${mobileHeadingClass}`}>
                   고객 정보
                 </h3>
                 {/* 고객 검색 */}
@@ -7645,7 +7784,7 @@ export default function ReservationForm({
 
             {/* Follow up - 1열 고객 정보 아래 (상세 페이지·예약 수정 모달 공통) */}
             {reservation && effectiveReservationId && (
-              <div className="max-lg:order-9 max-lg:mt-4 lg:shrink-0">
+              <div className={`max-lg:order-9 max-lg:mt-0 lg:shrink-0${isModal ? ' max-lg:scroll-mt-36' : ''}`}>
                 <ReservationFollowUpSection
                   reservationId={effectiveReservationId}
                   status={formData.status as string}
@@ -7670,8 +7809,8 @@ export default function ReservationForm({
               </div>
             )}
 
-            {/* 편집/취소/삭제 버튼 - Follow up 아래 (1열 하단) */}
-            <div className="w-full border border-gray-200 rounded-xl p-3 bg-white shadow-sm max-lg:order-7 flex-shrink-0">
+            {/* 편집/취소/삭제 버튼 - Follow up 아래 (1열 하단). 모바일 모달은 하단 고정 바로 대체 */}
+            <div className={`w-full border border-gray-200 rounded-xl p-3 bg-white shadow-sm max-lg:order-7 flex-shrink-0${isModal ? ' max-lg:hidden' : ''}`}>
               <div className="flex flex-row items-center gap-2">
                 <button
                   type="submit"
@@ -7718,10 +7857,10 @@ export default function ReservationForm({
               {/* 2열: 예약 정보 + 연결된 투어 */}
               <div className="lg:flex lg:flex-col lg:gap-4 lg:min-h-0 max-lg:contents">
               {/* 예약 정보 (투어 정보, 참가자) */}
-              <div className="space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:pt-4 sm:px-4 sm:pb-1 bg-gray-50/50 max-lg:order-2 lg:min-h-0 lg:flex-none lg:h-auto">
-                <div className="flex items-center justify-between gap-2 mb-2 lg:mb-0">
+              <div id="reservation-info-section" className={`space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:pt-4 sm:px-4 sm:pb-1 bg-gray-50/50 max-lg:order-2 lg:min-h-0 lg:flex-none lg:h-auto${mobileCardClass}`}>
+                <div className={`flex items-center justify-between gap-2 mb-2 lg:mb-0${isModal ? ' max-lg:flex-col max-lg:items-stretch max-lg:gap-3' : ''}`}>
                   <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                    <h3 className="text-sm font-medium text-gray-900 shrink-0">
+                    <h3 className={`text-sm font-medium text-gray-900 shrink-0${mobileHeadingClass}`}>
                       예약 정보
                     </h3>
                     <label className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-violet-50 border border-violet-200 cursor-pointer hover:bg-violet-100 focus-within:ring-2 focus-within:ring-violet-400 focus-within:ring-offset-1">
@@ -7754,8 +7893,8 @@ export default function ReservationForm({
                     )}
                   </div>
                   <div className="flex items-center justify-end gap-2 min-w-0 flex-shrink-0 ml-auto">
-                    {/* 모바일/태블릿 전용: 타이틀과 같은 줄 오른쪽 끝 정렬 */}
-                    <div className="hidden max-lg:block lg:hidden flex-shrink-0">
+                    {/* 페이지 레이아웃 모바일: 타이틀과 같은 줄. 모달은 상단 상태 셀렉트로 대체 */}
+                    <div className={`hidden max-lg:block lg:hidden flex-shrink-0${isModal ? ' max-lg:hidden' : ''}`}>
                       <label className="sr-only" htmlFor="reservation-status-section">{t('form.status')}</label>
                       <select
                         id="reservation-status-section"
@@ -7887,7 +8026,7 @@ export default function ReservationForm({
               )}
               {reservation && !isImportMode && effectiveReservationId && (
                 <>
-                  <div id="options-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">
+                  <div id="options-section" className={`border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto${mobileCardClass}`}>
                     <ReservationOptionsSection
                       reservationId={effectiveReservationId}
                       onTotalPriceChange={setReservationOptionsTotalPrice}
@@ -7899,7 +8038,7 @@ export default function ReservationForm({
                       addOptionModalZIndex={childOverlayZIndex}
                     />
                   </div>
-                  <div id="payment-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">
+                  <div id="payment-section" className={`border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto${mobileCardClass}`}>
                     <PaymentRecordsList
                       reservationId={effectiveReservationId}
                       customerName={customers.find(c => c.id === formData.customerId)?.name || 'Unknown'}
@@ -7909,7 +8048,7 @@ export default function ReservationForm({
                       suggestedCancelRefundAmountUsd={Number(formData.depositAmount) || 0}
                     />
                   </div>
-                  <div id="expense-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">
+                  <div id="expense-section" className={`border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto${mobileCardClass}`}>
                     <ReservationExpenseManager
                       key={
                         isStubReservationOnlyId
@@ -7932,7 +8071,7 @@ export default function ReservationForm({
                         : {})}
                     />
                   </div>
-                  <div id="assigned-tour-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">
+                  <div id="assigned-tour-section" className={`border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto${mobileCardClass}`}>
                     <TourConnectionSection
                       reservation={reservation}
                       variant="assignedSummary"
@@ -7953,9 +8092,9 @@ export default function ReservationForm({
             </div>
 
             {/* 가격 정보 - 기존 상품/채널 선택 컬럼 자리 (제목은 PricingSection에서 버튼과 같은 줄로 표시) */}
-            <div id="pricing-section" className={`col-span-1 lg:col-span-2 space-y-2 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-3 ${isModal ? 'lg:h-auto' : 'lg:min-h-0 lg:flex-1'}`}>
-              <div className="mb-2 pb-2 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xs text-gray-500">
+            <div id="pricing-section" className={`col-span-1 lg:col-span-2 space-y-2 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-3 ${isModal ? 'lg:h-auto' : 'lg:min-h-0 lg:flex-1'}${mobileCardClass}`}>
+              <div className={`mb-2 pb-2 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2${isModal ? ' max-lg:border-slate-100' : ''}`}>
+                <div className={`text-xs text-gray-500${isModal ? ' max-lg:hidden' : ''}`}>
                   {reservation?.id ? (
                     <>
                       reservation_pricing id: <span className="font-mono text-gray-700">{reservationPricingId ?? '(아직 저장되지 않음)'}</span>
@@ -8086,6 +8225,19 @@ export default function ReservationForm({
           </div>
           </div>
         </form>
+        {isModal ? (
+          <ReservationFormMobileFooter
+            formId="reservation-edit-form"
+            saveLabel={saveButtonLabel}
+            saveDisabled={saveButtonDisabled}
+            cancelLabel={tCommon('cancel')}
+            onCancel={handleCancelWithDraftAbandon}
+            {...(saveButtonTitle ? { saveTitle: saveButtonTitle } : {})}
+            {...(reservation && !(isImportMode && importSubmitDisabled)
+              ? { deleteLabel: tCommon('delete'), onDelete: handleDeleteReservation }
+              : {})}
+          />
+        ) : null}
       </div>
 
       {/* 고객 추가 모달 */}
@@ -8453,7 +8605,9 @@ export default function ReservationForm({
       defaultWidth={modalDefaultWidth ?? RESERVATION_EDIT_MODAL_DEFAULT_SIZE.width}
       defaultHeight={modalDefaultHeight ?? RESERVATION_EDIT_MODAL_DEFAULT_SIZE.height}
       zIndex={resolvedModalZIndex}
-      className="reservation-form-modal-shell flex flex-col gap-0 overflow-hidden"
+      fullViewportMaxWidth={1023}
+      coverAdminChromeOnMobile
+      className="reservation-form-modal-shell flex flex-col gap-0 overflow-hidden max-lg:rounded-none max-lg:border-0"
     >
       {formShell}
     </ResizableModalFrame>

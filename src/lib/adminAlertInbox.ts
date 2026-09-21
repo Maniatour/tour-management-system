@@ -14,6 +14,7 @@ export type AdminAlertKind =
   | 'op_todo'
   | 'weather_reminder'
   | 'goblin_narration'
+  | 'waiver_print_reminder'
   | 'competitor_price'
 
 export type AdminAlertInboxDraft = {
@@ -54,6 +55,7 @@ const KINDS = new Set<AdminAlertKind>([
   'op_todo',
   'weather_reminder',
   'goblin_narration',
+  'waiver_print_reminder',
   'competitor_price',
 ])
 
@@ -234,6 +236,8 @@ export function adminAlertKindLabel(kind: AdminAlertKind, isKo: boolean): string
       return isKo ? '날씨' : 'Weather'
     case 'goblin_narration':
       return isKo ? '나레이션' : 'Narration'
+    case 'waiver_print_reminder':
+      return isKo ? '면책 인쇄' : 'Waiver print'
     case 'competitor_price':
       return isKo ? '경쟁사 시세' : 'Competitor price'
   }

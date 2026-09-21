@@ -118,14 +118,14 @@ export default function TourHeader({
       <div
         className={
           variant === 'modal-toolbar'
-            ? 'px-3 py-2'
+            ? 'px-2 py-1.5 sm:px-3 sm:py-2'
             : embeddedInModal
               ? 'px-3 py-2 sm:px-4'
               : 'px-2 py-2 sm:px-6 sm:py-4'
         }
       >
         {variant === 'modal-toolbar' ? (
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-1.5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
               <GripVertical
                 className="hidden h-4 w-4 shrink-0 text-gray-400 sm:block"
@@ -265,7 +265,7 @@ export default function TourHeader({
                   <DollarSign className="h-4 w-4" />
                 </button>
               ) : null}
-              <div className="max-w-[88px] flex-shrink-0 sm:max-w-none">
+              <div className="hidden max-w-[88px] flex-shrink-0 lg:block lg:max-w-none">
                 <TourSunriseTime tourDate={tour.tour_date} />
               </div>
             </div>
@@ -287,6 +287,8 @@ export default function TourHeader({
               getAssignmentStatusColor={getAssignmentStatusColor}
               getAssignmentStatusText={getAssignmentStatusText}
               locale={params.locale}
+              showSunrise
+              hideFromBreakpoint="lg"
               {...(onEditClick ? { onEditClick } : {})}
               {...(onCopyTour ? { onCopyTour } : {})}
               {...(onDeleteTour ? { onDeleteTour } : {})}

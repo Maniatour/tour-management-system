@@ -30,12 +30,14 @@ export default function AdminWaiversPage() {
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
 
-  const load = useCallback(async (opts?: { today?: boolean }) => {
+  const load = useCallback(async (opts?: { today?: boolean; date?: string }) => {
     setLoading(true)
+    const nextDate = opts?.date ?? tourDate
+    if (opts?.date) setTourDate(opts.date)
     const sp = new URLSearchParams()
     if (opts?.today) sp.set('today', '1')
     if (q) sp.set('q', q)
-    if (tourDate && !opts?.today) sp.set('tourDate', tourDate)
+    if (nextDate && !opts?.today) sp.set('tourDate', nextDate)
     const res = await fetch(`/api/admin/waivers?${sp.toString()}`)
     const data = await res.json()
     setRows(data.rows ?? [])
@@ -43,7 +45,12 @@ export default function AdminWaiversPage() {
   }, [q, tourDate])
 
   useEffect(() => {
-    void load({ today: true })
+    const date =
+      typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('tourDate')?.trim() || ''
+        : ''
+    if (date) void load({ date })
+    else void load({ today: true })
     // Initial operational view only — search is explicit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

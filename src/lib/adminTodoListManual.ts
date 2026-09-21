@@ -391,6 +391,35 @@ export const ADMIN_TODO_LIST_MANUAL_SECTIONS: AdminTodoListManualSection[] = [
     completeEn: 'Place bento orders, then mark each tour done.',
   },
   {
+    id: 'review-classification',
+    titleKo: '리뷰 분류',
+    titleEn: 'Review classification',
+    categoryKo: '일일 · 고정 패널',
+    categoryEn: 'Daily · built-in panel',
+    departmentKo: 'Office',
+    departmentEn: 'Office',
+    filterLinesKo: [
+      '구글: 라스베가스 오후 9시 자동 가져오기 이후, 투어가 연결되지 않은 리뷰(8월 이후, 가이드 평점 미반영 제외).',
+      'GetYourGuide · Viator · Klook · KKDay: 마지막 업데이트 = 가져오기와 리뷰 없음 클릭 중 더 최근 시각.',
+      '오늘 가져오거나 리뷰 없음을 누르면 완료. 다음 날에는 그 시각이 마지막 업데이트로 보이며 다시 확인.',
+    ],
+    filterLinesEn: [
+      'Google: reviews from the 9 PM Las Vegas auto-import with no tour assigned (from August onward; exclude-staff-rating skipped).',
+      'GetYourGuide · Viator · Klook · KKDay: last update is the later of import time and No review click.',
+      'Done after today’s import or No review. Next day shows that timestamp and asks for another check.',
+    ],
+    workflowLinesKo: [
+      '구글 리뷰를 눌러 모달에서 상품·투어를 바로 분류합니다.',
+      'OTA 채널에 새 리뷰가 없으면 리뷰 없음을 누릅니다. 마지막 업데이트에 그 시각이 반영됩니다.',
+    ],
+    workflowLinesEn: [
+      'Tap a Google review to classify product and tour in the modal.',
+      'If an OTA channel has no new reviews, tap No review. That time becomes the last update.',
+    ],
+    completeKo: '투어 미선택 구글 리뷰가 없고, 수동 채널이 오늘 가져오기·리뷰없음 처리되면 자동 완료.',
+    completeEn: 'Auto-completes when no Google reviews lack a tour and every manual channel is imported or marked no-review today.',
+  },
+  {
     id: 'custom-db-todos',
     titleKo: '사용자 정의 Todo (DB)',
     titleEn: 'Custom todos (database)',

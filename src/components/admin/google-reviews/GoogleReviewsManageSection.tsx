@@ -36,7 +36,21 @@ type Props = {
 
 const STATUS_FILTERS = ['all', 'pending', 'approved', 'rejected', 'hidden'] as const
 
+type StatusFilter = (typeof STATUS_FILTERS)[number]
+
 const SORT_OPTIONS: AdminGoogleReviewListSort[] = ['imported_at', 'review_created_at']
+
+function defaultStatusFilter(
+  source: ReviewSource,
+  initialUnclassifiedOnly: boolean
+): StatusFilter {
+  if (initialUnclassifiedOnly || source === 'google') return 'all'
+  return 'pending'
+}
+
+function defaultUnclassifiedOnly(source: ReviewSource, initialUnclassifiedOnly: boolean): boolean {
+  return initialUnclassifiedOnly || source === 'google'
+}
 
 export default function GoogleReviewsManageSection({
   locale,
@@ -50,10 +64,12 @@ export default function GoogleReviewsManageSection({
 }: Props) {
   const isKo = locale === 'ko'
   const sourceLabel = getReviewSourceLabel(reviewSource, locale)
-  const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>(
-    initialUnclassifiedOnly ? 'all' : 'pending'
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() =>
+    defaultStatusFilter(reviewSource, initialUnclassifiedOnly)
   )
-  const [unclassifiedOnly, setUnclassifiedOnly] = useState(initialUnclassifiedOnly)
+  const [unclassifiedOnly, setUnclassifiedOnly] = useState(() =>
+    defaultUnclassifiedOnly(reviewSource, initialUnclassifiedOnly)
+  )
   const [sortBy, setSortBy] = useState<AdminGoogleReviewListSort>(() =>
     defaultAdminGoogleReviewListSort(reviewSource)
   )

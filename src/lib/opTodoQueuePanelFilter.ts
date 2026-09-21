@@ -20,6 +20,7 @@ const QUEUE_PANEL_TITLE_GROUPS: string[][] = [
   ['투어 정산', 'tour settlement'],
   ['예약 대행 관리', 'reservation agency management'],
   ['도시락 체크', 'bento check'],
+  ['리뷰 분류', 'review classification'],
 ]
 
 function normalizeTodoTitleKey(title: string): string {

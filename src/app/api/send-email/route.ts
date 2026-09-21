@@ -533,6 +533,7 @@ export function generateEmailContent(
           isEnglish,
           url: options.waiverCta.url,
           mode: options.waiverCta.mode,
+          signingClosed: options.waiverCta.signingClosed === true,
         })
       : ''
 

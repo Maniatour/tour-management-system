@@ -22,6 +22,9 @@ import {
 import { getPickupHotelNameById } from '@/lib/effectivePickupHotel'
 import { getPickupHotelPrimaryName } from '@/utils/pickupHotelUtils'
 import { SearchablePickupHotelSelect } from '@/components/SearchablePickupHotelSelect'
+import TourLanguageBadge from '@/components/reservation/TourLanguageBadge'
+import { getTourLanguageFlagCountryCode } from '@/lib/tourHighlightLanguages'
+import { isJapaneseLanguage, isKoreanLanguage } from '@/lib/reservationTourLanguage'
 import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
 
 interface PickupScheduleProps {
@@ -35,6 +38,8 @@ interface PickupScheduleProps {
     infants?: number | null
     tour_date?: string | null
     pickup_notification_sent?: boolean | null
+    tour_language?: string | null
+    tourLanguage?: string | null
   }>
   pickupHotels: Array<{
     id: string
@@ -188,26 +193,10 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
     .sort()
     .join(',')
 
-  // 언어를 국가 코드로 변환하는 함수
   const getLanguageFlag = (language: string | null | undefined): string => {
-    if (!language) return 'US'
-    const lang = language.toLowerCase()
-    if (lang === 'kr' || lang === 'ko' || lang === '한국어') return 'KR'
-    if (lang === 'en' || lang === '영어') return 'US'
-    if (lang === 'jp' || lang === '일본어') return 'JP'
-    if (lang === 'cn' || lang === '중국어') return 'CN'
-    if (lang === 'es' || lang === '스페인어') return 'ES'
-    if (lang === 'fr' || lang === '프랑스어') return 'FR'
-    if (lang === 'de' || lang === '독일어') return 'DE'
-    if (lang === 'it' || lang === '이탈리아어') return 'IT'
-    if (lang === 'pt' || lang === '포르투갈어') return 'PT'
-    if (lang === 'ru' || lang === '러시아어') return 'RU'
-    if (lang === 'th' || lang === '태국어') return 'TH'
-    if (lang === 'vi' || lang === '베트남어') return 'VN'
-    if (lang === 'id' || lang === '인도네시아어') return 'ID'
-    if (lang === 'ms' || lang === '말레이어') return 'MY'
-    if (lang === 'ph' || lang === '필리핀어') return 'PH'
-    return 'US' // 기본값
+    if (isKoreanLanguage(language)) return 'KR'
+    if (isJapaneseLanguage(language)) return 'JP'
+    return getTourLanguageFlagCountryCode(language)
   }
 
   // 예약별 거주 상태 정보 가져오기
@@ -684,10 +673,15 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
             {sortedReservations.map((reservation) => {
               const status = reservationResidentStatus[reservation.id]
               const statusIcon = getResidentStatusIcon(reservation.id)
+              const customerLanguage = reservation.customer_id && getCustomerLanguage
+                ? getCustomerLanguage(reservation.customer_id)
+                : ''
+              const customerFlagCode = getLanguageFlag(customerLanguage)
+              const tourLanguage = reservation.tour_language ?? reservation.tourLanguage
               
               return (
                 <div key={reservation.id} className="flex items-center justify-between p-2 border border-gray-200 rounded bg-white hover:border-gray-300 transition-colors">
-                  <div className="flex items-center space-x-1 text-xs">
+                  <div className="flex items-center space-x-1 text-xs min-w-0">
                     <span 
                       className="flex-shrink-0" 
                       style={{ 
@@ -703,23 +697,22 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                         {statusIcon}
                       </span>
                     )}
-                    {reservation.customer_id && getCustomerLanguage && (() => {
-                      const customerLanguage = getCustomerLanguage(reservation.customer_id)
-                      const flagCode = getLanguageFlag(customerLanguage)
-                      return (
-                        <ReactCountryFlag
-                          countryCode={flagCode}
-                          svg
-                          style={{
-                            width: '16px',
-                            height: '12px',
-                            borderRadius: '2px',
-                            marginRight: '6px'
-                          }}
-                        />
-                      )
-                    })()}
-                    <span className="text-gray-700 font-medium">{getCustomerName(reservation.customer_id || '')}</span>
+                    {reservation.customer_id && getCustomerLanguage && (
+                      <ReactCountryFlag
+                        countryCode={customerFlagCode}
+                        svg
+                        title="고객 언어"
+                        aria-label="고객 언어"
+                        style={{
+                          width: '16px',
+                          height: '12px',
+                          borderRadius: '2px',
+                          marginRight: '6px',
+                          flexShrink: 0,
+                        }}
+                      />
+                    )}
+                    <span className="text-gray-700 font-medium truncate">{getCustomerName(reservation.customer_id || '')}</span>
                     {isPickupRedirected(
                         reservation.pickup_hotel,
                         pickupHotelsForResolve,
@@ -737,7 +730,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                         </span>
                       )}
                   </div>
-                  <div className="flex items-center space-x-1 text-xs text-gray-500">
+                  <div className="flex items-center space-x-1 text-xs text-gray-500 shrink-0">
                     {status && (status.usResident > 0 || status.nonResident > 0 || status.nonResidentWithPass > 0) && (
                       <span className="text-gray-400">
                         ({status.usResident > 0 && <span className="text-green-600">{status.usResident}</span>}
@@ -747,30 +740,38 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                         {status.nonResidentWithPass > 0 && <span className="text-purple-600">{status.nonResidentWithPass}</span>})
                       </span>
                     )}
-                    <span>
-                      {(() => {
-                        // 필드명이 child/infant일 수도 있고 children/infants일 수도 있음
-                        const adults = reservation.adults || 0
-                        const children = (reservation.children || (reservation as any).child || 0) as number
-                        const infants = (reservation.infants || (reservation as any).infant || 0) as number
-                        const total = adults + children + infants
-                        
-                        // 성인만 있는 경우
-                        if (children === 0 && infants === 0) {
-                          return `${total}명`
-                        }
-                        
-                        // 아동이나 유아가 있는 경우: "총 인원, 아동X, 유아Y" 형식
-                        const detailParts: string[] = []
-                        if (children > 0) {
-                          detailParts.push(`아동${children}`)
-                        }
-                        if (infants > 0) {
-                          detailParts.push(`유아${infants}`)
-                        }
-                        
-                        return `총 ${total}명, ${detailParts.join(', ')}`
-                      })()}
+                    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                      <TourLanguageBadge
+                        tourLanguage={tourLanguage}
+                        customerLanguage={customerLanguage}
+                        locale={locale}
+                        compact
+                      />
+                      <span>
+                        {(() => {
+                          // 필드명이 child/infant일 수도 있고 children/infants일 수도 있음
+                          const adults = reservation.adults || 0
+                          const children = (reservation.children || (reservation as any).child || 0) as number
+                          const infants = (reservation.infants || (reservation as any).infant || 0) as number
+                          const total = adults + children + infants
+                          
+                          // 성인만 있는 경우
+                          if (children === 0 && infants === 0) {
+                            return `${total}명`
+                          }
+                          
+                          // 아동이나 유아가 있는 경우: "총 인원, 아동X, 유아Y" 형식
+                          const detailParts: string[] = []
+                          if (children > 0) {
+                            detailParts.push(`아동${children}`)
+                          }
+                          if (infants > 0) {
+                            detailParts.push(`유아${infants}`)
+                          }
+                          
+                          return `총 ${total}명, ${detailParts.join(', ')}`
+                        })()}
+                      </span>
                     </span>
                   </div>
                 </div>

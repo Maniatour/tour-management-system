@@ -4,6 +4,7 @@ import { Users, User, X } from 'lucide-react'
 import type { Participant as ChatParticipant } from '@/types/chat'
 import type { SupportedLanguage } from '@/lib/translation'
 import ChatGuideMemberManager from '@/components/chat/ChatGuideMemberManager'
+import ChatPresenceBadge from '@/components/chat/ChatPresenceBadge'
 import { countOnlineParticipants, isPresentInChat } from '@/lib/chatCustomerPresence'
 
 interface ChatSidebarProps {
@@ -54,13 +55,7 @@ function ParticipantRow({
           {isCustomer ? (isKo ? '고객' : 'Guest') : isKo ? '가이드' : 'Guide'}
         </p>
       </div>
-      <span
-        className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-          online ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-200 text-slate-600'
-        }`}
-      >
-        {online ? (isKo ? '채팅중' : 'In chat') : isKo ? '비활성' : 'Offline'}
-      </span>
+      <ChatPresenceBadge online={online} isKo={isKo} />
     </div>
   )
 }
@@ -105,8 +100,8 @@ export default function ChatSidebar({
         </div>
         <p className="text-xs text-gray-500 mt-1">
           {isKo
-            ? `채팅중 ${onlineCount}명 · 고객 ${customers.length}명`
-            : `${onlineCount} in chat · ${customers.length} guests`}
+            ? `활성 ${onlineCount}명 · 고객 ${customers.length}명`
+            : `${onlineCount} active · ${customers.length} guests`}
         </p>
       </div>
       <div className="flex-1 overflow-y-auto p-2 space-y-3">
@@ -152,7 +147,11 @@ export default function ChatSidebar({
       </div>
       {canManageMembers && roomId ? (
         <div className="flex-shrink-0">
-          <ChatGuideMemberManager roomId={roomId} selectedLanguage={selectedLanguage} />
+          <ChatGuideMemberManager
+            roomId={roomId}
+            selectedLanguage={selectedLanguage}
+            participants={participants}
+          />
         </div>
       ) : null}
     </div>

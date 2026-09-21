@@ -3,12 +3,25 @@
 import { useState, useEffect } from 'react'
 import { Sun } from 'lucide-react'
 
+function formatSunriseDisplay(sunriseTime: string, compact: boolean): string {
+  if (!compact) return sunriseTime
+  const parts = sunriseTime.trim().split(':')
+  if (parts.length >= 2) return `${parts[0]}:${parts[1]}`
+  return sunriseTime
+}
+
 interface TourSunriseTimeProps {
   tourDate?: string
   className?: string
+  /** 모바일 툴바용: HH:MM + 작은 패딩 */
+  compact?: boolean
 }
 
-export default function TourSunriseTime({ tourDate, className = '' }: TourSunriseTimeProps) {
+export default function TourSunriseTime({
+  tourDate,
+  className = '',
+  compact = false,
+}: TourSunriseTimeProps) {
   const [sunriseTime, setSunriseTime] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [hasEnvVars, setHasEnvVars] = useState(false)
@@ -54,11 +67,17 @@ export default function TourSunriseTime({ tourDate, className = '' }: TourSunris
     return null
   }
 
+  const shellClass = compact
+    ? `inline-flex h-7 items-center gap-0.5 rounded-md bg-yellow-50 px-1.5 text-yellow-700 ${className}`
+    : `flex items-center space-x-1 px-2 py-1 bg-yellow-50 text-yellow-700 rounded-lg min-w-0 max-w-full overflow-hidden ${className}`
+
   if (loading) {
     return (
-      <div className={`flex items-center space-x-1 px-2 py-1 bg-yellow-50 text-yellow-700 rounded-lg min-w-0 max-w-full overflow-hidden ${className}`}>
-        <Sun className="w-3 h-3 animate-pulse flex-shrink-0" />
-        <span className="text-xs font-mono truncate">--:--</span>
+      <div className={shellClass}>
+        <Sun className="h-3 w-3 flex-shrink-0 animate-pulse" />
+        <span className={`font-mono truncate ${compact ? 'text-[11px] leading-none' : 'text-xs'}`}>
+          --:--
+        </span>
       </div>
     )
   }
@@ -68,10 +87,12 @@ export default function TourSunriseTime({ tourDate, className = '' }: TourSunris
   }
 
   return (
-    <div className={`flex items-center space-x-1 px-2 py-1 bg-yellow-50 text-yellow-700 rounded-lg min-w-0 max-w-full overflow-hidden ${className}`}>
-      <Sun className="w-3 h-3 flex-shrink-0" />
-      <span className="text-xs font-mono font-medium truncate block min-w-0">
-        {sunriseTime}
+    <div className={shellClass}>
+      <Sun className="h-3 w-3 flex-shrink-0" />
+      <span
+        className={`font-mono font-medium truncate ${compact ? 'text-[11px] leading-none' : 'text-xs block min-w-0'}`}
+      >
+        {formatSunriseDisplay(sunriseTime, compact)}
       </span>
     </div>
   )

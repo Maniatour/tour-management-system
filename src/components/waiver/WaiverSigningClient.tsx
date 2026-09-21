@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import WaiverDocumentView from '@/components/waiver/WaiverDocumentView'
 import WaiverSignaturePad from '@/components/waiver/WaiverSignaturePad'
+import { hasHangul, isEnglishLegalName } from '@/lib/waiver/englishName'
 import { WAIVER_LOCALE_LABELS } from '@/lib/waiver/locales'
 import { getWaiverUi, waiverAcceptLabel, waiverLanguageNotice } from '@/lib/waiver/ui'
 import { WAIVER_LOCALES, type WaiverLocale } from '@/lib/waiver/types'
@@ -39,6 +40,7 @@ type Session = {
   participants: Participant[]
   completedCount: number
   requiredCount: number
+  signingClosed?: boolean
 }
 
 type Step = 'list' | 'form' | 'docs' | 'acks' | 'sign' | 'success'
@@ -136,6 +138,13 @@ export default function WaiverSigningClient({
     setLoadError(false)
   }, [preview, previewDocuments, previewSession])
 
+  useEffect(() => {
+    if (preview) return
+    if (session?.signingClosed && step !== 'list' && step !== 'success') {
+      setStep('list')
+    }
+  }, [preview, session?.signingClosed, step])
+
   const activeDocs = useMemo(() => docs.filter((d) => d.requiredForSigning), [docs])
   const current = session?.participants.find((p) => p.id === participantId) ?? null
 
@@ -160,6 +169,11 @@ export default function WaiverSigningClient({
   }
 
   function startParticipant(id: string) {
+    if (!preview && session?.signingClosed) {
+      setError(ui.signingClosedBody)
+      setStep('list')
+      return
+    }
     resetSensitiveState()
     setParticipantId(id)
     setStep('form')
@@ -208,6 +222,13 @@ export default function WaiverSigningClient({
     setSaving(false)
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
+      const code = typeof data.code === 'string' ? data.code : data.error
+      if (code === 'ONLINE_SIGNING_CLOSED') {
+        setError(ui.signingClosedBody)
+        setSession((prev) => (prev ? { ...prev, signingClosed: true } : prev))
+        setStep('list')
+        return
+      }
       setError(data.error || ui.errorGeneric)
       return
     }
@@ -234,6 +255,14 @@ export default function WaiverSigningClient({
   }
 
   const remaining = session.participants.filter((p) => !p.signed)
+  const signingClosed = !preview && Boolean(session.signingClosed)
+  const hideHangul = lang !== 'ko'
+  const visibleTourName = hideHangul && hasHangul(session.tourName) ? ui.tour : session.tourName
+  const visibleSuccessName = hideHangul && hasHangul(successName) ? ui.guestPlaceholder : successName
+  function visibleGuestLabel(label: string, slotIndex: number) {
+    if (hideHangul && hasHangul(label)) return `${ui.guestPlaceholder} ${slotIndex + 1}`
+    return label
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -247,7 +276,7 @@ export default function WaiverSigningClient({
           <p className="text-xs font-medium tracking-wide text-muted-foreground">{ui.brand}</p>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{session.tourName}</h1>
+              <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{visibleTourName}</h1>
               <p className="text-sm text-muted-foreground">
                 {ui.booking} {session.bookingNumber} · {ui.tourDate} {session.tourDate}
               </p>
@@ -287,7 +316,7 @@ export default function WaiverSigningClient({
             {step === 'success' ? (
               <div className="rounded-2xl border border-border bg-white p-6 shadow-sm">
                 <h2 className="text-2xl font-semibold tracking-tight">{ui.successTitle}</h2>
-                <p className="mt-2 text-lg">{successName}</p>
+                <p className="mt-2 text-lg">{visibleSuccessName}</p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {ui.booking} {session.bookingNumber}
                 </p>
@@ -322,19 +351,34 @@ export default function WaiverSigningClient({
               </ul>
             </div>
 
+            {signingClosed && remaining.length > 0 ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+                <h2 className="text-lg font-semibold text-amber-950">{ui.signingClosedTitle}</h2>
+                <p className="mt-2 text-sm leading-6 text-amber-950">{ui.signingClosedBody}</p>
+              </div>
+            ) : remaining.length > 0 ? (
+              <p className="rounded-xl border border-border bg-white px-4 py-3 text-sm leading-6 text-muted-foreground">
+                {ui.signingDeadlineNote}
+              </p>
+            ) : null}
+
             <div className="space-y-3">
               {session.participants.map((p) => (
                 <div key={p.id} className="flex items-center justify-between rounded-xl border border-border bg-white px-4 py-4">
                   <div>
-                    <p className="font-medium">{p.label}</p>
+                    <p className="font-medium">{visibleGuestLabel(p.label, p.slotIndex)}</p>
                     <p className="text-sm text-muted-foreground">
                       {p.completedCount}/{p.requiredCount} {p.signed ? ui.ready : ui.pending}
                     </p>
                   </div>
                   {!p.signed ? (
-                    <Button className="h-11 rounded-xl" onClick={() => startParticipant(p.id)}>
-                      {ui.startWaiver}
-                    </Button>
+                    signingClosed ? (
+                      <span className="text-sm text-amber-800">{ui.pending}</span>
+                    ) : (
+                      <Button className="h-11 rounded-xl" onClick={() => startParticipant(p.id)}>
+                        {ui.startWaiver}
+                      </Button>
+                    )
                   ) : (
                     <span className="text-sm text-emerald-700">{ui.signed}</span>
                   )}
@@ -342,7 +386,7 @@ export default function WaiverSigningClient({
               ))}
             </div>
 
-            {step === 'success' && remaining.length > 0 ? (
+            {step === 'success' && remaining.length > 0 && !signingClosed ? (
               <Button className="h-12 w-full rounded-xl" onClick={() => setStep('list')}>
                 {ui.nextParticipant} ({session.completedCount} {ui.of} {session.requiredCount})
               </Button>
@@ -353,17 +397,26 @@ export default function WaiverSigningClient({
           </section>
         ) : null}
 
-        {step !== 'list' && step !== 'success' ? (
+        {step !== 'list' && step !== 'success' && !signingClosed ? (
           <section className="space-y-6">
             <button type="button" className="inline-flex items-center gap-1 text-sm text-muted-foreground" onClick={() => setStep('list')}>
               <ChevronLeft className="h-4 w-4" /> {ui.back}
             </button>
-            <p className="text-sm text-muted-foreground">{current?.label}</p>
+            <p className="text-sm text-muted-foreground">
+              {current ? visibleGuestLabel(current.label, current.slotIndex) : null}
+            </p>
 
             {step === 'form' ? (
               <div className="space-y-4 rounded-2xl border border-border bg-white p-6 shadow-sm">
                 <h2 className="text-lg font-semibold">{ui.participantInfo}</h2>
-                <Field label={ui.fullLegalName} value={form.fullLegalName} onChange={(v) => setForm({ ...form, fullLegalName: v })} />
+                <Field
+                  label={ui.fullLegalName}
+                  hint={ui.fullLegalNameHint}
+                  placeholder={ui.fullLegalNamePlaceholder}
+                  autoComplete="name"
+                  value={form.fullLegalName}
+                  onChange={(v) => setForm({ ...form, fullLegalName: v })}
+                />
                 <Field label={ui.dateOfBirth} type="date" value={form.dateOfBirth} onChange={(v) => setForm({ ...form, dateOfBirth: v })} />
                 <Field label={ui.tourDate} value={session.tourDate} readOnly />
                 <Field label={ui.bookingNumber} value={session.bookingNumber} readOnly />
@@ -384,7 +437,14 @@ export default function WaiverSigningClient({
                 </fieldset>
                 {form.participantType === 'MINOR' ? (
                   <>
-                    <Field label={ui.guardianName} value={form.guardianFullLegalName} onChange={(v) => setForm({ ...form, guardianFullLegalName: v })} />
+                    <Field
+                      label={ui.guardianName}
+                      hint={ui.guardianNameHint}
+                      placeholder={ui.fullLegalNamePlaceholder}
+                      autoComplete="name"
+                      value={form.guardianFullLegalName}
+                      onChange={(v) => setForm({ ...form, guardianFullLegalName: v })}
+                    />
                     <Field label={ui.relationshipToMinor} value={form.relationshipToMinor} onChange={(v) => setForm({ ...form, relationshipToMinor: v })} />
                   </>
                 ) : null}
@@ -393,6 +453,14 @@ export default function WaiverSigningClient({
                   onClick={() => {
                     if (!form.fullLegalName.trim() || !form.dateOfBirth || !form.emergencyContactName.trim() || !form.emergencyContactPhone.trim()) {
                       setError(ui.validationRequired)
+                      return
+                    }
+                    if (!isEnglishLegalName(form.fullLegalName)) {
+                      setError(ui.validationEnglishName)
+                      return
+                    }
+                    if (form.participantType === 'MINOR' && !isEnglishLegalName(form.guardianFullLegalName)) {
+                      setError(ui.validationEnglishName)
                       return
                     }
                     setError(null)
@@ -545,12 +613,18 @@ export default function WaiverSigningClient({
 
 function Field({
   label,
+  hint,
+  placeholder,
+  autoComplete,
   value,
   onChange,
   type = 'text',
   readOnly,
 }: {
   label: string
+  hint?: string
+  placeholder?: string
+  autoComplete?: string
   value: string
   onChange?: (v: string) => void
   type?: string
@@ -562,11 +636,17 @@ function Field({
       <label htmlFor={id} className="text-sm font-medium">
         {label}
       </label>
+      {hint ? <p className="text-sm leading-6 text-muted-foreground">{hint}</p> : null}
       <Input
         id={id}
         type={type}
         value={value}
         readOnly={readOnly}
+        placeholder={placeholder}
+        autoComplete={autoComplete}
+        autoCapitalize={autoComplete === 'name' ? 'words' : undefined}
+        spellCheck={autoComplete === 'name' ? false : undefined}
+        lang={autoComplete === 'name' ? 'en' : undefined}
         onChange={onChange ? (e) => onChange(e.target.value) : undefined}
         className="h-12 rounded-lg"
       />

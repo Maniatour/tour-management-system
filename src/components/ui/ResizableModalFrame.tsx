@@ -15,6 +15,10 @@ type ResizableModalFrameProps = {
   className?: string
   overlayClassName?: string
   draggableHeaderSelector?: string
+  /** 이 너비 이하에서는 리사이즈 창 대신 전체 화면으로 표시 */
+  fullViewportMaxWidth?: number
+  /** true이면 모바일에서 관리자 헤더까지 덮는 전체 화면 */
+  coverAdminChromeOnMobile?: boolean
   children: ReactNode
 }
 
@@ -26,6 +30,8 @@ export function ResizableModalFrame({
   className,
   overlayClassName,
   draggableHeaderSelector = '[data-dialog-drag-handle]',
+  fullViewportMaxWidth = MOBILE_MAX_WIDTH,
+  coverAdminChromeOnMobile = false,
   children,
 }: ResizableModalFrameProps) {
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -37,12 +43,12 @@ export function ResizableModalFrame({
   const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
-    const mq = window.matchMedia(`(max-width: ${MOBILE_MAX_WIDTH}px)`)
+    const mq = window.matchMedia(`(max-width: ${fullViewportMaxWidth}px)`)
     const sync = () => setIsMobile(mq.matches)
     sync()
     mq.addEventListener('change', sync)
     return () => mq.removeEventListener('change', sync)
-  }, [])
+  }, [fullViewportMaxWidth])
 
   const handleHeaderPointerDown = (e: React.PointerEvent) => {
     if (isMobile || e.button !== 0) return
@@ -55,16 +61,29 @@ export function ResizableModalFrame({
     onDragPointerDown(e)
   }
 
+  const effectiveZIndex =
+    isMobile && coverAdminChromeOnMobile ? Math.max(zIndex, 10050) : zIndex
+
   const panelStyle: CSSProperties = isMobile
-    ? {
-        left: 0,
-        top: 'var(--header-height, 4rem)',
-        width: '100%',
-        height: 'calc(100dvh - var(--header-height, 4rem))',
-        maxWidth: 'none',
-        maxHeight: 'none',
-        zIndex,
-      }
+    ? coverAdminChromeOnMobile
+      ? {
+          left: 0,
+          top: 0,
+          width: '100%',
+          height: '100dvh',
+          maxWidth: 'none',
+          maxHeight: 'none',
+          zIndex: effectiveZIndex,
+        }
+      : {
+          left: 0,
+          top: 'var(--header-height, 4rem)',
+          width: '100%',
+          height: 'calc(100dvh - var(--header-height, 4rem))',
+          maxWidth: 'none',
+          maxHeight: 'none',
+          zIndex: effectiveZIndex,
+        }
     : {
         left: rect.x,
         top: rect.y,
@@ -72,14 +91,14 @@ export function ResizableModalFrame({
         height: rect.h,
         maxWidth: 'none',
         maxHeight: 'none',
-        zIndex,
+        zIndex: effectiveZIndex,
       }
 
   return (
     <>
       <div
         className={cn('reservation-form-modal-overlay fixed inset-0 bg-black/50', overlayClassName)}
-        style={{ zIndex }}
+        style={{ zIndex: effectiveZIndex }}
         aria-hidden
       />
       <div

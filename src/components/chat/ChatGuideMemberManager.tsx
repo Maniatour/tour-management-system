@@ -2,24 +2,36 @@
 
 import { useMemo, useState } from 'react'
 import { UserMinus, UserPlus, Search } from 'lucide-react'
+import type { Participant } from '@/types/chat'
 import type { SupportedLanguage } from '@/lib/translation'
 import { useTourChatGuideMembers } from '@/hooks/useTourChatGuideMembers'
 import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
+import ChatGuidePresenceRow from '@/components/chat/ChatGuidePresenceRow'
+import {
+  extraOnlineStaff,
+  isStaffPresentInChat,
+} from '@/lib/chatCustomerPresence'
 
 interface ChatGuideMemberManagerProps {
   roomId: string
   selectedLanguage: SupportedLanguage
+  participants?: Map<string, Participant>
 }
 
 export default function ChatGuideMemberManager({
   roomId,
   selectedLanguage,
+  participants,
 }: ChatGuideMemberManagerProps) {
   const isKo = selectedLanguage === 'ko'
   const { members, candidates, loading, busyEmail, error, invite, remove } =
     useTourChatGuideMembers(roomId, true)
   const [query, setQuery] = useState('')
   const [showInvite, setShowInvite] = useState(false)
+  const presenceList = useMemo(
+    () => (participants ? Array.from(participants.values()) : []),
+    [participants]
+  )
 
   const inviteList = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -32,6 +44,11 @@ export default function ChatGuideMemberManager({
       })
       .slice(0, 20)
   }, [candidates, query])
+
+  const watchingStaff = useMemo(
+    () => extraOnlineStaff(presenceList, members.map((member) => member.email)),
+    [members, presenceList]
+  )
 
   return (
     <div className="border-t border-gray-200">
@@ -51,8 +68,8 @@ export default function ChatGuideMemberManager({
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
           {isKo
-            ? '배정이 바뀌면 자동으로 맞춰집니다. 추가로 초대하거나 잘못된 멤버를 내보낼 수 있습니다.'
-            : 'Members follow tour assignment. You can also invite or remove extra guides.'}
+            ? '이 채팅 페이지를 보고 있으면 활성으로 표시됩니다.'
+            : 'Guides viewing this chat page show as active.'}
         </p>
       </div>
 
@@ -61,42 +78,50 @@ export default function ChatGuideMemberManager({
           <p className="px-2 py-4 text-center text-xs text-gray-500">
             {isKo ? '불러오는 중…' : 'Loading…'}
           </p>
-        ) : members.length === 0 ? (
+        ) : members.length === 0 && watchingStaff.length === 0 ? (
           <p className="px-2 py-4 text-center text-xs text-gray-500">
             {isKo ? '연결된 가이드가 없습니다.' : 'No guides in this room.'}
           </p>
         ) : (
-          members.map((member) => (
-            <div
-              key={member.id}
-              className="flex items-center gap-2 rounded-xl border border-gray-100 bg-white px-2.5 py-2"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-gray-900">{member.name}</p>
-                <p className="truncate text-[11px] text-gray-500">
-                  {member.assigned
+          <>
+            {members.map((member) => (
+              <ChatGuidePresenceRow
+                key={member.id}
+                name={member.name}
+                subtitle={`${
+                  member.assigned
                     ? isKo ? '배정' : 'Assigned'
-                    : isKo ? '초대' : 'Invited'}
-                  {member.position ? ` · ${member.position}` : ''}
-                </p>
-              </div>
-              {member.can_remove ? (
-                <button
-                  type="button"
-                  disabled={busyEmail === member.email}
-                  onClick={() => void remove(member.email)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-                >
-                  <UserMinus size={12} />
-                  {isKo ? '내보내기' : 'Remove'}
-                </button>
-              ) : (
-                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
-                  {isKo ? '배정됨' : 'Assigned'}
-                </span>
-              )}
-            </div>
-          ))
+                    : isKo ? '초대' : 'Invited'
+                }${member.position ? ` · ${member.position}` : ''}`}
+                online={isStaffPresentInChat(presenceList, member.email)}
+                isKo={isKo}
+                {...(member.can_remove
+                  ? {
+                      action: (
+                        <button
+                          type="button"
+                          disabled={busyEmail === member.email}
+                          onClick={() => void remove(member.email)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          <UserMinus size={12} />
+                          {isKo ? '내보내기' : 'Remove'}
+                        </button>
+                      ),
+                    }
+                  : {})}
+              />
+            ))}
+            {watchingStaff.map((staff) => (
+              <ChatGuidePresenceRow
+                key={`watching-${staff.id}`}
+                name={staff.name}
+                subtitle={isKo ? '이 페이지 보는 중' : 'Viewing this page'}
+                online
+                isKo={isKo}
+              />
+            ))}
+          </>
         )}
       </div>
 

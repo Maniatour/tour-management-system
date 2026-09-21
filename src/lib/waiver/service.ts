@@ -14,6 +14,7 @@ import {
 } from '@/lib/waiver/tokens'
 import { resolveRequiredWaivers, signingRequiredCodes } from '@/lib/waiver/requiredWaivers'
 import type { RequiredWaiverResolution, WaiverDocumentCode, WaiverLocale } from '@/lib/waiver/types'
+import { isWaiverOnlineSigningClosed, waiverOnlineSigningClosesAt } from '@/lib/waiver/signingWindow'
 import { isMinorAgeOnTourDate, parsePngBase64, submitWaiverSchema } from '@/lib/waiver/validation'
 
 type InvitationLookupRow = {
@@ -49,6 +50,8 @@ export type PublicWaiverSession = {
   participants: PublicParticipantSummary[]
   completedCount: number
   requiredCount: number
+  signingClosed: boolean
+  signingClosesAt: string | null
 }
 
 function db() {
@@ -176,7 +179,7 @@ export async function ensureInvitationForReservation(reservationId: string, crea
   if (!invitationId) return null
   await ensureParticipants(reservationId, invitationId, guestCountFromReservation(reservation), reservation.customer_id)
   const url = `${getAppOrigin()}/waiver/${buildStableWaiverSigningToken(invitationId)}`
-  return { invitationId, rawToken, url }
+  return { invitationId, rawToken, url, tourDate: String(reservation.tour_date || '') }
 }
 
 async function ensureParticipants(
@@ -372,16 +375,20 @@ export async function buildPublicSession(invitation: {
   }
 
   const completedCount = summaries.filter((p) => p.signed).length
+  const tourDate = String(reservation.tour_date || '')
+  const closesAt = waiverOnlineSigningClosesAt(tourDate)
   return {
     reservationId: reservation.id,
     bookingNumber: bookingNumberOf(reservation),
-    tourDate: reservation.tour_date,
+    tourDate,
     tourName,
     guestCount: summaries.length,
     requiredWaivers: required,
     participants: summaries,
     completedCount,
     requiredCount: summaries.length,
+    signingClosed: isWaiverOnlineSigningClosed(tourDate),
+    signingClosesAt: closesAt ? closesAt.toISOString() : null,
   }
 }
 
@@ -459,6 +466,10 @@ export async function submitSignedWaiver(input: {
     .eq('id', input.reservationId)
     .maybeSingle()
   if (!reservation) return { ok: false as const, status: 404, error: 'Not found' }
+
+  if (isWaiverOnlineSigningClosed(String(reservation.tour_date || ''))) {
+    return { ok: false as const, status: 409, error: 'ONLINE_SIGNING_CLOSED' }
+  }
 
   const required = await loadRequiredForReservation(reservation)
   const signingCodes = signingRequiredCodes(required)

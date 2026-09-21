@@ -724,7 +724,39 @@ export function getCanyonWaiverPrintStyles(): string {
       .lac-ops { grid-area: ops; margin-bottom: 6px; }
       .lac-table { grid-area: table; }
       .lac-foot { grid-area: foot; }
-      .acx-overlay-page { padding-top: calc(var(--acx-overlay-pad-top) + 22px); }
+      .acx-overlay-page { overflow: visible; }
+      .acx-overlay-page .acx-preview-note { top: -18px; }
+      .acx-overlay-page .acx-field { margin: 0 0 6px; }
+      .acx-overlay-page .acx-row { gap: 0.4in; flex-wrap: nowrap; }
+      .acx-overlay-page .acx-row .acx-field {
+        min-width: 0;
+        display: flex;
+        align-items: baseline;
+        gap: 4px;
+      }
+      .acx-overlay-page .acx-line { flex: 1 1 auto; min-width: 40px; }
+      .acx-overlay-page .acx-note { margin: 8px 0 10px; min-height: auto; }
+      .acx-overlay-page .acx-guest-list { top: 0; margin-top: 8px; }
+      .acx-overlay-page .acx-guest {
+        min-height: 28px;
+        height: auto;
+        margin: 0 0 4px;
+      }
+      .acx-overlay-page .acx-ink,
+      .acx-overlay-page .acx-overlay-company .acx-ink,
+      .acx-overlay-page .acx-overlay-datetime-top .acx-overlay-date .acx-ink,
+      .acx-overlay-page .acx-overlay-datetime-top .acx-overlay-time .acx-ink,
+      .acx-overlay-page .acx-overlay-adults .acx-ink,
+      .acx-overlay-page .acx-overlay-minors .acx-ink,
+      .acx-overlay-page .acx-overlay-guide-name .acx-ink,
+      .acx-overlay-page .acx-overlay-guide-phone .acx-ink,
+      .acx-overlay-page .acx-overlay-datetime-bottom .acx-overlay-date .acx-ink,
+      .acx-overlay-page .acx-overlay-datetime-bottom .acx-overlay-time .acx-ink,
+      .acx-overlay-page .acx-guest .acx-name .acx-ink,
+      .acx-overlay-page .acx-guest .acx-sig .acx-ink {
+        top: 0 !important;
+        left: 0 !important;
+      }
     }
 
     @media print {
@@ -804,7 +836,7 @@ export function getCanyonWaiverPrintStyles(): string {
         page-break-inside: avoid;
         overflow: hidden;
       }
-      .acx-page, .acx-waiver-page {
+      .acx-page:not(.acx-overlay-page), .acx-waiver-page {
         overflow: hidden;
         break-inside: avoid;
         page-break-inside: avoid;
@@ -816,6 +848,18 @@ export function getCanyonWaiverPrintStyles(): string {
       .acx-waiver-official li { margin: 0 0 6pt; }
       .acx-waiver-official .acx-waiver-closing { margin: 4pt 0 0; font-size: 11pt; }
       .acx-sheet-side { display: none !important; }
+      .lac-page,
+      .acx-overlay-page {
+        break-inside: auto !important;
+        page-break-inside: auto !important;
+        break-before: auto !important;
+        page-break-before: auto !important;
+        break-after: avoid;
+        page-break-after: avoid;
+        min-height: 0 !important;
+        max-height: calc(11in - 24mm);
+        overflow: hidden !important;
+      }
       .acx-overlay-page { background: transparent !important; }
       .acx-overlay-page .acx-preview-note { display: none !important; }
       .acx-overlay-page .acx-chrome,

@@ -13,6 +13,7 @@ import {
   Mail,
   Megaphone,
   MessageCircle,
+  Printer,
   Star,
   TrendingUp,
   type LucideIcon,
@@ -47,6 +48,7 @@ const KIND_ICON: Record<AdminAlertKind, LucideIcon> = {
   op_todo: ListTodo,
   weather_reminder: Cloud,
   goblin_narration: Headphones,
+  waiver_print_reminder: Printer,
   competitor_price: TrendingUp,
 }
 
@@ -63,6 +65,7 @@ const KIND_TONE: Record<AdminAlertKind, string> = {
   op_todo: 'bg-amber-500',
   weather_reminder: 'bg-sky-500',
   goblin_narration: 'bg-indigo-600',
+  waiver_print_reminder: 'bg-amber-700',
   competitor_price: 'bg-blue-700',
 }
 

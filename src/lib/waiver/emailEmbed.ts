@@ -4,6 +4,7 @@ import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
 import { isSampleReservationId, type WaiverEmailCta, type WaiverEmailCtaMode } from '@/lib/waiver/emailCtaHtml'
 import { resolveRequiredWaivers, signingRequiredCodes } from '@/lib/waiver/requiredWaivers'
 import { ensureInvitationForReservation } from '@/lib/waiver/service'
+import { isWaiverOnlineSigningClosed } from '@/lib/waiver/signingWindow'
 
 function previewWaiverUrl(): string {
   return `${getAppOrigin()}/waiver/preview`
@@ -92,7 +93,11 @@ export async function resolveWaiverEmailCta(input: {
 
     const minted = await ensureInvitationForReservation(input.reservationId, input.createdBy ?? null)
     if (!minted?.url) return null
-    return { url: minted.url, mode: input.mode }
+    return {
+      url: minted.url,
+      mode: input.mode,
+      signingClosed: isWaiverOnlineSigningClosed(minted.tourDate),
+    }
   } catch (error) {
     console.warn('[waiver email embed] skipped:', error)
     return null

@@ -16,7 +16,10 @@ import { generateWaiverRawToken, hashWaiverToken, isPlausibleWaiverToken, waiver
 import { pickCanonicalWaiverInvitation } from '@/lib/waiver/invitationCanonical'
 import { isMinorAgeOnTourDate, parsePngBase64, submitWaiverSchema } from '@/lib/waiver/validation'
 import { emptyWaiverContent, suggestedWaiverVersion, validateGoverningWaiverContent } from '@/lib/waiver/documentEditor'
+import { getWaiverUi } from '@/lib/waiver/ui'
 import { buildWaiverEmailCtaHtml, isSampleReservationId } from '@/lib/waiver/emailCtaHtml'
+import { isEnglishLegalName } from '@/lib/waiver/englishName'
+import { isWaiverOnlineSigningClosed, isWaiverPrintReminderWindow, tomorrowTourDateYmd, waiverOnlineSigningClosesAt } from '@/lib/waiver/signingWindow'
 
 test('Mania English source has sections 1-16', () => {
   assert.equal(LAS_VEGAS_MANIA_WAIVER_EN.sections.length, 16)
@@ -140,15 +143,98 @@ test('waiver email CTA copy differs for request vs reminder', () => {
   })
   assert.match(requestHtml, /Please sign the required tour waiver/)
   assert.match(requestHtml, /Sign the waiver/)
+  assert.match(requestHtml, /English letters only/)
+  assert.match(requestHtml, /6:00 PM Las Vegas time/)
+  assert.equal(/[\uAC00-\uD7A3]/.test(requestHtml), false)
+  const koreanHtml = buildWaiverEmailCtaHtml({
+    isEnglish: false,
+    url: 'https://example.com/waiver/abc',
+    mode: 'request',
+  })
+  assert.match(koreanHtml, /영문/)
+  assert.match(koreanHtml, /오후 6시/)
+  assert.match(koreanHtml, /면책 동의서 작성하기/)
   assert.match(reminderHtml, /Your waiver is still unsigned/)
   assert.match(requestHtml, /https:\/\/example.com\/waiver\/abc/)
   assert.equal(isSampleReservationId('00000000-0000-0000-0000-000000000001'), true)
   assert.equal(isSampleReservationId('11111111-2222-4333-8333-444444444444'), false)
 })
 
+test('English waiver UI copy has no Hangul and Korean UI has the same guidance', () => {
+  const en = getWaiverUi('en')
+  for (const value of Object.values(en)) {
+    assert.equal(/[\uAC00-\uD7A3]/.test(value), false, value)
+  }
+  assert.match(en.fullLegalNameHint, /English letters only/)
+  assert.match(en.signingDeadlineNote, /6:00 PM Las Vegas time/)
+  const ko = getWaiverUi('ko')
+  assert.match(ko.fullLegalNameHint, /영문/)
+  assert.match(ko.signingDeadlineNote, /오후 6시/)
+})
+
 test('minor age uses tour date', () => {
   assert.equal(isMinorAgeOnTourDate('2015-09-01', '2026-08-30'), true)
   assert.equal(isMinorAgeOnTourDate('2000-01-01', '2026-08-30'), false)
+})
+
+test('legal names must be English letters', () => {
+  assert.equal(isEnglishLegalName('Kim Minjun'), true)
+  assert.equal(isEnglishLegalName("O'Brien"), true)
+  assert.equal(isEnglishLegalName('Jean-Luc Picard'), true)
+  assert.equal(isEnglishLegalName('김민준'), false)
+  assert.equal(isEnglishLegalName('金敏俊'), false)
+  assert.equal(isEnglishLegalName('Kim 민준'), false)
+  const hangul = submitWaiverSchema.safeParse({
+    participantId: '00000000-0000-0000-0000-000000000000',
+    language: 'en',
+    identity: {
+      fullLegalName: '김민준',
+      dateOfBirth: '1990-01-01',
+      participantType: 'ADULT',
+      emergencyContactName: 'Jane',
+      emergencyContactPhone: '7025550100',
+    },
+    documentAcceptances: { LAS_VEGAS_MANIA: true },
+    acknowledgments: {
+      readAgreements: true,
+      inherentRisks: true,
+      releasesRights: true,
+      mayRefuseActivity: true,
+      informationAccurate: true,
+      electronicSignature: true,
+    },
+    signaturePngBase64: 'a'.repeat(80),
+  })
+  assert.equal(hangul.success, false)
+})
+
+test('online waiver signing closes at 6pm Las Vegas time the day before the tour', () => {
+  const tourDate = '2026-09-20'
+  const closesAt = waiverOnlineSigningClosesAt(tourDate)
+  assert.ok(closesAt)
+  assert.equal(closesAt.toISOString(), new Date('2026-09-19T18:00:00-07:00').toISOString())
+  assert.equal(isWaiverOnlineSigningClosed(tourDate, new Date('2026-09-19T17:59:59-07:00')), false)
+  assert.equal(isWaiverOnlineSigningClosed(tourDate, new Date('2026-09-19T18:00:00-07:00')), true)
+  assert.equal(isWaiverOnlineSigningClosed(tourDate, new Date('2026-09-20T08:00:00-07:00')), true)
+})
+
+test('staff waiver print reminder opens at 6:05 PM Las Vegas time', () => {
+  assert.equal(isWaiverPrintReminderWindow(new Date('2026-09-19T18:04:00-07:00')), false)
+  assert.equal(isWaiverPrintReminderWindow(new Date('2026-09-19T18:05:00-07:00')), true)
+  assert.equal(isWaiverPrintReminderWindow(new Date('2026-09-19T21:00:00-07:00')), true)
+  assert.equal(tomorrowTourDateYmd(new Date('2026-09-19T18:05:00-07:00')), '2026-09-20')
+})
+
+test('closed waiver email CTA asks guests to sign the printed form', () => {
+  const html = buildWaiverEmailCtaHtml({
+    isEnglish: true,
+    url: 'https://example.com/waiver/abc',
+    mode: 'request',
+    signingClosed: true,
+  })
+  assert.match(html, /Online waiver signing is closed/)
+  assert.match(html, /printed waiver/)
+  assert.doesNotMatch(html, /Sign the waiver/)
 })
 
 test('suggested waiver versions increment by date', () => {

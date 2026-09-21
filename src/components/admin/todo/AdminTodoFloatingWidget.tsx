@@ -49,6 +49,7 @@ import {
   PendingCustomerManagementPanel,
   PickupNotificationPanel,
   ReservationAgencyManagementPanel,
+  ReviewClassificationPanel,
   TourEnvelopePrintPanel,
   TourHotelManagementPanel,
   TourHotelPriceCheckPanel,
@@ -159,6 +160,13 @@ import {
   rentalCarPickupDropoffCompletionDateKey,
   rentalCarPickupDropoffTodoFormSeed,
 } from '@/lib/rentalCarPickupDropoffTodo'
+import {
+  shouldHideTodoChipForReviewClassificationPanel,
+  findReviewClassificationLinkedTodo,
+  readReviewClassificationLocalCompleted,
+  reviewClassificationCompletionDateKey,
+  reviewClassificationTodoFormSeed,
+} from '@/lib/reviewClassificationTodo'
 import { useTeamBoardManualOptional } from '@/contexts/TeamBoardManualContext'
 import { useAdminTodo } from '@/contexts/AdminTodoContext'
 import {
@@ -401,6 +409,10 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     () => rentalCarPickupDropoffCompletionDateKey(),
     []
   )
+  const reviewClassificationCompletionKey = useMemo(
+    () => reviewClassificationCompletionDateKey(),
+    []
+  )
   const [envelopeCompleted, setEnvelopeCompleted] = useState(() =>
     readTourEnvelopePrintLocalCompleted(envelopeTargetDate)
   )
@@ -446,6 +458,9 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
   )
   const [rentalCarPickupDropoffCompleted, setRentalCarPickupDropoffCompleted] = useState(() =>
     readRentalCarPickupDropoffLocalCompleted(rentalCarPickupDropoffCompletionKey)
+  )
+  const [reviewClassificationCompleted, setReviewClassificationCompleted] = useState(() =>
+    readReviewClassificationLocalCompleted(reviewClassificationCompletionKey)
   )
   const [tourHotelDetailModalId, setTourHotelDetailModalId] = useState<string | null>(null)
   const [onHoldFeatureEnabled, setOnHoldFeatureEnabled] = useState(true)
@@ -562,6 +577,13 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     )
   }, [todos, rentalCarPickupDropoffCompletionKey])
 
+  useEffect(() => {
+    const linked = findReviewClassificationLinkedTodo(todos)
+    setReviewClassificationCompleted(
+      linked?.completed ?? readReviewClassificationLocalCompleted(reviewClassificationCompletionKey)
+    )
+  }, [todos, reviewClassificationCompletionKey])
+
   const handleEnvelopeToggleLinkedTodo = useCallback(
     async (todo: { id: string; completed: boolean }, completed: boolean) => {
       const full = todos.find((t) => t.id === todo.id)
@@ -666,6 +688,12 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     activeListTab,
     rentalCarPickupDropoffCompleted,
     findRentalCarPickupDropoffLinkedTodo(todos)?.on_hold ?? false
+  )
+
+  const showReviewClassificationInList = panelVisibleInTab(
+    activeListTab,
+    reviewClassificationCompleted,
+    findReviewClassificationLinkedTodo(todos)?.on_hold ?? false
   )
 
   const tourHotelPriceCheckOnHold = findTourHotelPriceCheckLinkedTodo(todos)?.on_hold ?? false
@@ -1327,6 +1355,47 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
     setCreateOpen(true)
   }, [todos, openEditTodo, locale])
 
+  const handleReviewClassificationToggleLinkedTodo = useCallback(
+    async (todo: { id: string; completed: boolean }, completed: boolean) => {
+      const full = todos.find((t) => t.id === todo.id)
+      if (!full) return
+      setSubmittingId(full.id)
+      try {
+        const { data, error } = await toggleOpTodoCompletion(full, completed)
+        if (error) throw error
+        const patch = {
+          completed: data?.completed ?? completed,
+          completed_at: data?.completed_at ?? (completed ? new Date().toISOString() : null),
+          next_notify_at: data?.next_notify_at ?? full.next_notify_at ?? null,
+          on_hold: data?.on_hold ?? false,
+        }
+        setTodos((prev) => prev.map((t) => (t.id === full.id ? { ...t, ...patch } : t)))
+        adjustPendingCount(full, { completed: patch.completed, on_hold: !!patch.on_hold })
+        dispatchOpTodoRefresh()
+      } catch (e) {
+        console.error(e)
+        alert(isKo ? '완료 처리에 실패했습니다.' : 'Failed to update todo.')
+        throw e
+      } finally {
+        setSubmittingId(null)
+      }
+    },
+    [adjustPendingCount, isKo, todos]
+  )
+
+  const openEditReviewClassificationTodo = useCallback(() => {
+    const linked = findReviewClassificationLinkedTodo(todos)
+    if (linked) {
+      openEditTodo(linked)
+      return
+    }
+    setNewTodo({
+      ...EMPTY_OP_TODO_FORM,
+      ...reviewClassificationTodoFormSeed(locale),
+    })
+    setCreateOpen(true)
+  }, [todos, openEditTodo, locale])
+
   const persona = useMemo(
     () =>
       resolveSiteAccessPersona({
@@ -1717,7 +1786,8 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
           !shouldHideTodoChipForReservationAgencyManagementPanel(t) &&
           !shouldHideTodoChipForAntelopeCanyonBookingPanel(t) &&
           !shouldHideTodoChipForBentoCheckPanel(t) &&
-          !shouldHideTodoChipForRentalCarPickupDropoffPanel(t)
+          !shouldHideTodoChipForRentalCarPickupDropoffPanel(t) &&
+          !shouldHideTodoChipForReviewClassificationPanel(t)
       ),
     [todos]
   )
@@ -1821,6 +1891,10 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
   const bentoCheckLinkedTodo = useMemo(() => findBentoCheckLinkedTodo(todos), [todos])
   const rentalCarPickupDropoffLinkedTodo = useMemo(
     () => findRentalCarPickupDropoffLinkedTodo(todos),
+    [todos]
+  )
+  const reviewClassificationLinkedTodo = useMemo(
+    () => findReviewClassificationLinkedTodo(todos),
     [todos]
   )
 
@@ -2307,7 +2381,8 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
             !showReservationAgencyManagementInList &&
             !showAntelopeCanyonBookingInList &&
             !showBentoCheckInList &&
-            !showRentalCarPickupDropoffInList ? (
+            !showRentalCarPickupDropoffInList &&
+            !showReviewClassificationInList ? (
               <li className="list-none py-12 text-center text-sm text-gray-500">
                 {activeListTab === 'pending'
                   ? isKo
@@ -2488,6 +2563,24 @@ export default function AdminTodoFloatingWidget({ locale }: AdminTodoFloatingWid
                   onToggleLinkedTodo={handleOtaClosureToggleLinkedTodo}
                   onEditRequest={openEditOtaClosureTodo}
                   {...panelHoldProps(otaClosureLinkedTodo)}
+                />
+              </li>
+              <li
+                className={`rounded-lg px-2.5 py-2 transition-colors ${categoryCardClasses(
+                  'daily',
+                  reviewClassificationCompleted,
+                  reviewClassificationLinkedTodo?.on_hold ?? false
+                )} ${showReviewClassificationInList ? '' : 'hidden'}`}
+                aria-hidden={!showReviewClassificationInList}
+              >
+                <ReviewClassificationPanel
+                  locale={locale}
+                  variant="list"
+                  linkedTodos={todos as never}
+                  onCompletedChange={setReviewClassificationCompleted}
+                  onToggleLinkedTodo={handleReviewClassificationToggleLinkedTodo}
+                  onEditRequest={openEditReviewClassificationTodo}
+                  {...panelHoldProps(reviewClassificationLinkedTodo)}
                 />
               </li>
               <li

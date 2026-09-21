@@ -2,8 +2,15 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Participant } from '@/types/chat'
 import {
+  chatPresenceIdentityKey,
+  chatPresenceSelfKeys,
   customerChatIdentityKey,
+  guideChatIdentityKey,
+  isChatPresenceSelfKey,
+  isTourChatPresenceTopic,
+  tourChatPresenceChannelName,
   upsertCustomerParticipant,
+  type ChatPresencePayload,
 } from '@/lib/chatCustomerPresence'
 
 function makeParticipant(
@@ -18,16 +25,12 @@ function makeParticipant(
   return participant
 }
 
-function presenceKey(presence: {
-  userId?: string
-  userName?: string
-  userType?: string
-}): string {
-  if (presence.userType === 'customer' || (!presence.userType && presence.userName)) {
-    const nameKey = customerChatIdentityKey(presence.userName || presence.userId)
-    if (nameKey) return nameKey
+function removeExistingPresenceChannels(roomId: string) {
+  for (const existing of supabase.getChannels()) {
+    if (isTourChatPresenceTopic(existing.topic, roomId)) {
+      void supabase.removeChannel(existing)
+    }
   }
-  return String(presence.userId || presence.userName || '').trim()
 }
 
 interface UseChatParticipantsProps {
@@ -116,27 +119,46 @@ export function useChatParticipants({
 
     void loadChatParticipants(roomId)
 
-    const channel = supabase.channel(`chat_presence_${roomId}_${Date.now()}`, {
+    const selfArgs = { userId, userName, isPublicView, ...(guideEmail ? { guideEmail } : {}) }
+    const selfKey = isPublicView
+      ? customerChatIdentityKey(userName || userId)
+      : guideChatIdentityKey(guideEmail || userId)
+    const presenceKey = selfKey || userId
+    const channelName = tourChatPresenceChannelName(roomId)
+
+    removeExistingPresenceChannels(roomId)
+
+    const channel = supabase.channel(channelName, {
       config: {
         presence: {
-          key: userId,
+          key: presenceKey,
         },
       },
     })
     presenceChannelRef.current = channel
 
-    const markPresence = (
-      presence: {
-        userId?: string
-        userName?: string
-        userType?: string
-        userEmail?: string
-      },
-      online: boolean
-    ) => {
-      const key = presenceKey(presence)
+    const applySelfOnline = (online: boolean) => {
+      setOnlineParticipants((prev) => {
+        const updated = new Map(prev)
+        if (isPublicView) {
+          upsertCustomerParticipant(updated, userName, {
+            id: userId,
+            online,
+          })
+        } else if (selfKey) {
+          updated.set(
+            selfKey,
+            makeParticipant(selfKey, userName, 'guide', guideEmail || userId, online)
+          )
+        }
+        return updated
+      })
+    }
+
+    const markPresence = (presence: ChatPresencePayload, online: boolean) => {
+      const key = chatPresenceIdentityKey(presence)
       if (!key) return
-      if (key === customerChatIdentityKey(userId) || key === userId) return
+      if (isChatPresenceSelfKey(key, selfArgs)) return
       setOnlineParticipants((prev) => {
         const updated = new Map(prev)
         const currentMessages = messagesRef.current
@@ -147,9 +169,9 @@ export function useChatParticipants({
             presence.userName === m.sender_name
         )
         const type: Participant['type'] =
-          userMessage?.sender_type === 'system' || userMessage?.sender_type === 'admin'
-            ? 'guide'
-            : ((userMessage?.sender_type || presence.userType || 'guide') as Participant['type'])
+          presence.userType === 'customer' || userMessage?.sender_type === 'customer'
+            ? 'customer'
+            : 'guide'
         const name = userMessage?.sender_name || presence.userName || presence.userId || key
         if (type === 'customer') {
           upsertCustomerParticipant(updated, name, {
@@ -160,10 +182,10 @@ export function useChatParticipants({
           updated.set(
             key,
             makeParticipant(
-              presence.userId || key,
+              key,
               name,
               'guide',
-              userMessage?.sender_email || presence.userEmail,
+              userMessage?.sender_email || presence.userEmail || presence.userId,
               true
             )
           )
@@ -177,26 +199,44 @@ export function useChatParticipants({
       })
     }
 
+    const trackSelf = async () => {
+      if (document.visibilityState === 'hidden') {
+        await channel.untrack()
+        applySelfOnline(false)
+        return
+      }
+      await channel.track({
+        userId: presenceKey,
+        userName,
+        userType: isPublicView ? 'customer' : 'guide',
+        ...(isPublicView || !(guideEmail || userId)
+          ? {}
+          : { userEmail: guideEmail || userId }),
+        onlineAt: new Date().toISOString(),
+      })
+      applySelfOnline(true)
+    }
+
+    const onVisibilityChange = () => {
+      if (channel.state !== 'joined') return
+      void trackSelf()
+    }
+
     channel
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState()
-        const presentKeys = new Set<string>()
+        const selfOnline = document.visibilityState !== 'hidden'
 
         setOnlineParticipants((prev) => {
+          const presentKeys = new Set<string>(chatPresenceSelfKeys(selfArgs))
           const updated = new Map(prev)
           Object.entries(state).forEach(([, presences]) => {
             if (!Array.isArray(presences) || presences.length === 0) return
-            const presence = presences[0] as {
-              userId?: string
-              userName?: string
-              userType?: string
-              userEmail?: string
-            }
-            const key = presenceKey(presence)
+            const presence = presences[0] as ChatPresencePayload
+            const key = chatPresenceIdentityKey(presence)
             if (!key) return
             presentKeys.add(key)
-            const isSelf = key === customerChatIdentityKey(userId) || key === userId
-            if (isSelf) return
+            if (isChatPresenceSelfKey(key, selfArgs)) return
             const userMessage = messagesRef.current.find(
               (m: { sender_email?: string; sender_name?: string }) =>
                 presence.userId === m.sender_email ||
@@ -217,18 +257,34 @@ export function useChatParticipants({
               updated.set(
                 key,
                 makeParticipant(
-                  presence.userId || key,
+                  key,
                   name,
                   'guide',
-                  presence.userEmail,
+                  presence.userEmail || presence.userId,
                   true
                 )
               )
             }
           })
 
+          if (isPublicView) {
+            upsertCustomerParticipant(updated, userName, {
+              id: userId,
+              online: selfOnline,
+            })
+          } else if (selfKey) {
+            updated.set(
+              selfKey,
+              makeParticipant(selfKey, userName, 'guide', guideEmail || userId, selfOnline)
+            )
+          }
+
           updated.forEach((value, key) => {
-            if (value.online === true && !presentKeys.has(key) && key !== customerChatIdentityKey(userId) && key !== userId) {
+            if (
+              value.online === true &&
+              !presentKeys.has(key) &&
+              !isChatPresenceSelfKey(key, selfArgs)
+            ) {
               updated.set(key, { ...value, online: false })
             }
           })
@@ -236,43 +292,27 @@ export function useChatParticipants({
         })
       })
       .on('presence', { event: 'join' }, ({ newPresences }) => {
-        if (Array.isArray(newPresences) && newPresences.length > 0) {
-          markPresence(newPresences[0] as never, true)
+        if (!Array.isArray(newPresences)) return
+        for (const presence of newPresences) {
+          markPresence(presence as ChatPresencePayload, true)
         }
       })
       .on('presence', { event: 'leave' }, ({ leftPresences }) => {
-        if (Array.isArray(leftPresences) && leftPresences.length > 0) {
-          markPresence(leftPresences[0] as never, false)
+        if (!Array.isArray(leftPresences)) return
+        for (const presence of leftPresences) {
+          markPresence(presence as ChatPresencePayload, false)
         }
       })
-      .subscribe(async (status) => {
+      .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
-          await channel.track({
-            userId,
-            userName,
-            userType: isPublicView ? 'customer' : 'guide',
-            ...(isPublicView || !guideEmail ? {} : { userEmail: guideEmail }),
-            onlineAt: new Date().toISOString(),
-          })
-          setOnlineParticipants((prev) => {
-            const updated = new Map(prev)
-            if (isPublicView) {
-              upsertCustomerParticipant(updated, userName, {
-                id: userId,
-                online: true,
-              })
-            } else {
-              updated.set(
-                userId,
-                makeParticipant(userId, userName, 'guide', guideEmail, true)
-              )
-            }
-            return updated
-          })
+          void trackSelf()
         }
       })
 
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
     return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       void supabase.removeChannel(channel)
       if (presenceChannelRef.current === channel) {
         presenceChannelRef.current = null

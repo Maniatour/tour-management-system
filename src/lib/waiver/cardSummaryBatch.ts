@@ -33,7 +33,9 @@ export function buildWaiverShareMessage(input: {
   if (input.isKo) {
     return [
       '[LAS VEGAS MANIA TOUR]',
-      '투어 출발 전 면책 동의서에 서명해 주세요.',
+      '투어 전날 라스베이거스 시간 오후 6시까지 면책 동의서에 서명해 주세요.',
+      '성명은 영문으로만 작성해 주세요. 예: Kim Minjun',
+      '온라인 서명을 못 하신 경우, 가이드가 인쇄한 면책 동의서를 가져가니 투어 당일 인쇄물에 서명하시면 됩니다.',
       '',
       `예약번호: ${input.bookingNumber}`,
       `투어일: ${input.tourDate}`,
@@ -44,7 +46,9 @@ export function buildWaiverShareMessage(input: {
   }
   return [
     '[LAS VEGAS MANIA TOUR]',
-    'Please sign the required tour waiver before your tour.',
+    'Please sign the required tour waiver by 6:00 PM Las Vegas time the day before your tour.',
+    'Write each guest name in English letters only (example: Kim Minjun).',
+    'If you cannot sign online, our guide will bring a printed form for you to sign on the tour day.',
     '',
     `Booking: ${input.bookingNumber}`,
     `Tour date: ${input.tourDate}`,
@@ -65,7 +69,12 @@ export function buildWaiverShareEmail(input: {
   const subject = input.isKo
     ? `[LAS VEGAS MANIA TOUR] 면책 동의서 서명 안내 (${input.bookingNumber})`
     : `[LAS VEGAS MANIA TOUR] Please sign your tour waiver (${input.bookingNumber})`
-  const heading = input.isKo ? '투어 출발 전 면책 동의서에 서명해 주세요.' : 'Please sign the required tour waiver before your tour.'
+  const heading = input.isKo
+    ? '투어 전날 라스베이거스 시간 오후 6시까지 면책 동의서에 서명해 주세요.'
+    : 'Please sign the required tour waiver by 6:00 PM Las Vegas time the day before your tour.'
+  const detail = input.isKo
+    ? '성명은 영문으로만 작성해 주세요. 예: Kim Minjun. 온라인 서명을 못 하신 경우 가이드가 인쇄한 면책 동의서를 가져가니 투어 당일 인쇄물에 서명하시면 됩니다.'
+    : 'Write each guest name in English letters only (example: Kim Minjun). If you cannot sign online, our guide will bring a printed form for you to sign on the tour day.'
   const cta = input.isKo ? '면책 동의서 작성하기' : 'Sign the waiver'
   const bookingLabel = input.isKo ? '예약번호' : 'Booking'
   const dateLabel = input.isKo ? '투어일' : 'Tour date'
@@ -77,6 +86,7 @@ export function buildWaiverShareEmail(input: {
     <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;padding:28px 24px;">
       <p style="margin:0 0 8px;font-size:12px;letter-spacing:.08em;color:#6b7280;">LAS VEGAS MANIA TOUR</p>
       <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;">${escapeHtml(heading)}</h1>
+      <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#4b5563;">${escapeHtml(detail)}</p>
       <p style="margin:0 0 8px;font-size:14px;color:#4b5563;">${escapeHtml(bookingLabel)}: ${escapeHtml(input.bookingNumber)}</p>
       <p style="margin:0 0 8px;font-size:14px;color:#4b5563;">${escapeHtml(dateLabel)}: ${escapeHtml(input.tourDate)}</p>
       <p style="margin:0 0 24px;font-size:14px;color:#4b5563;">${escapeHtml(tourLabel)}: ${escapeHtml(input.tourName)}</p>

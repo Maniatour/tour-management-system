@@ -18,7 +18,8 @@ type PreviewDoc = {
   content: WaiverDocumentContent | null
 }
 
-function mockSession(docs: PreviewDoc[], isKo: boolean) {
+function mockSession(docs: PreviewDoc[], lang: WaiverLocale) {
+  const isKo = lang === 'ko'
   const required = docs.filter((d) => d.requiredForSigning).length
   const participants = [
     { id: 'preview-guest-1', slotIndex: 0, label: isKo ? '게스트 1' : 'Guest 1', type: 'ADULT' as const, signed: false, completedCount: 0, requiredCount: required },
@@ -128,7 +129,7 @@ export default function WaiverCustomerPreviewClient() {
     })
   }, [draft, lang, liveByCode, requestedCodes, source])
 
-  const session = useMemo(() => mockSession(documents, isKo), [documents, isKo])
+  const session = useMemo(() => mockSession(documents, lang), [documents, lang])
 
   if (error) {
     return <p className="p-8 text-center text-muted-foreground">{error}</p>

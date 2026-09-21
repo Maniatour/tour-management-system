@@ -137,7 +137,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   })
 
   if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.status })
+    const closed = result.error === 'ONLINE_SIGNING_CLOSED'
+    return NextResponse.json(
+      { error: result.error, code: closed ? 'ONLINE_SIGNING_CLOSED' : undefined },
+      { status: result.status }
+    )
   }
 
   const session = await buildPublicSession(invitation)

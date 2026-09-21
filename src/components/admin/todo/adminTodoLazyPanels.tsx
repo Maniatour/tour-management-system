@@ -86,6 +86,11 @@ export const TourEnvelopePrintPanel = dynamic(
   { ssr: false, loading: () => <TodoPanelLoading /> }
 )
 
+export const ReviewClassificationPanel = dynamic(
+  () => import('./ReviewClassificationPanel').then((m) => m.ReviewClassificationPanel),
+  { ssr: false, loading: () => <TodoPanelLoading /> }
+)
+
 export const LazyTourQuickPrintHost = dynamic(
   () => import('./TourQuickPrintHost').then((m) => m.TourQuickPrintHost),
   { ssr: false, loading: () => null }
