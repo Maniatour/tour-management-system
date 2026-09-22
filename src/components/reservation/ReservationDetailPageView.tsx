@@ -30,6 +30,7 @@ export function ReservationDetailPageView({
   modalLightLoad = false,
   layout = 'page',
   modalStackLevel,
+  modalZIndex,
   onCancel,
   onSaved,
 }: {
@@ -37,6 +38,7 @@ export function ReservationDetailPageView({
   modalLightLoad?: boolean
   layout?: 'modal' | 'page'
   modalStackLevel?: DialogStackLevel
+  modalZIndex?: number
   onCancel?: () => void
   onSaved?: () => void
 }) {
@@ -191,6 +193,7 @@ export function ReservationDetailPageView({
           onRefreshCustomers={refreshCustomers}
           layout={layout}
           {...(modalStackLevel ? { modalStackLevel } : {})}
+          {...(modalZIndex != null ? { modalZIndex } : {})}
           {...(layout === 'modal' ? { modalRectStorageKey: RESERVATION_EDIT_MODAL_RECT_KEY } : {})}
           allowPastDateEdit={isSuper || !!reservation}
           followUpPipelineSnapshotRefreshToken={followUpFormPipelineRefresh}
@@ -246,6 +249,7 @@ export function ReservationDetailPageView({
     followUpFormPipelineRefresh,
     layout,
     modalStackLevel,
+    modalZIndex,
   ])
 
   return (

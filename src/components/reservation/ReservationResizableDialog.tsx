@@ -8,6 +8,8 @@ type ReservationResizableDialogProps = {
   onOpenChange: (open: boolean) => void
   reservationId: string | null
   modalStackLevel?: DialogStackLevel
+  /** 부모 모달보다 위에 띄울 때. 있으면 stack level보다 우선합니다. */
+  modalZIndex?: number
 }
 
 export function ReservationResizableDialog({
@@ -15,6 +17,7 @@ export function ReservationResizableDialog({
   onOpenChange,
   reservationId,
   modalStackLevel = 'nested',
+  modalZIndex,
 }: ReservationResizableDialogProps) {
   if (!open || !reservationId) return null
 
@@ -24,6 +27,7 @@ export function ReservationResizableDialog({
       layout="modal"
       modalLightLoad
       modalStackLevel={modalStackLevel}
+      {...(modalZIndex != null ? { modalZIndex } : {})}
       onCancel={() => onOpenChange(false)}
     />
   )

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { X, ClipboardList, PhoneForwarded, MessageSquare, ArrowRight } from 'lucide-react'
+import { X, ClipboardList, PhoneForwarded, MessageSquare, ArrowRight, HelpCircle } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Customer, Reservation } from '@/types/reservation'
@@ -51,6 +51,7 @@ export default function CancelledMissingReasonModal({
   const supabase = createClientSupabase()
 
   const [loading, setLoading] = useState(false)
+  const [guideOpen, setGuideOpen] = useState(false)
   const [tab, setTab] = useState<CancelledMissingReasonTab>('needs_follow_up')
   const [needsFollowUpIds, setNeedsFollowUpIds] = useState<string[]>([])
   const [awaitingReasonIds, setAwaitingReasonIds] = useState<string[]>([])
@@ -102,6 +103,7 @@ export default function CancelledMissingReasonModal({
   useEffect(() => {
     if (!isOpen) {
       loadedForOpenRef.current = false
+      setGuideOpen(false)
       return
     }
     if (loadedForOpenRef.current) return
@@ -159,48 +161,77 @@ export default function CancelledMissingReasonModal({
     { key: 'reason', label: t('workflowReason'), Icon: ClipboardList },
   ] as const
 
+  const workflowGuide = (
+    <>
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {t('workflowTitle')}
+      </p>
+      <ol className="flex flex-wrap items-center gap-1.5 text-xs sm:text-sm">
+        {workflowSteps.map((step, index) => (
+          <li key={step.key} className="flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 font-medium text-slate-800">
+              <step.Icon className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
+              <span>{step.label}</span>
+            </span>
+            {index < workflowSteps.length - 1 ? (
+              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+            ) : null}
+          </li>
+        ))}
+      </ol>
+      <p className="mt-2 text-xs leading-relaxed text-slate-600">{t('workflowHint')}</p>
+    </>
+  )
+
   return (
     <div className="fixed inset-0 z-[1150] flex items-center justify-center bg-black/50 p-4">
       <div className="flex max-h-[88vh] w-full max-w-6xl flex-col rounded-xl bg-white shadow-xl">
-        <div className="flex items-start justify-between gap-3 border-b border-gray-200 p-4">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="shrink-0 rounded-lg bg-rose-50 p-2 text-rose-800">
+        <div className="flex items-center justify-between gap-2 border-b border-gray-200 px-3 py-2 sm:items-start sm:gap-3 sm:p-4">
+          <div className="flex min-w-0 items-center gap-2 sm:items-start sm:gap-3">
+            <div className="hidden shrink-0 rounded-lg bg-rose-50 p-2 text-rose-800 sm:block">
               <ClipboardList className="h-5 w-5" aria-hidden />
             </div>
             <div className="min-w-0">
-              <h2 className="text-lg font-semibold text-gray-900">{t('title')}</h2>
-              <p className="mt-1 text-sm leading-snug text-gray-600">{t('subtitle')}</p>
+              <div className="flex min-w-0 items-start gap-1">
+                <h2 className="min-w-0 text-base font-semibold leading-snug text-gray-900 sm:text-lg">
+                  {t('title')}
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setGuideOpen((open) => !open)}
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 sm:hidden"
+                  aria-expanded={guideOpen}
+                  aria-controls="cancel-reason-queue-guide"
+                  aria-label={t('helpButton')}
+                  title={t('helpButton')}
+                >
+                  <HelpCircle className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
+              <p className="mt-1 hidden text-sm leading-snug text-gray-600 sm:block">{t('subtitle')}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={handleClose}
-            className="shrink-0 rounded-lg p-2 text-gray-600 hover:bg-gray-100"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100"
             aria-label={t('close')}
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="border-b border-gray-100 bg-slate-50 px-4 py-3">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            {t('workflowTitle')}
-          </p>
-          <ol className="flex flex-wrap items-center gap-1.5 text-xs sm:text-sm">
-            {workflowSteps.map((step, index) => (
-              <li key={step.key} className="flex items-center gap-1.5">
-                <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 font-medium text-slate-800">
-                  <step.Icon className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
-                  <span>{step.label}</span>
-                </span>
-                {index < workflowSteps.length - 1 ? (
-                  <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
-                ) : null}
-              </li>
-            ))}
-          </ol>
-          <p className="mt-2 text-xs leading-relaxed text-slate-600">{t('workflowHint')}</p>
-        </div>
+        {guideOpen ? (
+          <div
+            id="cancel-reason-queue-guide"
+            className="border-b border-gray-100 bg-slate-50 px-3 py-3 sm:hidden"
+          >
+            <p className="text-sm leading-snug text-gray-600">{t('subtitle')}</p>
+            <div className="mt-3">{workflowGuide}</div>
+          </div>
+        ) : null}
+
+        <div className="hidden border-b border-gray-100 bg-slate-50 px-4 py-3 sm:block">{workflowGuide}</div>
 
         <div className="flex flex-wrap gap-2 border-b border-gray-100 px-4 pt-3">
           <button

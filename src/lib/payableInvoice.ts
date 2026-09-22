@@ -1379,6 +1379,8 @@ export async function createQuickPayableInvoice(
   }
 }
 
+export type QuickPaymentHistoryFilter = 'all' | 'unpaid' | 'paid' | 'tip'
+
 export type QuickPaymentHistoryItem = {
   id: string
   invoiceNumber: string
@@ -1392,10 +1394,28 @@ export type QuickPaymentHistoryItem = {
   sentAt: string | null
   paidAt: string | null
   createdBy: string | null
+  /** team.nick_name. 없으면 이름, 그것도 없으면 null */
+  createdByNick: string | null
+  phone: string | null
+  channelRn: string | null
   sitePayUrl: string | null
   hostedInvoiceUrl: string | null
   stripeInvoiceStatus: string | null
   openAmount: boolean
+  /** 고정 청구의 상품 금액. 팁 링크는 null */
+  baseAmountUsd: number | null
+  cardFeeUsd: number
+  /** 인보이스·결제 기록에서 확인한 실제 결제액. 팁 링크는 손님이 입력한 금액 */
+  paidAmountUsd: number | null
+  /** 고정 청구에 손님이 더한 가이드 팁. 팁 링크 전체 금액은 paidAmountUsd */
+  extraTipUsd: number | null
+  paid: boolean
+}
+
+export type QuickPaymentHistoryPage = {
+  items: QuickPaymentHistoryItem[]
+  hasMore: boolean
+  total: number | null
 }
 
 function descriptionFromInvoiceItems(items: unknown, locale: 'ko' | 'en'): string {
@@ -1407,54 +1427,445 @@ function descriptionFromInvoiceItems(items: unknown, locale: 'ko' | 'en'): strin
   return text || (locale === 'ko' ? '(내용 없음)' : '(No description)')
 }
 
+const QUICK_PAYMENT_HISTORY_SELECT =
+  'id, invoice_number, status, total, items, created_at, sent_at, paid_at, created_by, payment_token, hosted_invoice_url, stripe_invoice_status, customer_id, customers(id, name, email, phone)'
+
+function quickPaymentItemAmounts(items: unknown): {
+  baseAmountUsd: number | null
+  cardFeeUsd: number
+  itemAmountUsd: number
+} {
+  if (!Array.isArray(items) || items.length === 0) {
+    return { baseAmountUsd: null, cardFeeUsd: 0, itemAmountUsd: 0 }
+  }
+  const first = items[0] as InvoiceItemRow
+  const cardFeeRaw = Number(first.cardFeeUsd)
+  const cardFeeUsd = Number.isFinite(cardFeeRaw) && cardFeeRaw > 0 ? roundMoney(cardFeeRaw) : 0
+  const baseRaw = Number(first.baseAmountUsd)
+  const baseAmountUsd = Number.isFinite(baseRaw) && baseRaw > 0 ? roundMoney(baseRaw) : null
+  const itemRaw = Number(first.total) || Number(first.unitPrice) || 0
+  const itemAmountUsd = Number.isFinite(itemRaw) && itemRaw > 0 ? roundMoney(itemRaw) : 0
+  return { baseAmountUsd, cardFeeUsd, itemAmountUsd }
+}
+
+function invoiceIdFromPaymentNote(note: string): string | null {
+  const match = note.match(/invoice_id:([0-9a-f-]{36})/i)
+  return match?.[1]?.toLowerCase() ?? null
+}
+
+function paymentNoteIsGuideTip(note: string): boolean {
+  return note.includes(STRIPE_CHECKOUT_NOTE_PREFIX) && note.includes(STRIPE_TIP_NOTE_SUFFIX)
+}
+
+function staffNickFromTeam(row: {
+  nick_name?: string | null
+  name_ko?: string | null
+  display_name?: string | null
+}): string | null {
+  const nick = row.nick_name?.trim()
+  if (nick) return nick
+  const nameKo = row.name_ko?.trim()
+  if (nameKo) return nameKo
+  const display = row.display_name?.trim()
+  return display || null
+}
+
+async function teamNickByEmail(admin: AdminClient, emails: string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean))]
+  const map = new Map<string, string>()
+  if (unique.length === 0) return map
+
+  const { data, error } = await admin.from('team').select('email, nick_name, name_ko, display_name')
+  if (error) {
+    console.error('[payableInvoice] team nick lookup failed', error)
+    return map
+  }
+
+  const wanted = new Set(unique)
+  for (const row of data || []) {
+    const email = String(row.email || '').trim().toLowerCase()
+    if (!email || !wanted.has(email)) continue
+    const label = staffNickFromTeam(row)
+    if (label) map.set(email, label)
+  }
+  return map
+}
+
+async function paymentSplitsByInvoiceId(
+  admin: AdminClient,
+  invoiceIds: string[]
+): Promise<Map<string, { chargeUsd: number; tipUsd: number }>> {
+  const splits = new Map<string, { chargeUsd: number; tipUsd: number }>()
+  const ids = [...new Set(invoiceIds.map((id) => id.trim()).filter(Boolean))]
+  if (ids.length === 0) return splits
+
+  const chunkSize = 25
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += chunkSize) chunks.push(ids.slice(i, i + chunkSize))
+
+  const concurrency = 4
+  for (let i = 0; i < chunks.length; i += concurrency) {
+    const group = chunks.slice(i, i + concurrency)
+    const results = await Promise.all(
+      group.map(async (chunk) => {
+        const orFilter = chunk.map((id) => `note.ilike.%invoice_id:${id}%`).join(',')
+        const { data, error } = await admin.from('payment_records').select('amount, note').or(orFilter)
+        if (error) {
+          console.error('[payableInvoice] quick payment history payments failed', error)
+          return []
+        }
+        return data || []
+      })
+    )
+    for (const rows of results) {
+      for (const row of rows) {
+        const note = String(row.note || '')
+        const invoiceId = invoiceIdFromPaymentNote(note)
+        if (!invoiceId) continue
+        const amount = roundMoney(Number(row.amount) || 0)
+        if (amount <= 0) continue
+        const current = splits.get(invoiceId) || { chargeUsd: 0, tipUsd: 0 }
+        if (paymentNoteIsGuideTip(note)) current.tipUsd = roundMoney(current.tipUsd + amount)
+        else current.chargeUsd = roundMoney(current.chargeUsd + amount)
+        splits.set(invoiceId, current)
+      }
+    }
+  }
+  return splits
+}
+
+function mapQuickPaymentHistoryRow(
+  row: {
+    id: string
+    invoice_number?: string | null
+    status?: string | null
+    total?: number | null
+    items?: unknown
+    created_at?: string | null
+    sent_at?: string | null
+    paid_at?: string | null
+    created_by?: string | null
+    payment_token?: string | null
+    hosted_invoice_url?: string | null
+    stripe_invoice_status?: string | null
+    customers?: unknown
+  },
+  locale: 'ko' | 'en',
+  nicks: Map<string, string>,
+  payments: Map<string, { chargeUsd: number; tipUsd: number }>
+): QuickPaymentHistoryItem {
+  const customerRaw = row.customers
+  const customer = Array.isArray(customerRaw)
+    ? (customerRaw[0] as { name?: string | null; email?: string | null; phone?: string | null } | undefined)
+    : (customerRaw as { name?: string | null; email?: string | null; phone?: string | null } | null | undefined)
+  const openAmount = isTipOpenAmountInvoiceItems(row.items)
+  const amounts = quickPaymentItemAmounts(row.items)
+  const invoiceTotal = roundMoney(Number(row.total) || 0)
+  const status = String(row.status || 'draft')
+  const stripeStatus = row.stripe_invoice_status ?? null
+  const statusPaid = status.toLowerCase() === 'paid' || (stripeStatus || '').toLowerCase() === 'paid'
+  const split = payments.get(String(row.id).toLowerCase()) || { chargeUsd: 0, tipUsd: 0 }
+
+  let paidAmountUsd: number | null = null
+  let extraTipUsd: number | null = null
+  if (openAmount) {
+    const fromPayments = split.tipUsd > 0 ? split.tipUsd : split.chargeUsd
+    const fromInvoice = invoiceTotal > 0 ? invoiceTotal : amounts.itemAmountUsd
+    paidAmountUsd = fromPayments > 0 ? fromPayments : fromInvoice > 0 ? fromInvoice : null
+  } else {
+    paidAmountUsd = split.chargeUsd > 0 ? split.chargeUsd : statusPaid ? invoiceTotal : null
+    extraTipUsd = split.tipUsd > 0 ? split.tipUsd : null
+  }
+
+  const createdBy = row.created_by?.trim() || null
+  const createdByNick = createdBy ? nicks.get(createdBy.toLowerCase()) || null : null
+  const paymentToken = row.payment_token
+
+  return {
+    id: String(row.id),
+    invoiceNumber: String(row.invoice_number || ''),
+    status,
+    total: invoiceTotal,
+    description: descriptionFromInvoiceItems(row.items, locale),
+    email: (customer?.email || '').trim(),
+    recipientName: (customer?.name || '').trim(),
+    reservationId: reservationIdFromInvoiceItems(row.items),
+    createdAt: row.created_at ?? null,
+    sentAt: row.sent_at ?? null,
+    paidAt: row.paid_at ?? null,
+    createdBy,
+    createdByNick,
+    phone: (customer?.phone || '').trim() || null,
+    channelRn: null,
+    sitePayUrl: paymentToken ? buildInvoiceSitePayUrl(paymentToken, locale) : null,
+    hostedInvoiceUrl: row.hosted_invoice_url ?? null,
+    stripeInvoiceStatus: stripeStatus,
+    openAmount,
+    baseAmountUsd: openAmount ? null : amounts.baseAmountUsd,
+    cardFeeUsd: openAmount ? 0 : amounts.cardFeeUsd,
+    paidAmountUsd,
+    extraTipUsd,
+    paid: statusPaid || (paidAmountUsd != null && paidAmountUsd > 0),
+  }
+}
+
+function postgrestIlikeQuoted(term: string): string {
+  const pattern = `%${term.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
+  return `"${pattern.replace(/"/g, '""')}"`
+}
+
+function sanitizeHistorySearch(raw: string | undefined): string {
+  return (raw || '').replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80)
+}
+
+function phoneSearchClauses(term: string): string[] {
+  const like = postgrestIlikeQuoted(term)
+  const clauses = [`phone.ilike.${like}`, `emergency_contact.ilike.${like}`]
+  const digits = term.replace(/\D/g, '')
+  const local = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
+  if (local.length >= 10) {
+    const pattern = `%${local.slice(0, 3)}%${local.slice(3, 6)}%${local.slice(6, 10)}%`
+    clauses.push(`phone.ilike."${pattern.replace(/"/g, '""')}"`)
+  } else if (digits.length >= 7) {
+    clauses.push(`phone.ilike.${postgrestIlikeQuoted(digits)}`)
+  }
+  return clauses
+}
+
+const QUICK_PAYMENT_SEARCH_NOTES = [QUICK_PAYMENT_INVOICE_NOTES, ...QUICK_PAYMENT_NOTES_LEGACY]
+
+async function quickPaymentInvoiceIds(
+  admin: AdminClient,
+  // PostgREST 필터 체인이 select 이후에 갈라져 호출부에서만 조건을 붙입니다.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  apply: (query: any) => any
+): Promise<string[]> {
+  const base = admin.from('invoices').select('id').in('notes', QUICK_PAYMENT_SEARCH_NOTES)
+  const { data, error } = await apply(base).order('created_at', { ascending: false }).limit(40)
+  if (error) {
+    console.error('[payableInvoice] quick payment search invoices', error)
+    return []
+  }
+  return (data || []).map((row: { id?: string }) => String(row.id || '')).filter(Boolean)
+}
+
+async function invoiceIdsForReservationItems(admin: AdminClient, reservationIds: string[]): Promise<string[]> {
+  const ids = reservationIds.slice(0, 15)
+  const groups = await Promise.all(
+    ids.map(async (reservationId) => {
+      const { data, error } = await admin
+        .from('invoices')
+        .select('id')
+        .in('notes', QUICK_PAYMENT_SEARCH_NOTES)
+        .contains('items', [{ reservationId }])
+        .order('created_at', { ascending: false })
+        .limit(10)
+      if (error) {
+        console.error('[payableInvoice] quick payment search by reservation', error)
+        return [] as string[]
+      }
+      return (data || []).map((row) => String(row.id))
+    })
+  )
+  return groups.flat()
+}
+
+async function searchQuickPaymentInvoiceIds(admin: AdminClient, term: string): Promise<string[]> {
+  const like = postgrestIlikeQuoted(term)
+  const escaped = term.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+  const customerOr = [`name.ilike.${like}`, `email.ilike.${like}`, ...phoneSearchClauses(term)].join(',')
+  const guestOr = [
+    `name.ilike.${like}`,
+    `name_en.ilike.${like}`,
+    `name_ko.ilike.${like}`,
+    `email.ilike.${like}`,
+    ...phoneSearchClauses(term).filter((clause) => clause.startsWith('phone.ilike.')),
+  ].join(',')
+
+  const [customers, reservations, guests, team, channels] = await Promise.all([
+    admin.from('customers').select('id').or(customerOr).limit(40),
+    admin
+      .from('reservations')
+      .select('id, customer_id')
+      .or(`channel_rn.ilike.${like},id.ilike.${like},pickup_hotel.ilike.${like}`)
+      .limit(30),
+    admin.from('reservation_customers').select('reservation_id, customer_id').or(guestOr).limit(30),
+    admin
+      .from('team')
+      .select('email')
+      .or(
+        `nick_name.ilike.${like},name_ko.ilike.${like},name_en.ilike.${like},display_name.ilike.${like},email.ilike.${like}`
+      )
+      .limit(20),
+    admin.from('channels').select('id').ilike('name', `%${escaped}%`).limit(8),
+  ])
+
+  if (customers.error) console.error('[payableInvoice] quick payment search customers', customers.error)
+  if (reservations.error) console.error('[payableInvoice] quick payment search reservations', reservations.error)
+  if (guests.error) console.error('[payableInvoice] quick payment search guests', guests.error)
+  if (team.error) console.error('[payableInvoice] quick payment search team', team.error)
+  if (channels.error) console.error('[payableInvoice] quick payment search channels', channels.error)
+
+  const customerIds = new Set<string>()
+  const reservationIds = new Set<string>()
+  for (const row of customers.data || []) {
+    if (row.id) customerIds.add(String(row.id))
+  }
+  for (const row of reservations.data || []) {
+    if (row.id) reservationIds.add(String(row.id))
+    if (row.customer_id) customerIds.add(String(row.customer_id))
+  }
+  for (const row of guests.data || []) {
+    if (row.reservation_id) reservationIds.add(String(row.reservation_id))
+    if (row.customer_id) customerIds.add(String(row.customer_id))
+  }
+
+  const channelIds = (channels.data || []).map((row) => String(row.id)).filter(Boolean)
+  if (channelIds.length > 0) {
+    const { data, error } = await admin
+      .from('reservations')
+      .select('id, customer_id')
+      .in('channel_id', channelIds)
+      .order('created_at', { ascending: false })
+      .limit(30)
+    if (error) console.error('[payableInvoice] quick payment search channel reservations', error)
+    for (const row of data || []) {
+      if (row.id) reservationIds.add(String(row.id))
+      if (row.customer_id) customerIds.add(String(row.customer_id))
+    }
+  }
+
+  const staffEmails = [...new Set((team.data || []).map((row) => String(row.email || '').trim()).filter(Boolean))].slice(
+    0,
+    20
+  )
+  const customerIdList = [...customerIds].slice(0, 40)
+  const reservationIdList = [...reservationIds].slice(0, 15)
+
+  const idGroups = await Promise.all([
+    quickPaymentInvoiceIds(admin, (query) => query.ilike('invoice_number', `%${escaped}%`)),
+    customerIdList.length > 0
+      ? quickPaymentInvoiceIds(admin, (query) => query.in('customer_id', customerIdList))
+      : Promise.resolve([]),
+    staffEmails.length > 0
+      ? quickPaymentInvoiceIds(admin, (query) =>
+          query.or(staffEmails.map((email) => `created_by.ilike.${postgrestIlikeQuoted(email)}`).join(','))
+        )
+      : Promise.resolve([]),
+    reservationIdList.length > 0
+      ? invoiceIdsForReservationItems(admin, reservationIdList)
+      : Promise.resolve([]),
+  ])
+
+  return [...new Set(idGroups.flat())].slice(0, 80)
+}
+
+async function channelRnByReservationId(admin: AdminClient, reservationIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  const ids = [...new Set(reservationIds.map((id) => id.trim()).filter(Boolean))].slice(0, 80)
+  if (ids.length === 0) return map
+  const { data, error } = await admin.from('reservations').select('id, channel_rn').in('id', ids)
+  if (error) {
+    console.error('[payableInvoice] quick payment channel rn lookup', error)
+    return map
+  }
+  for (const row of data || []) {
+    const rn = String(row.channel_rn || '').trim()
+    if (row.id && rn) map.set(String(row.id), rn)
+  }
+  return map
+}
+
 /**
- * 빠른 금액 청구로 만든 인보이스 최근 목록을 반환합니다.
+ * 빠른 금액 청구로 만든 인보이스 목록.
+ * 결제 기록의 청구액·가이드 팁과 담당 닉네임을 함께 붙입니다.
  */
 export async function listQuickPaymentInvoices(
   admin: AdminClient,
-  options?: { locale?: 'ko' | 'en'; limit?: number }
-): Promise<QuickPaymentHistoryItem[]> {
+  options?: {
+    locale?: 'ko' | 'en'
+    limit?: number
+    offset?: number
+    filter?: QuickPaymentHistoryFilter
+    query?: string
+  }
+): Promise<QuickPaymentHistoryPage> {
   const locale = options?.locale === 'ko' ? 'ko' : 'en'
-  const limit = Math.min(Math.max(options?.limit ?? 50, 1), 100)
+  const limit = Math.min(Math.max(options?.limit ?? 40, 1), 50)
+  const offset = Math.max(options?.offset ?? 0, 0)
+  const filter: QuickPaymentHistoryFilter =
+    options?.filter === 'unpaid' || options?.filter === 'paid' || options?.filter === 'tip'
+      ? options.filter
+      : 'all'
+  const search = sanitizeHistorySearch(options?.query)
 
-  const { data, error } = await admin
+  let query = admin
     .from('invoices')
-    .select(
-      'id, invoice_number, status, total, items, created_at, sent_at, paid_at, created_by, payment_token, hosted_invoice_url, stripe_invoice_status, customer_id, customers(id, name, email)'
-    )
+    .select(QUICK_PAYMENT_HISTORY_SELECT, { count: 'exact' })
     .in('notes', [QUICK_PAYMENT_INVOICE_NOTES, ...QUICK_PAYMENT_NOTES_LEGACY])
     .order('created_at', { ascending: false })
-    .limit(limit)
+
+  if (search.length >= 2) {
+    const matchedIds = await searchQuickPaymentInvoiceIds(admin, search)
+    if (matchedIds.length === 0) {
+      return { items: [], hasMore: false, total: 0 }
+    }
+    query = query.in('id', matchedIds)
+  }
+
+  if (filter === 'paid') {
+    query = query.or('status.eq.paid,stripe_invoice_status.eq.paid')
+  } else if (filter === 'unpaid') {
+    query = query.in('status', ['draft', 'sent'])
+  }
+
+  const searching = search.length >= 2
+  const scan = filter === 'tip' && !searching ? 300 : limit
+  const { data, error, count } =
+    filter === 'tip'
+      ? await query.limit(searching ? 80 : scan)
+      : await query.range(offset, offset + limit - 1)
 
   if (error) {
     throw new Error(error.message || 'Failed to load quick payment history')
   }
 
-  return (data || []).map((row) => {
-    const customerRaw = (row as { customers?: unknown }).customers
-    const customer = Array.isArray(customerRaw)
-      ? (customerRaw[0] as { name?: string | null; email?: string | null } | undefined)
-      : (customerRaw as { name?: string | null; email?: string | null } | null | undefined)
-    const paymentToken = (row as { payment_token?: string | null }).payment_token
+  const rows = data || []
+  const [nicks, payments] = await Promise.all([
+    teamNickByEmail(
+      admin,
+      rows.map((row) => String(row.created_by || ''))
+    ),
+    paymentSplitsByInvoiceId(
+      admin,
+      rows.map((row) => String(row.id))
+    ),
+  ])
+
+  const mappedRows = rows.map((row) => mapQuickPaymentHistoryRow(row, locale, nicks, payments))
+  const rnByReservation = await channelRnByReservationId(
+    admin,
+    mappedRows.map((item) => item.reservationId || '')
+  )
+  const mapped = mappedRows.map((item) => ({
+    ...item,
+    channelRn: item.reservationId ? rnByReservation.get(item.reservationId) || null : null,
+  }))
+  if (filter === 'tip') {
+    const tipped = mapped.filter((item) => item.openAmount || (item.extraTipUsd != null && item.extraTipUsd > 0))
     return {
-      id: String(row.id),
-      invoiceNumber: String(row.invoice_number || ''),
-      status: String(row.status || 'draft'),
-      total: roundMoney(Number(row.total) || 0),
-      description: descriptionFromInvoiceItems(row.items, locale),
-      email: (customer?.email || '').trim(),
-      recipientName: (customer?.name || '').trim(),
-      reservationId: reservationIdFromInvoiceItems(row.items),
-      createdAt: row.created_at ?? null,
-      sentAt: row.sent_at ?? null,
-      paidAt: row.paid_at ?? null,
-      createdBy: row.created_by ?? null,
-      sitePayUrl: paymentToken ? buildInvoiceSitePayUrl(paymentToken, locale) : null,
-      hostedInvoiceUrl: row.hosted_invoice_url ?? null,
-      stripeInvoiceStatus: row.stripe_invoice_status ?? null,
-      openAmount: isTipOpenAmountInvoiceItems(row.items),
+      items: tipped.slice(offset, offset + limit),
+      hasMore: tipped.length > offset + limit,
+      total: tipped.length,
     }
-  })
+  }
+
+  const total = typeof count === 'number' ? count : null
+  return {
+    items: mapped,
+    hasMore: total != null ? offset + mapped.length < total : mapped.length === limit,
+    total,
+  }
 }
 
 const MIN_TIP_CENTS = 50

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { createPortal } from 'react-dom'
 import { useParams } from 'next/navigation'
 import {
@@ -14,12 +15,14 @@ import {
   X,
   History,
   RefreshCw,
+  Search,
+  FileText,
   TriangleAlert,
   Smartphone,
   Heart,
 } from 'lucide-react'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
-import { DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
+import { childModalZIndex, DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
 import CardFeeChargePreview, { cardFeeChargeTotals } from '@/components/payment/CardFeeChargePreview'
 import { actualAmountFromChargedTotal } from '@/lib/choiceProcessingFee'
 import { isGetYourGuideReplyEmail } from '@/lib/otaDirectCustomerEmail'
@@ -30,6 +33,14 @@ import {
 } from '@/lib/quickPaymentRequestMessage'
 import { resolveSmsPhone } from '@/utils/formatPhoneToE164'
 import { useReservationFormChildOverlayZIndex } from '@/components/reservation/ReservationFormModalStackContext'
+
+const ReservationResizableDialog = dynamic(
+  () =>
+    import('@/components/reservation/ReservationResizableDialog').then(
+      (m) => m.ReservationResizableDialog
+    ),
+  { ssr: false }
+)
 
 function WhatsAppGlyph({ className }: { className?: string }) {
   return (
@@ -1116,6 +1127,8 @@ type QuickPaymentRequestModalProps = {
   onCustomerContactUpdated?: (payload: QuickPaymentCustomerContactUpdate) => void
 }
 
+type HistoryFilter = 'all' | 'unpaid' | 'paid' | 'tip'
+
 type HistoryItem = {
   id: string
   invoiceNumber: string
@@ -1129,10 +1142,86 @@ type HistoryItem = {
   sentAt: string | null
   paidAt: string | null
   createdBy: string | null
+  createdByNick?: string | null
+  phone?: string | null
+  channelRn?: string | null
   sitePayUrl: string | null
   hostedInvoiceUrl: string | null
   stripeInvoiceStatus: string | null
   openAmount?: boolean
+  baseAmountUsd?: number | null
+  cardFeeUsd?: number
+  paidAmountUsd?: number | null
+  extraTipUsd?: number | null
+  paid?: boolean
+}
+
+const HISTORY_FILTERS: { id: HistoryFilter; ko: string; en: string }[] = [
+  { id: 'all', ko: '전체', en: 'All' },
+  { id: 'unpaid', ko: '미결제', en: 'Unpaid' },
+  { id: 'paid', ko: '결제됨', en: 'Paid' },
+  { id: 'tip', ko: '팁', en: 'Tips' },
+]
+
+const HISTORY_PAGE_SIZE = 40
+
+function formatUsd(amount: number): string {
+  return `$${amount.toFixed(2)}`
+}
+
+function historyHeadline(item: HistoryItem, locale: 'ko' | 'en'): string {
+  if (item.openAmount) {
+    if (item.paidAmountUsd != null && item.paidAmountUsd > 0) return formatUsd(item.paidAmountUsd)
+    return locale === 'ko' ? '손님 입력' : 'Open amount'
+  }
+  return formatUsd(item.total)
+}
+
+function historyAmountCells(
+  item: HistoryItem,
+  locale: 'ko' | 'en'
+): { charge: string; chargeHint: string | null; paid: string; tip: string; tipIsMoney: boolean } {
+  const ko = locale === 'ko'
+  const waiting = ko ? '대기' : 'Waiting'
+  if (item.openAmount) {
+    const guestPaid = item.paidAmountUsd != null && item.paidAmountUsd > 0 ? item.paidAmountUsd : null
+    return {
+      charge: ko ? '손님 입력' : 'Guest',
+      chargeHint: null,
+      paid: guestPaid != null ? formatUsd(guestPaid) : waiting,
+      tip: guestPaid != null ? formatUsd(guestPaid) : '—',
+      tipIsMoney: guestPaid != null,
+    }
+  }
+  const fee = item.cardFeeUsd || 0
+  return {
+    charge: formatUsd(item.total),
+    chargeHint:
+      item.baseAmountUsd != null && fee > 0
+        ? ko
+          ? `수수료 ${formatUsd(fee)} 포함`
+          : `incl. ${formatUsd(fee)} fee`
+        : null,
+    paid: item.paid && item.paidAmountUsd != null ? formatUsd(item.paidAmountUsd) : waiting,
+    tip: item.extraTipUsd != null && item.extraTipUsd > 0 ? formatUsd(item.extraTipUsd) : '—',
+    tipIsMoney: item.extraTipUsd != null && item.extraTipUsd > 0,
+  }
+}
+
+function sumHistoryMoney(items: HistoryItem[]): { charges: number; extraTips: number; guestTips: number } {
+  let charges = 0
+  let extraTips = 0
+  let guestTips = 0
+  for (const item of items) {
+    if (item.openAmount) {
+      if (item.paidAmountUsd != null && item.paidAmountUsd > 0) guestTips += item.paidAmountUsd
+    } else {
+      if (item.paid && item.paidAmountUsd != null) charges += item.paidAmountUsd
+      if (item.extraTipUsd != null && item.extraTipUsd > 0) extraTips += item.extraTipUsd
+    }
+  }
+  const round = (n: number) => Math.round(n * 100) / 100
+  return { charges: round(charges), extraTips: round(extraTips), guestTips: round(guestTips) }
 }
 
 function statusLabel(status: string, locale: 'ko' | 'en'): string {
@@ -1175,37 +1264,66 @@ function formatHistoryDate(raw: string | null, locale: 'ko' | 'en'): string {
 function QuickPaymentHistoryPanel({
   locale,
   onReuse,
+  onOpenReservation,
 }: {
   locale: 'ko' | 'en'
   onReuse: (item: HistoryItem) => void
+  onOpenReservation: (reservationId: string) => void
 }) {
   const [items, setItems] = useState<HistoryItem[]>([])
+  const [filter, setFilter] = useState<HistoryFilter>('all')
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [total, setTotal] = useState<number | null>(null)
+  const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  const load = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const response = await fetchApiWithAuth(
-        `/api/invoices/quick-payment-request?locale=${locale}&limit=50`
-      )
-      const data = await response.json()
-      if (!response.ok) {
-        throw new Error(data.error || (locale === 'ko' ? '내역 로드 실패' : 'Failed to load history'))
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 300)
+    return () => window.clearTimeout(timer)
+  }, [query])
+
+  const load = useCallback(
+    async (offset: number, mode: 'replace' | 'append') => {
+      if (mode === 'replace') {
+        setLoading(true)
+        setItems([])
+      } else setLoadingMore(true)
+      setError(null)
+      try {
+        const response = await fetchApiWithAuth(
+          `/api/invoices/quick-payment-request?locale=${locale}&limit=${HISTORY_PAGE_SIZE}&offset=${offset}&filter=${filter}${
+            debouncedQuery.trim().length >= 2 ? `&q=${encodeURIComponent(debouncedQuery.trim())}` : ''
+          }`
+        )
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.error || (locale === 'ko' ? '내역 로드 실패' : 'Failed to load history'))
+        }
+        const next = Array.isArray(data.items) ? (data.items as HistoryItem[]) : []
+        setItems((prev) => {
+          if (mode === 'replace') return next
+          const seen = new Set(prev.map((item) => item.id))
+          return [...prev, ...next.filter((item) => !seen.has(item.id))]
+        })
+        setHasMore(Boolean(data.hasMore))
+        setTotal(typeof data.total === 'number' ? data.total : null)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : locale === 'ko' ? '오류' : 'Error')
+        if (mode === 'replace') setItems([])
+      } finally {
+        setLoading(false)
+        setLoadingMore(false)
       }
-      setItems(Array.isArray(data.items) ? data.items : [])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : locale === 'ko' ? '오류' : 'Error')
-      setItems([])
-    } finally {
-      setLoading(false)
-    }
-  }
+    },
+    [debouncedQuery, filter, locale]
+  )
 
   useEffect(() => {
-    void load()
-  }, [locale])
+    void load(0, 'replace')
+  }, [load])
 
   const copyUrl = async (url: string) => {
     try {
@@ -1216,141 +1334,271 @@ function QuickPaymentHistoryPanel({
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-        {locale === 'ko' ? '내역을 불러오는 중…' : 'Loading history…'}
-      </div>
-    )
-  }
+  const visibleItems = items
+  const visibleTotals = sumHistoryMoney(visibleItems)
 
-  if (error) {
-    return (
-      <div className="space-y-3">
-        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm hover:bg-muted"
-        >
-          <RefreshCw className="h-4 w-4" aria-hidden />
-          {locale === 'ko' ? '다시 시도' : 'Retry'}
-        </button>
-      </div>
-    )
-  }
-
-  if (items.length === 0) {
-    return (
-      <div className="py-10 text-center text-sm text-muted-foreground">
-        {locale === 'ko' ? '아직 청구한 내역이 없습니다.' : 'No payment requests yet.'}
-      </div>
-    )
-  }
+  const summary =
+    total != null
+      ? locale === 'ko'
+        ? `전체 ${total}건 중 ${items.length}건`
+        : `${items.length} of ${total}`
+      : locale === 'ko'
+        ? `${items.length}건 표시`
+        : `Showing ${items.length}`
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap gap-1.5">
+        {HISTORY_FILTERS.map((option) => {
+          const active = filter === option.id
+          return (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => setFilter(option.id)}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                active
+                  ? 'bg-teal-600 text-white'
+                  : 'border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
+              }`}
+              aria-pressed={active}
+            >
+              {locale === 'ko' ? option.ko : option.en}
+            </button>
+          )
+        })}
+      </div>
+      <label className="relative block">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={
+            locale === 'ko'
+              ? '이름, 이메일, 전화, 채널 RN, 인보이스'
+              : 'Name, email, phone, channel RN, invoice'
+          }
+          aria-label={locale === 'ko' ? '내역 검색' : 'Search history'}
+          className="h-11 w-full rounded-xl border border-border bg-card pl-9 pr-3 text-sm outline-none ring-teal-600/30 placeholder:text-muted-foreground focus:ring-2"
+        />
+      </label>
+      <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          {locale === 'ko' ? `최근 ${items.length}건` : `Latest ${items.length}`}
+          {loading
+            ? locale === 'ko'
+              ? '불러오는 중…'
+              : 'Loading…'
+            : filter === 'tip'
+              ? locale === 'ko'
+                ? `${summary} · 최근 300건 기준`
+                : `${summary} · latest 300`
+              : summary}
         </p>
         <button
           type="button"
-          onClick={() => void load()}
+          onClick={() => void load(0, 'replace')}
           className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <RefreshCw className="h-3.5 w-3.5" aria-hidden />
           {locale === 'ko' ? '새로고침' : 'Refresh'}
         </button>
       </div>
-      <ul className="max-h-[min(55vh,28rem)] space-y-2 overflow-y-auto pr-1">
-        {items.map((item) => {
-          const payUrl = item.sitePayUrl || item.hostedInvoiceUrl
-          return (
-            <li
-              key={item.id}
-              className="rounded-xl border border-border/60 bg-card p-3 shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold tabular-nums text-foreground">
-                      {item.openAmount && item.status.toLowerCase() !== 'paid'
-                        ? locale === 'ko'
-                          ? '손님 입력'
-                          : 'Open amount'
-                        : `$${item.total.toFixed(2)}`}
-                    </span>
-                    {item.openAmount ? (
-                      <span className="inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-800">
-                        {locale === 'ko' ? '팁 링크' : 'Tip link'}
-                      </span>
-                    ) : null}
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClass(item.status)}`}
-                    >
-                      {statusLabel(item.status, locale)}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">{item.invoiceNumber}</span>
-                  </div>
-                  <p className="mt-1 truncate text-sm text-foreground" title={item.description}>
-                    {item.description}
-                  </p>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {item.recipientName ? `${item.recipientName} · ` : ''}
-                    {item.email || '—'}
-                  </p>
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    {locale === 'ko' ? '생성' : 'Created'}: {formatHistoryDate(item.createdAt, locale)}
-                    {item.paidAt
-                      ? ` · ${locale === 'ko' ? '결제' : 'Paid'}: ${formatHistoryDate(item.paidAt, locale)}`
-                      : item.sentAt
-                        ? ` · ${locale === 'ko' ? '발송' : 'Sent'}: ${formatHistoryDate(item.sentAt, locale)}`
-                        : ''}
-                  </p>
-                  {item.createdBy ? (
-                    <p className="text-[11px] text-muted-foreground">
-                      {locale === 'ko' ? '담당' : 'By'}: {item.createdBy}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {payUrl && item.status.toLowerCase() !== 'paid' ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => void copyUrl(payUrl)}
-                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-border px-2.5 text-xs hover:bg-muted"
-                    >
-                      <Copy className="h-3.5 w-3.5" aria-hidden />
-                      {locale === 'ko' ? '링크 복사' : 'Copy'}
-                    </button>
-                    <a
-                      href={payUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-border px-2.5 text-xs hover:bg-muted"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-                      {locale === 'ko' ? '열기' : 'Open'}
-                    </a>
-                  </>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => onReuse(item)}
-                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-teal-600 px-2.5 text-xs text-teal-700 hover:bg-teal-50"
-                >
-                  <Send className="h-3.5 w-3.5" aria-hidden />
-                  {locale === 'ko' ? '다시 청구' : 'Charge again'}
-                </button>
-              </div>
-            </li>
-          )
-        })}
-      </ul>
+      {error ? (
+        <div className="space-y-3">
+          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+          <button
+            type="button"
+            onClick={() => void load(0, 'replace')}
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm hover:bg-muted"
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden />
+            {locale === 'ko' ? '다시 시도' : 'Retry'}
+          </button>
+        </div>
+      ) : loading ? (
+        <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+          {locale === 'ko' ? '내역을 불러오는 중…' : 'Loading history…'}
+        </div>
+      ) : items.length === 0 ? (
+        <div className="py-10 text-center text-sm text-muted-foreground">
+          {debouncedQuery.trim().length >= 2
+            ? locale === 'ko'
+              ? '이름, 이메일, 전화, 채널 RN으로 찾은 청구가 없습니다.'
+              : 'No charges match that name, email, phone, or channel RN.'
+            : locale === 'ko'
+              ? '이 조건의 청구 내역이 없습니다.'
+              : 'No payment requests for this filter.'}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-xl border border-border/70 bg-muted/40 px-3 py-2">
+              <p className="text-[11px] text-muted-foreground">{locale === 'ko' ? '청구 결제' : 'Charges'}</p>
+              <p className="text-sm font-semibold tabular-nums text-foreground">{formatUsd(visibleTotals.charges)}</p>
+            </div>
+            <div className="rounded-xl border border-amber-200/80 bg-amber-50 px-3 py-2">
+              <p className="text-[11px] text-amber-900/80">{locale === 'ko' ? '추가 팁' : 'Extra tips'}</p>
+              <p className="text-sm font-semibold tabular-nums text-amber-950">{formatUsd(visibleTotals.extraTips)}</p>
+            </div>
+            <div className="rounded-xl border border-rose-200/80 bg-rose-50 px-3 py-2">
+              <p className="text-[11px] text-rose-900/80">{locale === 'ko' ? '팁 링크' : 'Tip links'}</p>
+              <p className="text-sm font-semibold tabular-nums text-rose-950">{formatUsd(visibleTotals.guestTips)}</p>
+            </div>
+          </div>
+          {visibleItems.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              {locale === 'ko' ? '검색 결과가 없습니다.' : 'No matches.'}
+            </div>
+          ) : (
+            <ul className="max-h-[min(60vh,34rem)] space-y-2 overflow-y-auto pr-1">
+              {visibleItems.map((item) => {
+                const payUrl = item.sitePayUrl || item.hostedInvoiceUrl
+                const settled = Boolean(item.paid) || item.status.toLowerCase() === 'paid'
+                const owner = item.createdByNick || item.createdBy
+                const amounts = historyAmountCells(item, locale)
+                const cells = [
+                  {
+                    label: locale === 'ko' ? '청구' : 'Charge',
+                    value: amounts.charge,
+                    hint: amounts.chargeHint,
+                    valueClass: 'text-foreground',
+                  },
+                  {
+                    label: locale === 'ko' ? '결제' : 'Paid',
+                    value: amounts.paid,
+                    hint: null,
+                    valueClass: amounts.paid === (locale === 'ko' ? '대기' : 'Waiting') ? 'text-muted-foreground' : 'text-green-800',
+                  },
+                  {
+                    label: locale === 'ko' ? '팁' : 'Tip',
+                    value: amounts.tip,
+                    hint: item.openAmount && amounts.tipIsMoney ? (locale === 'ko' ? '손님 입력' : 'Guest amount') : null,
+                    valueClass: amounts.tipIsMoney ? 'text-amber-900' : 'text-muted-foreground',
+                  },
+                ]
+                return (
+                  <li key={item.id} className="rounded-xl border border-border/60 bg-card p-3 shadow-sm">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-base font-semibold tabular-nums text-foreground">
+                          {historyHeadline(item, locale)}
+                        </span>
+                        {item.openAmount ? (
+                          <span className="inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-800">
+                            {locale === 'ko' ? '팁 링크' : 'Tip link'}
+                          </span>
+                        ) : null}
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClass(
+                            settled ? 'paid' : item.status
+                          )}`}
+                        >
+                          {statusLabel(settled ? 'paid' : item.status, locale)}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">{item.invoiceNumber}</span>
+                      </div>
+                      <div className="mt-2 grid grid-cols-3 gap-2">
+                        {cells.map((cell) => (
+                          <div key={cell.label} className="rounded-lg bg-muted/50 px-2 py-1.5">
+                            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                              {cell.label}
+                            </p>
+                            <p className={`text-sm font-semibold tabular-nums ${cell.valueClass}`}>{cell.value}</p>
+                            {cell.hint ? <p className="text-[10px] text-muted-foreground">{cell.hint}</p> : null}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="mt-2 truncate text-sm text-foreground" title={item.description}>
+                        {item.description}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {item.recipientName ? `${item.recipientName} · ` : ''}
+                        {item.email || '—'}
+                        {item.phone ? ` · ${item.phone}` : ''}
+                      </p>
+                      {item.channelRn ? (
+                        <p className="text-[11px] text-muted-foreground">RN {item.channelRn}</p>
+                      ) : null}
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {locale === 'ko' ? '생성' : 'Created'} {formatHistoryDate(item.createdAt, locale)}
+                        {' · '}
+                        {locale === 'ko' ? '발송' : 'Sent'} {formatHistoryDate(item.sentAt, locale)}
+                        {' · '}
+                        {locale === 'ko' ? '결제' : 'Paid'} {formatHistoryDate(item.paidAt, locale)}
+                      </p>
+                      {owner ? (
+                        <p className="text-[11px] text-muted-foreground" title={item.createdBy || undefined}>
+                          {locale === 'ko' ? '담당' : 'By'}: {owner}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {item.reservationId?.trim() ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpenReservation(item.reservationId!.trim())}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
+                        >
+                          <FileText className="h-3.5 w-3.5" aria-hidden />
+                          {locale === 'ko' ? '예약 상세' : 'Reservation'}
+                        </button>
+                      ) : null}
+                      {payUrl && !settled ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void copyUrl(payUrl)}
+                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-border px-2.5 text-xs hover:bg-muted"
+                          >
+                            <Copy className="h-3.5 w-3.5" aria-hidden />
+                            {locale === 'ko' ? '링크 복사' : 'Copy'}
+                          </button>
+                          <a
+                            href={payUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-border px-2.5 text-xs hover:bg-muted"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                            {locale === 'ko' ? '열기' : 'Open'}
+                          </a>
+                        </>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => onReuse(item)}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-teal-600 px-2.5 text-xs text-teal-700 hover:bg-teal-50"
+                      >
+                        <Send className="h-3.5 w-3.5" aria-hidden />
+                        {locale === 'ko' ? '다시 청구' : 'Charge again'}
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          {debouncedQuery.trim().length >= 2 && items.length > 0 ? (
+            <p className="text-[11px] text-muted-foreground">
+              {locale === 'ko'
+                ? '이름, 이메일, 전화, 채널 RN, 인보이스, 담당으로 찾은 결과입니다.'
+                : 'Matches by name, email, phone, channel RN, invoice, or staff.'}
+            </p>
+          ) : null}
+        </div>
+      )}
+      {hasMore && !error ? (
+        <button
+          type="button"
+          onClick={() => void load(items.length, 'append')}
+          disabled={loadingMore}
+          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border text-sm font-medium hover:bg-muted disabled:opacity-60"
+        >
+          {loadingMore ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+          {locale === 'ko' ? '이전 내역 더 보기' : 'Load earlier requests'}
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -1369,6 +1617,7 @@ export function QuickPaymentRequestModal({
   const [formInitials, setFormInitials] = useState<QuickPaymentFormInitials | undefined>(initials)
   const [formKey, setFormKey] = useState(0)
   const [mounted, setMounted] = useState(false)
+  const [detailReservationId, setDetailReservationId] = useState<string | null>(null)
   const wasOpenRef = useRef(false)
 
   useEffect(() => {
@@ -1381,6 +1630,7 @@ export function QuickPaymentRequestModal({
       setView('form')
       setFormInitials(initials)
       setFormKey((k) => k + 1)
+      setDetailReservationId(null)
     }
     wasOpenRef.current = open
   }, [open, initials])
@@ -1391,11 +1641,15 @@ export function QuickPaymentRequestModal({
       if (e.key !== 'Escape') return
       e.preventDefault()
       e.stopPropagation()
+      if (detailReservationId) {
+        setDetailReservationId(null)
+        return
+      }
       onClose()
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [open, onClose])
+  }, [open, onClose, detailReservationId])
 
   if (!open || !mounted) return null
 
@@ -1406,6 +1660,7 @@ export function QuickPaymentRequestModal({
       onClick={(e) => {
         e.preventDefault()
         e.stopPropagation()
+        if (detailReservationId) return
         onClose()
       }}
       role="dialog"
@@ -1414,7 +1669,7 @@ export function QuickPaymentRequestModal({
     >
       <div
         className={`relative w-full max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-background p-5 shadow-lg ${
-          view === 'history' ? 'max-w-2xl' : 'max-w-lg'
+          view === 'history' ? 'max-w-3xl' : 'max-w-lg'
         }`}
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
@@ -1427,8 +1682,8 @@ export function QuickPaymentRequestModal({
             <p className="mt-1 text-sm text-muted-foreground">
               {view === 'history'
                 ? locale === 'ko'
-                  ? '이전에 청구한 Stripe 결제 요청 내역입니다.'
-                  : 'Previous Stripe payment requests.'
+                  ? '보낸 청구, 받은 결제, 추가 팁을 구분해서 볼 수 있습니다.'
+                  : 'Sent charges, payments received, and extra tips.'
                 : locale === 'ko'
                   ? '고정 금액 인보이스 또는 손님이 금액을 넣는 팁 링크를 이메일, 문자, WhatsApp으로 보낼 수 있습니다.'
                   : 'Send a fixed invoice or a guest-amount tip link by email, SMS, or WhatsApp.'}
@@ -1468,6 +1723,7 @@ export function QuickPaymentRequestModal({
         {view === 'history' ? (
           <QuickPaymentHistoryPanel
             locale={locale}
+            onOpenReservation={setDetailReservationId}
             onReuse={(item) => {
               const next: QuickPaymentFormInitials = {
                 email: item.email,
@@ -1498,6 +1754,14 @@ export function QuickPaymentRequestModal({
           />
         )}
       </div>
+      <ReservationResizableDialog
+        open={Boolean(detailReservationId)}
+        onOpenChange={(next) => {
+          if (!next) setDetailReservationId(null)
+        }}
+        reservationId={detailReservationId}
+        modalZIndex={Math.max(childModalZIndex(resolvedOverlayZIndex), DIALOG_Z_INDEX.nestedElevated)}
+      />
     </div>,
     document.body
   )

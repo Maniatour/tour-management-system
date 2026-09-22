@@ -160,6 +160,8 @@ const nextConfig = {
 	
 	// 실험적 기능 활성화 (optimizeCss는 dev에서 .next CSS 동시 I/O를 늘려 Windows -4094 유발 가능)
 	experimental: {
+		// dev 디스크 캐시가 .sst 로 수백 GB까지 쌓이면 첫 컴파일이 수분까지 늘어난다.
+		turbopackFileSystemCacheForDev: false,
 		optimizeCss:
 			process.env.NODE_ENV === 'production' && !buildLowMemory,
 		scrollRestoration: true,

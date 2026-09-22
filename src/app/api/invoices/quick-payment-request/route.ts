@@ -169,8 +169,14 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const locale = searchParams.get('locale') === 'ko' ? 'ko' : 'en'
   const invoiceId = (searchParams.get('invoiceId') || '').trim()
-  const limitRaw = Number(searchParams.get('limit') || 50)
-  const limit = Number.isFinite(limitRaw) ? limitRaw : 50
+  const limitRaw = Number(searchParams.get('limit') || 40)
+  const limit = Number.isFinite(limitRaw) ? limitRaw : 40
+  const offsetRaw = Number(searchParams.get('offset') || 0)
+  const offset = Number.isFinite(offsetRaw) ? offsetRaw : 0
+  const filterRaw = (searchParams.get('filter') || 'all').trim()
+  const filter =
+    filterRaw === 'unpaid' || filterRaw === 'paid' || filterRaw === 'tip' ? filterRaw : 'all'
+  const queryText = (searchParams.get('q') || '').trim().slice(0, 80)
 
   try {
     if (invoiceId) {
@@ -209,8 +215,19 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const items = await listQuickPaymentInvoices(supabaseAdmin, { locale, limit })
-    return NextResponse.json({ success: true, items })
+    const history = await listQuickPaymentInvoices(supabaseAdmin, {
+      locale,
+      limit,
+      offset,
+      filter,
+      ...(queryText.length >= 2 ? { query: queryText } : {}),
+    })
+    return NextResponse.json({
+      success: true,
+      items: history.items,
+      hasMore: history.hasMore,
+      total: history.total,
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to load history'
     console.error('[quick-payment-request GET]', err)

@@ -4142,6 +4142,7 @@
     "cancelReasonQueue": {
       "headerButton": "취소 Follow-up",
       "title": "취소 사유 미기록 — Follow-up 필요",
+      "helpButton": "설명과 권장 처리 순서",
       "subtitle": "최근 30일 이내 상태가 취소로 바뀐 예약 중, 취소 사유가 없는 건입니다. 단순 수정일은 보지 않습니다. 취소·재예약 권유 안내 → 고객 답변 → 취소 사유 기록 순서로 처리하세요.",
       "workflowTitle": "권장 처리 순서",
       "workflowNotice": "취소 및 재예약 권유 안내",
