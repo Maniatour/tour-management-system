@@ -1,12 +1,15 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import {
   canGuideProduct,
   GUIDE_LANGUAGE_CODES,
   GUIDE_LANGUAGE_PRIORITY_LABEL,
+  guideLanguageCodesForStaff,
   guideLanguagePriority,
+  parseGuideProductSkills,
   type GuideLanguageCode,
   type GuideLanguagePriorities,
   type GuideLanguagePriority,
@@ -50,41 +53,128 @@ function guideSkillGroup(subCategory: string | null | undefined): ProductOption[
 
 type GuideProductSkillsFieldsProps = {
   skills: GuideProductSkills
+  languages: string[] | null | undefined
   onChange: (skills: GuideProductSkills) => void
+  showHeading?: boolean
 }
 
-export default function GuideProductSkillsFields({ skills, onChange }: GuideProductSkillsFieldsProps) {
-  const [products, setProducts] = useState<ProductOption[]>([])
-  const [loading, setLoading] = useState(true)
-  const [query, setQuery] = useState('')
+let guideProductOptionsRequest: Promise<ProductOption[]> | null = null
 
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
+function loadGuideProductOptions(): Promise<ProductOption[]> {
+  if (!guideProductOptionsRequest) {
+    guideProductOptionsRequest = (async () => {
       const { data, error } = await supabase
         .from('products')
         .select('id, name, name_ko, name_en, internal_name_ko, product_code, sub_category, status')
         .in('sub_category', ['Mania Tour', 'Mania Service'])
         .eq('status', 'active')
         .order('name_ko')
-      if (cancelled) return
-      setLoading(false)
-      if (error) return
-      setProducts(
-        (data || [])
-          .filter((product) => isMiscTourSelectableProduct(product) && String(product.status || '').trim().toLowerCase() === 'active')
-          .map((product) => {
-            const group = guideSkillGroup(product.sub_category)
-            if (!group) return null
-            return {
-              id: String(product.id || '').trim(),
-              label: guideProductLabel(product),
-              group,
-            }
-          })
-          .filter((product): product is ProductOption => Boolean(product?.id)),
-      )
+      if (error) {
+        guideProductOptionsRequest = null
+        return []
+      }
+      return (data || [])
+        .filter((product) => isMiscTourSelectableProduct(product) && String(product.status || '').trim().toLowerCase() === 'active')
+        .map((product) => {
+          const group = guideSkillGroup(product.sub_category)
+          if (!group) return null
+          return {
+            id: String(product.id || '').trim(),
+            label: guideProductLabel(product),
+            group,
+          }
+        })
+        .filter((product): product is ProductOption => Boolean(product?.id))
     })()
+  }
+  return guideProductOptionsRequest
+}
+
+export function selectedGuideProductCount(skills: unknown): number {
+  const parsed = parseGuideProductSkills(skills)
+  return Object.keys(parsed).filter((id) => canGuideProduct(parsed, id)).length
+}
+
+export function GuideProductSkillBadges({ skills }: { skills: unknown }) {
+  const [products, setProducts] = useState<ProductOption[]>([])
+  const parsed = parseGuideProductSkills(skills)
+  const selectedIds = Object.keys(parsed).filter((id) => canGuideProduct(parsed, id))
+
+  useEffect(() => {
+    let cancelled = false
+    void loadGuideProductOptions().then((options) => {
+      if (!cancelled) setProducts(options)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (selectedIds.length === 0) return null
+
+  const selected = selectedIds.map((id) => products.find((product) => product.id === id) || { id, label: id, group: 'tour' as const })
+
+  return (
+    <span className="mt-2 block max-h-14 overflow-y-auto">
+      <span className="flex flex-wrap gap-1">
+        {selected.map((product) => {
+          const ranks = GUIDE_LANGUAGE_CODES.flatMap((code) => {
+            const rank = guideLanguagePriority(parsed, product.id, code)
+            return rank ? [{ code, rank }] : []
+          })
+          return (
+            <span key={product.id} className="inline-flex max-w-full items-center gap-1 rounded-full border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium leading-4 text-blue-900">
+              <span className="max-w-[9rem] truncate">{product.label}</span>
+              {ranks.map((item, index) => (
+                <span key={item.code} className="inline-flex shrink-0 items-center gap-0.5">
+                  {index > 0 ? <span className="text-gray-400">,</span> : null}
+                  <ReactCountryFlag
+                    countryCode={BADGE_LANGUAGE_FLAG[item.code]}
+                    svg
+                    title={BADGE_LANGUAGE_NAME[item.code]}
+                    style={{ width: '12px', height: '9px', borderRadius: '1px' }}
+                  />
+                  <span>{PRIORITY_HANJA[item.rank]}</span>
+                </span>
+              ))}
+            </span>
+          )
+        })}
+      </span>
+    </span>
+  )
+}
+
+const BADGE_LANGUAGE_FLAG: Record<GuideLanguageCode, string> = {
+  ko: 'KR',
+  en: 'US',
+  ja: 'JP',
+}
+
+const BADGE_LANGUAGE_NAME: Record<GuideLanguageCode, string> = {
+  ko: '한국어',
+  en: '영어',
+  ja: '일본어',
+}
+
+const PRIORITY_HANJA: Record<GuideLanguagePriority, string> = {
+  1: '上',
+  2: '中',
+  3: '下',
+}
+
+export default function GuideProductSkillsFields({ skills, languages, onChange, showHeading = true }: GuideProductSkillsFieldsProps) {
+  const [products, setProducts] = useState<ProductOption[]>([])
+  const [loading, setLoading] = useState(true)
+  const [query, setQuery] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    void loadGuideProductOptions().then((options) => {
+      if (cancelled) return
+      setProducts(options)
+      setLoading(false)
+    })
     return () => {
       cancelled = true
     }
@@ -96,19 +186,22 @@ export default function GuideProductSkillsFields({ skills, onChange }: GuideProd
     return products.filter((product) => product.label.toLowerCase().includes(needle) || product.id.toLowerCase().includes(needle))
   }, [products, query])
 
+  const languageCodes = useMemo(() => guideLanguageCodesForStaff(languages), [languages])
+
   const writeSkill = (productId: string, eligible: boolean, priorities: GuideLanguagePriorities) => {
     const next = { ...skills }
+    const allowed = new Set(languageCodes)
     const cleaned = Object.fromEntries(
-      GUIDE_LANGUAGE_CODES.flatMap((code) => (priorities[code] ? [[code, priorities[code]]] : [])),
+      languageCodes.flatMap((code) => (allowed.has(code) && priorities[code] ? [[code, priorities[code]]] : [])),
     ) as GuideLanguagePriorities
-    if (eligible && Object.keys(cleaned).length === 0) delete next[productId]
-    else next[productId] = { eligible, priorities: eligible ? cleaned : {} }
+    if (!eligible) delete next[productId]
+    else next[productId] = { eligible: true, priorities: cleaned }
     onChange(next)
   }
 
   const currentPriorities = (productId: string): GuideLanguagePriorities => {
     const priorities: GuideLanguagePriorities = {}
-    for (const code of GUIDE_LANGUAGE_CODES) {
+    for (const code of languageCodes) {
       const rank = guideLanguagePriority(skills, productId, code)
       if (rank) priorities[code] = rank
     }
@@ -117,9 +210,9 @@ export default function GuideProductSkillsFields({ skills, onChange }: GuideProd
 
   return (
     <div>
-      <label className="mb-2 block text-sm font-medium text-gray-700">투어 가이드로 진행 가능한 상품</label>
+      {showHeading ? <label className="mb-2 block text-sm font-medium text-gray-700">투어 가이드로 진행 가능한 상품</label> : null}
       <p className="mb-2 text-xs text-gray-500">
-        체크를 끄면 그 상품의 가이드로 배정되지 않습니다. 손님 언어가 영어면 영어 상을 먼저 배정하고, 그 사람이 불가하면 중, 그다음 하로 넘어갑니다. 같은 순위를 다시 누르면 지워집니다.
+        기본은 선택되어 있지 않습니다. 확인 후 체크한 상품만 가이드로 배정됩니다. 가이드 언어에 해당하는 상·중·하만 보이며, 영어 손님은 영어 상부터 배정합니다. 같은 순위를 다시 누르면 지워집니다.
       </p>
       <input
         type="search"
@@ -155,7 +248,7 @@ export default function GuideProductSkillsFields({ skills, onChange }: GuideProd
                           <span className="truncate">{product.label}</span>
                         </label>
                         <div className={`flex flex-wrap items-center gap-2 ${eligible ? '' : 'opacity-40'}`}>
-                          {GUIDE_LANGUAGE_CODES.map((code) => (
+                          {languageCodes.map((code) => (
                             <LanguagePriorityControl
                               key={code}
                               locale={code}

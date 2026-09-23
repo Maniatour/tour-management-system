@@ -5,6 +5,7 @@ import { User, Car, CreditCard, Shield, FileText, Upload, Download, Edit, Trash2
 import { supabase } from '@/lib/supabase'
 import GuideProductSkillsFields, { showsGuideProductSkills } from '@/components/team/GuideProductSkillsFields'
 import { parseGuideProductSkills } from '@/lib/guideProductSkills'
+import { isTourGuideOrDriverPosition } from '@/lib/teamDoNotTeamWith'
 import type { Database } from '@/lib/supabase'
 
 type TeamMember = Database['public']['Tables']['team']['Row']
@@ -126,7 +127,11 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
       const selfEmail = (member?.email || '').trim().toLowerCase()
       setPeerTeamMembers(
         (data || [])
-          .filter((m) => String(m.email || '').trim().toLowerCase() !== selfEmail)
+          .filter(
+            (m) =>
+              String(m.email || '').trim().toLowerCase() !== selfEmail &&
+              isTourGuideOrDriverPosition(m.position),
+          )
           .map((m) => ({
             email: String(m.email),
             name_ko: String(m.name_ko || m.email),
@@ -874,6 +879,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
           {showsGuideProductSkills(formData.position) ? (
             <GuideProductSkillsFields
               skills={parseGuideProductSkills(formData.guide_product_skills)}
+              languages={formData.languages}
               onChange={(skills) => setFormData({ ...formData, guide_product_skills: skills })}
             />
           ) : null}

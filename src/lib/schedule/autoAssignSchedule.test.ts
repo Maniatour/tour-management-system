@@ -20,6 +20,11 @@ function member(email: string, overrides: Partial<AutoAssignMember> = {}): AutoA
     languages: ['KR'],
     active: true,
     cdl: false,
+    guideProductSkills: {
+      DAY: { eligible: true, priorities: {} },
+      MNGC1N: { eligible: true, priorities: {} },
+      MDGCSUNRISE: { eligible: true, priorities: {} },
+    },
     ...overrides,
   }
 }
@@ -63,6 +68,21 @@ test('korean guests are not assigned an english-only guide', () => {
     offs: [],
   })
   assert.equal(result.assignmentsByTourId.t1.tour_guide_id, 'ko@x.com')
+})
+
+test('a product stays unassigned until a guide is explicitly selected for it', () => {
+  const result = autoAssignSchedule({
+    startDate: '2026-10-04',
+    endDate: '2026-10-04',
+    preset: 'equal',
+    members: [
+      member('open@x.com', { name: 'Open', guideProductSkills: {} }),
+      member('picked@x.com', { name: 'Picked', guideProductSkills: { DAY: { eligible: true, priorities: {} } } }),
+    ],
+    tours: [tour('t1', '2026-10-04')],
+    offs: [],
+  })
+  assert.equal(result.assignmentsByTourId.t1.tour_guide_id, 'picked@x.com')
 })
 
 test('english guests prefer a higher english priority and fall back to the next rank', () => {
@@ -411,8 +431,8 @@ test('overnight tours assign one guide even when the stored team type is two gui
     reviewStats: [],
     memberOrder: ['a@x.com', 'b@x.com'],
     teamMembers: [
-      { email: 'a@x.com', name_ko: 'A', languages: ['KR'], is_active: true },
-      { email: 'b@x.com', name_ko: 'B', languages: ['KR'], is_active: true },
+      { email: 'a@x.com', name_ko: 'A', languages: ['KR'], is_active: true, guide_product_skills: { MNGC1N: { eligible: true, priorities: {} } } },
+      { email: 'b@x.com', name_ko: 'B', languages: ['KR'], is_active: true, guide_product_skills: { MNGC1N: { eligible: true, priorities: {} } } },
     ],
     products: [{ id: 'MNGC1N', name_ko: '그랜드서클 1박 2일' }],
     productOrder: ['MNGC1N'],
@@ -502,7 +522,7 @@ test('preview keeps the three days before the range and pending off requests', (
     preset: 'equal',
     reviewStats: [],
     memberOrder: ['a@x.com'],
-    teamMembers: [{ email: 'a@x.com', name_ko: 'A', languages: ['KR'], is_active: true }],
+    teamMembers: [{ email: 'a@x.com', name_ko: 'A', languages: ['KR'], is_active: true, guide_product_skills: { DAY: { eligible: true, priorities: {} } } }],
     products: [{ id: 'DAY', name_ko: '데이' }],
     productOrder: ['DAY'],
     productColors: {},

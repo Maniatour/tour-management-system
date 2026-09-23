@@ -24,6 +24,18 @@ import {
 } from '@/lib/staffSiteAlert'
 import { useHubArticlesForManualLink } from '@/hooks/useHubArticlesForManualLink'
 import { StaffSiteAlertHubAttachmentPicker } from '@/components/admin/staff-site-alert/StaffSiteAlertHubAttachmentPicker'
+import { StaffSiteAlertInteractionFields } from '@/components/admin/staff-site-alert/StaffSiteAlertInteractionFields'
+import { StaffSiteAlertInteractionResults } from '@/components/admin/staff-site-alert/StaffSiteAlertInteractionResults'
+import {
+  buildStaffSiteAlertInteractionResults,
+  emptyStaffSiteAlertInteraction,
+  normalizeStaffSiteAlertInteraction,
+  parseStaffSiteAlertQuestionRows,
+  staffSiteAlertHasInteraction,
+  staffSiteAlertInteractionErrorMessage,
+  type StaffSiteAlertInteractionInput,
+  type StaffSiteAlertInteractionResultQuestion,
+} from '@/lib/staffSiteAlertInteraction'
 
 type StaffSiteAlertSendModalProps = {
   open: boolean
@@ -37,7 +49,11 @@ type AlertWithStats = StaffSiteAlertRow & {
   signed: number
 }
 
-const EMPTY_FORM: StaffSiteAlertSendPayload = {
+type SendFormState = StaffSiteAlertSendPayload & {
+  interaction: StaffSiteAlertInteractionInput
+}
+
+const EMPTY_FORM: SendFormState = {
   titleKo: '',
   titleEn: '',
   bodyKo: '',
@@ -48,6 +64,7 @@ const EMPTY_FORM: StaffSiteAlertSendPayload = {
   linkedHubArticleIds: [],
   requiresSignature: false,
   senderProxy: null,
+  interaction: emptyStaffSiteAlertInteraction(),
 }
 
 export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAlertSendModalProps) {
@@ -70,13 +87,17 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
   })
 
   const [tab, setTab] = useState<'send' | 'history'>('send')
-  const [form, setForm] = useState<StaffSiteAlertSendPayload>(EMPTY_FORM)
+  const [form, setForm] = useState<SendFormState>(EMPTY_FORM)
   const [sending, setSending] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [history, setHistory] = useState<AlertWithStats[]>([])
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [recipientDetails, setRecipientDetails] = useState<StaffSiteAlertRecipientRow[]>([])
   const [detailsLoading, setDetailsLoading] = useState(false)
+  const [interactionResults, setInteractionResults] = useState<StaffSiteAlertInteractionResultQuestion[] | null>(
+    null
+  )
+  const [interactionKind, setInteractionKind] = useState<'poll' | 'survey'>('poll')
   const [teamMembers, setTeamMembers] = useState<StaffSiteAlertTeamMember[]>([])
   const [teamLoading, setTeamLoading] = useState(false)
   const [activePositionTab, setActivePositionTab] = useState(STAFF_SITE_ALERT_POSITION_TABS[0]?.id ?? 'tour guide')
@@ -112,6 +133,7 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
       setForm(EMPTY_FORM)
       setExpandedId(null)
       setRecipientDetails([])
+      setInteractionResults(null)
       setActivePositionTab(STAFF_SITE_ALERT_POSITION_TABS[0]?.id ?? 'tour guide')
       return
     }
@@ -210,6 +232,7 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
     form.recipientMode === 'group'
       ? form.targetGroups.length > 0
       : form.targetIndividuals.length > 0
+  const interactionCheck = normalizeStaffSiteAlertInteraction(form.interaction)
 
   const handleSend = async () => {
     if (!canSend || sending) return
@@ -248,26 +271,71 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
     }
   }
 
-  const loadRecipientDetails = async (alertId: string) => {
-    if (expandedId === alertId) {
+  const loadRecipientDetails = async (item: AlertWithStats) => {
+    if (expandedId === item.id) {
       setExpandedId(null)
       setRecipientDetails([])
+      setInteractionResults(null)
       return
     }
-    setExpandedId(alertId)
+    setExpandedId(item.id)
     setDetailsLoading(true)
+    setInteractionResults(null)
     try {
       const { data, error } = await supabase
         .from('staff_site_alert_recipients')
         .select('*')
-        .eq('alert_id', alertId)
+        .eq('alert_id', item.id)
         .order('acknowledged_at', { ascending: true, nullsFirst: false })
 
       if (error) throw error
-      setRecipientDetails((data || []) as StaffSiteAlertRecipientRow[])
+      const recipients = (data || []) as StaffSiteAlertRecipientRow[]
+      setRecipientDetails(recipients)
+
+      if (!staffSiteAlertHasInteraction(item.interaction_kind)) return
+
+      try {
+      const anonymous = Boolean(item.interaction_anonymous)
+      const [questionResult, responseResult] = await Promise.all([
+        supabase
+          .from('staff_site_alert_questions')
+          .select(
+            'id, alert_id, sort_order, prompt_ko, prompt_en, question_type, required, staff_site_alert_options(id, question_id, sort_order, label_ko, label_en)'
+          )
+          .eq('alert_id', item.id)
+          .order('sort_order', { ascending: true }),
+        supabase
+          .from('staff_site_alert_responses')
+          .select('question_id, option_ids, text_answer, recipient_id')
+          .eq('alert_id', item.id),
+      ])
+      if (questionResult.error) throw questionResult.error
+      if (responseResult.error) throw responseResult.error
+
+      const emailByRecipient = new Map(recipients.map((recipient) => [recipient.id, recipient.recipient_email]))
+      setInteractionKind(item.interaction_kind === 'survey' ? 'survey' : 'poll')
+      setInteractionResults(
+        buildStaffSiteAlertInteractionResults({
+          questions: parseStaffSiteAlertQuestionRows(questionResult.data),
+          responses: (responseResult.data || []).map((row) => ({
+            question_id: row.question_id,
+            option_ids: row.option_ids,
+            text_answer: row.text_answer,
+            voter_email: anonymous ? null : emailByRecipient.get(row.recipient_id) ?? null,
+          })),
+          locale,
+          includeVoters: !anonymous,
+          includeTextAnswers: true,
+        })
+      )
+      } catch (interactionError) {
+        console.error('StaffSiteAlertSendModal interaction', interactionError)
+        setInteractionResults(null)
+      }
     } catch (e) {
       console.error('StaffSiteAlertSendModal details', e)
       setRecipientDetails([])
+      setInteractionResults(null)
     } finally {
       setDetailsLoading(false)
     }
@@ -277,7 +345,7 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
-      <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+      <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b px-5 py-4">
           <div className="flex items-center gap-2">
             <Megaphone className="h-5 w-5 text-primary" />
@@ -376,6 +444,17 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
                   />
                 </div>
               </div>
+
+              <StaffSiteAlertInteractionFields
+                locale={locale}
+                value={form.interaction}
+                onChange={(interaction) => setForm((prev) => ({ ...prev, interaction }))}
+              />
+              {form.interaction.kind !== 'none' && !interactionCheck.ok ? (
+                <p className="-mt-2 text-xs text-gray-500">
+                  {staffSiteAlertInteractionErrorMessage(interactionCheck.error, locale)}
+                </p>
+              ) : null}
 
               <StaffSiteAlertHubAttachmentPicker
                 locale={locale}
@@ -579,7 +658,7 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
                 <div key={item.id} className="rounded-xl border border-gray-200 bg-white">
                   <button
                     type="button"
-                    onClick={() => void loadRecipientDetails(item.id)}
+                    onClick={() => void loadRecipientDetails(item)}
                     className="w-full px-4 py-3 text-left hover:bg-gray-50"
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -599,6 +678,15 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
                               : ` · ${item.linked_hub_article_ids!.length} doc(s)`
                             : ''}
                           {item.requires_signature ? (isKo ? ' · 서명 필요' : ' · Signature') : ''}
+                          {item.interaction_kind === 'poll'
+                            ? isKo
+                              ? ' · 투표'
+                              : ' · Poll'
+                            : item.interaction_kind === 'survey'
+                              ? isKo
+                                ? ' · 설문'
+                                : ' · Survey'
+                              : ''}
                         </p>
                       </div>
                       <div className="shrink-0 text-right text-xs text-gray-600">
@@ -621,7 +709,16 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
                         <div className="flex justify-center py-4">
                           <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
                         </div>
-                      ) : recipientDetails.length === 0 ? (
+                      ) : (
+                        <div className="space-y-4">
+                          {interactionResults ? (
+                            <StaffSiteAlertInteractionResults
+                              locale={locale}
+                              kind={interactionKind}
+                              results={interactionResults}
+                            />
+                          ) : null}
+                          {recipientDetails.length === 0 ? (
                         <p className="text-sm text-gray-500">
                           {isKo ? '수신자가 없습니다.' : 'No recipients.'}
                         </p>
@@ -687,6 +784,8 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
                             </tbody>
                           </table>
                         </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   ) : null}
@@ -713,7 +812,8 @@ export function StaffSiteAlertSendModal({ open, locale, onClose }: StaffSiteAler
                 sending ||
                 !form.titleKo.trim() ||
                 !form.bodyKo.trim() ||
-                !hasRecipients
+                !hasRecipients ||
+                !interactionCheck.ok
               }
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >

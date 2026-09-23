@@ -2,6 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookOpen, Check, ExternalLink, Loader2, Megaphone, PenLine } from 'lucide-react'
+import { StaffSiteAlertInteractionForm } from '@/components/admin/staff-site-alert/StaffSiteAlertInteractionForm'
+import { StaffSiteAlertInteractionResults } from '@/components/admin/staff-site-alert/StaffSiteAlertInteractionResults'
+import {
+  parseStaffSiteAlertQuestionRows,
+  staffSiteAlertAnswersComplete,
+  staffSiteAlertHasInteraction,
+  staffSiteAlertInteractionErrorMessage,
+  validateStaffSiteAlertAnswers,
+  type StaffSiteAlertAnswerInput,
+  type StaffSiteAlertInteractionResultQuestion,
+  type StaffSiteAlertQuestionRow,
+} from '@/lib/staffSiteAlertInteraction'
 import { supabase } from '@/lib/supabase'
 import { useTeamBoardManualOptional } from '@/contexts/TeamBoardManualContext'
 import { useAdminAlertInboxOptional, useReportAdminAlert } from '@/contexts/AdminAlertInboxContext'
@@ -39,6 +51,10 @@ export function StaffSiteAlertPopupLayer({ userEmail, locale }: StaffSiteAlertPo
   const [padKey, setPadKey] = useState(0)
   const signatureDataUrlRef = useRef('')
   const [schemaUnavailable, setSchemaUnavailable] = useState(false)
+  const [questions, setQuestions] = useState<StaffSiteAlertQuestionRow[]>([])
+  const [questionsLoading, setQuestionsLoading] = useState(false)
+  const [answers, setAnswers] = useState<StaffSiteAlertAnswerInput[]>([])
+  const [resultView, setResultView] = useState<StaffSiteAlertInteractionResultQuestion[] | null>(null)
   const isKo = locale.startsWith('ko')
 
   const emailKey = (userEmail || '').trim().toLowerCase()
@@ -49,15 +65,31 @@ export function StaffSiteAlertPopupLayer({ userEmail, locale }: StaffSiteAlertPo
       return
     }
     try {
-      const { data: rows, error } = await supabase
+      const primary = await supabase
         .from('staff_site_alert_recipients')
         .select(
-          'id, alert_id, acknowledged_at, staff_site_alerts(id, title_ko, title_en, body_ko, body_en, linked_hub_article_ids, requires_signature, display_sender_name, sent_as_super, created_at)'
+          'id, alert_id, acknowledged_at, staff_site_alerts(id, title_ko, title_en, body_ko, body_en, linked_hub_article_ids, requires_signature, display_sender_name, sent_as_super, created_at, interaction_kind, interaction_anonymous, interaction_show_results)'
         )
         .ilike('recipient_email', emailKey)
         .is('acknowledged_at', null)
         .order('created_at', { ascending: true })
         .limit(5)
+
+      let rows = primary.data as Array<{ id: string; staff_site_alerts: StaffSiteAlertRow | null }> | null
+      let error = primary.error
+      if (error && /interaction_kind|interaction_anonymous|interaction_show_results/i.test(error.message ?? '')) {
+        const fallback = await supabase
+          .from('staff_site_alert_recipients')
+          .select(
+            'id, alert_id, acknowledged_at, staff_site_alerts(id, title_ko, title_en, body_ko, body_en, linked_hub_article_ids, requires_signature, display_sender_name, sent_as_super, created_at)'
+          )
+          .ilike('recipient_email', emailKey)
+          .is('acknowledged_at', null)
+          .order('created_at', { ascending: true })
+          .limit(5)
+        rows = (fallback.data || []) as unknown as Array<{ id: string; staff_site_alerts: StaffSiteAlertRow | null }>
+        error = fallback.error
+      }
 
       if (error) {
         if (isStaffSiteAlertSchemaMissingError(error)) {
@@ -110,27 +142,113 @@ export function StaffSiteAlertPopupLayer({ userEmail, locale }: StaffSiteAlertPo
   }, [emailKey, loadPending, schemaUnavailable])
 
   const current = queue[0] ?? null
+  const needsInteraction = staffSiteAlertHasInteraction(current?.interaction_kind)
   useEffect(() => {
     signatureDataUrlRef.current = ''
     setSignatureEmpty(true)
     setPadKey((k) => k + 1)
+    setAnswers([])
+    setResultView(null)
   }, [current?.id])
+
+  useEffect(() => {
+    const alertId = current?.id
+    if (!alertId || !needsInteraction) {
+      setQuestions([])
+      setQuestionsLoading(false)
+      return
+    }
+    let cancelled = false
+    setQuestionsLoading(true)
+    void (async () => {
+      const { data, error } = await supabase
+        .from('staff_site_alert_questions')
+        .select(
+          'id, alert_id, sort_order, prompt_ko, prompt_en, question_type, required, staff_site_alert_options(id, question_id, sort_order, label_ko, label_en)'
+        )
+        .eq('alert_id', alertId)
+        .order('sort_order', { ascending: true })
+      if (cancelled) return
+      if (error) {
+        console.error('StaffSiteAlertPopupLayer questions', error)
+        setQuestions([])
+      } else {
+        setQuestions(parseStaffSiteAlertQuestionRows(data))
+      }
+      setQuestionsLoading(false)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [current?.id, needsInteraction])
 
   const handleSignaturePadChange = useCallback((empty: boolean, dataUrl: string) => {
     signatureDataUrlRef.current = dataUrl
     setSignatureEmpty((prev) => (prev === empty ? prev : empty))
   }, [])
 
+  const dismissCurrent = () => {
+    if (!current) return
+    inbox?.markRead(`staff_site_alert:${current.recipient_id}`)
+    setQueue((prev) => prev.filter((p) => p.recipient_id !== current.recipient_id))
+    setResultView(null)
+  }
+
   const handleConfirm = async () => {
     if (!current) return
+    if (resultView) {
+      dismissCurrent()
+      return
+    }
     const drawn = signatureDataUrlRef.current.trim()
     if (current.requires_signature && (signatureEmpty || !drawn)) {
       alert(isKo ? '서명을 그려 주세요.' : 'Please draw your signature.')
       return
     }
+    if (needsInteraction) {
+      const validated = validateStaffSiteAlertAnswers(questions, answers)
+      if (!validated.ok) {
+        alert(staffSiteAlertInteractionErrorMessage(validated.error, locale))
+        return
+      }
+    }
 
     setSubmitting(true)
     try {
+      if (needsInteraction) {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        const token = session?.access_token
+        if (!token) throw new Error(isKo ? '로그인 세션이 없습니다.' : 'Your session has expired.')
+        const res = await fetch('/api/staff-site-alerts/respond', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            recipientId: current.recipient_id,
+            answers,
+            signatureDataUrl: current.requires_signature ? drawn : null,
+            locale,
+          }),
+        })
+        const json = (await res.json()) as {
+          error?: string
+          showResults?: boolean
+          results?: StaffSiteAlertInteractionResultQuestion[] | null
+        }
+        if (!res.ok) throw new Error(json.error || 'failed')
+        inbox?.markRead(`staff_site_alert:${current.recipient_id}`)
+        if (json.showResults && json.results && json.results.length > 0) {
+          setResultView(json.results)
+          return
+        }
+        dismissCurrent()
+        return
+      }
+
       const now = new Date().toISOString()
       const { error } = await supabase
         .from('staff_site_alert_recipients')
@@ -143,15 +261,16 @@ export function StaffSiteAlertPopupLayer({ userEmail, locale }: StaffSiteAlertPo
         .eq('id', current.recipient_id)
 
       if (error) throw error
-      inbox?.markRead(`staff_site_alert:${current.recipient_id}`)
-      setQueue((prev) => prev.filter((p) => p.recipient_id !== current.recipient_id))
+      dismissCurrent()
     } catch (e) {
       console.error('StaffSiteAlertPopupLayer ack', e)
-      alert(isKo ? '확인 처리에 실패했습니다.' : 'Failed to confirm.')
+      alert(e instanceof Error && e.message && e.message !== 'failed' ? e.message : isKo ? '확인 처리에 실패했습니다.' : 'Failed to confirm.')
     } finally {
       setSubmitting(false)
     }
   }
+
+  const answersReady = !needsInteraction || (questions.length > 0 && staffSiteAlertAnswersComplete(questions, answers))
 
   if (!emailKey || !current) return null
 
@@ -205,7 +324,37 @@ export function StaffSiteAlertPopupLayer({ userEmail, locale }: StaffSiteAlertPo
             </div>
           ) : null}
 
-          {current.requires_signature ? (
+          {needsInteraction && !resultView ? (
+            questionsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {isKo ? '문항을 불러오는 중…' : 'Loading questions…'}
+              </div>
+            ) : questions.length === 0 ? (
+              <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {isKo
+                  ? '투표·설문 문항을 불러오지 못했습니다. 잠시 후 다시 열어 주세요.'
+                  : 'The questions could not be loaded. Please reopen this alert.'}
+              </p>
+            ) : (
+              <StaffSiteAlertInteractionForm
+                locale={locale}
+                questions={questions}
+                answers={answers}
+                onChange={setAnswers}
+              />
+            )
+          ) : null}
+
+          {resultView ? (
+            <StaffSiteAlertInteractionResults
+              locale={locale}
+              kind={current.interaction_kind || 'poll'}
+              results={resultView}
+            />
+          ) : null}
+
+          {current.requires_signature && !resultView ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
               <div className="mb-3 flex items-center gap-2 text-sm font-medium text-amber-900">
                 <PenLine className="h-4 w-4" />
@@ -230,7 +379,12 @@ export function StaffSiteAlertPopupLayer({ userEmail, locale }: StaffSiteAlertPo
         <div className="flex shrink-0 justify-end border-t px-5 py-4">
           <button
             type="button"
-            disabled={submitting || (current.requires_signature && signatureEmpty)}
+            disabled={
+              submitting ||
+              questionsLoading ||
+              (!resultView && current.requires_signature && signatureEmpty) ||
+              (!resultView && !answersReady)
+            }
             onClick={() => void handleConfirm()}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
@@ -239,13 +393,21 @@ export function StaffSiteAlertPopupLayer({ userEmail, locale }: StaffSiteAlertPo
             ) : (
               <Check className="h-4 w-4" />
             )}
-            {current.requires_signature
+            {resultView
               ? isKo
-                ? '서명 후 확인'
-                : 'Sign & Confirm'
-              : isKo
-                ? '확인'
-                : 'Confirm'}
+                ? '닫기'
+                : 'Close'
+              : current.requires_signature
+                ? isKo
+                  ? '서명 후 확인'
+                  : 'Sign & Confirm'
+                : needsInteraction
+                  ? isKo
+                    ? '응답 후 확인'
+                    : 'Submit & Confirm'
+                  : isKo
+                    ? '확인'
+                    : 'Confirm'}
           </button>
         </div>
       </div>

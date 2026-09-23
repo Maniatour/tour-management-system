@@ -15,6 +15,16 @@ export type TeamDoNotTeamMember = {
   avoid_team_with?: string[] | null
 }
 
+/** 팀 조합 제한 목록에 보여줄 직책. 투어 가이드와 드라이버만. */
+export function isTourGuideOrDriverPosition(position: string | null | undefined): boolean {
+  const value = String(position || '').trim().toLowerCase()
+  if (!value) return false
+  if (value.includes('assistant') || value.includes('어시')) return false
+  const isDriver = value.includes('driver') || value.includes('드라이버') || value.includes('운전기사')
+  const isTourGuide = value.includes('tour guide') || value.includes('투어 가이드') || value.includes('투어가이드')
+  return isDriver || isTourGuide
+}
+
 function normalizeEmail(email: string | null | undefined): string {
   return String(email || '')
     .trim()

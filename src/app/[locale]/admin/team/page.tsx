@@ -1,8 +1,7 @@
 'use client'
 import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
-import React, { useState, useEffect, useMemo } from 'react'
-import Link from 'next/link'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { useTranslations } from 'next-intl'
@@ -21,13 +20,15 @@ import {
   FileText,
   Grid,
   List,
-  Download,
 } from 'lucide-react'
 import type { Database } from '@/lib/supabase'
-import { formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
+import { extractPaymentMethodCardLabel, formatPaymentMethodDisplay } from '@/lib/paymentMethodDisplay'
 import TeamMemberForm from '@/components/team/TeamMemberForm'
+import TeamMemberQuickEditModal, { TeamCardQuickButton, type TeamQuickField } from '@/components/team/TeamMemberQuickEditModal'
+import { GuideProductSkillBadges, selectedGuideProductCount, showsGuideProductSkills } from '@/components/team/GuideProductSkillsFields'
 import {
   ensureExclusiveLists,
+  isTourGuideOrDriverPosition,
   normalizeTeamEmailList,
   syncDoNotTeamWithPeers,
 } from '@/lib/teamDoNotTeamWith'
@@ -39,6 +40,33 @@ type TeamCardPaymentMethodRow = Pick<
   Database['public']['Tables']['payment_methods']['Row'],
   'id' | 'method' | 'display_name' | 'status' | 'method_type' | 'user_email' | 'card_holder_name'
 >
+
+function teamCardPaymentBadgeLabel(method: string | null, displayName: string | null): string {
+  const raw = extractPaymentMethodCardLabel(displayName, method).trim()
+  return raw.replace(/^([A-Za-z]+)\s+(\d+)\b/, '$1$2') || '결제수단'
+}
+
+function teamCardPairingBadges(member: TeamMember, members: TeamMember[]) {
+  const byEmail = new Map(members.map((item) => [item.email.trim().toLowerCase(), item]))
+  const nickFor = (email: string) => {
+    const peer = byEmail.get(email.trim().toLowerCase())
+    if (!peer) return null
+    if (String(peer.is_active).toLowerCase() !== 'true') return null
+    if (!isTourGuideOrDriverPosition(peer.position)) return null
+    return peer.nick_name?.trim() || peer.name_ko
+  }
+  const never = (member.do_not_team_with || []).flatMap((email) => {
+    const nick = nickFor(email)
+    return nick ? [{ email, nick, level: 'never' as const }] : []
+  })
+  const neverEmails = new Set(never.map((item) => item.email.trim().toLowerCase()))
+  const avoid = (member.avoid_team_with || []).flatMap((email) => {
+    if (neverEmails.has(email.trim().toLowerCase())) return []
+    const nick = nickFor(email)
+    return nick ? [{ email, nick, level: 'avoid' as const }] : []
+  })
+  return [...never, ...avoid]
+}
 
 const TEAM_LIST_UI_DEFAULT = {
   searchTerm: '',
@@ -73,6 +101,7 @@ export default function AdminTeam() {
   // 인라인 편집 상태
   const [inlineEditing, setInlineEditing] = useState<{ email: string; field: string } | null>(null)
   const [inlineEditValue, setInlineEditValue] = useState<string>('')
+  const [quickEdit, setQuickEdit] = useState<{ email: string; field: TeamQuickField } | null>(null)
 
   const teamMemberEmailsKey = useMemo(
     () => teamMembers.map((m) => m.email.toLowerCase()).sort().join('|'),
@@ -266,6 +295,61 @@ export default function AdminTeam() {
     }
   }
 
+  const saveQuickEdit = async (email: string, patch: TeamMemberUpdate) => {
+    try {
+      const current = teamMembers.find((member) => member.email === email)
+      const hasPair = patch.do_not_team_with !== undefined || patch.avoid_team_with !== undefined
+      const exclusive = hasPair
+        ? ensureExclusiveLists(
+            normalizeTeamEmailList(patch.do_not_team_with ?? current?.do_not_team_with),
+            normalizeTeamEmailList(patch.avoid_team_with ?? current?.avoid_team_with),
+          )
+        : null
+      const payload = exclusive
+        ? { ...patch, do_not_team_with: exclusive.never, avoid_team_with: exclusive.avoid }
+        : patch
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any).from('team').update(payload).eq('email', email)
+      if (error) {
+        console.error('Error updating team member field:', error)
+        alert('팀원 정보 수정 중 오류가 발생했습니다.')
+        return false
+      }
+
+      let peerUpdates: Array<{ email: string; do_not_team_with: string[]; avoid_team_with: string[] }> = []
+      if (exclusive) {
+        const { error: syncError, peerUpdates: synced } = await syncDoNotTeamWithPeers({
+          selfEmail: email,
+          previousNeverList: current?.do_not_team_with,
+          nextNeverList: exclusive.never,
+          previousAvoidList: current?.avoid_team_with,
+          nextAvoidList: exclusive.avoid,
+        })
+        peerUpdates = synced
+        if (syncError) {
+          console.error('Error syncing team pair restrictions:', syncError)
+          alert('팀원 정보는 저장되었지만, 상대 가이드 쪽 팀 조합 설정 동기화에 실패했습니다. 상대 팀원 정보를 확인해 주세요.')
+        }
+      }
+
+      const nextEmail = typeof payload.email === 'string' && payload.email ? payload.email : email
+      setTeamMembers((prev) =>
+        prev.map((member) => {
+          if (member.email === email) return { ...member, ...payload, email: nextEmail } as TeamMember
+          const peer = peerUpdates.find((item) => item.email.trim().toLowerCase() === member.email.trim().toLowerCase())
+          if (!peer) return member
+          return { ...member, do_not_team_with: peer.do_not_team_with, avoid_team_with: peer.avoid_team_with }
+        }),
+      )
+      return true
+    } catch (error) {
+      console.error('Error updating team member field:', error)
+      alert('팀원 정보 수정 중 오류가 발생했습니다.')
+      return false
+    }
+  }
+
   // 팀원 삭제 — 성공 시 true (모달 닫기 등에 사용)
   const handleDeleteMember = async (email: string): Promise<boolean> => {
     if (!confirm(t('deleteConfirm'))) return false
@@ -432,61 +516,83 @@ export default function AdminTeam() {
     fetchTeamMembers()
   }, [])
 
-  // 팀원 문서 목록 불러오기
-  const fetchMemberDocuments = async (email: string) => {
-    if (memberDocuments[email]) return // 이미 로드된 경우 스킵
-    
+  const loadedDocumentEmails = useRef(new Set<string>())
+
+  // 팀원 문서 목록 불러오기. 카드 개수는 클릭 전에 채워 둔다.
+  const fetchMemberDocuments = async (email: string, force = false) => {
+    if (!force && loadedDocumentEmails.current.has(email)) return
+    loadedDocumentEmails.current.add(email)
+
     try {
       const documentTypes = ['contract', 'id_copy', 'bank_info', 'other']
-      const allDocuments: {[key: string]: Array<{id: string, name: string, url: string, path: string, size: number, uploadedAt: string}>} = {}
-      
-      for (const docType of documentTypes) {
-        const prefix = `team-documents/${email}/${docType}/`
-        const { data: files, error } = await supabase.storage
-          .from('documents')
-          .list(prefix, {
+      const listed = await Promise.all(
+        documentTypes.map(async (docType) => {
+          const prefix = `team-documents/${email}/${docType}/`
+          const { data: files, error } = await supabase.storage.from('documents').list(prefix, {
             limit: 100,
             offset: 0,
-            sortBy: { column: 'created_at', order: 'desc' }
+            sortBy: { column: 'created_at', order: 'desc' },
           })
-        
-        if (error) {
-          console.error(`${docType} 문서 목록 조회 오류:`, error)
-          allDocuments[docType] = []
-          continue
-        }
-        
-        if (files && files.length > 0) {
-          allDocuments[docType] = files
-            .filter(file => file.name !== '.emptyFolderPlaceholder')
-            .map(file => {
+          if (error) {
+            console.error(`${docType} 문서 목록 조회 오류:`, error)
+            return [docType, []] as const
+          }
+          const docs = (files || [])
+            .filter((file) => Boolean(file.name) && file.name !== '.emptyFolderPlaceholder' && file.metadata)
+            .map((file) => {
               const filePath = `${prefix}${file.name}`
-              const { data: { publicUrl } } = supabase.storage
-                .from('documents')
-                .getPublicUrl(filePath)
-              
+              const {
+                data: { publicUrl },
+              } = supabase.storage.from('documents').getPublicUrl(filePath)
               return {
                 id: file.id || `${docType}-${file.name}`,
                 name: file.name,
                 url: publicUrl,
                 path: filePath,
                 size: file.metadata?.size || 0,
-                uploadedAt: file.created_at || new Date().toISOString()
+                uploadedAt: file.created_at || new Date().toISOString(),
               }
             })
-        } else {
-          allDocuments[docType] = []
-        }
-      }
-      
-      setMemberDocuments(prev => ({
+          return [docType, docs] as const
+        }),
+      )
+      const allDocuments: {
+        [key: string]: Array<{ id: string; name: string; url: string; path: string; size: number; uploadedAt: string }>
+      } = {}
+      for (const [docType, docs] of listed) allDocuments[docType] = [...docs]
+
+      setMemberDocuments((prev) => ({
         ...prev,
-        [email]: allDocuments
+        [email]: allDocuments,
       }))
     } catch (error) {
+      loadedDocumentEmails.current.delete(email)
       console.error('문서 목록 불러오기 오류:', error)
     }
   }
+
+  const fetchMemberDocumentsRef = useRef(fetchMemberDocuments)
+  fetchMemberDocumentsRef.current = fetchMemberDocuments
+
+  useEffect(() => {
+    if (viewMode !== 'card' || teamMembers.length === 0) return
+    let cancelled = false
+    const emails = teamMembers.map((member) => member.email)
+    ;(async () => {
+      const queue = [...emails]
+      const workers = Array.from({ length: 4 }, async () => {
+        while (!cancelled && queue.length > 0) {
+          const email = queue.shift()
+          if (!email) return
+          await fetchMemberDocumentsRef.current(email)
+        }
+      })
+      await Promise.all(workers)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [viewMode, teamMemberEmailsKey, teamMembers])
 
   // 검색된 팀원 목록
   const filteredMembers = teamMembers.filter(member => {
@@ -916,46 +1022,52 @@ export default function AdminTeam() {
           </div>
           ) : (
             /* 카드뷰 - 모바일 최적화 */
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+            <div className="grid grid-cols-1 items-stretch gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {sortedMembers.map((member) => (
                 <div
                   key={member.email}
-                  className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow cursor-pointer"
+                  className="flex h-full cursor-pointer flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition duration-300 hover:shadow-lg"
                   onClick={() => {
                     setEditingMember(member)
                     setShowForm(true)
                   }}
                 >
-                  <div className="p-4 sm:p-6">
+                  <div className="flex flex-1 flex-col p-5">
                     {/* 카드 헤더 */}
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center space-x-3">
+                    <div className="mb-4 flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
                         <div className="flex-shrink-0">
                           {member.avatar_url ? (
                             <img
                               src={member.avatar_url}
                               alt={member.name_ko}
-                              className="h-12 w-12 rounded-full object-cover"
+                              className="h-14 w-14 rounded-full object-cover ring-4 ring-gray-50"
                             />
                           ) : (
-                            <div className="h-12 w-12 rounded-full bg-gray-200 flex items-center justify-center">
+                            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 ring-4 ring-gray-50">
                               <User size={24} className="text-gray-400" />
                             </div>
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2 min-w-0">
-                            <h3 className="text-lg font-semibold text-gray-900 truncate">
-                              {member.name_ko}
-                              {member.nick_name && (
-                                <span className="ml-1.5 text-sm font-normal text-primary">({member.nick_name})</span>
-                              )}
-                            </h3>
-                          </div>
-                          <p className="text-sm text-gray-600 mt-0.5 flex items-center gap-2 min-w-0">
-                            {member.languages && member.languages.length > 0 ? (
-                              <span className="flex flex-shrink-0 items-center gap-1" aria-hidden>
-                                {member.languages.map((lang: string, index: number) => (
+                          <TeamCardQuickButton
+                            label={`${member.name_ko} 이름 수정`}
+                            onClick={() => setQuickEdit({ email: member.email, field: 'name' })}
+                            className="block max-w-full truncate rounded-lg text-left text-lg font-semibold tracking-tight text-gray-900 hover:bg-gray-50"
+                          >
+                            {member.name_ko}
+                            {member.nick_name ? (
+                              <span className="ml-1.5 text-sm font-normal text-primary">({member.nick_name})</span>
+                            ) : null}
+                          </TeamCardQuickButton>
+                          <div className="mt-0.5 flex min-w-0 items-center gap-2 text-sm text-gray-600">
+                            <TeamCardQuickButton
+                              label="언어 수정"
+                              onClick={() => setQuickEdit({ email: member.email, field: 'languages' })}
+                              className="flex flex-shrink-0 items-center gap-1 rounded-md px-1 py-0.5 hover:bg-gray-100"
+                            >
+                              {member.languages && member.languages.length > 0 ? (
+                                member.languages.map((lang: string, index: number) => (
                                   <ReactCountryFlag
                                     key={index}
                                     countryCode={lang === 'KR' ? 'KR' : lang === 'EN' ? 'US' : lang === 'JP' ? 'JP' : lang === 'CN' ? 'CN' : lang === 'ES' ? 'ES' : lang === 'FR' ? 'FR' : lang === 'DE' ? 'DE' : lang === 'RU' ? 'RU' : 'US'}
@@ -967,11 +1079,26 @@ export default function AdminTeam() {
                                     }}
                                     title={lang}
                                   />
-                                ))}
-                              </span>
-                            ) : null}
-                            <span className="truncate min-w-0">{member.name_en || '영문명 없음'}</span>
-                          </p>
+                                ))
+                              ) : (
+                                <span className="text-xs text-gray-400">언어</span>
+                              )}
+                            </TeamCardQuickButton>
+                            <TeamCardQuickButton
+                              label="영어 이름 수정"
+                              onClick={() => setQuickEdit({ email: member.email, field: 'name' })}
+                              className="min-w-0 truncate rounded-lg px-1 text-left text-gray-500 hover:bg-gray-50"
+                            >
+                              {member.name_en || '영문명 없음'}
+                            </TeamCardQuickButton>
+                          </div>
+                          <TeamCardQuickButton
+                            label="직책 수정"
+                            onClick={() => setQuickEdit({ email: member.email, field: 'position' })}
+                            className="mt-2 inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-700 hover:bg-gray-200"
+                          >
+                            {member.position || '미지정'}
+                          </TeamCardQuickButton>
                         </div>
                       </div>
                       <div className="flex items-center space-x-2 flex-shrink-0">
@@ -996,87 +1123,169 @@ export default function AdminTeam() {
                     </div>
 
                     {/* 카드 내용 */}
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">직책</span>
-                        <span className="font-medium">{member.position || '미지정'}</span>
-                      </div>
-                      
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">이메일</span>
-                        <span className="font-medium text-primary truncate ml-2">{member.email}</span>
-                      </div>
-                      
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">전화번호</span>
-                        <span className="font-medium">{member.phone || '미등록'}</span>
-                      </div>
+                    <div className="mt-1 space-y-1 rounded-xl bg-gray-50 p-1.5">
+                      <TeamCardQuickButton
+                        label="이메일 수정"
+                        onClick={() => setQuickEdit({ email: member.email, field: 'email' })}
+                        className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-white"
+                      >
+                        <span className="shrink-0 text-gray-500">이메일</span>
+                        <span className="truncate font-medium text-primary">{member.email}</span>
+                      </TeamCardQuickButton>
 
-                      {member.home_address?.trim() ? (
-                        <div className="text-sm">
-                          <span className="text-gray-500 block mb-0.5">집주소</span>
-                          <p className="font-medium text-gray-800 line-clamp-2 break-words" title={member.home_address}>
-                            {member.home_address}
-                          </p>
-                        </div>
+                      <TeamCardQuickButton
+                        label="전화번호 수정"
+                        onClick={() => setQuickEdit({ email: member.email, field: 'phone' })}
+                        className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-white"
+                      >
+                        <span className="shrink-0 text-gray-500">전화번호</span>
+                        <span className="font-medium text-gray-900">{member.phone || '미등록'}</span>
+                      </TeamCardQuickButton>
+                    </div>
+
+                    <div className="mt-3 space-y-2">
+                      {(() => {
+                        const pairing = teamCardPairingBadges(member, teamMembers)
+                        return (
+                          <TeamCardQuickButton
+                            label={pairing.length === 0 ? '팀 조합 제한 없음' : `팀 조합 제한 ${pairing.map((item) => item.nick).join(' ')}`}
+                            onClick={() => setQuickEdit({ email: member.email, field: 'pairing' })}
+                            className="flex w-full flex-wrap items-center gap-1.5 rounded-xl border border-gray-100 px-3 py-2.5 text-left text-sm hover:border-gray-200 hover:bg-gray-50"
+                          >
+                            <span className="shrink-0 text-gray-500">팀 조합 제한</span>
+                            {pairing.length === 0 ? (
+                              <span className="text-xs text-gray-400">없음</span>
+                            ) : (
+                              pairing.map((item) => (
+                                <span
+                                  key={`${item.level}-${item.email}`}
+                                  className={`inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-semibold leading-4 ${
+                                    item.level === 'never'
+                                      ? 'border-red-200 bg-red-50 text-red-900'
+                                      : 'border-amber-200 bg-amber-50 text-amber-950'
+                                  }`}
+                                >
+                                  {item.nick}
+                                </span>
+                              ))
+                            )}
+                          </TeamCardQuickButton>
+                        )
+                      })()}
+
+                      {showsGuideProductSkills(member.position) ? (
+                        <TeamCardQuickButton
+                          label="투어 가이드로 진행 가능한 상품 수정"
+                          onClick={() => setQuickEdit({ email: member.email, field: 'products' })}
+                          className="block w-full rounded-xl border border-gray-100 px-3 py-2.5 text-left hover:border-gray-200 hover:bg-gray-50"
+                        >
+                          <span className="flex items-center justify-between gap-2 text-sm">
+                            <span className="min-w-0 truncate text-gray-500">투어 가이드로 진행 가능한 상품</span>
+                            <span className="shrink-0 text-xs font-semibold text-gray-800">
+                              {selectedGuideProductCount(member.guide_product_skills)}개
+                            </span>
+                          </span>
+                          <GuideProductSkillBadges skills={member.guide_product_skills} />
+                        </TeamCardQuickButton>
                       ) : null}
 
-                      <TeamMemberCardLinkedPaymentMethods
-                        memberEmail={member.email}
-                        memberNickName={member.nick_name}
-                        memberNameEn={member.name_en}
-                        memberNameKo={member.name_ko}
-                        methods={paymentMethodsByUserEmail[member.email.toLowerCase()] ?? []}
-                        manageHref={`/${locale}/admin/payment-methods?user_email=${encodeURIComponent(member.email)}`}
-                      />
+                      {(() => {
+                        const methods = paymentMethodsByUserEmail[member.email.toLowerCase()] ?? []
+                        return (
+                          <TeamCardQuickButton
+                            label={methods.length === 0 ? '연결 결제수단 없음' : `연결 결제수단 ${methods.map((method) => teamCardPaymentBadgeLabel(method.method, method.display_name)).join(' ')}`}
+                            onClick={() => setQuickEdit({ email: member.email, field: 'payments' })}
+                            className="flex w-full flex-wrap items-center gap-1.5 rounded-xl border border-gray-100 px-3 py-2.5 text-left text-sm hover:border-gray-200 hover:bg-gray-50"
+                          >
+                            <span className="flex shrink-0 items-center gap-1.5 text-gray-500">
+                              <CreditCard size={14} />
+                              연결 결제수단
+                            </span>
+                            {methods.length === 0 ? (
+                              <span className="text-xs text-gray-400">없음</span>
+                            ) : (
+                              methods.map((method) => {
+                                const active = (method.status || '').trim().toLowerCase() === 'active'
+                                return (
+                                  <span
+                                    key={method.id}
+                                    className={`inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-semibold leading-4 ${
+                                      active
+                                        ? 'border-green-200 bg-green-50 text-green-900'
+                                        : 'border-pink-200 bg-pink-50 text-pink-900'
+                                    }`}
+                                  >
+                                    {teamCardPaymentBadgeLabel(method.method, method.display_name)}
+                                  </span>
+                                )
+                              })
+                            )}
+                          </TeamCardQuickButton>
+                        )
+                      })()}
 
-                      {/* 특별 자격사항 */}
-                      <div className="border-t pt-3">
-                        <div className="flex items-center justify-between text-sm mb-2">
-                          <span className="text-gray-500">자격사항</span>
-                        </div>
-                        <div className="flex space-x-2">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            member.cpr 
-                              ? (member.cpr_expired && new Date(member.cpr_expired) < new Date() 
-                                  ? 'bg-red-100 text-red-800' 
+                      <TeamCardQuickButton
+                        label="자격사항 수정"
+                        onClick={() => setQuickEdit({ email: member.email, field: 'credentials' })}
+                        className="block w-full rounded-xl border border-gray-100 px-3 py-2.5 text-left hover:border-gray-200 hover:bg-gray-50"
+                      >
+                        <span className="mb-2 block text-sm text-gray-500">자격사항</span>
+                        <span className="flex flex-wrap gap-1.5">
+                          <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
+                            member.cpr
+                              ? (member.cpr_expired && new Date(member.cpr_expired) < new Date()
+                                  ? 'bg-red-100 text-red-800'
                                   : 'bg-green-100 text-green-800')
                               : 'bg-gray-100 text-gray-800'
                           }`}>
                             <Shield size={12} className="mr-1" />
                             CPR {member.cpr ? (member.cpr_expired && new Date(member.cpr_expired) < new Date() ? '(만료)' : '') : '(없음)'}
                           </span>
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            member.medical_report 
-                              ? (member.medical_expired && new Date(member.medical_expired) < new Date() 
-                                  ? 'bg-red-100 text-red-800' 
+                          <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
+                            member.medical_report
+                              ? (member.medical_expired && new Date(member.medical_expired) < new Date()
+                                  ? 'bg-red-100 text-red-800'
                                   : 'bg-green-100 text-green-800')
                               : 'bg-gray-100 text-gray-800'
                           }`}>
                             <FileText size={12} className="mr-1" />
                             의료보고서 {member.medical_report ? (member.medical_expired && new Date(member.medical_expired) < new Date() ? '(만료)' : '') : '(없음)'}
                           </span>
-                          {member.cdl_driver_license && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-900">
-                              <Car size={12} className="mr-1" />
-                              CDL
-                            </span>
-                          )}
-                          {member.personal_car_model && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                              <Car size={12} className="mr-1" />
-                              개인차량
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                          <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
+                            member.cdl_driver_license ? 'bg-yellow-100 text-yellow-900' : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            <Car size={12} className="mr-1" />
+                            CDL {member.cdl_driver_license ? '' : '(없음)'}
+                          </span>
+                          <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
+                            member.personal_car_model ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            <Car size={12} className="mr-1" />
+                            {member.personal_car_model ? '개인차량' : '개인차량 (없음)'}
+                          </span>
+                        </span>
+                      </TeamCardQuickButton>
 
-                      {/* 문서 목록 */}
-                      <TeamMemberDocuments 
-                        memberEmail={member.email}
-                        onLoadDocuments={() => fetchMemberDocuments(member.email)}
-                        documents={memberDocuments[member.email] || {}}
-                      />
+                      {(() => {
+                        const documentCount = memberDocuments[member.email]
+                          ? Object.values(memberDocuments[member.email]).reduce((sum, docs) => sum + docs.length, 0)
+                          : null
+                        return (
+                          <TeamCardQuickButton
+                            label={documentCount === null ? '문서 불러오는 중' : `문서 ${documentCount}개 보기`}
+                            onClick={() => setQuickEdit({ email: member.email, field: 'documents' })}
+                            className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-100 px-3 py-2.5 text-left text-sm text-gray-700 hover:border-gray-200 hover:bg-gray-50"
+                          >
+                            <span className="flex items-center">
+                              <FileText size={14} className="mr-2" />
+                              문서
+                            </span>
+                            <span className="text-xs font-medium text-gray-700">
+                              {documentCount === null ? '…' : `${documentCount}개`}
+                            </span>
+                          </TeamCardQuickButton>
+                        )
+                      })()}
 
                     </div>
 
@@ -1087,6 +1296,55 @@ export default function AdminTeam() {
           )}
         </>
       )}
+
+      {quickEdit ? (() => {
+        const member = teamMembers.find((item) => item.email === quickEdit.email)
+        if (!member) return null
+        return (
+          <TeamMemberQuickEditModal
+            member={member}
+            field={quickEdit.field}
+            onClose={() => setQuickEdit(null)}
+            onSave={(patch) => saveQuickEdit(quickEdit.email, patch)}
+            payments={(paymentMethodsByUserEmail[member.email.toLowerCase()] ?? []).map((method) => ({
+              id: method.id,
+              label: formatPaymentMethodDisplay(
+                {
+                  id: method.id,
+                  method: method.method,
+                  display_name: method.display_name,
+                  user_email: method.user_email,
+                  card_holder_name: method.card_holder_name,
+                },
+                {
+                  nick_name: member.nick_name,
+                  name_en: member.name_en,
+                  name_ko: member.name_ko,
+                },
+              ),
+              active: (method.status || '').trim().toLowerCase() === 'active',
+            }))}
+            manageHref={`/${locale}/admin/payment-methods?user_email=${encodeURIComponent(member.email)}`}
+            documents={memberDocuments[member.email] ?? null}
+            onLoadDocuments={() => {
+              void fetchMemberDocuments(member.email)
+            }}
+            peers={teamMembers
+              .filter(
+                (peer) =>
+                  peer.email !== member.email &&
+                  String(peer.is_active).toLowerCase() === 'true' &&
+                  isTourGuideOrDriverPosition(peer.position),
+              )
+              .map((peer) => ({
+                email: peer.email,
+                name_ko: peer.name_ko,
+                nick_name: peer.nick_name,
+                position: peer.position,
+              }))}
+          />
+        )
+      })() : null}
 
       {/* 팀원 추가/편집 폼 */}
       {showForm && (
@@ -1114,7 +1372,7 @@ export default function AdminTeam() {
           onDocumentChange={(email) => {
             // 문서 변경 시 해당 팀원의 문서 목록 다시 로드
             if (email) {
-              fetchMemberDocuments(email)
+              void fetchMemberDocuments(email, true)
             }
           }}
         />
@@ -1129,202 +1387,6 @@ export default function AdminTeam() {
             setSelectedMember(null)
           }}
         />
-      )}
-    </div>
-  )
-}
-
-function teamCardPaymentMethodBadgeClass(status: string | null): string {
-  const isActive = (status || '').trim().toLowerCase() === 'active'
-  if (isActive) {
-    return 'bg-green-100 text-green-900 border-green-300'
-  }
-  return 'bg-pink-100 text-pink-900 border-pink-300'
-}
-
-/** 팀 카드뷰: 해당 이메일(payment_methods.user_email)에 연결된 결제수단 요약 + 관리 페이지 링크 */
-function TeamMemberCardLinkedPaymentMethods({
-  memberEmail: _memberEmail,
-  memberNickName,
-  memberNameEn,
-  memberNameKo,
-  methods,
-  manageHref,
-}: {
-  memberEmail: string
-  memberNickName: string | null
-  memberNameEn: string | null
-  memberNameKo: string
-  methods: TeamCardPaymentMethodRow[]
-  manageHref: string
-}) {
-  const displayLimit = 12
-
-  return (
-    <div className="border-t pt-3" onClick={(e) => e.stopPropagation()}>
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="text-sm text-gray-500 flex items-center gap-1.5 min-w-0">
-          <CreditCard size={14} className="flex-shrink-0" />
-          <span className="truncate">연결 결제수단</span>
-        </span>
-        <Link
-          href={manageHref}
-          onClick={(e) => e.stopPropagation()}
-          className="text-xs font-medium text-primary hover:text-primary/80 whitespace-nowrap"
-        >
-          관리
-        </Link>
-      </div>
-      {methods.length === 0 ? (
-        <p className="text-xs text-gray-400">등록된 결제수단이 없습니다.</p>
-      ) : (
-        <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
-          {methods.slice(0, displayLimit).map((m) => {
-            const label = formatPaymentMethodDisplay(
-              {
-                id: m.id,
-                method: m.method,
-                display_name: m.display_name,
-                user_email: m.user_email,
-                card_holder_name: m.card_holder_name,
-              },
-              {
-                nick_name: memberNickName,
-                name_en: memberNameEn,
-                name_ko: memberNameKo,
-              }
-            )
-            const st = (m.status || '').trim()
-            const badgeCls = teamCardPaymentMethodBadgeClass(m.status)
-            return (
-              <span
-                key={m.id}
-                className={`inline-flex max-w-full items-center rounded-full border px-2 py-0.5 text-[11px] font-medium leading-tight ${badgeCls}`}
-                title={st ? `${label} (${st})` : label}
-              >
-                <span className="truncate">{label}</span>
-              </span>
-            )
-          })}
-        </div>
-      )}
-      {methods.length > displayLimit ? (
-        <p className="text-[11px] text-gray-400 mt-1">외 {methods.length - displayLimit}건 · 관리에서 전체 보기</p>
-      ) : null}
-    </div>
-  )
-}
-
-// 팀원 문서 컴포넌트
-function TeamMemberDocuments({
-  memberEmail: _memberEmail,
-  onLoadDocuments,
-  documents
-}: {
-  memberEmail: string
-  onLoadDocuments: () => void
-  documents: {[type: string]: Array<{id: string, name: string, url: string, path: string, size: number, uploadedAt: string}>}
-}) {
-  const [isExpanded, setIsExpanded] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
-
-  useEffect(() => {
-    if (isExpanded && Object.keys(documents).length === 0) {
-      setIsLoading(true)
-      onLoadDocuments()
-      setTimeout(() => setIsLoading(false), 500)
-    }
-  }, [isExpanded, documents, onLoadDocuments])
-
-  const documentTypeLabels: {[key: string]: string} = {
-    contract: '계약서',
-    id_copy: '신분증 사본',
-    bank_info: 'W9',
-    other: '기타 문서'
-  }
-
-  const totalDocuments = Object.values(documents).reduce((sum, docs) => sum + docs.length, 0)
-
-  if (totalDocuments === 0 && !isExpanded) {
-    return (
-      <div className="border-t pt-3" onClick={(e) => e.stopPropagation()}>
-        <button
-          type="button"
-          onClick={() => setIsExpanded(true)}
-          className="flex items-center justify-between w-full text-sm text-gray-600 hover:text-gray-900"
-        >
-          <span className="flex items-center">
-            <FileText size={14} className="mr-2" />
-            문서 보기
-          </span>
-          <span className="text-xs text-gray-400">클릭하여 로드</span>
-        </button>
-      </div>
-    )
-  }
-
-  return (
-    <div className="border-t pt-3" onClick={(e) => e.stopPropagation()}>
-      <button
-        type="button"
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center justify-between w-full text-sm text-gray-700 hover:text-gray-900 mb-2"
-      >
-        <span className="flex items-center">
-          <FileText size={14} className="mr-2" />
-          문서 ({totalDocuments}개)
-        </span>
-        <span className="text-xs text-gray-400">
-          {isExpanded ? '접기' : '펼치기'}
-        </span>
-      </button>
-
-      {isExpanded && (
-        <div className="space-y-2 max-h-48 overflow-y-auto">
-          {isLoading ? (
-            <div className="text-center py-4 text-sm text-gray-500">
-              문서를 불러오는 중...
-            </div>
-          ) : totalDocuments === 0 ? (
-            <div className="text-center py-4 text-sm text-gray-500">
-              업로드된 문서가 없습니다.
-            </div>
-          ) : (
-            Object.entries(documents).map(([type, docs]) => {
-              if (docs.length === 0) return null
-              return (
-                <div key={type} className="space-y-1">
-                  <div className="text-xs font-medium text-gray-500 px-1">
-                    {documentTypeLabels[type] || type}
-                  </div>
-                  {docs.map((doc) => (
-                    <a
-                      key={doc.id}
-                      href={doc.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 hover:border-border transition-colors group"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="flex items-center flex-1 min-w-0">
-                        <FileText className="w-3 h-3 mr-2 text-gray-400 group-hover:text-primary flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs text-gray-700 truncate group-hover:text-primary" title={doc.name}>
-                            {doc.name}
-                          </p>
-                          <p className="text-xs text-gray-400">
-                            {(doc.size / 1024).toFixed(1)} KB
-                          </p>
-                        </div>
-                      </div>
-                      <Download className="w-3 h-3 text-gray-400 group-hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </a>
-                  ))}
-                </div>
-              )
-            })
-          )}
-        </div>
       )}
     </div>
   )

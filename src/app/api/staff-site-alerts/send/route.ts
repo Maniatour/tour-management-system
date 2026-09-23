@@ -13,6 +13,13 @@ import {
   type StaffSiteAlertSendPayload,
   type StaffSiteAlertTargetGroup,
 } from '@/lib/staffSiteAlert'
+import {
+  normalizeStaffSiteAlertInteraction,
+  staffSiteAlertInteractionErrorMessage,
+  type StaffSiteAlertInteractionInput,
+} from '@/lib/staffSiteAlertInteraction'
+import type { Database } from '@/lib/database.types'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchAuthTeamMemberRow } from '@/lib/authTeamRoleLookup'
 import { getUserRole } from '@/lib/roles'
 
@@ -84,6 +91,14 @@ export async function POST(request: NextRequest) {
       ]
     : []
   const requiresSignature = Boolean(body.requiresSignature)
+  const interactionResult = normalizeStaffSiteAlertInteraction(readInteractionInput(body))
+  if (!interactionResult.ok) {
+    return NextResponse.json(
+      { error: staffSiteAlertInteractionErrorMessage(interactionResult.error, locale) },
+      { status: 400 }
+    )
+  }
+  const interaction = interactionResult.value
   const senderProxy = parseStaffSiteAlertSenderProxy(body)
   const linkedHubArticleIds = Array.isArray(body.linkedHubArticleIds)
     ? [...new Set(body.linkedHubArticleIds.map((id) => String(id ?? '').trim()).filter(Boolean))]
@@ -156,28 +171,49 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const alertInsert: Database['public']['Tables']['staff_site_alerts']['Insert'] = {
+    title_ko: titleKo,
+    title_en: titleEn,
+    body_ko: bodyKo,
+    body_en: bodyEn,
+    target_positions: recipientMode === 'group' ? targetGroups : [],
+    target_individuals: recipientMode === 'individual' ? targetIndividuals : [],
+    linked_hub_article_ids: linkedHubArticleIds,
+    requires_signature: requiresSignature,
+    sent_as_super: staffSiteAlertSentAsSuperFlag(senderProxy),
+    sent_by_email: user.email.toLowerCase(),
+    sent_by_name: senderName,
+    display_sender_name: displaySenderName,
+  }
+  if (interaction.kind !== 'none') {
+    alertInsert.interaction_kind = interaction.kind
+    alertInsert.interaction_anonymous = interaction.anonymous
+    alertInsert.interaction_show_results = interaction.showResults
+  }
+
   const { data: alert, error: alertError } = await db
     .from('staff_site_alerts')
-    .insert({
-      title_ko: titleKo,
-      title_en: titleEn,
-      body_ko: bodyKo,
-      body_en: bodyEn,
-      target_positions: recipientMode === 'group' ? targetGroups : [],
-      target_individuals: recipientMode === 'individual' ? targetIndividuals : [],
-      linked_hub_article_ids: linkedHubArticleIds,
-      requires_signature: requiresSignature,
-      sent_as_super: staffSiteAlertSentAsSuperFlag(senderProxy),
-      sent_by_email: user.email.toLowerCase(),
-      sent_by_name: senderName,
-      display_sender_name: displaySenderName,
-    })
+    .insert(alertInsert)
     .select('id')
     .single()
 
   if (alertError || !alert) {
     console.error('[staff-site-alerts/send] alert', alertError)
+    if (interaction.kind !== 'none' && /interaction_kind|schema cache/i.test(alertError?.message ?? '')) {
+      return NextResponse.json(
+        { error: '투표·설문을 쓰려면 사이트 알림 마이그레이션을 적용해 주세요.' },
+        { status: 500 }
+      )
+    }
     return NextResponse.json({ error: '알림 저장에 실패했습니다.' }, { status: 500 })
+  }
+
+  if (interaction.kind !== 'none') {
+    const saved = await insertStaffSiteAlertInteraction(db, alert.id, interaction.questions)
+    if (!saved.ok) {
+      await db.from('staff_site_alerts').delete().eq('id', alert.id)
+      return NextResponse.json({ error: saved.error }, { status: 500 })
+    }
   }
 
   const recipientRows = recipients.map((row) => ({
@@ -200,4 +236,63 @@ export async function POST(request: NextRequest) {
     alertId: alert.id,
     recipientCount: recipientRows.length,
   })
+}
+
+function readInteractionInput(body: StaffSiteAlertSendPayload): StaffSiteAlertInteractionInput {
+  const raw = body.interaction
+  const kind = raw?.kind === 'poll' || raw?.kind === 'survey' ? raw.kind : 'none'
+  return {
+    kind,
+    anonymous: Boolean(raw?.anonymous),
+    showResults: raw?.showResults !== false,
+    questions: Array.isArray(raw?.questions)
+      ? (raw.questions as StaffSiteAlertInteractionInput['questions'])
+      : [],
+  }
+}
+
+async function insertStaffSiteAlertInteraction(
+  db: SupabaseClient<Database>,
+  alertId: string,
+  questions: StaffSiteAlertInteractionInput['questions']
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const questionRows = questions.map((question, index) => ({
+    alert_id: alertId,
+    sort_order: index,
+    prompt_ko: question.promptKo,
+    prompt_en: question.promptEn,
+    question_type: question.questionType,
+    required: question.required !== false,
+  }))
+
+  const { data: insertedQuestions, error: questionError } = await db
+    .from('staff_site_alert_questions')
+    .insert(questionRows)
+    .select('id, sort_order')
+
+  if (questionError || !insertedQuestions || insertedQuestions.length !== questionRows.length) {
+    console.error('[staff-site-alerts/send] questions', questionError)
+    return { ok: false, error: '투표·설문 문항 저장에 실패했습니다.' }
+  }
+
+  const questionIdByOrder = new Map(insertedQuestions.map((row) => [row.sort_order, row.id]))
+  const optionRows = questions.flatMap((question, index) => {
+    const questionId = questionIdByOrder.get(index)
+    if (!questionId) return []
+    return question.options.map((option, optionIndex) => ({
+      question_id: questionId,
+      sort_order: optionIndex,
+      label_ko: option.labelKo,
+      label_en: option.labelEn,
+    }))
+  })
+
+  if (optionRows.length === 0) return { ok: true }
+
+  const { error: optionError } = await db.from('staff_site_alert_options').insert(optionRows)
+  if (optionError) {
+    console.error('[staff-site-alerts/send] options', optionError)
+    return { ok: false, error: '투표·설문 보기 저장에 실패했습니다.' }
+  }
+  return { ok: true }
 }

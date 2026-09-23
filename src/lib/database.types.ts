@@ -12489,6 +12489,9 @@ export type Database = {
           sent_by_name: string | null
           display_sender_name: string
           created_at: string
+          interaction_kind: string
+          interaction_anonymous: boolean
+          interaction_show_results: boolean
         }
         Insert: {
           id?: string
@@ -12505,6 +12508,9 @@ export type Database = {
           sent_by_name?: string | null
           display_sender_name: string
           created_at?: string
+          interaction_kind?: string
+          interaction_anonymous?: boolean
+          interaction_show_results?: boolean
         }
         Update: {
           id?: string
@@ -12521,6 +12527,9 @@ export type Database = {
           sent_by_name?: string | null
           display_sender_name?: string
           created_at?: string
+          interaction_kind?: string
+          interaction_anonymous?: boolean
+          interaction_show_results?: boolean
         }
         Relationships: []
       }
@@ -12564,6 +12573,128 @@ export type Database = {
             columns: ['alert_id']
             isOneToOne: false
             referencedRelation: 'staff_site_alerts'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      staff_site_alert_questions: {
+        Row: {
+          id: string
+          alert_id: string
+          sort_order: number
+          prompt_ko: string
+          prompt_en: string
+          question_type: string
+          required: boolean
+        }
+        Insert: {
+          id?: string
+          alert_id: string
+          sort_order: number
+          prompt_ko: string
+          prompt_en?: string
+          question_type: string
+          required?: boolean
+        }
+        Update: {
+          id?: string
+          alert_id?: string
+          sort_order?: number
+          prompt_ko?: string
+          prompt_en?: string
+          question_type?: string
+          required?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'staff_site_alert_questions_alert_id_fkey'
+            columns: ['alert_id']
+            isOneToOne: false
+            referencedRelation: 'staff_site_alerts'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      staff_site_alert_options: {
+        Row: {
+          id: string
+          question_id: string
+          sort_order: number
+          label_ko: string
+          label_en: string
+        }
+        Insert: {
+          id?: string
+          question_id: string
+          sort_order: number
+          label_ko: string
+          label_en?: string
+        }
+        Update: {
+          id?: string
+          question_id?: string
+          sort_order?: number
+          label_ko?: string
+          label_en?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'staff_site_alert_options_question_id_fkey'
+            columns: ['question_id']
+            isOneToOne: false
+            referencedRelation: 'staff_site_alert_questions'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      staff_site_alert_responses: {
+        Row: {
+          id: string
+          alert_id: string
+          question_id: string
+          recipient_id: string
+          option_ids: string[]
+          text_answer: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          alert_id: string
+          question_id: string
+          recipient_id: string
+          option_ids?: string[]
+          text_answer?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          alert_id?: string
+          question_id?: string
+          recipient_id?: string
+          option_ids?: string[]
+          text_answer?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'staff_site_alert_responses_alert_id_fkey'
+            columns: ['alert_id']
+            isOneToOne: false
+            referencedRelation: 'staff_site_alerts'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'staff_site_alert_responses_question_id_fkey'
+            columns: ['question_id']
+            isOneToOne: false
+            referencedRelation: 'staff_site_alert_questions'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'staff_site_alert_responses_recipient_id_fkey'
+            columns: ['recipient_id']
+            isOneToOne: false
+            referencedRelation: 'staff_site_alert_recipients'
             referencedColumns: ['id']
           },
         ]

@@ -37,6 +37,9 @@ export type StaffSiteAlertRow = {
   sent_by_name: string | null
   display_sender_name: string
   created_at: string
+  interaction_kind?: 'none' | 'poll' | 'survey' | null
+  interaction_anonymous?: boolean | null
+  interaction_show_results?: boolean | null
 }
 
 export type StaffSiteAlertRecipientRow = {
@@ -85,6 +88,12 @@ export type StaffSiteAlertSendPayload = {
   sendAsSuper?: boolean
   senderProxy?: StaffSiteAlertSenderProxy | null
   locale?: string
+  interaction?: {
+    kind?: 'none' | 'poll' | 'survey' | null
+    anonymous?: boolean | null
+    showResults?: boolean | null
+    questions?: unknown
+  } | null
 }
 
 export type StaffSiteAlertTeamMember = {

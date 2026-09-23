@@ -60,10 +60,21 @@ export function parseGuideProductSkills(value: unknown): GuideProductSkills {
 
 export function canGuideProduct(skills: GuideProductSkills | null | undefined, productId: string): boolean {
   const id = String(productId || '').trim()
-  if (!id) return true
+  if (!id) return false
   const skill = skills?.[id]
-  if (!skill) return true
+  if (!skill) return false
   return skill.eligible !== false
+}
+
+export function guideLanguageCodesForStaff(languages: readonly string[] | null | undefined): GuideLanguageCode[] {
+  const have = new Set<GuideLanguageCode>()
+  for (const raw of languages || []) {
+    const value = String(raw || '').trim().toLowerCase()
+    if (value === 'kr' || value === 'ko' || value === '한국어') have.add('ko')
+    else if (value === 'en' || value === '영어') have.add('en')
+    else if (value === 'jp' || value === 'ja' || value === '일본어') have.add('ja')
+  }
+  return GUIDE_LANGUAGE_CODES.filter((code) => have.has(code))
 }
 
 export function guideLanguagePriority(
