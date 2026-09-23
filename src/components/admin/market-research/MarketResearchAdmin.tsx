@@ -17,6 +17,14 @@ import {
   pricingBoardRows,
   toggleAllOrItem,
 } from '@/lib/market-research/pricingBoard'
+import {
+  arrangeBoardColumns,
+  EMPTY_BOARD_LAYOUT,
+  moveListingOrder,
+  readBoardLayouts,
+  writeBoardLayouts,
+  type BoardLayoutPrefs,
+} from '@/lib/market-research/boardLayout'
 import { MARKET_OTA_PLATFORMS, type MarketBadgeCatalogItem, type MarketListing, type MarketOtaPlatform } from '@/lib/market-research/types'
 import { compareItemDefsFromCatalog, inclusionHasExcluded } from '@/lib/market-research/excludedItems'
 import { MarketResearchCompareItemsManager } from './MarketResearchCompareItemsManager'
@@ -63,6 +71,8 @@ export default function MarketResearchAdmin() {
   const [listingCompetitorId, setListingCompetitorId] = useState<string | undefined>()
   const [priceListingId, setPriceListingId] = useState<string | undefined>()
   const [ourOfferPlatform, setOurOfferPlatform] = useState<MarketOtaPlatform | null>(null)
+  const [boardLayouts, setBoardLayouts] = useState<Record<string, BoardLayoutPrefs>>({})
+  const [showHiddenListings, setShowHiddenListings] = useState(false)
 
   const load = useCallback(async () => {
     const res = await fetchApiWithAuth('/api/admin/market-research')
@@ -83,6 +93,10 @@ export default function MarketResearchAdmin() {
       cancelled = true
     }
   }, [load])
+
+  useEffect(() => {
+    setBoardLayouts(readBoardLayouts())
+  }, [])
 
   const post = async (body: Record<string, unknown>) => {
     const res = await fetchApiWithAuth('/api/admin/market-research', {
@@ -148,16 +162,19 @@ export default function MarketResearchAdmin() {
             compareItems,
             oursLabel: isKo ? '자사' : 'Kovegas',
           })
-    return [
-      ...ours,
-      ...buildPricingBoardColumns(
-        bundle.listings,
-        bundle.competitors,
-        bundle.snapshots,
-        activeProductId,
-        filter
-      ),
-    ]
+    return arrangeBoardColumns(
+      [
+        ...ours,
+        ...buildPricingBoardColumns(
+          bundle.listings,
+          bundle.competitors,
+          bundle.snapshots,
+          activeProductId,
+          filter
+        ),
+      ],
+      boardLayouts[activeProductId] || EMPTY_BOARD_LAYOUT
+    )
   }, [
     bundle.listings,
     bundle.competitors,
@@ -169,11 +186,31 @@ export default function MarketResearchAdmin() {
     otaFilter,
     competitorFilter,
     isKo,
+    boardLayouts,
   ])
   const rows = useMemo(
     () => pricingBoardRows(columns, isKo, compareItemDefsFromCatalog(bundle.compareItems)),
     [columns, isKo, bundle.compareItems]
   )
+
+  const boardPrefs = boardLayouts[activeProductId] || EMPTY_BOARD_LAYOUT
+  const saveBoardLayout = (next: BoardLayoutPrefs) => {
+    if (!activeProductId) return
+    setBoardLayouts((prev) => {
+      const layouts = { ...prev, [activeProductId]: next }
+      writeBoardLayouts(layouts)
+      return layouts
+    })
+  }
+  const hiddenListingLabels = boardPrefs.hidden.flatMap((id) => {
+    const listing = bundle.listings.find((row) => row.id === id)
+    if (!listing) return []
+    const name =
+      bundle.competitors.find((row) => row.id === listing.competitor_id)?.name ||
+      listing.listing_title ||
+      id
+    return [{ id, label: `${name} · ${otaPlatformLabel(listing.ota_platform, isKo)}` }]
+  })
 
   const closeModal = () => {
     setModal(null)
@@ -183,7 +220,7 @@ export default function MarketResearchAdmin() {
   }
 
   return (
-    <div className="w-full min-w-0 space-y-6 px-4 lg:px-0">
+    <div className="market-research-page space-y-6 px-4 lg:px-0">
       <div className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-3">
@@ -282,6 +319,38 @@ export default function MarketResearchAdmin() {
             }))}
           />
         ) : null}
+        {hiddenListingLabels.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-xl"
+              onClick={() => setShowHiddenListings((open) => !open)}
+              aria-expanded={showHiddenListings}
+            >
+              {isKo ? `숨긴 리스팅 ${hiddenListingLabels.length}` : `Hidden ${hiddenListingLabels.length}`}
+            </Button>
+            {showHiddenListings
+              ? hiddenListingLabels.map((row) => (
+                  <Button
+                    key={row.id}
+                    type="button"
+                    variant="ghost"
+                    className="h-9 rounded-xl"
+                    onClick={() =>
+                      saveBoardLayout({
+                        ...boardPrefs,
+                        hidden: boardPrefs.hidden.filter((id) => id !== row.id),
+                      })
+                    }
+                  >
+                    {row.label}
+                    <span className="ml-1 text-xs text-muted-foreground">{isKo ? '표시' : 'Show'}</span>
+                  </Button>
+                ))
+              : null}
+          </div>
+        ) : null}
       </div>
 
       {loading ? (
@@ -294,6 +363,41 @@ export default function MarketResearchAdmin() {
           columns={columns}
           rows={rows}
           isKo={isKo}
+          favoriteIds={boardPrefs.favorites}
+          onToggleFavorite={(id) => {
+            const favorite = boardPrefs.favorites.includes(id)
+            if (favorite) {
+              saveBoardLayout({
+                ...boardPrefs,
+                favorites: boardPrefs.favorites.filter((item) => item !== id),
+              })
+              return
+            }
+            const visibleIds = columns
+              .filter((column) => column.kind === 'competitor')
+              .map((column) => column.columnId)
+              .filter((item) => item !== id)
+            saveBoardLayout({
+              ...boardPrefs,
+              favorites: [...boardPrefs.favorites, id],
+              order: [id, ...visibleIds],
+            })
+          }}
+          onMoveListing={(id, direction) => {
+            const visibleIds = columns
+              .filter((column) => column.kind === 'competitor')
+              .map((column) => column.columnId)
+            saveBoardLayout({
+              ...boardPrefs,
+              order: moveListingOrder(visibleIds, id, direction),
+            })
+          }}
+          onHideListing={(id) => {
+            saveBoardLayout({
+              ...boardPrefs,
+              hidden: boardPrefs.hidden.includes(id) ? boardPrefs.hidden : [...boardPrefs.hidden, id],
+            })
+          }}
           onEditListing={(row) => {
             setEditingListing(row)
             setModal('listing')

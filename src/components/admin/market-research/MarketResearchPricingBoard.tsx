@@ -1,33 +1,47 @@
 'use client'
 
-import { ExternalLink, Pencil, RefreshCw, Settings2, Trash2 } from 'lucide-react'
+import { Settings2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { MarketListing, MarketOtaPlatform } from '@/lib/market-research/types'
 import {
   OUR_COLUMN_TONE,
   COLUMN_TONES,
   cellValue,
+  competitorPriceTone,
+  shownSalePrice,
+  type CompetitorPriceTone,
   type PricingBoardColumn,
   type PricingBoardRow,
 } from '@/lib/market-research/pricingBoard'
 import { formatUsd } from './helpers'
+import { MarketResearchColumnMenu } from './MarketResearchColumnMenu'
 import { MarketResearchPriceStack } from './MarketResearchPriceStack'
+
+function toneClass(tone: CompetitorPriceTone | null): string {
+  if (tone === 'higher') return 'text-emerald-600'
+  if (tone === 'lower') return 'text-red-600'
+  return ''
+}
 
 function FinalCell({
   primary,
   secondary,
+  primaryTone,
+  secondaryTone,
   isKo,
 }: {
   primary: number | null
   secondary: number | null
+  primaryTone: CompetitorPriceTone | null
+  secondaryTone: CompetitorPriceTone | null
   isKo: boolean
 }) {
   return (
     <div>
-      <div className="text-lg font-semibold">{formatUsd(primary)}</div>
+      <div className={`text-lg font-semibold ${toneClass(primaryTone)}`}>{formatUsd(primary)}</div>
       <div className="text-xs text-muted-foreground">{isKo ? 'Lower 기준' : 'Lower'}</div>
       {secondary != null ? (
-        <div className="mt-1 text-sm font-medium">
+        <div className={`mt-1 text-sm font-medium ${toneClass(secondaryTone)}`}>
           {formatUsd(secondary)}
           <span className="ml-1 text-xs font-normal text-muted-foreground">X</span>
         </div>
@@ -36,10 +50,22 @@ function FinalCell({
   )
 }
 
+function oursColumnFor(columns: PricingBoardColumn[], column: PricingBoardColumn): PricingBoardColumn | null {
+  if (column.kind !== 'competitor') return null
+  return columns.find((row) => row.kind === 'ours' && row.otaPlatform === column.otaPlatform) ?? null
+}
+
+const LABEL_WIDTH = 220
+const COLUMN_WIDTH = 196
+
 export function MarketResearchPricingBoard({
   columns,
   rows,
   isKo,
+  favoriteIds,
+  onToggleFavorite,
+  onMoveListing,
+  onHideListing,
   onEditListing,
   onDeleteListing,
   onEnterPrice,
@@ -50,6 +76,10 @@ export function MarketResearchPricingBoard({
   columns: PricingBoardColumn[]
   rows: PricingBoardRow[]
   isKo: boolean
+  favoriteIds?: string[]
+  onToggleFavorite?: (listingId: string) => void
+  onMoveListing?: (listingId: string, direction: -1 | 1) => void
+  onHideListing?: (listingId: string) => void
   onEditListing: (listing: MarketListing) => void
   onDeleteListing: (id: string) => void
   onEnterPrice: (listingId: string) => void
@@ -57,7 +87,10 @@ export function MarketResearchPricingBoard({
   onManageCompareItems?: () => void
   onEditOurs?: (platform: MarketOtaPlatform) => void
 }) {
-  const grid = `minmax(220px, 1.15fr) repeat(${Math.max(columns.length, 1)}, minmax(170px, 1fr))`
+  const grid = `${LABEL_WIDTH}px repeat(${Math.max(columns.length, 1)}, ${COLUMN_WIDTH}px)`
+  const boardWidth = LABEL_WIDTH + Math.max(columns.length, 1) * COLUMN_WIDTH + Math.max(columns.length, 1) * 12
+  const competitorIds = columns.filter((column) => column.kind === 'competitor').map((column) => column.columnId)
+  const favorites = new Set(favoriteIds || [])
 
   if (columns.length === 0) {
     return (
@@ -78,14 +111,21 @@ export function MarketResearchPricingBoard({
   }
 
   return (
-    <div className="overflow-x-auto">
-      <div className="min-w-[760px]">
+    <div className="market-research-x-scroll market-research-x-scroll--board">
+      <div style={{ width: boardWidth }}>
         <div className="grid items-stretch gap-3" style={{ gridTemplateColumns: grid }}>
-          <div className="flex items-end px-2 pb-10 text-2xl font-semibold text-slate-500">
+          <div className="sticky left-0 z-20 flex items-end bg-slate-50 px-2 pb-10 text-2xl font-semibold text-slate-500">
             {isKo ? '가격 비교' : 'Pricing'}
           </div>
           {columns.map((col) => {
             const tone = col.kind === 'ours' ? OUR_COLUMN_TONE : COLUMN_TONES[col.toneIndex]
+            const ours = oursColumnFor(columns, col)
+            const headerPriceTone = competitorPriceTone(
+              shownSalePrice(col.fromPrice, col.fromDiscounted),
+              ours ? shownSalePrice(ours.fromPrice, ours.fromDiscounted) : null
+            )
+            const competitorIndex = competitorIds.indexOf(col.columnId)
+            const favorite = favorites.has(col.columnId)
             return (
               <div key={col.columnId} className="relative flex h-full flex-col pt-1">
                 <div
@@ -96,73 +136,41 @@ export function MarketResearchPricingBoard({
                     <div className="mt-0.5 text-[11px] font-medium text-white/90">{col.otaLabel}</div>
                   ) : null}
                 </div>
-                <div className="-mt-3 flex min-h-44 flex-1 flex-col rounded-2xl bg-white px-4 pb-5 pt-8 text-center shadow-sm">
+                <div className="-mt-3 flex min-h-44 flex-1 flex-col rounded-2xl bg-white px-3 pb-4 pt-8 text-center shadow-sm">
                   <MarketResearchPriceStack
                     list={col.fromPrice}
                     discounted={col.fromDiscounted}
                     percent={col.discountPercent}
                     isKo={isKo}
                     size="lg"
+                    tone={headerPriceTone}
                   />
-                  <div className="mt-auto flex min-h-8 flex-wrap justify-center gap-1 pt-3">
+                  <div className="mt-auto pt-3">
                     {col.kind === 'ours' ? (
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-8 rounded-lg px-2"
+                        className="h-9 rounded-xl px-3 text-slate-600"
                         onClick={() => onEditOurs?.(col.otaPlatform)}
                       >
                         <Settings2 className="mr-1 h-3.5 w-3.5" />
                         {isKo ? '설정' : 'Settings'}
                       </Button>
                     ) : col.listing ? (
-                      <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 rounded-lg px-2"
-                      onClick={() => onEnterPrice(col.listing!.id)}
-                    >
-                      {isKo ? '가격' : 'Price'}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 rounded-lg px-2"
-                      onClick={() => onFetchOne(col.listing!.id)}
-                      aria-label={isKo ? '지금 수집' : 'Fetch now'}
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 rounded-lg px-2"
-                      onClick={() => onEditListing(col.listing!)}
-                      aria-label={isKo ? '리스팅 수정' : 'Edit listing'}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 rounded-lg px-2"
-                      onClick={() => onDeleteListing(col.listing!.id)}
-                      aria-label={isKo ? '리스팅 삭제' : 'Delete listing'}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="sm" className="h-8 rounded-lg px-2" asChild>
-                      <a
-                        href={col.listing.listing_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-label={isKo ? '리스팅 열기' : 'Open listing'}
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
-                    </Button>
-                      </>
+                      <MarketResearchColumnMenu
+                        isKo={isKo}
+                        listing={col.listing}
+                        favorite={favorite}
+                        canMoveLeft={competitorIndex > 0}
+                        canMoveRight={competitorIndex >= 0 && competitorIndex < competitorIds.length - 1}
+                        onToggleFavorite={onToggleFavorite}
+                        onMove={onMoveListing}
+                        onHide={onHideListing}
+                        onEnterPrice={onEnterPrice}
+                        onFetch={onFetchOne}
+                        onEdit={onEditListing}
+                        onDelete={onDeleteListing}
+                      />
                     ) : null}
                   </div>
                 </div>
@@ -204,23 +212,38 @@ export function MarketResearchPricingBoard({
                 style={{ gridTemplateColumns: grid }}
               >
                 <div
-                  className={`text-sm ${
+                  className={`sticky left-0 z-10 -ml-4 bg-white py-1 pr-2 text-sm ${
                     row.kind === 'final'
-                      ? 'font-semibold text-slate-900'
+                      ? 'pl-4 font-semibold text-slate-900'
                       : row.kind === 'excluded'
-                        ? 'pl-2 text-slate-500'
-                        : 'font-medium text-slate-600'
+                        ? 'pl-6 text-slate-500'
+                        : 'pl-4 font-medium text-slate-600'
                   }`}
                 >
                   {row.label}
                 </div>
                 {columns.map((col) => {
                   const value = cellValue(col, row)
+                  const ours = oursColumnFor(columns, col)
+                  const oursValue = ours ? cellValue(ours, row) : null
                   const included = row.kind === 'excluded' && col.inclusionItems[row.id] === 'included'
+                  const saleTone =
+                    row.kind === 'sale'
+                      ? competitorPriceTone(
+                          shownSalePrice(value.primary, value.secondary),
+                          oursValue ? shownSalePrice(oursValue.primary, oursValue.secondary) : null
+                        )
+                      : null
                   return (
                     <div key={col.columnId} className="text-center">
                       {row.kind === 'final' ? (
-                        <FinalCell primary={value.primary} secondary={value.secondary} isKo={isKo} />
+                        <FinalCell
+                          primary={value.primary}
+                          secondary={value.secondary}
+                          primaryTone={competitorPriceTone(value.primary, oursValue?.primary)}
+                          secondaryTone={competitorPriceTone(value.secondary, oursValue?.secondary)}
+                          isKo={isKo}
+                        />
                       ) : included ? (
                         <div className="text-sm font-medium text-emerald-700">
                           {isKo ? '포함' : 'Included'}
@@ -231,6 +254,7 @@ export function MarketResearchPricingBoard({
                           discounted={value.secondary}
                           percent={col.discountPercent}
                           isKo={isKo}
+                          tone={saleTone}
                         />
                       ) : (
                         <div

@@ -171,9 +171,9 @@ const EN: WaiverUiCopy = {
   previewOnly: 'Preview only. Signatures are not saved.',
   signingClosedTitle: 'Online waiver signing is closed',
   signingClosedBody:
-    'Online signing closed at 6:00 PM Las Vegas time the day before your tour. If you were unable to sign, or you are opening this after the deadline, please sign the printed waiver our guide will bring on the tour day.',
+    'Online signing closed at 5:00 PM Las Vegas time the day before your tour. If you were unable to sign, or you are opening this after the deadline, please sign the printed waiver our guide will bring on the tour day.',
   signingDeadlineNote:
-    'Please complete this form by 6:00 PM Las Vegas time the day before your tour. After that, our guide will bring a printed copy for you to sign.',
+    'Please complete this form by 5:00 PM Las Vegas time the day before your tour. After that, our guide will bring a printed copy for you to sign.',
 }
 
 export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
@@ -265,9 +265,9 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     previewOnly: '미리보기입니다. 서명은 저장되지 않습니다.',
     signingClosedTitle: '온라인 면책 동의서 작성이 마감되었습니다',
     signingClosedBody:
-      '온라인 면책 동의서는 투어 전날 라스베이거스 시간 오후 6시에 마감됩니다. 서명을 완료하지 못했거나 마감 이후에 접속하신 경우, 가이드가 인쇄한 면책 동의서를 가져가니 투어 당일 인쇄물에 서명해 주세요.',
+      '온라인 면책 동의서는 투어 전날 라스베이거스 시간 오후 5시에 마감됩니다. 서명을 완료하지 못했거나 마감 이후에 접속하신 경우, 가이드가 인쇄한 면책 동의서를 가져가니 투어 당일 인쇄물에 서명해 주세요.',
     signingDeadlineNote:
-      '온라인 작성은 투어 전날 라스베이거스 시간 오후 6시까지입니다. 그 이후에는 가이드가 인쇄한 면책 동의서를 가져가니 인쇄물에 서명하시면 됩니다.',
+      '온라인 작성은 투어 전날 라스베이거스 시간 오후 5시까지입니다. 그 이후에는 가이드가 인쇄한 면책 동의서를 가져가니 인쇄물에 서명하시면 됩니다.',
   },
   ja: {
     ...EN,
@@ -354,9 +354,9 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     previewOnly: 'プレビューです。署名は保存されません。',
     signingClosedTitle: 'オンライン免責同意の受付は終了しました',
     signingClosedBody:
-      'オンライン署名はツアー前日のラスベガス時間午後6時に締め切ります。署名できなかった場合、または締め切り後にアクセスした場合は、ガイドが印刷した免責同意書をお持ちしますので、ツアー当日に紙面へご署名ください。',
+      'オンライン署名はツアー前日のラスベガス時間午後5時に締め切ります。署名できなかった場合、または締め切り後にアクセスした場合は、ガイドが印刷した免責同意書をお持ちしますので、ツアー当日に紙面へご署名ください。',
     signingDeadlineNote:
-      'オンライン記入はツアー前日のラスベガス時間午後6時までです。それ以降はガイドが印刷した免責同意書をお持ちしますので、紙面に署名してください。',
+      'オンライン記入はツアー前日のラスベガス時間午後5時までです。それ以降はガイドが印刷した免責同意書をお持ちしますので、紙面に署名してください。',
   },
   zh: {
     ...EN,
@@ -441,9 +441,9 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     previewOnly: '预览模式。签名不会被保存。',
     signingClosedTitle: '在线弃权书签署已截止',
     signingClosedBody:
-      '在线签署于行程前一天拉斯维加斯时间下午 6 点截止。如未能完成签署，或在截止后打开此页面，请在行程当天签署导游带来的纸质弃权书。',
+      '在线签署于行程前一天拉斯维加斯时间下午 5 点截止。如未能完成签署，或在截止后打开此页面，请在行程当天签署导游带来的纸质弃权书。',
     signingDeadlineNote:
-      '请于行程前一天拉斯维加斯时间下午 6 点前完成此表格。之后导游会带来纸质弃权书，请在印刷件上签名。',
+      '请于行程前一天拉斯维加斯时间下午 5 点前完成此表格。之后导游会带来纸质弃权书，请在印刷件上签名。',
   },
   es: {
     ...EN,
@@ -533,9 +533,9 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     previewOnly: 'Solo vista previa. Las firmas no se guardan.',
     signingClosedTitle: 'La firma en línea de la exención está cerrada',
     signingClosedBody:
-      'La firma en línea se cierra a las 6:00 p. m., hora de Las Vegas, el día anterior al tour. Si no pudo firmar o abre este enlace después del plazo, firme la exención impresa que traerá el guía el día del tour.',
+      'La firma en línea se cierra a las 5:00 p. m., hora de Las Vegas, el día anterior al tour. Si no pudo firmar o abre este enlace después del plazo, firme la exención impresa que traerá el guía el día del tour.',
     signingDeadlineNote:
-      'Complete este formulario antes de las 6:00 p. m., hora de Las Vegas, el día anterior al tour. Después, el guía traerá una copia impresa para que firme.',
+      'Complete este formulario antes de las 5:00 p. m., hora de Las Vegas, el día anterior al tour. Después, el guía traerá una copia impresa para que firme.',
   },
   fr: {
     ...EN,
@@ -625,9 +625,9 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     previewOnly: 'Aperçu uniquement. Les signatures ne sont pas enregistrées.',
     signingClosedTitle: 'La signature en ligne de la décharge est close',
     signingClosedBody:
-      'La signature en ligne se termine à 18 h, heure de Las Vegas, la veille de la visite. Si vous n’avez pas pu signer ou si vous ouvrez ce lien après l’échéance, veuillez signer la décharge imprimée que le guide apportera le jour de la visite.',
+      'La signature en ligne se termine à 17 h, heure de Las Vegas, la veille de la visite. Si vous n’avez pas pu signer ou si vous ouvrez ce lien après l’échéance, veuillez signer la décharge imprimée que le guide apportera le jour de la visite.',
     signingDeadlineNote:
-      'Veuillez remplir ce formulaire avant 18 h, heure de Las Vegas, la veille de la visite. Ensuite, le guide apportera une copie imprimée à signer.',
+      'Veuillez remplir ce formulaire avant 17 h, heure de Las Vegas, la veille de la visite. Ensuite, le guide apportera une copie imprimée à signer.',
   },
   de: {
     ...EN,
@@ -717,9 +717,9 @@ export const WAIVER_UI: Record<WaiverLocale, WaiverUiCopy> = {
     previewOnly: 'Nur Vorschau. Unterschriften werden nicht gespeichert.',
     signingClosedTitle: 'Die Online-Unterzeichnung des Haftungsausschlusses ist geschlossen',
     signingClosedBody:
-      'Die Online-Unterzeichnung endet um 18:00 Uhr Las-Vegas-Zeit am Vortag der Tour. Wenn Sie nicht unterzeichnen konnten oder diesen Link danach öffnen, unterschreiben Sie bitte den gedruckten Haftungsausschluss, den der Guide am Tourtag mitbringt.',
+      'Die Online-Unterzeichnung endet um 17:00 Uhr Las-Vegas-Zeit am Vortag der Tour. Wenn Sie nicht unterzeichnen konnten oder diesen Link danach öffnen, unterschreiben Sie bitte den gedruckten Haftungsausschluss, den der Guide am Tourtag mitbringt.',
     signingDeadlineNote:
-      'Bitte füllen Sie dieses Formular bis 18:00 Uhr Las-Vegas-Zeit am Vortag der Tour aus. Danach bringt der Guide eine gedruckte Kopie zur Unterschrift mit.',
+      'Bitte füllen Sie dieses Formular bis 17:00 Uhr Las-Vegas-Zeit am Vortag der Tour aus. Danach bringt der Guide eine gedruckte Kopie zur Unterschrift mit.',
   },
 }
 

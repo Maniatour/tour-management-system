@@ -2,8 +2,10 @@
 
 import {
   cloneElement,
+  createContext,
   isValidElement,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -18,6 +20,9 @@ export const SCHEDULE_TOOLTIP_PANEL_CLASS =
   'pointer-events-none px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg text-left leading-snug'
 
 const TOOLTIP_Z_INDEX = 1100
+
+/** 본문보다 높은 모달 안에서는 툴팁이 모달 위에 보이도록 올린다. */
+export const ScheduleTooltipZIndexContext = createContext(TOOLTIP_Z_INDEX)
 const TOOLTIP_GAP = 6
 const VIEWPORT_PADDING = 8
 
@@ -63,6 +68,7 @@ export default function ScheduleHoverTooltip({
   className,
   contentClassName,
 }: ScheduleHoverTooltipProps) {
+  const tooltipZIndex = useContext(ScheduleTooltipZIndexContext)
   const [open, setOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
   const anchorRef = useRef<HTMLElement | null>(null)
@@ -124,11 +130,11 @@ export default function ScheduleHoverTooltip({
       left,
       width: 'max-content',
       maxWidth: cappedMaxWidth,
-      zIndex: TOOLTIP_Z_INDEX,
+      zIndex: tooltipZIndex,
       visibility: 'visible',
       pointerEvents: 'none',
     })
-  }, [align, maxWidth, placement])
+  }, [align, maxWidth, placement, tooltipZIndex])
 
   useLayoutEffect(() => {
     if (!open) return

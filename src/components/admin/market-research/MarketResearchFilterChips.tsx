@@ -17,10 +17,10 @@ export function MarketResearchFilterChips({
 }) {
   const allActive = selected.length === 0
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="market-research-x-scroll flex gap-2 pb-1">
       <Button
         variant={allActive ? 'default' : 'outline'}
-        className="h-10 rounded-full"
+        className="h-10 shrink-0 rounded-full"
         aria-pressed={allActive}
         onClick={onSelectAll}
       >
@@ -32,7 +32,7 @@ export function MarketResearchFilterChips({
           <Button
             key={option.id}
             variant={active ? 'default' : 'outline'}
-            className="h-10 rounded-full"
+            className="h-10 shrink-0 rounded-full"
             aria-pressed={active}
             onClick={() => onToggle(option.id)}
           >

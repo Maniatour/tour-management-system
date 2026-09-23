@@ -8294,6 +8294,7 @@ export type Database = {
           nick_name: string | null
           name_ko: string
           notes: string | null
+          guide_product_skills: Json
           personal_car_model: string | null
           phone: string | null
           position: string | null
@@ -8332,6 +8333,7 @@ export type Database = {
           nick_name?: string | null
           name_ko: string
           notes?: string | null
+          guide_product_skills?: Json
           personal_car_model?: string | null
           phone?: string | null
           position?: string | null
@@ -8370,6 +8372,7 @@ export type Database = {
           nick_name?: string | null
           name_ko?: string
           notes?: string | null
+          guide_product_skills?: Json
           personal_car_model?: string | null
           phone?: string | null
           position?: string | null

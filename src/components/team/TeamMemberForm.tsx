@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { User, Car, CreditCard, Shield, FileText, Upload, Download, Edit, Trash2, ImagePlus, StickyNote } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import GuideProductSkillsFields, { showsGuideProductSkills } from '@/components/team/GuideProductSkillsFields'
+import { parseGuideProductSkills } from '@/lib/guideProductSkills'
 import type { Database } from '@/lib/supabase'
 
 type TeamMember = Database['public']['Tables']['team']['Row']
@@ -411,6 +413,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
     medical_acquired: member?.medical_acquired || '',
     medical_expired: member?.medical_expired || '',
     notes: member?.notes || '',
+    guide_product_skills: parseGuideProductSkills(member?.guide_product_skills),
   })
 
   const removeStoredTeamAvatarIfManaged = async (publicUrl: string | null | undefined) => {
@@ -867,6 +870,13 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
               </div>
             )}
           </div>
+
+          {showsGuideProductSkills(formData.position) ? (
+            <GuideProductSkillsFields
+              skills={parseGuideProductSkills(formData.guide_product_skills)}
+              onChange={(skills) => setFormData({ ...formData, guide_product_skills: skills })}
+            />
+          ) : null}
 
           {/* 개인 정보 */}
           <div className="border-t pt-4">

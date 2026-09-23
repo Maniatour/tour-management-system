@@ -27,6 +27,7 @@ export type TourNarrationPlay = {
   play_count: number
   play_seconds: number
   played_by_name?: string | null
+  material_language?: string | null
 }
 
 type AssignedTour = {
@@ -339,6 +340,33 @@ async function loadTeamNames(emails: string[]): Promise<Map<string, string>> {
   return nameByEmail
 }
 
+async function withMaterialLanguages(rows: TourNarrationPlay[]): Promise<TourNarrationPlay[]> {
+  const ids = [...new Set(rows.map((row) => row.material_id).filter(Boolean))]
+  if (ids.length === 0) return rows
+  const languageById = new Map<string, string | null>()
+  for (let i = 0; i < ids.length; i += 80) {
+    const chunk = ids.slice(i, i + 80)
+    const { data, error } = await supabase
+      .from('tour_materials')
+      .select('id, language')
+      .in('id', chunk)
+    if (error) {
+      console.warn('[narration play] material language', error)
+      continue
+    }
+    for (const row of data || []) {
+      const rec = row as { id: string; language: string | null }
+      languageById.set(rec.id, rec.language)
+    }
+  }
+  return rows.map((row) => ({
+    ...row,
+    material_language: languageById.has(row.material_id)
+      ? languageById.get(row.material_id) ?? null
+      : null,
+  }))
+}
+
 async function withPlayedByNames(rows: TourNarrationPlay[]): Promise<TourNarrationPlay[]> {
   const emails = [...new Set(rows.map((row) => row.played_by_email).filter(Boolean))]
   if (emails.length === 0) return rows
@@ -474,7 +502,9 @@ export async function fetchToursNarrationHistory(args: {
       args.goblinOnly ? isGoblinTourProduct(tour.product, tour.product_id) : true,
     )
 
-  const plays = await fetchTourNarrationPlaysForTourIds(tours.map((tour) => tour.id))
+  const plays = await withMaterialLanguages(
+    await fetchTourNarrationPlaysForTourIds(tours.map((tour) => tour.id)),
+  )
   const playsByTour = new Map<string, TourNarrationPlay[]>()
   for (const play of plays) {
     const list = playsByTour.get(play.tour_id) || []

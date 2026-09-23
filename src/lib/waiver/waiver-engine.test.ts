@@ -144,7 +144,7 @@ test('waiver email CTA copy differs for request vs reminder', () => {
   assert.match(requestHtml, /Please sign the required tour waiver/)
   assert.match(requestHtml, /Sign the waiver/)
   assert.match(requestHtml, /English letters only/)
-  assert.match(requestHtml, /6:00 PM Las Vegas time/)
+  assert.match(requestHtml, /5:00 PM Las Vegas time/)
   assert.equal(/[\uAC00-\uD7A3]/.test(requestHtml), false)
   const koreanHtml = buildWaiverEmailCtaHtml({
     isEnglish: false,
@@ -152,7 +152,7 @@ test('waiver email CTA copy differs for request vs reminder', () => {
     mode: 'request',
   })
   assert.match(koreanHtml, /영문/)
-  assert.match(koreanHtml, /오후 6시/)
+  assert.match(koreanHtml, /오후 5시/)
   assert.match(koreanHtml, /면책 동의서 작성하기/)
   assert.match(reminderHtml, /Your waiver is still unsigned/)
   assert.match(requestHtml, /https:\/\/example.com\/waiver\/abc/)
@@ -166,10 +166,10 @@ test('English waiver UI copy has no Hangul and Korean UI has the same guidance',
     assert.equal(/[\uAC00-\uD7A3]/.test(value), false, value)
   }
   assert.match(en.fullLegalNameHint, /English letters only/)
-  assert.match(en.signingDeadlineNote, /6:00 PM Las Vegas time/)
+  assert.match(en.signingDeadlineNote, /5:00 PM Las Vegas time/)
   const ko = getWaiverUi('ko')
   assert.match(ko.fullLegalNameHint, /영문/)
-  assert.match(ko.signingDeadlineNote, /오후 6시/)
+  assert.match(ko.signingDeadlineNote, /오후 5시/)
 })
 
 test('minor age uses tour date', () => {
@@ -208,21 +208,21 @@ test('legal names must be English letters', () => {
   assert.equal(hangul.success, false)
 })
 
-test('online waiver signing closes at 6pm Las Vegas time the day before the tour', () => {
+test('online waiver signing closes at 5pm Las Vegas time the day before the tour', () => {
   const tourDate = '2026-09-20'
   const closesAt = waiverOnlineSigningClosesAt(tourDate)
   assert.ok(closesAt)
-  assert.equal(closesAt.toISOString(), new Date('2026-09-19T18:00:00-07:00').toISOString())
-  assert.equal(isWaiverOnlineSigningClosed(tourDate, new Date('2026-09-19T17:59:59-07:00')), false)
-  assert.equal(isWaiverOnlineSigningClosed(tourDate, new Date('2026-09-19T18:00:00-07:00')), true)
+  assert.equal(closesAt.toISOString(), new Date('2026-09-19T17:00:00-07:00').toISOString())
+  assert.equal(isWaiverOnlineSigningClosed(tourDate, new Date('2026-09-19T16:59:59-07:00')), false)
+  assert.equal(isWaiverOnlineSigningClosed(tourDate, new Date('2026-09-19T17:00:00-07:00')), true)
   assert.equal(isWaiverOnlineSigningClosed(tourDate, new Date('2026-09-20T08:00:00-07:00')), true)
 })
 
-test('staff waiver print reminder opens at 6:05 PM Las Vegas time', () => {
-  assert.equal(isWaiverPrintReminderWindow(new Date('2026-09-19T18:04:00-07:00')), false)
-  assert.equal(isWaiverPrintReminderWindow(new Date('2026-09-19T18:05:00-07:00')), true)
+test('staff waiver print reminder opens at 5:05 PM Las Vegas time', () => {
+  assert.equal(isWaiverPrintReminderWindow(new Date('2026-09-19T17:04:00-07:00')), false)
+  assert.equal(isWaiverPrintReminderWindow(new Date('2026-09-19T17:05:00-07:00')), true)
   assert.equal(isWaiverPrintReminderWindow(new Date('2026-09-19T21:00:00-07:00')), true)
-  assert.equal(tomorrowTourDateYmd(new Date('2026-09-19T18:05:00-07:00')), '2026-09-20')
+  assert.equal(tomorrowTourDateYmd(new Date('2026-09-19T17:05:00-07:00')), '2026-09-20')
 })
 
 test('closed waiver email CTA asks guests to sign the printed form', () => {

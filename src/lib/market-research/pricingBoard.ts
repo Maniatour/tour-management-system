@@ -20,7 +20,7 @@ import {
   sumExcludedItems,
   type MarketCompareItemDef,
 } from './excludedItems'
-import { discountedPrice, effectiveSalePrice, listingObservedMeta, listingRecordedPrices } from './prices'
+import { discountedPrice, effectiveSalePrice, listingObservedMeta, listingRecordedPrices, roundMoney } from './prices'
 import { applyOurChannelSettings, parseOurChannelSettings } from './ourChannelSettings'
 import { overlayAxisPoint, ourProductPlatformKey } from './ourPrice'
 
@@ -392,6 +392,27 @@ export function pricingBoardRows(
     { kind: 'final', id: 'final', label: isKo ? '최종 고객 결제가' : 'Customer pays' },
   ]
   return rows
+}
+
+export type CompetitorPriceTone = 'higher' | 'lower'
+
+/** Competitor above our price is higher (green). Below is lower (red). */
+export function competitorPriceTone(
+  theirs: number | null | undefined,
+  ours: number | null | undefined
+): CompetitorPriceTone | null {
+  if (theirs == null || ours == null || !Number.isFinite(theirs) || !Number.isFinite(ours)) return null
+  const delta = roundMoney(theirs) - roundMoney(ours)
+  if (delta > 0) return 'higher'
+  if (delta < 0) return 'lower'
+  return null
+}
+
+export function shownSalePrice(
+  list: number | null | undefined,
+  discounted: number | null | undefined
+): number | null {
+  return effectiveSalePrice(list ?? null, discounted ?? null)
 }
 
 export function cellValue(column: PricingBoardColumn, row: PricingBoardRow): {

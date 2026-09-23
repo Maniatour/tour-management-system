@@ -27,6 +27,8 @@ export type ScheduleProductGridProps = {
   monthDaysCore: ScheduleMonthDayCell[]
   monthDaysCoreDateStrings: string[]
   dynamicMinTableWidthPx: number
+  /** 모달 너비에 맞춰 날짜 칸을 줄이고 가로 스크롤을 없앤다. */
+  fitWidth?: boolean
   dayColumnWidthCalc: string
   productScheduleStickyTopPx: number
   productScheduleHeaderScrollRef: RefObject<HTMLDivElement>
@@ -69,6 +71,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
     monthDaysCore,
     monthDaysCoreDateStrings,
     dynamicMinTableWidthPx,
+    fitWidth = false,
     dayColumnWidthCalc,
     productScheduleStickyTopPx,
     productScheduleHeaderScrollRef,
@@ -115,7 +118,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
     virtualItems: virtualProductRows,
     totalSize: virtualProductRowsTotalSize,
   } = useScheduleGridWindowVirtualizer({
-    enabled: true,
+    enabled: !fitWidth,
     count: productRows.length,
   })
 
@@ -127,6 +130,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
     monthDaysCore,
     monthDaysCoreDateStrings,
     dayColumnWidthCalc,
+    fitWidth,
     productColors,
     defaultPresetIds,
     selectedProducts,
@@ -210,7 +214,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
       <div
         ref={productScheduleHeaderScrollRef}
         onScroll={onProductScheduleHeaderScroll}
-        className="sticky z-[1010] scrollbar-hide min-w-0 overflow-x-auto overflow-y-visible bg-[color-mix(in_oklch,var(--primary)_5%,white)]"
+        className={`sticky z-[1010] scrollbar-hide min-w-0 overflow-y-visible bg-[color-mix(in_oklch,var(--primary)_5%,white)] ${fitWidth ? 'overflow-x-hidden' : 'overflow-x-auto'}`}
         style={{
           top: productScheduleStickyTopPx,
           scrollbarWidth: 'none',
@@ -220,7 +224,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
       >
         <table
           className="w-full border-separate border-spacing-0"
-          style={{ tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px` }}
+          style={{ tableLayout: 'fixed', minWidth: fitWidth ? 0 : `${dynamicMinTableWidthPx}px`, width: '100%' }}
         >
           <thead className="bg-[color-mix(in_oklch,var(--primary)_5%,white)]">
             <tr className="align-top">
@@ -248,7 +252,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
                           ? 'bg-red-600 text-[#ffff00]'
                           : 'bg-[color-mix(in_oklch,var(--primary)_5%,white)] text-gray-700'
                     } ${isGuideVisibleUntilCutoff(dateString) ? GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS : ''}`}
-                    style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
+                    style={{ width: dayColumnWidthCalc, minWidth: fitWidth ? 0 : '40px' }}
                     title={
                       isGuideVisibleUntilCutoff(dateString)
                         ? '가이드 공개 마감일 — 이 날짜 이후 투어는 가이드에게 보이지 않습니다'
@@ -341,7 +345,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
       <div
         ref={productScheduleBodyScrollRef}
         onScroll={onProductScheduleBodyScroll}
-        className="scrollbar-hide min-w-0 overflow-x-auto"
+        className={`scrollbar-hide min-w-0 ${fitWidth ? 'overflow-x-hidden' : 'overflow-x-auto'}`}
         style={{
           scrollbarWidth: 'none',
           msOverflowStyle: 'none',
@@ -350,7 +354,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
       >
         <table
           className="w-full border-separate border-spacing-0"
-          style={{ tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px` }}
+          style={{ tableLayout: 'fixed', minWidth: fitWidth ? 0 : `${dynamicMinTableWidthPx}px`, width: '100%' }}
         >
           <tbody ref={productRowsAnchorRef} className="divide-y divide-gray-200">
             {renderRows()}
@@ -373,7 +377,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
                     className={`p-0 text-center text-xs ${
                       isGuideVisibleUntilCutoff(dateString) ? GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS : ''
                     }`}
-                    style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
+                    style={{ width: dayColumnWidthCalc, minWidth: fitWidth ? 0 : '40px' }}
                   >
                     <div className={`${isToday(dateString) ? 'border-2 border-red-500 bg-red-50' : ''} px-1 py-0.5`}>
                       <div

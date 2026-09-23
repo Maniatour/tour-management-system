@@ -33,7 +33,7 @@ export function buildWaiverShareMessage(input: {
   if (input.isKo) {
     return [
       '[LAS VEGAS MANIA TOUR]',
-      '투어 전날 라스베이거스 시간 오후 6시까지 면책 동의서에 서명해 주세요.',
+      '투어 전날 라스베이거스 시간 오후 5시까지 면책 동의서에 서명해 주세요.',
       '성명은 영문으로만 작성해 주세요. 예: Kim Minjun',
       '온라인 서명을 못 하신 경우, 가이드가 인쇄한 면책 동의서를 가져가니 투어 당일 인쇄물에 서명하시면 됩니다.',
       '',
@@ -46,7 +46,7 @@ export function buildWaiverShareMessage(input: {
   }
   return [
     '[LAS VEGAS MANIA TOUR]',
-    'Please sign the required tour waiver by 6:00 PM Las Vegas time the day before your tour.',
+    'Please sign the required tour waiver by 5:00 PM Las Vegas time the day before your tour.',
     'Write each guest name in English letters only (example: Kim Minjun).',
     'If you cannot sign online, our guide will bring a printed form for you to sign on the tour day.',
     '',
@@ -70,8 +70,8 @@ export function buildWaiverShareEmail(input: {
     ? `[LAS VEGAS MANIA TOUR] 면책 동의서 서명 안내 (${input.bookingNumber})`
     : `[LAS VEGAS MANIA TOUR] Please sign your tour waiver (${input.bookingNumber})`
   const heading = input.isKo
-    ? '투어 전날 라스베이거스 시간 오후 6시까지 면책 동의서에 서명해 주세요.'
-    : 'Please sign the required tour waiver by 6:00 PM Las Vegas time the day before your tour.'
+    ? '투어 전날 라스베이거스 시간 오후 5시까지 면책 동의서에 서명해 주세요.'
+    : 'Please sign the required tour waiver by 5:00 PM Las Vegas time the day before your tour.'
   const detail = input.isKo
     ? '성명은 영문으로만 작성해 주세요. 예: Kim Minjun. 온라인 서명을 못 하신 경우 가이드가 인쇄한 면책 동의서를 가져가니 투어 당일 인쇄물에 서명하시면 됩니다.'
     : 'Write each guest name in English letters only (example: Kim Minjun). If you cannot sign online, our guide will bring a printed form for you to sign on the tour day.'

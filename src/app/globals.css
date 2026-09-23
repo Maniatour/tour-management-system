@@ -488,6 +488,52 @@ html:has(.admin-shell) main.main-safe-area {
   }
 }
 
+/* 시장조사: 본문 overflow-x:clip 때문에 표가 오른쪽으로 잘리고 페이지 스크롤이 먹지 않는다. */
+.market-research-page {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.market-research-x-scroll {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
+
+.market-research-x-scroll--board {
+  max-height: calc(100dvh - var(--header-height) - 12rem);
+  overflow-y: auto;
+}
+
+@media (min-width: 1024px) {
+  .market-research-x-scroll {
+    max-width: calc(100vw - var(--app-sidebar-width) - (var(--admin-main-gutter-x) * 2));
+  }
+
+  .admin-main-shell--collapsed .market-research-x-scroll {
+    max-width: calc(100vw - var(--app-sidebar-width-collapsed) - (var(--admin-main-gutter-x) * 2));
+  }
+
+  html.admin-todo-docked .market-research-x-scroll {
+    max-width: calc(
+      100vw - var(--app-sidebar-width) - (var(--admin-main-gutter-x) * 2) - var(--admin-todo-dock-width, 380px)
+    );
+  }
+
+  html.admin-todo-docked .admin-main-shell--collapsed .market-research-x-scroll {
+    max-width: calc(
+      100vw - var(--app-sidebar-width-collapsed) - (var(--admin-main-gutter-x) * 2) -
+        var(--admin-todo-dock-width, 380px)
+    );
+  }
+}
+
 /*
  * 고정 네비·하단 푸터를 덮지 않는 모달 영역 (가이드 등)
  * --header-height / --footer-height 는 :root 와 동기

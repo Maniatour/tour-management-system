@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { CheckCircle2, Headphones, Loader2, MessageSquare, X, XCircle } from 'lucide-react'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
+import NarrationLanguageBadge from '@/components/tour/NarrationLanguageBadge'
 import {
   fetchToursNarrationHistory,
   formatNarrationDuration,
@@ -42,7 +43,10 @@ function PlayList({
     <ul className="space-y-1.5">
       {plays.map((play) => (
         <li key={play.id} className="rounded-md bg-white px-3 py-2 text-sm ring-1 ring-border/60">
-          <div className="font-medium text-gray-900">{play.material_title}</div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-medium text-gray-900">{play.material_title}</span>
+            <NarrationLanguageBadge language={play.material_language ?? null} />
+          </div>
           <div className="mt-0.5 text-xs text-gray-500">
             {play.played_by_name || play.played_by_email} · {narrationRoleLabel(play.played_as, locale)} ·{' '}
             {isEn ? `${play.play_count} time(s)` : `${play.play_count}회`} ·{' '}

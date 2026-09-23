@@ -89,6 +89,94 @@ export function pricesChanged(
   return roundMoney(prev.sale) !== roundMoney(next.sale) || roundMoney(prev.notIncluded) !== roundMoney(next.notIncluded)
 }
 
+export type MarketOfferObservation = {
+  sale: number
+  notIncluded: number
+  discountEnabled?: boolean | undefined
+  discountPercent?: number | undefined
+}
+
+export type MarketPriceChangeNotice = {
+  title: string
+  body: string
+  oldPayable: number
+  newPayable: number
+}
+
+function observedDiscount(input: MarketOfferObservation): {
+  enabled: boolean
+  percent: number
+  discounted: number | null
+} {
+  const percent = input.discountEnabled ? normalizeDiscountPercent(input.discountPercent) : 0
+  const discounted = percent > 0 ? discountedPrice(input.sale, percent) : null
+  return {
+    enabled: discounted != null,
+    percent: discounted != null ? percent : 0,
+    discounted,
+  }
+}
+
+function payableAmount(input: MarketOfferObservation, discounted: number | null): number {
+  return adultTotal(discounted ?? input.sale, input.notIncluded) ?? 0
+}
+
+function moneyLabel(value: number): string {
+  return `$${value}`
+}
+
+/**
+ * First observation is silent. Later saves alert when the list price,
+ * excluded fees, or coupon changes. Tour prices move rarely, so any change counts.
+ */
+export function describeMarketPriceChange(
+  prev: MarketOfferObservation | null | undefined,
+  next: MarketOfferObservation
+): MarketPriceChangeNotice | null {
+  if (!prev) return null
+  const prevDiscount = observedDiscount(prev)
+  const nextDiscount = observedDiscount(next)
+  const priceChanged = pricesChanged(prev, next)
+  const discountStarted = !prevDiscount.enabled && nextDiscount.enabled
+  const discountEnded = prevDiscount.enabled && !nextDiscount.enabled
+  const discountRateChanged =
+    prevDiscount.enabled && nextDiscount.enabled && prevDiscount.percent !== nextDiscount.percent
+  if (!priceChanged && !discountStarted && !discountEnded && !discountRateChanged) return null
+
+  const titles: string[] = []
+  if (priceChanged) titles.push('경쟁사 가격 변경')
+  if (discountStarted) titles.push('경쟁사 할인 시작')
+  if (discountEnded) titles.push('경쟁사 할인 종료')
+  if (discountRateChanged) titles.push('경쟁사 할인율 변경')
+
+  const oldPayable = payableAmount(prev, prevDiscount.discounted)
+  const newPayable = payableAmount(next, nextDiscount.discounted)
+  const lines: string[] = []
+  if (priceChanged) {
+    const oldList = adultTotal(prev.sale, prev.notIncluded) ?? 0
+    const newList = adultTotal(next.sale, next.notIncluded) ?? 0
+    lines.push(`가격 ${moneyLabel(oldList)} → ${moneyLabel(newList)}`)
+  }
+  if (discountStarted) {
+    lines.push(`할인 ${nextDiscount.percent}% 시작 · 할인가 ${moneyLabel(newPayable)}`)
+  } else if (discountEnded) {
+    lines.push(`할인 ${prevDiscount.percent}% 종료 · ${moneyLabel(oldPayable)} → ${moneyLabel(newPayable)}`)
+  } else if (discountRateChanged) {
+    lines.push(
+      `할인 ${prevDiscount.percent}% → ${nextDiscount.percent}% · ${moneyLabel(oldPayable)} → ${moneyLabel(newPayable)}`
+    )
+  } else if (prevDiscount.enabled || nextDiscount.enabled) {
+    lines.push(`${moneyLabel(oldPayable)} → ${moneyLabel(newPayable)}`)
+  }
+
+  return {
+    title: titles.join(' · '),
+    body: lines.join('\n'),
+    oldPayable,
+    newPayable,
+  }
+}
+
 export function priceDelta(
   ours: number | null | undefined,
   theirs: number | null | undefined

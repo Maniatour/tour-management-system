@@ -41,8 +41,8 @@ export function MarketResearchCompetitorManager({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="min-w-0 flex-1 text-sm text-muted-foreground">
           {isKo
             ? '비교에 쓸 경쟁사를 추가하고, 이름과 사이트를 관리합니다.'
             : 'Add and manage the competitors you compare against.'}

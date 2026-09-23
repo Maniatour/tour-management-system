@@ -41,15 +41,15 @@ export function buildWaiverEmailCtaHtml(input: {
         : '투어 출발 전 면책 동의서에 서명해 주세요'
   const body = input.isEnglish
     ? closed
-      ? 'Online signing closed at 6:00 PM Las Vegas time the day before your tour. Please sign the printed waiver our guide will bring on the tour day.'
+      ? 'Online signing closed at 5:00 PM Las Vegas time the day before your tour. Please sign the printed waiver our guide will bring on the tour day.'
       : isReminder
-        ? 'Please complete the waiver for every guest by 6:00 PM Las Vegas time the day before your tour. Write each guest name in English letters only (example: Kim Minjun). A parent or guardian must sign for minors. If you cannot sign online, our guide will bring a printed form.'
-        : 'Every guest must sign by 6:00 PM Las Vegas time the day before the tour. Please write each guest name in English letters only (example: Kim Minjun). A parent or guardian must sign for minors. If you cannot sign online, our guide will bring a printed form.'
+        ? 'Please complete the waiver for every guest by 5:00 PM Las Vegas time the day before your tour. Write each guest name in English letters only (example: Kim Minjun). A parent or guardian must sign for minors. If you cannot sign online, our guide will bring a printed form.'
+        : 'Every guest must sign by 5:00 PM Las Vegas time the day before the tour. Please write each guest name in English letters only (example: Kim Minjun). A parent or guardian must sign for minors. If you cannot sign online, our guide will bring a printed form.'
     : closed
-      ? '온라인 면책 동의서는 투어 전날 라스베이거스 시간 오후 6시에 마감됩니다. 가이드가 인쇄한 면책 동의서를 가져가니 투어 당일 인쇄물에 서명해 주세요.'
+      ? '온라인 면책 동의서는 투어 전날 라스베이거스 시간 오후 5시에 마감됩니다. 가이드가 인쇄한 면책 동의서를 가져가니 투어 당일 인쇄물에 서명해 주세요.'
       : isReminder
-        ? '투어 전날 라스베이거스 시간 오후 6시까지 모든 참가자가 면책 동의서에 서명해 주세요. 성명은 영문으로만 작성해 주세요. 예: Kim Minjun. 미성년자는 보호자가 서명합니다. 온라인 서명을 못 하신 경우 가이드가 인쇄물을 가져가니 인쇄물에 서명하시면 됩니다.'
-        : '모든 참가자가 투어 전날 라스베이거스 시간 오후 6시까지 서명해야 합니다. 성명은 영문으로만 작성해 주세요. 예: Kim Minjun. 미성년자는 보호자가 서명합니다. 온라인 서명을 못 하신 경우 가이드가 인쇄물을 가져가니 인쇄물에 서명하시면 됩니다.'
+        ? '투어 전날 라스베이거스 시간 오후 5시까지 모든 참가자가 면책 동의서에 서명해 주세요. 성명은 영문으로만 작성해 주세요. 예: Kim Minjun. 미성년자는 보호자가 서명합니다. 온라인 서명을 못 하신 경우 가이드가 인쇄물을 가져가니 인쇄물에 서명하시면 됩니다.'
+        : '모든 참가자가 투어 전날 라스베이거스 시간 오후 5시까지 서명해야 합니다. 성명은 영문으로만 작성해 주세요. 예: Kim Minjun. 미성년자는 보호자가 서명합니다. 온라인 서명을 못 하신 경우 가이드가 인쇄물을 가져가니 인쇄물에 서명하시면 됩니다.'
   const cta = input.isEnglish ? 'Sign the waiver' : '면책 동의서 작성하기'
   const border = closed || isReminder ? '#f59e0b' : '#0B5FFF'
   const bg = closed || isReminder ? '#fffbeb' : '#eff6ff'

@@ -39,6 +39,7 @@ export type ScheduleProductGridRowProps = {
   monthDaysCore: ScheduleMonthDayCell[]
   monthDaysCoreDateStrings: string[]
   dayColumnWidthCalc: string
+  fitWidth?: boolean
   productColors: Record<string, string>
   defaultPresetIds: string[]
   selectedProducts: string[]
@@ -75,6 +76,7 @@ export default function ScheduleProductGridRow({
   monthDaysCore,
   monthDaysCoreDateStrings,
   dayColumnWidthCalc,
+  fitWidth = false,
   productColors,
   defaultPresetIds,
   selectedProducts,
@@ -186,7 +188,7 @@ export default function ScheduleProductGridRow({
             className={`p-0 text-center text-xs overflow-visible ${
               isGuideVisibleUntilCutoff(dateString) ? GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS : ''
             }`}
-            style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
+            style={{ width: dayColumnWidthCalc, minWidth: fitWidth ? 0 : '40px' }}
           >
             {(() => {
               const pulseReasons = scheduleHealthProductCellAlerts?.get(`${productId}|${dateString}`) || []

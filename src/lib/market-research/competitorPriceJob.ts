@@ -11,7 +11,13 @@ import {
   MARKET_SNAPSHOT_COLUMNS,
   MARKET_SNAPSHOTS_TABLE,
 } from './tables'
-import { inferAutoSnapshotAxis, isListingStale, pricesChanged, serializeSnapshotDiscount } from './prices'
+import {
+  describeMarketPriceChange,
+  inferAutoSnapshotAxis,
+  isListingStale,
+  pricesChanged,
+  serializeSnapshotDiscount,
+} from './prices'
 import { serializeExcludedItems, sumExcludedItems } from './excludedItems'
 import { parseListingBadges, serializeListingBadges } from './badges'
 import type { MarketListing, MarketListingBadge, MarketSnapshot } from './types'
@@ -179,11 +185,21 @@ export async function saveManualSnapshot(input: {
   })
   if (!snapshot) throw new Error('snapshot save failed')
 
-  const changed = pricesChanged(
+  const notice = describeMarketPriceChange(
     prev
-      ? { sale: prev.adult_sale_price, notIncluded: prev.adult_not_included }
+      ? {
+          sale: prev.adult_sale_price,
+          notIncluded: prev.adult_not_included,
+          discountEnabled: prev.discount_enabled,
+          discountPercent: prev.discount_percent,
+        }
       : null,
-    { sale: input.sale, notIncluded }
+    {
+      sale: input.sale,
+      notIncluded,
+      discountEnabled: input.discountEnabled,
+      discountPercent: input.discountPercent,
+    }
   )
   await updateListingFetch(input.listingId, {
     last_fetch_status: 'ok',
@@ -191,20 +207,20 @@ export async function saveManualSnapshot(input: {
     last_success_at: new Date().toISOString(),
     last_fetch_error: null,
   })
-  if (changed && prev) {
+  if (notice && prev) {
     await insertMarketPriceAlert(supabaseAdmin, {
       operatorId,
       listingId: input.listingId,
       kind: 'price_changed',
-      title: '경쟁사 가격 변경',
-      body: `수동 입력: $${prev.adult_total} → $${snapshot.adult_total}`,
+      title: notice.title,
+      body: `수동 입력\n${notice.body}`,
       canyonVariant: input.canyon,
       offerType: input.offer,
-      oldAdultTotal: prev.adult_total,
-      newAdultTotal: snapshot.adult_total,
+      oldAdultTotal: notice.oldPayable,
+      newAdultTotal: notice.newPayable,
     })
   }
-  return { snapshot, changed }
+  return { snapshot, changed: notice != null }
 }
 
 export async function saveTodayPrices(input: {

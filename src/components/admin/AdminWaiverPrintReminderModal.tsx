@@ -132,8 +132,8 @@ export default function AdminWaiverPrintReminderModal({ locale }: { locale: stri
             </h2>
             <p className="mt-2 text-sm leading-6 text-gray-600">
               {isKo
-                ? '온라인 서명이 오늘 오후 6시에 마감됐습니다. 내일 투어 면책 동의서를 인쇄해 가져가세요. 서명하지 못한 고객은 인쇄물에 서명하면 됩니다.'
-                : 'Online signing closed at 6:00 PM. Please print the waiver forms for tomorrow’s tours. Guests who did not sign online can sign the printed copy.'}
+                ? '온라인 서명이 오늘 오후 5시에 마감됐습니다. 내일 투어 면책 동의서를 인쇄해 가져가세요. 서명하지 못한 고객은 인쇄물에 서명하면 됩니다.'
+                : 'Online signing closed at 5:00 PM. Please print the waiver forms for tomorrow’s tours. Guests who did not sign online can sign the printed copy.'}
             </p>
           </div>
         </div>

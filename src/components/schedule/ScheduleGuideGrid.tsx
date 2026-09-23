@@ -43,6 +43,7 @@ export type ScheduleGuideGridProps = {
   monthDays: ScheduleMonthDayCell[]
   dayColumnWidthCalc: string
   dynamicMinTableWidthPx: number
+  fitWidth?: boolean
   isToday: (dateString: string) => boolean
   isGuideVisibleUntilCutoff: (dateString: string) => boolean
   guideTotals: Record<string, ScheduleGuideDayTotal>
@@ -124,6 +125,7 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
     monthDays,
     dayColumnWidthCalc,
     dynamicMinTableWidthPx,
+    fitWidth = false,
     isToday,
     isGuideVisibleUntilCutoff,
     guideTotals,
@@ -193,7 +195,7 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
     virtualItems: virtualGuideRows,
     totalSize: virtualGuideRowsTotalSize,
   } = useScheduleGridWindowVirtualizer({
-    enabled: true,
+    enabled: !fitWidth,
     count: guideRows.length,
   })
 
@@ -201,6 +203,7 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
     locale,
     monthDays,
     dayColumnWidthCalc,
+    fitWidth,
     isToday,
     isGuideVisibleUntilCutoff,
     selectedTeamMembers,
@@ -316,7 +319,7 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
           {/* 가이드별 스케줄 테이블 */}
           <div>
             <div className="overflow-visible">
-          <table className="w-full" style={{tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px`}}>
+          <table className="w-full" style={{tableLayout: 'fixed', minWidth: fitWidth ? 0 : `${dynamicMinTableWidthPx}px`, width: '100%'}}>
             <thead className="bg-green-50 hidden">
               <tr>
                 <th className="px-2 py-0.5 text-left text-xs font-medium text-gray-700" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
@@ -328,7 +331,7 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
                     className={`p-0 text-center text-xs font-medium text-gray-700 ${
                       isGuideVisibleUntilCutoff(dateString) ? GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS : ''
                     }`}
-                    style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
+                    style={{ width: dayColumnWidthCalc, minWidth: fitWidth ? 0 : '40px' }}
                   >
                     <div className={`${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''} ${isEdgePadding ? 'bg-slate-100/80' : ''} px-1 py-0.5`}>
                       <div className={isToday(dateString) ? 'font-bold text-red-700' : isEdgePadding ? 'text-slate-700' : ''}>
@@ -393,7 +396,7 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
                       className={`px-0 py-0 text-center text-xs ${
                         isGuideVisibleUntilCutoff(dateString) ? GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS : ''
                       }`}
-                      style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
+                      style={{ width: dayColumnWidthCalc, minWidth: fitWidth ? 0 : '40px' }}
                     >
                       <ScheduleHoverTooltip
                         disabled={!hoverContent}

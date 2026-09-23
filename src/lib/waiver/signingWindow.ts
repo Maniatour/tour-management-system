@@ -6,8 +6,8 @@ import { LV_TZ } from '@/lib/lasVegasCalendar'
 dayjs.extend(utc)
 dayjs.extend(timezone)
 
-/** Online waiver signing closes at 6:00 PM Las Vegas time the day before the tour. */
-export const WAIVER_ONLINE_SIGNING_CUTOFF_HOUR = 18
+/** Online waiver signing closes at 5:00 PM Las Vegas time the day before the tour. */
+export const WAIVER_ONLINE_SIGNING_CUTOFF_HOUR = 17
 export const WAIVER_PRINT_REMINDER_MINUTE = 5
 
 function isYmd(value: string): boolean {
@@ -32,7 +32,7 @@ export function isWaiverOnlineSigningClosed(tourDate: string, now: Date = new Da
   return now.getTime() >= closesAt.getTime()
 }
 
-/** Staff print reminder: 6:05 PM Las Vegas time and later the same calendar day. */
+/** Staff print reminder: 5:05 PM Las Vegas time and later the same calendar day. */
 export function isWaiverPrintReminderWindow(now: Date = new Date()): boolean {
   const lv = dayjs(now).tz(LV_TZ)
   const minutes = lv.hour() * 60 + lv.minute()

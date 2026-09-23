@@ -35,6 +35,7 @@ export type ScheduleGuideGridRowProps = Pick<
   | 'locale'
   | 'monthDays'
   | 'dayColumnWidthCalc'
+  | 'fitWidth'
   | 'isToday'
   | 'isGuideVisibleUntilCutoff'
   | 'selectedTeamMembers'
@@ -105,6 +106,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
     rowProps,
     locale,
     monthDays,
+    fitWidth = false,
     selectedTeamMembers,
     cdlDriverEmailSet,
     cdlKoreanDriverEmailSet,
@@ -403,7 +405,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
       </td>
       <td className="p-0" colSpan={monthDays.length}>
         <div className="relative">
-          <div className="grid" style={{gridTemplateColumns: `repeat(${monthDays.length}, minmax(40px, 1fr))`, width: '100%', minWidth: `calc(${monthDays.length} * 40px)`}}>
+          <div className="grid" style={{gridTemplateColumns: `repeat(${monthDays.length}, minmax(${fitWidth ? '0px' : '40px'}, 1fr))`, width: '100%', minWidth: fitWidth ? 0 : `calc(${monthDays.length} * 40px)`}}>
             {monthDays.map(({ dateString }) => {
             const dayData = guide.dailyData[dateString]
             
@@ -427,7 +429,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                   className={`px-1 py-0 text-center text-xs relative ${getGuideScheduleCellBgClass(dateString, true)} ${
                     isGuideVisibleUntilCutoff(dateString) ? GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS : ''
                   }`}
-                  style={{ minWidth: '40px', boxSizing: 'border-box' }}
+                  style={{ minWidth: fitWidth ? 0 : '40px', boxSizing: 'border-box' }}
                 >
                   <div
                     className="relative h-[22px]"
@@ -511,7 +513,7 @@ export default function ScheduleGuideGridRow(props: ScheduleGuideGridRowProps) {
                 className={`px-1 py-0 text-center text-xs relative ${getGuideScheduleCellBgClass(dateString, Boolean(dayData))} ${
                   isGuideVisibleUntilCutoff(dateString) ? GUIDE_VISIBLE_UNTIL_CUTOFF_LINE_CLASS : ''
                 }`}
-                style={{ minWidth: '40px', boxSizing: 'border-box' }}
+                style={{ minWidth: fitWidth ? 0 : '40px', boxSizing: 'border-box' }}
               >
                 <div
                   className="relative h-[22px]"

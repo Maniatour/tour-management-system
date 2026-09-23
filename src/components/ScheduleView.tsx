@@ -15,6 +15,17 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
 import { operatorIdInsert, resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { fetchSchedulePastTourFollowUp } from '@/lib/schedulePastTourFollowUp'
+import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { fetchScheduleGridCoreData } from '@/lib/scheduleDisplayData'
+import ScheduleAutoAssignModal from '@/components/schedule/ScheduleAutoAssignModal'
+import ScheduleAutoAssignPreviewBoard from '@/components/schedule/ScheduleAutoAssignPreviewBoard'
+import {
+  defaultAutoAssignRange,
+  guestReviewRatePercentOf,
+  previousCalendarMonth,
+  type AutoAssignResult,
+} from '@/lib/schedule/autoAssignSchedule'
+import { mergeAutoAssignOffRows, mergeAutoAssignOffs, prepareAutoAssignSchedule } from '@/lib/schedule/autoAssignScheduleInput'
 import {
   isReservationCancelledStatus,
   normalizeReservationIds,
@@ -22,6 +33,7 @@ import {
   normalizeTourDateKey,
   resolveTeamTypeForTourCreate,
   normalizeTourTeamType,
+  addDaysToYmd,
 } from '@/utils/tourUtils'
 import {
   getChannelName,
@@ -1245,6 +1257,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
   // 일괄 오프 스케줄 모달 상태
   const [showBatchOffModal, setShowBatchOffModal] = useState(false)
   const [showOffScheduleHistoryModal, setShowOffScheduleHistoryModal] = useState(false)
+  const [autoAssignOpen, setAutoAssignOpen] = useState(false)
+  const autoAssignSourceToursRef = useRef<Tour[]>([])
   const [showPriceInventoryModal, setShowPriceInventoryModal] = useState(false)
   const [showPastMissingReceiptsModal, setShowPastMissingReceiptsModal] = useState(false)
   const [showPastBalanceRemainingModal, setShowPastBalanceRemainingModal] = useState(false)
@@ -4080,6 +4094,191 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     }
     return ordered
   }, [selectedTeamMembers, isDisplayMode, tours, monthDaysCoreDateStrings, teamMembers])
+
+  const generateAutoAssignPreview = useCallback(
+    async (args: {
+      startDate: string
+      endDate: string
+      preset: AutoAssignResult['preset']
+      variant?: number
+      previousSignature?: string | null
+      existingMode?: 'keep' | 'reset'
+    }) => {
+      const memberOrder =
+        effectiveSelectedTeamMembers.length > 0
+          ? effectiveSelectedTeamMembers
+          : teamMembers.map((member) => member.email)
+      if (memberOrder.length === 0) {
+        throw new Error('배정할 가이드가 없습니다. 스케줄 표에 팀원을 먼저 선택해 주세요.')
+      }
+      const fetchStart = addDaysToYmd(args.startDate, -6)
+      const fetchEnd = addDaysToYmd(args.endDate, 4)
+      const core = await fetchScheduleGridCoreData(supabase, {
+        operatorId: activeOperatorId,
+        rangeStart: fetchStart,
+        rangeEnd: fetchEnd,
+        gridNoteStart: fetchStart,
+        gridNoteEnd: fetchEnd,
+        monthStart: fetchStart,
+        monthEnd: fetchEnd,
+        reservationSelect: 'admin',
+      })
+      const toursById = new Map<string, Tour>()
+      for (const tour of (core.tours || []) as Tour[]) {
+        if (tour?.id) toursById.set(String(tour.id), tour)
+      }
+      for (const tour of tours) {
+        const existing = toursById.get(String(tour.id))
+        toursById.set(String(tour.id), existing ? { ...existing, ...tour } : tour)
+      }
+      const mergedTours = Array.from(toursById.values()).map((tour) => {
+        const patch = pendingChanges[tour.id]
+        return patch ? { ...tour, ...patch } : tour
+      })
+      autoAssignSourceToursRef.current = mergedTours
+
+      let reviewStats: {
+        email: string
+        avgRating: number | null
+        reviewCount: number
+        guestReviewRatePercent: number | null
+      }[] | null = []
+      if (args.preset === 'reviews') {
+        try {
+          const previous = previousCalendarMonth(new Date())
+          const response = await fetchApiWithAuth(
+            `/api/admin/google-business/reviews/staff-stats?view=monthly&year=${previous.year}&monthBy=tour_date`,
+          )
+          const body = (await response.json()) as {
+            ok?: boolean
+            monthlyStats?: Array<{
+              staffEmail?: string
+              months?: Array<{
+                month?: number
+                avgRating?: number | null
+                reviewCount?: number
+                totalTourGuests?: number
+                guestReviewRatePercent?: number | null
+              }>
+            }>
+          }
+          if (!response.ok || !body.ok || !Array.isArray(body.monthlyStats)) {
+            reviewStats = null
+          } else {
+            reviewStats = []
+            for (const row of body.monthlyStats) {
+              const cell = (row.months || []).find((month) => month.month === previous.month)
+              if (!cell) continue
+              const reviewCount = cell.reviewCount || 0
+              const totalTourGuests = cell.totalTourGuests || 0
+              reviewStats.push({
+                email: String(row.staffEmail || ''),
+                avgRating: typeof cell.avgRating === 'number' ? cell.avgRating : null,
+                reviewCount,
+                guestReviewRatePercent: guestReviewRatePercentOf({
+                  reviewCount,
+                  totalTourGuests,
+                  guestReviewRatePercent:
+                    typeof cell.guestReviewRatePercent === 'number' ? cell.guestReviewRatePercent : null,
+                }),
+              })
+            }
+          }
+        } catch {
+          reviewStats = null
+        }
+      }
+
+      const preview = prepareAutoAssignSchedule({
+        startDate: args.startDate,
+        endDate: args.endDate,
+        preset: args.preset,
+        variant: args.variant,
+        previousSignature: args.previousSignature,
+        existingMode: args.existingMode,
+        reviewStats,
+        memberOrder,
+        teamMembers,
+        products: [...((core.products || []) as Product[]), ...products],
+        productOrder: selectedProducts,
+        productColors,
+        tours: mergedTours,
+        reservations: [...((core.reservations || []) as Reservation[]), ...reservations],
+        customers: [...(core.customers || []), ...customers],
+        offs: mergeAutoAssignOffs({
+          rows: [...(core.offSchedules || []), ...offSchedules],
+          pending: Object.values(pendingOffScheduleChanges),
+        }),
+        offRows: mergeAutoAssignOffRows({
+          rows: [...(core.offSchedules || []), ...offSchedules],
+          pending: Object.values(pendingOffScheduleChanges),
+        }),
+      })
+      if (preview.tours.length === 0) {
+        throw new Error('이 기간에 배정할 투어가 없습니다.')
+      }
+      return preview
+    },
+    [
+      activeOperatorId,
+      customers,
+      effectiveSelectedTeamMembers,
+      offSchedules,
+      pendingChanges,
+      pendingOffScheduleChanges,
+      productColors,
+      products,
+      reservations,
+      selectedProducts,
+      teamMembers,
+      tours,
+    ],
+  )
+
+  const applyAutoAssignResult = useCallback(
+    (result: AutoAssignResult) => {
+      const sourceById = new Map(autoAssignSourceToursRef.current.map((tour) => [String(tour.id), tour]))
+      const patches: Record<string, Partial<Tour>> = {}
+      for (const [tourId, next] of Object.entries(result.assignmentsByTourId)) {
+        const tour = tours.find((item) => String(item.id) === tourId) || sourceById.get(tourId)
+        if (!tour) continue
+        const sameGuide =
+          String(tour.tour_guide_id || '').trim().toLowerCase() === String(next.tour_guide_id || '').trim().toLowerCase()
+        const sameAssistant =
+          String(tour.assistant_id || '').trim().toLowerCase() === String(next.assistant_id || '').trim().toLowerCase()
+        if (sameGuide && sameAssistant) continue
+        patches[tourId] = mergeStaffPatchWithAssignmentReset(tourId, tour, {
+          tour_guide_id: next.tour_guide_id,
+          assistant_id: next.assistant_id,
+        })
+      }
+      if (Object.keys(patches).length === 0) {
+        setAutoAssignOpen(false)
+        return
+      }
+      setPendingChanges((prev) => {
+        const nextPending = { ...prev }
+        for (const [tourId, patch] of Object.entries(patches)) {
+          nextPending[tourId] = { ...(nextPending[tourId] || {}), ...patch }
+        }
+        return nextPending
+      })
+      setTours((prev) => {
+        const next = prev.map((tour) => (patches[tour.id] ? { ...tour, ...patches[tour.id] } : tour))
+        const known = new Set(next.map((tour) => String(tour.id)))
+        for (const [tourId, patch] of Object.entries(patches)) {
+          if (known.has(tourId)) continue
+          const source = sourceById.get(tourId)
+          if (!source) continue
+          next.push({ ...source, ...patch })
+        }
+        return next
+      })
+      setAutoAssignOpen(false)
+      requestSaveAfterDragAssignment()
+    },
+    [mergeStaffPatchWithAssignmentReset, requestSaveAfterDragAssignment, tours],
+  )
 
   // 가이드별 스케줄 데이터 계산
   const guideScheduleData = useMemo((): Record<string, ScheduleGuideScheduleRow> => {
@@ -7543,6 +7742,16 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   </button>
                 ) : null}
               </label>
+              {canManageSharedSchedule ? (
+                <button
+                  type="button"
+                  onClick={() => setAutoAssignOpen(true)}
+                  className="h-7 sm:h-8 rounded-lg bg-primary px-2 text-[11px] sm:text-xs font-medium text-primary-foreground hover:bg-primary/90 whitespace-nowrap"
+                  title="공개 마감일 다음 날부터 최대 2주를 자동 배정합니다"
+                >
+                  자동 배정
+                </button>
+              ) : null}
             </div>
           </div>
 
@@ -11713,6 +11922,48 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           sentBy={user?.email ?? null}
         />
       )}
+
+      {canManageSharedSchedule ? (
+        <ScheduleAutoAssignModal
+          open={autoAssignOpen}
+          initialStart={defaultAutoAssignRange(guideToursVisibleUntil, dayjs().format('YYYY-MM-DD')).startDate}
+          initialEnd={defaultAutoAssignRange(guideToursVisibleUntil, dayjs().format('YYYY-MM-DD')).endDate}
+          onClose={() => setAutoAssignOpen(false)}
+          onGenerate={generateAutoAssignPreview}
+          onApply={applyAutoAssignResult}
+          renderPreview={(preview) => (
+            <ScheduleAutoAssignPreviewBoard
+              preview={preview}
+              locale={locale}
+              teamMembers={teamMembers}
+              products={products}
+              productColors={productColors}
+              defaultPresetIds={defaultPresetIds}
+              selectedProducts={selectedProducts}
+              miscTourProductIds={miscTourProductIds}
+              cdlDriverEmailSet={cdlDriverEmailSet}
+              cdlKoreanDriverEmailSet={cdlKoreanDriverEmailSet}
+              airportPickupMemberIdSet={airportPickupMemberIdSet}
+              airportSendingMemberIdSet={airportSendingMemberIdSet}
+              getMultiDayTourDays={getMultiDayTourDays}
+              isToday={isToday}
+              isGuideVisibleUntilCutoff={isGuideVisibleUntilCutoff}
+              dateNotes={dateNotes}
+              pendingOffScheduleChanges={pendingOffScheduleChanges}
+              offScheduleAssignmentCellClass={offScheduleAssignmentCellClass}
+              getColorFromClass={getColorFromClass}
+              getBorderColorValue={getBorderColorValue}
+              getTourBorderColor={getTourBorderColor}
+              openTourDetailModal={openTourDetailModal}
+              showGuideModalContent={showGuideModalContent}
+              getTourSummary={getTourSummary}
+              getGuideScheduleTourHoverText={getGuideScheduleTourHoverText}
+              guideLanguageMismatchByTourId={guideLanguageMismatchByTourId}
+              assignedTourConfirmationPulseByTourId={assignedTourConfirmationPulseByTourId}
+            />
+          )}
+        />
+      ) : null}
 
     </div>
   )

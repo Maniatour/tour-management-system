@@ -7,12 +7,20 @@ import {
   isListingStale,
   listingRecordedPrices,
   priceDelta,
+  describeMarketPriceChange,
   pricesChanged,
   roundMoney,
 } from './prices'
 import { parseListingHtml } from './parseListing'
 import { buildOtaCompareRows, compareGridCsv, compareRowLabel } from './compare'
-import { buildOurPricingBoardColumns, buildPricingBoardColumns, cellValue, pricingBoardRows, toggleAllOrItem } from './pricingBoard'
+import {
+  buildOurPricingBoardColumns,
+  buildPricingBoardColumns,
+  cellValue,
+  competitorPriceTone,
+  pricingBoardRows,
+  toggleAllOrItem,
+} from './pricingBoard'
 import {
   inferExcludedItemId,
   parseExcludedItems,
@@ -46,6 +54,49 @@ test('pricesChanged ignores first observation', () => {
   assert.equal(pricesChanged(null, { sale: 199, notIncluded: 0 }), false)
   assert.equal(pricesChanged({ sale: 199, notIncluded: 80 }, { sale: 199, notIncluded: 80 }), false)
   assert.equal(pricesChanged({ sale: 199, notIncluded: 80 }, { sale: 209, notIncluded: 80 }), true)
+})
+
+test('describeMarketPriceChange alerts on price change and discount start, end, or rate change', () => {
+  const base = { sale: 199, notIncluded: 0, discountEnabled: false, discountPercent: 0 }
+  assert.equal(describeMarketPriceChange(null, base), null)
+  assert.equal(describeMarketPriceChange(base, base), null)
+
+  const price = describeMarketPriceChange(base, { ...base, sale: 209 })
+  assert.equal(price?.title, '경쟁사 가격 변경')
+  assert.match(price?.body || '', /\$199 → \$209/)
+
+  const started = describeMarketPriceChange(base, { ...base, discountEnabled: true, discountPercent: 9 })
+  assert.equal(started?.title, '경쟁사 할인 시작')
+  assert.equal(started?.newPayable, 181.09)
+  assert.match(started?.body || '', /할인 9% 시작/)
+
+  const ended = describeMarketPriceChange(
+    { ...base, discountEnabled: true, discountPercent: 9 },
+    base
+  )
+  assert.equal(ended?.title, '경쟁사 할인 종료')
+
+  const rate = describeMarketPriceChange(
+    { ...base, discountEnabled: true, discountPercent: 9 },
+    { ...base, discountEnabled: true, discountPercent: 12 }
+  )
+  assert.equal(rate?.title, '경쟁사 할인율 변경')
+  assert.match(rate?.body || '', /9% → 12%/)
+
+  const both = describeMarketPriceChange(base, {
+    sale: 220,
+    notIncluded: 0,
+    discountEnabled: true,
+    discountPercent: 10,
+  })
+  assert.equal(both?.title, '경쟁사 가격 변경 · 경쟁사 할인 시작')
+})
+
+test('competitorPriceTone is green when higher and red when lower', () => {
+  assert.equal(competitorPriceTone(220, 200), 'higher')
+  assert.equal(competitorPriceTone(180, 200), 'lower')
+  assert.equal(competitorPriceTone(200, 200), null)
+  assert.equal(competitorPriceTone(null, 200), null)
 })
 
 test('priceDelta vs our price', () => {
