@@ -10956,6 +10956,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                         onPrintReceipts={() => setTourQuickPrint({ tourId, kind: 'receipts' })}
                         onPrintTipEnvelopes={() => setTourQuickPrint({ tourId, kind: 'tip' })}
                         onPrintBalanceEnvelopes={() => setTourQuickPrint({ tourId, kind: 'balance' })}
+                        onPrintBalanceQr={() => setTourQuickPrint({ tourId, kind: 'balanceQr' })}
                         onCopyTour={() => {
                           void handleCopyTourFromGuideModal(tourId)
                         }}

@@ -16,7 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { axisLabel, otaPlatformLabel } from '@/lib/market-research/compare'
+import { axisLabel } from '@/lib/market-research/compare'
+import { labelForOta } from '@/lib/market-research/otaChannels'
 import { excludedItemLabel, snapshotExcludedItems } from '@/lib/market-research/excludedItems'
 import type { MarketListing } from '@/lib/market-research/types'
 import { formatUsd, type MarketResearchBundle } from './helpers'
@@ -37,7 +38,7 @@ export function MarketResearchHistorySection({
   )
 
   const listingLabel = (row: MarketListing) =>
-    `${nameByCompetitor.get(row.competitor_id) || ''} · ${otaPlatformLabel(row.ota_platform, isKo)}`
+    `${nameByCompetitor.get(row.competitor_id) || ''} · ${labelForOta(row.ota_platform, bundle.channels, isKo)}`
 
   return (
     <div className="space-y-4">

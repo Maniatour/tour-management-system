@@ -7,7 +7,7 @@ import type {
   MarketSnapshot,
   OurPriceOverlay,
 } from './types'
-import { MARKET_OTA_PLATFORMS } from './types'
+import { orderOtaKeys, otaPlatformRank } from './otaChannels'
 import {
   collectExcludedItemIds,
   compareItemLabel,
@@ -91,9 +91,9 @@ export function listingsForProduct(
 }
 
 export function otasForProduct(listings: MarketListing[], productId: string): MarketOtaPlatform[] {
-  const found = new Set<MarketOtaPlatform>()
+  const found = new Set<string>()
   for (const row of listingsForProduct(listings, productId)) found.add(row.ota_platform)
-  return MARKET_OTA_PLATFORMS.filter((platform) => found.has(platform))
+  return orderOtaKeys([...found]) as MarketOtaPlatform[]
 }
 
 export function competitorsForProduct(
@@ -194,7 +194,7 @@ export function buildPricingBoardColumns(
     const nameA = nameById.get(a.competitor_id) || a.listing_title || a.id
     const nameB = nameById.get(b.competitor_id) || b.listing_title || b.id
     if (nameA !== nameB) return nameA.localeCompare(nameB, 'en')
-    return MARKET_OTA_PLATFORMS.indexOf(a.ota_platform) - MARKET_OTA_PLATFORMS.indexOf(b.ota_platform)
+    return otaPlatformRank(a.ota_platform) - otaPlatformRank(b.ota_platform)
   })
   return rows.map((listing, index) => {
     const recorded = listingRecordedPrices(snapshots, listing.id)
@@ -253,17 +253,21 @@ export function platformsForOurColumns(
   productId: string,
   listings: MarketListing[],
   offers: MarketOurOffer[],
-  otas?: readonly MarketOtaPlatform[]
+  otas?: readonly string[],
+  fallbackOtas?: readonly string[]
 ): MarketOtaPlatform[] {
   if (productId === UNMAPPED_PRODUCT_ID) return []
-  if (otas && otas.length > 0) return MARKET_OTA_PLATFORMS.filter((platform) => otas.includes(platform))
-  const found = new Set<MarketOtaPlatform>()
+  if (otas && otas.length > 0) return orderOtaKeys(otas) as MarketOtaPlatform[]
+  const found = new Set<string>()
   for (const row of listingsForProduct(listings, productId)) found.add(row.ota_platform)
   for (const row of offers) {
     if (row.product_id === productId) found.add(row.ota_platform)
   }
-  const ordered = MARKET_OTA_PLATFORMS.filter((platform) => found.has(platform) && platform !== 'other')
-  return ordered.length > 0 ? ordered : (['getyourguide', 'viator'] as MarketOtaPlatform[])
+  const ordered = orderOtaKeys([...found]).filter((platform) => platform !== 'other')
+  if (ordered.length > 0) return ordered as MarketOtaPlatform[]
+  const fallback = (fallbackOtas || []).filter((platform) => platform !== 'other')
+  if (fallback.length > 0) return orderOtaKeys(fallback) as MarketOtaPlatform[]
+  return ['getyourguide', 'viator']
 }
 
 function oursExcludedTotal(
@@ -284,11 +288,18 @@ export function buildOurPricingBoardColumns(input: {
   offers: MarketOurOffer[]
   overlays: Record<string, OurPriceOverlay>
   otas?: readonly MarketOtaPlatform[]
+  fallbackOtas?: readonly string[]
   otaLabel?: (platform: MarketOtaPlatform) => string
   compareItems?: readonly MarketCompareItemDef[]
   oursLabel: string
 }): PricingBoardColumn[] {
-  const platforms = platformsForOurColumns(input.productId, input.listings, input.offers, input.otas)
+  const platforms = platformsForOurColumns(
+    input.productId,
+    input.listings,
+    input.offers,
+    input.otas,
+    input.fallbackOtas
+  )
   const labelOta = input.otaLabel || ((platform: MarketOtaPlatform) => platform)
   const showOtaLabel = input.otas ? input.otas.length !== 1 : platforms.length !== 1
   const compareItems = input.compareItems

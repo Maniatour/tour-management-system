@@ -7,7 +7,7 @@ import type {
   MarketOtaPlatform,
   MarketSnapshot,
 } from './types'
-import { isMarketCanyonVariant, isMarketOfferType, isMarketOtaPlatform } from './types'
+import { isMarketCanyonVariant, isMarketOfferType, isStoredOtaPlatform } from './types'
 import {
   parseExcludedItems,
   parseInclusionMap,
@@ -64,7 +64,7 @@ export function mapMarketListing(
   const platform = asString(row.ota_platform)
   const createdAt = asString(row.created_at)
   const updatedAt = asString(row.updated_at)
-  if (!id || !competitorId || !url || !platform || !isMarketOtaPlatform(platform) || !createdAt || !updatedAt) {
+  if (!id || !competitorId || !url || !platform || !isStoredOtaPlatform(platform) || !createdAt || !updatedAt) {
     return null
   }
   const status = asString(row.last_fetch_status) || 'never'
@@ -181,7 +181,13 @@ export function mapCatalogProduct(row: Record<string, unknown>): MarketCatalogPr
 export function mapCatalogChannel(row: Record<string, unknown>): MarketCatalogChannel | null {
   const id = asString(row.id)
   if (!id) return null
-  return { id, name: asString(row.name) }
+  return {
+    id,
+    name: asString(row.name),
+    type: asString(row.type),
+    category: asString(row.category),
+    status: asString(row.status),
+  }
 }
 
 export function mapFocusProduct(row: Record<string, unknown>): import('./types').MarketFocusProduct | null {
@@ -238,11 +244,11 @@ export function mapMarketOurOffer(
   const platform = asString(row.ota_platform)
   const createdAt = asString(row.created_at)
   const updatedAt = asString(row.updated_at)
-  if (!productId || !platform || !isMarketOtaPlatform(platform) || !createdAt || !updatedAt) return null
+  if (!productId || !platform || !isStoredOtaPlatform(platform) || !createdAt || !updatedAt) return null
   return {
     operator_id: asString(row.operator_id) || '',
     product_id: productId,
-    ota_platform: platform,
+    ota_platform: platform as MarketOtaPlatform,
     inclusion_items: parseInclusionMap(row.inclusion_items, true, items),
     excluded_items: parseExcludedItems(row.excluded_items),
     channel_settings: parseOurChannelSettings(row.channel_settings),

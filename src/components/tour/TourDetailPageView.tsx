@@ -68,6 +68,7 @@ import { ReservationFormSmsSendButton } from '@/components/reservation/Reservati
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import CancellationReasonModal from '@/components/reservation/CancellationReasonModal'
 import TourEnvelopeModal from '@/components/receipt/TourEnvelopeModal'
+import TourBalanceQrPrintModal from '@/components/tour/modals/TourBalanceQrPrintModal'
 import { GuideScheduleConfirmPreviewModal } from '@/components/admin/todo/GuideScheduleConfirmPreviewModal'
 import { GuideScheduleAssignmentPreviewModal } from '@/components/admin/todo/GuideScheduleAssignmentPreviewModal'
 
@@ -267,6 +268,7 @@ export function TourDetailPageView({
   const [showGuideAssignmentHistoryModal, setShowGuideAssignmentHistoryModal] = useState(false)
   const [showNarrationHistoryModal, setShowNarrationHistoryModal] = useState(false)
   const [envelopeModalVariant, setEnvelopeModalVariant] = useState<'tip' | 'balance' | null>(null)
+  const [showBalanceQrPrint, setShowBalanceQrPrint] = useState(false)
   const [showTourPrintModal, setShowTourPrintModal] = useState<boolean>(false)
   const [convertingLowerToX, setConvertingLowerToX] = useState(false)
   const [pickupPresets, setPickupPresets] = useState<PickupGroupPresetRow[]>([])
@@ -2506,6 +2508,7 @@ export function TourDetailPageView({
         onPrintReceipts={() => setShowBatchReceiptModal(true)}
         onPrintTipEnvelopes={() => setEnvelopeModalVariant('tip')}
         onPrintBalanceEnvelopes={() => setEnvelopeModalVariant('balance')}
+        onPrintBalanceQr={() => setShowBalanceQrPrint(true)}
         {...(canSendGuideScheduleConfirm
           ? {
               onSendGuideScheduleConfirm: openGuideScheduleConfirmModal,
@@ -2719,6 +2722,7 @@ export function TourDetailPageView({
         onPrintReceipts={() => setShowBatchReceiptModal(true)}
         onPrintTipEnvelopes={() => setEnvelopeModalVariant('tip')}
         onPrintBalanceEnvelopes={() => setEnvelopeModalVariant('balance')}
+        onPrintBalanceQr={() => setShowBalanceQrPrint(true)}
         {...(canSendGuideScheduleConfirm
           ? {
               onSendGuideScheduleConfirm: openGuideScheduleConfirmModal,
@@ -2756,6 +2760,19 @@ export function TourDetailPageView({
           tourData.selectedAssistant ? tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'en') : null,
         ].filter(Boolean).join(' & ') || '—'}
         locale={locale}
+      />
+
+      <TourBalanceQrPrintModal
+        isOpen={showBalanceQrPrint}
+        onClose={() => setShowBalanceQrPrint(false)}
+        locale={locale}
+        reservationIds={batchPrintReservationIds}
+        tourDate={tourData.tour?.tour_date || ''}
+        productName={
+          locale === 'ko'
+            ? tourData.product?.name_ko || tourData.product?.name_en || ''
+            : tourData.product?.name_en || tourData.product?.name_ko || ''
+        }
       />
 
       {/* 투어 정보 인쇄 모달 (팀/픽업/부킹, Letter) */}

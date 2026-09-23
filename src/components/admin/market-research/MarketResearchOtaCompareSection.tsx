@@ -9,8 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { buildOtaCompareRows, compareGridCsv, otaPlatformLabel } from '@/lib/market-research/compare'
-import { MARKET_OTA_PLATFORMS } from '@/lib/market-research/types'
+import { buildOtaCompareRows, compareGridCsv } from '@/lib/market-research/compare'
+import { otaChoicesForBoard } from '@/lib/market-research/otaChannels'
 import { MarketResearchCompareTable } from './MarketResearchCompareTable'
 import type { MarketResearchBundle } from './helpers'
 
@@ -31,7 +31,8 @@ export function MarketResearchOtaCompareSection({
   bundle: MarketResearchBundle
   isKo: boolean
 }) {
-  const [platform, setPlatform] = useState(bundle.listings[0]?.ota_platform || 'viator')
+  const otaChoices = otaChoicesForBoard(bundle.channels, bundle.listings, isKo)
+  const [platform, setPlatform] = useState(bundle.listings[0]?.ota_platform || otaChoices[0]?.id || 'viator')
   const platformListings = bundle.listings.filter((row) => row.ota_platform === platform)
   const [selected, setSelected] = useState<string[]>(() => platformListings.map((row) => row.id))
 
@@ -62,9 +63,9 @@ export function MarketResearchOtaCompareSection({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {MARKET_OTA_PLATFORMS.map((p) => (
-                <SelectItem key={p} value={p}>
-                  {otaPlatformLabel(p, isKo)}
+              {otaChoices.map((choice) => (
+                <SelectItem key={choice.id} value={choice.id}>
+                  {choice.label}
                 </SelectItem>
               ))}
             </SelectContent>

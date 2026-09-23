@@ -6,7 +6,7 @@ import { History, Loader2, Plus, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
-import { otaPlatformLabel } from '@/lib/market-research/compare'
+import { labelForOta, otaChoicesForBoard } from '@/lib/market-research/otaChannels'
 import {
   UNMAPPED_PRODUCT_ID,
   buildOurPricingBoardColumns,
@@ -25,7 +25,7 @@ import {
   writeBoardLayouts,
   type BoardLayoutPrefs,
 } from '@/lib/market-research/boardLayout'
-import { MARKET_OTA_PLATFORMS, type MarketBadgeCatalogItem, type MarketListing, type MarketOtaPlatform } from '@/lib/market-research/types'
+import type { MarketBadgeCatalogItem, MarketListing, MarketOtaPlatform } from '@/lib/market-research/types'
 import { compareItemDefsFromCatalog, inclusionHasExcluded } from '@/lib/market-research/excludedItems'
 import { MarketResearchCompareItemsManager } from './MarketResearchCompareItemsManager'
 import { MarketResearchCompetitorManager } from './MarketResearchCompetitorManager'
@@ -127,18 +127,19 @@ export default function MarketResearchAdmin() {
 
   const productListings = listingsForProduct(bundle.listings, activeProductId)
   const productOtas = otasForProduct(bundle.listings, activeProductId)
+  const otaChoices = otaChoicesForBoard(bundle.channels, productListings, isKo)
   const productCompetitors = competitorsForProduct(
     bundle.listings,
     bundle.competitors,
     activeProductId
   )
   const otaFilter = selectedOtas.filter((platform) =>
-    MARKET_OTA_PLATFORMS.includes(platform)
+    otaChoices.some((choice) => choice.id === platform)
   )
   const competitorFilter = selectedCompetitorIds.filter((id) =>
     productCompetitors.some((row) => row.id === id)
   )
-  const activeOta = otaFilter[0] || productOtas[0] || 'getyourguide'
+  const activeOta = otaFilter[0] || productOtas[0] || otaChoices[0]?.id || 'getyourguide'
 
   const columns = useMemo(() => {
     if (!activeProductId) return []
@@ -146,7 +147,7 @@ export default function MarketResearchAdmin() {
     const filter = {
       otas: otaFilter,
       competitorIds: competitorFilter,
-      otaLabel: (platform: MarketOtaPlatform) => otaPlatformLabel(platform, isKo),
+      otaLabel: (platform: MarketOtaPlatform) => labelForOta(platform, bundle.channels, isKo),
       compareItems,
     }
     const ours =
@@ -158,6 +159,7 @@ export default function MarketResearchAdmin() {
             offers: bundle.ourOffers,
             overlays: bundle.ourPlatformPrices,
             otas: otaFilter,
+            fallbackOtas: otaChoices.map((choice) => choice.id),
             otaLabel: filter.otaLabel,
             compareItems,
             oursLabel: isKo ? '자사' : 'Kovegas',
@@ -182,6 +184,7 @@ export default function MarketResearchAdmin() {
     bundle.ourOffers,
     bundle.ourPlatformPrices,
     bundle.compareItems,
+    bundle.channels,
     activeProductId,
     otaFilter,
     competitorFilter,
@@ -209,7 +212,7 @@ export default function MarketResearchAdmin() {
       bundle.competitors.find((row) => row.id === listing.competitor_id)?.name ||
       listing.listing_title ||
       id
-    return [{ id, label: `${name} · ${otaPlatformLabel(listing.ota_platform, isKo)}` }]
+    return [{ id, label: `${name} · ${labelForOta(listing.ota_platform, bundle.channels, isKo)}` }]
   })
 
   const closeModal = () => {
@@ -300,10 +303,10 @@ export default function MarketResearchAdmin() {
           onToggle={(id) =>
             setSelectedOtas(toggleAllOrItem(otaFilter, id as MarketOtaPlatform))
           }
-          options={MARKET_OTA_PLATFORMS.map((platform) => ({
-            id: platform,
-            label: otaPlatformLabel(platform, isKo),
-            count: productListings.filter((row) => row.ota_platform === platform).length,
+          options={otaChoices.map((choice) => ({
+            id: choice.id,
+            label: choice.label,
+            count: productListings.filter((row) => row.ota_platform === choice.id).length,
           }))}
         />
         {productCompetitors.length > 0 ? (

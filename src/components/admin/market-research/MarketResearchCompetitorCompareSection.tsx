@@ -9,7 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { buildCompetitorCompareRows, compareGridCsv, otaPlatformLabel } from '@/lib/market-research/compare'
+import { buildCompetitorCompareRows, compareGridCsv } from '@/lib/market-research/compare'
+import { labelForOta } from '@/lib/market-research/otaChannels'
 import { MarketResearchCompareTable } from './MarketResearchCompareTable'
 import type { MarketResearchBundle } from './helpers'
 
@@ -41,7 +42,7 @@ export function MarketResearchCompetitorCompareSection({
   )
   const columns = visible.map((row) => ({
     id: row.id,
-    label: otaPlatformLabel(row.ota_platform, isKo),
+    label: labelForOta(row.ota_platform, bundle.channels, isKo),
   }))
 
   return (
@@ -88,7 +89,7 @@ export function MarketResearchCompetitorCompareSection({
                 )
               }
             />
-            {otaPlatformLabel(listing.ota_platform, isKo)}
+            {labelForOta(listing.ota_platform, bundle.channels, isKo)}
           </label>
         ))}
       </div>

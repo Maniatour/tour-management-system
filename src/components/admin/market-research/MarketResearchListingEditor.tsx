@@ -11,8 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { MARKET_OTA_PLATFORMS } from '@/lib/market-research/types'
-import { otaPlatformLabel } from '@/lib/market-research/compare'
+import { companyOtaChannels, initialOtaPlatform, otaSelectOptions } from '@/lib/market-research/otaChannels'
 import {
   formatListingLanguages,
   listingLanguageLabel,
@@ -72,7 +71,8 @@ export function listingToDraft(
   productId?: string,
   otaPlatform?: string,
   snapshots: MarketSnapshot[] = [],
-  compareItems?: readonly MarketCompareItemDef[]
+  compareItems?: readonly MarketCompareItemDef[],
+  channels: MarketCatalogChannel[] = []
 ): ListingDraft {
   const offer = exclusiveOffer(listing)
   const recorded = listing ? listingRecordedPrices(snapshots, listing.id) : null
@@ -82,7 +82,7 @@ export function listingToDraft(
       : snapshotExcludedItems(recorded?.antelopeX)
   return {
     competitorId: listing?.competitor_id || competitorId,
-    otaPlatform: listing?.ota_platform || otaPlatform || 'viator',
+    otaPlatform: initialOtaPlatform(listing?.ota_platform, otaPlatform, channels),
     listingUrl: listing?.listing_url || '',
     listingTitle: listing?.listing_title || '',
     mappedProductId: listing?.mapped_product_id || productId || '',
@@ -172,9 +172,16 @@ export function MarketResearchListingEditor({
       defaultProductId,
       defaultOtaPlatform,
       snapshots,
-      compareItems
+      compareItems,
+      channels
     )
   )
+  const otaOptions = otaSelectOptions(channels, draft.otaPlatform, isKo)
+  const selectedOta =
+    otaOptions.find(
+      (option) => option.platform === draft.otaPlatform || option.value === draft.otaPlatform
+    ) || null
+  const registeredOta = companyOtaChannels(channels)
   const [saving, setSaving] = useState(false)
   const set = <K extends keyof ListingDraft>(key: K, value: ListingDraft[K]) =>
     setDraft((prev) => ({ ...prev, [key]: value }))
@@ -195,12 +202,29 @@ export function MarketResearchListingEditor({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>OTA</Label>
-            <Select value={draft.otaPlatform} onValueChange={(v) => set('otaPlatform', v)}>
-              <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+            <Label>{isKo ? 'OTA 채널' : 'OTA channel'}</Label>
+            <p className="text-xs text-muted-foreground">
+              {registeredOta.length > 0
+                ? isKo
+                  ? '채널 관리에 등록된 OTA 중에서 고릅니다.'
+                  : 'Choose an OTA channel registered for this company.'
+                : isKo
+                  ? '등록된 OTA 채널이 없습니다. 채널 관리에서 분류를 OTA로 저장하면 여기에 나타납니다.'
+                  : 'No OTA channels are registered yet. Mark a channel as OTA in channel settings.'}
+            </p>
+            <Select
+              {...(selectedOta?.value ? { value: selectedOta.value } : {})}
+              onValueChange={(value) => {
+                const picked = otaOptions.find((option) => option.value === value)
+                if (picked) set('otaPlatform', picked.platform)
+              }}
+            >
+              <SelectTrigger className="h-11 rounded-xl">
+                <SelectValue placeholder={isKo ? 'OTA 채널 선택' : 'Select an OTA channel'} />
+              </SelectTrigger>
               <SelectContent>
-                {MARKET_OTA_PLATFORMS.map((p) => (
-                  <SelectItem key={p} value={p}>{otaPlatformLabel(p, isKo)}</SelectItem>
+                {otaOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

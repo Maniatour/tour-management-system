@@ -35,6 +35,12 @@ import {
   resolveOtaChannelId,
 } from './ourPrice'
 import { MARKET_BADGE_PRESETS, findCatalogBadgeByLabel, sortBadgeCatalog } from './badges'
+import {
+  companyOtaChannels,
+  isCompanyOtaChannel,
+  otaSelectOptions,
+  storedPlatformForChannel,
+} from './otaChannels'
 import type { MarketListing, MarketSnapshot, OurPriceOverlay } from './types'
 
 test('adultTotal adds sale and not-included', () => {
@@ -877,4 +883,31 @@ test('parseListingLanguages accepts ids and labels', () => {
   assert.deepEqual(parseListingLanguages('ko,en,ja'), ['ko', 'en', 'ja'])
   assert.deepEqual(parseListingLanguages('한국어 · English / Japanese'), ['ko', 'en', 'ja'])
   assert.equal(formatListingLanguages(['ko', 'es', 'xx']), 'ko,es')
+})
+
+test('OTA choices come from registered company channels', () => {
+  const channels = [
+    { id: 'OWN_PHONE', name: '전화 예약', type: 'Phone', category: 'Own', status: 'active' },
+    { id: 'Partner6', name: 'Viator', type: 'OTA', category: 'OTA', status: 'active' },
+    { id: 'nol-1', name: 'NOL (트리플)', type: 'OTA', category: 'OTA', status: 'active' },
+    { id: 'old-ota', name: '숨긴 OTA', type: 'OTA', category: 'OTA', status: 'inactive' },
+  ]
+  assert.equal(isCompanyOtaChannel(channels[0]!), false)
+  assert.equal(isCompanyOtaChannel(channels[1]!), true)
+  assert.equal(isCompanyOtaChannel(channels[3]!), false)
+  assert.deepEqual(
+    companyOtaChannels(channels).map((row) => row.id),
+    ['nol-1', 'Partner6']
+  )
+  assert.equal(storedPlatformForChannel(channels[1]!), 'viator')
+  assert.equal(storedPlatformForChannel(channels[2]!), 'nol-1')
+  const options = otaSelectOptions(channels, 'viator', true)
+  assert.deepEqual(
+    options.map((row) => row.label),
+    ['NOL (트리플)', 'Viator']
+  )
+  assert.equal(options.find((row) => row.label === 'Viator')?.platform, 'viator')
+  assert.equal(options.some((row) => row.label === '전화 예약'), false)
+  assert.equal(resolveOtaChannelId('nol-1', channels), 'nol-1')
+  assert.deepEqual(otaSelectOptions([], '', true), [])
 })

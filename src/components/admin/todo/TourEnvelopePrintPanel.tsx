@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { DollarSign, FileText, Loader2, Mail, Printer, RefreshCw, Users } from 'lucide-react'
+import { DollarSign, FileText, Loader2, Mail, Printer, QrCode, RefreshCw, Users } from 'lucide-react'
 import { TodoPanelStatusButtons } from '@/components/admin/todo/TodoPanelStatusButtons'
 import { TodoPanelTourStatusButtons } from '@/components/admin/todo/TodoPanelTourStatusButtons'
 import {
@@ -192,6 +192,15 @@ export function TourEnvelopePrintPanel({
         aria-label="Balance"
       >
         <DollarSign className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => onQuickPrint(tourId, 'balanceQr')}
+        className="inline-flex h-6 w-6 items-center justify-center rounded border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100"
+        title={isKo ? '잔금 QR' : 'Balance QR'}
+        aria-label={isKo ? '잔금 QR' : 'Balance QR'}
+      >
+        <QrCode className="h-3.5 w-3.5" />
       </button>
     </div>
   )

@@ -9,7 +9,7 @@ import {
   serializeExcludedItems,
   type MarketInclusionMap,
 } from '@/lib/market-research/excludedItems'
-import { otaPlatformLabel } from '@/lib/market-research/compare'
+import { labelForOta } from '@/lib/market-research/otaChannels'
 import { defaultOurChannelSettings } from '@/lib/market-research/ourChannelSettings'
 import { overlayAxisPoint, ourProductPlatformKey } from '@/lib/market-research/ourPrice'
 import type { MarketExcludedItem, MarketOtaPlatform, OurChannelSettings } from '@/lib/market-research/types'
@@ -60,7 +60,7 @@ export function MarketResearchOurOfferEditor({
     <div className="space-y-5">
       <div className="rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-3">
         <p className="text-sm font-semibold text-blue-900">
-          {productLabel(product, isKo) || productId} · {otaPlatformLabel(otaPlatform, isKo)}
+          {productLabel(product, isKo) || productId} · {labelForOta(otaPlatform, bundle.channels, isKo)}
         </p>
         <p className="mt-1 text-sm text-blue-800/80">
           {isKo

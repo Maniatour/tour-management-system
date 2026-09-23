@@ -1,4 +1,4 @@
-import { ArrowLeft, Edit, Trash2, Copy, Printer, Mail, DollarSign, RotateCcw, FileText, X, GripVertical, Users, Smartphone, UserCheck, History, Headphones } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, Copy, Printer, Mail, DollarSign, RotateCcw, FileText, X, GripVertical, Users, Smartphone, UserCheck, History, Headphones, QrCode } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import TourSunriseTime from '@/components/TourSunriseTime'
@@ -33,6 +33,8 @@ interface TourHeaderProps {
   onPrintReceipts?: () => void
   onPrintTipEnvelopes?: () => void
   onPrintBalanceEnvelopes?: () => void
+  /** 잔금이 남은 고객의 카드 결제 QR를 한 장으로 인쇄 */
+  onPrintBalanceQr?: () => void
   /** 투어 정보(팀/픽업/부킹) Letter 인쇄 */
   onPrintTourInfo?: () => void
   /** 모달 닫기 (modal-toolbar 전용) */
@@ -82,6 +84,7 @@ export default function TourHeader({
   onPrintReceipts,
   onPrintTipEnvelopes,
   onPrintBalanceEnvelopes,
+  onPrintBalanceQr,
   onPrintTourInfo,
   onCloseModal,
   onConvertLowerToX,
@@ -263,6 +266,16 @@ export default function TourHeader({
                   title={params.locale === 'ko' ? 'Balance 봉투 인쇄' : 'Print balance envelopes'}
                 >
                   <DollarSign className="h-4 w-4" />
+                </button>
+              ) : null}
+              {onPrintBalanceQr ? (
+                <button
+                  type="button"
+                  onClick={onPrintBalanceQr}
+                  className="rounded-md border border-blue-200 bg-blue-50 p-1.5 text-blue-700 hover:bg-blue-100"
+                  title={params.locale === 'ko' ? '잔금 QR 인쇄' : 'Print balance QR sheet'}
+                >
+                  <QrCode className="h-4 w-4" />
                 </button>
               ) : null}
               <div className="hidden max-w-[88px] flex-shrink-0 lg:block lg:max-w-none">
@@ -476,6 +489,16 @@ export default function TourHeader({
                     title={params.locale === 'ko' ? 'Balance 봉투 인쇄' : 'Print balance envelopes'}
                   >
                     <DollarSign className="w-5 h-5" />
+                  </button>
+                )}
+                {onPrintBalanceQr && (
+                  <button
+                    type="button"
+                    onClick={onPrintBalanceQr}
+                    className="p-2 rounded-lg hover:bg-blue-50 text-blue-700 flex-shrink-0"
+                    title={params.locale === 'ko' ? '잔금 QR 인쇄' : 'Print balance QR sheet'}
+                  >
+                    <QrCode className="w-5 h-5" />
                   </button>
                 )}
               </div>

@@ -29,8 +29,12 @@ const TourPrintModal = dynamic(() => import('@/components/tour/modals/TourPrintM
   ssr: false,
   loading: () => null,
 })
+const TourBalanceQrPrintModal = dynamic(
+  () => import('@/components/tour/modals/TourBalanceQrPrintModal'),
+  { ssr: false, loading: () => null }
+)
 
-export type TourQuickPrintKind = 'tourInfo' | 'receipts' | 'tip' | 'balance'
+export type TourQuickPrintKind = 'tourInfo' | 'receipts' | 'tip' | 'balance' | 'balanceQr'
 
 export type TourQuickPrintRequest = {
   tourId: string
@@ -113,6 +117,7 @@ export function TourQuickPrintHost({ locale, request, onClose }: TourQuickPrintH
   const [showTourPrintModal, setShowTourPrintModal] = useState(false)
   const [showBatchReceiptModal, setShowBatchReceiptModal] = useState(false)
   const [envelopeVariant, setEnvelopeVariant] = useState<EnvelopeVariant | null>(null)
+  const [showBalanceQr, setShowBalanceQr] = useState(false)
   const [opened, setOpened] = useState(false)
 
   useEffect(() => {
@@ -177,6 +182,7 @@ export function TourQuickPrintHost({ locale, request, onClose }: TourQuickPrintH
       setShowTourPrintModal(false)
       setShowBatchReceiptModal(false)
       setEnvelopeVariant(null)
+      setShowBalanceQr(false)
       setBookingsLoaded(false)
       setTicketBookings([])
       setTourHotelBookings([])
@@ -186,6 +192,7 @@ export function TourQuickPrintHost({ locale, request, onClose }: TourQuickPrintH
     setShowTourPrintModal(false)
     setShowBatchReceiptModal(false)
     setEnvelopeVariant(null)
+    setShowBalanceQr(false)
     setBookingsLoaded(false)
     if (request.kind === 'tourInfo') {
       void loadBookings()
@@ -235,6 +242,11 @@ export function TourQuickPrintHost({ locale, request, onClose }: TourQuickPrintH
       setOpened(true)
       return
     }
+    if (request.kind === 'balanceQr') {
+      setShowBalanceQr(true)
+      setOpened(true)
+      return
+    }
     if (request.kind === 'tourInfo' && bookingsLoaded && !tourData.loadingStates.reservations) {
       setShowTourPrintModal(true)
       setOpened(true)
@@ -271,6 +283,7 @@ export function TourQuickPrintHost({ locale, request, onClose }: TourQuickPrintH
     setShowTourPrintModal(false)
     setShowBatchReceiptModal(false)
     setEnvelopeVariant(null)
+    setShowBalanceQr(false)
     onClose()
   }
 
@@ -278,7 +291,10 @@ export function TourQuickPrintHost({ locale, request, onClose }: TourQuickPrintH
     Boolean(request) &&
     !opened &&
     (tourData.pageLoading ||
-      ((request?.kind === 'receipts' || request?.kind === 'tip' || request?.kind === 'balance') &&
+      ((request?.kind === 'receipts' ||
+        request?.kind === 'tip' ||
+        request?.kind === 'balance' ||
+        request?.kind === 'balanceQr') &&
         !assignmentSnapshotReady) ||
       (request?.kind === 'tourInfo' && (bookingsLoading || !bookingsLoaded || tourData.loadingStates.reservations)))
 
@@ -331,6 +347,19 @@ export function TourQuickPrintHost({ locale, request, onClose }: TourQuickPrintH
             .join(' & ') || '—'
         }
         locale={locale}
+      />
+
+      <TourBalanceQrPrintModal
+        isOpen={showBalanceQr}
+        onClose={handleCloseAll}
+        locale={locale}
+        reservationIds={receiptReservationIds}
+        tourDate={tourData.tour?.tour_date || ''}
+        productName={
+          locale === 'ko'
+            ? tourData.product?.name_ko || tourData.product?.name_en || ''
+            : tourData.product?.name_en || tourData.product?.name_ko || ''
+        }
       />
 
       <TourPrintModal

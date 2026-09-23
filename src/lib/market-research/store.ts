@@ -24,7 +24,8 @@ import { mapCatalogChannel, mapCatalogProduct, mapFocusProduct, mapMarketBadge, 
 import { mapMarketPriceAlertRow } from './notify'
 import { loadOurPriceOverlays, loadOurProductPlatformOverlays } from './ourPrice'
 import { parseOurChannelSettings } from './ourChannelSettings'
-import { isMarketCanyonVariant, isMarketOfferType, isMarketOtaPlatform } from './types'
+import { isCompanyOtaChannel } from './otaChannels'
+import { isMarketCanyonVariant, isMarketOfferType, isStoredOtaPlatform, MARKET_OTA_PLATFORMS } from './types'
 import type { MarketBadgeCatalogItem, MarketCompareItemCatalog, MarketCompetitor, MarketFocusProduct, MarketListing, MarketOurOffer } from './types'
 import { MARKET_BADGE_PRESETS, badgeIdFromLabel, findCatalogBadgeByLabel, sortBadgeCatalog } from './badges'
 import {
@@ -46,6 +47,24 @@ function asRecord(value: unknown): Record<string, unknown> {
 function requireAdmin() {
   if (!supabaseAdmin) throw new Error('SUPABASE_SERVICE_ROLE_KEY is required')
   return supabaseAdmin
+}
+
+async function assertSavableOtaPlatform(
+  admin: ReturnType<typeof requireAdmin>,
+  platform: string
+): Promise<string> {
+  const key = platform.trim()
+  if (!isStoredOtaPlatform(key)) throw new Error('invalid ota platform')
+  if ((MARKET_OTA_PLATFORMS as readonly string[]).includes(key)) return key
+  const { data, error } = await admin
+    .from('channels')
+    .select('id, name, type, category, status')
+    .eq('id', key)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  const channel = mapCatalogChannel(asRecord(data))
+  if (!channel || !isCompanyOtaChannel(channel)) throw new Error('invalid ota platform')
+  return channel.id
 }
 
 export async function loadMarketResearchBundle(operatorIdRaw?: string | null) {
@@ -75,7 +94,7 @@ export async function loadMarketResearchBundle(operatorIdRaw?: string | null) {
         .order('created_at', { ascending: false })
         .limit(50),
       admin.from('products').select('id, name, name_ko, name_en').order('id', { ascending: true }),
-      admin.from('channels').select('id, name').order('name', { ascending: true }),
+      admin.from('channels').select('id, name, type, category, status').order('name', { ascending: true }),
       fromUntypedTable(admin, MARKET_FOCUS_PRODUCTS_TABLE)
         .select(MARKET_FOCUS_PRODUCT_COLUMNS)
         .eq('operator_id', operatorId)
@@ -158,7 +177,10 @@ export async function loadMarketResearchBundle(operatorIdRaw?: string | null) {
     console.error('[market-research] our price overlay', error)
     return {} as Record<string, import('./types').OurPriceOverlay>
   })
-  const ourPlatformPrices = await loadOurProductPlatformOverlays(admin, overlayProductIds).catch((error) => {
+  const ourPlatformPrices = await loadOurProductPlatformOverlays(admin, overlayProductIds, [
+    ...listings.map((row) => row.ota_platform),
+    ...ourOffers.map((row) => row.ota_platform),
+  ]).catch((error) => {
     console.error('[market-research] our platform overlay', error)
     return {} as Record<string, import('./types').OurPriceOverlay>
   })
@@ -260,7 +282,7 @@ export async function createListing(input: {
   inclusionItems?: MarketInclusionMap | undefined
 }): Promise<MarketListing> {
   const admin = requireAdmin()
-  if (!isMarketOtaPlatform(input.otaPlatform)) throw new Error('invalid ota platform')
+  const otaPlatform = await assertSavableOtaPlatform(admin, input.otaPlatform)
   const listingUrl = input.listingUrl.trim()
   if (!listingUrl) throw new Error('listingUrl required')
   const mappedChannelId = input.mappedChannelId?.trim() || null
@@ -268,7 +290,7 @@ export async function createListing(input: {
     .insert({
       operator_id: resolveOperatorId(input.operatorId),
       competitor_id: input.competitorId,
-      ota_platform: input.otaPlatform,
+      ota_platform: otaPlatform,
       listing_url: listingUrl,
       listing_title: input.listingTitle?.trim() || null,
       mapped_product_id: input.mappedProductId?.trim() || null,
@@ -329,8 +351,7 @@ export async function updateListing(input: {
   if (input.mappedProductId !== undefined) patch.mapped_product_id = input.mappedProductId?.trim() || null
   if (input.mappedChannelId !== undefined) patch.mapped_channel_id = input.mappedChannelId?.trim() || null
   if (input.otaPlatform != null) {
-    if (!isMarketOtaPlatform(input.otaPlatform)) throw new Error('invalid ota platform')
-    patch.ota_platform = input.otaPlatform
+    patch.ota_platform = await assertSavableOtaPlatform(admin, input.otaPlatform)
   }
   if (input.hasLower !== undefined) patch.has_lower = input.hasLower
   if (input.hasAntelopeX !== undefined) patch.has_antelope_x = input.hasAntelopeX
@@ -591,7 +612,7 @@ export async function saveOurOffer(input: {
   const operatorId = resolveOperatorId(input.operatorId)
   const productId = input.productId.trim()
   if (!productId) throw new Error('productId required')
-  if (!isMarketOtaPlatform(input.otaPlatform)) throw new Error('invalid ota platform')
+  const otaPlatform = await assertSavableOtaPlatform(admin, input.otaPlatform)
   const items = compareItemDefsFromCatalog(await loadCompareItems(operatorId))
   const inclusionItems = serializeInclusionMap(
     parseInclusionMap(input.inclusionItems, true, items),
@@ -606,7 +627,7 @@ export async function saveOurOffer(input: {
       {
         operator_id: operatorId,
         product_id: productId,
-        ota_platform: input.otaPlatform,
+        ota_platform: otaPlatform,
         inclusion_items: inclusionItems,
         excluded_items: excludedItems,
         channel_settings: parseOurChannelSettings(input.channelSettings),

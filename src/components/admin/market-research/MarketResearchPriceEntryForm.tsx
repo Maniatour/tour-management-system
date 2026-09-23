@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { listingOptionOffer, listingObservedMeta, listingRecordedPrices } from '@/lib/market-research/prices'
-import { otaPlatformLabel } from '@/lib/market-research/compare'
+import { labelForOta } from '@/lib/market-research/otaChannels'
 import {
   compareItemDefsFromCatalog,
   inclusionHasExcluded,
@@ -140,7 +140,7 @@ export function MarketResearchPriceEntryForm({
           <SelectContent>
             {bundle.listings.map((row) => (
               <SelectItem key={row.id} value={row.id}>
-                {nameByCompetitor.get(row.competitor_id)} · {otaPlatformLabel(row.ota_platform, isKo)}
+                {nameByCompetitor.get(row.competitor_id)} · {labelForOta(row.ota_platform, bundle.channels, isKo)}
               </SelectItem>
             ))}
           </SelectContent>

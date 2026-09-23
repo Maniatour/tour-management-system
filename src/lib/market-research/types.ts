@@ -196,6 +196,9 @@ export type MarketCatalogProduct = {
 export type MarketCatalogChannel = {
   id: string
   name: string | null
+  type?: string | null
+  category?: string | null
+  status?: string | null
 }
 
 export type OurPricePoint = {
@@ -223,6 +226,12 @@ export function marketPriceAxisKey(
 
 export function isMarketOtaPlatform(value: string): value is MarketOtaPlatform {
   return (MARKET_OTA_PLATFORMS as readonly string[]).includes(value)
+}
+
+/** 고정 목록 또는 회사에 등록된 채널 id. */
+export function isStoredOtaPlatform(value: string): boolean {
+  const key = value.trim()
+  return key.length > 0 && key.length <= 120 && !/[\u0000-\u001f]/.test(key)
 }
 
 export function isMarketCanyonVariant(value: string): value is MarketCanyonVariant {

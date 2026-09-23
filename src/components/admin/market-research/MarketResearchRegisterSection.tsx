@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { otaPlatformLabel } from '@/lib/market-research/compare'
+import { labelForOta } from '@/lib/market-research/otaChannels'
 import { listingLanguageLabel, parseListingLanguages } from '@/lib/market-research/listingLanguages'
 import { listingRecordedPrices } from '@/lib/market-research/prices'
 import type { MarketCompetitor, MarketListing } from '@/lib/market-research/types'
@@ -82,7 +82,7 @@ export function MarketResearchRegisterSection({
                   >
                     <div className="min-w-0 space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium">{otaPlatformLabel(listing.ota_platform, isKo)}</span>
+                        <span className="font-medium">{labelForOta(listing.ota_platform, bundle.channels, isKo)}</span>
                         <MarketResearchStatusBadge
                           status={listing.last_fetch_status}
                           lastSuccessAt={listing.last_success_at}

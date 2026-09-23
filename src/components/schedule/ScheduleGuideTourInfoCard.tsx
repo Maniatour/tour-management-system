@@ -9,6 +9,7 @@ import {
   Car,
   DollarSign,
   FileText,
+  QrCode,
   History,
   Hotel,
   Pin,
@@ -156,6 +157,7 @@ type ScheduleGuideTourInfoCardProps = {
   onPrintReceipts?: () => void
   onPrintTipEnvelopes?: () => void
   onPrintBalanceEnvelopes?: () => void
+  onPrintBalanceQr?: () => void
   /** 같은 상품/날짜로 투어 복사 */
   onCopyTour?: () => void
   copyingTour?: boolean
@@ -272,6 +274,7 @@ export default function ScheduleGuideTourInfoCard({
   onPrintReceipts,
   onPrintTipEnvelopes,
   onPrintBalanceEnvelopes,
+  onPrintBalanceQr,
   onCopyTour,
   copyingTour = false,
 }: ScheduleGuideTourInfoCardProps) {
@@ -371,6 +374,16 @@ export default function ScheduleGuideTourInfoCard({
             title={locale === 'ko' ? 'Balance 봉투 인쇄' : 'Print balance envelopes'}
           >
             <DollarSign className="h-4 w-4" />
+          </button>
+        ) : null}
+        {onPrintBalanceQr ? (
+          <button
+            type="button"
+            onClick={onPrintBalanceQr}
+            className="rounded-md border border-blue-200 bg-blue-50 p-1.5 text-blue-700 hover:bg-blue-100"
+            title={locale === 'ko' ? '잔금 QR 인쇄' : 'Print balance QR sheet'}
+          >
+            <QrCode className="h-4 w-4" />
           </button>
         ) : null}
         {isStaff && onCopyTour ? (

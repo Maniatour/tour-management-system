@@ -4,6 +4,7 @@ import { findBookingTimeChoicePricing } from '@/lib/bookingTimeChoicePricing'
 import { getChannelIdForPlatform } from '@/lib/platformChannelMapping'
 import { isCanyonKey, type CanyonKey } from '@/lib/canyonChoice'
 import { fromUntypedTable } from '@/lib/supabaseUntypedTable'
+import { isCompanyOtaChannel, OTA_CHANNEL_ALIASES, orderOtaKeys, storedPlatformForChannel } from './otaChannels'
 import type { MarketListing, MarketOtaPlatform, OurPriceOverlay, OurPricePoint } from './types'
 import { MARKET_OTA_PLATFORMS, MARKET_PRICE_AXES, marketPriceAxisKey } from './types'
 import { adultTotal, discountedPrice, normalizeDiscountPercent, toMoney } from './prices'
@@ -28,17 +29,9 @@ type DynamicRow = {
 type ChannelRow = {
   id: string
   name: string | null
-}
-
-const OTA_CHANNEL_ALIASES: Record<Exclude<MarketOtaPlatform, 'other'>, string[]> = {
-  getyourguide: ['getyourguide', 'gyg', 'get your guide'],
-  viator: ['viator'],
-  klook: ['klook'],
-  kkday: ['kkday', 'kk day'],
-  tripadvisor: ['tripadvisor', 'trip advisor'],
-  tripcom: ['trip.com', 'tripcom', 'ctrip'],
-  myrealtrip: ['myrealtrip', 'my real trip', '마이리얼트립'],
-  expedia: ['expedia'],
+  type?: string | null
+  category?: string | null
+  status?: string | null
 }
 
 function compactToken(value: string): string {
@@ -55,6 +48,8 @@ export function resolveOtaChannelId(
 ): string | null {
   const key = platform.trim().toLowerCase()
   if (!key || key === 'other') return null
+  const exact = channels.find((row) => row.id === platform.trim() || row.id.toLowerCase() === key)
+  if (exact) return exact.id
   const mapped = getChannelIdForPlatform(key)
   if (mapped && channels.some((row) => row.id === mapped)) return mapped
 
@@ -200,15 +195,18 @@ async function loadPricingContext(client: SupabaseClient, productIds: string[]):
     fromUntypedTable(client, 'product_choices')
       .select('id, product_id, choice_options(id, canyon_key, canonical_option_key, option_key, adult_price)')
       .in('product_id', productIds),
-    client.from('channels').select('id, name'),
+    client.from('channels').select('id, name, type, category, status'),
   ])
 
   const channels = (channelRows || []) as ChannelRow[]
   const channelIds = [
     ...new Set(
-      MARKET_OTA_PLATFORMS.filter((platform) => platform !== 'other')
-        .map((platform) => resolveOtaChannelId(platform, channels))
-        .filter((id): id is string => Boolean(id))
+      [
+        ...channels.filter((row) => isCompanyOtaChannel(row)).map((row) => row.id),
+        ...MARKET_OTA_PLATFORMS.filter((platform) => platform !== 'other').map((platform) =>
+          resolveOtaChannelId(platform, channels)
+        ),
+      ].filter((id): id is string => Boolean(id))
     ),
   ]
 
@@ -351,15 +349,23 @@ export async function loadOurPriceOverlays(
 
 export async function loadOurProductPlatformOverlays(
   client: SupabaseClient,
-  productIds: string[]
+  productIds: string[],
+  extraPlatforms: readonly string[] = []
 ): Promise<Record<string, OurPriceOverlay>> {
   const ids = [...new Set(productIds.map((id) => id.trim()).filter(Boolean))]
   if (ids.length === 0) return {}
   const ctx = await loadPricingContext(client, ids)
+  const fromChannels = ctx.channels
+    .filter((row) => isCompanyOtaChannel(row))
+    .map((row) => storedPlatformForChannel(row))
+  const platforms = orderOtaKeys([
+    ...MARKET_OTA_PLATFORMS.filter((platform) => platform !== 'other'),
+    ...fromChannels,
+    ...extraPlatforms,
+  ]).filter((platform) => platform !== 'other')
   const result: Record<string, OurPriceOverlay> = {}
   for (const productId of ids) {
-    for (const platform of MARKET_OTA_PLATFORMS) {
-      if (platform === 'other') continue
+    for (const platform of platforms) {
       result[ourProductPlatformKey(productId, platform)] = overlayFromContext(
         productId,
         resolveOtaChannelId(platform, ctx.channels),
