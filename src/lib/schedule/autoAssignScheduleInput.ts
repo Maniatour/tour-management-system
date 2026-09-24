@@ -257,6 +257,7 @@ export function prepareAutoAssignSchedule(args: {
   variant?: number | undefined
   previousSignature?: string | null | undefined
   existingMode?: AutoAssignExistingMode | undefined
+  guidePlan?: AutoAssignInput['guidePlan']
 }): AutoAssignPreviewData {
   const teamByEmail = new Map<string, TeamLike>()
   for (const member of args.teamMembers) {
@@ -360,6 +361,7 @@ export function prepareAutoAssignSchedule(args: {
     reviewStats: args.reviewStats,
     variant: Math.max(0, Math.floor(args.variant ?? 0)),
     existingMode: args.existingMode === 'keep' ? 'keep' : 'reset',
+    ...(args.guidePlan !== undefined ? { guidePlan: args.guidePlan } : {}),
   }
   let variant = input.variant ?? 0
   let result = autoAssignSchedule(input)

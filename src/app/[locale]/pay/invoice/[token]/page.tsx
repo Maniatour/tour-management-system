@@ -34,7 +34,7 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
 
   if (!token || !/^[0-9a-f-]{36}$/i.test(token)) {
     return (
-      <CustomerPageShell locale={locale}>
+      <CustomerPageShell locale={locale} hideFooter>
         <PayState
           locale={locale}
           kind="error"
@@ -48,7 +48,7 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
 
   if (!supabaseAdmin) {
     return (
-      <CustomerPageShell locale={locale}>
+      <CustomerPageShell locale={locale} hideFooter>
         <PayState
           locale={locale}
           kind="error"
@@ -68,7 +68,7 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
 
   if (!invoice) {
     return (
-      <CustomerPageShell locale={locale}>
+      <CustomerPageShell locale={locale} hideFooter>
         <PayState
           locale={locale}
           kind="error"
@@ -104,7 +104,7 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
 
   if (current.status === 'paid' || current.stripe_invoice_status === 'paid') {
     return (
-      <CustomerPageShell locale={locale}>
+      <CustomerPageShell locale={locale} hideFooter>
         <PayState
           locale={locale}
           kind="success"
@@ -118,7 +118,7 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
 
   if (current.status === 'cancelled') {
     return (
-      <CustomerPageShell locale={locale}>
+      <CustomerPageShell locale={locale} hideFooter>
         <PayState
           locale={locale}
           kind="error"
@@ -145,7 +145,7 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
 
   if (!isOpenAmount && amountDueUsd <= 0 && !current.hosted_invoice_url) {
     return (
-      <CustomerPageShell locale={locale}>
+      <CustomerPageShell locale={locale} hideFooter>
         <PayState
           locale={locale}
           kind="pending"
@@ -160,7 +160,7 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
   }
 
   return (
-    <CustomerPageShell locale={locale}>
+    <CustomerPageShell locale={locale} hideFooter>
       <InvoicePayWithTipForm
         locale={locale}
         token={token}
@@ -194,8 +194,8 @@ function PayState({
 }) {
   const homeHref = `/${locale}`
   return (
-    <div className="min-h-[70vh] bg-muted/30 py-16 md:py-24">
-      <div className="mx-auto max-w-lg px-4 sm:px-6 lg:px-8">
+    <div className="min-h-dvh bg-muted/30 px-4 py-8 sm:px-6 sm:py-12">
+      <div className="mx-auto w-full max-w-lg">
         <div className="rounded-2xl border border-border/60 bg-card p-8 text-center shadow-sm md:p-10">
           <div
             className={

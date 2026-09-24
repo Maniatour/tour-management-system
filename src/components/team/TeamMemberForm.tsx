@@ -80,9 +80,17 @@ export type TeamMemberFormProps = {
   onCancel: () => void
   onDelete?: () => void | Promise<void>
   onDocumentChange?: (email: string) => void
+  overlayClassName?: string
 }
 
-export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, onDocumentChange }: TeamMemberFormProps) {
+export default function TeamMemberForm({
+  member,
+  onSubmit,
+  onCancel,
+  onDelete,
+  onDocumentChange,
+  overlayClassName = 'z-[1200]',
+}: TeamMemberFormProps) {
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
   // 문서 타입별 문서 목록을 관리
@@ -548,7 +556,7 @@ export default function TeamMemberForm({ member, onSubmit, onCancel, onDelete, o
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1200]">
+    <div className={`fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center ${overlayClassName}`}>
       <div className="bg-white rounded-lg p-4 w-full max-w-3xl max-h-[85vh] overflow-y-auto">
         <h2 className="text-xl font-bold mb-4">
           {member ? '팀원 정보 수정' : '새 팀원 추가'}

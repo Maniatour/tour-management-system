@@ -70,6 +70,7 @@ export default function TeamMemberEditModal({
       member={member}
       onSubmit={(data) => void handleSubmit(data)}
       onCancel={onClose}
+      overlayClassName="z-[10070]"
       {...(onDelete ? { onDelete } : {})}
     />
   )

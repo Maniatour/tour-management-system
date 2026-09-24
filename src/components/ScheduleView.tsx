@@ -250,10 +250,13 @@ const VehicleMaintenanceVehicleModal = dynamic(
   }
 )
 
-const TeamMemberEditModal = dynamic(() => import('@/components/team/TeamMemberEditModal'), {
-  ssr: false,
-  loading: () => null,
-})
+const ScheduleTeamMemberCardModal = dynamic(
+  () => import('@/components/team/ScheduleTeamMemberCardModal'),
+  {
+    ssr: false,
+    loading: () => null,
+  },
+)
 
 const ScheduleTicketBookingForm = dynamic(() => import('@/components/booking/TicketBookingForm'), {
   ssr: false,
@@ -3147,7 +3150,15 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         do_not_team_with: string[]
         avoid_team_with: string[]
       }>,
+      previousEmail?: string,
     ) => {
+      const sameMember = (email: string) => {
+        const key = String(email).trim().toLowerCase()
+        return (
+          key === String(updated.email).trim().toLowerCase() ||
+          (previousEmail ? key === String(previousEmail).trim().toLowerCase() : false)
+        )
+      }
       const applyPeer = (m: Team) => {
         const peer = peerUpdates?.find(
           (p) => String(p.email).trim().toLowerCase() === String(m.email).trim().toLowerCase(),
@@ -3159,16 +3170,22 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           avoid_team_with: peer.avoid_team_with,
         }
       }
-      setTeamMembers((prev) =>
-        prev.map((m) =>
-          m.email === updated.email ? { ...m, ...updated } : applyPeer(m),
-        ),
-      )
-      setInactiveTeamMembers((prev) =>
-        prev.map((m) =>
-          m.email === updated.email ? { ...m, ...updated } : applyPeer(m),
-        ),
-      )
+      const place = (list: Team[], shouldContain: boolean) => {
+        const exists = list.some((m) => sameMember(m.email))
+        const mapped = list.map((m) => (sameMember(m.email) ? { ...m, ...updated } : applyPeer(m)))
+        if (shouldContain && !exists) return [...mapped, updated]
+        if (!shouldContain) return mapped.filter((m) => !sameMember(m.email))
+        return mapped
+      }
+      if (updated.is_active == null) {
+        setTeamMembers((prev) => prev.map((m) => (sameMember(m.email) ? { ...m, ...updated } : applyPeer(m))))
+        setInactiveTeamMembers((prev) => prev.map((m) => (sameMember(m.email) ? { ...m, ...updated } : applyPeer(m))))
+      } else {
+        const active = updated.is_active === true
+        setTeamMembers((prev) => place(prev, active))
+        setInactiveTeamMembers((prev) => place(prev, !active))
+      }
+      setTeamEditModalMember(updated)
     },
     [],
   )
@@ -4103,6 +4120,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       variant?: number
       previousSignature?: string | null
       existingMode?: 'keep' | 'reset'
+      guidePlan?: import('@/lib/schedule/autoAssignSchedule').AutoAssignGuidePlanEntry[]
     }) => {
       const memberOrder =
         effectiveSelectedTeamMembers.length > 0
@@ -4196,6 +4214,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         variant: args.variant,
         previousSignature: args.previousSignature,
         existingMode: args.existingMode,
+        guidePlan: args.guidePlan,
         reviewStats,
         memberOrder,
         teamMembers,
@@ -11899,8 +11918,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       )}
 
       {teamEditModalMember && (
-        <TeamMemberEditModal
+        <ScheduleTeamMemberCardModal
           member={teamEditModalMember}
+          teamMembers={[...teamMembers, ...inactiveTeamMembers]}
+          locale={locale}
           onClose={() => setTeamEditModalMember(null)}
           onSaved={handleTeamEditModalSaved}
         />
@@ -11932,6 +11953,21 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           onClose={() => setAutoAssignOpen(false)}
           onGenerate={generateAutoAssignPreview}
           onApply={applyAutoAssignResult}
+          guides={effectiveSelectedTeamMembers.length > 0
+            ? effectiveSelectedTeamMembers.flatMap((email) => {
+                const member = teamMembers.find((item) => item.email === email)
+                if (!member || member.is_active === false) return []
+                return [{
+                  email: member.email,
+                  name: member.nick_name || member.name_ko || member.name_en || member.email,
+                }]
+              })
+            : teamMembers
+                .filter((member) => member.is_active !== false && member.email)
+                .map((member) => ({
+                  email: member.email,
+                  name: member.nick_name || member.name_ko || member.name_en || member.email,
+                }))}
           renderPreview={(preview) => (
             <ScheduleAutoAssignPreviewBoard
               preview={preview}

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { mergeGuidePlan, sameGuidePlan } from './autoAssignGuidePlan'
 import {
   autoAssignSchedule,
   clampAutoAssignRange,
@@ -676,6 +677,117 @@ test('preview keeps the three days before the range and pending off requests', (
   )
   assert.equal(overlaid.find((tour) => tour.id === 'before')?.tour_guide_id, 'a@x.com')
   assert.equal(overlaid.find((tour) => tour.id === 'inside')?.tour_guide_id, 'a@x.com')
+})
+
+test('saved guide columns stay in place when the guide list is rebuilt', () => {
+  const guides = [
+    { email: 'Sean@x.com', name: 'Sean' },
+    { email: 'dez@x.com', name: 'Dez' },
+    { email: 'new@x.com', name: 'New' },
+  ]
+  const saved = mergeGuidePlan(guides, [
+    { email: 'dez@x.com', rank: 'priority', weeklyLoad: 2 },
+    { email: 'sean@x.com', rank: 'low', weeklyLoad: 1 },
+  ])
+  assert.equal(saved.find((entry) => entry.email === 'dez@x.com')?.rank, 'priority')
+  assert.equal(saved.find((entry) => entry.email === 'Sean@x.com')?.rank, 'low')
+  assert.equal(saved.find((entry) => entry.email === 'Sean@x.com')?.weeklyLoad, 1)
+  assert.equal(saved.find((entry) => entry.email === 'new@x.com')?.rank, 'normal')
+  const again = mergeGuidePlan(
+    [
+      { email: 'new@x.com', name: 'New' },
+      { email: 'Sean@x.com', name: 'Sean' },
+      { email: 'dez@x.com', name: 'Dez' },
+    ],
+    saved,
+  )
+  assert.ok(sameGuidePlan(again, saved))
+})
+
+test('guide plan keeps a standby guide until nobody else can take the tour', () => {
+  const plan = [
+    { email: 'a@x.com', rank: 'normal' as const, weeklyLoad: 3 as const },
+    { email: 'antony@x.com', rank: 'standby' as const, weeklyLoad: 3 as const },
+  ]
+  const open = autoAssignSchedule({
+    startDate: '2026-10-05',
+    endDate: '2026-10-05',
+    preset: 'equal',
+    members: [member('a@x.com', { name: 'A' }), member('antony@x.com', { name: 'Antony' })],
+    tours: [tour('t1', '2026-10-05')],
+    offs: [],
+    guidePlan: plan,
+  })
+  assert.equal(open.assignmentsByTourId.t1.tour_guide_id, 'a@x.com')
+
+  const fallback = autoAssignSchedule({
+    startDate: '2026-10-05',
+    endDate: '2026-10-05',
+    preset: 'equal',
+    members: [member('a@x.com', { name: 'A' }), member('antony@x.com', { name: 'Antony' })],
+    tours: [tour('t1', '2026-10-05')],
+    offs: [{ email: 'a@x.com', date: '2026-10-05' }],
+    guidePlan: plan,
+  })
+  assert.equal(fallback.assignmentsByTourId.t1.tour_guide_id, 'antony@x.com')
+  assert.ok(fallback.slots.some((slot) => slot.reasonLines.some((line) => line.includes('배정 안 함'))))
+})
+
+test('equal assignment shares tours across ranks and only breaks ties', () => {
+  const result = autoAssignSchedule({
+    startDate: '2026-10-05',
+    endDate: '2026-10-09',
+    preset: 'equal',
+    members: [
+      member('first@x.com', { name: 'First' }),
+      member('second@x.com', { name: 'Second' }),
+      member('third@x.com', { name: 'Third' }),
+    ],
+    tours: ['05', '06', '07', '08', '09'].map((day, index) => tour(`t${index}`, `2026-10-${day}`)),
+    offs: [],
+    guidePlan: [
+      { email: 'first@x.com', rank: 'priority', weeklyLoad: 3 },
+      { email: 'second@x.com', rank: 'normal', weeklyLoad: 3 },
+      { email: 'third@x.com', rank: 'low', weeklyLoad: 3 },
+    ],
+  })
+  const guides = Object.values(result.assignmentsByTourId).map((row) => row.tour_guide_id)
+  const count = (email: string) => guides.filter((item) => item === email).length
+  assert.equal(count('first@x.com'), 2)
+  assert.equal(count('second@x.com'), 2)
+  assert.equal(count('third@x.com'), 1)
+  const odd = autoAssignSchedule({
+    startDate: '2026-10-05',
+    endDate: '2026-10-09',
+    preset: 'equal',
+    members: [member('high@x.com', { name: 'High' }), member('low@x.com', { name: 'Low' })],
+    tours: ['05', '06', '07', '08', '09'].map((day, index) => tour(`t${index}`, `2026-10-${day}`)),
+    offs: [],
+    guidePlan: [
+      { email: 'high@x.com', rank: 'priority', weeklyLoad: 3 },
+      { email: 'low@x.com', rank: 'low', weeklyLoad: 3 },
+    ],
+  })
+  const oddGuides = Object.values(odd.assignmentsByTourId).map((row) => row.tour_guide_id)
+  assert.equal(oddGuides.filter((email) => email === 'high@x.com').length, 3)
+  assert.equal(oddGuides.filter((email) => email === 'low@x.com').length, 2)
+})
+
+test('a one-tour week stops before a lower rank is skipped for a second tour', () => {
+  const result = autoAssignSchedule({
+    startDate: '2026-10-05',
+    endDate: '2026-10-06',
+    preset: 'equal',
+    members: [member('once@x.com', { name: 'Once' }), member('open@x.com', { name: 'Open' })],
+    tours: [tour('t1', '2026-10-05'), tour('t2', '2026-10-06')],
+    offs: [],
+    guidePlan: [
+      { email: 'once@x.com', rank: 'priority', weeklyLoad: 1 },
+      { email: 'open@x.com', rank: 'normal', weeklyLoad: 3 },
+    ],
+  })
+  const guides = [result.assignmentsByTourId.t1.tour_guide_id, result.assignmentsByTourId.t2.tour_guide_id].sort()
+  assert.deepEqual(guides, ['once@x.com', 'open@x.com'])
 })
 
 test('duplicate reservation rows are counted once on the preview', () => {

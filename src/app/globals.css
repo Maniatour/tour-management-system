@@ -46,6 +46,18 @@
   --booking-hover: oklch(0.62 0.18 45);
 }
 
+/* 잔금 QR 결제: 사이트 헤더·푸터를 걷어 휴대폰 전체 화면으로 연다 */
+html.pay-invoice-standalone .kv-header,
+html.pay-invoice-standalone .app-sidebar-shell,
+html.pay-invoice-standalone .kv-footer,
+html.pay-invoice-standalone .customer-site-footer-bleed {
+  display: none !important;
+}
+
+html.pay-invoice-standalone main.main-safe-area {
+  padding: 0 !important;
+}
+
 /* 모바일 최적화 */
 @layer base {
   html {

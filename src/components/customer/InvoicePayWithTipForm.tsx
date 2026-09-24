@@ -112,9 +112,9 @@ export default function InvoicePayWithTipForm({
   )
 
   return (
-    <div className="min-h-[70vh] bg-muted/30 py-16 md:py-24">
-      <div className="mx-auto max-w-lg px-4 sm:px-6 lg:px-8">
-        <div className="rounded-2xl border border-border/60 bg-card p-6 shadow-sm md:p-8">
+    <div className="min-h-dvh bg-muted/30 px-4 py-5 sm:px-6 sm:py-10">
+      <div className="mx-auto w-full max-w-lg">
+        <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm sm:p-8">
           <p className="text-xs font-medium tracking-wide text-muted-foreground">
             {t('invoiceLabel')} {invoiceNumber}
           </p>
@@ -229,7 +229,7 @@ export default function InvoicePayWithTipForm({
             onClick={() => {
               void handlePay()
             }}
-            className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+            className="mt-6 inline-flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-base font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
           >
             {submitting ? (
               <>

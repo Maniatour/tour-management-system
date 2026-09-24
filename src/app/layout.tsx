@@ -21,6 +21,7 @@ import DevServiceWorkerCleanup from "@/components/DevServiceWorkerCleanup";
 import DevBootRecovery from "@/components/DevBootRecovery";
 import { DevBootRecoveryInlineScript } from "@/components/DevBootRecoveryInlineScript";
 import AuthSessionCookieInlineScript from "@/components/AuthSessionCookieInlineScript";
+import PayInvoiceViewportScript from "@/components/customer/PayInvoiceViewportScript";
 import RouteTransitionProgress from "@/components/RouteTransitionProgress";
 import { cn } from "@/lib/utils";
 
@@ -126,6 +127,7 @@ export default function RootLayout({
     <html lang="ko" className={cn(inter.className, "font-sans", customerPageFontVariables)}>
       <body className={cn(inter.className, 'antialiased')}>
         <AuthSessionCookieInlineScript />
+        <PayInvoiceViewportScript />
         <DevBootRecoveryInlineScript />
         <AbortErrorHandler />
         <SafePointerCaptureGuard />

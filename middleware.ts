@@ -218,11 +218,18 @@ export async function middleware(req: NextRequest) {
     sameSite: 'lax',
   })
   setPublicOperatorResponseCookie(res, resolvedPublicOperator)
-  // intlMiddleware가 설정한 쿠키/헤더 복사
+  // intlMiddleware가 설정한 쿠키/헤더 복사.
+  // x-middleware-* 는 요청 헤더 전달용이라, 여기서 덮어쓰면 x-pathname 이 레이아웃에 안 간다.
+  const preservedMiddlewareHeaders = new Map<string, string>()
+  res.headers.forEach((v, k) => {
+    if (k.startsWith('x-middleware-')) preservedMiddlewareHeaders.set(k, v)
+  })
   response.cookies.getAll().forEach((c) => res.cookies.set(c.name, c.value, c))
   response.headers.forEach((v, k) => {
-    if (k !== 'x-middleware-skip') res.headers.set(k, v)
+    if (k === 'x-middleware-skip' || k.startsWith('x-middleware-')) return
+    res.headers.set(k, v)
   })
+  preservedMiddlewareHeaders.forEach((v, k) => res.headers.set(k, v))
 
   // 언어 변경 시 쿠키 설정 (강제 리다이렉트 제거)
   const locale = pathname.split('/')[1]

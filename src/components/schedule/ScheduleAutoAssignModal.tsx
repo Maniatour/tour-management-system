@@ -2,7 +2,13 @@
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { HelpCircle, RefreshCw, X } from 'lucide-react'
+import { HelpCircle, RefreshCw, Users, X } from 'lucide-react'
+import ScheduleAutoAssignGuidePlanModal, {
+  persistGuidePlan,
+  readStoredGuidePlan,
+  type AutoAssignGuideChoice,
+} from '@/components/schedule/ScheduleAutoAssignGuidePlanModal'
+import { mergeGuidePlan, sameGuidePlan } from '@/lib/schedule/autoAssignGuidePlan'
 import {
   assignmentSignature,
   AUTO_ASSIGN_EXISTING_LABEL,
@@ -10,6 +16,7 @@ import {
   AUTO_ASSIGN_PRESET_LABEL,
   AUTO_ASSIGN_RULE_LINES,
   type AutoAssignExistingMode,
+  type AutoAssignGuidePlanEntry,
   type AutoAssignPreset,
   type AutoAssignResult,
 } from '@/lib/schedule/autoAssignSchedule'
@@ -88,9 +95,11 @@ type ScheduleAutoAssignModalProps = {
     variant?: number
     previousSignature?: string | null
     existingMode?: AutoAssignExistingMode
+    guidePlan?: AutoAssignGuidePlanEntry[]
   }) => Promise<AutoAssignPreviewData>
   onApply: (result: AutoAssignResult) => void
   renderPreview: (preview: AutoAssignPreviewData) => ReactNode
+  guides: AutoAssignGuideChoice[]
 }
 
 export default function ScheduleAutoAssignModal({
@@ -101,12 +110,15 @@ export default function ScheduleAutoAssignModal({
   onGenerate,
   onApply,
   renderPreview,
+  guides,
 }: ScheduleAutoAssignModalProps) {
   const [startDate, setStartDate] = useState(initialStart)
   const [endDate, setEndDate] = useState(initialEnd)
   const [preset, setPreset] = useState<AutoAssignPreset>('equal')
   const [existingMode, setExistingMode] = useState<AutoAssignExistingMode>('reset')
   const [helpOpen, setHelpOpen] = useState(false)
+  const [guidePlanOpen, setGuidePlanOpen] = useState(false)
+  const [guidePlan, setGuidePlan] = useState<AutoAssignGuidePlanEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<AutoAssignPreviewData | null>(null)
@@ -128,6 +140,21 @@ export default function ScheduleAutoAssignModal({
     setFrame(defaultModalFrame())
   }, [open, initialStart, initialEnd])
 
+  const guideKey = guides.map((guide) => `${guide.email}\t${guide.name}`).join('\n')
+  useEffect(() => {
+    if (!guides.length) return
+    setGuidePlan((current) => {
+      const stored = readStoredGuidePlan()
+      const next = mergeGuidePlan(guides, stored.length > 0 ? stored : current)
+      return sameGuidePlan(next, current) ? current : next
+    })
+  }, [guideKey])
+
+  const updateGuidePlan = (next: AutoAssignGuidePlanEntry[]) => {
+    setGuidePlan(next)
+    persistGuidePlan(next)
+  }
+
   const generate = async (
     nextPreset = preset,
     nextStart = startDate,
@@ -135,6 +162,7 @@ export default function ScheduleAutoAssignModal({
     nextVariant = 0,
     previousSignature: string | null = null,
     nextExistingMode: AutoAssignExistingMode = existingMode,
+    nextPlan: AutoAssignGuidePlanEntry[] = guidePlan,
   ) => {
     setLoading(true)
     setError('')
@@ -146,6 +174,7 @@ export default function ScheduleAutoAssignModal({
         variant: nextVariant,
         previousSignature,
         existingMode: nextExistingMode,
+        ...(nextPlan.length > 0 ? { guidePlan: nextPlan } : {}),
       })
       setPreview(data)
       if (data.dates[0]) setStartDate(data.dates[0])
@@ -319,6 +348,21 @@ export default function ScheduleAutoAssignModal({
           </div>
           <button
             type="button"
+            onClick={() => {
+              const stored = readStoredGuidePlan()
+              setGuidePlan((current) => mergeGuidePlan(guides, stored.length > 0 ? stored : current))
+              setGuidePlanOpen(true)
+            }}
+            className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-gray-300 px-4 text-sm font-medium text-gray-800 hover:bg-gray-50"
+          >
+            <Users className="h-4 w-4" />
+            가이드 선택
+            {guidePlan.some((entry) => entry.rank === 'standby')
+              ? ` · 제외 ${guidePlan.filter((entry) => entry.rank === 'standby').length}`
+              : ''}
+          </button>
+          <button
+            type="button"
             disabled={loading || !startDate || !endDate}
             onClick={() => void generate(preset, startDate, endDate, 0, null, existingMode)}
             className="h-10 rounded-xl bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
@@ -418,5 +462,20 @@ export default function ScheduleAutoAssignModal({
     </div>
   )
 
-  return createPortal(modal, document.body)
+  return (
+    <>
+      {createPortal(modal, document.body)}
+      <ScheduleAutoAssignGuidePlanModal
+        open={guidePlanOpen}
+        guides={guides}
+        plan={guidePlan}
+        onChange={updateGuidePlan}
+        onClose={() => {
+          persistGuidePlan(guidePlan)
+          setGuidePlanOpen(false)
+          if (preview) void generate()
+        }}
+      />
+    </>
+  )
 }

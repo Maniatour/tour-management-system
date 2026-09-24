@@ -1,6 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
+import { usePathname } from 'next/navigation'
 
 const Sidebar = dynamic(() => import('@/components/Sidebar'), {
   loading: () => (
@@ -12,5 +13,7 @@ const Sidebar = dynamic(() => import('@/components/Sidebar'), {
 })
 
 export default function LazySidebar() {
+  const pathname = usePathname()
+  if (pathname?.includes('/pay/invoice/')) return null
   return <Sidebar />
 }

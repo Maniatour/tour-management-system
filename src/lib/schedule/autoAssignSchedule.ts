@@ -8,6 +8,14 @@ export const AUTO_ASSIGN_MAX_DAYS = 14
 
 export type AutoAssignPreset = 'equal' | 'priority' | 'reviews'
 export type AutoAssignExistingMode = 'keep' | 'reset'
+export type AutoAssignGuideRank = 'priority' | 'normal' | 'low' | 'standby'
+export type AutoAssignWeeklyLoad = 1 | 2 | 3
+
+export type AutoAssignGuidePlanEntry = {
+  email: string
+  rank: AutoAssignGuideRank
+  weeklyLoad: AutoAssignWeeklyLoad
+}
 
 export type AutoAssignRole = 'guide' | 'assistant'
 
@@ -80,6 +88,8 @@ export type AutoAssignInput = {
   variant?: number
   /** keep이면 이미 들어간 배정을 두고 빈칸만 채운다. reset이면 잠긴 배정만 남기고 다시 나눈다. */
   existingMode?: AutoAssignExistingMode
+  /** 없으면 순위·주간 횟수를 쓰지 않는다. 있으면 칸 밖 가이드는 다른 사람이 불가할 때만 쓴다. */
+  guidePlan?: AutoAssignGuidePlanEntry[] | null
 }
 
 export type AutoAssignSlotResult = {
@@ -168,6 +178,7 @@ export const AUTO_ASSIGN_UNFILLED_LABEL: Record<AutoAssignUnfilledReason, string
 export const AUTO_ASSIGN_RULE_LINES = [
   '고객의 한국어·영어·일본어는 가이드와 어시스턴트 언어를 합쳐 맞춰야 합니다.',
   '영어 손님만 있는 투어는 언어 목록에서 영어가 첫 번째인 가이드를 우선 배정합니다. 그날 그런 가이드가 없으면 영어를 할 수 있는 다른 가이드를 배정합니다.',
+  '가이드 선택의 우선·일반·하위는 균등 배정에서 이번 구간 횟수가 같을 때만 아주 조금 유리합니다. 주 1회·주 2회는 그 주를 넘기지 않습니다. 배정 안 함은 다른 가이드가 불가할 때만 씁니다.',
   '오프인 날은 배정하지 않습니다.',
   '밤도깨비는 이틀 연속으로 가지 않습니다. 전날 일정이 있으면 그날은 쉬고 다음날 후보가 됩니다. 밤도깨비 다음날은 다른 투어도 쉬어 갑니다.',
   '절대 금지는 팀을 만들지 않습니다. 기피는 다른 조합이 없을 때만 쓰고, 그때는 경고를 남깁니다.',
@@ -208,6 +219,10 @@ type PersonState = {
   restDates: Set<string>
   assignedInRange: number
   target: number
+  planActive: boolean
+  rank: AutoAssignGuideRank
+  weeklyLoad: AutoAssignWeeklyLoad
+  weekCounts: Map<string, number>
 }
 
 function emailKey(email: string | null | undefined): string {
@@ -340,10 +355,81 @@ function productExplicitlyBlocked(member: AutoAssignMember, productId: string): 
   return Boolean(skill && skill.eligible === false)
 }
 
+function isDeferredGuide(person: PersonState): boolean {
+  if (person.planActive && person.rank !== 'standby') return false
+  return person.owner || (person.planActive && person.rank === 'standby')
+}
+
+function autoAssignWeekKey(ymd: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || '').slice(0, 10))
+  if (!match) return String(ymd || '')
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
+  const weekday = date.getUTCDay() || 7
+  date.setUTCDate(date.getUTCDate() + 4 - weekday)
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
+  const week = Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
+  return `${date.getUTCFullYear()}-${String(week).padStart(2, '0')}`
+}
+
+function weekAssignmentCount(person: PersonState, ymd: string): number {
+  return person.weekCounts.get(autoAssignWeekKey(ymd)) || 0
+}
+
+/** 낮을수록 먼저. 균등 배정에서는 순위 칸을 넣지 않고, 주간 횟수를 넘긴 사람과 배정 안 함만 뒤로 보낸다. */
+function guidePlanPhase(person: PersonState, ymd: string, preset: AutoAssignPreset): number {
+  if (!person.planActive) return 0
+  const count = weekAssignmentCount(person, ymd)
+  const rank = person.rank === 'priority' ? 0 : person.rank === 'normal' ? 1 : person.rank === 'low' ? 2 : 3
+  if (isDeferredGuide(person)) return 300
+  if (preset === 'equal') {
+    if (count < person.weeklyLoad || person.weeklyLoad >= 3) return 0
+    return 200
+  }
+  if (count < person.weeklyLoad) return rank * 10
+  if (person.weeklyLoad >= 3) return 100 + rank * 10
+  return 200 + rank * 10
+}
+
+/** 균등 배정에서 횟수가 같을 때만 쓰는 아주 작은 가산점. */
+function equalRankBonus(person: PersonState): number {
+  if (!person.planActive || person.rank === 'standby') return 0
+  if (person.rank === 'priority') return 1
+  if (person.rank === 'low') return -1
+  return 0
+}
+
+function blankPersonTracking(planActive: boolean): Pick<
+  PersonState,
+  'occupied' | 'off' | 'goblinDates' | 'restDates' | 'assignedInRange' | 'target' | 'planActive' | 'rank' | 'weeklyLoad' | 'weekCounts'
+> {
+  return {
+    occupied: new Set(),
+    off: new Set(),
+    goblinDates: new Set(),
+    restDates: new Set(),
+    assignedInRange: 0,
+    target: 0,
+    planActive,
+    rank: 'normal',
+    weeklyLoad: 3,
+    weekCounts: new Map(),
+  }
+}
+
+function normalizePlanEntry(entry: AutoAssignGuidePlanEntry | undefined): { rank: AutoAssignGuideRank; weeklyLoad: AutoAssignWeeklyLoad } {
+  const weeklyLoad = entry?.weeklyLoad === 1 || entry?.weeklyLoad === 2 || entry?.weeklyLoad === 3 ? entry.weeklyLoad : 3
+  if (!entry) return { rank: 'standby', weeklyLoad }
+  const rank =
+    entry.rank === 'priority' || entry.rank === 'low' || entry.rank === 'standby' || entry.rank === 'normal'
+      ? entry.rank
+      : 'standby'
+  return { rank, weeklyLoad }
+}
+
 /** 영어 손님만 있는 투어는, 진행 가능이 비어 있어도 영어가 첫 언어인 가이드를 후보로 둔다. 명시적으로 불가면 제외한다. */
 function guideMaySkipProductCheck(person: PersonState, tour: AutoAssignTour, relaxProduct: boolean): boolean {
   if (relaxProduct) return true
-  if (person.owner || !isEnglishPrimaryGuide(person.member)) return false
+  if (isDeferredGuide(person) || !isEnglishPrimaryGuide(person.member)) return false
   if (!isEnglishOnlyGuestTour(tour.guestPeople)) return false
   if (productExplicitlyBlocked(person.member, tour.productId)) return false
   return true
@@ -413,7 +499,7 @@ function hasReadyEnglishPrimaryGuide(args: {
 }): boolean {
   if (args.role !== 'guide' || !isEnglishOnlyGuestTour(args.tour.guestPeople)) return false
   return args.people.some((person) => {
-    if (person.owner || !isEnglishPrimaryGuide(person.member)) return false
+    if (isDeferredGuide(person) || !isEnglishPrimaryGuide(person.member)) return false
     return (
       rejection({
         person,
@@ -438,7 +524,11 @@ function commitAssignment(person: PersonState, tour: AutoAssignTour, inRange: bo
     const rest = addDaysToYmd(days[days.length - 1], 1)
     if (rest) person.restDates.add(rest)
   }
-  if (inRange) person.assignedInRange += 1
+  if (inRange) {
+    person.assignedInRange += 1
+    const key = autoAssignWeekKey(tour.tourDate)
+    person.weekCounts.set(key, (person.weekCounts.get(key) || 0) + 1)
+  }
 }
 
 function deficit(person: PersonState): number {
@@ -476,8 +566,10 @@ function reasonForAssignment(args: {
   review: AutoAssignReviewStat | undefined
 }): string[] {
   const lines = [`${AUTO_ASSIGN_PRESET_LABEL[args.preset]} · ${roleLabel(args.tour, args.role)}`]
-  if (args.person.owner) {
+  if (args.person.owner && (!args.person.planActive || args.person.rank === 'standby')) {
     lines.push('다른 사람이 불가해 Joey·채드를 마지막 후보로 배정')
+  } else if (args.person.planActive && args.person.rank === 'standby') {
+    lines.push('다른 가이드가 불가해 배정 안 함에서 배정')
   } else if (args.preset === 'priority') {
     lines.push(`가이드 표 ${args.person.priorityIndex + 1}번째 우선 · 이번 구간 ${args.person.assignedInRange}건`)
   } else if (args.preset === 'reviews') {
@@ -495,6 +587,11 @@ function reasonForAssignment(args: {
   }
   if (args.role === 'guide' && isEnglishOnlyGuestTour(args.tour.guestPeople) && isEnglishPrimaryGuide(args.person.member)) {
     lines.push('영어가 첫 언어라 영어 손님 투어를 우선 배정')
+  }
+  if (args.person.planActive && args.person.rank !== 'standby') {
+    const rankLabel = args.person.rank === 'priority' ? '우선' : args.person.rank === 'low' ? '하위' : '일반'
+    const loadLabel = args.person.weeklyLoad >= 3 ? '주 3회 이상' : `주 ${args.person.weeklyLoad}회`
+    lines.push(`${rankLabel} · ${loadLabel} · 이번 주 ${weekAssignmentCount(args.person, args.tour.tourDate)}건`)
   }
   if (args.role === 'guide') {
     const summary = guideLanguagePrioritySummary(args.person.member.guideProductSkills, args.tour.productId, args.required)
@@ -515,15 +612,19 @@ function setTargets(people: PersonState[], slots: number, preset: AutoAssignPres
     }
     return count
   }
-  const pool = people.filter((person) => person.member.active && !person.owner && available(person) > 0)
+  const pool = people.filter((person) => person.member.active && !isDeferredGuide(person) && available(person) > 0)
   const weightOf = (person: PersonState) => {
     const days = available(person)
+    let weight = Math.max(1, days)
     if (preset === 'priority') {
       const rank = Math.max(1, pool.length - person.priorityIndex)
-      return rank * rank
+      weight = rank * rank
+    } else if (preset === 'reviews') {
+      weight = reviewPriorityScore(reviews.get(person.key))
     }
-    if (preset === 'reviews') return reviewPriorityScore(reviews.get(person.key))
-    return Math.max(1, days)
+    if (!person.planActive || preset === 'equal') return weight
+    const rankWeight = person.rank === 'priority' ? 3 : person.rank === 'low' ? 1 : 2
+    return weight * rankWeight * person.weeklyLoad
   }
   let weights = pool.map((person) => ({ person, weight: weightOf(person), days: available(person) }))
   let total = weights.reduce((sum, row) => sum + row.weight, 0)
@@ -557,6 +658,18 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
 
   const people: PersonState[] = []
   const peopleByKey = new Map<string, PersonState>()
+  const planActive = Array.isArray(input.guidePlan) && input.guidePlan.length > 0
+  const planByKey = new Map<string, AutoAssignGuidePlanEntry>()
+  for (const entry of input.guidePlan || []) {
+    const key = emailKey(entry.email)
+    if (key) planByKey.set(key, entry)
+  }
+  const withPlan = (person: PersonState) => {
+    if (!planActive) return
+    const plan = normalizePlanEntry(planByKey.get(person.key))
+    person.rank = plan.rank
+    person.weeklyLoad = plan.weeklyLoad
+  }
   let priorityCursor = 0
   input.members.forEach((member, index) => {
     const key = emailKey(member.email)
@@ -568,13 +681,9 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
       member,
       priorityIndex: owner ? 1000 + index : priorityCursor,
       owner,
-      occupied: new Set(),
-      off: new Set(),
-      goblinDates: new Set(),
-      restDates: new Set(),
-      assignedInRange: 0,
-      target: 0,
+      ...blankPersonTracking(planActive),
     }
+    withPlan(person)
     if (!owner) priorityCursor += 1
     people.push(person)
     peopleByKey.set(key, person)
@@ -596,13 +705,9 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
       },
       priorityIndex: 5000 + people.length,
       owner: false,
-      occupied: new Set(),
-      off: new Set(),
-      goblinDates: new Set(),
-      restDates: new Set(),
-      assignedInRange: 0,
-      target: 0,
+      ...blankPersonTracking(planActive),
     }
+    withPlan(person)
     people.push(person)
     peopleByKey.set(key, person)
     return person
@@ -664,7 +769,7 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
     const assistantHeldPerson = assistantHeld(tour) ? peopleByKey.get(emailKey(tour.assistantEmail)) || null : null
     let count = 0
     for (const guide of people) {
-      if (guide.owner || !guide.member.active) continue
+      if (isDeferredGuide(guide) || !guide.member.active) continue
       if (guideHeld(tour)) {
         if (!guideHeldPerson || guide.key !== guideHeldPerson.key) continue
       } else if (
@@ -687,7 +792,7 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
         continue
       }
       for (const assistant of people) {
-        if (assistant.owner || !assistant.member.active || assistant.key === guide.key) continue
+        if (isDeferredGuide(assistant) || !assistant.member.active || assistant.key === guide.key) continue
         if (
           rejection({
             person: assistant,
@@ -899,21 +1004,29 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
         })
       }
     }
-    const nonOwner = pairs.filter((pair) => !pair.guide.owner && !pair.assistant.owner)
-    const ownerPool = nonOwner.length > 0 ? nonOwner : pairs
+    const activePairs = pairs.filter((pair) => !isDeferredGuide(pair.guide) && !isDeferredGuide(pair.assistant))
+    const guideActivePairs = pairs.filter((pair) => !isDeferredGuide(pair.guide))
+    const available = activePairs.length > 0 ? activePairs : guideActivePairs.length > 0 ? guideActivePairs : pairs
+    const nonOwner = available.filter((pair) => !pair.guide.owner && !pair.assistant.owner)
+    const ownerPool = nonOwner.length > 0 ? nonOwner : available
     const preferred = ownerPool.filter((pair) => !pair.avoid)
     const pool = preferred.length > 0 ? preferred : ownerPool
     const englishGuidePairs =
       !relaxProduct && isEnglishOnlyGuestTour(tour.guestPeople)
-        ? pool.filter((pair) => isEnglishPrimaryGuide(pair.guide.member) && !pair.guide.owner)
+        ? pool.filter((pair) => isEnglishPrimaryGuide(pair.guide.member) && !isDeferredGuide(pair.guide))
         : []
     const ranked = englishGuidePairs.length > 0 ? englishGuidePairs : pool
     const bestScore = ranked.reduce((best, pair) => Math.max(best, deficit(pair.guide) + deficit(pair.assistant)), Number.NEGATIVE_INFINITY)
     const near =
-      variant > 0
-        ? ranked.filter((pair) => bestScore - (deficit(pair.guide) + deficit(pair.assistant)) <= 1)
-        : ranked
+      planActive || variant === 0
+        ? ranked
+        : ranked.filter((pair) => bestScore - (deficit(pair.guide) + deficit(pair.assistant)) <= 1)
     near.sort((a, b) => {
+      const phase =
+        guidePlanPhase(a.guide, tour.tourDate, effectivePreset) +
+        guidePlanPhase(a.assistant, tour.tourDate, effectivePreset) -
+        (guidePlanPhase(b.guide, tour.tourDate, effectivePreset) + guidePlanPhase(b.assistant, tour.tourDate, effectivePreset))
+      if (phase !== 0) return phase
       const rating =
         guideLanguagePriorityScore(b.guide.member.guideProductSkills, tour.productId, required) -
         guideLanguagePriorityScore(a.guide.member.guideProductSkills, tour.productId, required)
@@ -924,6 +1037,10 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
       }
       const score = deficit(b.guide) + deficit(b.assistant) - (deficit(a.guide) + deficit(a.assistant))
       if (Math.abs(score) > 1e-9) return score
+      if (effectivePreset === 'equal') {
+        const bonus = equalRankBonus(b.guide) + equalRankBonus(b.assistant) - (equalRankBonus(a.guide) + equalRankBonus(a.assistant))
+        if (bonus !== 0) return bonus
+      }
       return a.guide.priorityIndex + a.assistant.priorityIndex - (b.guide.priorityIndex + b.assistant.priorityIndex)
     })
     const chosen = near[0]
@@ -980,12 +1097,14 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
   }
 
   function pickPerson(candidates: PersonState[], tour: AutoAssignTour, role: AutoAssignRole): PersonState | null {
-    const primary = candidates.filter((person) => !person.owner)
-    const pool = primary.length > 0 ? primary : candidates.filter((person) => person.owner)
+    const primary = candidates.filter((person) => !isDeferredGuide(person))
+    const pool = primary.length > 0 ? primary : candidates
     if (pool.length === 0) return null
     const best = pool.reduce((max, person) => Math.max(max, deficit(person)), Number.NEGATIVE_INFINITY)
-    const near = variant > 0 ? pool.filter((person) => best - deficit(person) <= 1) : pool
+    const near = planActive || variant === 0 ? pool : pool.filter((person) => best - deficit(person) <= 1)
     return [...near].sort((a, b) => {
+      const phase = guidePlanPhase(a, tour.tourDate, effectivePreset) - guidePlanPhase(b, tour.tourDate, effectivePreset)
+      if (phase !== 0) return phase
       if (role === 'guide') {
         const rating =
           guideLanguagePriorityScore(b.member.guideProductSkills, tour.productId, requiredGuestLocales(tour.guestPeople)) -
@@ -998,6 +1117,10 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
       }
       const gap = deficit(b) - deficit(a)
       if (Math.abs(gap) > 1e-9) return gap
+      if (effectivePreset === 'equal') {
+        const bonus = equalRankBonus(b) - equalRankBonus(a)
+        if (bonus !== 0) return bonus
+      }
       return a.priorityIndex - b.priorityIndex
     })[0]
   }

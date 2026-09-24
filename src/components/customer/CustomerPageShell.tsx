@@ -26,6 +26,14 @@ export default function CustomerPageShell({
   const footerBleedClass = 'customer-site-footer-bleed w-full'
 
   useEffect(() => {
+    if (!window.location.pathname.includes('/pay/invoice/')) return
+    document.documentElement.classList.add('pay-invoice-standalone')
+    return () => {
+      document.documentElement.classList.remove('pay-invoice-standalone')
+    }
+  }, [])
+
+  useEffect(() => {
     if (window.parent === window) return
 
     const notifyOnce = () => {

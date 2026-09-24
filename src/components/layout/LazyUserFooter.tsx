@@ -15,6 +15,6 @@ const UserFooter = dynamic(() => import('@/components/UserFooter'), {
 
 export default function LazyUserFooter({ locale }: { locale: string }) {
   const pathname = usePathname()
-  if (pathname?.includes('/guide')) return null
+  if (pathname?.includes('/guide') || pathname?.includes('/pay/invoice/')) return null
   return <UserFooter locale={locale} />
 }

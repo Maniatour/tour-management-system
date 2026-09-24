@@ -168,6 +168,19 @@ export default async function LocaleLayout({
     );
   }
 
+  // 잔금 QR 결제: 사이트 헤더·사이드바 없이 휴대폰 전체 화면
+  if (isCustomerPayInvoice) {
+    return (
+      <NextIntlClientProvider messages={messages} locale={locale}>
+        {brandingWrapper(
+          <div className="min-h-dvh min-w-0 max-w-full overflow-x-clip bg-muted/30">
+            {children}
+          </div>
+        )}
+      </NextIntlClientProvider>
+    );
+  }
+
   // 일반 페이지인 경우 기존 레이아웃 사용
   return (
     <NextIntlClientProvider messages={messages} locale={locale}>
