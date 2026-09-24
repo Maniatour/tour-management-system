@@ -25,6 +25,7 @@ import { TOUR_DETAIL_NESTED_PICKER_Z_INDEX } from '@/lib/dialogZIndex'
 import { setTourPhotoHiddenByAdmin } from '@/lib/tourPhotoVisibility'
 import { moveTourPhotoToReceipt } from '@/lib/moveTourPhotoToReceipt'
 import { deleteTourPhotoFromStorageAndDb } from '@/lib/deleteTourPhoto'
+import { snapshotInputFiles } from '@/lib/imageUtils'
 
 interface TourPhoto {
   id: string
@@ -495,7 +496,7 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
   }, [isReady, folderStatus, tourId, loadPhotos])
 
   // 사진 업로드
-  const handleFileUpload = async (files: FileList | null) => {
+  const handleFileUpload = async (files: FileList | File[] | null) => {
     console.log('handleFileUpload called with:', files)
     console.log('Files type:', typeof files)
     console.log('Files is null?', files === null)
@@ -818,16 +819,48 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
     setDragOver(false)
   }
 
+  const readPickedFiles = async (list: FileList | null) => {
+    const files = await snapshotInputFiles(list)
+    return files.filter((file) => file.size > 0)
+  }
+
+  const consumeFileInput = (input: HTMLInputElement) => {
+    const list = input.files
+    if (!list || list.length === 0) return
+    void (async () => {
+      try {
+        const files = await readPickedFiles(list)
+        input.value = ''
+        if (files.length === 0) {
+          alert(t('noFilesSelected'))
+          return
+        }
+        void handleFileUpload(files)
+      } catch (error) {
+        input.value = ''
+        console.error('Tour photo file read failed:', error)
+        alert(t('uploadErrorGeneric', { error: error instanceof Error ? error.message : String(error) }))
+      }
+    })()
+  }
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
-    const files = e.dataTransfer.files
-    if (files && files.length > 0) {
-      console.log('Files dropped:', files.length)
-      handleFileUpload(files)
-    } else {
+    const incoming = e.dataTransfer.files
+    if (!incoming || incoming.length === 0) {
       console.log('No files in drop event')
+      return
     }
+    void (async () => {
+      const files = await readPickedFiles(incoming)
+      if (files.length === 0) {
+        alert(t('noFilesSelected'))
+        return
+      }
+      console.log('Files dropped:', files.length)
+      void handleFileUpload(files)
+    })()
   }
 
   return (
@@ -952,61 +985,31 @@ const TourPhotoUpload = forwardRef<TourPhotoUploadHandle, TourPhotoUploadProps>(
             : t('fileFormats')
           }
         </p>
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept={TOUR_PHOTO_FILE_ACCEPT}
-          onChange={(e) => {
-            const target = e.target as HTMLInputElement
-            const list = target.files
-            if (list && list.length > 0) {
-              console.log('File input files selected:', list.length)
-              handleFileUpload(list)
-            } else {
-              console.log('No files selected from file input')
-            }
-            // 모바일: change 직후 value 초기화가 FileList 무효화를 유발할 수 있어 다음 틱으로 미룸
-            requestAnimationFrame(() => {
-              target.value = ''
-            })
-          }}
-          className="hidden"
-        />
-        <input
-          ref={cameraInputRef}
-          type="file"
-          accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp,.gif"
-          capture={typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'environment' : undefined}
-          onChange={(e) => {
-            const target = e.target as HTMLInputElement
-            const list = target.files
-            console.log('Camera input onChange triggered')
-            console.log('Files:', list)
-            console.log('Files length:', list?.length)
-            
-            if (list && list.length > 0) {
-              console.log('Camera input files selected:', list.length)
-              console.log('File details:', {
-                name: list[0].name,
-                size: list[0].size,
-                type: list[0].type
-              })
-              handleFileUpload(list)
-            } else {
-              console.log('No files selected from camera input - user may have cancelled')
-            }
-            
-            requestAnimationFrame(() => {
-              target.value = ''
-            })
-          }}
-          onClick={() => {
-            console.log('Camera input clicked')
-          }}
-          className="hidden"
-        />
       </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept={TOUR_PHOTO_FILE_ACCEPT}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => {
+          e.stopPropagation()
+          consumeFileInput(e.currentTarget)
+        }}
+        className="hidden"
+      />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp,.gif"
+        capture={typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'environment' : undefined}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => {
+          e.stopPropagation()
+          consumeFileInput(e.currentTarget)
+        }}
+        className="hidden"
+      />
 
       {/* 사진 목록 */}
       {photos.length > 0 && (

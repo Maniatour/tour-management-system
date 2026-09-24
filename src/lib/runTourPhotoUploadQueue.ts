@@ -14,7 +14,9 @@ import {
   runWithConcurrency,
   tourPhotoMaxBytesForFile,
   tourPhotoMetadataKey,
+  tourPhotoNeedsJpegTranscode,
   tourPhotoStorageExtension,
+  transcodeTourPhotoToJpeg,
   withUploadRetries,
 } from '@/lib/tourPhotoUploadUtils'
 import {
@@ -168,27 +170,33 @@ export async function runTourPhotoUploadQueue(
     try {
       await runWithConcurrency(toUpload, concurrency, async (file) => {
       try {
+        let uploadFile = file
+        if (tourPhotoNeedsJpegTranscode(file)) {
+          const jpeg = await transcodeTourPhotoToJpeg(file)
+          if (jpeg) uploadFile = jpeg
+        }
+
         let uploaded: UploadedTourPhotoRef | null = null
         await withUploadRetries(
           async () => {
-            const maxBytes = tourPhotoMaxBytesForFile(file)
-            if (file.size > maxBytes) {
+            const maxBytes = tourPhotoMaxBytesForFile(uploadFile)
+            if (uploadFile.size > maxBytes) {
               const maxMb = Math.round(maxBytes / (1024 * 1024))
-              throw new Error(interpolate(labels.fileTooLarge, { name: file.name, maxMb }))
+              throw new Error(interpolate(labels.fileTooLarge, { name: uploadFile.name, maxMb }))
             }
-            if (!isLikelyTourMediaFile(file)) {
+            if (!isLikelyTourMediaFile(uploadFile)) {
               throw new Error(`${labels.mediaOnlyError}: ${file.name}`)
             }
 
-            const isVideo = isLikelyTourVideoFile(file)
-            const resolvedMime = inferTourPhotoMimeType(file)
-            const safeExt = tourPhotoStorageExtension(file)
+            const isVideo = isLikelyTourVideoFile(uploadFile)
+            const resolvedMime = inferTourPhotoMimeType(uploadFile)
+            const safeExt = tourPhotoStorageExtension(uploadFile)
             const fileName = `${Date.now()}-${crypto.randomUUID()}.${safeExt}`
             const filePath = `${tourId}/${fileName}`
 
             const { data: uploadData, error: uploadError } = await supabase.storage
               .from('tour-photos')
-              .upload(filePath, file, {
+              .upload(filePath, uploadFile, {
                 cacheControl: '3600',
                 upsert: false,
                 contentType: resolvedMime,
@@ -200,8 +208,8 @@ export async function runTourPhotoUploadQueue(
             let thumbnailPath: string | null = null
             try {
               const thumbnailBlob = isVideo
-                ? await createVideoThumbnail(file, 400, 400, 0.8)
-                : await createThumbnail(file, 400, 400, 0.8)
+                ? await createVideoThumbnail(uploadFile, 400, 400, 0.8)
+                : await createThumbnail(uploadFile, 400, 400, 0.8)
               const thumbnailFileName = isVideo
                 ? getJpegThumbnailFileName(fileName)
                 : getThumbnailFileName(fileName)
@@ -226,8 +234,8 @@ export async function runTourPhotoUploadQueue(
               .insert({
                 tour_id: tourId,
                 file_path: uploadData.path,
-                file_name: file.name,
-                file_size: file.size,
+                file_name: uploadFile.name,
+                file_size: uploadFile.size,
                 mime_type: resolvedMime.slice(0, 100),
                 uploaded_by: uploadedBy,
                 share_token: shareToken,

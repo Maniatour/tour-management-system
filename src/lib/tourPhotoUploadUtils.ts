@@ -72,10 +72,103 @@ export function isLikelyTourMediaFile(file: File): boolean {
   return TOUR_PHOTO_FILENAME_EXT_REGEX.test(file.name)
 }
 
+/** 버킷이 그대로 받는 이미지 MIME. HEIC·Live Photo 계열은 JPEG로 바꾼 뒤 올린다. */
+const TOUR_PHOTO_STORAGE_SAFE_IMAGE_MIMES = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/bmp',
+  'image/tiff',
+  'image/avif',
+])
+
+/** 아이폰 카메라롤 원본(HEIC/HEIF, Live Photo) */
+export function isHeicLikeTourPhoto(file: File): boolean {
+  const t = fileTypeToken(file)
+  if (t.includes('heic') || t.includes('heif')) return true
+  return /\.(heic|heif)$/i.test(file.name || '')
+}
+
+/**
+ * 카메라로 미리 찍어 둔 사진은 JPEG가 아닌 경우가 많다.
+ * 브라우저가 디코딩할 수 있으면 JPEG로 바꿔 Storage·미리보기가 받게 한다.
+ */
+export function tourPhotoNeedsJpegTranscode(file: File): boolean {
+  if (isLikelyTourVideoFile(file)) return false
+  if (isHeicLikeTourPhoto(file)) return true
+  const t = fileTypeToken(file)
+  if (t.startsWith('image/') && !TOUR_PHOTO_STORAGE_SAFE_IMAGE_MIMES.has(t)) return true
+  if (
+    (t === '' || t === 'application/octet-stream') &&
+    !TOUR_PHOTO_FILENAME_EXT_REGEX.test(file.name || '')
+  ) {
+    return true
+  }
+  return false
+}
+
+function clampTourPhotoEdge(width: number, height: number, maxEdge: number) {
+  const longest = Math.max(width, height)
+  if (longest <= maxEdge) return { width, height }
+  const scale = maxEdge / longest
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  }
+}
+
+async function decodeTourPhotoBitmap(file: File): Promise<ImageBitmap | null> {
+  if (typeof createImageBitmap !== 'function') return null
+  try {
+    return await createImageBitmap(file, { imageOrientation: 'from-image' })
+  } catch {
+    try {
+      return await createImageBitmap(file)
+    } catch {
+      return null
+    }
+  }
+}
+
+/** HEIC 등 카메라롤 사진을 JPEG로 변환. 실패하면 null (원본 업로드로 폴백). */
+export async function transcodeTourPhotoToJpeg(file: File): Promise<File | null> {
+  if (typeof document === 'undefined') return null
+  const bitmap = await decodeTourPhotoBitmap(file)
+  if (!bitmap) return null
+
+  try {
+    if (bitmap.width < 1 || bitmap.height < 1) return null
+    const sized = clampTourPhotoEdge(bitmap.width, bitmap.height, 3840)
+    const canvas = document.createElement('canvas')
+    canvas.width = sized.width
+    canvas.height = sized.height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.drawImage(bitmap, 0, 0, sized.width, sized.height)
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, 'image/jpeg', 0.92)
+    })
+    if (!blob || blob.size < 1) return null
+    const stem = (file.name || 'tour-photo').replace(/\.[^.]+$/, '').trim() || 'tour-photo'
+    return new File([blob], `${stem}.jpg`, {
+      type: 'image/jpeg',
+      lastModified: file.lastModified || Date.now(),
+    })
+  } finally {
+    bitmap.close()
+  }
+}
+
 /** Storage·DB에 넣을 MIME (빈 type이면 확장자로 추정) */
 export function inferTourPhotoMimeType(file: File): string {
-  const t = file.type?.trim()
-  if (t && (t.startsWith('image/') || t.startsWith('video/'))) return t
+  const raw = file.type?.trim()
+  const t = raw?.toLowerCase()
+  if (t && (t.startsWith('image/') || t.startsWith('video/'))) {
+    if (t.includes('heic') || t.includes('heif')) return 'image/heic'
+    return raw
+  }
   const m = file.name.toLowerCase().match(/\.([a-z0-9]+)$/)
   const ext = m?.[1]?.toLowerCase()
   switch (ext) {

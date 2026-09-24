@@ -10,6 +10,7 @@ import GuideLiveCameraOverlay from '@/components/guide/GuideLiveCameraOverlay'
 import GuidePhotoLightbox, { type GuidePhotoLightboxItem } from '@/components/guide/GuidePhotoLightbox'
 import { openGuideLiveCameraStream } from '@/lib/guideLiveCameraFocus'
 import { prepareGuideQuickPhoto } from '@/lib/guideQuickPhotoProcess'
+import { snapshotInputFiles } from '@/lib/imageUtils'
 import { classifyGuideQuickCapture, type GuideQuickCaptureKind } from '@/lib/guideQuickPhotoClassify'
 import { deleteGuideQuickReceipt, uploadGuideQuickReceipt } from '@/lib/guideQuickReceiptUpload'
 import { deleteTourPhotoFromStorageAndDb } from '@/lib/deleteTourPhoto'
@@ -642,12 +643,21 @@ const GuideQuickPhotoSheet = forwardRef<GuideQuickPhotoSheetHandle, GuideQuickPh
   }, [])
 
   const onFilePicked = (event: ChangeEvent<HTMLInputElement>) => {
-    const target = event.target
-    const file = target.files?.[0]
-    if (file) void handleCapturedFile(file, selectedStopId)
-    requestAnimationFrame(() => {
-      target.value = ''
-    })
+    const input = event.currentTarget
+    const list = input.files
+    if (!list || list.length === 0) return
+    const stopId = selectedStopId
+    void (async () => {
+      try {
+        const files = await snapshotInputFiles(list)
+        input.value = ''
+        const file = files.find((item) => item.size > 0)
+        if (file) void handleCapturedFile(file, stopId)
+      } catch (error) {
+        input.value = ''
+        console.error('Guide photo file read failed:', error)
+      }
+    })()
   }
 
   const cameraInput = (
