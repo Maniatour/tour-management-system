@@ -2,6 +2,7 @@ import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { generateCustomerId, generateReservationId } from '@/lib/entityIds'
 import { syncReservationPricingAggregates } from '@/lib/syncReservationPricingAggregates'
 import { isManiatourHomepageBookingEmail } from '@/lib/emailReservationParser'
+import { WIX_HOMEPAGE_CHANNEL_ID } from '@/lib/platformChannelMapping'
 import {
   resolveImportCustomerLanguage,
   resolveImportTourLanguage,
@@ -44,7 +45,7 @@ function depositPaymentMethodIdForEmailImport(
   channelId: string,
   importRow: { platform_key?: string | null; source_email?: string | null; subject?: string | null }
 ): string {
-  const homepageChannel = channelId === 'M00001'
+  const homepageChannel = channelId === 'M00001' || channelId === WIX_HOMEPAGE_CHANNEL_ID
   const homepagePlatform = (importRow.platform_key ?? '').toLowerCase() === 'maniatour'
   const homepageWixEmail = isManiatourHomepageBookingEmail(
     importRow.source_email ?? null,

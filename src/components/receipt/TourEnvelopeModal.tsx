@@ -3,6 +3,9 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { X, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fetchApiWithAuthWhenReady } from '@/lib/api-client-bearer'
+import { cardFeeChargeTotals } from '@/components/payment/CardFeeChargePreview'
+import BalanceEnvelopePaymentMark from '@/components/receipt/BalanceEnvelopePaymentMark'
 import {
   createOffscreenPrintIframe,
   removePrintIframe,
@@ -176,6 +179,13 @@ export type EnvelopeRow = {
   balanceLines: BalanceEnvelopeLine[]
 }
 
+type BalanceQrLink = {
+  reservationId: string
+  sitePayUrl: string
+  chargeUsd: number
+  error?: string
+}
+
 export type EnvelopeVariant = 'tip' | 'balance'
 
 export interface TourEnvelopeModalProps {
@@ -325,6 +335,9 @@ export default function TourEnvelopeModal({
   const [error, setError] = useState<string | null>(null)
   const [printWithImage, setPrintWithImage] = useState(true)
   const [selectedReservationIds, setSelectedReservationIds] = useState<Set<string>>(new Set())
+  const [qrLinks, setQrLinks] = useState<BalanceQrLink[]>([])
+  const [qrPreparing, setQrPreparing] = useState(false)
+  const [qrError, setQrError] = useState<string | null>(null)
 
   const L = locale === 'ko' ? LABELS.ko : LABELS.en
   const envelopeImageUrl = resolveEnvelopeImageUrl(ENVELOPE_IMAGE_PATH[variant])
@@ -617,6 +630,101 @@ export default function TourEnvelopeModal({
     }
   }, [isOpen, reservationIds.join(','), variant])
 
+  useEffect(() => {
+    if (!isOpen || variant !== 'balance' || loading) {
+      if (!isOpen || variant !== 'balance') {
+        setQrLinks([])
+        setQrPreparing(false)
+        setQrError(null)
+      }
+      return
+    }
+
+    const items = rows
+      .filter((row) => row.balanceAmount > 0.005 && (row.currency || 'USD').toUpperCase() === 'USD')
+      .map((row) => ({
+        reservationId: row.reservationId,
+        recipientName: row.customerName,
+        balanceUsd: Math.round(row.balanceAmount * 100) / 100,
+      }))
+
+    if (items.length === 0) {
+      setQrLinks([])
+      setQrPreparing(false)
+      setQrError(null)
+      return
+    }
+
+    let cancelled = false
+    const prepare = async () => {
+      setQrPreparing(true)
+      setQrError(null)
+      try {
+        const links: BalanceQrLink[] = []
+        for (let index = 0; index < items.length; index += 40) {
+          const chunk = items.slice(index, index + 40)
+          const res = await fetchApiWithAuthWhenReady('/api/invoices/tour-balance-qr', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              locale: locale === 'ko' ? 'ko' : 'en',
+              tourDate,
+              items: chunk,
+            }),
+          })
+          if (!res) {
+            if (!cancelled) {
+              setQrError(locale === 'ko' ? '로그인 세션을 확인한 뒤 다시 인쇄해 주세요.' : 'Check your session and try again.')
+            }
+            return
+          }
+          const data = (await res.json().catch(() => null)) as
+            | { error?: string; links?: BalanceQrLink[] }
+            | null
+          if (!res.ok || !data?.links) {
+            if (!cancelled) {
+              setQrError(
+                data?.error ||
+                  (locale === 'ko'
+                    ? '카드 QR을 만들지 못했습니다. 봉투는 QR 없이 인쇄할 수 있습니다.'
+                    : 'Could not create card QR codes. Envelopes can still be printed without them.')
+              )
+            }
+            return
+          }
+          links.push(...data.links)
+        }
+        if (cancelled) return
+        setQrLinks(links)
+        const failed = links.filter((link) => !link.sitePayUrl)
+        if (failed.length > 0) {
+          setQrError(
+            locale === 'ko'
+              ? `${failed.length}명의 카드 QR을 만들지 못했습니다. 나머지는 봉투에 인쇄됩니다.`
+              : `${failed.length} card QR code${failed.length === 1 ? '' : 's'} could not be created. The rest will print on the envelopes.`
+          )
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setQrError(
+            err instanceof Error
+              ? err.message
+              : locale === 'ko'
+                ? '카드 QR을 만들지 못했습니다. 봉투는 QR 없이 인쇄할 수 있습니다.'
+                : 'Could not create card QR codes. Envelopes can still be printed without them.'
+          )
+        }
+      } finally {
+        if (!cancelled) setQrPreparing(false)
+      }
+    }
+
+    void prepare()
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, variant, loading, rows, locale, tourDate])
+
   const waitForDocumentImages = (doc: Document, timeoutMs = 2500): Promise<void> =>
     new Promise((resolve) => {
       const images = Array.from(doc.querySelectorAll('img'))
@@ -693,6 +801,8 @@ export default function TourEnvelopeModal({
       removePrintIframe(iframe)
     }
   }
+
+  const qrByReservationId = new Map(qrLinks.map((link) => [link.reservationId, link]))
 
   if (!isOpen) return null
 
@@ -789,6 +899,23 @@ export default function TourEnvelopeModal({
                 </label>
               </div>
 
+              {variant === 'balance' ? (
+                <p className="mb-3 text-sm text-gray-600">
+                  {qrPreparing
+                    ? locale === 'ko'
+                      ? '카드 결제 QR을 만드는 중입니다.'
+                      : 'Creating card payment QR codes.'
+                    : locale === 'ko'
+                      ? '카드 결제 QR은 봉투 오른쪽 아래, 회사 로고는 오른쪽 위에 인쇄됩니다.'
+                      : 'The card QR prints at the bottom right. The company logo prints at the top right.'}
+                </p>
+              ) : null}
+              {qrError ? (
+                <p className="mb-3 text-sm text-red-600" role="alert">
+                  {qrError}
+                </p>
+              ) : null}
+
               <div className="border-t border-gray-200 pt-6 mt-8 flex flex-col gap-2">
                 <span className="text-sm font-medium text-gray-600">{L.preview}</span>
                 <div className={variant === 'balance' ? 'flex justify-center overflow-x-auto overflow-visible' : ''}>
@@ -796,6 +923,12 @@ export default function TourEnvelopeModal({
                   {rows.filter((row) => selectedReservationIds.has(row.reservationId)).map((row, idx) => {
                     const balanceLayout =
                       variant === 'balance' ? buildBalanceBlockLayout(row.balanceLines.length) : null
+                    const qrLink = qrByReservationId.get(row.reservationId)
+                    const cardCharge =
+                      qrLink?.chargeUsd && qrLink.chargeUsd > 0
+                        ? qrLink.chargeUsd
+                        : cardFeeChargeTotals(row.balanceAmount).total
+                    const cardFee = Math.max(0, Math.round((cardCharge - row.balanceAmount) * 100) / 100)
                     return (
                     <div
                       key={`${row.reservationId}-${idx}`}
@@ -910,6 +1043,23 @@ export default function TourEnvelopeModal({
                           </div>
                         </>
                       ) : null}
+                      {variant === 'balance' ? (
+                        <BalanceEnvelopePaymentMark
+                          envelopeWidthMm={ENVELOPE_WIDTH_MM}
+                          envelopeHeightMm={ENVELOPE_HEIGHT_MM}
+                          coverPrintedLogo={printWithImage}
+                          payUrl={qrLink?.sitePayUrl || null}
+                          cardAmounts={
+                            qrLink?.sitePayUrl
+                              ? {
+                                  balance: formatMoney(row.balanceAmount, 'USD'),
+                                  fee: formatMoney(cardFee, 'USD'),
+                                  total: formatMoney(cardCharge, 'USD'),
+                                }
+                              : null
+                          }
+                        />
+                      ) : null}
                     </div>
                     )
                   })}
@@ -925,11 +1075,15 @@ export default function TourEnvelopeModal({
             <button
               type="button"
               onClick={handlePrint}
-              disabled={selectedReservationIds.size === 0}
+              disabled={selectedReservationIds.size === 0 || (variant === 'balance' && qrPreparing)}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               <Printer className="w-4 h-4" />
-              {L.print}
+              {variant === 'balance' && qrPreparing
+                ? locale === 'ko'
+                  ? 'QR 준비 중…'
+                  : 'Preparing QR…'
+                : L.print}
             </button>
             <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
               {L.close}

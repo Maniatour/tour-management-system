@@ -23,6 +23,8 @@ import { supabase } from '@/lib/supabase'
 import { ADMIN_SMS_CATEGORIES } from '@/lib/adminSmsTemplateCatalog'
 import { resolveAdminSmsCategoryLabel } from '@/lib/adminSmsCategorySettings'
 import { useAdminSmsCategorySettings } from '@/hooks/useAdminSmsCategorySettings'
+import { ScheduleTooltipZIndexContext } from '@/components/schedule/ScheduleHoverTooltip'
+import SmsFailureHover from '@/components/reservation/SmsFailureHover'
 import { childModalZIndex, DIALOG_Z_INDEX } from '@/lib/dialogZIndex'
 import { RESERVATION_CARD_SMS_CATEGORY_IDS } from '@/lib/reservationOutboundSmsCategories'
 import type { ReservationOutboundSmsCategoryId } from '@/lib/reservationOutboundSmsCategories'
@@ -372,6 +374,7 @@ export default function AllSmsHistoryModal({
         : `${items.length}건 표시`
 
   return createPortal(
+    <ScheduleTooltipZIndexContext.Provider value={DIALOG_Z_INDEX.elevated + 40}>
     <div
       className="fixed inset-0 flex items-center justify-center bg-black/50 p-4"
       style={{ zIndex: DIALOG_Z_INDEX.elevated }}
@@ -525,11 +528,24 @@ export default function AllSmsHistoryModal({
                         <Send className="h-4 w-4 shrink-0 text-amber-600" aria-hidden />
                       )}
                       <span className="text-sm font-semibold text-foreground">{categoryLabel}</span>
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${smsDeliveryStateBadgeClasses(deliveryState)}`}
-                      >
-                        {smsDeliveryStateLabel(deliveryState, uiLocale)}
-                      </span>
+                      {deliveryState === 'failed' ? (
+                        <SmsFailureHover
+                          raw={item.failure_reason || item.error_message}
+                          locale={uiLocale}
+                        >
+                          <span
+                            className={`inline-flex cursor-help rounded-full px-2 py-0.5 text-[11px] font-medium ${smsDeliveryStateBadgeClasses(deliveryState)}`}
+                          >
+                            {smsDeliveryStateLabel(deliveryState, uiLocale)}
+                          </span>
+                        </SmsFailureHover>
+                      ) : (
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${smsDeliveryStateBadgeClasses(deliveryState)}`}
+                        >
+                          {smsDeliveryStateLabel(deliveryState, uiLocale)}
+                        </span>
+                      )}
                       <span className="text-[11px] text-muted-foreground">
                         {formatWhen(item.created_at, uiLocale)}
                       </span>
@@ -555,10 +571,15 @@ export default function AllSmsHistoryModal({
                       </p>
                     ) : null}
                     {(item.failure_reason || item.error_message) && deliveryState === 'failed' ? (
-                      <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-800">
-                        <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                        <span>{item.failure_reason || item.error_message}</span>
-                      </p>
+                      <SmsFailureHover
+                        raw={item.failure_reason || item.error_message}
+                        locale={uiLocale}
+                      >
+                        <p className="mt-2 flex cursor-help items-start gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-800">
+                          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                          <span>{item.failure_reason || item.error_message}</span>
+                        </p>
+                      </SmsFailureHover>
                     ) : null}
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {deliveryState === 'failed' && categoryId ? (
@@ -652,7 +673,8 @@ export default function AllSmsHistoryModal({
         reservationId={detailReservationId}
         modalZIndex={childModalZIndex(DIALOG_Z_INDEX.elevated)}
       />
-    </div>,
+    </div>
+    </ScheduleTooltipZIndexContext.Provider>,
     document.body
   )
 }

@@ -136,3 +136,152 @@ export async function deliverCustomerBookingConfirmationEmail(
 
   return { ok: false, error: lastError }
 }
+
+export const OFFICE_NEW_BOOKING_EMAIL = 'info@maniatour.com'
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/**
+ * kovegas.com 예약이 새로 들어오면 사무실 메일로 알린다.
+ * 같은 예약번호로 이미 보낸 종류는 다시 보내지 않는다.
+ */
+export async function notifyOfficeOfNewWebReservation(
+  admin: AdminClient,
+  args: {
+    reservationId: string
+    kind: 'paid' | 'inquiry'
+  }
+): Promise<void> {
+  const emailType = args.kind === 'paid' ? 'office_new_booking_paid' : 'office_new_booking_inquiry'
+  try {
+    const { data: already } = await admin
+      .from('email_logs')
+      .select('id')
+      .eq('reservation_id', args.reservationId)
+      .eq('email_type', emailType)
+      .eq('status', 'sent')
+      .limit(1)
+      .maybeSingle()
+    if (already?.id) return
+
+    const resendApiKey = process.env.RESEND_API_KEY
+    if (!resendApiKey) {
+      console.error('[notifyOfficeOfNewWebReservation] RESEND_API_KEY missing', args.reservationId)
+      return
+    }
+
+    const { data: reservation } = await admin
+      .from('reservations')
+      .select('id, tour_date, adults, child, infant, product_id, customer_id, status, event_note')
+      .eq('id', args.reservationId)
+      .maybeSingle()
+    if (!reservation) return
+
+    let customerName = ''
+    let customerEmail = ''
+    let customerPhone = ''
+    if (reservation.customer_id) {
+      const { data: customer } = await admin
+        .from('customers')
+        .select('name, email, phone')
+        .eq('id', reservation.customer_id)
+        .maybeSingle()
+      customerName = customer?.name?.trim() || ''
+      customerEmail = customer?.email?.trim() || ''
+      customerPhone = customer?.phone?.trim() || ''
+    }
+
+    let productName = reservation.product_id || ''
+    if (reservation.product_id) {
+      const { data: product } = await admin
+        .from('products')
+        .select('internal_name_ko, customer_name_ko, name_ko, name')
+        .eq('id', reservation.product_id)
+        .maybeSingle()
+      productName =
+        product?.internal_name_ko?.trim() ||
+        product?.customer_name_ko?.trim() ||
+        product?.name_ko?.trim() ||
+        product?.name?.trim() ||
+        productName
+    }
+
+    const { data: pricing } = await admin
+      .from('reservation_pricing')
+      .select('total_price')
+      .eq('reservation_id', args.reservationId)
+      .maybeSingle()
+    const amount = Number(pricing?.total_price)
+    const amountLabel = Number.isFinite(amount)
+      ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
+      : ''
+
+    const guestBits = [
+      Number(reservation.adults) > 0 ? `성인 ${reservation.adults}` : '',
+      Number(reservation.child) > 0 ? `아동 ${reservation.child}` : '',
+      Number(reservation.infant) > 0 ? `유아 ${reservation.infant}` : '',
+    ].filter(Boolean)
+    const headline =
+      args.kind === 'paid'
+        ? 'kovegas.com에서 결제가 완료된 예약이 들어왔습니다.'
+        : 'kovegas.com에서 예약 문의가 들어왔습니다.'
+    const who = customerName || '고객'
+    const subject = `[Kovegas] 새 예약 — ${who}${reservation.tour_date ? ` · ${reservation.tour_date}` : ''}`
+    const origin = getAppOrigin().replace(/\/$/, '')
+    const adminUrl = `${origin}/ko/admin/reservations`
+    const rows: Array<[string, string]> = [
+      ['예약번호', reservation.id],
+      ['고객', customerName],
+      ['이메일', customerEmail],
+      ['전화', customerPhone],
+      ['상품', productName],
+      ['투어일', reservation.tour_date || ''],
+      ['인원', guestBits.join(', ')],
+      ['금액', amountLabel],
+      ['상태', reservation.status || ''],
+    ]
+    const list = rows
+      .filter(([, value]) => value)
+      .map(([label, value]) => `<li><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</li>`)
+      .join('')
+    const note = reservation.event_note?.trim()
+    const html = `
+      <p>${escapeHtml(headline)}</p>
+      <ul>${list}</ul>
+      ${note ? `<p><strong>메모</strong><br/>${escapeHtml(note).replace(/\n/g, '<br/>')}</p>` : ''}
+      <p><a href="${escapeHtml(adminUrl)}">예약 관리 열기</a></p>
+    `
+
+    const resend = new Resend(resendApiKey)
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'Las Vegas Mania Tour <info@maniatour.com>'
+    const sent = await resend.emails.send({
+      from: fromEmail,
+      to: OFFICE_NEW_BOOKING_EMAIL,
+      subject,
+      html,
+    })
+
+    await admin.from('email_logs').insert({
+      reservation_id: args.reservationId,
+      email: OFFICE_NEW_BOOKING_EMAIL,
+      email_type: emailType,
+      subject,
+      status: sent.error ? 'failed' : 'sent',
+      error_message: sent.error ? String(sent.error.message || sent.error).slice(0, 1000) : null,
+      resend_email_id: sent.data?.id || null,
+      sent_at: new Date().toISOString(),
+      sent_by: 'kovegas_web_booking',
+    })
+    if (sent.error) {
+      console.error('[notifyOfficeOfNewWebReservation] resend', sent.error)
+    }
+  } catch (err) {
+    console.error('[notifyOfficeOfNewWebReservation] failed', args.reservationId, err)
+  }
+}

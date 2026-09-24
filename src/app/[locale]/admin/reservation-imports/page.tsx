@@ -619,7 +619,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     { value: 'klook', label: 'Klook' },
     { value: 'kkday', label: 'KKday' },
     { value: 'viator', label: 'Viator' },
-    { value: 'maniatour', label: 'Maniatour (홈페이지)' },
+    { value: 'maniatour', label: 'Homepage (Wix)' },
     { value: 'tidesquare', label: '타이드스퀘어' },
     { value: 'myrealtrip', label: 'MYT' },
     { value: 'tripcom', label: 'Trip.com' },

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react'
 import { MessageSquare, Plus, Send, User, Clock } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
@@ -19,6 +19,10 @@ import {
 import { getCustomerName, getProductName } from '@/utils/reservationUtils'
 import type { FollowUpPipelineStepKey } from '@/lib/reservationFollowUpPipeline'
 import { reservationExcludedFromFollowUpPipeline } from '@/lib/reservationFollowUpPipeline'
+import {
+  resolveLinkedCustomer,
+  type LinkedCustomerContact,
+} from '@/lib/resolveLinkedCustomer'
 import type { Reservation, Customer, Product } from '@/types/reservation'
 
 type PipelineEmailPreviewState = {
@@ -63,6 +67,8 @@ interface ReservationFollowUpSectionProps {
   }>
   followUpPipelineReservation?: Reservation | null
   followUpPipelineCustomers?: Customer[]
+  /** 목록 캐시에 없어도 폼이 이미 불러 둔 연결 고객 */
+  linkedCustomerFallback?: LinkedCustomerContact | null
   /** 상단 이메일 버튼 발송 성공 시 부모에서 증가 → 파이프라인 재조회 */
   followUpPipelineRefreshToken?: number
   /** Follow up 제목 아래, 본문 위 */
@@ -91,6 +97,7 @@ export default function ReservationFollowUpSection({
   followUpPipelineProducts,
   followUpPipelineReservation,
   followUpPipelineCustomers,
+  linkedCustomerFallback = null,
   followUpPipelineRefreshToken = 0,
   belowTitle,
 }: ReservationFollowUpSectionProps) {
@@ -140,19 +147,34 @@ export default function ReservationFollowUpSection({
   const [pipelineEmailPreview, setPipelineEmailPreview] = useState<PipelineEmailPreviewState | null>(
     null
   )
+  const linkedCustomerRef = useRef<LinkedCustomerContact | null>(null)
+  const resolvingRef = useRef(false)
 
   const openPipelineEmailPreview = useCallback(
-    (
+    async (
       emailType: 'confirmation' | 'departure' | 'pickup' | 'resident_inquiry'
     ) => {
       const res = followUpPipelineReservation
       const customers = followUpPipelineCustomers ?? []
       if (!res) return
-      const customer = customers.find((c) => c.id === res.customerId)
+      if (resolvingRef.current) return
+      resolvingRef.current = true
+      let customer: LinkedCustomerContact | null = null
+      try {
+        customer = await resolveLinkedCustomer(customers, res.customerId, linkedCustomerFallback)
+      } catch (error) {
+        if (!isAbortLikeError(error)) {
+          alert(error instanceof Error ? error.message : tRes('messages.emailSendError'))
+        }
+        return
+      } finally {
+        resolvingRef.current = false
+      }
       if (!customer) {
         alert(tRes('messages.customerNotLinkedForEmailPreview'))
         return
       }
+      linkedCustomerRef.current = customer
 
       if (emailType === 'pickup' && (!res.pickUpTime || !res.tourDate)) {
         alert(tRes('messages.pickupAndTourDateRequired'))
@@ -193,9 +215,11 @@ export default function ReservationFollowUpSection({
         customerEmail: customer.email ?? '',
         pickupTime: res.pickUpTime,
         tourDate: res.tourDate,
+        customerLanguage: customer.language ?? null,
+        customerName: customer.name ?? null,
       })
     },
-    [followUpPipelineReservation, followUpPipelineCustomers, followUpPipelineProducts, tRes]
+    [followUpPipelineReservation, followUpPipelineCustomers, followUpPipelineProducts, linkedCustomerFallback, tRes]
   )
 
   const sendPipelineEmailFromPreview = useCallback(async (opts?: { includePriceInfo?: boolean }) => {
@@ -205,8 +229,13 @@ export default function ReservationFollowUpSection({
       return
     }
     const customers = followUpPipelineCustomers ?? []
-    const customer = customers.find((c) => c.id === followUpPipelineReservation?.customerId)
-    const sendLocale = resolveReservationEmailLocale(customer?.language ?? null, null)
+    const customer =
+      linkedCustomerRef.current ??
+      customers.find((c) => c.id === followUpPipelineReservation?.customerId)
+    const sendLocale = resolveReservationEmailLocale(
+      customer?.language ?? pipelineEmailPreview.customerLanguage ?? null,
+      null
+    )
     const includePriceInfo = opts?.includePriceInfo !== false
 
     let response: Response

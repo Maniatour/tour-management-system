@@ -2,7 +2,7 @@
  * 이메일 예약 가져오기: 초이스·variant·동적가격 미스 보완.
  * 판매가의 1순위는 항상 dynamic_pricing. 이메일 금액은 조회가 비었을 때만 사용.
  */
-import { PLATFORM_CHANNEL_MAP } from '@/lib/platformChannelMapping'
+import { PLATFORM_CHANNEL_MAP, WIX_HOMEPAGE_CHANNEL_ID } from '@/lib/platformChannelMapping'
 import {
   getFallbackOtaAndNotIncluded,
   getNoChoiceOtaAndNotIncluded,
@@ -14,7 +14,7 @@ import {
   toOtaAndNotIncluded,
 } from '@/lib/bookingTimeChoicePricing'
 
-const HOMEPAGE_CHANNEL_IDS = new Set(['M00001'])
+const HOMEPAGE_CHANNEL_IDS = new Set(['M00001', WIX_HOMEPAGE_CHANNEL_ID])
 
 const CANYON_ALIASES: Array<{ canon: string; aliases: string[] }> = [
   {

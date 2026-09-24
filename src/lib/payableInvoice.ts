@@ -596,12 +596,16 @@ export async function markInvoicePaidFromStripeWebhook(
   })
 
   if (!alreadyPaid) {
+    const paidUsd = stripeInvoicePaidAmountUsd(stripeInvoice, Number(invoiceRow.total) || 0)
+    const tipOnly = isTipOpenAmountInvoiceItems(invoiceRow.items)
     await notifyFieldChargePaid(admin, {
       invoiceId: targetId,
       createdBy: (invoiceRow as { created_by?: string | null }).created_by ?? null,
       customerId: invoiceRow.customer_id,
       reservationId: apply.reservationId,
-      amountUsd: stripeInvoicePaidAmountUsd(stripeInvoice, Number(invoiceRow.total) || 0),
+      amountUsd: paidUsd,
+      chargeUsd: tipOnly ? 0 : paidUsd,
+      tipUsd: tipOnly ? paidUsd : 0,
       items: invoiceRow.items,
       notes: invoiceRow.notes,
     })
@@ -2308,12 +2312,16 @@ export async function markInvoicePaidFromCheckoutSession(
   }
 
   if (!alreadyPaid) {
+    const chargeUsd = openAmount ? 0 : invoiceAmountUsd
+    const tipUsd = openAmount ? paidTotalUsd : tipAmountUsd
     await notifyFieldChargePaid(admin, {
       invoiceId: invoice.id,
       createdBy: (invoice as { created_by?: string | null }).created_by ?? null,
       customerId: invoice.customer_id,
       reservationId,
-      amountUsd: openAmount ? paidTotalUsd : invoiceAmountUsd,
+      amountUsd: roundMoney(chargeUsd + tipUsd),
+      chargeUsd,
+      tipUsd,
       items: openAmount ? withPaidOpenAmountItems(invoice.items, paidTotalUsd) : invoice.items,
       notes: invoice.notes,
     })

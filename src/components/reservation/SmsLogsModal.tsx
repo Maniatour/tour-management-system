@@ -21,6 +21,7 @@ import {
   smsDeliveryStateCardClasses,
   smsDeliveryStateLabel,
 } from '@/lib/smsLogDeliveryState'
+import SmsFailureHover from '@/components/reservation/SmsFailureHover'
 import type { ReservationOutboundSmsCategoryId } from '@/lib/reservationOutboundSmsCategories'
 
 interface SmsLog {
@@ -274,31 +275,33 @@ export default function SmsLogsModal({
                         </div>
                       )}
                       {(log.failed_at || deliveryState === 'failed') && (
-                        <div className="mt-2 p-3 bg-red-100 rounded-lg text-sm text-red-900 border border-red-200">
-                          <div className="flex items-center gap-2 mb-1">
-                            <AlertCircle className="w-4 h-4 shrink-0" />
-                            <strong>{isEn ? 'Delivery failed' : '전달 실패'}</strong>
-                            {log.failed_at ? (
-                              <span className="text-red-800">({formatDate(log.failed_at)})</span>
-                            ) : null}
-                          </div>
-                          {(log.failure_reason || log.error_message) && (
-                            <div className="mt-1 text-xs text-red-800">
-                              <strong>{isEn ? 'Reason:' : '사유:'}</strong>{' '}
-                              {log.failure_reason || log.error_message}
+                        <SmsFailureHover
+                          raw={log.failure_reason || log.error_message}
+                          locale={uiLocale}
+                        >
+                          <div className="mt-2 cursor-help rounded-lg border border-red-200 bg-red-100 p-3 text-sm text-red-900">
+                            <div className="mb-1 flex items-center gap-2">
+                              <AlertCircle className="h-4 w-4 shrink-0" />
+                              <strong>{isEn ? 'Delivery failed' : '전달 실패'}</strong>
+                              {log.failed_at ? (
+                                <span className="text-red-800">({formatDate(log.failed_at)})</span>
+                              ) : null}
                             </div>
-                          )}
-                          <p className="mt-2 text-xs text-red-800">
-                            {isEn
-                              ? 'The phone number may be invalid or blocked by the carrier. Please verify and resend.'
-                              : '전화번호가 잘못되었거나 통신사에서 차단되었을 수 있습니다. 번호를 확인한 뒤 다시 발송해 주세요.'}
-                          </p>
-                        </div>
+                            {(log.failure_reason || log.error_message) && (
+                              <div className="mt-1 text-xs text-red-800">
+                                <strong>{isEn ? 'Reason:' : '사유:'}</strong>{' '}
+                                {log.failure_reason || log.error_message}
+                              </div>
+                            )}
+                          </div>
+                        </SmsFailureHover>
                       )}
                       {log.error_message && !log.failed_at && log.status === 'failed' && (
-                        <div className="mt-2 p-2 bg-red-100 rounded text-sm text-red-700">
-                          <strong>{isEn ? 'Error:' : '오류:'}</strong> {log.error_message}
-                        </div>
+                        <SmsFailureHover raw={log.error_message} locale={uiLocale}>
+                          <div className="mt-2 cursor-help rounded bg-red-100 p-2 text-sm text-red-700">
+                            <strong>{isEn ? 'Error:' : '오류:'}</strong> {log.error_message}
+                          </div>
+                        </SmsFailureHover>
                       )}
                     </div>
                   </div>

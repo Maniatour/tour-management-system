@@ -3,6 +3,8 @@ import test from 'node:test'
 import {
   customerPaymentNotifyKindFromMessage,
   FIELD_CHARGE_PAYMENT_NOTIFY_MARKER,
+  formatPaymentBreakdownLine,
+  parsePaymentBreakdownFromMessage,
 } from '@/lib/customerPaymentNotifyKind'
 import {
   fieldChargePaymentIntentId,
@@ -66,6 +68,16 @@ test('isFieldChargeOfficePushRecipient matches op, office manager, and super', (
 
 test('field charge payment intent id is stable per invoice', () => {
   assert.equal(fieldChargePaymentIntentId('inv-1'), 'field-charge:inv-1')
+})
+
+test('parsePaymentBreakdownFromMessage reads charge and tip', () => {
+  const line = formatPaymentBreakdownLine(100.5, 20)
+  assert.deepEqual(parsePaymentBreakdownFromMessage(`금액\n${line}`), {
+    chargeUsd: 100.5,
+    tipUsd: 20,
+  })
+  assert.equal(parsePaymentBreakdownFromMessage('금액: $10'), null)
+  assert.equal(parsePaymentBreakdownFromMessage('pay_breakdown:charge=no;tip=1'), null)
 })
 
 test('customerPaymentNotifyKindFromMessage detects field charge rows', () => {

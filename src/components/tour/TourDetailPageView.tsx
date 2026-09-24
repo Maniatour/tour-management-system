@@ -2752,12 +2752,28 @@ export function TourDetailPageView({
         productNameKo={tourData.product?.name_ko || tourData.product?.name_en || ''}
         productNameEn={tourData.product?.name_en || tourData.product?.name_ko || ''}
         guideAndAssistantKo={[
-          tourData.selectedGuide ? tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'ko') : null,
-          tourData.selectedAssistant ? tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'ko') : null,
+          tourData.selectedGuide
+            ? envelopeModalVariant === 'balance'
+              ? tourData.getTeamMemberNickName(tourData.selectedGuide)
+              : tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'ko')
+            : null,
+          tourData.selectedAssistant
+            ? envelopeModalVariant === 'balance'
+              ? tourData.getTeamMemberNickName(tourData.selectedAssistant)
+              : tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'ko')
+            : null,
         ].filter(Boolean).join(' & ') || '—'}
         guideAndAssistantEn={[
-          tourData.selectedGuide ? tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'en') : null,
-          tourData.selectedAssistant ? tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'en') : null,
+          tourData.selectedGuide
+            ? envelopeModalVariant === 'balance'
+              ? tourData.getTeamMemberNickName(tourData.selectedGuide)
+              : tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'en')
+            : null,
+          tourData.selectedAssistant
+            ? envelopeModalVariant === 'balance'
+              ? tourData.getTeamMemberNickName(tourData.selectedAssistant)
+              : tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'en')
+            : null,
         ].filter(Boolean).join(' & ') || '—'}
         locale={locale}
       />

@@ -9,7 +9,10 @@ import { useReportAdminAlert } from '@/contexts/AdminAlertInboxContext'
 import { makeAdminAlertDraft } from '@/lib/adminAlertInbox'
 import { asAdminAlertPayload, unshiftUniqueAlert } from '@/lib/adminAlertReplay'
 import { useAdminAlertReplay } from '@/hooks/useAdminAlertReplay'
-import { customerPaymentNotifyKindFromMessage } from '@/lib/customerPaymentNotifyKind'
+import {
+  customerPaymentNotifyKindFromMessage,
+  parsePaymentBreakdownFromMessage,
+} from '@/lib/customerPaymentNotifyKind'
 
 type CustomerPaymentNotification = {
   id: string
@@ -49,6 +52,17 @@ function formatTourDate(raw: string | null | undefined): string | null {
   return raw.trim()
 }
 
+function paymentTipLabel(message: string, currency: string): string | null {
+  const breakdown = parsePaymentBreakdownFromMessage(message)
+  if (!breakdown) {
+    const kind = customerPaymentNotifyKindFromMessage(message)
+    if (kind === 'field_charge') return null
+    return '팁 없음'
+  }
+  if (breakdown.tipUsd > 0) return `팁 ${formatMoney(breakdown.tipUsd, currency)}`
+  return '팁 없음'
+}
+
 function formatGuests(n: CustomerPaymentNotification): string {
   const parts: string[] = []
   if ((n.adults || 0) > 0) parts.push(`성인 ${n.adults}`)
@@ -76,10 +90,15 @@ export default function CustomerPaymentNotificationListener({ locale }: { locale
           : isResidentCheck
             ? '거주·패스 안내 결제'
             : '고객 결제 완료',
-        body: [next.customer_name, formatMoney(next.amount, next.currency), next.product_name]
+        body: [
+          next.customer_name,
+          formatMoney(next.amount, next.currency),
+          paymentTipLabel(next.message, next.currency),
+          next.product_name,
+        ]
           .filter(Boolean)
           .join(' · '),
-        href: `/${locale}/admin/reservations/${next.reservation_id}`,
+        href: `/${locale}/admin/reservations?edit=${encodeURIComponent(next.reservation_id)}`,
         createdAt: next.created_at,
         payload: next,
       })
@@ -160,7 +179,7 @@ export default function CustomerPaymentNotificationListener({ locale }: { locale
     const reservationId = notification?.reservation_id
     await handleClose()
     if (reservationId) {
-      router.push(`/${locale}/admin/reservations/${reservationId}`)
+      router.push(`/${locale}/admin/reservations?edit=${encodeURIComponent(reservationId)}`)
     }
   }
 
@@ -168,6 +187,14 @@ export default function CustomerPaymentNotificationListener({ locale }: { locale
 
   const remaining = Math.max(0, queue.length - 1)
   const kind = customerPaymentNotifyKindFromMessage(notification.message)
+  const breakdown = parsePaymentBreakdownFromMessage(notification.message)
+  const tipUsd = breakdown
+    ? breakdown.tipUsd
+    : kind === 'field_charge'
+      ? null
+      : 0
+  const chargeUsd = breakdown?.chargeUsd ?? null
+  const paidLabel = formatMoney(notification.amount, notification.currency)
   const isResidentCheck = kind === 'resident_check'
   const isFieldCharge = kind === 'field_charge'
   const title = isFieldCharge
@@ -198,9 +225,16 @@ export default function CustomerPaymentNotificationListener({ locale }: { locale
               <h2 id="customer-payment-notify-title" className="text-base font-semibold text-gray-900">
                 {title}
               </h2>
-              <p className="mt-1 text-sm font-semibold text-emerald-800">
-                {formatMoney(notification.amount, notification.currency)}
-              </p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-emerald-800">{paidLabel}</p>
+              {tipUsd != null && tipUsd > 0 ? (
+                <p className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
+                  팁 {formatMoney(tipUsd, notification.currency)}
+                </p>
+              ) : tipUsd === 0 ? (
+                <p className="mt-1 inline-flex rounded-full bg-white/80 px-2 py-0.5 text-xs font-medium text-gray-600">
+                  팁 없음
+                </p>
+              ) : null}
               {remaining > 0 ? (
                 <p className="mt-0.5 text-xs text-emerald-700">외 {remaining}건 대기 중</p>
               ) : null}
@@ -220,6 +254,20 @@ export default function CustomerPaymentNotificationListener({ locale }: { locale
           <p className="rounded-lg border border-emerald-100 bg-emerald-50/70 px-3 py-2 text-sm text-emerald-900">
             {headline}
           </p>
+          <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-3">
+            <p className="text-xs font-medium text-muted-foreground">결제 금액</p>
+            <p className="mt-0.5 text-2xl font-semibold tabular-nums tracking-tight text-gray-900">{paidLabel}</p>
+            {tipUsd != null && tipUsd > 0 && chargeUsd != null && chargeUsd > 0 ? (
+              <p className="mt-1 text-sm text-gray-700">
+                상품 {formatMoney(chargeUsd, notification.currency)} · 팁{' '}
+                {formatMoney(tipUsd, notification.currency)}
+              </p>
+            ) : tipUsd != null && tipUsd > 0 ? (
+              <p className="mt-1 text-sm font-medium text-amber-800">가이드 팁</p>
+            ) : tipUsd === 0 ? (
+              <p className="mt-1 text-sm text-gray-600">팁은 포함되지 않았습니다.</p>
+            ) : null}
+          </div>
           <dl className="space-y-2 text-sm text-gray-800">
             <div>
               <dt className="text-xs font-medium text-muted-foreground">고객</dt>

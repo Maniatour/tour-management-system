@@ -5,6 +5,7 @@ import {
   parseCustomerBookingCustomer,
   parseCustomerBookingLine,
 } from '@/lib/customerBookingCheckout'
+import { notifyOfficeOfNewWebReservation } from '@/lib/customerBookingEmail'
 import { getPublicOperatorId } from '@/lib/operators/getPublicOperatorId'
 import { resolvePublicDirectChannel } from '@/lib/operators/resolvePublicDirectChannel'
 
@@ -53,6 +54,11 @@ export async function POST(request: NextRequest) {
         operatorId: direct.operatorId,
         channelId: direct.channelId,
       },
+    })
+
+    await notifyOfficeOfNewWebReservation(supabaseAdmin, {
+      reservationId: pending.reservationId,
+      kind: 'inquiry',
     })
 
     return NextResponse.json({

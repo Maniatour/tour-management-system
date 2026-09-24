@@ -7464,6 +7464,7 @@ export type Database = {
           archive: boolean
           channel_id: string
           channel_rn: string | null
+          checkout_dedupe_key: string | null
           child: number | null
           choices: Json | null
           canyon_choice: string | null
@@ -7506,6 +7507,7 @@ export type Database = {
           archive?: boolean
           channel_id: string
           channel_rn?: string | null
+          checkout_dedupe_key?: string | null
           child?: number | null
           choices?: Json | null
           canyon_choice?: string | null
@@ -7548,6 +7550,7 @@ export type Database = {
           archive?: boolean
           channel_id?: string
           channel_rn?: string | null
+          checkout_dedupe_key?: string | null
           child?: number | null
           choices?: Json | null
           canyon_choice?: string | null

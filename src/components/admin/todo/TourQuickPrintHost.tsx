@@ -328,9 +328,15 @@ export function TourQuickPrintHost({ locale, request, onClose }: TourQuickPrintH
         productNameEn={tourData.product?.name_en || tourData.product?.name_ko || ''}
         guideAndAssistantKo={
           [
-            tourData.selectedGuide ? tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'ko') : null,
+            tourData.selectedGuide
+              ? envelopeVariant === 'balance'
+                ? tourData.getTeamMemberNickName(tourData.selectedGuide)
+                : tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'ko')
+              : null,
             tourData.selectedAssistant
-              ? tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'ko')
+              ? envelopeVariant === 'balance'
+                ? tourData.getTeamMemberNickName(tourData.selectedAssistant)
+                : tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'ko')
               : null,
           ]
             .filter(Boolean)
@@ -338,9 +344,15 @@ export function TourQuickPrintHost({ locale, request, onClose }: TourQuickPrintH
         }
         guideAndAssistantEn={
           [
-            tourData.selectedGuide ? tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'en') : null,
+            tourData.selectedGuide
+              ? envelopeVariant === 'balance'
+                ? tourData.getTeamMemberNickName(tourData.selectedGuide)
+                : tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'en')
+              : null,
             tourData.selectedAssistant
-              ? tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'en')
+              ? envelopeVariant === 'balance'
+                ? tourData.getTeamMemberNickName(tourData.selectedAssistant)
+                : tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'en')
               : null,
           ]
             .filter(Boolean)

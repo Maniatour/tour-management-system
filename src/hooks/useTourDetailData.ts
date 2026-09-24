@@ -471,14 +471,14 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
           tour.tour_guide_id
             ? supabase
                 .from('team')
-                .select('email, name_ko, name_en, display_name')
+                .select('email, name_ko, name_en, display_name, nick_name')
                 .eq('email', tour.tour_guide_id)
                 .maybeSingle()
             : Promise.resolve({ data: null as TeamMember | null, error: null }),
           tour.assistant_id
             ? supabase
                 .from('team')
-                .select('email, name_ko, name_en, display_name')
+                .select('email, name_ko, name_en, display_name, nick_name')
                 .eq('email', tour.assistant_id)
                 .maybeSingle()
             : Promise.resolve({ data: null as TeamMember | null, error: null }),
@@ -535,6 +535,21 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
           assignedVehicleRes: Awaited<typeof assignedVehiclePromise>,
           [guideRes, assistantRes]: Awaited<typeof guideAssistantPromise>
         ) => {
+          const rememberTeamMember = (member: TeamMember | null) => {
+            const email = member?.email?.trim()
+            if (!email) return
+            setTeamMembers((prev) => {
+              const key = email.toLowerCase()
+              const index = prev.findIndex((row) => row.email?.toLowerCase() === key)
+              if (index < 0) return [...prev, member as TeamMember]
+              const current = prev[index]
+              if (current.nick_name?.trim() || !member?.nick_name?.trim()) return prev
+              const next = prev.slice()
+              next[index] = { ...current, nick_name: member.nick_name }
+              return next
+            })
+          }
+
           if (tour.tour_guide_id) {
             const { data: guideData, error: guideError } = guideRes
             if (guideError && guideError.code !== 'PGRST116') {
@@ -543,6 +558,7 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
             if (guideData) {
               const g = guideData as TeamMember
               setSelectedGuide(g.email || tour.tour_guide_id || '')
+              rememberTeamMember(g)
             } else {
               setSelectedGuide(tour.tour_guide_id || '')
             }
@@ -558,6 +574,7 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
             if (assistantData) {
               const a = assistantData as TeamMember
               setSelectedAssistant(a.email || tour.assistant_id || '')
+              rememberTeamMember(a)
             } else {
               setSelectedAssistant(tour.assistant_id || '')
             }
@@ -1110,6 +1127,22 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
     return resolveTeamMemberDisplayLabel(email)
   }
 
+  /** Balance 봉투: team.nick_name. 닉네임이 없으면 기존 표시 이름. */
+  const getTeamMemberNickName = (email: string) => {
+    if (!email?.trim()) return ''
+    const emails = parseTourAssignmentEmails(email)
+    if (emails.length === 0) return ''
+    const labels = emails.map((address) => {
+      const member = teamMembers.find(
+        (m) => m.email && m.email.toLowerCase() === address.toLowerCase()
+      )
+      const nick = member?.nick_name?.trim()
+      if (nick) return nick
+      return resolveTeamMemberDisplayLabel(address) || address
+    })
+    return labels.join(' & ')
+  }
+
   return {
     // 상태들
     tour,
@@ -1222,6 +1255,7 @@ export function useTourDetailData(opts?: { tourId?: string | null; modalLightLoa
     getCountryCode,
     getTeamMemberName,
     getTeamMemberNameForLocale,
+    getTeamMemberNickName,
     refreshReservations: async () => {
       if (!tour || !tour.product_id || !tour.tour_date) return
       const { data: reservationsData, error: reservationsError } = await supabase

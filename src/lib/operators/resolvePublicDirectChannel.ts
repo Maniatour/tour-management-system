@@ -8,6 +8,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase'
 import { KOVEgAS_OPERATOR_ID } from '@/lib/operatorConstants'
+import { isWixHomepageChannelName } from '@/lib/platformChannelMapping'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 
 /** Kovegas Direct Web — must stay M00001 (seeded homepage channel). */
@@ -69,6 +70,7 @@ async function findExistingDirectChannel(
       const category = String(row.category || '').toLowerCase()
       let score = 0
       if (row.id === KOVEgAS_DIRECT_CHANNEL_ID) score += 100
+      if (isWixHomepageChannelName(name)) score -= 200
       if (name.includes('homepage') || name.includes('홈페이지')) score += 50
       if (type === 'website' || type.includes('direct')) score += 30
       if (category === 'own' || category === 'self') score += 10

@@ -1,16 +1,24 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { Customer, Reservation } from '@/types/reservation'
 import EmailPreviewModal from '@/components/reservation/EmailPreviewModal'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { isAbortLikeError } from '@/lib/isAbortLikeError'
 import { resolveReservationEmailLocale } from '@/lib/reservationEmailLocale'
+import {
+  readReservationCustomerId,
+  resolveLinkedCustomer,
+  type LinkedCustomerContact,
+} from '@/lib/resolveLinkedCustomer'
 
 export type ReservationFormEmailSendKind = 'confirmation' | 'departure' | 'pickup'
 
 type Props = {
-  reservation: Pick<Reservation, 'id' | 'customerId' | 'pickUpTime' | 'tourDate'>
+  reservation: Pick<Reservation, 'id' | 'customerId' | 'pickUpTime' | 'tourDate'> & {
+    customer_id?: string | null
+  }
   customers: Customer[]
   sentBy: string | null
   uiLocale?: 'ko' | 'en'
@@ -29,10 +37,25 @@ export function ReservationFormEmailSendButtons({
 }: Props) {
   const [sending, setSending] = useState<ReservationFormEmailSendKind | null>(null)
   const [previewKind, setPreviewKind] = useState<ReservationFormEmailSendKind | null>(null)
+  const [previewEmail, setPreviewEmail] = useState('')
+  const linkedCustomerRef = useRef<LinkedCustomerContact | null>(null)
+  const resolvingRef = useRef(false)
 
   const openPreview = useCallback(
-    (kind: ReservationFormEmailSendKind) => {
-      const customer = customers.find((c) => c.id === reservation.customerId)
+    async (kind: ReservationFormEmailSendKind) => {
+      if (resolvingRef.current) return
+      resolvingRef.current = true
+      let customer: LinkedCustomerContact | null = null
+      try {
+        customer = await resolveLinkedCustomer(customers, readReservationCustomerId(reservation))
+      } catch (error) {
+        if (!isAbortLikeError(error)) {
+          alert(error instanceof Error ? error.message : '고객 정보를 불러오지 못했습니다.')
+        }
+        return
+      } finally {
+        resolvingRef.current = false
+      }
       if (!customer) {
         alert(
           uiLocale === 'en'
@@ -41,6 +64,8 @@ export function ReservationFormEmailSendButtons({
         )
         return
       }
+      linkedCustomerRef.current = customer
+      setPreviewEmail(customer.email ?? '')
 
       if (kind === 'pickup') {
         const pt = reservation.pickUpTime?.trim()
@@ -56,12 +81,14 @@ export function ReservationFormEmailSendButtons({
 
       setPreviewKind(kind)
     },
-    [customers, reservation.customerId, reservation.pickUpTime, reservation.tourDate, uiLocale]
+    [customers, reservation, uiLocale]
   )
 
   const executeSend = useCallback(
     async (kind: ReservationFormEmailSendKind, opts?: { includePriceInfo?: boolean }) => {
-      const customer = customers.find((c) => c.id === reservation.customerId)
+      const customer =
+        linkedCustomerRef.current ??
+        customers.find((c) => c.id === readReservationCustomerId(reservation))
       if (!customer?.email) {
         throw new Error(uiLocale === 'en' ? 'The customer has no email address.' : '고객 이메일이 없습니다.')
       }
@@ -126,7 +153,7 @@ export function ReservationFormEmailSendButtons({
       reservation.id,
       reservation.pickUpTime,
       reservation.tourDate,
-      reservation.customerId,
+      reservation,
       sentBy,
       uiLocale,
       onSendSuccess,
@@ -135,9 +162,6 @@ export function ReservationFormEmailSendButtons({
 
   const btnClass =
     'inline-flex items-center justify-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-[11px] sm:text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:pointer-events-none max-w-[5.5rem] sm:max-w-none'
-
-  const customer = customers.find((c) => c.id === reservation.customerId)
-  const previewEmail = customer?.email ?? ''
 
   return (
     <>

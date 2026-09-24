@@ -362,19 +362,20 @@ function PaymentForm({
   const [cardError, setCardError] = useState<string>('')
   const [_processing, setProcessing] = useState(false)
   const handleSubmitRef = React.useRef<(() => Promise<void>) | null>(null)
+  const checkoutLockRef = React.useRef(false)
 
   const handleSubmit = React.useCallback(async (event?: React.FormEvent) => {
     if (event) {
       event.preventDefault()
     }
-
-    if (!stripe || !elements) {
-      return
-    }
+    if (checkoutLockRef.current) return
+    if (!stripe || !elements) return
+    checkoutLockRef.current = true
 
     setProcessing(true)
     setCardError('')
 
+    try {
     const cardElement = elements.getElement(CardElement)
     if (!cardElement) {
       setCardError(translate('카드 정보를 불러올 수 없습니다.', 'Unable to load card information.'))
@@ -382,7 +383,6 @@ function PaymentForm({
       return
     }
 
-    try {
       const checkoutBody = buildCheckoutBody()
 
       const response = await fetch('/api/booking/create-checkout', {
@@ -479,6 +479,8 @@ function PaymentForm({
       console.error('Stripe 결제 처리 오류:', error)
       setCardError(error instanceof Error ? error.message : translate('결제 처리 중 오류가 발생했습니다.', 'An error occurred during payment processing.'))
       setProcessing(false)
+    } finally {
+      checkoutLockRef.current = false
     }
   }, [stripe, elements, buildCheckoutBody, onPaymentComplete, translate, locale])
 
@@ -594,6 +596,7 @@ export default function BookingFlow({
   
   // 장바구니 훅
   const cart = useCart()
+  const inquirySubmitLockRef = useRef(false)
   const statusLabelMap: Record<string, string> = {
     available: translate('예약 가능', 'Available'),
     recruiting: translate('동행 모집중', 'More guests needed'),
@@ -2531,6 +2534,8 @@ export default function BookingFlow({
 
   // 은행 이체 등 비카드: 서버 create-inquiry
   const handleCompleteBooking = async () => {
+    if (inquirySubmitLockRef.current) return
+    inquirySubmitLockRef.current = true
     try {
       setLoading(true)
       const checkoutBody = buildCheckoutBody()
@@ -2582,6 +2587,7 @@ export default function BookingFlow({
           : `예약 생성에 실패했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`
       )
     } finally {
+      inquirySubmitLockRef.current = false
       setLoading(false)
     }
   }

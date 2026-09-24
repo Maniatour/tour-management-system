@@ -23,6 +23,7 @@ import {
   shouldSwitchImportVariantPrice,
   pickImportDynamicPricingOta,
 } from '@/lib/importReservationPriceResolve'
+import { directWebPricingChannelId } from '@/lib/platformChannelMapping'
 import { supabase, isAbortLikeError } from '@/lib/supabase'
 import { insertCustomerViaAdminApi } from '@/lib/adminCustomerInsert'
 import { generateCustomerId } from '@/lib/entityIds'
@@ -3337,6 +3338,7 @@ export default function ReservationForm({
       console.log('필수 정보가 부족합니다:', { productId, tourDate, tourDateNormalized, channelId })
       return
     }
+    channelId = directWebPricingChannelId(channelId)
     // 이메일 가져오기 등: reservation id가 import- 로 시작하면 아직 DB 예약이 없음 → reservation_pricing 조회 생략 후 dynamic_pricing만 사용
     const pricingReservationId =
       reservationId && !String(reservationId).startsWith('import-') ? String(reservationId) : undefined
@@ -5135,7 +5137,11 @@ export default function ReservationForm({
       tourDate: formData.tourDate,
       pickUpTime: formData.pickUpTime,
       channelRN: formData.channelRN,
-      customerId: formData.customerId || reservation.customerId,
+      customerId:
+        formData.customerId ||
+        reservation.customerId ||
+        (reservation as { customer_id?: string | null }).customer_id ||
+        '',
     }
   }, [
     reservation,
@@ -5840,6 +5846,7 @@ export default function ReservationForm({
 
     try {
       const variantKey = formData.variantKey || 'default'
+      const pricingChannelId = directWebPricingChannelId(formData.channelId)
       let pricingData: any[] | null = null
       let err: any = null
       const res = await (supabase as any)
@@ -5847,7 +5854,7 @@ export default function ReservationForm({
         .select('choices_pricing, updated_at')
         .eq('product_id', formData.productId)
         .eq('date', tourDateNorm)
-        .eq('channel_id', formData.channelId)
+        .eq('channel_id', pricingChannelId)
         .eq('variant_key', variantKey)
         .order('updated_at', { ascending: false })
         .limit(1)
@@ -5860,7 +5867,7 @@ export default function ReservationForm({
             .select('choices_pricing, updated_at')
             .eq('product_id', formData.productId)
             .eq('date', tourDateNorm)
-            .eq('channel_id', formData.channelId)
+            .eq('channel_id', pricingChannelId)
             .eq('variant_key', 'default')
             .order('updated_at', { ascending: false })
             .limit(1)
@@ -5874,7 +5881,7 @@ export default function ReservationForm({
             .select('choices_pricing, updated_at')
             .eq('product_id', formData.productId)
             .eq('date', tourDateNorm)
-            .eq('channel_id', formData.channelId)
+            .eq('channel_id', pricingChannelId)
             .order('updated_at', { ascending: false })
             .limit(1)
           if ((resAny.data?.length ?? 0) > 0) {
@@ -7802,6 +7809,18 @@ export default function ReservationForm({
                   followUpPipelineProducts={products}
                   followUpPipelineReservation={followUpPipelineReservationMerged}
                   followUpPipelineCustomers={customers}
+                  linkedCustomerFallback={
+                    followUpPipelineReservationMerged?.customerId
+                      ? {
+                          id: followUpPipelineReservationMerged.customerId,
+                          name: formData.customerName || formData.customerSearch || null,
+                          email: formData.customerEmail || null,
+                          phone: formData.customerPhone || null,
+                          language: formData.customerLanguage || null,
+                          emergency_contact: formData.customerEmergencyContact || null,
+                        }
+                      : null
+                  }
                   followUpPipelineRefreshToken={followUpPipelineSnapshotRefreshToken}
                   belowTitle={
                     formData.addedTime ? (

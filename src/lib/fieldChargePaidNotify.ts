@@ -1,6 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
-import { FIELD_CHARGE_PAYMENT_NOTIFY_MARKER } from '@/lib/customerPaymentNotifyKind'
+import {
+  FIELD_CHARGE_PAYMENT_NOTIFY_MARKER,
+  formatPaymentBreakdownLine,
+} from '@/lib/customerPaymentNotifyKind'
 import { sendStaffPushToEmails } from '@/lib/sendStaffWebPush'
 import { SUPER_ADMIN_EMAILS, isSuperAdminActor } from '@/lib/superAdmin'
 
@@ -116,6 +119,10 @@ export async function notifyFieldChargePaid(
     customerId: string | null | undefined
     reservationId: string | null | undefined
     amountUsd: number
+    /** 상품·청구 금액. 팁만 결제한 경우 0 */
+    chargeUsd?: number
+    /** 이번 결제에 포함된 가이드 팁 */
+    tipUsd?: number
     items: unknown
     notes: string | null | undefined
   }
@@ -130,6 +137,10 @@ export async function notifyFieldChargePaid(
     if (!invoiceId) return
 
     const amountUsd = Number.isFinite(args.amountUsd) ? Math.round(args.amountUsd * 100) / 100 : 0
+    const tipUsd = Number.isFinite(args.tipUsd) ? Math.round(Number(args.tipUsd) * 100) / 100 : null
+    const chargeUsd = Number.isFinite(args.chargeUsd)
+      ? Math.round(Number(args.chargeUsd) * 100) / 100
+      : null
     const creatorEmail = normalizeEmail(args.createdBy)
     const officeEmails = await officeRecipientEmails(admin)
     const recipients = new Set<string>(officeEmails)
@@ -183,6 +194,8 @@ export async function notifyFieldChargePaid(
       FIELD_CHARGE_PAYMENT_NOTIFY_MARKER,
       '가이드 현장 청구 결제가 완료되었습니다.',
       `금액: ${amountLabel}`,
+      tipUsd != null ? `팁: ${tipUsd > 0 ? formatUsd(tipUsd) : '없음'}` : null,
+      chargeUsd != null && tipUsd != null ? formatPaymentBreakdownLine(chargeUsd, tipUsd) : null,
       `고객: ${guestName}`,
       customerEmail ? `이메일: ${customerEmail}` : null,
       productName ? `상품: ${productName}` : null,
@@ -233,8 +246,12 @@ export async function notifyFieldChargePaid(
         return {
           title: isKo ? '현장 청구 결제 완료' : 'On-site charge paid',
           body: isKo
-            ? `${guestName} · ${amountLabel}`
-            : `${guestName} · ${amountLabel}`,
+            ? tipUsd != null && tipUsd > 0
+              ? `${guestName} · ${amountLabel} · 팁 ${formatUsd(tipUsd)}`
+              : `${guestName} · ${amountLabel}`
+            : tipUsd != null && tipUsd > 0
+              ? `${guestName} · ${amountLabel} · tip ${formatUsd(tipUsd)}`
+              : `${guestName} · ${amountLabel}`,
           tag: `field-charge-paid-${invoiceId}`,
           url: isCreator ? guidePath : officePath,
           extraData: {

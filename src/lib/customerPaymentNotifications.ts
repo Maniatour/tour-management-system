@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
 import {
   RESIDENT_CHECK_PAYMENT_NOTIFY_MARKER,
+  formatPaymentBreakdownLine,
   type CustomerPaymentNotifyKind,
 } from '@/lib/customerPaymentNotifyKind'
 import { getUserRole } from '@/lib/roles'
@@ -140,6 +141,8 @@ export async function notifyStaffOfCustomerPayment(
       productName ? `상품: ${productName}` : null,
       tourDate ? `투어일: ${tourDate}` : null,
       `인원: ${guestLabel}`,
+      '팁: 없음',
+      formatPaymentBreakdownLine(args.amountUsd, 0),
     ]
       .filter(Boolean)
       .join('\n')

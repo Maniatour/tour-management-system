@@ -49,8 +49,18 @@ const PRINT_CSS = `
   .bqr-card:nth-child(8n):not(:last-child) { break-after: page; page-break-after: always; }
   .bqr-name { margin: 0; font-size: 15px; font-weight: 800; line-height: 1.2; }
   .bqr-hotel { margin: 2px 0 0; font-size: 11px; color: #374151; }
-  .bqr-cash { margin: 6px 0 0; font-size: 13px; font-weight: 700; }
-  .bqr-cardpay { margin: 1px 0 6px; font-size: 11px; color: #374151; }
+  .bqr-cash { margin: 8px 0 0; font-size: 16px; font-weight: 600; color: #4b5563; line-height: 1.2; }
+  .bqr-cardpay {
+    display: inline-block;
+    margin: 4px auto 8px;
+    padding: 3px 10px;
+    font-size: 16px;
+    font-weight: 800;
+    color: #111;
+    background: #e8f0ff;
+    border-radius: 8px;
+    line-height: 1.2;
+  }
   .bqr-qr { width: 1.45in; height: 1.45in; margin: 0 auto; }
   .bqr-qr svg { width: 100%; height: 100%; }
   .bqr-scan { margin: 4px 0 0; font-size: 10px; letter-spacing: 0.01em; }
@@ -254,16 +264,12 @@ export default function TourBalanceQrPrintModal({
           ) : (
             <div id="tour-balance-qr-sheet" className="bqr-sheet rounded-xl bg-white">
               <div className="bqr-head mb-3">
-                <h3 className="bqr-title text-base font-extrabold text-gray-900">
-                  {isKo ? '잔금 카드 결제' : 'Remaining balance'}
-                </h3>
+                <h3 className="bqr-title text-base font-extrabold text-gray-900">Remaining balance</h3>
                 <p className="bqr-sub text-sm text-gray-700">
                   {[tourDate, productName].filter(Boolean).join(' · ')}
                 </p>
                 <p className="bqr-note text-xs leading-5 text-gray-500">
-                  {isKo
-                    ? '현금이 없으면 손님 이름 칸의 QR을 보여 주세요. 카드 금액은 잔금에 카드 수수료가 포함된 금액입니다.'
-                    : 'If the guest has no cash, show the QR under their name. The card amount includes the card fee.'}
+                  If the guest has no cash, show the QR under their name. The card amount includes the card fee.
                 </p>
               </div>
               <div className="bqr-grid grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -274,11 +280,11 @@ export default function TourBalanceQrPrintModal({
                     <article key={row.reservationId} className="bqr-card rounded-xl border border-gray-900 px-3 py-3 text-center">
                       <p className="bqr-name text-base font-extrabold text-gray-900">{row.customerName}</p>
                       {row.pickupLabel ? <p className="bqr-hotel text-xs text-gray-600">{row.pickupLabel}</p> : null}
-                      <p className="bqr-cash mt-2 text-sm font-bold text-gray-900">
-                        {isKo ? '현금' : 'Cash'} {money(row.balanceAmount)}
+                      <p className="bqr-cash mt-2 text-base font-semibold leading-tight text-gray-600">
+                        Cash {money(row.balanceAmount)}
                       </p>
-                      <p className="bqr-cardpay text-xs text-gray-600">
-                        {isKo ? '카드' : 'Card'} {money(charge)}
+                      <p className="bqr-cardpay mx-auto mt-1 inline-block rounded-lg bg-blue-50 px-2.5 py-0.5 text-base font-extrabold leading-tight text-gray-900">
+                        Card {money(charge)}
                       </p>
                       {link?.sitePayUrl ? (
                         <div className="bqr-qr mx-auto mt-1 h-36 w-36 bg-white p-1">
@@ -294,7 +300,7 @@ export default function TourBalanceQrPrintModal({
                         </div>
                       ) : (
                         <p className="mt-3 text-xs text-red-600">
-                          {link?.error || (isKo ? '링크 없음' : 'No link')}
+                          {link?.error || 'No link'}
                         </p>
                       )}
                       {link?.sitePayUrl ? (

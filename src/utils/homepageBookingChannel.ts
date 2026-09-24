@@ -1,4 +1,5 @@
 import { HOMEPAGE_BOOKING_CHANNEL_ID } from '@/lib/productDetailPromoCodes'
+import { isWixHomepageChannelName } from '@/lib/platformChannelMapping'
 import { channelIsOtaForPricingSection } from '@/utils/channelSettlement'
 
 export type CouponChannelRow = {
@@ -30,11 +31,13 @@ export function resolveHomepageChannelId(
   channels: Array<{ id: string; name?: string | null }> | null | undefined
 ): string {
   if (!channels?.length) return HOMEPAGE_BOOKING_CHANNEL_ID
+  const exact = channels.find((ch) => ch.id === HOMEPAGE_BOOKING_CHANNEL_ID)
+  if (exact) return exact.id
   const homepageChannel = channels.find(
     (ch) =>
-      ch.id === HOMEPAGE_BOOKING_CHANNEL_ID ||
-      (ch.name &&
-        (String(ch.name).toLowerCase().includes('homepage') || String(ch.name).includes('홈페이지')))
+      ch.name &&
+      !isWixHomepageChannelName(ch.name) &&
+      (String(ch.name).toLowerCase().includes('homepage') || String(ch.name).includes('홈페이지'))
   )
   return homepageChannel?.id ?? HOMEPAGE_BOOKING_CHANNEL_ID
 }

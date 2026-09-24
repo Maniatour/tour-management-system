@@ -10,6 +10,7 @@ import {
 } from '@/lib/bookingFlowGuestNotes'
 import {
   deliverCustomerBookingConfirmationEmail,
+  notifyOfficeOfNewWebReservation,
   parseBookingLocale,
 } from '@/lib/customerBookingEmail'
 import { resolvePriceV2 } from '@/lib/commerce/resolvePriceV2'
@@ -22,6 +23,7 @@ import {
 } from '@/lib/commerce/inventoryEngine'
 import { buildBookingMoneyBreakdown } from '@/lib/commerce/bookingMoneyBreakdown'
 import { KOVEgAS_DIRECT_CHANNEL_ID } from '@/lib/operators/resolvePublicDirectChannel'
+import { duplicateWebBookingMessage, webCheckoutDedupeKey } from '@/lib/webCheckoutDedupe'
 import { KOVEgAS_OPERATOR_ID } from '@/lib/operatorConstants'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
 import { lookupReservationOperatorId } from '@/lib/operators/lookupReservationOperatorId'
@@ -1153,12 +1155,139 @@ async function upsertReservationPricing(
   if (error) throw new Error(`가격 정보 저장 실패: ${error.message}`)
 }
 
+type WebCheckoutSibling = {
+  block: boolean
+  reuseId: string | null
+  reservationId: string
+  inventoryHoldIds: string[] | null
+}
+
+async function findActiveWebCheckoutSibling(
+  admin: AdminClient,
+  args: {
+    customerId: string
+    productId: string
+    tourDate: string
+    adults: number
+    child: number
+    infant: number
+    channelId: string
+  }
+): Promise<WebCheckoutSibling | null> {
+  const { data, error } = await admin
+    .from('reservations')
+    .select('id, status, commerce_pricing_source, checkout_dedupe_key, inventory_hold_ids')
+    .eq('customer_id', args.customerId)
+    .eq('product_id', args.productId)
+    .eq('tour_date', args.tourDate)
+    .eq('adults', args.adults)
+    .eq('child', args.child)
+    .eq('infant', args.infant)
+    .eq('channel_id', args.channelId)
+    .in('status', ['pending', 'inquiry', 'confirmed', 'completed'])
+    .order('created_at', { ascending: false })
+    .limit(8)
+
+  if (error) {
+    console.error('[customerBookingCheckout] sibling lookup', error)
+    throw new Error('기존 예약 확인에 실패했습니다.')
+  }
+
+  const rows = data || []
+  if (rows.length === 0) return null
+
+  for (const row of rows) {
+    const { data: paid } = await admin
+      .from('payment_records')
+      .select('id')
+      .eq('reservation_id', row.id)
+      .eq('payment_status', 'confirmed')
+      .limit(1)
+      .maybeSingle()
+    if (paid?.id || row.status === 'confirmed' || row.status === 'completed') {
+      return {
+        block: true,
+        reuseId: null,
+        reservationId: row.id,
+        inventoryHoldIds: null,
+      }
+    }
+  }
+
+  const reusable = rows.find(
+    (row) =>
+      (row.status === 'pending' || row.status === 'inquiry') &&
+      (row.checkout_dedupe_key || row.commerce_pricing_source)
+  )
+  if (reusable) {
+    return {
+      block: false,
+      reuseId: reusable.id,
+      reservationId: reusable.id,
+      inventoryHoldIds: reusable.inventory_hold_ids,
+    }
+  }
+
+  const other = rows[0]
+  if (!other) return null
+  return {
+    block: true,
+    reuseId: null,
+    reservationId: other.id,
+    inventoryHoldIds: null,
+  }
+}
+
+async function supersedeOpenCardPayments(admin: AdminClient, reservationId: string): Promise<void> {
+  const { data: pendingRows, error } = await admin
+    .from('payment_records')
+    .select('id, note, payment_status')
+    .eq('reservation_id', reservationId)
+    .eq('payment_status', 'pending')
+
+  if (error) {
+    console.error('[customerBookingCheckout] pending payments lookup', error)
+    throw new Error('기존 결제 확인에 실패했습니다.')
+  }
+
+  let stripe: Stripe | null = null
+  try {
+    stripe = getStripeClient()
+  } catch (stripeErr) {
+    console.warn('[customerBookingCheckout] stripe unavailable while reusing checkout', stripeErr)
+  }
+
+  for (const row of pendingRows || []) {
+    const note = String(row.note || '')
+    const paymentIntentId = note.startsWith(STRIPE_PI_NOTE_PREFIX)
+      ? note.slice(STRIPE_PI_NOTE_PREFIX.length).trim()
+      : ''
+    if (paymentIntentId.startsWith('pi_')) {
+      if (!stripe) {
+        throw new Error('이전 결제를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.')
+      }
+      const existing = await stripe.paymentIntents.retrieve(paymentIntentId)
+      if (existing.status === 'succeeded') {
+        throw new Error(duplicateWebBookingMessage(reservationId))
+      }
+      if (existing.status !== 'canceled') {
+        await stripe.paymentIntents.cancel(paymentIntentId)
+      }
+    }
+    const { error: deleteError } = await admin.from('payment_records').delete().eq('id', row.id)
+    if (deleteError) {
+      throw new Error('이전 결제 시도를 정리하지 못했습니다. 잠시 후 다시 시도해 주세요.')
+    }
+  }
+}
+
 export type CreatePendingBookingResult = {
   reservationId: string
   customerId: string
   amountUsd: number
   amountCents: number
   price: CustomerBookingPriceResult
+  reused: boolean
 }
 
 export async function createPendingCustomerBooking(
@@ -1179,7 +1308,6 @@ export async function createPendingCustomerBooking(
     args.priceOverride ||
     (await calculateServerBookingPrice(admin, args.line, args.couponCode, { tenant }))
   const customerId = await createOrReuseCustomer(admin, args.customer, tenant)
-  const reservationId = generateReservationId()
   const totalPeople = args.line.adults + args.line.child + args.line.infant
   const now = new Date().toISOString()
   const localContactChannels = normalizeLocalContactChannels(
@@ -1232,8 +1360,35 @@ export async function createPendingCustomerBooking(
     offerCode: price.commerceOfferCode ?? null,
   })
 
+  const dedupeKey = webCheckoutDedupeKey({
+    customerId,
+    productId: args.line.productId,
+    tourDate: args.line.tourDate,
+    adults: args.line.adults,
+    child: args.line.child,
+    infant: args.line.infant,
+    channelId: tenant.channelId,
+  })
+  const sibling = await findActiveWebCheckoutSibling(admin, {
+    customerId,
+    productId: args.line.productId,
+    tourDate: args.line.tourDate,
+    adults: args.line.adults,
+    child: args.line.child,
+    infant: args.line.infant,
+    channelId: tenant.channelId,
+  })
+  if (sibling?.block) {
+    throw new Error(duplicateWebBookingMessage(sibling.reservationId))
+  }
+
+  let reservationId = sibling?.reuseId || generateReservationId()
+  let reused = Boolean(sibling?.reuseId)
+  let existingHoldIds = sibling?.inventoryHoldIds ?? null
+
   const reservationInsert: Database['public']['Tables']['reservations']['Insert'] = {
     id: reservationId,
+    checkout_dedupe_key: dedupeKey,
     product_id: args.line.productId,
     channel_id: tenant.channelId,
     operator_id: tenant.operatorId,
@@ -1265,11 +1420,42 @@ export async function createPendingCustomerBooking(
     reservationInsert.variant_key = args.line.variantKey
   }
 
-  const { error: reservationError } = await admin.from('reservations').insert(reservationInsert)
+  const persistExistingReservation = async (id: string) => {
+    const { id: _ignoredId, created_at: _ignoredCreatedAt, ...updates } = reservationInsert
+    const { error: updateError } = await admin
+      .from('reservations')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id)
+    if (updateError) {
+      throw new Error(`예약 업데이트 실패: ${updateError.message}`)
+    }
+    await admin.from('reservation_choices').delete().eq('reservation_id', id)
+    await admin.from('reservation_options').delete().eq('reservation_id', id)
+  }
 
-  if (reservationError) {
-    console.error('[customerBookingCheckout] reservations insert', reservationError)
-    throw new Error(`예약 생성 실패: ${reservationError.message}`)
+  if (reused) {
+    await supersedeOpenCardPayments(admin, reservationId)
+    await persistExistingReservation(reservationId)
+  } else {
+    const { error: reservationError } = await admin.from('reservations').insert(reservationInsert)
+    if (reservationError?.code === '23505') {
+      const { data: raced } = await admin
+        .from('reservations')
+        .select('id, inventory_hold_ids')
+        .eq('checkout_dedupe_key', dedupeKey)
+        .maybeSingle()
+      if (!raced?.id) {
+        throw new Error(`예약 생성 실패: ${reservationError.message}`)
+      }
+      reservationId = raced.id
+      reused = true
+      existingHoldIds = raced.inventory_hold_ids
+      await supersedeOpenCardPayments(admin, reservationId)
+      await persistExistingReservation(reservationId)
+    } else if (reservationError) {
+      console.error('[customerBookingCheckout] reservations insert', reservationError)
+      throw new Error(`예약 생성 실패: ${reservationError.message}`)
+    }
   }
 
   try {
@@ -1277,36 +1463,40 @@ export async function createPendingCustomerBooking(
     await upsertReservationPricing(admin, reservationId, price, args.line.adults)
 
     const choiceOptionIds = Object.values(args.line.selectedOptions || {}).filter(Boolean)
-    const hold = await holdInventoryForBooking(admin, {
-      productId: args.line.productId,
-      tourDate: args.line.tourDate,
-      tourTime: args.line.tourTime || null,
-      guestQty: totalPeople,
-      reservationId,
-      choiceOptionIds,
-    })
-    if (!hold.ok) {
-      throw new Error(hold.reason || '재고 확보에 실패했습니다.')
-    }
+    if (!existingHoldIds?.length) {
+      const hold = await holdInventoryForBooking(admin, {
+        productId: args.line.productId,
+        tourDate: args.line.tourDate,
+        tourTime: args.line.tourTime || null,
+        guestQty: totalPeople,
+        reservationId,
+        choiceOptionIds,
+      })
+      if (!hold.ok) {
+        throw new Error(hold.reason || '재고 확보에 실패했습니다.')
+      }
 
-    if (hold.holdIds.length > 0) {
-      const { error: holdSnapErr } = await admin
-        .from('reservations')
-        .update({
-          inventory_hold_ids: hold.holdIds,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', reservationId)
-      if (holdSnapErr) {
-        console.warn(
-          '[customerBookingCheckout] inventory_hold_ids snapshot failed',
-          holdSnapErr.message
-        )
+      if (hold.holdIds.length > 0) {
+        const { error: holdSnapErr } = await admin
+          .from('reservations')
+          .update({
+            inventory_hold_ids: hold.holdIds,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', reservationId)
+        if (holdSnapErr) {
+          console.warn(
+            '[customerBookingCheckout] inventory_hold_ids snapshot failed',
+            holdSnapErr.message
+          )
+        }
       }
     }
   } catch (err) {
-    await releaseInventoryForReservation(admin, reservationId).catch(() => 0)
-    await admin.from('reservations').delete().eq('id', reservationId)
+    if (!reused) {
+      await releaseInventoryForReservation(admin, reservationId).catch(() => 0)
+      await admin.from('reservations').delete().eq('id', reservationId)
+    }
     throw err
   }
 
@@ -1316,6 +1506,7 @@ export async function createPendingCustomerBooking(
     amountUsd: price.totalPrice,
     amountCents: usdToCents(price.totalPrice),
     price,
+    reused,
   }
 }
 
@@ -1535,11 +1726,27 @@ async function finalizeSingleReservationPayment(
     )
   }
 
+  const { error: dedupeClearError } = await admin
+    .from('reservations')
+    .update({
+      checkout_dedupe_key: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', args.reservationId)
+  if (dedupeClearError) {
+    console.warn('[customerBookingCheckout] clear checkout dedupe key', dedupeClearError.message)
+  }
+
   await notifyStaffOfCustomerPayment(admin, {
     reservationId: args.reservationId,
     paymentIntentId: args.paymentIntentId,
     paymentRecordId,
     amountUsd: args.amountUsdForRecord,
+  })
+
+  await notifyOfficeOfNewWebReservation(admin, {
+    reservationId: args.reservationId,
+    kind: 'paid',
   })
 
   if (args.sendEmail && reservation.customer_id) {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   Banknote,
@@ -18,6 +18,7 @@ import {
   TrendingUp,
   type LucideIcon,
 } from 'lucide-react'
+import { AdminNotificationCenterKindTabs, type AdminNotificationKindTab } from '@/components/admin/alerts/AdminNotificationCenterKindTabs'
 import { AdminNotificationCenterPagination } from '@/components/admin/alerts/AdminNotificationCenterPagination'
 import { AdminNotificationCenterTabs } from '@/components/admin/alerts/AdminNotificationCenterTabs'
 import { useAdminAlertInboxOptional } from '@/contexts/AdminAlertInboxContext'
@@ -34,6 +35,17 @@ import {
   type AdminAlertInboxTab,
   type AdminAlertKind,
 } from '@/lib/adminAlertInbox'
+
+function emptyAlertMessage(isKo: boolean, tab: AdminAlertInboxTab, kindLabel: string | null): string {
+  if (kindLabel) {
+    if (tab === 'unread') {
+      return isKo ? `${kindLabel} 안 읽은 알림이 없습니다` : `No unread ${kindLabel} alerts`
+    }
+    return isKo ? `${kindLabel} 읽은 알림이 없습니다` : `No read ${kindLabel} alerts`
+  }
+  if (tab === 'unread') return isKo ? '안 읽은 알림이 없습니다' : 'No unread alerts'
+  return isKo ? '읽은 알림이 없습니다' : 'No read alerts'
+}
 
 const KIND_ICON: Record<AdminAlertKind, LucideIcon> = {
   customer_payment: CreditCard,
@@ -78,20 +90,48 @@ export function AdminNotificationCenterList({ locale, onOpenModal }: AdminNotifi
   const inbox = useAdminAlertInboxOptional()
   const isKo = locale.startsWith('ko')
   const items = inbox?.items ?? []
+  const [kindTab, setKindTab] = useState<AdminNotificationKindTab>('all')
   const [tab, setTab] = useState<AdminAlertInboxTab>('unread')
   const [pageState, setPageState] = useState(1)
-  const tabItems = filterAdminAlertInboxByTab(items, tab)
+  const kindCounts = useMemo(() => {
+    const counts: Partial<Record<AdminAlertKind, number>> = {}
+    const unreadCounts: Partial<Record<AdminAlertKind, number>> = {}
+    for (const item of items) {
+      counts[item.kind] = (counts[item.kind] ?? 0) + 1
+      if (!item.read) unreadCounts[item.kind] = (unreadCounts[item.kind] ?? 0) + 1
+    }
+    return { counts, unreadCounts }
+  }, [items])
+  const kindItems = kindTab === 'all' ? items : items.filter((item) => item.kind === kindTab)
+  const tabItems = filterAdminAlertInboxByTab(kindItems, tab)
   const page = clampAdminAlertInboxPage(pageState, tabItems.length)
   const totalPages = adminAlertInboxPageCount(tabItems.length)
   const pageItems = sliceAdminAlertInboxPage(tabItems, page)
   const rangeStart = tabItems.length === 0 ? 0 : (page - 1) * ADMIN_ALERT_INBOX_PAGE_SIZE + 1
   const rangeEnd = Math.min(page * ADMIN_ALERT_INBOX_PAGE_SIZE, tabItems.length)
-  const unreadCount = inbox?.unreadCount ?? 0
-  const readCount = countReadAdminAlerts(items)
+  const unreadCount = kindItems.reduce((sum, item) => sum + (item.read ? 0 : 1), 0)
+  const readCount = countReadAdminAlerts(kindItems)
+  const kindLabel = kindTab === 'all' ? null : adminAlertKindLabel(kindTab, isKo)
   const openLabel = isKo ? '알림 모달 열기' : 'Open alert modal'
+
+  useEffect(() => {
+    if (kindTab !== 'all' && !items.some((item) => item.kind === kindTab)) setKindTab('all')
+  }, [items, kindTab])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <AdminNotificationCenterKindTabs
+        isKo={isKo}
+        active={kindTab}
+        counts={kindCounts.counts}
+        unreadCounts={kindCounts.unreadCounts}
+        total={items.length}
+        unreadTotal={inbox?.unreadCount ?? 0}
+        onChange={(next) => {
+          setKindTab(next)
+          setPageState(1)
+        }}
+      />
       <AdminNotificationCenterTabs
         isKo={isKo}
         tab={tab}
@@ -106,13 +146,7 @@ export function AdminNotificationCenterList({ locale, onOpenModal }: AdminNotifi
       {tabItems.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
           <p className="text-sm font-medium text-gray-900">
-            {tab === 'unread'
-              ? isKo
-                ? '안 읽은 알림이 없습니다'
-                : 'No unread alerts'
-              : isKo
-                ? '읽은 알림이 없습니다'
-                : 'No read alerts'}
+            {emptyAlertMessage(isKo, tab, kindLabel)}
           </p>
         </div>
       ) : (

@@ -1,12 +1,18 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Loader2, Smartphone } from 'lucide-react'
 import type { Customer, Reservation } from '@/types/reservation'
 import PreTourContactSmsPreviewModal from '@/components/reservation/PreTourContactSmsPreviewModal'
+import { isAbortLikeError } from '@/lib/isAbortLikeError'
+import {
+  readReservationCustomerId,
+  resolveLinkedCustomer,
+  type LinkedCustomerContact,
+} from '@/lib/resolveLinkedCustomer'
 
 type Props = {
-  reservation: Pick<Reservation, 'id' | 'customerId'>
+  reservation: Pick<Reservation, 'id' | 'customerId'> & { customer_id?: string | null }
   customers: Customer[]
   sentBy: string | null
   uiLocale?: 'ko' | 'en'
@@ -24,10 +30,25 @@ export function ReservationFormSmsSendButton({
 }: Props) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [linkedCustomer, setLinkedCustomer] = useState<LinkedCustomerContact | null>(null)
+  const resolvingRef = useRef(false)
 
-  const customer = customers.find((c) => c.id === reservation.customerId)
-
-  const openModal = useCallback(() => {
+  const openModal = useCallback(async () => {
+    if (resolvingRef.current) return
+    resolvingRef.current = true
+    setBusy(true)
+    let customer: LinkedCustomerContact | null = null
+    try {
+      customer = await resolveLinkedCustomer(customers, readReservationCustomerId(reservation))
+    } catch (error) {
+      if (!isAbortLikeError(error)) {
+        alert(error instanceof Error ? error.message : '고객 정보를 불러오지 못했습니다.')
+      }
+      return
+    } finally {
+      resolvingRef.current = false
+      setBusy(false)
+    }
     if (!customer) {
       alert(
         uiLocale === 'en'
@@ -45,8 +66,9 @@ export function ReservationFormSmsSendButton({
       )
       return
     }
+    setLinkedCustomer(customer)
     setOpen(true)
-  }, [customer, uiLocale])
+  }, [customers, reservation, uiLocale])
 
   const btnClass =
     'inline-flex items-center justify-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1.5 text-[11px] sm:text-xs font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-50 disabled:pointer-events-none max-w-[5.5rem] sm:max-w-none'
@@ -63,12 +85,7 @@ export function ReservationFormSmsSendButton({
             : '투어 사전 연락 SMS 미리보기·발송'
         }
         onClick={() => {
-          setBusy(true)
-          try {
-            openModal()
-          } finally {
-            setBusy(false)
-          }
+          void openModal()
         }}
       >
         {busy ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden /> : null}
@@ -76,12 +93,12 @@ export function ReservationFormSmsSendButton({
         <span className="truncate">{uiLocale === 'en' ? 'SMS' : '사전연락'}</span>
       </button>
 
-      {open && customer ? (
+      {open && linkedCustomer ? (
         <PreTourContactSmsPreviewModal
           isOpen
           onClose={() => setOpen(false)}
           reservationId={reservation.id}
-          customerLanguage={customer.language ?? null}
+          customerLanguage={linkedCustomer.language ?? null}
           sentBy={sentBy}
           uiLocale={uiLocale}
           {...(onSendSuccess ? { onSendSuccess } : {})}

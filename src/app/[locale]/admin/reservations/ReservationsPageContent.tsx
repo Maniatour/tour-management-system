@@ -14,6 +14,7 @@ import type { Database } from '@/lib/supabase'
 import type { ReservationPricingMapValue } from '@/types/reservationPricingMap'
 import { computeCustomerPaymentTotalLineFormula, resolveOnSiteBalanceAmountForSave } from '@/utils/reservationPricingBalance'
 import { mapDbReservationRowsToReservations } from '@/lib/mapDbReservationRowsToReservations'
+import { readReservationCustomerId, resolveLinkedCustomer } from '@/lib/resolveLinkedCustomer'
 import { resolveReservationTourLanguage } from '@/lib/reservationTourLanguage'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
@@ -936,8 +937,44 @@ export default function AdminReservations() {
       window.history.replaceState({}, '', newUrl)
     }
   }, [searchParams, showAddForm])
+
   const [newReservationId, setNewReservationId] = useState<string | null>(null)
   const [editingReservation, setEditingReservation] = useState<Reservation | null>(null)
+
+  const openedReservationEditIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const editId = searchParams.get('edit')?.trim()
+    if (!editId || !user?.email || openedReservationEditIdRef.current === editId) return
+
+    let cancelled = false
+    const openEditModal = async () => {
+      const { data, error } = await supabase
+        .from('reservations')
+        .select(RESERVATION_LIST_SELECT)
+        .eq('id', editId)
+        .maybeSingle()
+      if (cancelled || error || !data) return
+      const mapped = mapDbReservationRowsToReservations(
+        [data as unknown as Record<string, unknown>],
+        new Map(),
+        new Map()
+      )[0]
+      if (cancelled || !mapped) return
+      openedReservationEditIdRef.current = editId
+      setShowAddForm(false)
+      setNewReservationId(null)
+      setEditingReservation(mapped)
+      const next = new URLSearchParams(window.location.search)
+      next.delete('edit')
+      const qs = next.toString()
+      window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`)
+    }
+
+    void openEditModal()
+    return () => {
+      cancelled = true
+    }
+  }, [searchParams, user?.email])
   const [pricingModalReservation, setPricingModalReservation] = useState<Reservation | null>(null)
   const [showPricingModal, setShowPricingModal] = useState(false)
   const [showCustomerForm, setShowCustomerForm] = useState(false)
@@ -5487,8 +5524,19 @@ export default function AdminReservations() {
 
 
   // ????????? ?? ??? - useCallback??? ????????
-  const handleOpenEmailPreview = useCallback((reservation: Reservation, emailType: 'confirmation' | 'departure' | 'pickup' | 'resident_inquiry') => {
-    const customer = (customers as Customer[]).find(c => c.id === reservation.customerId)
+  const handleOpenEmailPreview = useCallback(async (reservation: Reservation, emailType: 'confirmation' | 'departure' | 'pickup' | 'resident_inquiry') => {
+    let customer: Awaited<ReturnType<typeof resolveLinkedCustomer>> = null
+    try {
+      customer = await resolveLinkedCustomer(
+        (customers as Customer[]) || [],
+        readReservationCustomerId(reservation)
+      )
+    } catch (error) {
+      if (!isAbortLikeError(error)) {
+        alert(error instanceof Error ? error.message : t('messages.emailSendError'))
+      }
+      return
+    }
     if (!customer) {
       alert(t('messages.customerNotLinkedForEmailPreview'))
       return
@@ -5546,7 +5594,8 @@ export default function AdminReservations() {
       emailType,
       customerEmail: customer.email ?? '',
       pickupTime: reservation.pickUpTime,
-      tourDate: reservation.tourDate
+      tourDate: reservation.tourDate,
+      customerLanguage: customer.language ?? null,
     })
     setShowEmailPreview(true)
     setEmailDropdownOpen(null)
@@ -5567,12 +5616,16 @@ export default function AdminReservations() {
 
     try {
       let response: Response
-      const customer = (customers as Customer[]).find(c => {
-        const reservation = reservations.find(r => r.id === emailPreviewData.reservationId)
-        return reservation && c.id === reservation.customerId
-      })
-      
-      const locale = resolveReservationEmailLocale(customer?.language ?? null, null)
+      const reservation = reservations.find(r => r.id === emailPreviewData.reservationId)
+      const customer = await resolveLinkedCustomer(
+        (customers as Customer[]) || [],
+        readReservationCustomerId(reservation)
+      ).catch(() => null)
+
+      const locale = resolveReservationEmailLocale(
+        emailPreviewData.customerLanguage ?? customer?.language ?? null,
+        null
+      )
 
       if (emailPreviewData.emailType === 'resident_inquiry') {
         response = await fetchApiWithAuth('/api/send-resident-inquiry-email', {

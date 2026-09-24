@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { X, CreditCard, Ticket, Lock, Loader2, AlertCircle, BadgeCheck } from 'lucide-react'
 import { useCart } from './CartProvider'
 import { useLocale } from 'next-intl'
@@ -43,17 +43,18 @@ function CheckoutPaymentForm({
   const elements = useElements()
   const [cardError, setCardError] = useState<string>('')
   const [processing, setProcessing] = useState(false)
+  const checkoutLockRef = useRef(false)
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-
-    if (!stripe || !elements) {
-      return
-    }
+    if (checkoutLockRef.current) return
+    if (!stripe || !elements) return
+    checkoutLockRef.current = true
 
     setProcessing(true)
     setCardError('')
 
+    try {
     const cardElement = elements.getElement(CardElement)
     if (!cardElement) {
       setCardError(translate('카드 정보를 불러올 수 없습니다.', 'Unable to load card information.'))
@@ -61,7 +62,6 @@ function CheckoutPaymentForm({
       return
     }
 
-    try {
       const response = await fetch('/api/booking/create-checkout', {
         method: 'POST',
         headers: {
@@ -138,6 +138,8 @@ function CheckoutPaymentForm({
       console.error('Stripe 결제 처리 오류:', error)
       setCardError(error instanceof Error ? error.message : translate('결제 처리 중 오류가 발생했습니다.', 'An error occurred during payment processing.'))
       setProcessing(false)
+    } finally {
+      checkoutLockRef.current = false
     }
   }
 
@@ -229,6 +231,7 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
   const [stripePromise, setStripePromise] = useState<ReturnType<typeof loadStripe> | null>(null)
   const [stripeLoadError, setStripeLoadError] = useState<string>('')
   const [loading, setLoading] = useState(false)
+  const bankTransferLockRef = useRef(false)
 
   // Stripe 초기화
   useEffect(() => {
@@ -474,6 +477,8 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
 
   // 은행 이체: 아이템별 inquiry 생성
   const handleBankTransferComplete = async () => {
+    if (bankTransferLockRef.current) return
+    bankTransferLockRef.current = true
     try {
       setLoading(true)
       const reservationIds: string[] = []
@@ -527,6 +532,7 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
           : `예약 생성에 실패했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`
       )
     } finally {
+      bankTransferLockRef.current = false
       setLoading(false)
     }
   }

@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
         priceOverride: pricedLines[i],
         tenant,
       })
-      createdReservationIds.push(pending.reservationId)
+      if (!pending.reused) createdReservationIds.push(pending.reservationId)
       pendings.push(pending)
     }
 
