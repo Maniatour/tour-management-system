@@ -16,7 +16,10 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { fetchApiWithAuth } from '@/lib/api-client-bearer'
+import { useAuth } from '@/contexts/AuthContext'
 import { useOperatorOptional } from '@/contexts/OperatorContext'
+import { canReadAllTourReports } from '@/lib/tourReportExtras'
+import { normalizeTourReportEmail } from '@/lib/tourReportMissing'
 import { defaultTourReportStatusRange } from '@/lib/tourReportMissing'
 import type { TourReportStatusPayload } from '@/lib/tourReportMissing'
 import { resolveOperatorId } from '@/lib/operators/scopeQuery'
@@ -72,7 +75,14 @@ export default function TourReportStatusModal({
   onOpenTourDetail?: (tourId: string, reportId?: string) => void
 }) {
   const { operatorId } = useOperatorOptional()
+  const { user, userRole, simulatedUser, isSimulating } = useAuth()
+  const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
+  const readAllReports = canReadAllTourReports(userRole)
   const isEn = locale === 'en'
+  const canOpenReport = (email: string | null | undefined) =>
+    readAllReports ||
+    (normalizeTourReportEmail(currentUserEmail) !== '' &&
+      normalizeTourReportEmail(email) === normalizeTourReportEmail(currentUserEmail))
   const fallback = defaultTourReportStatusRange()
   const [rangeStart, setRangeStart] = useState(fallback.from)
   const [rangeEnd, setRangeEnd] = useState(fallback.to)
@@ -398,7 +408,7 @@ export default function TourReportStatusModal({
                               </span>
                             </label>
                             <div className="flex shrink-0 items-center gap-1.5">
-                              {person.hasReport ? (
+                              {person.hasReport && canOpenReport(person.email) ? (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -410,6 +420,10 @@ export default function TourReportStatusModal({
                                   <Eye className="h-3.5 w-3.5" />
                                   {isEn ? 'View' : '보기'}
                                 </button>
+                              ) : person.hasReport ? (
+                                <span className="text-xs font-medium text-emerald-800">
+                                  {isEn ? 'Submitted' : '제출됨'}
+                                </span>
                               ) : (
                                 <span className="text-xs font-medium text-amber-800">
                                   {isEn ? 'Missing' : '미작성'}
@@ -451,6 +465,7 @@ export default function TourReportStatusModal({
                       <button
                         type="button"
                         onClick={() => {
+                          if (!canOpenReport(row.userEmail)) return
                           if (open) {
                             setExpandedTourId(null)
                             setHighlightReportId(null)
@@ -480,6 +495,7 @@ export default function TourReportStatusModal({
                             {isEn ? 'Tour' : '투어 상세'}
                           </button>
                         ) : null}
+                        {canOpenReport(row.userEmail) ? (
                         <button
                           type="button"
                           onClick={() => {
@@ -496,9 +512,10 @@ export default function TourReportStatusModal({
                           <ChevronDown className={`h-3.5 w-3.5 ${open ? 'rotate-180' : ''}`} />
                           {isEn ? 'View' : '내용 보기'}
                         </button>
+                        ) : null}
                       </div>
                     </div>
-                    {open ? (
+                    {open && canOpenReport(row.userEmail) ? (
                       <div className="border-t border-emerald-100 bg-white p-2">
                         <TourReportList
                           tourId={row.tourId}

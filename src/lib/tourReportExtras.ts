@@ -37,6 +37,16 @@ export function tourReportText(locale: string, ko: string, en: string): string {
   return isEnglishTourReportLocale(locale) ? en : ko
 }
 
+/** 사무실·관리자만 다른 사람의 투어 리포트를 읽는다. 가이드·드라이버는 본인 제출분만. */
+export function canReadAllTourReports(role: string | null | undefined): boolean {
+  return role === 'admin' || role === 'manager'
+}
+
+/** ILIKE 정확 일치. 이메일 안의 _ % 가 와일드카드로 풀리지 않게 한다. */
+export function tourReportEmailIlikeExact(email: string): string {
+  return email.trim().replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+}
+
 export const TOUR_REPORT_WEATHER_OPTIONS = [
   { value: 'sunny', icon: '☀️', ko: '맑음', en: 'Sunny' },
   { value: 'cloudy', icon: '☁️', ko: '흐림', en: 'Cloudy' },

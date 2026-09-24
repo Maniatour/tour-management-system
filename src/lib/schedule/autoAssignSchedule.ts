@@ -1,3 +1,4 @@
+import { tryConvertLanguageCodeToLocale } from '@/lib/guideLanguageDetection'
 import { canGuideProduct, guideLanguagePriorityScore, guideLanguagePrioritySummary, type GuideProductSkills } from '@/lib/guideProductSkills'
 import { collectStaffScheduleLocales } from '@/lib/scheduleGuideLanguageMatch'
 import { addDaysToYmd } from '@/utils/tourUtils'
@@ -166,6 +167,7 @@ export const AUTO_ASSIGN_UNFILLED_LABEL: Record<AutoAssignUnfilledReason, string
 
 export const AUTO_ASSIGN_RULE_LINES = [
   '고객의 한국어·영어·일본어는 가이드와 어시스턴트 언어를 합쳐 맞춰야 합니다.',
+  '영어 손님만 있는 투어는 언어 목록에서 영어가 첫 번째인 가이드를 우선 배정합니다. 그날 그런 가이드가 없으면 영어를 할 수 있는 다른 가이드를 배정합니다.',
   '오프인 날은 배정하지 않습니다.',
   '밤도깨비는 이틀 연속으로 가지 않습니다. 전날 일정이 있으면 그날은 쉬고 다음날 후보가 됩니다. 밤도깨비 다음날은 다른 투어도 쉬어 갑니다.',
   '절대 금지는 팀을 만들지 않습니다. 기피는 다른 조합이 없을 때만 쓰고, 그때는 경고를 남깁니다.',
@@ -322,6 +324,31 @@ function languageCovered(
   return required.every((locale) => locales.includes(locale))
 }
 
+function isEnglishOnlyGuestTour(people: AutoAssignGuestPeople): boolean {
+  return people.en > 0 && people.ko === 0 && people.ja === 0
+}
+
+function isEnglishPrimaryGuide(member: AutoAssignMember): boolean {
+  const first = member.languages?.[0]
+  if (!first) return false
+  return tryConvertLanguageCodeToLocale(first) === 'en'
+}
+
+function productExplicitlyBlocked(member: AutoAssignMember, productId: string): boolean {
+  const id = String(productId || '').trim()
+  const skill = id ? member.guideProductSkills?.[id] : undefined
+  return Boolean(skill && skill.eligible === false)
+}
+
+/** 영어 손님만 있는 투어는, 진행 가능이 비어 있어도 영어가 첫 언어인 가이드를 후보로 둔다. 명시적으로 불가면 제외한다. */
+function guideMaySkipProductCheck(person: PersonState, tour: AutoAssignTour, relaxProduct: boolean): boolean {
+  if (relaxProduct) return true
+  if (person.owner || !isEnglishPrimaryGuide(person.member)) return false
+  if (!isEnglishOnlyGuestTour(tour.guestPeople)) return false
+  if (productExplicitlyBlocked(person.member, tour.productId)) return false
+  return true
+}
+
 function rejection(args: {
   person: PersonState
   tour: AutoAssignTour
@@ -374,6 +401,33 @@ function rejection(args: {
     if (!languageCovered(emails, args.peopleByKey, args.required)) return 'language'
   }
   return null
+}
+
+function hasReadyEnglishPrimaryGuide(args: {
+  tour: AutoAssignTour
+  role: AutoAssignRole
+  partner: PersonState | null
+  peopleByKey: Map<string, PersonState>
+  people: PersonState[]
+  required: Array<'ko' | 'ja' | 'en'>
+}): boolean {
+  if (args.role !== 'guide' || !isEnglishOnlyGuestTour(args.tour.guestPeople)) return false
+  return args.people.some((person) => {
+    if (person.owner || !isEnglishPrimaryGuide(person.member)) return false
+    return (
+      rejection({
+        person,
+        tour: args.tour,
+        role: 'guide',
+        partner: args.partner,
+        language: 'complete',
+        peopleByKey: args.peopleByKey,
+        people: args.people,
+        required: args.required,
+        skipProduct: guideMaySkipProductCheck(person, args.tour, false),
+      }) == null
+    )
+  })
 }
 
 function commitAssignment(person: PersonState, tour: AutoAssignTour, inRange: boolean) {
@@ -438,6 +492,9 @@ function reasonForAssignment(args: {
   if (args.required.length > 0) {
     const labels = args.required.map((locale) => guestLocaleLabel(locale))
     lines.push(`${labels.join('·')} 손님 언어를 맞춤`)
+  }
+  if (args.role === 'guide' && isEnglishOnlyGuestTour(args.tour.guestPeople) && isEnglishPrimaryGuide(args.person.member)) {
+    lines.push('영어가 첫 언어라 영어 손님 투어를 우선 배정')
   }
   if (args.role === 'guide') {
     const summary = guideLanguagePrioritySummary(args.person.member.guideProductSkills, args.tour.productId, args.required)
@@ -620,6 +677,7 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
           peopleByKey,
           people,
           required,
+          skipProduct: guideMaySkipProductCheck(guide, tour, false),
         })
       ) {
         continue
@@ -722,7 +780,11 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
     const counts = new Map<RejectCode, number>()
     const preferred: PersonState[] = []
     const avoiders: PersonState[] = []
+    const preferEnglishPrimary =
+      !relaxProduct &&
+      hasReadyEnglishPrimaryGuide({ tour, role, partner, peopleByKey, people, required })
     for (const person of people) {
+      if (preferEnglishPrimary && (person.owner || !isEnglishPrimaryGuide(person.member))) continue
       const code = rejection({
         person,
         tour,
@@ -732,7 +794,7 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
         peopleByKey,
         people,
         required,
-        skipProduct: relaxProduct,
+        skipProduct: guideMaySkipProductCheck(person, tour, relaxProduct),
       })
       if (code) {
         counts.set(code, (counts.get(code) || 0) + 1)
@@ -800,7 +862,7 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
         peopleByKey,
         people,
         required,
-        skipProduct: relaxProduct,
+        skipProduct: guideMaySkipProductCheck(guide, tour, relaxProduct),
       })
       if (guideCode) {
         counts.set(guideCode, (counts.get(guideCode) || 0) + 1)
@@ -841,11 +903,16 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
     const ownerPool = nonOwner.length > 0 ? nonOwner : pairs
     const preferred = ownerPool.filter((pair) => !pair.avoid)
     const pool = preferred.length > 0 ? preferred : ownerPool
-    const bestScore = pool.reduce((best, pair) => Math.max(best, deficit(pair.guide) + deficit(pair.assistant)), Number.NEGATIVE_INFINITY)
+    const englishGuidePairs =
+      !relaxProduct && isEnglishOnlyGuestTour(tour.guestPeople)
+        ? pool.filter((pair) => isEnglishPrimaryGuide(pair.guide.member) && !pair.guide.owner)
+        : []
+    const ranked = englishGuidePairs.length > 0 ? englishGuidePairs : pool
+    const bestScore = ranked.reduce((best, pair) => Math.max(best, deficit(pair.guide) + deficit(pair.assistant)), Number.NEGATIVE_INFINITY)
     const near =
       variant > 0
-        ? pool.filter((pair) => bestScore - (deficit(pair.guide) + deficit(pair.assistant)) <= 1)
-        : pool
+        ? ranked.filter((pair) => bestScore - (deficit(pair.guide) + deficit(pair.assistant)) <= 1)
+        : ranked
     near.sort((a, b) => {
       const rating =
         guideLanguagePriorityScore(b.guide.member.guideProductSkills, tour.productId, required) -

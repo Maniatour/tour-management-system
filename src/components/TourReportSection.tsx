@@ -7,7 +7,12 @@ import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import { useLocale } from 'next-intl'
-import { isTourReportEditWindowClosed, tourReportText } from '@/lib/tourReportExtras'
+import {
+  canReadAllTourReports,
+  isTourReportEditWindowClosed,
+  tourReportEmailIlikeExact,
+  tourReportText,
+} from '@/lib/tourReportExtras'
 import { normalizeTourReportEmail } from '@/lib/tourReportMissing'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTourDetailSectionChrome } from '@/components/tour/TourDetailModalChromeContext'
@@ -47,8 +52,9 @@ const TourReportSection = forwardRef<TourReportSectionHandle, TourReportSectionP
   const t = useTranslations('tours.tourReport')
   const locale = useLocale()
   const chrome = useTourDetailSectionChrome()
-  const { user, simulatedUser, isSimulating } = useAuth()
+  const { user, userRole, simulatedUser, isSimulating } = useAuth()
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
+  const readAllReports = canReadAllTourReports(userRole)
   const [showForm, setShowForm] = useState(false)
   const [showList, setShowList] = useState(false)
   const [hasReports, setHasReports] = useState(false)
@@ -58,15 +64,21 @@ const TourReportSection = forwardRef<TourReportSectionHandle, TourReportSectionP
 
   useEffect(() => {
     checkForReports()
-  }, [tourId])
+  }, [tourId, currentUserEmail, readAllReports])
 
   const checkForReports = async () => {
     try {
-      const { data, error } = await supabase
-        .from('tour_reports')
-        .select('id')
-        .eq('tour_id', tourId)
-        .limit(1)
+      let query = supabase.from('tour_reports').select('id').eq('tour_id', tourId).limit(1)
+      if (!readAllReports) {
+        const email = currentUserEmail?.trim()
+        if (!email) {
+          setHasReports(false)
+          setShowList(false)
+          return
+        }
+        query = query.ilike('user_email', tourReportEmailIlikeExact(email))
+      }
+      const { data, error } = await query
 
       if (error) throw error
       const has = !!(data && data.length > 0)

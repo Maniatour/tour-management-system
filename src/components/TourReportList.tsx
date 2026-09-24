@@ -63,11 +63,13 @@ import {
   displayMoodOption,
   displayRatingOption,
   displaySkipReasonLabel,
+  canReadAllTourReports,
   displayVehicleConditionLabel,
   displayWeatherOption,
   isTourReportSignatureImage,
   parseIssuePhotoUrls,
   parseSkippedStops,
+  tourReportEmailIlikeExact,
   tourReportText,
   TOUR_REPORT_MOOD_OPTIONS,
   TOUR_REPORT_WEATHER_OPTIONS,
@@ -137,8 +139,9 @@ export default function TourReportList({
   locale = 'ko',
   highlightReportId = null,
 }: TourReportListProps) {
-  const { user, simulatedUser, isSimulating } = useAuth()
+  const { user, userRole, simulatedUser, isSimulating } = useAuth()
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
+  const readAllReports = canReadAllTourReports(userRole)
   const getText = (ko: string, en: string) => tourReportText(locale, ko, en)
   const [reports, setReports] = useState<TourReport[]>([])
   const [stopCourseById, setStopCourseById] = useState<Map<string, CourseForMainStops>>(new Map())
@@ -155,7 +158,7 @@ export default function TourReportList({
   useEffect(() => {
     fetchReports()
     void fetchDrivingSegments()
-  }, [tourId, user])
+  }, [tourId, currentUserEmail, readAllReports])
 
   const fetchDrivingSegments = async () => {
     try {
@@ -174,7 +177,11 @@ export default function TourReportList({
   }
 
   const fetchReports = async () => {
-    if (!user?.email) return
+    if (!readAllReports && !currentUserEmail?.trim()) {
+      setReports([])
+      setLoading(false)
+      return
+    }
 
     setLoading(true)
     try {
@@ -196,6 +203,15 @@ export default function TourReportList({
 
       if (tourId) {
         query = query.eq('tour_id', tourId)
+      }
+
+      if (!readAllReports) {
+        const email = currentUserEmail?.trim()
+        if (!email) {
+          setReports([])
+          return
+        }
+        query = query.ilike('user_email', tourReportEmailIlikeExact(email))
       }
 
       const { data, error } = await query

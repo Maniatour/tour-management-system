@@ -684,19 +684,28 @@ export default function TourReportForm({
       }
       try {
         const myEmail = normalizeTourReportEmail(user.email)
-        const { data, error } = await supabase
+        const narrow = await supabase
           .from('tour_reports')
-          .select('id, user_email, driving_segment_ids, activity_details, submitted_on, updated_at')
+          .select(
+            'id, user_email, driving_segment_ids, submitted_on, updated_at, drivingRoster:activity_details->drivingRoster'
+          )
           .eq('tour_id', tourId)
-        if (error) throw error
-        const rows = (data ?? []) as Array<{
-          id: string
-          user_email: string
-          driving_segment_ids: string[] | null
-          activity_details: unknown
-          submitted_on: string | null
-          updated_at: string | null
-        }>
+        const fallback = narrow.error
+          ? await supabase
+              .from('tour_reports')
+              .select('id, user_email, driving_segment_ids, submitted_on, updated_at')
+              .eq('tour_id', tourId)
+          : null
+        if (fallback?.error) throw fallback.error
+        const rows = (narrow.error ? fallback?.data ?? [] : narrow.data ?? []).map((row) => ({
+          id: row.id,
+          user_email: row.user_email,
+          driving_segment_ids: row.driving_segment_ids,
+          drivingRoster:
+            'drivingRoster' in row ? (row as { drivingRoster?: unknown }).drivingRoster : undefined,
+          submitted_on: row.submitted_on,
+          updated_at: row.updated_at,
+        }))
         const emails = [...new Set(rows.map((row) => row.user_email).filter(Boolean))]
         if (!emails.includes(user.email)) emails.push(user.email)
 
@@ -748,7 +757,7 @@ export default function TourReportForm({
                   user_email: email,
                   userName: nameByEmail.get(email) || row.user_email.split('@')[0] || email,
                   driving_segment_ids: Array.isArray(row.driving_segment_ids) ? row.driving_segment_ids : [],
-                  activity_details: parseActivityDetails(row.activity_details),
+                  activity_details: parseActivityDetails({ drivingRoster: row.drivingRoster }),
                   submitted_on: row.submitted_on,
                   updated_at: row.updated_at,
                 } satisfies PartnerDrivingReport

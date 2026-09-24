@@ -119,6 +119,98 @@ test('english guests prefer a higher english priority and fall back to the next 
   assert.ok(result.slots.some((slot) => slot.email === 'top@x.com' && slot.reasonLines.some((line) => line.includes('영어 우선순위 상'))))
 })
 
+test('english-only tours go to guides whose first language is english, split evenly', () => {
+  const english = { ko: 0, ja: 0, en: 4 }
+  const result = autoAssignSchedule({
+    startDate: '2026-10-05',
+    endDate: '2026-10-08',
+    preset: 'equal',
+    existingMode: 'reset',
+    members: [
+      member('sean@x.com', {
+        name: 'Sean',
+        languages: ['KR', 'EN'],
+        guideProductSkills: { DAY: { eligible: true, priorities: { ko: 1, en: 3 } } },
+      }),
+      member('dez@x.com', { name: 'Dez', languages: ['EN'], guideProductSkills: {} }),
+      member('patricia@x.com', { name: 'Patricia', languages: ['EN', 'FR'], guideProductSkills: {} }),
+    ],
+    tours: ['05', '06', '07', '08'].map((day, index) =>
+      tour(`t${index}`, `2026-10-${day}`, { guestPeople: english }),
+    ),
+    offs: [],
+  })
+  const guides = Object.values(result.assignmentsByTourId).map((row) => row.tour_guide_id)
+  assert.equal(guides.filter((email) => email === 'sean@x.com').length, 0)
+  assert.equal(guides.filter((email) => email === 'dez@x.com').length, 2)
+  assert.equal(guides.filter((email) => email === 'patricia@x.com').length, 2)
+  assert.ok(
+    result.slots.some((slot) => slot.reasonLines.some((line) => line.includes('영어가 첫 언어라'))),
+  )
+})
+
+test('english-only tour falls back when every english-first guide is off', () => {
+  const result = autoAssignSchedule({
+    startDate: '2026-10-05',
+    endDate: '2026-10-05',
+    preset: 'equal',
+    existingMode: 'reset',
+    members: [
+      member('sean@x.com', {
+        name: 'Sean',
+        languages: ['KR', 'EN'],
+        guideProductSkills: { DAY: { eligible: true, priorities: { ko: 1, en: 3 } } },
+      }),
+      member('dez@x.com', { name: 'Dez', languages: ['EN'], guideProductSkills: {} }),
+    ],
+    tours: [tour('t1', '2026-10-05', { guestPeople: { ko: 0, ja: 0, en: 4 } })],
+    offs: [{ email: 'dez@x.com', date: '2026-10-05' }],
+  })
+  assert.equal(result.assignmentsByTourId.t1.tour_guide_id, 'sean@x.com')
+})
+
+test('korean tours still prefer the product-checked guide', () => {
+  const result = autoAssignSchedule({
+    startDate: '2026-10-05',
+    endDate: '2026-10-05',
+    preset: 'equal',
+    existingMode: 'reset',
+    members: [
+      member('sean@x.com', {
+        name: 'Sean',
+        languages: ['KR', 'EN'],
+        guideProductSkills: { DAY: { eligible: true, priorities: { ko: 1, en: 3 } } },
+      }),
+      member('dez@x.com', { name: 'Dez', languages: ['EN'], guideProductSkills: {} }),
+    ],
+    tours: [tour('t1', '2026-10-05')],
+    offs: [],
+  })
+  assert.equal(result.assignmentsByTourId.t1.tour_guide_id, 'sean@x.com')
+})
+
+test('english-only pair uses an english-first guide', () => {
+  const result = autoAssignSchedule({
+    startDate: '2026-10-05',
+    endDate: '2026-10-05',
+    preset: 'equal',
+    existingMode: 'reset',
+    members: [
+      member('sean@x.com', {
+        name: 'Sean',
+        languages: ['KR', 'EN'],
+        guideProductSkills: { DAY: { eligible: true, priorities: { en: 1 } } },
+      }),
+      member('dez@x.com', { name: 'Dez', languages: ['EN'], guideProductSkills: {}, cdl: false }),
+      member('driver@x.com', { name: 'Driver', languages: ['EN'], guideProductSkills: {}, cdl: true }),
+    ],
+    tours: [tour('t1', '2026-10-05', { teamType: 'guide+driver', guestPeople: { ko: 0, ja: 0, en: 4 } })],
+    offs: [],
+  })
+  assert.equal(result.assignmentsByTourId.t1.tour_guide_id, 'dez@x.com')
+  assert.equal(result.assignmentsByTourId.t1.assistant_id, 'driver@x.com')
+})
+
 test('english guests are not assigned a guide who does not speak english', () => {
   const tours = [
     tour('night', '2026-10-09', {
