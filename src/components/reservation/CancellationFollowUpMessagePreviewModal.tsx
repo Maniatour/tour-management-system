@@ -34,6 +34,15 @@ import EmailPreviewBodyPanel from '@/components/reservation/EmailPreviewBodyPane
 import StaffOutreachMessageTemplatePanel from '@/components/reservation/StaffOutreachMessageTemplatePanel'
 import { useStaffOutreachMessageTemplates } from '@/hooks/useStaffOutreachMessageTemplates'
 import { shouldSkipDirectCancellationFollowUpEmail } from '@/lib/otaDirectCustomerEmail'
+import {
+  getInitialMessengerContactSettings,
+  loadMessengerContactSettings,
+} from '@/lib/messengerContactSettingsClientCache'
+import {
+  applyOneWaySmsContactGuidance,
+  isOneWaySmsDestination,
+} from '@/lib/oneWaySmsContactGuidance'
+import { formatPhoneToE164, resolveSmsPhone } from '@/utils/formatPhoneToE164'
 
 export interface CancellationFollowUpMessagePreviewModalProps {
   isOpen: boolean
@@ -102,6 +111,9 @@ export default function CancellationFollowUpMessagePreviewModal({
   const activeChannel: CancellationFollowUpMessageChannel = skipDirectEmail ? 'sms' : channel
   const [messageKind, setMessageKind] = useState<CancellationFollowUpMessageKind>(initialMessageKind)
   const [editMode, setEditMode] = useState(false)
+  const [messengerContacts, setMessengerContacts] = useState(getInitialMessengerContactSettings)
+  const smsPhone = formatPhoneToE164(customerPhone) || resolveSmsPhone(customerPhone)
+  const oneWaySms = isOneWaySmsDestination(smsPhone)
 
   useEffect(() => {
     if (isOpen) setMessageKind(initialMessageKind)
@@ -161,6 +173,17 @@ export default function CancellationFollowUpMessagePreviewModal({
       setEditMode(false)
     }
   }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen || !oneWaySms) return
+    let cancelled = false
+    loadMessengerContactSettings().then((settings) => {
+      if (!cancelled) setMessengerContacts(settings)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, oneWaySms])
   const [choiceRows, setChoiceRows] = useState<ReservationChoiceRowForRebooking[]>([])
   const [couponValidUntilIso, setCouponValidUntilIso] = useState<string | null>(null)
   const [priceComparison, setPriceComparison] = useState<RebookingPriceComparisonResult | null>(null)
@@ -312,7 +335,7 @@ export default function CancellationFollowUpMessagePreviewModal({
   }, [priceComparison, emailLocale])
 
   const messageContent = useMemo(() => {
-    return substituteCancellationFollowUpMessageTemplate(subjectTpl, bodyForSubstitute, activeChannel, {
+    const content = substituteCancellationFollowUpMessageTemplate(subjectTpl, bodyForSubstitute, activeChannel, {
       customerName,
       tourDate,
       productName,
@@ -325,6 +348,9 @@ export default function CancellationFollowUpMessagePreviewModal({
       priceComparisonHtml,
       priceComparisonPlain,
     })
+    if (activeChannel !== 'sms' || !oneWaySms) return content
+    const plainText = applyOneWaySmsContactGuidance(content.plainText, emailLocale, messengerContacts)
+    return { ...content, body: plainText, plainText }
   }, [
     subjectTpl,
     bodyForSubstitute,
@@ -339,6 +365,8 @@ export default function CancellationFollowUpMessagePreviewModal({
     couponValidUntilLabel,
     priceComparisonHtml,
     priceComparisonPlain,
+    oneWaySms,
+    messengerContacts,
   ])
 
   const handleCopy = useCallback(async () => {

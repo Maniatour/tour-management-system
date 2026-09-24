@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireStaffApiAuth } from '@/lib/api-security'
 import { buildAdminSmsSamplePreview } from '@/lib/adminSmsSamplePreview'
 import { ADMIN_SMS_CATEGORIES, type AdminSmsCategoryId } from '@/lib/adminSmsTemplateCatalog'
+import { fetchMessengerContactSettingsFromDb } from '@/lib/messengerContactSettingsDb'
+import {
+  applyOneWaySmsContactGuidance,
+  isOneWaySmsDestination,
+} from '@/lib/oneWaySmsContactGuidance'
 import { sendTwilioSms } from '@/lib/twilioClient'
 import { formatPhoneToE164 } from '@/utils/formatPhoneToE164'
 
@@ -46,11 +51,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const message = buildAdminSmsSamplePreview({
+    const preview = buildAdminSmsSamplePreview({
       categoryId,
       locale,
       bodyTpl: bodyTemplate,
     })
+    const message = isOneWaySmsDestination(toPhone)
+      ? applyOneWaySmsContactGuidance(
+          preview,
+          locale,
+          await fetchMessengerContactSettingsFromDb()
+        )
+      : preview
     if (!message.trim()) {
       return NextResponse.json({ error: '미리보기 메시지를 생성할 수 없습니다.' }, { status: 400 })
     }

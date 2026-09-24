@@ -14,6 +14,10 @@ import {
 } from '@/lib/cancellationFollowUpMessage'
 import { fetchMessengerContactSettingsFromDb } from '@/lib/messengerContactSettingsDb'
 import {
+  applyOneWaySmsContactGuidance,
+  isOneWaySmsDestination,
+} from '@/lib/oneWaySmsContactGuidance'
+import {
   getBuiltinPendingAltTourTemplate,
   substitutePendingAltTourMessageTemplate,
   type PendingAltTourMessageLocale,
@@ -156,6 +160,16 @@ async function loadReservationBase(reservationId: string) {
   }
 }
 
+async function applyOneWayGuidance(
+  message: string,
+  locale: string,
+  toPhone: string | null
+): Promise<string> {
+  if (!isOneWaySmsDestination(toPhone)) return message
+  const contacts = await fetchMessengerContactSettingsFromDb()
+  return applyOneWaySmsContactGuidance(message, locale, contacts)
+}
+
 async function fetchCouponValidUntilIso(db: SupabaseClient): Promise<string | null> {
   const { data } = await db
     .from('coupons')
@@ -206,7 +220,7 @@ export async function buildReservationOutboundSmsPreview(
       data: {
         categoryId,
         locale: smsLocale,
-        message: result.data.message,
+        message: await applyOneWayGuidance(result.data.message, smsLocale, result.data.toPhone),
         bodyTemplate: result.data.bodyTemplate,
         savedInDb: result.data.savedInDb,
         toPhone: result.data.toPhone,
@@ -229,17 +243,21 @@ export async function buildReservationOutboundSmsPreview(
       product ? [product] : [],
       locale
     )
-    const message = substitutePickupNotificationSmsTemplate(bodyTemplate, {
-      customerName,
-      productName,
-      tourDate: reservation.tour_date,
-      channelReference: reservation.channel_rn,
-      pickupTime: reservation.pickup_time,
-      pickupHotelName,
-      pickupLocation,
-      contacts,
+    const message = await applyOneWayGuidance(
+      substitutePickupNotificationSmsTemplate(bodyTemplate, {
+        customerName,
+        productName,
+        tourDate: reservation.tour_date,
+        channelReference: reservation.channel_rn,
+        pickupTime: reservation.pickup_time,
+        pickupHotelName,
+        pickupLocation,
+        contacts,
+        locale,
+      }),
       locale,
-    })
+      toPhone
+    )
 
     return {
       ok: true,
@@ -323,19 +341,23 @@ export async function buildReservationOutboundSmsPreview(
       couponValidUntilIso,
     })
 
-    const message = substituteCancellationFollowUpMessageTemplate('', bodyTemplate, 'sms', {
-      customerName,
-      tourDate: reservation.tour_date,
-      productName,
-      channelReference: reservation.channel_rn,
-      locale: staffLocale,
-      tourDateLong: formatTourDateLongForCancellationMessage(reservation.tour_date, staffLocale),
-      rebookingUrl,
-      couponCode: REBOOKING_OUTREACH_COUPON_CODE,
-      couponValidUntil: formatRebookingCouponValidUntil(staffLocale, couponValidUntilIso),
-      priceComparisonHtml,
-      priceComparisonPlain,
-    }).body
+    const message = await applyOneWayGuidance(
+      substituteCancellationFollowUpMessageTemplate('', bodyTemplate, 'sms', {
+        customerName,
+        tourDate: reservation.tour_date,
+        productName,
+        channelReference: reservation.channel_rn,
+        locale: staffLocale,
+        tourDateLong: formatTourDateLongForCancellationMessage(reservation.tour_date, staffLocale),
+        rebookingUrl,
+        couponCode: REBOOKING_OUTREACH_COUPON_CODE,
+        couponValidUntil: formatRebookingCouponValidUntil(staffLocale, couponValidUntilIso),
+        priceComparisonHtml,
+        priceComparisonPlain,
+      }).body,
+      staffLocale,
+      toPhone
+    )
 
     return {
       ok: true,
@@ -363,13 +385,17 @@ export async function buildReservationOutboundSmsPreview(
   const bodyTemplate = bodyTemplateOverride?.trim() || dbTpl?.body_template || builtin.body
   const savedInDb = !!dbTpl?.body_template?.trim() && !bodyTemplateOverride?.trim()
 
-  const message = substitutePendingAltTourMessageTemplate(bodyTemplate, {
-    customerName,
-    tourDate: reservation.tour_date,
-    productName,
-    channelReference: reservation.channel_rn,
-    locale: staffLocale,
-  })
+  const message = await applyOneWayGuidance(
+    substitutePendingAltTourMessageTemplate(bodyTemplate, {
+      customerName,
+      tourDate: reservation.tour_date,
+      productName,
+      channelReference: reservation.channel_rn,
+      locale: staffLocale,
+    }),
+    staffLocale,
+    toPhone
+  )
 
   return {
     ok: true,

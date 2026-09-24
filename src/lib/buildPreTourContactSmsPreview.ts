@@ -1,6 +1,7 @@
 import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { buildTourChatRoomUrl } from '@/lib/tourChatRoomEmailHtml'
 import { fetchMessengerContactSettingsFromDb } from '@/lib/messengerContactSettingsDb'
+import { applyOneWaySmsContactGuidance, isOneWaySmsDestination } from '@/lib/oneWaySmsContactGuidance'
 import {
   getBuiltinPreTourContactSmsTemplate,
   substitutePreTourContactSmsTemplate,
@@ -118,7 +119,7 @@ export async function buildPreTourContactSmsPreview(params: {
     bodyTemplateOverride?.trim() || dbTemplate || builtin
   const savedInDb = !!dbTemplate && !bodyTemplateOverride
 
-  const message = substitutePreTourContactSmsTemplate(bodyTemplate, {
+  const substituted = substitutePreTourContactSmsTemplate(bodyTemplate, {
     customerName: String(customer.name ?? ''),
     productName,
     tourDate: reservation.tour_date,
@@ -133,6 +134,9 @@ export async function buildPreTourContactSmsPreview(params: {
 
   const toPhone = pickCustomerSmsPhone(customer.phone, customer.emergency_contact)
   const rawPhone = customer.phone?.trim() || customer.emergency_contact?.trim() || ''
+  const message = isOneWaySmsDestination(toPhone)
+    ? applyOneWaySmsContactGuidance(substituted, locale, contacts)
+    : substituted
 
   return {
     ok: true,

@@ -17,6 +17,15 @@ import { resolveReservationEmailIsEnglish } from '@/lib/reservationEmailLocale'
 import EmailPreviewBodyPanel from '@/components/reservation/EmailPreviewBodyPanel'
 import StaffOutreachMessageTemplatePanel from '@/components/reservation/StaffOutreachMessageTemplatePanel'
 import { useStaffOutreachMessageTemplates } from '@/hooks/useStaffOutreachMessageTemplates'
+import {
+  getInitialMessengerContactSettings,
+  loadMessengerContactSettings,
+} from '@/lib/messengerContactSettingsClientCache'
+import {
+  applyOneWaySmsContactGuidance,
+  isOneWaySmsDestination,
+} from '@/lib/oneWaySmsContactGuidance'
+import { formatPhoneToE164, resolveSmsPhone } from '@/utils/formatPhoneToE164'
 
 type PendingCustomerAltTourMessagePreviewModalProps = {
   isOpen: boolean
@@ -46,6 +55,9 @@ export function PendingCustomerAltTourMessagePreviewModal({
   const [channel, setChannel] = useState<PendingAltTourMessageChannel>('email')
   const [copied, setCopied] = useState(false)
   const [editMode, setEditMode] = useState(false)
+  const [messengerContacts, setMessengerContacts] = useState(getInitialMessengerContactSettings)
+  const smsPhone = formatPhoneToE164(customerPhone) || resolveSmsPhone(customerPhone)
+  const oneWaySms = isOneWaySmsDestination(smsPhone)
 
   const emailLocale: PendingAltTourMessageLocale = resolveReservationEmailIsEnglish(
     customerLanguage,
@@ -113,19 +125,31 @@ export function PendingCustomerAltTourMessagePreviewModal({
     if (!isOpen) setEditMode(false)
   }, [isOpen])
 
+  useEffect(() => {
+    if (!isOpen || !oneWaySms) return
+    let cancelled = false
+    loadMessengerContactSettings().then((settings) => {
+      if (!cancelled) setMessengerContacts(settings)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, oneWaySms])
+
   const bodyForSubstitute = useMemo(() => {
     if (channel !== 'email') return bodyTpl
     return mergePendingAltTourEmailDocumentFromBody(emailLocale, bodyTpl)
   }, [channel, emailLocale, bodyTpl])
 
-  const messageContent = useMemo(
-    () =>
-      substitutePendingAltTourFullMessage(subjectTpl, bodyForSubstitute, channel, {
-        ...params,
-        locale: emailLocale,
-      }),
-    [subjectTpl, bodyForSubstitute, channel, params, emailLocale]
-  )
+  const messageContent = useMemo(() => {
+    const content = substitutePendingAltTourFullMessage(subjectTpl, bodyForSubstitute, channel, {
+      ...params,
+      locale: emailLocale,
+    })
+    if (channel !== 'sms' || !oneWaySms) return content
+    const plainText = applyOneWaySmsContactGuidance(content.plainText, emailLocale, messengerContacts)
+    return { ...content, body: plainText, plainText }
+  }, [subjectTpl, bodyForSubstitute, channel, params, emailLocale, oneWaySms, messengerContacts])
 
   const handleCopy = useCallback(async () => {
     try {
