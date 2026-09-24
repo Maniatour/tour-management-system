@@ -4,11 +4,12 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { createPortal } from 'react-dom'
 import { ChevronLeft, ChevronRight, HelpCircle, Users, X } from 'lucide-react'
 import ScheduleAutoAssignGuidePlanModal, {
-  persistGuidePlan,
+  clearStoredGuidePlan,
   readStoredGuidePlan,
   type AutoAssignGuideChoice,
 } from '@/components/schedule/ScheduleAutoAssignGuidePlanModal'
 import { mergeGuidePlan, sameGuidePlan } from '@/lib/schedule/autoAssignGuidePlan'
+import { fetchSharedGuidePlan, saveSharedGuidePlan } from '@/lib/schedule/autoAssignGuidePlanStore'
 import {
   AUTO_ASSIGN_EXISTING_LABEL,
   AUTO_ASSIGN_LATER_LINES,
@@ -118,6 +119,8 @@ export default function ScheduleAutoAssignModal({
   const [helpOpen, setHelpOpen] = useState(false)
   const [guidePlanOpen, setGuidePlanOpen] = useState(false)
   const [guidePlan, setGuidePlan] = useState<AutoAssignGuidePlanEntry[]>([])
+  const [planReady, setPlanReady] = useState(false)
+  const [planNotice, setPlanNotice] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<AutoAssignPreviewData | null>(null)
@@ -137,23 +140,55 @@ export default function ScheduleAutoAssignModal({
     setCaseIndex(0)
     setError('')
     setHelpOpen(false)
+    setPlanReady(false)
+    setPlanNotice('')
     setSidebarWidth(readSidebarWidth())
     setFrame(defaultModalFrame())
   }, [open, initialStart, initialEnd])
 
   const guideKey = guides.map((guide) => `${guide.email}\t${guide.name}`).join('\n')
   useEffect(() => {
-    if (!guides.length) return
-    setGuidePlan((current) => {
-      const stored = readStoredGuidePlan()
-      const next = mergeGuidePlan(guides, stored.length > 0 ? stored : current)
-      return sameGuidePlan(next, current) ? current : next
-    })
-  }, [guideKey])
+    if (!open) return
+    if (!guides.length) {
+      setPlanReady(true)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const remote = await fetchSharedGuidePlan()
+      if (cancelled) return
+      if (!remote.ok) {
+        setPlanNotice('공유된 가이드 조건을 읽지 못했습니다. 잠시 후 다시 열어 주세요.')
+        setPlanReady(true)
+        return
+      }
+      let saved = remote.entries
+      if (saved.length === 0) {
+        const local = readStoredGuidePlan()
+        if (local.length > 0) {
+          saved = mergeGuidePlan(guides, local)
+          const seeded = await saveSharedGuidePlan(saved)
+          if (cancelled) return
+          if (seeded.ok) clearStoredGuidePlan()
+          else setPlanNotice('이 브라우저에만 있던 가이드 조건을 공유 저장하지 못했습니다.')
+        }
+      }
+      setGuidePlan((current) => {
+        const next = mergeGuidePlan(guides, saved.length > 0 ? saved : current)
+        return sameGuidePlan(next, current) ? current : next
+      })
+      setPlanReady(true)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [open, guideKey])
 
   const updateGuidePlan = (next: AutoAssignGuidePlanEntry[]) => {
     setGuidePlan(next)
-    persistGuidePlan(next)
+    void saveSharedGuidePlan(next).then((result) => {
+      setPlanNotice(result.ok ? '' : '가이드 조건을 공유 저장하지 못했습니다. 관리자 권한이 필요합니다.')
+    })
   }
 
   const generate = async (
@@ -369,11 +404,7 @@ export default function ScheduleAutoAssignModal({
           </div>
           <button
             type="button"
-            onClick={() => {
-              const stored = readStoredGuidePlan()
-              setGuidePlan((current) => mergeGuidePlan(guides, stored.length > 0 ? stored : current))
-              setGuidePlanOpen(true)
-            }}
+            onClick={() => setGuidePlanOpen(true)}
             className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-gray-300 px-4 text-sm font-medium text-gray-800 hover:bg-gray-50"
           >
             <Users className="h-4 w-4" />
@@ -384,11 +415,11 @@ export default function ScheduleAutoAssignModal({
           </button>
           <button
             type="button"
-            disabled={loading || !startDate || !endDate}
+            disabled={loading || !planReady || !startDate || !endDate}
             onClick={() => void generate(preset, startDate, endDate, 0, null, existingMode)}
             className="h-10 rounded-xl bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
-            {loading ? '생성 중' : '미리보기 생성'}
+            {loading ? '생성 중' : planReady ? '미리보기 생성' : '조건 불러오는 중'}
           </button>
           {preview && alternativeTotal > 0 ? (
             <div className="inline-flex h-10 items-center rounded-xl border border-gray-200 bg-white">
@@ -421,6 +452,7 @@ export default function ScheduleAutoAssignModal({
 
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-3 sm:px-4">
           {error ? <p className="mb-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+          {planNotice ? <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">{planNotice}</p> : null}
           {preset === 'reviews' ? (
             <p className="mb-3 text-sm text-gray-600">
               후기 순은 지난달 투어의 평점과 인원별 리뷰율을 함께 봅니다. 배정 인원 대비 후기가 적으면 5점이어도 뒤로 갑니다.
@@ -499,7 +531,6 @@ export default function ScheduleAutoAssignModal({
         plan={guidePlan}
         onChange={updateGuidePlan}
         onClose={() => {
-          persistGuidePlan(guidePlan)
           setGuidePlanOpen(false)
           if (preview) void generate()
         }}

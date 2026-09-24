@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { mergeGuidePlan, sameGuidePlan } from './autoAssignGuidePlan'
+import { mergeGuidePlan, parseStoredGuidePlan, sameGuidePlan } from './autoAssignGuidePlan'
 import {
   assignmentSignature,
   autoAssignSchedule,
@@ -714,6 +714,17 @@ test('saved guide columns stay in place when the guide list is rebuilt', () => {
     saved,
   )
   assert.ok(sameGuidePlan(again, saved))
+  assert.deepEqual(
+    parseStoredGuidePlan({
+      entries: [
+        { email: ' Sean@x.com ', rank: 'low', weeklyLoad: 1 },
+        { email: 'sean@x.com', rank: 'priority', weeklyLoad: 3 },
+        { email: '', rank: 'normal', weeklyLoad: 3 },
+        { email: 'dez@x.com', rank: 'nope', weeklyLoad: 9 },
+      ],
+    }).map((entry) => `${entry.email}:${entry.rank}:${entry.weeklyLoad}`),
+    ['Sean@x.com:low:1', 'dez@x.com:normal:3'],
+  )
 })
 
 test('guide plan keeps a standby guide until nobody else can take the tour', () => {

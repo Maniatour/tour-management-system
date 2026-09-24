@@ -19,6 +19,7 @@ const LOADS: AutoAssignWeeklyLoad[] = [1, 2, 3]
 
 export type { AutoAssignGuideChoice }
 
+/** 예전 브라우저 저장본. 공유 설정이 비어 있을 때 한 번만 옮긴다. */
 export function readStoredGuidePlan(): AutoAssignGuidePlanEntry[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -27,14 +28,6 @@ export function readStoredGuidePlan(): AutoAssignGuidePlanEntry[] {
     return Array.isArray(parsed.entries) ? parsed.entries : []
   } catch {
     return []
-  }
-}
-
-function writeStoredPlan(entries: AutoAssignGuidePlanEntry[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ entries }))
-  } catch {
-    // 저장이 안 되어도 이번 배정에는 현재 선택을 쓴다.
   }
 }
 
@@ -104,6 +97,7 @@ export default function ScheduleAutoAssignGuidePlanModal({
             <p className="mt-1 text-sm leading-6 text-gray-600">
               이름 뱃지를 끌어 우선, 일반, 하위에 넣습니다. 균등 배정에서는 이 순위가 배정을 가져가지 않고, 이번 구간 횟수가 같을 때만 조금 유리합니다.
               주 1회와 주 2회는 그 주를 넘기지 않습니다. 위쪽 배정 안 함에 둔 가이드는 다른 사람이 불가할 때만 배정합니다.
+              이 순서는 공유 설정에 저장되어 모든 관리자가 같은 조건으로 배정합니다.
             </p>
           </div>
           <button type="button" className="rounded-lg p-2 text-gray-500 hover:bg-gray-100" aria-label="가이드 선택 닫기" onClick={onClose}>
@@ -231,6 +225,10 @@ export function initialGuidePlan(guides: AutoAssignGuideChoice[]): AutoAssignGui
   return mergeGuidePlan(guides, readStoredGuidePlan())
 }
 
-export function persistGuidePlan(entries: AutoAssignGuidePlanEntry[]) {
-  writeStoredPlan(entries)
+export function clearStoredGuidePlan() {
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+  } catch {
+    // 예전 브라우저 저장본을 지우지 못해도 공유 설정이 우선이다.
+  }
 }
