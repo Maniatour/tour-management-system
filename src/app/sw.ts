@@ -1,6 +1,7 @@
 import { defaultCache } from '@serwist/next/worker'
 import type { PrecacheEntry, SerwistGlobalConfig } from 'serwist'
 import { disableNavigationPreload, Serwist } from 'serwist'
+import { GUIDE_SHELL_CACHE, guideShellCacheUrl, isGuideAppPathname } from '../lib/guideAppShell'
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -13,9 +14,65 @@ declare const self: ServiceWorkerGlobalScope
 const STAFF_APP_PATH =
   /^\/(ko|en|ja|zh-CN|zh-TW|es|fr|de)\/(admin|dashboard|guide)(\/|$)/
 
-/** 직원·관리 화면 (HTML·RSC·프리페치 포함). defaultCache NetworkFirst가 캐시 미스+네트워크 실패 시 no-response를 throw함 */
+/** 관리자·대시보드. 가이드는 오프라인 셸 캐시를 쓰므로 여기서 제외한다. */
 function isStaffAppPath(url: URL): boolean {
-  return STAFF_APP_PATH.test(url.pathname)
+  return STAFF_APP_PATH.test(url.pathname) && !isGuideAppPathname(url.pathname)
+}
+
+function guideShellKind(request: Request): 'skip' | 'html' | 'rsc' {
+  if (request.headers.get('Next-Router-Prefetch') === '1') return 'skip'
+  if (request.headers.get('RSC') === '1') return 'rsc'
+  return 'html'
+}
+
+/**
+ * 가이드 화면은 온라인이면 최신 HTML을 받고, 연결이 없으면 마지막으로 연 화면을 연다.
+ * 사진·나레이션 데이터는 IndexedDB에 있고, 이 캐시는 그 화면을 다시 그리는 껍데기만 담당한다.
+ */
+async function handleGuideAppShell(options: {
+  request: Request
+  event?: ExtendableEvent
+}): Promise<Response> {
+  const kind = guideShellKind(options.request)
+  const cache = await caches.open(GUIDE_SHELL_CACHE)
+  const cacheKey = new Request(guideShellCacheUrl(options.request.url, kind === 'rsc' ? 'rsc' : 'html'))
+
+  const response = await handleNetworkOnlySafe(options)
+  const contentType = response.headers.get('content-type') || ''
+  const matchesKind =
+    kind === 'html'
+      ? contentType.includes('text/html')
+      : kind === 'rsc'
+        ? contentType.includes('text/x-component')
+        : false
+
+  if (kind !== 'skip' && options.request.method === 'GET' && response.ok && matchesKind) {
+    try {
+      // 리다이렉트를 따라간 응답은 Cache API에 그대로 넣을 수 없다.
+      const forCache = response.redirected
+        ? new Response(response.clone().body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+          })
+        : response.clone()
+      await cache.put(cacheKey, forCache)
+    } catch {
+      // 용량 초과·불투명 응답은 네트워크 응답만 반환
+    }
+    return response
+  }
+
+  if (response.status === 504 && kind !== 'skip') {
+    const cached = await cache.match(cacheKey)
+    if (cached) return cached
+    if (options.request.mode === 'navigate' || options.request.destination === 'document') {
+      const offline = await caches.match('/~offline')
+      if (offline) return offline
+    }
+  }
+
+  return response
 }
 
 function isPublicSharePath(url: URL): boolean {
@@ -137,6 +194,12 @@ const serwist = new Serwist({
         return request.mode === 'navigate' || request.destination === 'document'
       },
       handler: handleNetworkOnlySafe,
+    },
+    {
+      matcher({ url, sameOrigin, request }) {
+        return sameOrigin && request.method === 'GET' && isGuideAppPathname(url.pathname)
+      },
+      handler: handleGuideAppShell,
     },
     {
       matcher({ url, sameOrigin }) {

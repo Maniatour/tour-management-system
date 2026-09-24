@@ -45,6 +45,7 @@ import {
 } from '@/lib/staffLanding'
 import { tourReportRequiredDateRange } from '@/lib/tourReportExtras'
 import { assignedToursOrFilter } from '@/lib/guideAssignedToursFilter'
+import { registerGuideAppShell } from '@/lib/registerGuideAppShell'
 
 interface GuideLayoutProps {
   children: React.ReactNode
@@ -94,6 +95,12 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
       root.classList.remove('is-guide-route')
     }
   }, [])
+
+  // 온라인일 때 가이드 홈·자료 화면을 기기에 남겨, 신호가 없어도 사진·나레이션 화면이 열리게 한다.
+  useEffect(() => {
+    const loc = pathname.split('/').filter(Boolean)[0] || 'ko'
+    void registerGuideAppShell(loc)
+  }, [pathname])
 
   // 홈 화면에 추가 시 복원용: 가이드 구간 URL을 localStorage + 쿠키에 저장
   // (manifest start_url이 `/`였던 기존 바로가기가 `/` → 고객홈으로 가는 것 방지)
@@ -264,6 +271,9 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
     if (!isSimulating) {
       // 관리자, 매니저, 투어 가이드가 아닌 경우 접근 차단
       if (!currentUser || !['admin', 'manager', 'team_member'].includes(currentUserRole || '')) {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          return
+        }
         console.log('GuideLayout: Access denied, redirecting to auth', {
           currentUser: !!currentUser,
           currentUserRole,
@@ -557,6 +567,14 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
     )
   }
 
+  const openGuideRoute = (path: string) => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      window.location.assign(path)
+      return
+    }
+    router.push(path)
+  }
+
    return (
      <AudioPlayerProvider>
        <GuidePickupGeofenceProvider
@@ -601,7 +619,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
           <button
             onClick={() => {
               const currentLocale = pathname.split('/')[1] || 'ko'
-              router.push(`/${currentLocale}/guide`)
+              openGuideRoute(`/${currentLocale}/guide`)
             }}
             className={`flex flex-col items-center py-1 px-0.5 transition-colors ${
               pathname === `/${locale}/guide` || pathname === `/${locale}/guide/`
@@ -616,7 +634,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
           <button
             onClick={() => {
               const currentLocale = pathname.split('/')[1] || 'ko'
-              router.push(`/${currentLocale}/guide/tours?view=calendar`)
+              openGuideRoute(`/${currentLocale}/guide/tours?view=calendar`)
             }}
             className={`flex flex-col items-center py-1 px-0.5 transition-colors ${
               pathname.includes('/guide/tours') && pathname.includes('calendar')
@@ -631,7 +649,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
           <button
             onClick={() => {
               const currentLocale = pathname.split('/')[1] || 'ko'
-              router.push(`/${currentLocale}/guide/chat`)
+              openGuideRoute(`/${currentLocale}/guide/chat`)
             }}
             className={`flex flex-col items-center py-1 px-0.5 transition-colors relative ${
               pathname.includes('/guide/chat')
@@ -664,7 +682,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
           <button
             onClick={() => {
               const currentLocale = pathname.split('/')[1] || 'ko'
-              router.push(`/${currentLocale}/guide/tour-materials`)
+              openGuideRoute(`/${currentLocale}/guide/tour-materials`)
             }}
             className={`flex flex-col items-center py-1 px-0.5 transition-colors ${
               pathname.includes('/guide/tour-materials')
@@ -679,7 +697,7 @@ export default function GuideLayout({ children, params: _params }: GuideLayoutPr
           <button
             onClick={() => {
               const currentLocale = pathname.split('/')[1] || 'ko'
-              router.push(`/${currentLocale}/guide/reviews`)
+              openGuideRoute(`/${currentLocale}/guide/reviews`)
             }}
             className={`flex flex-col items-center py-1 px-0.5 transition-colors relative ${
               pathname.includes('/guide/reviews')

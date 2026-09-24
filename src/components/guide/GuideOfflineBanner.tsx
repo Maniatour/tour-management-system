@@ -27,7 +27,8 @@ export default function GuideOfflineBanner() {
     >
       <WifiOff className="h-4 w-4 shrink-0" aria-hidden />
       <span>
-        오프라인입니다. 마지막으로 불러온 데이터를 표시합니다. 연결되면 자동으로 갱신됩니다.
+        오프라인입니다. 저장된 화면에서 사진 촬영과 내려받은 나레이션을 사용할 수 있습니다. 연결되면
+        자동으로 갱신됩니다.
       </span>
     </div>
   )
