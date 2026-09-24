@@ -379,6 +379,44 @@ test('keeping the current guide blocks that day and reset can move them', () => 
   assert.equal(reset.assignmentsByTourId.taken.tour_guide_id, 'b@x.com')
 })
 
+test('reset clears an assigned day and fills it again when the checked guide is already used', () => {
+  const members = [
+    member('skilled@x.com', { name: 'Skilled', guideProductSkills: { DAY: { eligible: true, priorities: {} } } }),
+    member('other@x.com', { name: 'Other', guideProductSkills: {} }),
+  ]
+  const tours = [
+    tour('first', '2026-10-04', { guideEmail: 'skilled@x.com' }),
+    tour('second', '2026-10-04', { guideEmail: 'other@x.com' }),
+  ]
+  const reset = autoAssignSchedule({
+    startDate: '2026-10-04',
+    endDate: '2026-10-04',
+    preset: 'equal',
+    existingMode: 'reset',
+    members,
+    tours,
+    offs: [],
+  })
+  const guides = [
+    reset.assignmentsByTourId.first.tour_guide_id,
+    reset.assignmentsByTourId.second.tour_guide_id,
+  ]
+  assert.equal(guides.filter(Boolean).length, 2)
+  assert.equal(new Set(guides).size, 2)
+
+  const kept = autoAssignSchedule({
+    startDate: '2026-10-04',
+    endDate: '2026-10-04',
+    preset: 'equal',
+    existingMode: 'keep',
+    members,
+    tours: [tour('held', '2026-10-04', { guideEmail: 'skilled@x.com' }), tour('open', '2026-10-04')],
+    offs: [],
+  })
+  assert.equal(kept.assignmentsByTourId.held.tour_guide_id, 'skilled@x.com')
+  assert.equal(kept.assignmentsByTourId.open.tour_guide_id, null)
+})
+
 test('locked guide stays and a free assistant is filled', () => {
   const result = autoAssignSchedule({
     startDate: '2026-10-04',

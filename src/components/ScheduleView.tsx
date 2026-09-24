@@ -7540,10 +7540,10 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         ) : (
         <>
         {/* 첫 번째 줄: 좌 아이콘 | 가운데 월·오늘 | 우 저장·취소 */}
-        <div className="relative mb-2 flex min-h-10 flex-wrap items-center gap-y-2 sm:grid sm:min-h-11 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center sm:gap-x-2">
-          {/* 왼쪽: 선택 버튼들 — sm+ 에서 월 네비와 겹치지 않게 왼쪽 열에만 배치 */}
-          <div className="relative z-10 flex min-w-0 shrink-0 items-center gap-0.5 sm:gap-2">
-            <div className="flex flex-wrap gap-0.5 sm:gap-2">
+        <div className="relative mb-2 flex flex-col gap-2 sm:grid sm:min-h-11 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center sm:gap-x-2">
+          {/* 왼쪽: 모바일은 가로 스크롤, sm+ 는 왼쪽 열 */}
+          <div className="relative z-10 order-3 flex min-w-0 items-center sm:order-none sm:shrink-0">
+            <div className="flex w-full gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:w-auto sm:flex-wrap sm:gap-2 sm:overflow-visible sm:pb-0 [&::-webkit-scrollbar]:hidden [&>button]:shrink-0">
               <button
                 onClick={() => setShowProductModal(true)}
                 className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors relative"
@@ -7681,8 +7681,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           </div>
 
           {/* 가운데: 모바일은 다음 줄 전체, sm+ 는 그리드 중앙 열 */}
-          <div className="order-last flex w-full basis-full justify-center px-2 sm:order-none sm:w-auto sm:basis-auto sm:justify-self-center sm:px-0">
-            <div className="flex items-center gap-1 sm:gap-2 sm:pointer-events-auto">
+          <div className="order-1 flex w-full justify-center px-1 sm:order-none sm:w-auto sm:justify-self-center sm:px-0">
+            <div className="flex w-full flex-wrap items-center justify-center gap-1 sm:w-auto sm:flex-nowrap sm:gap-2 sm:pointer-events-auto">
               <div className="flex items-center space-x-1 sm:space-x-4">
                 <button
                   type="button"
@@ -7710,7 +7710,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 오늘
               </button>
               <label
-                className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50/80 px-1.5 py-1 text-[10px] sm:text-xs text-red-800 whitespace-nowrap"
+                className="flex max-w-full items-center gap-1 rounded-lg border border-red-200 bg-red-50/80 px-1.5 py-1 text-[10px] sm:text-xs text-red-800"
                 title="이 날짜 이후의 투어는 가이드 페이지에 표시되지 않습니다. 라스베이거스 자정마다 하루씩 자동으로 늘어납니다."
               >
                 <span className="font-medium tabular-nums">
@@ -7725,7 +7725,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                     void handleGuideToursVisibleUntilChange(e.target.value)
                   }}
                   disabled={!canManageSharedSchedule}
-                  className="h-7 sm:h-8 max-w-[9.5rem] rounded-md border border-red-300 bg-white px-1 text-[11px] sm:text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-400 disabled:opacity-60"
+                  className="h-8 w-[8.6rem] max-w-full rounded-md border border-red-300 bg-white px-1 text-[11px] sm:h-8 sm:text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-400 disabled:opacity-60"
                   aria-label="가이드에게 보여줄 마지막 날짜"
                 />
                 {guideToursVisibleUntil && canManageSharedSchedule ? (
@@ -7756,7 +7756,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           </div>
 
           {/* 오른쪽: 나레이션·재고·저장 */}
-          <div className="relative z-10 ml-auto flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-0.5 sm:ml-0 sm:justify-self-end sm:gap-2">
+          <div className="relative z-10 order-2 flex w-full min-w-0 items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] sm:order-none sm:ml-0 sm:w-auto sm:shrink-0 sm:flex-wrap sm:justify-self-end sm:justify-end sm:gap-2 sm:overflow-visible [&::-webkit-scrollbar]:hidden [&>button]:shrink-0 [&>label]:shrink-0">
             <button
               type="button"
               onClick={() => setShowTourReportStatusModal(true)}

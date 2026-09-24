@@ -52,6 +52,9 @@ function readSidebarWidth(): number {
 }
 
 function defaultModalFrame(): ModalFrame {
+  if (window.innerWidth < 768) {
+    return { top: 0, left: 0, width: window.innerWidth, height: window.innerHeight }
+  }
   const sidebarWidth = readSidebarWidth()
   const headerHeight = 64
   const availableWidth = Math.max(640, window.innerWidth - sidebarWidth - 16)
@@ -185,16 +188,18 @@ export default function ScheduleAutoAssignModal({
     }
     const maxWidth = window.innerWidth - drag.frame.left - 8
     const maxHeight = window.innerHeight - drag.frame.top - 8
+    const minWidth = window.innerWidth < 768 ? Math.min(320, window.innerWidth) : 640
+    const minHeight = window.innerWidth < 768 ? Math.min(360, window.innerHeight) : 420
     const next = {
       ...drag.frame,
       width:
         drag.mode === 'bottom'
           ? drag.frame.width
-          : Math.max(640, Math.min(maxWidth, drag.frame.width + event.clientX - drag.x)),
+          : Math.max(minWidth, Math.min(maxWidth, drag.frame.width + event.clientX - drag.x)),
       height:
         drag.mode === 'right'
           ? drag.frame.height
-          : Math.max(420, Math.min(maxHeight, drag.frame.height + event.clientY - drag.y)),
+          : Math.max(minHeight, Math.min(maxHeight, drag.frame.height + event.clientY - drag.y)),
     }
     resizedRef.current = { width: next.width, height: next.height }
     setFrame(next)
@@ -263,7 +268,7 @@ export default function ScheduleAutoAssignModal({
           </div>
         ) : null}
 
-        <div className="flex flex-wrap items-end gap-3 border-b border-gray-100 px-4 py-3 sm:px-6">
+        <div className="flex flex-wrap items-end gap-2 border-b border-gray-100 px-3 py-3 sm:gap-3 sm:px-6">
           <label className="text-xs text-gray-600">
             시작일
             <input
@@ -352,7 +357,7 @@ export default function ScheduleAutoAssignModal({
           <p className="mb-3 text-sm text-gray-600">
             {existingMode === 'keep'
               ? '기존 배정 유지는 이미 들어간 사람을 두고, 그 사람이 비는 칸만 채웁니다.'
-              : '기존 배정 리셋은 잠긴 배정만 남기고 기간 안의 배정을 다시 나눕니다.'}
+              : '기존 배정 리셋은 잠긴 배정만 남기고 그 날짜의 배정을 비운 뒤, 같은 날짜에 다시 배정합니다.'}
           </p>
           {preview?.result.reviewStatsUnavailable ? (
             <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">

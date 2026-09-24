@@ -172,7 +172,7 @@ export const AUTO_ASSIGN_RULE_LINES = [
   '고객이 지정해 잠긴 배정은 바꾸지 않습니다.',
   '한 사람은 같은 날 한 투어만 갑니다. 멀티데이는 끝나는 날까지 점유합니다.',
   '가이드+드라이버의 드라이버는 CDL이 있어야 합니다.',
-  '체크해서 진행 가능으로 둔 상품만 그 사람의 가이드로 배정합니다. 손님 언어의 우선순위가 상인 가이드를 먼저 쓰고, 불가하면 중, 그다음 하를 배정합니다.',
+  '진행 가능으로 체크된 가이드를 먼저 배정하고, 손님 언어 우선순위는 상, 중, 하 순입니다. 기존 배정 리셋에서 그 날짜에 체크된 사람이 없으면 언어와 오프가 맞는 다른 사람을 배정합니다.',
   'Joey와 채드는 우선순위에서 빼고, 다른 사람이 불가할 때만 배정합니다.',
   '날마다 앞에서 채우지 않고, 기간 전체 슬롯과 가능한 날을 보고 나눕니다.',
 ]
@@ -331,6 +331,7 @@ function rejection(args: {
   peopleByKey: Map<string, PersonState>
   people: PersonState[]
   required: Array<'ko' | 'ja' | 'en'>
+  skipProduct?: boolean
 }): RejectCode | null {
   const { person, tour, role, partner } = args
   if (!person.member.active && !person.owner) {
@@ -339,7 +340,13 @@ function rejection(args: {
   if (!person.member.active) return 'inactive'
   if (partner && person.key === partner.key) return 'same_person'
   if (role === 'assistant' && tour.teamType === 'guide+driver' && !person.member.cdl) return 'cdl'
-  if (role === 'guide' && !canGuideProduct(person.member.guideProductSkills, tour.productId)) return 'product'
+  if (
+    role === 'guide' &&
+    !args.skipProduct &&
+    !canGuideProduct(person.member.guideProductSkills, tour.productId)
+  ) {
+    return 'product'
+  }
 
   const days = spanDates(tour)
   for (const day of days) {
@@ -410,6 +417,7 @@ function reasonForAssignment(args: {
   tour: AutoAssignTour
   role: AutoAssignRole
   avoidPair: boolean
+  uncheckedProduct?: boolean
   required: Array<'ko' | 'ja' | 'en'>
   review: AutoAssignReviewStat | undefined
 }): string[] {
@@ -436,6 +444,7 @@ function reasonForAssignment(args: {
     if (summary) lines.push(summary)
   }
   if (args.role === 'assistant' && args.tour.teamType === 'guide+driver') lines.push('CDL 드라이버')
+  if (args.uncheckedProduct) lines.push('진행 가능으로 체크된 사람이 없어 다른 조건으로 배정')
   if (args.avoidPair) lines.push('기피 조합이지만 다른 후보가 없어 배정')
   return lines
 }
@@ -678,13 +687,13 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
     const assistantOpen = needsAssistant(tour) && !assistantHeld(tour)
 
     if (guideOpen && assistantOpen) {
-      const placed = placePair(tour, required)
+      const placed = placePair(tour, required, false)
       guideEmail = placed.guide
       assistantEmail = placed.assistant
     } else if (guideOpen) {
-      guideEmail = placeSingle(tour, 'guide', assistantHeldPerson, required)
+      guideEmail = placeSingle(tour, 'guide', assistantHeldPerson, required, false)
     } else if (assistantOpen) {
-      assistantEmail = placeSingle(tour, 'assistant', guideHeldPerson, required)
+      assistantEmail = placeSingle(tour, 'assistant', guideHeldPerson, required, false)
     }
 
     assignmentsByTourId[tour.id] = {
@@ -708,6 +717,7 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
     role: AutoAssignRole,
     partner: PersonState | null,
     required: Array<'ko' | 'ja' | 'en'>,
+    relaxProduct: boolean,
   ): string | null {
     const counts = new Map<RejectCode, number>()
     const preferred: PersonState[] = []
@@ -722,6 +732,7 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
         peopleByKey,
         people,
         required,
+        skipProduct: relaxProduct,
       })
       if (code) {
         counts.set(code, (counts.get(code) || 0) + 1)
@@ -733,6 +744,9 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
     }
     const pool = preferred.length > 0 ? preferred : avoiders
     const chosen = pickPerson(pool, tour, role)
+    if (!chosen && !relaxProduct && existingMode === 'reset' && role === 'guide') {
+      return placeSingle(tour, role, partner, required, true)
+    }
     if (!chosen) {
       slots.push({
         tourId: tour.id,
@@ -760,6 +774,7 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
         tour,
         role,
         avoidPair,
+        uncheckedProduct: relaxProduct,
         required,
         review: reviews.get(chosen.key),
       }),
@@ -770,6 +785,7 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
   function placePair(
     tour: AutoAssignTour,
     required: Array<'ko' | 'ja' | 'en'>,
+    relaxProduct: boolean,
   ): { guide: string | null; assistant: string | null } {
     type Pair = { guide: PersonState; assistant: PersonState; avoid: boolean }
     const pairs: Pair[] = []
@@ -784,6 +800,7 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
         peopleByKey,
         people,
         required,
+        skipProduct: relaxProduct,
       })
       if (guideCode) {
         counts.set(guideCode, (counts.get(guideCode) || 0) + 1)
@@ -843,6 +860,9 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
       return a.guide.priorityIndex + a.assistant.priorityIndex - (b.guide.priorityIndex + b.assistant.priorityIndex)
     })
     const chosen = near[0]
+    if (!chosen && !relaxProduct && existingMode === 'reset') {
+      return placePair(tour, required, true)
+    }
     if (!chosen) {
       const reason = unfilledFromCounts(counts)
       slots.push({
@@ -883,6 +903,7 @@ export function autoAssignSchedule(input: AutoAssignInput): AutoAssignResult {
           tour,
           role,
           avoidPair,
+          uncheckedProduct: relaxProduct && role === 'guide',
           required,
           review: reviews.get(person.key),
         }),
