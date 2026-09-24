@@ -2976,14 +2976,18 @@ function stripForwardReplySubject(subject: string): string {
 }
 
 /**
- * Klook 주문 메일 제목 패턴인지 (Received / Confimed / Confirmed, Fwd:/Re: 제거 후 판별).
+ * Klook 신규 주문 메일 제목인지 (Fwd:/Re: 제거 후 판별).
+ * - "Klook Order Received -" / "Klook Order Confirmed|Confimed -"
+ * - "Klook has confirmed an order …" / "Klook has received an order …" (바우처·접수 본문과 같은 제목)
  */
 export function isKlookOrderEmailSubjectForReservation(subject: string | null | undefined): boolean {
   const lower = stripForwardReplySubject(subject ?? '').toLowerCase()
   return (
     lower.startsWith('klook order received -') ||
     lower.startsWith('klook order confimed -') ||
-    lower.startsWith('klook order confirmed -')
+    lower.startsWith('klook order confirmed -') ||
+    lower.startsWith('klook has confirmed an order') ||
+    lower.startsWith('klook has received an order')
   )
 }
 
@@ -2991,6 +2995,7 @@ export function isKlookOrderEmailSubjectForReservation(subject: string | null | 
  * Klook 예약 접수 이메일(is_booking_confirmed).
  * - "Klook Order Received -" (기존: 접수 후 우리측 Confirm 필요)
  * - "Klook Order Confirmed|Confimed -" (즉시 확정 예약 — Received 없이 Confirmed만 오는 경우 포함)
+ * - "Klook has confirmed|received an order …" (바우처가 이미 나간 주문)
  * Fwd:/Re: 접두 허용. rawBody* 인자는 하위 호환용(제목만으로 판별).
  */
 export function isKlookBookingConfirmedReservationEmail(

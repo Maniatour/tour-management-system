@@ -4,9 +4,7 @@ import { useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { CreditCard, Heart, Loader2, ShieldCheck } from 'lucide-react'
 import { normalizeSiteLocale } from '@/lib/siteLocales'
-
-const TIP_PRESETS = [0, 10, 20, 40, 50] as const
-const OPEN_AMOUNT_PRESETS = [10, 20, 40, 50] as const
+import { tipAmountsMatch, tipGuideOptions } from '@/lib/tipGuideline'
 
 type InvoicePayWithTipFormProps = {
   locale: string
@@ -15,6 +13,8 @@ type InvoicePayWithTipFormProps = {
   description: string
   amountDueUsd: number
   isOpenAmount: boolean
+  /** 예약 투어비. 있으면 15/20/25% 안내를 보여 준다. */
+  tourFareUsd?: number | null
   canceled?: boolean
 }
 
@@ -25,11 +25,15 @@ export default function InvoicePayWithTipForm({
   description,
   amountDueUsd,
   isOpenAmount,
+  tourFareUsd = null,
   canceled = false,
 }: InvoicePayWithTipFormProps) {
   const t = useTranslations('invoicePay')
   const payLocale = normalizeSiteLocale(locale, 'en')
-  const [tipPreset, setTipPreset] = useState<number | 'custom'>(isOpenAmount ? 20 : 0)
+  const guideOptions = useMemo(() => tipGuideOptions(tourFareUsd), [tourFareUsd])
+  const [tipPreset, setTipPreset] = useState<number | 'custom'>(() =>
+    tipGuideOptions(tourFareUsd).length === 0 ? 'custom' : 0
+  )
   const [customAmount, setCustomAmount] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -80,7 +84,32 @@ export default function InvoicePayWithTipForm({
     }
   }
 
-  const presets = isOpenAmount ? OPEN_AMOUNT_PRESETS : TIP_PRESETS
+  const fareLabel =
+    tourFareUsd != null && tourFareUsd > 0 ? `$${tourFareUsd.toFixed(2)}` : ''
+
+  const customAmountField = (
+    <div className="relative mt-3">
+      <label htmlFor="invoice-tip-custom" className="sr-only">
+        {t('customTipAria')}
+      </label>
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+        $
+      </span>
+      <input
+        id="invoice-tip-custom"
+        type="number"
+        min={0.5}
+        step={0.01}
+        value={customAmount}
+        onChange={(e) => {
+          setTipPreset('custom')
+          setCustomAmount(e.target.value)
+        }}
+        className="h-11 w-full rounded-lg border border-input bg-background pl-7 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        placeholder="0.00"
+      />
+    </div>
+  )
 
   return (
     <div className="min-h-[70vh] bg-muted/30 py-16 md:py-24">
@@ -114,37 +143,44 @@ export default function InvoicePayWithTipForm({
             </div>
           ) : null}
 
-          <div className="mt-6">
-            <div className="flex items-center gap-2">
-              <Heart className="h-4 w-4 text-rose-500" aria-hidden />
-              <p className="text-sm font-medium text-foreground">
-                {isOpenAmount ? t('tipAmount') : t('tipOptional')}
+          {guideOptions.length > 0 ? (
+            <div className="mt-6 rounded-2xl border border-border/60 bg-muted/40 p-4">
+              <p className="text-sm font-medium text-foreground">{t('tipGuideTitle')}</p>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                {t('tipGuideBody', { fare: fareLabel })}
               </p>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {presets.map((value) => {
-                const active = tipPreset === value
-                const label = value === 0 ? t('noTip') : `$${value}`
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setTipPreset(value)}
-                    className={`h-11 min-w-[4.5rem] rounded-xl border px-3 text-sm font-medium transition ${
-                      active
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border bg-background text-foreground hover:border-primary/50'
-                    }`}
-                    aria-pressed={active}
-                  >
-                    {label}
-                  </button>
-                )
-              })}
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {guideOptions.map((option) => {
+                  const active =
+                    tipPreset !== 'custom' && tipAmountsMatch(selectedAmount, option.amountUsd)
+                  return (
+                    <button
+                      key={option.percent}
+                      type="button"
+                      onClick={() => setTipPreset(option.amountUsd)}
+                      className={`flex min-h-16 flex-col items-center justify-center rounded-xl border px-2 py-2 transition ${
+                        active
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border bg-background text-foreground hover:border-primary/50'
+                      }`}
+                      aria-pressed={active}
+                      aria-label={t('tipGuideAria', {
+                        percent: option.percent,
+                        amount: option.amountUsd.toFixed(2),
+                      })}
+                    >
+                      <span className="text-xs font-medium">{option.percent}%</span>
+                      <span className="text-base font-semibold tabular-nums">
+                        ${option.amountUsd.toFixed(2)}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
               <button
                 type="button"
                 onClick={() => setTipPreset('custom')}
-                className={`h-11 rounded-xl border px-3 text-sm font-medium transition ${
+                className={`mt-2 h-11 w-full rounded-xl border text-sm font-medium transition ${
                   tipPreset === 'custom'
                     ? 'border-primary bg-primary text-primary-foreground'
                     : 'border-border bg-background text-foreground hover:border-primary/50'
@@ -153,28 +189,19 @@ export default function InvoicePayWithTipForm({
               >
                 {t('custom')}
               </button>
+              {tipPreset === 'custom' ? customAmountField : null}
             </div>
-            {tipPreset === 'custom' ? (
-              <div className="relative mt-3">
-                <label htmlFor="invoice-tip-custom" className="sr-only">
-                  {t('customTipAria')}
-                </label>
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                  $
-                </span>
-                <input
-                  id="invoice-tip-custom"
-                  type="number"
-                  min={0.5}
-                  step={0.01}
-                  value={customAmount}
-                  onChange={(e) => setCustomAmount(e.target.value)}
-                  className="h-11 w-full rounded-lg border border-input bg-background pl-7 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  placeholder={isOpenAmount ? '20.00' : '15.00'}
-                />
+          ) : (
+            <div className="mt-6">
+              <div className="flex items-center gap-2">
+                <Heart className="h-4 w-4 text-rose-500" aria-hidden />
+                <p className="text-sm font-medium text-foreground">
+                  {isOpenAmount ? t('tipAmount') : t('tipOptional')}
+                </p>
               </div>
-            ) : null}
-          </div>
+              <div className="mt-3">{customAmountField}</div>
+            </div>
+          )}
 
           <div className="mt-6 flex items-end justify-between gap-4 border-t border-border/60 pt-5">
             <div>

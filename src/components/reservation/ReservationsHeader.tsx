@@ -1,9 +1,10 @@
 'use client'
 import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
-import React from "react"
-import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal, Trash2, ListChecks, LayoutList, X, BarChart3 } from 'lucide-react'
+import React, { useState } from "react"
+import dynamic from 'next/dynamic'
+import { useLocale, useTranslations } from 'next-intl'
+import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal, Trash2, ListChecks, LayoutList, X, BarChart3, Smartphone } from 'lucide-react'
 import AdminPageHubManualButton from '@/components/admin/AdminPageHubManualButton'
 import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import {
@@ -13,6 +14,11 @@ import {
 } from '@/lib/reservationAdminManualDocument'
 import { getCustomerName } from '@/utils/reservationUtils'
 import type { Customer } from '@/types/reservation'
+
+const AllSmsHistoryModal = dynamic(() => import('@/components/reservation/AllSmsHistoryModal'), {
+  ssr: false,
+  loading: () => null,
+})
 
 interface ReservationsHeaderProps {
   customerIdFromUrl: string | null
@@ -107,10 +113,22 @@ function ReservationsHeader({
   onPrefetchOperationalQueue,
 }: ReservationsHeaderProps) {
   const t = useTranslations('reservations')
+  const locale = useLocale()
+  const uiLocale = locale === 'en' ? 'en' : 'ko'
+  const [smsHistoryOpen, setSmsHistoryOpen] = useState(false)
 
   const handleOperationalQueuePrefetch = () => {
     onPrefetchOperationalQueue?.()
   }
+
+  const renderSmsHistory = () => (
+    <IconHeaderButton
+      label={uiLocale === 'en' ? 'SMS send history' : 'SMS 발송 내역'}
+      onClick={() => setSmsHistoryOpen(true)}
+      className="bg-violet-600 text-white hover:bg-violet-700"
+      icon={<Smartphone className="h-4 w-4" aria-hidden />}
+    />
+  )
 
   const renderActionRequired = () =>
     typeof onActionRequired === 'function' ? (
@@ -285,6 +303,7 @@ function ReservationsHeader({
               </button>
             )}
           </div>
+          {renderSmsHistory()}
           {renderActionRequired()}
           {renderWeeklyStats()}
           {renderCancelReasonQueue()}
@@ -305,12 +324,20 @@ function ReservationsHeader({
 
       {/* 모바일 2줄: 예약 처리 필요 · Follow-up 단계 · 삭제된 예약 */}
       <div className="flex flex-wrap items-center gap-2 md:hidden">
+        {renderSmsHistory()}
         {renderActionRequired()}
         {renderWeeklyStats()}
         {renderCancelReasonQueue()}
         {renderFollowUp()}
         {renderDeleted()}
       </div>
+      {smsHistoryOpen ? (
+        <AllSmsHistoryModal
+          open={smsHistoryOpen}
+          onClose={() => setSmsHistoryOpen(false)}
+          uiLocale={uiLocale}
+        />
+      ) : null}
     </div>
   )
 }

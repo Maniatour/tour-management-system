@@ -10,7 +10,10 @@ import type {
   ScheduleGuideVehicleColors,
   ScheduleMonthDayCell,
 } from '@/lib/scheduleGuideGridTypes'
-import { useScheduleGridWindowVirtualizer } from '@/hooks/useScheduleGridWindowVirtualizer'
+import {
+  scheduleGridVirtualRowSpacers,
+  useScheduleGridWindowVirtualizer,
+} from '@/hooks/useScheduleGridWindowVirtualizer'
 import ScheduleGuideGridRow from '@/components/schedule/ScheduleGuideGridRow'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -192,6 +195,7 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
     anchorRef: guideRowsAnchorRef,
     active: virtualizeGuideRows,
     virtualizer: guideRowVirtualizer,
+    scrollMargin: guideRowsScrollMargin,
     virtualItems: virtualGuideRows,
     totalSize: virtualGuideRowsTotalSize,
   } = useScheduleGridWindowVirtualizer({
@@ -259,9 +263,12 @@ export default function ScheduleGuideGrid(props: ScheduleGuideGridProps) {
 
   const renderGuideRows = () => {
     if (virtualizeGuideRows && virtualGuideRows && virtualGuideRows.length > 0) {
-      const paddingTop = virtualGuideRows[0]?.start ?? 0
-      const paddingBottom =
-        virtualGuideRowsTotalSize - (virtualGuideRows[virtualGuideRows.length - 1]?.end ?? 0)
+      const { paddingTop, paddingBottom } = scheduleGridVirtualRowSpacers(
+        guideRowsScrollMargin,
+        virtualGuideRowsTotalSize,
+        virtualGuideRows[0]?.start ?? 0,
+        virtualGuideRows[virtualGuideRows.length - 1]?.end ?? 0,
+      )
 
       return (
         <>

@@ -25,6 +25,22 @@ test('파싱이 완전하면 자동 추가 자격이 된다', () => {
   assert.equal(r.priceConnected, true)
 })
 
+test('Klook은 이메일 금액이 없어도 상품·날짜·인원·고객이 있으면 자동 추가 자격이다', () => {
+  const r = evaluateImportAutoConfirmReadiness({
+    platformKey: 'klook',
+    subject: 'Klook has confirmed an order for Grand Canyon Sunrise',
+    extracted: {
+      product_id: 'MDGCSUNRISE',
+      tour_date: '2026-10-01',
+      adults: 2,
+      customer_name: 'Jane Doe',
+    },
+  })
+  assert.equal(r.ready, true)
+  assert.equal(r.missing.includes('missing_price'), false)
+  assert.equal(r.missing.includes('not_booking'), false)
+})
+
 test('금액이 없으면 자동 추가하지 않는다', () => {
   const r = evaluateImportAutoConfirmReadiness({
     platformKey: 'nol',

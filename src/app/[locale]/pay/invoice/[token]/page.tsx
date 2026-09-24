@@ -6,7 +6,9 @@ import { getStripeClient } from '@/lib/customerBookingCheckout'
 import {
   isTipOpenAmountInvoiceItems,
   markInvoicePaidFromCheckoutSession,
+  reservationIdFromInvoiceItems,
 } from '@/lib/payableInvoice'
+import { tourFareUsdForTipGuide } from '@/lib/tipGuideline'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
 import InvoicePayWithTipForm from '@/components/customer/InvoicePayWithTipForm'
 import { normalizeSiteLocale } from '@/lib/siteLocales'
@@ -130,6 +132,16 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
 
   const isOpenAmount = isTipOpenAmountInvoiceItems(current.items)
   const amountDueUsd = Math.round((Number(current.total) || 0) * 100) / 100
+  const reservationId = reservationIdFromInvoiceItems(current.items)
+  let tourFareUsd: number | null = null
+  if (reservationId) {
+    const { data: pricingRows } = await supabaseAdmin
+      .from('reservation_pricing')
+      .select('total_price, product_price_total, prepayment_tip')
+      .eq('reservation_id', reservationId)
+      .limit(1)
+    tourFareUsd = tourFareUsdForTipGuide(pricingRows?.[0])
+  }
 
   if (!isOpenAmount && amountDueUsd <= 0 && !current.hosted_invoice_url) {
     return (
@@ -156,6 +168,7 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
         description={descriptionFromItems(current.items)}
         amountDueUsd={amountDueUsd}
         isOpenAmount={isOpenAmount}
+        tourFareUsd={tourFareUsd}
         canceled={canceled}
       />
     </CustomerPageShell>

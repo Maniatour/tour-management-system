@@ -640,7 +640,7 @@ async function resolveStripePaymentMethodValue(admin: AdminClient): Promise<stri
   return 'stripe'
 }
 
-function reservationIdFromInvoiceItems(items: unknown): string | null {
+export function reservationIdFromInvoiceItems(items: unknown): string | null {
   if (!Array.isArray(items)) return null
   for (const raw of items) {
     const id = (raw as InvoiceItemRow)?.reservationId

@@ -32,6 +32,7 @@ import {
   parseRecipientEmail,
 } from '@/lib/quickPaymentRequestMessage'
 import { resolveSmsPhone } from '@/utils/formatPhoneToE164'
+import { tipGuideOptions } from '@/lib/tipGuideline'
 import { useReservationFormChildOverlayZIndex } from '@/components/reservation/ReservationFormModalStackContext'
 
 const ReservationResizableDialog = dynamic(
@@ -41,6 +42,59 @@ const ReservationResizableDialog = dynamic(
     ),
   { ssr: false }
 )
+
+function TipRequestGuidePreview({
+  locale,
+  tourFareUsd,
+}: {
+  locale: 'ko' | 'en'
+  tourFareUsd?: number | null
+}) {
+  const options = tipGuideOptions(tourFareUsd)
+  const fareLabel =
+    tourFareUsd != null && tourFareUsd > 0 ? `$${tourFareUsd.toFixed(2)}` : ''
+
+  return (
+    <div className="space-y-2">
+      <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-950">
+        {locale === 'ko'
+          ? '금액은 손님이 결제 페이지에서 직접 정합니다. 15%, 20%, 25% 또는 직접 입력만 있습니다.'
+          : 'The guest chooses the amount. The page offers 15%, 20%, 25%, or a custom amount.'}
+      </div>
+      {options.length > 0 ? (
+        <div className="rounded-xl border border-border/60 bg-muted/40 px-3 py-3">
+          <p className="text-sm font-medium text-foreground">
+            {locale === 'ko' ? '손님에게 보이는 권장 팁' : 'Guide the guest will see'}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {locale === 'ko'
+              ? `팁은 선택입니다. 투어비 ${fareLabel}의 15%, 20%, 25%를 정중히 안내합니다.`
+              : `A tip is optional. The page shows 15%, 20%, and 25% of the tour fare (${fareLabel}).`}
+          </p>
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            {options.map((option) => (
+              <div
+                key={option.percent}
+                className="rounded-xl border border-border bg-background px-2 py-2 text-center"
+              >
+                <p className="text-xs text-muted-foreground">{option.percent}%</p>
+                <p className="text-sm font-semibold tabular-nums text-foreground">
+                  ${option.amountUsd.toFixed(2)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs leading-5 text-muted-foreground">
+          {locale === 'ko'
+            ? '예약 투어비가 연결되면 결제 페이지에 15%, 20%, 25% 안내가 표시됩니다.'
+            : 'When a tour fare is linked, the payment page shows 15%, 20%, and 25%.'}
+        </p>
+      )}
+    </div>
+  )
+}
 
 function WhatsAppGlyph({ className }: { className?: string }) {
   return (
@@ -58,6 +112,8 @@ export type QuickPaymentFormInitials = {
   amountUsd?: number | string
   reservationId?: string
   openAmount?: boolean
+  /** 예약 투어비. 팁 링크일 때 15/20/25% 안내를 미리 보여 준다. */
+  tourFareUsd?: number | null
 }
 
 type QuickPaymentResult = {
@@ -970,11 +1026,10 @@ export default function QuickPaymentRequestForm({
             <CardFeeChargePreview baseAmountUsd={Number(amount)} locale={locale} />
           </div>
           ) : (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-950">
-              {locale === 'ko'
-                ? '금액은 손님이 결제 페이지에서 직접 정합니다. 추천 금액($10, $20, $40, $50)이 표시됩니다.'
-                : 'The guest chooses the amount. Suggested amounts ($10, $20, $40, $50) are shown on the payment page.'}
-            </div>
+            <TipRequestGuidePreview
+              locale={locale}
+              {...(initials?.tourFareUsd != null ? { tourFareUsd: initials.tourFareUsd } : {})}
+            />
           )}
 
           <div className="space-y-2">

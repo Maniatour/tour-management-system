@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Plus, Users, DollarSign, Eye, Clock, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal, CalendarPlus, CalendarX, CalendarClock, Send, Wallet, RefreshCw } from 'lucide-react'
+import { Plus, Users, DollarSign, Eye, Clock, Edit, MessageSquare, X, FileText, Printer, Flag, Hotel, Receipt, CheckCircle2, CircleCheck, XCircle, HelpCircle, MessageCircleQuestion, UserX, MoreHorizontal, CalendarPlus, CalendarX, CalendarClock, Send, Wallet, RefreshCw, TriangleAlert } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - react-country-flag may lack types
@@ -19,6 +19,7 @@ import {
   normalizeTourDateKey
 } from '@/utils/reservationUtils'
 import { getPickupHotelPrimaryName } from '@/utils/pickupHotelUtils'
+import { isNotDecidedPickupHotel } from '@/lib/reservationImportPickup'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
 import { isRebookingCancellationReason } from '@/lib/reservationCancellationReason'
 import { ResidentStatusIcon } from '@/components/reservation/ResidentStatusIcon'
@@ -351,21 +352,56 @@ function resolveCardPickupHotelName(
   return cleaned || raw || tbdLabel
 }
 
+type PickupHotelHintState = 'known' | 'undecided' | 'missing'
+
+/** 미정(비어 있음·Not Decided)과 픽업 호텔 목록에 없는 값을 구분한다. */
+function resolvePickupHotelHintState(
+  pickUpHotel: string | null | undefined,
+  pickupHotels: Array<{
+    id: string
+    hotel?: string | null
+    pick_up_location?: string | null
+    internal_name?: string | null
+  }>
+): PickupHotelHintState {
+  const raw = String(pickUpHotel ?? '').trim()
+  if (!raw || isNotDecidedPickupHotel(raw, pickupHotels)) return 'undecided'
+  if (pickupHotels.length === 0) return 'known'
+  return pickupHotels.some((hotel) => hotel.id === raw) ? 'known' : 'missing'
+}
+
+const PICKUP_HOTEL_HINT_CLASS: Record<PickupHotelHintState, { wrap: string; icon: string }> = {
+  known: {
+    wrap: 'rounded hover:bg-teal-50',
+    icon: 'text-teal-700',
+  },
+  undecided: {
+    wrap: 'rounded-md bg-amber-100 ring-1 ring-amber-400 hover:bg-amber-200',
+    icon: 'text-amber-700',
+  },
+  missing: {
+    wrap: 'rounded-md bg-rose-100 ring-1 ring-rose-400 hover:bg-rose-200',
+    icon: 'text-rose-700',
+  },
+}
+
 function PickupHotelHintIcon({
   hotelName,
-  hasHotel,
+  state,
 }: {
   hotelName: string
-  hasHotel: boolean
+  state: PickupHotelHintState
 }) {
+  const Icon = state === 'known' ? Hotel : TriangleAlert
+  const tone = PICKUP_HOTEL_HINT_CLASS[state]
   return (
     <span
-      className="group/pickupHotel relative inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded hover:bg-teal-50"
+      className={`group/pickupHotel relative inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center ${tone.wrap}`}
       tabIndex={0}
       aria-label={hotelName}
     >
-      <Hotel
-        className={`h-3.5 w-3.5 ${hasHotel ? 'text-teal-700' : 'text-gray-400'}`}
+      <Icon
+        className={`h-3.5 w-3.5 ${tone.icon}`}
         aria-hidden
       />
       <span
@@ -460,7 +496,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     pickupHotels,
     t('card.pickupHotelTbd')
   )
-  const hasPickupHotel = Boolean(String(reservation.pickUpHotel ?? '').trim())
+  const pickupHotelHintState = resolvePickupHotelHintState(
+    reservation.pickUpHotel,
+    pickupHotels
+  )
 
   const prefetchedResidentCustomerRows = residentCustomerBatchMap?.get(reservation.id)
 
@@ -1044,7 +1083,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   ) : null}
                   <div className="ml-auto inline-flex shrink-0 items-center gap-0.5">
                     {guestResidentFormButton}
-                    <PickupHotelHintIcon hotelName={pickupHotelName} hasHotel={hasPickupHotel} />
+                    <PickupHotelHintIcon hotelName={pickupHotelName} state={pickupHotelHintState} />
                   </div>
                 </div>
               )
@@ -1116,7 +1155,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 </div>
                 <div className="ml-auto inline-flex shrink-0 items-center gap-0.5">
                   {guestResidentFormButton}
-                  <PickupHotelHintIcon hotelName={pickupHotelName} hasHotel={hasPickupHotel} />
+                  <PickupHotelHintIcon hotelName={pickupHotelName} state={pickupHotelHintState} />
                 </div>
               </div>
             )
@@ -1651,6 +1690,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     prevProps.reservation.status === nextProps.reservation.status &&
     prevProps.reservation.tourId === nextProps.reservation.tourId &&
     prevProps.reservation.pickUpHotel === nextProps.reservation.pickUpHotel &&
+    prevProps.pickupHotels === nextProps.pickupHotels &&
     prevProps.linkedTourId === nextProps.linkedTourId &&
     prevProps.tourInfoMap === nextProps.tourInfoMap &&
     prevProps.reservationPricingMap.get(prevProps.reservation.id) === nextProps.reservationPricingMap.get(nextProps.reservation.id) &&

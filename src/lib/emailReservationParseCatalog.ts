@@ -11,6 +11,7 @@ import {
   KLOOK_ACTIVITY_ID_TO_TOUR_NAME,
   SUPPORTED_EMAIL_CHANNELS,
   isCancellationRequestEmailSubject,
+  isKlookOrderEmailSubjectForReservation,
 } from '@/lib/emailReservationParser'
 import { PLATFORM_CHANNEL_MAP } from '@/lib/platformChannelMapping'
 import { parseImportMoneyString } from '@/lib/importReservationPriceResolve'
@@ -65,7 +66,7 @@ export const OTA_PLATFORM_CATALOG: OtaPlatformCatalogMeta[] = [
     hasDedicatedParser: true,
     price: PRICE_KLOOK,
     fieldCoverage: { product: 'strong', people: 'strong', date: 'strong', customer: 'strong', price: 'strong' },
-    notes: 'Activity URL → 상품/variant, Total amount + Amount not included',
+    notes: 'Activity URL → 상품/variant. 이메일 금액이 없어도 채널 판매가로 자동 추가',
   },
   {
     key: 'getyourguide',
@@ -370,8 +371,11 @@ export function evaluateImportAutoConfirmReadiness(args: {
   const priceRuleOk = Boolean(meta?.price.amount || meta?.price.viator_net_rate || meta?.price.amount_excluded)
   const priceConnected = Boolean(hasPrice && priceRuleOk && (productId || productName))
 
+  const platformKey = String(args.platformKey || '').toLowerCase()
+  const klookBooking =
+    platformKey === 'klook' && isKlookOrderEmailSubjectForReservation(args.subject)
   if (isCancellationRequestEmailSubject(args.subject)) missing.push('cancellation')
-  if (ext.is_booking_confirmed !== true) missing.push('not_booking')
+  if (ext.is_booking_confirmed !== true && !klookBooking) missing.push('not_booking')
   if (!productId && !productName) missing.push('missing_product')
   if (!String(ext.tour_date || '').trim()) missing.push('missing_date')
   const adults = Number(ext.adults)
@@ -379,7 +383,8 @@ export function evaluateImportAutoConfirmReadiness(args: {
   if (!(adults > 0) && !(total > 0)) missing.push('missing_people')
   if (!String(ext.customer_name || '').trim()) missing.push('missing_customer')
   if (!priceRuleOk) missing.push('price_rule_unmapped')
-  if (!hasPrice) missing.push('missing_price')
+  // Klook 주문 메일은 Total amount가 없는 경우가 많다. 수동 저장과 같이 채널 판매가로 진행한다.
+  if (!hasPrice && platformKey !== 'klook') missing.push('missing_price')
 
   return {
     ready: missing.length === 0,

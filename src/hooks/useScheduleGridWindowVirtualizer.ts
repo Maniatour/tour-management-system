@@ -58,7 +58,24 @@ export function useScheduleGridWindowVirtualizer(options: UseScheduleGridWindowV
     anchorRef,
     active,
     virtualizer,
+    scrollMargin,
     virtualItems: active ? virtualizer.getVirtualItems() : null,
     totalSize: active ? virtualizer.getTotalSize() : 0,
   }
+}
+
+/**
+ * window virtualizer의 start/end는 문서 맨 위부터의 위치(scrollMargin 포함)다.
+ * 표 안 위·아래 여백은 그 오프셋을 빼야 한다. 빼지 않으면 가이드가 많아 가상화가
+ * 켜질 때 표 위에 페이지 높이만큼 빈칸이 생긴다.
+ */
+export function scheduleGridVirtualRowSpacers(
+  scrollMargin: number,
+  totalSize: number,
+  firstStart: number,
+  lastEnd: number,
+): { paddingTop: number; paddingBottom: number } {
+  const paddingTop = Math.max(0, firstStart - scrollMargin)
+  const paddingBottom = Math.max(0, totalSize - (lastEnd - scrollMargin))
+  return { paddingTop, paddingBottom }
 }

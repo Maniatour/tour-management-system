@@ -12,7 +12,10 @@ import {
   type ScheduleProductGridProductRow,
   type ScheduleMonthDayCell,
 } from '@/lib/scheduleProductGridHelpers'
-import { useScheduleGridWindowVirtualizer } from '@/hooks/useScheduleGridWindowVirtualizer'
+import {
+  scheduleGridVirtualRowSpacers,
+  useScheduleGridWindowVirtualizer,
+} from '@/hooks/useScheduleGridWindowVirtualizer'
 import ScheduleProductGridRow from '@/components/schedule/ScheduleProductGridRow'
 import ScheduleHoverTooltip from '@/components/schedule/ScheduleHoverTooltip'
 import type { ScheduleProductRef } from '@/lib/scheduleAirportPickDropGroup'
@@ -115,6 +118,7 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
     anchorRef: productRowsAnchorRef,
     active: virtualizeProductRows,
     virtualizer: productRowVirtualizer,
+    scrollMargin: productRowsScrollMargin,
     virtualItems: virtualProductRows,
     totalSize: virtualProductRowsTotalSize,
   } = useScheduleGridWindowVirtualizer({
@@ -154,9 +158,12 @@ export default function ScheduleProductGrid(props: ScheduleProductGridProps) {
 
   const renderRows = () => {
     if (virtualizeProductRows && virtualProductRows && virtualProductRows.length > 0) {
-      const paddingTop = virtualProductRows[0]?.start ?? 0
-      const paddingBottom =
-        virtualProductRowsTotalSize - (virtualProductRows[virtualProductRows.length - 1]?.end ?? 0)
+      const { paddingTop, paddingBottom } = scheduleGridVirtualRowSpacers(
+        productRowsScrollMargin,
+        virtualProductRowsTotalSize,
+        virtualProductRows[0]?.start ?? 0,
+        virtualProductRows[virtualProductRows.length - 1]?.end ?? 0,
+      )
 
       return (
         <>

@@ -46,6 +46,7 @@ import {
 } from '@/lib/adminModalRectStorage'
 import { formatLasVegasDateTime } from '@/lib/dailyReport/dateUtils'
 import { normalizeReservationChoicesForProduct } from '@/lib/normalizeReservationChoicesForProduct'
+import { tourFareUsdForTipGuide } from '@/lib/tipGuideline'
 import { displayNamesFromCanyonKey, matchStoredChoiceToProductOption } from '@/lib/canyonChoice'
 
 /** 브라우저에서 customers INSERT 시 RLS(team↔is_staff 재귀 등)로 실패할 때 API+service role 경로 사용 */
@@ -7155,6 +7156,12 @@ export default function ReservationForm({
       reservationId: reservation.id,
     }
     if (balance > 0.005) next.amountUsd = Math.round(balance * 100) / 100
+    const tourFareUsd = tourFareUsdForTipGuide({
+      totalPrice: formData.totalPrice,
+      productPriceTotal: formData.productPriceTotal,
+      prepaymentTip: formData.prepaymentTip,
+    })
+    if (tourFareUsd != null) next.tourFareUsd = tourFareUsd
     setQuickPaymentInitials(next)
     setQuickPaymentOpen(true)
   }, [
@@ -7165,6 +7172,9 @@ export default function ReservationForm({
     formData.customerPhone,
     formData.customerEmergencyContact,
     formData.onSiteBalanceAmount,
+    formData.prepaymentTip,
+    formData.productPriceTotal,
+    formData.totalPrice,
     formData.productId,
     formData.tourDate,
     isImportMode,

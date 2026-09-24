@@ -211,7 +211,9 @@ export async function tryAutoConfirmReservationImport(
   const emailTotal =
     parseImportMoneyString(merged.amount) ?? parseImportMoneyString(merged.viator_net_rate_usd)
   const emailUnit = emailTotal != null ? Math.round((emailTotal / Math.max(1, adults)) * 100) / 100 : null
-  const isViator = (row.platform_key || '').toLowerCase() === 'viator'
+  const platformKey = (row.platform_key || '').toLowerCase()
+  const isViator = platformKey === 'viator'
+  const isKlook = platformKey === 'klook'
   const netTotal = parseImportMoneyString(merged.viator_net_rate_usd)
 
   const semanticVariant =
@@ -260,7 +262,7 @@ export async function tryAutoConfirmReservationImport(
       ? await client
           .from('choice_options')
           .select(
-            'id, choice_id, option_name, option_name_ko, option_key, adult_price, canyon_key, canonical_option_key'
+            'id, choice_id, option_name, option_name_ko, option_key, adult_price, canyon_key, canonical_option_key, is_default'
           )
           .in('choice_id', choiceIds)
       : { data: [] }
@@ -274,6 +276,7 @@ export async function tryAutoConfirmReservationImport(
     adult_price?: number | null
     canyon_key?: string | null
     canonical_option_key?: string | null
+    is_default?: boolean | null
   }>
 
   const selectedChoices: Array<{
@@ -312,20 +315,22 @@ export async function tryAutoConfirmReservationImport(
     }
     const opts = optionList.filter((o) => o.choice_id === choice.id)
     const matched = matchChoiceOptionFromImportNames(opts, importOptionNames)
-    if (matched) {
+    // 수동 저장은 이메일 옵션이 없으면 is_default 초이스로 둔다. Klook도 그렇게 진행한다.
+    const chosen = matched || (isKlook ? opts.find((o) => o.is_default === true) : undefined)
+    if (chosen) {
       const canyonKey =
-        matched.canyon_key ||
-        canyonKeyFromLabels(matched.option_name_ko, matched.option_name, matched.option_key)
+        chosen.canyon_key ||
+        canyonKeyFromLabels(chosen.option_name_ko, chosen.option_name, chosen.option_key)
       selectedChoices.push({
         choice_id: choice.id,
-        option_id: matched.id,
-        option_key: matched.option_key ?? null,
-        option_name: matched.option_name ?? null,
-        option_name_ko: matched.option_name_ko ?? null,
+        option_id: chosen.id,
+        option_key: chosen.option_key ?? null,
+        option_name: chosen.option_name ?? null,
+        option_name_ko: chosen.option_name_ko ?? null,
         ...(canyonKey ? { canyon_key: canyonKey } : {}),
-        ...(matched.canonical_option_key ? { canonical_option_key: matched.canonical_option_key } : {}),
+        ...(chosen.canonical_option_key ? { canonical_option_key: chosen.canonical_option_key } : {}),
         quantity: 1,
-        total_price: Number(matched.adult_price) || 0,
+        total_price: Number(chosen.adult_price) || 0,
       })
     } else if (choice.is_required) {
       const looksCanyon = /앤텔롭|antelope|canyon/i.test(groupBlob)
@@ -354,26 +359,39 @@ export async function tryAutoConfirmReservationImport(
   ])
 
   const rows = (pricingRows || []) as ImportPricingRow[]
-  if (!rows.length) return { attempted: false, reason: 'no_dynamic_pricing' }
   const coupons = (couponRows || []) as ImportCouponRow[]
   const couponChannels = (channelRows || []) as Array<
     CouponChannelRow & { pricing_type?: string | null }
   >
   const channelMeta = couponChannels.find((c) => c.id === channelId) ?? null
 
-  const picked = pickImportDynamicPricingOta({
-    rows,
-    selectedChoices: selectedChoices.map((c) => {
-      const mapped: { choice_id: string; option_id: string; option_key?: string } = {
-        choice_id: c.choice_id,
-        option_id: c.option_id,
-      }
-      if (c.option_key) mapped.option_key = c.option_key
-      return mapped
-    }),
-    preferredVariantKey: dbVariantKey,
-    emailUnit: isViator ? null : emailUnit,
-  })
+  let picked = rows.length
+    ? pickImportDynamicPricingOta({
+        rows,
+        selectedChoices: selectedChoices.map((c) => {
+          const mapped: { choice_id: string; option_id: string; option_key?: string } = {
+            choice_id: c.choice_id,
+            option_id: c.option_id,
+          }
+          if (c.option_key) mapped.option_key = c.option_key
+          return mapped
+        }),
+        preferredVariantKey: dbVariantKey,
+        emailUnit: isViator ? null : emailUnit,
+      })
+    : null
+  if ((!picked || !(picked.ota > 0)) && isKlook && emailUnit != null && emailUnit > 0) {
+    const excluded = parseImportMoneyString(merged.amount_excluded)
+    picked = {
+      variantKey: dbVariantKey,
+      ota: emailUnit,
+      notIncluded: excluded != null && excluded > 0 ? excluded : 0,
+      commissionPercent: 0,
+    }
+  }
+  if (!rows.length && (!picked || !(picked.ota > 0))) {
+    return { attempted: false, reason: 'no_dynamic_pricing' }
+  }
   if (!picked || !(picked.ota > 0)) {
     return { attempted: false, reason: 'dynamic_pricing_unusable' }
   }
@@ -440,6 +458,7 @@ export async function tryAutoConfirmReservationImport(
     adults > 0 ? Math.round(((couponBase - couponDiscount) / adults) * 100) / 100 : picked.ota
   if (
     !isViator &&
+    !isKlook &&
     emailUnit != null &&
     !pricesClose(emailUnit, picked.ota) &&
     !pricesClose(emailUnit, afterCouponUnit)

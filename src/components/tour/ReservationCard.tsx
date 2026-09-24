@@ -59,6 +59,7 @@ import { CustomerCommunicationChannelPicker } from '@/components/reservation/Cus
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import { useTourDetailSectionChrome } from './TourDetailModalChromeContext'
 import { QuickPaymentRequestModal } from '@/components/customer/QuickPaymentRequestForm'
+import { tourFareUsdForTipGuide } from '@/lib/tipGuideline'
 
 function getReservationCommunicationChannel(reservation: Reservation): string | null {
   const r = reservation as Record<string, unknown>
@@ -248,10 +249,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const [quickPaymentOpen, setQuickPaymentOpen] = useState(false)
   const [quickPaymentInitials, setQuickPaymentInitials] = useState<{
     email?: string
+    phone?: string
     recipientName?: string
     description?: string
     amountUsd?: number | string
     reservationId?: string
+    tourFareUsd?: number
   }>({})
   const [channelInfo, setChannelInfo] = useState<{ name: string; favicon?: string; has_not_included_price?: boolean; commission_base_price_only?: boolean } | null>(null)
   const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
@@ -1168,6 +1171,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         description?: string
         amountUsd?: number | string
         reservationId?: string
+        tourFareUsd?: number
       } = {
         email,
         phone,
@@ -1176,12 +1180,16 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         reservationId: reservation.id,
       }
       if (balanceNum != null) nextInitials.amountUsd = balanceNum
+      const tourFareUsd = tourFareUsdForTipGuide(reservationPricing)
+      if (tourFareUsd != null) nextInitials.tourFareUsd = tourFareUsd
       setQuickPaymentInitials(nextInitials)
     } else {
+      const tourFareUsd = tourFareUsdForTipGuide(reservationPricing)
       setQuickPaymentInitials({
         recipientName: customerName,
         description: [customerName, reservation.tour_date || '', reservation.id].filter(Boolean).join(' · '),
         reservationId: reservation.id,
+        ...(tourFareUsd != null ? { tourFareUsd } : {}),
       })
     }
     setQuickPaymentOpen(true)

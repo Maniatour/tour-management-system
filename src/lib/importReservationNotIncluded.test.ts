@@ -57,6 +57,7 @@ Activity URL: https://www.klook.com/en-US/activity/113386
     'Antelope X Canyon',
   ])
   assert.equal(extracted_data.product_id, 'MDGCSUNRISE')
+  assert.equal(extracted_data.is_booking_confirmed, true)
 })
 
 test('Klook Amount not included 칸의 $95만 불포함 금액으로 인정한다', () => {
