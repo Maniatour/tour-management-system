@@ -125,6 +125,32 @@ export function assignmentSignature(assignments: Record<string, AutoAssignTourAs
     .join('|')
 }
 
+/** 같은 규칙에서 배정 결과가 달라지는 안만 모은다. 동점 순환이 한 바퀴 돌면 새 안은 더 나오지 않는다. */
+export function distinctAutoAssignResults(input: AutoAssignInput): AutoAssignResult[] {
+  const emails = new Set<string>()
+  for (const member of input.members) {
+    const key = emailKey(member.email)
+    if (key) emails.add(key)
+  }
+  for (const tour of input.tours) {
+    const guide = emailKey(tour.guideEmail)
+    const assistant = emailKey(tour.assistantEmail)
+    if (guide) emails.add(guide)
+    if (assistant) emails.add(assistant)
+  }
+  const limit = Math.min(64, Math.max(1, emails.size + 1))
+  const seen = new Set<string>()
+  const results: AutoAssignResult[] = []
+  for (let variant = 0; variant < limit; variant += 1) {
+    const result = autoAssignSchedule({ ...input, variant })
+    const signature = assignmentSignature(result.assignmentsByTourId)
+    if (seen.has(signature)) continue
+    seen.add(signature)
+    results.push(result)
+  }
+  return results
+}
+
 export const AUTO_ASSIGN_PRESET_LABEL: Record<AutoAssignPreset, string> = {
   equal: '균등 배정',
   priority: '가이드 우선순위',

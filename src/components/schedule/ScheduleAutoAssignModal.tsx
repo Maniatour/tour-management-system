@@ -1,8 +1,8 @@
 ﻿'use client'
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { HelpCircle, RefreshCw, Users, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, HelpCircle, Users, X } from 'lucide-react'
 import ScheduleAutoAssignGuidePlanModal, {
   persistGuidePlan,
   readStoredGuidePlan,
@@ -10,7 +10,6 @@ import ScheduleAutoAssignGuidePlanModal, {
 } from '@/components/schedule/ScheduleAutoAssignGuidePlanModal'
 import { mergeGuidePlan, sameGuidePlan } from '@/lib/schedule/autoAssignGuidePlan'
 import {
-  assignmentSignature,
   AUTO_ASSIGN_EXISTING_LABEL,
   AUTO_ASSIGN_LATER_LINES,
   AUTO_ASSIGN_PRESET_LABEL,
@@ -122,6 +121,7 @@ export default function ScheduleAutoAssignModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<AutoAssignPreviewData | null>(null)
+  const [caseIndex, setCaseIndex] = useState(0)
   const [frame, setFrame] = useState<ModalFrame>({ top: 16, left: 16, width: 1100, height: 760 })
   const [sidebarWidth, setSidebarWidth] = useState(0)
   const dragRef = useRef<{ mode: 'move' | 'right' | 'bottom' | 'corner'; x: number; y: number; frame: ModalFrame } | null>(null)
@@ -134,6 +134,7 @@ export default function ScheduleAutoAssignModal({
     setPreset('equal')
     setExistingMode('reset')
     setPreview(null)
+    setCaseIndex(0)
     setError('')
     setHelpOpen(false)
     setSidebarWidth(readSidebarWidth())
@@ -177,6 +178,7 @@ export default function ScheduleAutoAssignModal({
         ...(nextPlan.length > 0 ? { guidePlan: nextPlan } : {}),
       })
       setPreview(data)
+      setCaseIndex(0)
       if (data.dates[0]) setStartDate(data.dates[0])
       const lastDate = data.dates[data.dates.length - 1]
       if (lastDate) setEndDate(lastDate)
@@ -242,10 +244,29 @@ export default function ScheduleAutoAssignModal({
     }
   }
 
+  const alternativeResults = preview?.alternatives?.length ? preview.alternatives : []
+  const alternativeTotal = alternativeResults.length || (preview ? 1 : 0)
+  const safeCaseIndex =
+    alternativeTotal === 0 ? 0 : ((caseIndex % alternativeTotal) + alternativeTotal) % alternativeTotal
+  const activePreview = useMemo(() => {
+    if (!preview) return null
+    const result = alternativeResults[safeCaseIndex] ?? preview.result
+    if (result === preview.result) return preview
+    return { ...preview, result }
+  }, [alternativeResults, preview, safeCaseIndex])
+
   if (!open) return null
 
-  const filled = preview?.result.slots.filter((slot) => slot.email && !slot.unfilledReason).length ?? 0
-  const unfilled = preview?.result.slots.filter((slot) => slot.unfilledReason).length ?? 0
+  const filled = activePreview?.result.slots.filter((slot) => slot.email && !slot.unfilledReason).length ?? 0
+  const unfilled = activePreview?.result.slots.filter((slot) => slot.unfilledReason).length ?? 0
+  const showPreviousCase = () => {
+    if (alternativeTotal < 2) return
+    setCaseIndex((current) => (current - 1 + alternativeTotal) % alternativeTotal)
+  }
+  const showNextCase = () => {
+    if (alternativeTotal < 2) return
+    setCaseIndex((current) => (current + 1) % alternativeTotal)
+  }
 
   const modal = (
     <div className="fixed inset-0 z-[10060]" style={{ left: sidebarWidth, pointerEvents: 'none' }}>
@@ -369,25 +390,32 @@ export default function ScheduleAutoAssignModal({
           >
             {loading ? '생성 중' : '미리보기 생성'}
           </button>
-          {preview ? (
-            <button
-              type="button"
-              disabled={loading}
-              onClick={() =>
-                void generate(
-                  preset,
-                  startDate,
-                  endDate,
-                  (preview.result.variant ?? 0) + 1,
-                  assignmentSignature(preview.result.assignmentsByTourId),
-                  existingMode,
-                )
-              }
-              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-gray-300 px-4 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
-            >
-              <RefreshCw className="h-4 w-4" />
-              다른 배정
-            </button>
+          {preview && alternativeTotal > 0 ? (
+            <div className="inline-flex h-10 items-center rounded-xl border border-gray-200 bg-white">
+              <button
+                type="button"
+                disabled={loading || alternativeTotal < 2}
+                aria-label="이전 배정"
+                onClick={showPreviousCase}
+                className="inline-flex h-10 items-center gap-0.5 rounded-l-xl px-3 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                이전
+              </button>
+              <span className="min-w-[7.5rem] border-x border-gray-200 px-3 text-center text-sm font-medium text-gray-900">
+                다른 배정 {safeCaseIndex + 1}/{alternativeTotal}
+              </span>
+              <button
+                type="button"
+                disabled={loading || alternativeTotal < 2}
+                aria-label="다음 배정"
+                onClick={showNextCase}
+                className="inline-flex h-10 items-center gap-0.5 rounded-r-xl px-3 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-40"
+              >
+                다음
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           ) : null}
         </div>
 
@@ -408,17 +436,17 @@ export default function ScheduleAutoAssignModal({
               후기 통계를 읽지 못해 균등 배정으로 만들었습니다.
             </p>
           ) : null}
-          {preview ? (
+          {activePreview ? (
             <div>
               <p className="mb-3 text-sm text-gray-600">
-                배정 {filled}칸 · 비어 있음 {unfilled}칸 · {AUTO_ASSIGN_PRESET_LABEL[preview.result.effectivePreset]} ·{' '}
-                {AUTO_ASSIGN_EXISTING_LABEL[existingMode]} · 안 {(preview.result.variant ?? 0) + 1}
-                {preview.contextDates.length > 0 ? ' · 앞 3일은 기존 배정·오프' : ''}
+                배정 {filled}칸 · 비어 있음 {unfilled}칸 · {AUTO_ASSIGN_PRESET_LABEL[activePreview.result.effectivePreset]} ·{' '}
+                {AUTO_ASSIGN_EXISTING_LABEL[existingMode]} · 다른 배정 {alternativeTotal}가지 중 {safeCaseIndex + 1}번째
+                {activePreview.contextDates.length > 0 ? ' · 앞 3일은 기존 배정·오프' : ''}
               </p>
-              {preview.result.alternativeExhausted ? (
-                <p className="mb-3 text-sm text-gray-600">이 조건에서는 더 다른 배정이 없습니다. 같은 안을 다시 보여 줍니다.</p>
+              {alternativeTotal < 2 ? (
+                <p className="mb-3 text-sm text-gray-600">이 조건에서는 다른 배정이 1가지뿐입니다.</p>
               ) : null}
-              {renderPreview(preview)}
+              {renderPreview(activePreview)}
             </div>
           ) : (
             <p className="text-sm text-gray-500">기간은 최대 2주입니다. 미리보기를 만든 뒤 칸에 마우스를 올리면 배정 이유를 볼 수 있습니다.</p>
@@ -431,8 +459,8 @@ export default function ScheduleAutoAssignModal({
           </button>
           <button
             type="button"
-            disabled={!preview || loading}
-            onClick={() => preview && onApply(preview.result)}
+            disabled={!activePreview || loading}
+            onClick={() => activePreview && onApply(activePreview.result)}
             className="h-10 rounded-xl bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
             적용

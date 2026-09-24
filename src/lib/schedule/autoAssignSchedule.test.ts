@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { mergeGuidePlan, sameGuidePlan } from './autoAssignGuidePlan'
 import {
+  assignmentSignature,
   autoAssignSchedule,
   clampAutoAssignRange,
+  distinctAutoAssignResults,
   defaultAutoAssignRange,
   guestReviewRatePercentOf,
   previousCalendarMonth,
@@ -273,6 +275,16 @@ test('refresh variant makes a different equal assignment', () => {
   assert.notEqual(first.assignmentsByTourId.t1.tour_guide_id, second.assignmentsByTourId.t1.tour_guide_id)
   assert.equal(first.assignmentsByTourId.t1.tour_guide_id, 'a@x.com')
   assert.equal(second.assignmentsByTourId.t1.tour_guide_id, 'b@x.com')
+  const cases = distinctAutoAssignResults(input)
+  const signatures = cases.map((item) => assignmentSignature(item.assignmentsByTourId))
+  assert.equal(new Set(signatures).size, signatures.length)
+  assert.ok(signatures.length >= 2)
+  const onlyOne = distinctAutoAssignResults({
+    ...input,
+    members: [member('a@x.com', { name: 'A' })],
+    tours: [tour('t1', '2026-10-04')],
+  })
+  assert.equal(onlyOne.length, 1)
 })
 
 test('off days are skipped', () => {

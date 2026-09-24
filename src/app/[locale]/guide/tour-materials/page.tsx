@@ -4,17 +4,12 @@ import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 import { useState, useCallback, useMemo } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { createClientSupabase } from '@/lib/supabase'
-import {
-  Search,
-  FileText,
-  CheckCircle2,
-  DownloadCloud,
-} from 'lucide-react'
+import { Search, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAudioPlayer } from '@/contexts/AudioPlayerContext'
 import ReactCountryFlag from 'react-country-flag'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
-import { useNarrationOfflineStatus } from '@/hooks/useNarrationOfflineStatus'
+import GuideNarrationOfflineDownload from '@/components/guide/GuideNarrationOfflineDownload'
 import GuideTodayNarrationPlayLog from '@/components/guide/GuideTodayNarrationPlayLog'
 import { TourNarrationPlayTile } from '@/components/tour/TourNarrationPlayTile'
 import {
@@ -34,8 +29,6 @@ export default function GuideTourMaterialsPage() {
   const locale = useLocale()
   const supabase = createClientSupabase()
   const { playTrack, primeAudioForGesture, currentTrack, isPlaying } = useAudioPlayer()
-  const narrationStatus = useNarrationOfflineStatus()
-
   const [searchTerm, setSearchTerm] = useState('')
   const [langTab, setLangTab] = useState<string | null>(null)
 
@@ -152,25 +145,7 @@ export default function GuideTourMaterialsPage() {
             />
           </div>
         </div>
-        {narrationStatus.total > 0 && (
-          <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-500">
-            {narrationStatus.status === 'ready' ? (
-              <CheckCircle2 className="h-3.5 w-3.5 text-green-600" aria-hidden />
-            ) : (
-              <DownloadCloud className="h-3.5 w-3.5 text-primary" aria-hidden />
-            )}
-            <span>
-              {narrationStatus.status === 'ready'
-                ? t('narrationOfflineReady')
-                : narrationStatus.status === 'syncing'
-                  ? t('narrationOfflineSyncing', {
-                      cached: narrationStatus.cached,
-                      total: narrationStatus.total,
-                    })
-                  : t('narrationOfflinePartial')}
-            </span>
-          </p>
-        )}
+        <GuideNarrationOfflineDownload />
         <GuideTodayNarrationPlayLog locale={locale === 'en' ? 'en' : 'ko'} />
       </div>
 

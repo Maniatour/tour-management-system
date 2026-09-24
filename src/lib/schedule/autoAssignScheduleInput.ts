@@ -14,6 +14,7 @@ import {
   assignmentSignature,
   autoAssignSchedule,
   clampAutoAssignRange,
+  distinctAutoAssignResults,
   eachAutoAssignDate,
   type AutoAssignExistingMode,
   type AutoAssignInput,
@@ -66,6 +67,8 @@ export type AutoAssignPreviewTour = {
 
 export type AutoAssignPreviewData = {
   result: AutoAssignResult
+  /** 같은 조건에서 서로 다른 배정 안. 첫 안이 기본이다. */
+  alternatives: AutoAssignResult[]
   /** 다시 배정하는 날짜 */
   dates: string[]
   /** 배정 시작일 앞 3일. 기존 배정과 오프만 보여주고 적용하지 않는다. */
@@ -363,13 +366,25 @@ export function prepareAutoAssignSchedule(args: {
     existingMode: args.existingMode === 'keep' ? 'keep' : 'reset',
     ...(args.guidePlan !== undefined ? { guidePlan: args.guidePlan } : {}),
   }
+  const alternatives = distinctAutoAssignResults({ ...input, variant: 0 })
   let variant = input.variant ?? 0
-  let result = autoAssignSchedule(input)
+  let result =
+    alternatives.find((item) => item.variant === variant) ??
+    alternatives[0] ??
+    autoAssignSchedule(input)
   const previous = args.previousSignature || ''
   if (previous) {
-    for (let step = 0; step < 8 && assignmentSignature(result.assignmentsByTourId) === previous; step += 1) {
-      variant += 1
-      result = autoAssignSchedule({ ...input, variant })
+    const next = alternatives.find(
+      (item) => item.variant >= variant && assignmentSignature(item.assignmentsByTourId) !== previous,
+    )
+    if (next) {
+      result = next
+      variant = next.variant
+    } else {
+      for (let step = 0; step < 8 && assignmentSignature(result.assignmentsByTourId) === previous; step += 1) {
+        variant += 1
+        result = autoAssignSchedule({ ...input, variant })
+      }
     }
   }
   result = {
@@ -411,6 +426,7 @@ export function prepareAutoAssignSchedule(args: {
 
   return {
     result,
+    alternatives: alternatives.length > 0 ? alternatives : [result],
     dates: range,
     contextDates: autoAssignContextDates(clamped.startDate),
     guides: members.map((member) => ({ email: member.email, name: member.name })),
