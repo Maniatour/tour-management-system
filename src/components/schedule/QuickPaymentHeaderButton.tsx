@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState, type MutableRefObject } from 'react'
 import dynamic from 'next/dynamic'
 import { Send } from 'lucide-react'
 
@@ -13,14 +13,24 @@ const QuickPaymentRequestModal = dynamic(
 type QuickPaymentHeaderButtonProps = {
   locale: string
   className?: string
+  registerOpen?: MutableRefObject<(() => void) | null>
 }
 
 export default function QuickPaymentHeaderButton({
   locale,
   className,
+  registerOpen,
 }: QuickPaymentHeaderButtonProps) {
   const [open, setOpen] = useState(false)
   const isKo = locale.startsWith('ko')
+
+  useEffect(() => {
+    if (!registerOpen) return
+    registerOpen.current = () => setOpen(true)
+    return () => {
+      registerOpen.current = null
+    }
+  }, [registerOpen])
 
   return (
     <>

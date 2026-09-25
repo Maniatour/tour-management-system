@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState, type MutableRefObject } from 'react'
 import dynamic from 'next/dynamic'
 import { DollarSign } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -27,9 +27,10 @@ type TeamMemberLite = {
 
 type PriceInventoryHeaderButtonProps = {
   className?: string
+  registerOpen?: MutableRefObject<(() => void) | null>
 }
 
-export default function PriceInventoryHeaderButton({ className }: PriceInventoryHeaderButtonProps) {
+export default function PriceInventoryHeaderButton({ className, registerOpen }: PriceInventoryHeaderButtonProps) {
   const { user } = useAuth()
   const { operatorId } = useOperatorOptional()
   const activeOperatorId = resolveOperatorId(operatorId)
@@ -77,6 +78,16 @@ export default function PriceInventoryHeaderButton({ className }: PriceInventory
       setLoading(false)
     }
   }, [activeOperatorId, products.length])
+
+  useEffect(() => {
+    if (!registerOpen) return
+    registerOpen.current = () => {
+      void handleOpen()
+    }
+    return () => {
+      registerOpen.current = null
+    }
+  }, [handleOpen, registerOpen])
 
   return (
     <>

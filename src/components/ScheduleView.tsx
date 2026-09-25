@@ -2,6 +2,7 @@
 import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
 import { ChevronLeft, ChevronRight, ChevronDown, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, Plus, Trash2, UserPlus, Car, Layers, Bell, RotateCcw, DollarSign, Smartphone, UserCheck, History, Receipt, Wallet, Sparkles, Headphones, FileText } from 'lucide-react'
@@ -187,6 +188,12 @@ import type { ScheduleDisplayDataPayload } from '@/lib/scheduleDisplayData'
 import type { ScheduleDisplayCalendarTourSummary } from '@/components/schedule/ScheduleDisplayCalendar'
 import ScheduleDisplayAsidePanel from '@/components/schedule/ScheduleDisplayAsidePanel'
 import ScheduleDisplayToolbar from '@/components/schedule/ScheduleDisplayToolbar'
+import {
+  ScheduleViewMobileToolGrid,
+  type ScheduleMobileTool,
+} from '@/components/schedule/ScheduleViewMobileToolGrid'
+
+export type { ScheduleMobileTool }
 import ScheduleProductGrid from '@/components/schedule/ScheduleProductGrid'
 import ScheduleGuideGrid from '@/components/schedule/ScheduleGuideGrid'
 import ScheduleVehicleGrid from '@/components/schedule/ScheduleVehicleGrid'
@@ -819,6 +826,10 @@ type ScheduleViewProps = {
   prefetchedScheduleData?: ScheduleDisplayDataPayload | null
   /** display 모드에서 API 데이터 재조회 */
   onScheduleDisplayRefetch?: () => Promise<void>
+  /** 투어 관리 페이지 액션을 모바일 스케줄 도구 그리드에 함께 표시 */
+  mobilePageTools?: ScheduleMobileTool[]
+  /** 페이지 액션 배지 합계 (스케줄 도구 버튼) */
+  mobilePageAttentionCount?: number
 }
 
 export default function ScheduleView(props: ScheduleViewProps = {}) {
@@ -830,6 +841,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     onPriceInventoryLaunchConsumed,
     prefetchedScheduleData = null,
     onScheduleDisplayRefetch,
+    mobilePageTools = [],
+    mobilePageAttentionCount = 0,
   } = props
   const isDisplayMode = variant === 'display'
   const usesPrefetchedScheduleData = isDisplayMode && prefetchedScheduleData != null
@@ -1045,6 +1058,18 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     [hasPermission, userRole]
   )
   const [showProductModal, setShowProductModal] = useState(false)
+  const [scheduleMobileToolsOpen, setScheduleMobileToolsOpen] = useState(false)
+  const [scheduleToolAnchors, setScheduleToolAnchors] = useState<{
+    launcher: HTMLElement
+    panel: HTMLElement
+  } | null>(null)
+
+  useLayoutEffect(() => {
+    if (isDisplayMode) return
+    const launcher = document.getElementById('tour-schedule-tools-launcher')
+    const panel = document.getElementById('tour-schedule-tools-panel')
+    if (launcher && panel) setScheduleToolAnchors({ launcher, panel })
+  }, [isDisplayMode])
   const [showMiscTourModal, setShowMiscTourModal] = useState(false)
   const [miscTourProductIds, setMiscTourProductIds] = useState<string[]>([])
   const [miscTourModalDraft, setMiscTourModalDraft] = useState<string[]>([])
@@ -7540,6 +7565,150 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     )
   }
 
+  const isKoSchedule = locale === 'ko'
+  const scheduleMobileAttentionCount =
+    (canManageSharedSchedule ? (pastMissingReceiptCount ?? 0) + (pastBalanceRemainingCount ?? 0) : 0) +
+    (scheduleHealthFetchedLoaded ? scheduleHealthIssueCount : 0)
+  const scheduleMobileTools: ScheduleMobileTool[] = [
+    {
+      id: 'products',
+      label: isKoSchedule ? `상품 ${selectedProducts.length}` : `Products ${selectedProducts.length}`,
+      tileClass: 'border-blue-200 bg-blue-50 text-blue-700',
+      icon: <MapPin className="h-6 w-6" />,
+      badge: selectedProducts.length,
+      onClick: () => setShowProductModal(true),
+    },
+    {
+      id: 'misc',
+      label: isKoSchedule ? `기타 ${miscTourProductIds.length}` : `Other ${miscTourProductIds.length}`,
+      tileClass: 'border-violet-200 bg-violet-50 text-violet-700',
+      icon: <Layers className="h-6 w-6" />,
+      badge: miscTourProductIds.length,
+      onClick: () => {
+        setMiscTourModalDraft([...miscTourProductIds])
+        setShowMiscTourModal(true)
+      },
+    },
+    {
+      id: 'team',
+      label: isKoSchedule ? `팀원 ${selectedTeamMembers.length}` : `Team ${selectedTeamMembers.length}`,
+      tileClass: 'border-green-200 bg-green-50 text-green-700',
+      icon: <Users className="h-6 w-6" />,
+      badge: selectedTeamMembers.length,
+      onClick: () => {
+        setShareTeamMembersSetting(false)
+        setShowTeamModal(true)
+      },
+    },
+    {
+      id: 'batch-off',
+      label: isKoSchedule ? '일괄 오프' : 'Batch off',
+      tileClass: 'border-orange-200 bg-orange-50 text-orange-700',
+      icon: <CalendarOff className="h-6 w-6" />,
+      onClick: () => {
+        const monthStart = dayjs(currentDate).startOf('month').format('YYYY-MM-DD')
+        setBatchOffPeriods([{ id: crypto.randomUUID(), startDate: monthStart, endDate: monthStart }])
+        setShowBatchOffModal(true)
+      },
+    },
+    ...(isSuperAdmin
+      ? [
+          {
+            id: 'rental',
+            label: isKoSchedule ? '렌터카' : 'Rent a car',
+            tileClass: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+            icon: <Car className="h-6 w-6" />,
+            onClick: openRentalVehicleAddFromSchedule,
+          } satisfies ScheduleMobileTool,
+        ]
+      : []),
+    {
+      id: 'assign-sms',
+      label: isKoSchedule ? '부여 SMS' : 'Assign SMS',
+      tileClass: 'border-violet-200 bg-violet-50 text-violet-700',
+      icon: <UserCheck className="h-6 w-6" />,
+      onClick: () => setShowGuideScheduleAssignmentBulkModal(true),
+    },
+    {
+      id: 'confirm-sms',
+      label: isKoSchedule ? '컨펌 발송' : 'Confirm',
+      tileClass: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+      icon: <Smartphone className="h-6 w-6" />,
+      onClick: () => setShowGuideScheduleBulkModal(true),
+    },
+    {
+      id: 'refresh',
+      label: isKoSchedule ? '새로고침' : 'Refresh',
+      tileClass: 'border-gray-200 bg-white text-gray-700',
+      icon: <RotateCcw className={`h-6 w-6 ${isClearingCache ? 'animate-spin' : ''}`} />,
+      disabled: isClearingCache,
+      onClick: () => {
+        void handleClearCacheAndRefresh()
+      },
+    },
+    {
+      id: 'off-history',
+      label: isKoSchedule ? '오프 기록' : 'Off history',
+      tileClass: 'border-amber-200 bg-amber-50 text-amber-800',
+      icon: <History className="h-6 w-6" />,
+      onClick: () => setShowOffScheduleHistoryModal(true),
+    },
+    {
+      id: 'health',
+      label: isKoSchedule ? '스케줄 점검' : 'Health',
+      tileClass: 'border-orange-200 bg-orange-50 text-orange-700',
+      icon: <Bell className="h-6 w-6" />,
+      badge: scheduleHealthFetchedLoaded ? scheduleHealthIssueCount : 0,
+      onClick: () => {
+        if (scheduleHealthIssueCount === 0) return
+        setScheduleHealthModalOpen(true)
+      },
+    },
+    {
+      id: 'reports',
+      label: isKoSchedule ? '투어 리포트' : 'Reports',
+      tileClass: 'border-amber-200 bg-amber-50 text-amber-800',
+      icon: <FileText className="h-6 w-6" />,
+      onClick: () => setShowTourReportStatusModal(true),
+    },
+    {
+      id: 'narration',
+      label: isKoSchedule ? '나레이션' : 'Narration',
+      tileClass: 'border-sky-200 bg-sky-50 text-sky-700',
+      icon: <Headphones className="h-6 w-6" />,
+      onClick: () => setShowNarrationHistoryModal(true),
+    },
+    {
+      id: 'price',
+      label: isKoSchedule ? '가격·재고' : 'Price',
+      tileClass: 'border-sky-200 bg-sky-50 text-sky-700',
+      icon: <DollarSign className="h-6 w-6" />,
+      onClick: () => setShowPriceInventoryModal(true),
+    },
+    ...(canManageSharedSchedule
+      ? [
+          {
+            id: 'missing-receipts',
+            label: isKoSchedule ? '지출 없음' : 'No expenses',
+            tileClass: 'border-rose-200 bg-rose-50 text-rose-700',
+            icon: <Receipt className="h-6 w-6" />,
+            badge: pastMissingReceiptCount ?? 0,
+            onClick: () => setShowPastMissingReceiptsModal(true),
+          } satisfies ScheduleMobileTool,
+          {
+            id: 'balance',
+            label: isKoSchedule ? '잔금' : 'Balance',
+            tileClass: 'border-teal-200 bg-teal-50 text-teal-800',
+            icon: <Wallet className="h-6 w-6" />,
+            badge: pastBalanceRemainingCount ?? 0,
+            onClick: () => setShowPastBalanceRemainingModal(true),
+          } satisfies ScheduleMobileTool,
+        ]
+      : []),
+  ]
+  const scheduleMobileToolsForGrid = [...mobilePageTools, ...scheduleMobileTools]
+  const scheduleMobileAttentionTotal = scheduleMobileAttentionCount + mobilePageAttentionCount
+
   const scheduleMainPanel = (
     <div className={`bg-white rounded-none border-0 shadow-none px-0 py-2 sm:rounded-lg sm:border sm:shadow-md sm:p-2 ${isDisplayMode ? 'min-w-0 lg:flex-1 lg:overflow-auto' : ''}`}>
       {/* 헤더 */}
@@ -7561,7 +7730,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         {/* 첫 번째 줄: 좌 아이콘 | 가운데 월·오늘 | 우 저장·취소 */}
         <div className="relative mb-2 flex flex-col gap-2 sm:grid sm:min-h-11 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center sm:gap-x-2">
           {/* 왼쪽: 모바일은 가로 스크롤, sm+ 는 왼쪽 열 */}
-          <div className="relative z-10 order-3 flex min-w-0 items-center sm:order-none sm:shrink-0">
+          <div className="relative z-10 order-3 hidden min-w-0 items-center sm:order-none sm:flex sm:shrink-0">
             <div className="flex w-full gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:w-auto sm:flex-wrap sm:gap-2 sm:overflow-visible sm:pb-0 [&::-webkit-scrollbar]:hidden [&>button]:shrink-0">
               <button
                 onClick={() => setShowProductModal(true)}
@@ -7699,14 +7868,25 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             </div>
           </div>
 
-          {/* 가운데: 모바일은 다음 줄 전체, sm+ 는 그리드 중앙 열 */}
-          <div className="order-1 flex w-full justify-center px-1 sm:order-none sm:w-auto sm:justify-self-center sm:px-0">
-            <div className="flex w-full flex-wrap items-center justify-center gap-1 sm:w-auto sm:flex-nowrap sm:gap-2 sm:pointer-events-auto">
-              <div className="flex items-center space-x-1 sm:space-x-4">
+          <ScheduleViewMobileToolGrid
+            open={scheduleMobileToolsOpen}
+            onOpenChange={setScheduleMobileToolsOpen}
+            tools={scheduleMobileToolsForGrid}
+            attentionCount={scheduleMobileAttentionTotal}
+            title={isKoSchedule ? '스케줄 도구' : 'Schedule tools'}
+            launcherTarget={scheduleToolAnchors?.launcher ?? null}
+            panelTarget={scheduleToolAnchors?.panel ?? null}
+          />
+
+          {/* 가운데: 모바일은 월·오늘·저장이 한 줄, sm+ 는 기존 한 줄 */}
+          <div className="order-1 flex w-full flex-col items-stretch gap-2 px-1 sm:order-none sm:w-auto sm:flex-row sm:flex-nowrap sm:items-center sm:justify-self-center sm:gap-2 sm:px-0 sm:pointer-events-auto">
+            <div className="flex w-full flex-nowrap items-center gap-1 overflow-x-auto sm:contents">
+              <div className="flex shrink-0 items-center space-x-1 sm:space-x-4">
                 <button
                   type="button"
                   onClick={goToPreviousMonth}
                   className="p-1 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  aria-label={isKoSchedule ? '이전 달' : 'Previous month'}
                 >
                   <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
                 </button>
@@ -7717,6 +7897,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                   type="button"
                   onClick={goToNextMonth}
                   className="p-1 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  aria-label={isKoSchedule ? '다음 달' : 'Next month'}
                 >
                   <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
                 </button>
@@ -7724,10 +7905,49 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               <button
                 type="button"
                 onClick={goToToday}
-                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors whitespace-nowrap text-xs sm:text-sm"
+                className="shrink-0 px-2.5 py-1.5 sm:px-4 sm:py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors whitespace-nowrap text-xs sm:text-sm"
               >
                 오늘
               </button>
+              <div className="ml-auto flex shrink-0 items-center gap-1 sm:hidden">
+                <label
+                  className={`flex cursor-pointer items-center gap-1 rounded-lg border px-1.5 py-1 text-[10px] whitespace-nowrap select-none ${
+                    scheduleExplorationMode
+                      ? 'border-amber-300 bg-amber-50 text-amber-950'
+                      : 'border-gray-200 bg-gray-50 text-gray-600'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 shrink-0 rounded border-gray-400 text-amber-600 focus:ring-amber-500"
+                    checked={scheduleExplorationMode}
+                    onChange={(e) => setScheduleExplorationMode(e.target.checked)}
+                  />
+                  <span>스케줄링</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void executeBatchSave({ offerGuideEmail: true })
+                  }}
+                  disabled={pendingCount === 0}
+                  className={`rounded-lg px-2 py-1 text-xs whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-primary text-primary-foreground hover:bg-primary/90'}`}
+                >
+                  저장
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void discardPendingScheduleChanges()
+                  }}
+                  disabled={pendingCount === 0}
+                  className={`rounded-lg px-2 py-1 text-xs whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-600 text-white hover:bg-gray-700'}`}
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+            <div className="flex w-full flex-wrap items-center justify-center gap-1 sm:w-auto sm:flex-nowrap sm:gap-2">
               <label
                 className="flex max-w-full items-center gap-1 rounded-lg border border-red-200 bg-red-50/80 px-1.5 py-1 text-[10px] sm:text-xs text-red-800"
                 title="이 날짜 이후의 투어는 가이드 페이지에 표시되지 않습니다. 라스베이거스 자정마다 하루씩 자동으로 늘어납니다."
@@ -7775,7 +7995,8 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
           </div>
 
           {/* 오른쪽: 나레이션·재고·저장 */}
-          <div className="relative z-10 order-2 flex w-full min-w-0 items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] sm:order-none sm:ml-0 sm:w-auto sm:shrink-0 sm:flex-wrap sm:justify-self-end sm:justify-end sm:gap-2 sm:overflow-visible [&::-webkit-scrollbar]:hidden [&>button]:shrink-0 [&>label]:shrink-0">
+          <div className="relative z-10 order-2 hidden w-full min-w-0 items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] sm:order-none sm:ml-0 sm:flex sm:w-auto sm:shrink-0 sm:flex-wrap sm:justify-self-end sm:justify-end sm:gap-2 sm:overflow-visible [&::-webkit-scrollbar]:hidden [&>button]:shrink-0 [&>label]:shrink-0">
+            <div className="hidden sm:contents">
             <button
               type="button"
               onClick={() => setShowTourReportStatusModal(true)}
@@ -7838,6 +8059,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                 </button>
               </>
             ) : null}
+            </div>
 
             <label
               className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1 text-[10px] sm:text-xs whitespace-nowrap select-none ${
@@ -10808,9 +11030,12 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
       )}
 
       {/* 가이드 모달 */}
-      {showGuideModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1100]">
-          <div className="bg-white rounded-lg p-5 max-w-xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+      {showGuideModal && typeof document !== 'undefined'
+        ? createPortal(
+        <>
+        <div className="fixed inset-0 z-[10050] flex items-center justify-center bg-black/50 max-lg:items-stretch">
+          <div className="flex w-full max-w-xl flex-col bg-white max-lg:h-[100dvh] max-lg:max-h-[100dvh] max-lg:max-w-none max-lg:rounded-none lg:max-h-[90vh] lg:rounded-lg lg:shadow-xl">
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-5">
             <div className="flex items-center justify-between gap-2 mb-3">
               <h3 className="text-lg font-semibold text-gray-900 min-w-0 truncate">
                 {guideModalContent.title}
@@ -11077,39 +11302,39 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                                 </span>
                               ))}
                             </div>
-                            <div className="inline-flex shrink-0 items-center gap-1.5">
-                              <TourLanguageBadge
-                                tourLanguage={res.tour_language ?? res.tourLanguage}
-                                customerLanguage={customer?.language}
-                                locale={locale}
-                                compact
-                                showLabel
-                              />
-                              <span className="text-xs tabular-nums text-gray-600">
-                                {res.total_people ?? 0}
-                                {locale === 'ko' ? '명' : ' pax'}
-                              </span>
-                            </div>
+                            <span className="shrink-0 text-xs tabular-nums text-gray-600">
+                              {res.total_people ?? 0}
+                              {locale === 'ko' ? '명' : ' pax'}
+                            </span>
                           </div>
-                          <div className="mt-0.5 min-w-0 truncate pl-0.5 text-[11px] leading-snug text-gray-600">
-                            {pickupHotelId ? (
-                              <>
-                                <span className="font-bold text-gray-800">
-                                  {pickupHotelLabel ||
-                                    (locale === 'ko' ? '픽업 미정' : 'Pickup TBD')}
-                                </span>
-                                {pickupLocationLabel ? (
-                                  <>
-                                    {' - '}
-                                    <span>{pickupLocationLabel}</span>
-                                  </>
-                                ) : null}
-                              </>
-                            ) : locale === 'ko' ? (
-                              '픽업 미정'
-                            ) : (
-                              'Pickup TBD'
-                            )}
+                          <div className="mt-0.5 flex min-w-0 items-center justify-between gap-2 pl-0.5">
+                            <div className="min-w-0 truncate text-[11px] leading-snug text-gray-600">
+                              {pickupHotelId ? (
+                                <>
+                                  <span className="font-bold text-gray-800">
+                                    {pickupHotelLabel ||
+                                      (locale === 'ko' ? '픽업 미정' : 'Pickup TBD')}
+                                  </span>
+                                  {pickupLocationLabel ? (
+                                    <>
+                                      {' - '}
+                                      <span>{pickupLocationLabel}</span>
+                                    </>
+                                  ) : null}
+                                </>
+                              ) : locale === 'ko' ? (
+                                '픽업 미정'
+                              ) : (
+                                'Pickup TBD'
+                              )}
+                            </div>
+                            <TourLanguageBadge
+                              tourLanguage={res.tour_language ?? res.tourLanguage}
+                              customerLanguage={customer?.language}
+                              locale={locale}
+                              compact
+                              showLabel
+                            />
                           </div>
                         </button>
                       )
@@ -11119,58 +11344,55 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
               </div>
             ) : null}
 
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap gap-2">
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5 border-t border-gray-100 bg-white px-3 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom,0px))] lg:px-5">
+              <button
+                onClick={() => {
+                  if (guideModalContent.tourId) {
+                    setShowGuideModal(false)
+                    openTourDetailModal(guideModalContent.tourId)
+                  }
+                }}
+                disabled={!guideModalContent.tourId}
+                className="inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-lg bg-green-500 px-2 text-xs font-medium text-white transition-colors hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                투어 상세 열기
+              </button>
+              {isScheduleStaff && guideModalContent.tourId ? (
                 <button
+                  type="button"
                   onClick={() => {
-                    if (guideModalContent.tourId) {
-                      setShowGuideModal(false)
-                      openTourDetailModal(guideModalContent.tourId)
-                    }
+                    void handleCopyTourFromGuideModal(guideModalContent.tourId)
                   }}
-                  disabled={!guideModalContent.tourId}
-                  className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  disabled={copyingGuideModalTourId === guideModalContent.tourId}
+                  className="inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-lg bg-emerald-600 px-2 text-xs font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                   </svg>
-                  투어 상세 열기
+                  {locale === 'ko' ? '투어 복사' : 'Copy tour'}
                 </button>
-                {isScheduleStaff && guideModalContent.tourId ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleCopyTourFromGuideModal(guideModalContent.tourId)
-                    }}
-                    disabled={copyingGuideModalTourId === guideModalContent.tourId}
-                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                    {locale === 'ko' ? '투어 복사' : 'Copy tour'}
-                  </button>
-                ) : null}
-              </div>
+              ) : null}
               <button
                 type="button"
                 onClick={() => {
                   setShowGuideModalAutoAssign(false)
                   setShowGuideModal(false)
                 }}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                className="inline-flex h-9 shrink-0 items-center justify-center whitespace-nowrap rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 닫기
               </button>
             </div>
           </div>
         </div>
-      )}
-
-      {showGuideModalAutoAssign &&
+        {showGuideModalAutoAssign &&
         guideModalContent.tourId &&
         guideModalTour?.product_id &&
-        guideModalTour?.tour_date && (
+        guideModalTour?.tour_date ? (
           <AutoAssignModal
             isOpen={showGuideModalAutoAssign}
             onClose={() => setShowGuideModalAutoAssign(false)}
@@ -11179,12 +11401,16 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
             tourDate={normalizeTourDateKey(guideModalTour.tour_date)}
             getCustomerName={getGuideModalCustomerName}
             getCustomerLanguage={getGuideModalCustomerLanguage}
-            overlayZIndex={1200}
+            overlayZIndex={10150}
             onSuccess={async () => {
               await refreshScheduleData()
             }}
           />
-        )}
+        ) : null}
+        </>,
+        document.body
+      )
+      : null}
 
       {/* 투어 상세 (스케줄 뷰에서 페이지 이동 없이 확인) */}
       <TourDetailResizableDialog

@@ -3,7 +3,7 @@ import { BROWSER_AUTOFILL_OFF_PROPS } from '@/lib/browserAutofill'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
-import { Plus, Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, Trash2, Receipt, CalendarOff, ExternalLink } from 'lucide-react'
+import { Plus, Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight, ChevronDown, Trash2, Receipt, CalendarOff, ExternalLink, SlidersHorizontal } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
@@ -26,6 +26,7 @@ import { useAwayOtherUserChangesNotifier } from '@/hooks/useAwayOtherUserChanges
 import { fetchToursNeedCheckData } from '@/lib/toursNeedCheckStats'
 import { chunkStrings } from '@/lib/supabaseInChunks'
 import { TourDetailResizableDialog } from '@/components/tour/TourDetailResizableDialog'
+import type { ScheduleMobileTool } from '@/components/schedule/ScheduleViewMobileToolGrid'
 
 function ToursViewSkeleton({ label }: { label: string }) {
   return (
@@ -893,6 +894,7 @@ export default function AdminTours() {
 
   const [asGuideEmail, setAsGuideEmail] = useState<string>('')
   const [showStatusFilter, setShowStatusFilter] = useState(false)
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
   const statusFilterRef = useRef<HTMLDivElement>(null)
   
   // 드롭다운 외부 클릭 시 닫기
@@ -1151,6 +1153,46 @@ export default function AdminTours() {
 
   // 삭제 기능은 카드뷰 간소화 요구에 따라 제거됨
 
+  const mobilePageTools: ScheduleMobileTool[] = [
+    ...(viewerCanApproveOffSchedules
+      ? [
+          {
+            id: 'pending-off',
+            label: t('calendar.offSchedule.pendingQueueButton'),
+            tileClass: 'border-amber-200 bg-amber-50 text-amber-800',
+            icon: <CalendarOff className="h-6 w-6" />,
+            badge: pendingOffCount,
+            onClick: () => openPendingOffModal(false),
+          } satisfies ScheduleMobileTool,
+        ]
+      : []),
+    {
+      id: 'add-tour',
+      label: t('addTour'),
+      tileClass: 'border-blue-200 bg-blue-50 text-blue-700',
+      icon: <Plus className="h-6 w-6" />,
+      onClick: () => setShowNewTourModal(true),
+    },
+    {
+      id: 'need-check',
+      label: t('needToCheckButton'),
+      tileClass: 'border-amber-200 bg-amber-50 text-amber-800',
+      icon: <Receipt className="h-6 w-6" />,
+      badge: needCheckStatsLoading ? 0 : needCheckStats.union,
+      onClick: () => setShowNeedCheckModal(true),
+    },
+    {
+      id: 'deleted-tours',
+      label: locale === 'ko' ? '삭제된 투어' : 'Deleted tours',
+      tileClass: 'border-gray-200 bg-gray-100 text-gray-800',
+      icon: <Trash2 className="h-6 w-6" />,
+      onClick: () => setShowDeletedToursModal(true),
+    },
+  ]
+  const mobilePageAttentionCount =
+    (viewerCanApproveOffSchedules ? pendingOffCount : 0) +
+    (needCheckStatsLoading ? 0 : needCheckStats.union)
+
   return (
     <div className="px-0 pt-0 pb-1.5 sm:pb-3">
       {loading && (
@@ -1165,12 +1207,12 @@ export default function AdminTours() {
       )}
       {/* 헤더 — 모바일에서도 컨트롤만 살짝 안쪽, 스케줄 그리드는 풀블리드 */}
       <div className="mb-4 px-2 sm:mb-6 sm:px-0">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 m-0 truncate">{t('title')}</h1>
-          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+        <div className="mb-3 flex flex-wrap items-center gap-1.5">
+          <h1 className="m-0 shrink-0 text-lg font-bold text-gray-900 sm:text-2xl">{t('title')}</h1>
+          <div className="flex shrink-0 items-center gap-1">
             <button
               onClick={() => setViewMode('list')}
-              className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 text-sm font-medium ${
+              className={`px-2 py-1.5 sm:px-3 rounded-md flex items-center gap-1.5 text-sm font-medium ${
                 viewMode === 'list' 
                   ? 'bg-primary text-primary-foreground' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -1181,7 +1223,7 @@ export default function AdminTours() {
             </button>
             <button
               onClick={() => setViewMode('calendar')}
-              className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 text-sm font-medium ${
+              className={`px-2 py-1.5 sm:px-3 rounded-md flex items-center gap-1.5 text-sm font-medium ${
                 viewMode === 'calendar' 
                   ? 'bg-primary text-primary-foreground' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -1192,7 +1234,7 @@ export default function AdminTours() {
             </button>
             <button
               onClick={() => setViewMode('schedule')}
-              className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 text-sm font-medium ${
+              className={`px-2 py-1.5 sm:px-3 rounded-md flex items-center gap-1.5 text-sm font-medium ${
                 viewMode === 'schedule' 
                   ? 'bg-primary text-primary-foreground' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -1208,11 +1250,13 @@ export default function AdminTours() {
               onFocus={prefetchScheduleDisplay}
               title="스케줄 디스플레이"
               aria-label="스케줄 디스플레이"
-              className="px-3 py-1.5 rounded-md flex items-center gap-1.5 text-sm font-medium bg-slate-800 text-white hover:bg-slate-900"
+              className="px-2 py-1.5 sm:px-3 rounded-md flex items-center gap-1.5 text-sm font-medium bg-slate-800 text-white hover:bg-slate-900"
             >
               <ExternalLink size={16} className="shrink-0" aria-hidden />
               <span className="hidden sm:inline">스케줄 디스플레이</span>
             </button>
+          </div>
+          <div className={`flex flex-wrap items-center gap-2 ${viewMode === 'schedule' ? 'hidden sm:ml-auto sm:flex' : 'ml-auto'}`}>
             {viewerCanApproveOffSchedules && (
               <button
                 type="button"
@@ -1259,10 +1303,36 @@ export default function AdminTours() {
               <Trash2 size={18} className="shrink-0" aria-hidden />
             </button>
           </div>
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:hidden">
+            <button
+              type="button"
+              className={`relative inline-flex h-9 w-9 items-center justify-center rounded-xl border transition-colors ${
+                mobileFiltersOpen ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-700'
+              }`}
+              aria-expanded={mobileFiltersOpen}
+              aria-label={locale === 'ko' ? '필터' : 'Filters'}
+              title={locale === 'ko' ? '필터' : 'Filters'}
+              onClick={() => {
+                setMobileFiltersOpen((open) => {
+                  if (open) setShowStatusFilter(false)
+                  return !open
+                })
+              }}
+            >
+              <SlidersHorizontal className="h-5 w-5" />
+              {searchTerm.trim() || asGuideEmail || (selectedStatuses.length > 0 && !selectedStatuses.includes('all')) ? (
+                <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-600" />
+              ) : null}
+            </button>
+            {viewMode === 'schedule' ? (
+              <div id="tour-schedule-tools-launcher" className="shrink-0" />
+            ) : null}
+          </div>
         </div>
+        {viewMode === 'schedule' ? <div id="tour-schedule-tools-panel" className="sm:hidden" /> : null}
 
-        {/* 검색 및 필터 */}
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-stretch sm:gap-4 mb-4">
+        {/* 검색 및 필터 — 모바일은 필터 버튼으로 펼침 */}
+        <div className={`mb-4 gap-2 ${mobileFiltersOpen ? 'grid grid-cols-2' : 'hidden'} sm:flex sm:items-stretch sm:gap-4`}>
           <div className="relative sm:flex-1 min-w-0 col-span-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input {...BROWSER_AUTOFILL_OFF_PROPS} type="search"
@@ -1427,6 +1497,8 @@ export default function AdminTours() {
           onTourStatusChanged={handleScheduleTourStatusChanged}
           priceInventoryLaunch={priceInventoryLaunch}
           onPriceInventoryLaunchConsumed={() => setPriceInventoryLaunch(null)}
+          mobilePageTools={mobilePageTools}
+          mobilePageAttentionCount={mobilePageAttentionCount}
         />
       )}
 

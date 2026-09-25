@@ -827,7 +827,7 @@ export default function ScheduleGuideTourInfoCard({
 
       {/* 편집 서브모달 */}
       {editTarget ? (
-        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-[10100] flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl">
             <div className="mb-3 flex items-center justify-between gap-2">
               <h4 className="text-sm font-semibold text-gray-900">{editTitle}</h4>
@@ -852,7 +852,7 @@ export default function ScheduleGuideTourInfoCard({
                 <SelectTrigger className="h-10 w-full text-sm">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="z-[1300]">
+                <SelectContent className="z-[10120]">
                   <SelectItem value={NO_GUIDE}>
                     {locale === 'ko' ? '미배정' : 'Unassigned'}
                   </SelectItem>
@@ -876,7 +876,7 @@ export default function ScheduleGuideTourInfoCard({
                 <SelectTrigger className="h-10 w-full text-sm">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="z-[1300]">
+                <SelectContent className="z-[10120]">
                   <SelectItem value={NO_ASSISTANT}>
                     {locale === 'ko' ? '미배정' : 'Unassigned'}
                   </SelectItem>
@@ -900,7 +900,7 @@ export default function ScheduleGuideTourInfoCard({
                 <SelectTrigger className="h-10 w-full text-sm">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="z-[1300]">
+                <SelectContent className="z-[10120]">
                   <SelectItem value={NO_VEHICLE}>
                     {locale === 'ko' ? '배정 안 함' : 'None'}
                   </SelectItem>
@@ -925,7 +925,7 @@ export default function ScheduleGuideTourInfoCard({
                 <SelectTrigger className="h-10 w-full text-sm">
                   <SelectValue placeholder={locale === 'ko' ? '상태 선택' : 'Select status'} />
                 </SelectTrigger>
-                <SelectContent className="z-[1300]">
+                <SelectContent className="z-[10120]">
                   {tourStatusOptions.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}

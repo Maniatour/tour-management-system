@@ -41,6 +41,7 @@ interface TourInfo {
   assistant_id: string | null
   tour_status: string | null
   assignment_status: string | null
+  tour_car_id: string | null
 }
 
 interface TeamMember {
@@ -140,6 +141,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   const tResCard = useTranslations('reservations.card')
   const locale = useLocale()
   const [tourInfos, setTourInfos] = useState<Record<string, TourInfo>>({})
+  const [vehicleNickById, setVehicleNickById] = useState<Record<string, string>>({})
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [showAutoAssignModal, setShowAutoAssignModal] = useState(false)
   const [assignedBalanceTotal, setAssignedBalanceTotal] = useState(0)
@@ -448,7 +450,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
         // 투어 정보 가져오기
         const { data: toursData, error: toursError } = await supabase
           .from('tours')
-          .select('id, tour_guide_id, assistant_id, tour_status, assignment_status')
+          .select('id, tour_guide_id, assistant_id, tour_status, assignment_status, tour_car_id')
           .in('id', uniqueTourIds)
 
         if (toursError) {
@@ -463,6 +465,28 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
         })
 
         setTourInfos(tourInfoMap)
+
+        const vehicleIds = [...new Set(
+          toursData?.map((tour: TourInfo) => tour.tour_car_id).filter(Boolean)
+        )] as string[]
+        if (vehicleIds.length > 0) {
+          const { data: vehicleData, error: vehicleError } = await supabase
+            .from('vehicles')
+            .select('id, nick, vehicle_number')
+            .in('id', vehicleIds)
+          if (vehicleError) {
+            console.error('차량 정보 가져오기 오류:', vehicleError)
+          } else {
+            const nickMap: Record<string, string> = {}
+            vehicleData?.forEach((vehicle) => {
+              const nick = vehicle.nick?.trim()
+              nickMap[vehicle.id] = nick || vehicle.vehicle_number
+            })
+            setVehicleNickById(nickMap)
+          }
+        } else {
+          setVehicleNickById({})
+        }
 
         // 팀 멤버 정보 가져오기
         const guideEmails = [...new Set(
@@ -501,29 +525,6 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
     if (!member) return email
     
     return member.nick_name || member.name_ko || member.name_en || email
-  }
-
-  // 상태 뱃지 색상 결정 함수
-  const getStatusBadgeColor = (status: string | null) => {
-    if (!status) return 'bg-gray-100 text-gray-800'
-    
-    const statusLower = status.toLowerCase()
-    if (statusLower.includes('confirmed')) return 'bg-green-100 text-green-800'
-    if (statusLower.includes('recruiting')) return 'bg-primary/10 text-primary'
-    if (statusLower.includes('cancel')) return 'bg-red-100 text-red-800'
-    if (statusLower.includes('pending')) return 'bg-yellow-100 text-yellow-800'
-    return 'bg-gray-100 text-gray-800'
-  }
-
-  // 배정 상태 뱃지 색상 결정 함수
-  const getAssignmentStatusBadgeColor = (assignmentStatus: string | null) => {
-    if (!assignmentStatus) return 'bg-gray-100 text-gray-800'
-    
-    const statusLower = assignmentStatus.toLowerCase()
-    if (statusLower.includes('assigned')) return 'bg-green-100 text-green-800'
-    if (statusLower.includes('pending')) return 'bg-yellow-100 text-yellow-800'
-    if (statusLower.includes('unassigned')) return 'bg-red-100 text-red-800'
-    return 'bg-gray-100 text-gray-800'
   }
 
   // 배정된 예약을 픽업 시간으로 정렬 (오후 9시 이후 시간은 전날로 취급)
@@ -718,17 +719,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                      const assistantName = tourInfo ? getTeamMemberName(tourInfo.assistant_id) : t('unassigned')
                      const tourStatus = tourInfo?.tour_status || null
                      const assignmentStatus = tourInfo?.assignment_status || null
-                     
-                     // 예약들의 상태 뱃지들
-                     const statusCounts = reservations.reduce((acc, reservation) => {
-                       const status = reservation.status || 'unknown'
-                       const assignmentStatus = reservation.assignment_status || 'unknown'
-                       
-                       acc.status[status] = (acc.status[status] || 0) + 1
-                       acc.assignmentStatus[assignmentStatus] = (acc.assignmentStatus[assignmentStatus] || 0) + 1
-                       return acc
-                     }, { status: {} as Record<string, number>, assignmentStatus: {} as Record<string, number> })
-                     
+
                      // 총 인원 계산 (성인+아동+유아; child/infant 필드 호환)
                      const totalPeople = reservations.reduce(
                        (sum, reservation) => sum + getReservationPartySize(reservation as Record<string, unknown>),
@@ -739,54 +730,30 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                        <div key={tourId} className="border rounded-lg p-3 bg-gray-50">
                          {/* 헤더: 모바일 최적화 - 여러 줄로 배치 */}
                          <div className="mb-3 space-y-2">
-                           {/* 1행: 가이드 및 어시스턴트 정보 + 투어 ID (오른쪽 상단) */}
-                           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-                             <div>
-                               <h4 className="text-sm font-medium text-gray-900">
-                                 {t('guide')}: {guideName}
-                               </h4>
-                               <p className="text-xs text-gray-600">
-                                 {t('assistant')}: {assistantName}
-                               </p>
-                             </div>
-                             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-                               {/* 투어 상태 및 배정 상태 */}
-                               {tourStatus && (
-                                 <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(tourStatus)}`}>
-                                   {tHeader('tour')}: {getStatusText(tourStatus, locale)}
-                                 </span>
-                               )}
-                               {assignmentStatus && (
-                                 <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getAssignmentStatusColor({ assignment_status: assignmentStatus })}`}>
-                                   {tHeader('assignment')}: {getAssignmentStatusText({ assignment_status: assignmentStatus }, locale)}
-                                 </span>
-                               )}
-                               {tourId !== 'unknown' && (
-                                 <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 font-mono self-start sm:self-auto">
-                                   {tourId.substring(0, 8)}
-                                 </span>
-                               )}
-                             </div>
+                           <div>
+                             <h4 className="text-sm font-medium text-gray-900">
+                               {t('guide')}: {guideName}
+                             </h4>
+                             <p className="text-xs text-gray-600">
+                               {t('assistant')}: {assistantName}
+                             </p>
                            </div>
-                           
-                           {/* 2행: 예약 상태 뱃지들 */}
-                           <div className="flex flex-wrap gap-1">
-                             {Object.entries(statusCounts.status).map(([status, count]) => (
-                               <span
-                                 key={status}
-                                 className={`text-xs px-2 py-1 rounded-full ${getStatusBadgeColor(status)}`}
-                               >
-                                 {status} ({count})
+                           <div className="flex flex-wrap items-center gap-1.5">
+                             {tourStatus && (
+                               <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(tourStatus)}`}>
+                                 {tHeader('tour')}: {getStatusText(tourStatus, locale)}
                                </span>
-                             ))}
-                             {Object.entries(statusCounts.assignmentStatus).map(([assignmentStatus, count]) => (
-                               <span
-                                 key={`assignment-${assignmentStatus}`}
-                                 className={`text-xs px-2 py-1 rounded-full ${getAssignmentStatusBadgeColor(assignmentStatus)}`}
-                               >
-                                 {assignmentStatus} ({count})
+                             )}
+                             {assignmentStatus && (
+                               <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getAssignmentStatusColor({ assignment_status: assignmentStatus })}`}>
+                                 {tHeader('assignment')}: {getAssignmentStatusText({ assignment_status: assignmentStatus }, locale)}
                                </span>
-                             ))}
+                             )}
+                             {tourInfo?.tour_car_id && vehicleNickById[tourInfo.tour_car_id] ? (
+                               <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-1 text-xs font-medium text-purple-800">
+                                 {locale === 'en' ? 'Vehicle' : '차량'}: {vehicleNickById[tourInfo.tour_car_id]}
+                               </span>
+                             ) : null}
                            </div>
                            
                            {/* 3행: 예약 건수, 인원, 버튼 */}

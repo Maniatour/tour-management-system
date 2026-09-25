@@ -150,6 +150,7 @@ export function TourDetailResizableDialog({
       zIndex={zIndex}
       overlayClassName={resolvedOverlay}
       className="tour-detail-modal-shell flex flex-col overflow-hidden bg-white"
+      coverAdminChromeOnMobile
     >
       <TourDetailModalChromeContext.Provider value={chromeContextValue}>
         <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">

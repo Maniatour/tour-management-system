@@ -1,7 +1,7 @@
 'use client'
 
 import { Bell, CheckCheck, GripVertical } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState, type MutableRefObject } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -18,15 +18,24 @@ import type { AdminAlertInboxItem } from '@/lib/adminAlertInbox'
 
 type AdminNotificationCenterButtonProps = {
   locale: string
+  registerOpen?: MutableRefObject<(() => void) | null>
 }
 
-export function AdminNotificationCenterButton({ locale }: AdminNotificationCenterButtonProps) {
+export function AdminNotificationCenterButton({ locale, registerOpen }: AdminNotificationCenterButtonProps) {
   const inbox = useAdminAlertInboxOptional()
   const [open, setOpen] = useState(false)
   const [fallback, setFallback] = useState<AdminAlertInboxItem | null>(null)
   const isKo = locale.startsWith('ko')
   const unreadCount = inbox?.unreadCount ?? 0
   const { box, beginDrag } = useAdminNotificationPanelFrame(open)
+  useEffect(() => {
+    if (!registerOpen) return
+    registerOpen.current = () => setOpen(true)
+    return () => {
+      registerOpen.current = null
+    }
+  }, [registerOpen])
+
   const title = isKo ? '알림' : 'Notifications'
   const description = isKo
     ? '종류별로 모아 볼 수 있습니다. 제목을 끌어 옮기고, 가장자리로 크기를 조절하세요.'

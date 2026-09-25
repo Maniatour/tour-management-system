@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type MutableRefObject } from 'react'
 import { Smartphone } from 'lucide-react'
 import { AdminSmsManagementModal } from '@/components/admin/sms/AdminSmsManagementModal'
 import { prefetchAdminSmsCategorySettings } from '@/hooks/useAdminSmsCategorySettings'
@@ -10,6 +10,7 @@ import { prefetchMessengerContactSettings } from '@/lib/messengerContactSettings
 type Props = {
   locale: string
   className?: string
+  registerOpen?: MutableRefObject<(() => void) | null>
 }
 
 function prefetchSmsManagementData() {
@@ -18,13 +19,21 @@ function prefetchSmsManagementData() {
   prefetchMessengerContactSettings()
 }
 
-export function AdminSmsManagementHeaderButton({ locale, className }: Props) {
+export function AdminSmsManagementHeaderButton({ locale, className, registerOpen }: Props) {
   const [open, setOpen] = useState(false)
   const isKo = locale.startsWith('ko')
 
   useEffect(() => {
     prefetchSmsManagementData()
   }, [])
+
+  useEffect(() => {
+    if (!registerOpen) return
+    registerOpen.current = () => setOpen(true)
+    return () => {
+      registerOpen.current = null
+    }
+  }, [registerOpen])
 
   return (
     <>

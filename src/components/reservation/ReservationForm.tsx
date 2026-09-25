@@ -3,7 +3,7 @@
 
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { Trash2, Eye, AlertTriangle, X, Mail, Phone, ChevronDown, Globe, Store, History, CalendarClock, CreditCard } from 'lucide-react'
+import { Trash2, Eye, AlertTriangle, X, Mail, Phone, ChevronDown, Globe, Store, History, CalendarClock, CreditCard, ArrowLeft } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations, useLocale } from 'next-intl'
 import { stripSpacesFromContactInput } from '@/lib/contactInputUtils'
@@ -7309,7 +7309,7 @@ export default function ReservationForm({
                     fallbackDoc={noShowDateChangeManualDocument}
                     fallbackTitle={noShowDateChangeManualTitles}
                     storageKey="no-show-date-change-manual"
-                    className="!h-11 !w-full justify-start rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-800"
+                    className="text-indigo-700"
                     showLabel
                   />
                 ) : null}
@@ -7326,17 +7326,16 @@ export default function ReservationForm({
                 {reservation && titleAction ? (
                   <>
                     <p>연락</p>
-                    <div className="flex w-full flex-col gap-2 [&>div]:flex [&>div]:w-full [&>div]:flex-col [&>div]:flex-nowrap [&>div]:items-stretch [&>div]:gap-2 [&>div>div]:flex [&>div>div]:w-full [&>div>div]:flex-col [&>div>div]:gap-2">
-                      {titleAction}
-                    </div>
+                    <div className="contents">{titleAction}</div>
                   </>
                 ) : null}
                 <p>이동</p>
                 <button
                   type="button"
                   onClick={() => window.history.back()}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white text-gray-700"
+                  className="inline-flex items-center gap-1.5 bg-slate-50 text-gray-700"
                 >
+                  <ArrowLeft className="h-3.5 w-3.5 shrink-0" />
                   목록으로
                 </button>
               </>

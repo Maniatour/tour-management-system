@@ -26,6 +26,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import ReactCountryFlag from 'react-country-flag'
 import { AdminNotificationCenterButton } from '@/components/admin/alerts/AdminNotificationCenterButton'
+import AdminHeaderMobileApps from '@/components/admin/AdminHeaderMobileApps'
 import { useAuth } from '@/contexts/AuthContext'
 import { useOperator } from '@/contexts/OperatorContext'
 import type { UserRole } from '@/lib/roles'
@@ -193,6 +194,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   })
   const [orderLocked, setOrderLocked] = useState(true)
   const dragPayloadRef = useRef<SidebarDragPayload | null>(null)
+  const notificationOpenRef = useRef<(() => void) | null>(null)
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
   const [showDailyReportModal, setShowDailyReportModal] = useState(false)
@@ -1035,7 +1037,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
             <div className="flex items-center space-x-2 sm:space-x-6">
               <button
                 onClick={() => setSidebarOpen(true)}
-                className="lg:hidden text-gray-500 hover:text-gray-700 p-1"
+                className="lg:hidden shrink-0 text-gray-500 hover:text-gray-700 p-1"
+                aria-label={t('menu')}
               >
                 <Menu size={20} />
               </button>
@@ -1057,6 +1060,24 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 <span className="hidden text-lg font-bold text-gray-800 truncate hover:text-primary md:text-xl lg:inline">
                   {t('systemTitle')}
                 </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleLanguageToggle}
+                className="flex shrink-0 items-center rounded-lg p-2 transition-colors hover:bg-gray-100 lg:hidden"
+                title={currentLocale === 'ko' ? t('switchToEnglish') : t('switchToKorean')}
+                aria-label={currentLocale === 'ko' ? t('switchToEnglish') : t('switchToKorean')}
+              >
+                <ReactCountryFlag
+                  countryCode={getLanguageFlag()}
+                  svg
+                  style={{
+                    width: '24px',
+                    height: '18px',
+                    borderRadius: '2px',
+                  }}
+                />
               </button>
               
               {/* 데스크톱 전용 빠른 이동 — 레지스트리 + site_access_matrix 패치 */}
@@ -1182,6 +1203,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                     locale={locale}
                     open={showDailyReportModal}
                     onOpenChange={setShowDailyReportModal}
+                    className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-white transition-colors hover:bg-slate-900 lg:inline-flex"
                   />
 
                   <div className="relative hidden sm:inline-block">
@@ -1235,7 +1257,11 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 </div>
               )}
 
-              {authUser?.email ? <AdminNotificationCenterButton locale={locale} /> : null}
+              {authUser?.email ? (
+                <div className="hidden lg:block">
+                  <AdminNotificationCenterButton locale={locale} registerOpen={notificationOpenRef} />
+                </div>
+              ) : null}
               
               {/* 사용자 정보 드롭다운 */}
               <div className="relative">
@@ -1431,11 +1457,13 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 )}
               </div>
               
-              {/* 언어 스위처 */}
+              {/* 언어 스위처 — 데스크탑. 모바일은 로고 옆 */}
               <button
+                type="button"
                 onClick={handleLanguageToggle}
-                className="flex items-center p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="hidden shrink-0 items-center rounded-lg p-2 transition-colors hover:bg-gray-100 lg:flex"
                 title={currentLocale === 'ko' ? t('switchToEnglish') : t('switchToKorean')}
+                aria-label={currentLocale === 'ko' ? t('switchToEnglish') : t('switchToKorean')}
               >
                 <ReactCountryFlag
                   countryCode={getLanguageFlag()}
@@ -1443,10 +1471,29 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                   style={{
                     width: '24px',
                     height: '18px',
-                    borderRadius: '2px'
+                    borderRadius: '2px',
                   }}
                 />
               </button>
+
+              <AdminHeaderMobileApps
+                locale={locale}
+                quickEntries={visibleHeaderQuickEntries.map((entry) => ({
+                  id: entry.id,
+                  href: `/${locale}/admin/${entry.path}`,
+                  label: resolveAdminHeaderQuickLabel(entry, locale, t, tAdmin),
+                }))}
+                showAddReservation={showHeaderAddReservation}
+                showPriceInventory={showHeaderPriceInventory}
+                showStaffTools={Boolean(authUser?.email && !employeeNotFound)}
+                showDailyReport={Boolean(authUser?.email && !employeeNotFound)}
+                showNotifications={Boolean(authUser?.email)}
+                onOpenDailyReport={() => setShowDailyReportModal(true)}
+                onOpenNotifications={() => notificationOpenRef.current?.()}
+                tourChatUnreadCount={tourChatUnreadCount}
+                teamBoardCount={teamBoardCount}
+                teamChatUnreadCount={teamChatUnreadCount}
+              />
             </div>
           </div>
         </div>
