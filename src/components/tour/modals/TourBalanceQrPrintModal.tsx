@@ -212,8 +212,8 @@ export default function TourBalanceQrPrintModal({
             </p>
             <p className="mt-2 text-sm leading-6 text-gray-600">
               {isKo
-                ? '잔금이 남은 고객의 카드 결제 QR을 이 투어 한 장으로 모읍니다. 현금이 없을 때 가이드가 해당 칸을 보여 주면 됩니다. 이메일이나 문자는 보내지 않습니다.'
-                : 'Collect card-payment QR codes for guests who still owe a balance, on one sheet for this tour. The guide shows the matching square when cash is not ready. No email or text is sent.'}
+                ? '손님별 카드 결제 QR을 이 투어 한 장으로 모읍니다. 찍으면 잔금, 팁, 또는 둘 다를 고릅니다. 잔금이 없으면 팁만 나옵니다. 이메일이나 문자는 보내지 않습니다.'
+                : 'One sheet of card-payment QR codes for this tour. Each guest chooses balance, a tip, or both. If the balance is already paid, only the tip is offered. No email or text is sent.'}
             </p>
           </div>
           <button
@@ -269,7 +269,7 @@ export default function TourBalanceQrPrintModal({
                   {[tourDate, productName].filter(Boolean).join(' · ')}
                 </p>
                 <p className="bqr-note text-xs leading-5 text-gray-500">
-                  If the guest has no cash, show the QR under their name. The card amount includes the card fee.
+                  Scan to pay the balance, a tip, or both. The balance card amount includes the card fee. If the balance is already paid, the page offers a tip only.
                 </p>
               </div>
               <div className="bqr-grid grid grid-cols-1 gap-3 sm:grid-cols-2">

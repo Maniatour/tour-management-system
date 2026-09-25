@@ -7,7 +7,16 @@ import {
   isTipOpenAmountInvoiceItems,
   markInvoicePaidFromCheckoutSession,
   reservationIdFromInvoiceItems,
+  retireOpenFieldStripeInvoice,
 } from '@/lib/payableInvoice'
+import {
+  canPayFieldBalance,
+  fieldBalanceCardCharge,
+  isFieldChargeInvoiceItems,
+  type FieldPayMode,
+} from '@/lib/fieldChargePayChoice'
+import { loadFieldChargeBalanceUsd } from '@/lib/loadFieldChargeBalance'
+import FieldChargePayForm from '@/components/customer/FieldChargePayForm'
 import { tourFareUsdForTipGuide } from '@/lib/tipGuideline'
 import CustomerPageShell from '@/components/customer/CustomerPageShell'
 import InvoicePayWithTipForm from '@/components/customer/InvoicePayWithTipForm'
@@ -31,6 +40,7 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
   const t = await getTranslations({ locale, namespace: 'invoicePay' })
   const canceled = query.canceled === '1'
   const sessionId = typeof query.session_id === 'string' ? query.session_id.trim() : ''
+  let thanks: FieldPayMode | null = null
 
   if (!token || !/^[0-9a-f-]{36}$/i.test(token)) {
     return (
@@ -62,7 +72,7 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
 
   const { data: invoice } = await supabaseAdmin
     .from('invoices')
-    .select('id, status, hosted_invoice_url, stripe_invoice_status, invoice_number, total, items')
+    .select('id, status, hosted_invoice_url, stripe_invoice_status, stripe_invoice_id, invoice_number, total, items')
     .eq('payment_token', token)
     .maybeSingle()
 
@@ -84,8 +94,10 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
     try {
       const stripe = getStripeClient()
       const session = await stripe.checkout.sessions.retrieve(sessionId)
-      if (session.metadata?.invoice_id === invoice.id) {
+      if (session.metadata?.invoice_id === invoice.id && session.payment_status === 'paid') {
         await markInvoicePaidFromCheckoutSession(supabaseAdmin, session)
+        const mode = session.metadata?.pay_mode
+        if (mode === 'balance' || mode === 'tip' || mode === 'both') thanks = mode
       }
     } catch (err) {
       console.warn('[pay/invoice] checkout session finalize', err)
@@ -95,26 +107,12 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
   const { data: latestInvoice } = sessionId.startsWith('cs_')
     ? await supabaseAdmin
         .from('invoices')
-        .select('id, status, hosted_invoice_url, stripe_invoice_status, invoice_number, total, items')
+        .select('id, status, hosted_invoice_url, stripe_invoice_status, stripe_invoice_id, invoice_number, total, items')
         .eq('id', invoice.id)
         .maybeSingle()
     : { data: invoice }
 
   const current = latestInvoice || invoice
-
-  if (current.status === 'paid' || current.stripe_invoice_status === 'paid') {
-    return (
-      <CustomerPageShell locale={locale} hideFooter>
-        <PayState
-          locale={locale}
-          kind="success"
-          title={t('paidTitle')}
-          body={t('paidBody', { number: current.invoice_number })}
-          backHomeLabel={t('backHome')}
-        />
-      </CustomerPageShell>
-    )
-  }
 
   if (current.status === 'cancelled') {
     return (
@@ -133,6 +131,74 @@ export default async function PayInvoicePage({ params, searchParams }: PageProps
   const isOpenAmount = isTipOpenAmountInvoiceItems(current.items)
   const amountDueUsd = Math.round((Number(current.total) || 0) * 100) / 100
   const reservationId = reservationIdFromInvoiceItems(current.items)
+  const fieldCharge = isFieldChargeInvoiceItems(current.items)
+
+  if (fieldCharge && reservationId && supabaseAdmin) {
+    try {
+      const live = await loadFieldChargeBalanceUsd(supabaseAdmin, reservationId)
+      if (live?.currency === 'USD') {
+        const invoicePaid = current.status === 'paid' || current.stripe_invoice_status === 'paid'
+        const charge = fieldBalanceCardCharge(live.balanceUsd)
+        const balancePayable = canPayFieldBalance({
+          invoicePaid,
+          balanceUsd: charge.balanceUsd,
+          currency: live.currency,
+        })
+        const stripeOpen = current.stripe_invoice_status === 'open' || current.stripe_invoice_status === 'draft'
+        if (!balancePayable && stripeOpen) {
+          try {
+            await retireOpenFieldStripeInvoice(supabaseAdmin, {
+              id: current.id,
+              stripe_invoice_id: current.stripe_invoice_id,
+            })
+          } catch (err) {
+            console.warn('[pay/invoice] retire stale field invoice', err)
+          }
+        }
+        let tourFareUsd: number | null = null
+        const { data: pricingRows } = await supabaseAdmin
+          .from('reservation_pricing')
+          .select('total_price, product_price_total, prepayment_tip')
+          .eq('reservation_id', reservationId)
+          .limit(1)
+        tourFareUsd = tourFareUsdForTipGuide(pricingRows?.[0])
+        return (
+          <CustomerPageShell locale={locale} hideFooter>
+            <FieldChargePayForm
+              locale={locale}
+              token={token}
+              invoiceNumber={current.invoice_number}
+              description={descriptionFromItems(current.items)}
+              balancePayable={balancePayable}
+              balanceUsd={charge.balanceUsd}
+              cardChargeUsd={charge.cardChargeUsd}
+              cardFeeUsd={charge.cardFeeUsd}
+              tourFareUsd={tourFareUsd}
+              canceled={canceled}
+              thanks={thanks}
+            />
+          </CustomerPageShell>
+        )
+      }
+    } catch (err) {
+      console.warn('[pay/invoice] field charge choice', err)
+    }
+  }
+
+  if (current.status === 'paid' || current.stripe_invoice_status === 'paid') {
+    return (
+      <CustomerPageShell locale={locale} hideFooter>
+        <PayState
+          locale={locale}
+          kind="success"
+          title={t('paidTitle')}
+          body={t('paidBody', { number: current.invoice_number })}
+          backHomeLabel={t('backHome')}
+        />
+      </CustomerPageShell>
+    )
+  }
+
   let tourFareUsd: number | null = null
   if (reservationId) {
     const { data: pricingRows } = await supabaseAdmin

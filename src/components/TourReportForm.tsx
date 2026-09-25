@@ -1936,10 +1936,9 @@ export default function TourReportForm({
                     variant === 'modal' ? 'px-1 py-2' : 'px-2 py-2'
                   )}
                 >
-                  {mainStopsIndented.map(({ id, course, depth }) => {
+                  {mainStopsIndented.map(({ id, course }) => {
                     const visited = formData.main_stops_visited.includes(id)
                     const label = displayCourseName(course, locale)
-                    const indentPx = Math.min(depth, 12) * 14
                     const horseshoe = isHorseshoeBendCourse(course)
                     const reportRole = reportStopRoleFromMap(reportStopRoles, id)
                     const horseshoeIcon = (value: HorseshoeBendActivity) => {
@@ -1951,7 +1950,6 @@ export default function TourReportForm({
                       <div
                         key={id}
                         className="border-b border-gray-100/90 last:border-b-0"
-                        style={{ paddingLeft: indentPx }}
                       >
                         <Button
                           type="button"

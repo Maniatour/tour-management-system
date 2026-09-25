@@ -2636,6 +2636,17 @@
     "pendingTitle": "付款連結準備中",
     "pendingBody": "付款頁面尚未就緒。請查看發票電子郵件或聯絡客服。",
     "invoiceNumberLabel": "發票編號",
+    "choiceTitle": "Pay your guide",
+    "choiceHint": "Choose balance, a tip, or both. You pay by card on the next step.",
+    "balanceSettled": "Your tour balance is already paid. You can leave a guide tip.",
+    "payBalance": "Balance",
+    "payTip": "Tip",
+    "payBoth": "Balance and tip",
+    "cardFeeNote": "Includes a {percent}% card fee.",
+    "thanksTip": "Thank you. Your tip was received.",
+    "thanksBalance": "Thank you. Your balance was received.",
+    "thanksBoth": "Thank you. Your balance and tip were received.",
+    "chooseFirst": "Choose what you would like to pay.",
     "backHome": "返回首頁"
   }
 }

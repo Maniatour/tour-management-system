@@ -19,6 +19,13 @@ import {
   actualAmountFromChargedTotal,
   cardFeeFromChargedTotal,
 } from '@/lib/choiceProcessingFee'
+import {
+  fieldCheckoutSettlesInvoice,
+  isFieldChargeInvoiceItems,
+  resolveFieldCheckout,
+  type FieldPayMode,
+} from '@/lib/fieldChargePayChoice'
+import { loadFieldChargeBalanceUsd } from '@/lib/loadFieldChargeBalance'
 
 export const STAFF_PAYABLE_INVOICE_PURPOSE = 'staff_payable_invoice'
 export const STAFF_PAYABLE_CHECKOUT_PURPOSE = 'staff_payable_invoice_checkout'
@@ -281,6 +288,32 @@ async function voidOpenStripeInvoice(stripe: Stripe, stripeInvoiceId: string | n
   } catch (err) {
     console.warn('[payableInvoice] failed to void previous Stripe invoice', stripeInvoiceId, err)
   }
+}
+
+/** 잔금이 바뀐 현장 QR의 예전 Stripe 청구서를 닫아, 이미 낸 잔금이 다시 청구되지 않게 합니다. */
+export async function retireOpenFieldStripeInvoice(
+  admin: AdminClient,
+  invoice: { id: string; stripe_invoice_id?: string | null }
+): Promise<void> {
+  const stripeId = String(invoice.stripe_invoice_id || '').trim()
+  if (stripeId) {
+    const stripe = getStripeClient()
+    try {
+      const existing = await stripe.invoices.retrieve(stripeId)
+      if (existing.status === 'paid') return
+    } catch (err) {
+      console.warn('[payableInvoice] field invoice retrieve before retire', stripeId, err)
+    }
+    await voidOpenStripeInvoice(stripe, stripeId)
+  }
+  await admin
+    .from('invoices')
+    .update({
+      hosted_invoice_url: null,
+      stripe_invoice_status: 'void',
+      updated_at: new Date().toISOString(),
+    } as never)
+    .eq('id', invoice.id)
 }
 
 function fieldOnsiteStripeEmail(reservationId: string): string {
@@ -2014,6 +2047,21 @@ async function applyPrepaidTipToReservation(
   return { applied: true, reservationId: resolved.reservationId, skippedReason: null }
 }
 
+function syncFieldBalanceChargeItems(
+  items: unknown,
+  plan: { balanceUsd: number; cardFeeUsd: number; invoiceAmountUsd: number }
+): InvoiceItemRow[] {
+  const rows = Array.isArray(items) ? ([...items] as InvoiceItemRow[]) : []
+  if (rows.length === 0) return rows
+  const first = { ...rows[0] }
+  first.unitPrice = plan.invoiceAmountUsd
+  first.total = plan.invoiceAmountUsd
+  first.baseAmountUsd = plan.balanceUsd
+  first.cardFeeUsd = plan.cardFeeUsd
+  rows[0] = first
+  return rows
+}
+
 function withPaidOpenAmountItems(items: unknown, paidUsd: number): InvoiceItemRow[] {
   const rows = Array.isArray(items) ? ([...items] as InvoiceItemRow[]) : []
   if (rows.length === 0) {
@@ -2044,6 +2092,7 @@ export async function createPublicInvoicePaySession(
     locale?: string
     tipUsd?: number
     amountUsd?: number
+    payMode?: FieldPayMode | null
   }
 ): Promise<{ url: string; mode: 'hosted_invoice' | 'checkout' }> {
   const pathLocale = invoicePayPathLocale(params.locale)
@@ -2061,7 +2110,13 @@ export async function createPublicInvoicePaySession(
   if (error || !invoice) {
     throw new Error(locale === 'ko' ? '인보이스를 찾을 수 없습니다.' : 'Invoice not found.')
   }
-  if (invoice.status === 'paid' || invoice.stripe_invoice_status === 'paid') {
+  const invoicePaid = invoice.status === 'paid' || invoice.stripe_invoice_status === 'paid'
+  const fieldPayMode: FieldPayMode | null =
+    params.payMode === 'balance' || params.payMode === 'tip' || params.payMode === 'both'
+      ? params.payMode
+      : null
+  const fieldCharge = isFieldChargeInvoiceItems(invoice.items)
+  if (invoicePaid && !(fieldCharge && fieldPayMode === 'tip')) {
     throw new Error(locale === 'ko' ? '이미 결제 완료된 인보이스입니다.' : 'Invoice is already paid.')
   }
   if (invoice.status === 'cancelled') {
@@ -2069,10 +2124,63 @@ export async function createPublicInvoicePaySession(
   }
 
   const openAmount = isTipOpenAmountInvoiceItems(invoice.items)
-  const invoiceAmountUsd = openAmount ? 0 : roundMoney(Number(invoice.total) || 0)
-  const tipUsd = openAmount
+  let invoiceAmountUsd = openAmount ? 0 : roundMoney(Number(invoice.total) || 0)
+  let tipUsd = openAmount
     ? roundMoney(Number(params.amountUsd))
     : roundMoney(Number(params.tipUsd) || 0)
+  let activeFieldPayMode: FieldPayMode | '' = ''
+
+  if (fieldCharge && fieldPayMode) {
+    const reservationId = reservationIdFromInvoiceItems(invoice.items)
+    if (!reservationId) {
+      throw new Error(
+        locale === 'ko' ? '예약에 연결된 결제가 아닙니다.' : 'This payment is not linked to a reservation.'
+      )
+    }
+    const live = await loadFieldChargeBalanceUsd(admin, reservationId)
+    const resolved = resolveFieldCheckout({
+      mode: fieldPayMode,
+      invoicePaid,
+      balanceUsd: live?.balanceUsd ?? 0,
+      currency: live?.currency || 'USD',
+      tipUsd,
+    })
+    if (!resolved.ok) {
+      if (resolved.reason === 'balance_settled') {
+        throw new Error(
+          locale === 'ko' ? '받을 잔금이 없습니다. 팁만 결제할 수 있습니다.' : 'There is no balance due. You can pay a tip only.'
+        )
+      }
+      if (resolved.reason === 'unsupported_currency') {
+        throw new Error(
+          locale === 'ko' ? '이 잔금은 카드 QR로 결제할 수 없습니다.' : 'This balance cannot be paid with the card QR.'
+        )
+      }
+      throw new Error(
+        locale === 'ko' ? '팁 금액은 $0.50 이상이어야 합니다.' : 'Tip amount must be at least $0.50.'
+      )
+    }
+    activeFieldPayMode = fieldPayMode
+    invoiceAmountUsd = resolved.plan.invoiceAmountUsd
+    tipUsd = resolved.plan.tipUsd
+    if (resolved.plan.balanceUsd > 0) {
+      const nextItems = syncFieldBalanceChargeItems(invoice.items, resolved.plan)
+      await admin
+        .from('invoices')
+        .update({
+          items: nextItems as never,
+          subtotal: resolved.plan.invoiceAmountUsd,
+          total: resolved.plan.invoiceAmountUsd,
+          updated_at: new Date().toISOString(),
+        } as never)
+        .eq('id', invoice.id)
+      invoice.items = nextItems
+    }
+    if (resolved.plan.retireHostedInvoice) {
+      await retireOpenFieldStripeInvoice(admin, invoice)
+      invoice.hosted_invoice_url = null
+    }
+  }
 
   if (openAmount) {
     const tipCents = usdToCents(tipUsd)
@@ -2087,7 +2195,7 @@ export async function createPublicInvoicePaySession(
       throw new Error(locale === 'ko' ? '금액이 너무 큽니다.' : 'Amount is too large.')
     }
   } else {
-    if (invoiceAmountUsd <= 0) {
+    if (invoiceAmountUsd <= 0 && activeFieldPayMode !== 'tip') {
       throw new Error(locale === 'ko' ? '결제 금액이 0보다 커야 합니다.' : 'Invoice total must be greater than zero.')
     }
     if (tipUsd < 0) {
@@ -2105,7 +2213,7 @@ export async function createPublicInvoicePaySession(
   }
 
   const hostedUrl = String(invoice.hosted_invoice_url || '').trim()
-  if (!openAmount && tipUsd <= 0 && hostedUrl) {
+  if (!activeFieldPayMode && !openAmount && tipUsd <= 0 && hostedUrl) {
     return { url: hostedUrl, mode: 'hosted_invoice' }
   }
 
@@ -2168,6 +2276,7 @@ export async function createPublicInvoicePaySession(
     invoice_amount_cents: String(invoiceCents),
     tip_amount_cents: String(tipCents),
     open_amount: openAmount ? '1' : '0',
+    ...(activeFieldPayMode ? { pay_mode: activeFieldPayMode } : {}),
     customer_id: invoice.customer_id || '',
     ...(reservationId ? { reservation_id: reservationId } : {}),
   }
@@ -2181,9 +2290,10 @@ export async function createPublicInvoicePaySession(
     metadata,
     payment_intent_data: {
       metadata,
-      description: openAmount
-        ? `Guide tip ${invoiceNumber}`
-        : `Invoice ${invoiceNumber}${tipCents > 0 ? ' + tip' : ''}`,
+      description:
+        openAmount || activeFieldPayMode === 'tip'
+          ? `Guide tip ${invoiceNumber}`
+          : `Invoice ${invoiceNumber}${tipCents > 0 ? ' + tip' : ''}`,
     },
     submit_type: 'pay',
   }
@@ -2233,6 +2343,10 @@ export async function markInvoicePaidFromCheckoutSession(
   if (!invoice) return { ok: false }
 
   const openAmount = session.metadata?.open_amount === '1' || isTipOpenAmountInvoiceItems(invoice.items)
+  const payModeRaw = session.metadata?.pay_mode || ''
+  const payMode: FieldPayMode | '' =
+    payModeRaw === 'balance' || payModeRaw === 'tip' || payModeRaw === 'both' ? payModeRaw : ''
+  const settlesInvoice = fieldCheckoutSettlesInvoice(payMode)
   const invoiceAmountUsd = roundMoney(Number(session.metadata?.invoice_amount_cents || 0) / 100)
   const tipAmountUsd = roundMoney(Number(session.metadata?.tip_amount_cents || 0) / 100)
   const paidTotalUsd =
@@ -2242,7 +2356,7 @@ export async function markInvoicePaidFromCheckoutSession(
   const alreadyPaid = invoice.status === 'paid'
   const sessionId = session.id
 
-  if (!alreadyPaid) {
+  if (!alreadyPaid && settlesInvoice) {
     const paidItems = openAmount ? withPaidOpenAmountItems(invoice.items, paidTotalUsd) : invoice.items
     const updatePayload: Record<string, unknown> = {
       status: 'paid',
@@ -2275,7 +2389,7 @@ export async function markInvoicePaidFromCheckoutSession(
   let reservationId: string | null = null
   let paymentSkippedReason: string | null = null
 
-  if (!openAmount && invoiceAmountUsd > 0) {
+  if (!openAmount && payMode !== 'tip' && invoiceAmountUsd > 0) {
     const apply = await applyPaidStaffInvoiceToReservation(admin, {
       invoiceId: invoice.id,
       notes: invoice.notes,
@@ -2311,8 +2425,8 @@ export async function markInvoicePaidFromCheckoutSession(
     if (!paymentSkippedReason) paymentSkippedReason = tip.skippedReason
   }
 
-  if (!alreadyPaid) {
-    const chargeUsd = openAmount ? 0 : invoiceAmountUsd
+  if (!alreadyPaid || payMode) {
+    const chargeUsd = openAmount || payMode === 'tip' ? 0 : invoiceAmountUsd
     const tipUsd = openAmount ? paidTotalUsd : tipAmountUsd
     await notifyFieldChargePaid(admin, {
       invoiceId: invoice.id,
@@ -2320,6 +2434,7 @@ export async function markInvoicePaidFromCheckoutSession(
       customerId: invoice.customer_id,
       reservationId,
       amountUsd: roundMoney(chargeUsd + tipUsd),
+      notifyKey: payMode ? `field-charge:${invoice.id}:${sessionId}` : null,
       chargeUsd,
       tipUsd,
       items: openAmount ? withPaidOpenAmountItems(invoice.items, paidTotalUsd) : invoice.items,

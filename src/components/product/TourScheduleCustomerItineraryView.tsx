@@ -19,6 +19,10 @@ import { markdownToHtml } from '@/components/LightRichEditor'
 import ProductDetailDeparturePointModal from '@/components/product/ProductDetailDeparturePointModal'
 import { useProductDetailTourScheduleTiming } from '@/hooks/useProductDetailTourScheduleTiming'
 import {
+  decorateHotelDropTimeRange,
+  HOTEL_TRANSFER_STOP_MINUTES,
+} from '@/lib/productDetailTourScheduleTiming'
+import {
   getScheduleLocalizedText,
   type ScheduleContentI18n,
 } from '@/lib/productScheduleLocales'
@@ -89,6 +93,45 @@ function getScheduleIcon(schedule: CustomerScheduleItem) {
   return <MapPin className="h-4 w-4" />
 }
 
+function HotelTransferItineraryStep({
+  title,
+  timeRangeLabel,
+  durationLabel,
+  badgeLabel,
+}: {
+  title: string
+  timeRangeLabel: string
+  durationLabel: string
+  badgeLabel?: string
+}) {
+  return (
+    <div className="airbnb-itinerary-step">
+      <div className="airbnb-itinerary-marker" aria-hidden>
+        <Car className="h-4 w-4" />
+      </div>
+      <article className="airbnb-itinerary-card">
+        <div className="airbnb-itinerary-card-header">
+          <div className="min-w-0 flex-1 text-left">
+            <h4
+              className={`airbnb-itinerary-card-title${badgeLabel ? ' airbnb-itinerary-card-title--wrap' : ''}`}
+            >
+              <span className="airbnb-itinerary-card-time">{timeRangeLabel}</span>
+              <span className="airbnb-itinerary-card-separator" aria-hidden>
+                |
+              </span>
+              <span className="airbnb-itinerary-card-title-text">{title}</span>
+              <span className="airbnb-itinerary-duration-badge">{durationLabel}</span>
+              {badgeLabel ? (
+                <span className="airbnb-itinerary-previous-day-badge">{badgeLabel}</span>
+              ) : null}
+            </h4>
+          </div>
+        </div>
+      </article>
+    </div>
+  )
+}
+
 export default function TourScheduleCustomerItineraryView({
   schedules,
   locale,
@@ -117,7 +160,8 @@ export default function TourScheduleCustomerItineraryView({
     getScheduleLocalizedText(schedule, 'title', locale) ||
     getLocalizedText(schedule.title_ko, schedule.title_en, '')
 
-  const { displayItems, sunriseSummary, loadingSunrise } = useProductDetailTourScheduleTiming(
+  const { displayItems, sunriseSummary, loadingSunrise, hotelTransferStops } =
+    useProductDetailTourScheduleTiming(
     schedules,
     selectedDate,
     product,
@@ -171,6 +215,17 @@ export default function TourScheduleCustomerItineraryView({
           <p className="airbnb-itinerary-sunrise-alert-window">
             {t('sunrisePickupWindowLabel')}: {sunriseSummary.pickupWindowLabel}
           </p>
+          {hotelTransferStops?.pickup ? (
+            <p className="airbnb-itinerary-sunrise-alert-window">
+              {getText('호텔 픽업', 'Hotel pickup')}: {hotelTransferStops.pickup.timeRangeLabel}{' '}
+              (
+              {getText(
+                `${hotelTransferStops.pickup.durationMinutes}분`,
+                `${hotelTransferStops.pickup.durationMinutes} min`
+              )}
+              )
+            </p>
+          ) : null}
           <p className="airbnb-itinerary-sunrise-alert-sunrise">
             {t('sunriseApproxLabel')}: {sunriseSummary.sunriseClock}
             {sunriseSummary.usedApproxTable ? ` · ${t('sunriseApproxNote')}` : ''}
@@ -204,9 +259,11 @@ export default function TourScheduleCustomerItineraryView({
       )}
 
       <div className="airbnb-itinerary-timeline">
-        {dayEntries.map(([dayNumber, daySchedules]) => {
+        {dayEntries.map(([dayNumber, daySchedules], dayIndex) => {
           const dayNum = Number(dayNumber)
           const showDayLabel = dayEntries.length > 1
+          const isFirstDay = dayIndex === 0
+          const isLastDay = dayIndex === dayEntries.length - 1
 
           return (
             <div key={dayNum} className="airbnb-itinerary-day-group">
@@ -217,11 +274,31 @@ export default function TourScheduleCustomerItineraryView({
                 </div>
               ) : null}
 
+              {isFirstDay && hotelTransferStops?.pickup ? (
+                <HotelTransferItineraryStep
+                  title={getText('호텔 픽업', 'Hotel pickup')}
+                  timeRangeLabel={hotelTransferStops.pickup.timeRangeLabel}
+                  durationLabel={getText(
+                    `${hotelTransferStops.pickup.durationMinutes}분`,
+                    `${hotelTransferStops.pickup.durationMinutes} min`
+                  )}
+                  {...(hotelTransferStops.pickup.startsDayBeforeTour
+                    ? { badgeLabel: getText('투어일 전날', 'Day before tour') }
+                    : {})}
+                />
+              ) : null}
+
               {daySchedules.map((schedule) => {
                 const displayItem = displayItems.find((item) => item.schedule.id === schedule.id)
                 if (!displayItem) return null
 
-                const { title, timeRangeLabel } = displayItem
+                const { title } = displayItem
+                const isLastDisplayItem =
+                  displayItem.schedule.id === displayItems[displayItems.length - 1]?.schedule.id
+                const timeRangeLabel =
+                  isLastDisplayItem && hotelTransferStops && !hotelTransferStops.dropoff
+                    ? decorateHotelDropTimeRange(title, displayItem.timeRangeLabel)
+                    : displayItem.timeRangeLabel
                 const description =
                   getScheduleLocalizedText(schedule, 'description', locale) ||
                   getLocalizedText(
@@ -236,7 +313,11 @@ export default function TourScheduleCustomerItineraryView({
                 const durationLabel =
                   schedule.duration_minutes && schedule.duration_minutes > 0
                     ? getText(`${schedule.duration_minutes}분`, `${schedule.duration_minutes} min`)
-                    : null
+                    : timeRangeLabel &&
+                        timeRangeLabel !== displayItem.timeRangeLabel &&
+                        timeRangeLabel.includes('~')
+                      ? getText(`${HOTEL_TRANSFER_STOP_MINUTES}분`, `${HOTEL_TRANSFER_STOP_MINUTES} min`)
+                      : null
                 const hiddenFromCustomer =
                   schedule.show_to_customers === false ||
                   Boolean(hiddenFromCustomerIds?.has(schedule.id))
@@ -376,6 +457,17 @@ export default function TourScheduleCustomerItineraryView({
                   </div>
                 )
               })}
+
+              {isLastDay && hotelTransferStops?.dropoff ? (
+                <HotelTransferItineraryStep
+                  title={getText('호텔 드롭', 'Hotel drop-off')}
+                  timeRangeLabel={hotelTransferStops.dropoff.timeRangeLabel}
+                  durationLabel={getText(
+                    `${hotelTransferStops.dropoff.durationMinutes}분`,
+                    `${hotelTransferStops.dropoff.durationMinutes} min`
+                  )}
+                />
+              ) : null}
             </div>
           )
         })}

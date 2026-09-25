@@ -32,12 +32,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   const amountRaw = body.amountUsd ?? body.amount
   const tipUsd = typeof tipRaw === 'number' ? tipRaw : Number(tipRaw || 0)
   const amountUsd = typeof amountRaw === 'number' ? amountRaw : Number(amountRaw)
+  const payMode =
+    body.payMode === 'balance' || body.payMode === 'tip' || body.payMode === 'both' ? body.payMode : null
 
   try {
     const result = await createPublicInvoicePaySession(supabaseAdmin, token, {
       locale,
       tipUsd: Number.isFinite(tipUsd) ? tipUsd : 0,
       ...(Number.isFinite(amountUsd) ? { amountUsd } : {}),
+      ...(payMode ? { payMode } : {}),
     })
     return NextResponse.json({ success: true, ...result })
   } catch (err) {

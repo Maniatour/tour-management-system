@@ -7,6 +7,7 @@ import {
   groupProductChoices,
 } from '@/lib/productChoiceGrouping'
 import {
+  adjustPeopleQuantityFromResidents,
   getCapacityCoverage,
   getDefaultPeopleQuantities,
   getDefaultRoomQuantities,
@@ -232,6 +233,9 @@ export function useProductDetailChoices(
     const currentMap = selectedChoiceQuantities[choiceId] ?? {}
     const option = group.options.find((o) => o.option_id === optionId)
 
+    const isPeopleGroup =
+      usesPeopleQuantitySelection(group.choice_type, group.options, label) && Boolean(option)
+
     let maxQty = safeQty
     if (usesCapacityQuantitySelection(group.choice_type, group.options, label)) {
       maxQty = getMaxQuantityForOption(
@@ -240,27 +244,40 @@ export function useProductDetailChoices(
         currentMap,
         partySize
       )
-    } else if (usesPeopleQuantitySelection(group.choice_type, group.options, label) && option) {
+    } else if (isPeopleGroup && option) {
       maxQty = getMaxPeopleQuantityForOption(option, group.options, currentMap, partySize)
     }
 
     const nextQty = Math.min(safeQty, maxQty)
+    const nextPeopleMap = isPeopleGroup
+      ? adjustPeopleQuantityFromResidents(
+          group.options,
+          currentMap,
+          optionId,
+          nextQty,
+          partySize
+        )
+      : null
 
     setSelectedChoiceQuantities((prev) => ({
       ...prev,
-      [choiceId]: {
+      [choiceId]: nextPeopleMap ?? {
         ...(prev[choiceId] || {}),
         [optionId]: nextQty,
       },
     }))
 
-    if (nextQty > 0) {
+    const appliedQty = nextPeopleMap ? (nextPeopleMap[optionId] ?? 0) : nextQty
+    if (appliedQty > 0) {
       setSelectedOptions((prev) => ({ ...prev, [choiceId]: optionId }))
     } else {
       setSelectedOptions((prev) => {
         const next = { ...prev }
         if (next[choiceId] === optionId) {
-          const remaining = { ...(selectedChoiceQuantities[choiceId] || {}), [optionId]: 0 }
+          const remaining = nextPeopleMap ?? {
+            ...(selectedChoiceQuantities[choiceId] || {}),
+            [optionId]: 0,
+          }
           const other = group.options.find(
             (opt) => opt.option_id !== optionId && (remaining[opt.option_id] ?? 0) > 0
           )

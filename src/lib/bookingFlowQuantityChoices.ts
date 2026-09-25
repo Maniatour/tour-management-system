@@ -41,7 +41,9 @@ export function isResidentsOnlyOption(option: QuantityOptionNameFields): boolean
   const hasNonResident =
     name.includes('non-resident') ||
     name.includes('nonresident') ||
-    name.includes('비 거주자')
+    name.includes('non resident') ||
+    name.includes('비거주') ||
+    name.includes('비 거주')
   return hasResident && !hasNonResident
 }
 

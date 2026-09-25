@@ -109,7 +109,6 @@ export default function ProductsGygCard({
   const listingRibbon = resolveProductListingRibbon(product)
 
   const durationLabel = formatProductDurationShort(product.duration, locale === 'en')
-  const metaParts = [durationLabel, locationLine].filter(Boolean)
 
   const imageBlock = (
     <div className="gyg-listing-card-image">
@@ -289,38 +288,29 @@ export default function ProductsGygCard({
           titleBlock
         )}
 
-        {metaParts.length > 0 ? (
+        {durationLabel ? (
           <p className="gyg-listing-card-meta">
-            {metaParts.map((part, index) => (
-              <span key={`${part}-${index}`}>
-                {index > 0 ? ' • ' : null}
-                {part === durationLabel ? (
-                  adminCardEdits ? (
-                    <button
-                      type="button"
-                      className="gyg-listing-card-editable inline-flex items-center gap-1"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        adminCardEdits.onEditTourDetails()
-                      }}
-                      title={adminCardEdits.editDurationLabel}
-                      aria-label={adminCardEdits.editDurationLabel}
-                    >
-                      <Clock className="h-3.5 w-3.5" aria-hidden />
-                      {part}
-                    </button>
-                  ) : (
-                    <span className="inline-flex items-center gap-1">
-                      <Clock className="h-3.5 w-3.5" aria-hidden />
-                      {part}
-                    </span>
-                  )
-                ) : (
-                  part
-                )}
+            {adminCardEdits ? (
+              <button
+                type="button"
+                className="gyg-listing-card-editable inline-flex items-center gap-1"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  adminCardEdits.onEditTourDetails()
+                }}
+                title={adminCardEdits.editDurationLabel}
+                aria-label={adminCardEdits.editDurationLabel}
+              >
+                <Clock className="h-3.5 w-3.5" aria-hidden />
+                {durationLabel}
+              </button>
+            ) : (
+              <span className="inline-flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5" aria-hidden />
+                {durationLabel}
               </span>
-            ))}
+            )}
           </p>
         ) : null}
 

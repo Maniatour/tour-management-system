@@ -9012,6 +9012,17 @@
     "pendingTitle": "결제 링크 준비 중",
     "pendingBody": "아직 결제 페이지가 연결되지 않았습니다. 발송 메일의 안내를 확인하거나 고객센터로 문의해 주세요.",
     "invoiceNumberLabel": "인보이스 번호",
+    "choiceTitle": "가이드에게 결제",
+    "choiceHint": "잔금, 팁, 또는 둘 다 중에서 고르세요. 다음 단계에서 카드로 결제합니다.",
+    "balanceSettled": "투어 잔금은 이미 결제되었습니다. 가이드 팁을 남길 수 있습니다.",
+    "payBalance": "잔금",
+    "payTip": "팁",
+    "payBoth": "잔금 및 팁",
+    "cardFeeNote": "카드수수료 {percent}%가 포함되어 있습니다.",
+    "thanksTip": "감사합니다. 팁 결제가 완료되었습니다.",
+    "thanksBalance": "감사합니다. 잔금 결제가 완료되었습니다.",
+    "thanksBoth": "감사합니다. 잔금과 팁 결제가 완료되었습니다.",
+    "chooseFirst": "결제할 항목을 선택해 주세요.",
     "backHome": "홈으로"
   }
 }

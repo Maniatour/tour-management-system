@@ -1,4 +1,5 @@
 import {
+  addCalendarDaysYmd,
   buildGrandCanyonSunrisePickupEmailInfo,
   formatYmdLong,
   GRAND_CANYON_SUNRISE_PICKUP_WINDOW_END_MINUTES_BEFORE_SUNRISE,
@@ -23,10 +24,22 @@ export type HotelPickupWindowDisplay = {
   pickupDateLabel: string
   pickupStartYmd: string
   pickupEndYmd: string
+  /** 픽업 시간대 끝. 해당 날짜 0시부터의 분 */
+  pickupEndMinutes: number
+}
+
+export type ItineraryHotelTransferStop = {
+  id: 'hotel-pickup' | 'hotel-dropoff'
+  dayNumber: number
+  timeRangeLabel: string
+  durationMinutes: number
+  /** 표시된 픽업 시작이 투어일 0시보다 앞일 때만 true */
+  startsDayBeforeTour?: boolean
 }
 
 export const HOTEL_PICKUP_HIDDEN_TRAVEL_MINUTES = 10
 export const HOTEL_PICKUP_WINDOW_DURATION_MINUTES = 60
+export const HOTEL_TRANSFER_STOP_MINUTES = 30
 
 function parseScheduleTimeToMinutes(time: string | null | undefined): number | null {
   if (!time || time.trim() === '') return null
@@ -138,6 +151,127 @@ export function buildHotelPickupWindowDisplay(
     pickupDateLabel,
     pickupStartYmd: pickupStartNorm.ymd,
     pickupEndYmd: pickupEndNorm.ymd,
+    pickupEndMinutes: pickupEndNorm.minutesInDay,
+  }
+}
+
+function compactTitle(title: string): string {
+  return title.toLowerCase().replace(/\s+/g, '')
+}
+
+function isHotelPickupTitle(title: string): boolean {
+  const compact = compactTitle(title)
+  return compact.includes('호텔픽업') || compact.includes('hotelpickup')
+}
+
+function isHotelDropTitle(title: string): boolean {
+  const compact = compactTitle(title)
+  return (
+    compact.includes('호텔드롭') ||
+    compact.includes('호텔드랍') ||
+    compact.includes('호텔하차') ||
+    compact.includes('hoteldropoff') ||
+    compact.includes('hoteldrop-off') ||
+    compact.includes('hoteldrop')
+  )
+}
+
+/** 이미 호텔 하차 일정이 있고 종료 시각이 없으면, 카드에 30분 구간으로 보여 준다. */
+export function decorateHotelDropTimeRange(
+  title: string,
+  timeRangeLabel: string | null
+): string | null {
+  if (!timeRangeLabel || timeRangeLabel.includes('~') || !isHotelDropTitle(title)) {
+    return timeRangeLabel
+  }
+  const startMinutes = parseScheduleTimeToMinutes(timeRangeLabel)
+  if (startMinutes == null) return timeRangeLabel
+  const end = normalizeMinutesToYmd(startMinutes + HOTEL_TRANSFER_STOP_MINUTES, '2000-01-01')
+  return formatTimeRange(minutesToScheduleTime(startMinutes), minutesToScheduleTime(end.minutesInDay))
+}
+
+function resolveDisplayItemEnd(
+  item: CustomerScheduleDisplayItem
+): { ymd: string; minutes: number } | null {
+  if (!item.eventDateYmd || !item.timeRangeLabel) return null
+  const [startRaw, endRaw] = item.timeRangeLabel.split('~').map((part) => part.trim())
+  const startMinutes = parseScheduleTimeToMinutes(startRaw)
+  if (startMinutes == null) return null
+
+  const explicitEnd = endRaw ? parseScheduleTimeToMinutes(endRaw) : null
+  const duration = item.schedule.duration_minutes
+  let endMinutes = explicitEnd
+  let extraDays = 0
+
+  if (endMinutes == null && duration && duration > 0) {
+    endMinutes = startMinutes + duration
+    while (endMinutes >= 24 * 60) {
+      endMinutes -= 24 * 60
+      extraDays += 1
+    }
+  }
+
+  if (endMinutes == null) endMinutes = startMinutes
+  if (explicitEnd != null && explicitEnd < startMinutes) extraDays = 1
+
+  return {
+    ymd: extraDays > 0 ? addCalendarDaysYmd(item.eventDateYmd, extraDays) : item.eventDateYmd,
+    minutes: endMinutes,
+  }
+}
+
+/** 고객 일정 화면 전용. 저장된 일정에는 넣지 않고, 픽업 시간대 끝에 맞춰 30분을 붙인다. */
+export function buildItineraryHotelTransferStops(
+  windowDisplay: HotelPickupWindowDisplay,
+  displayItems: CustomerScheduleDisplayItem[],
+  tourYmd?: string
+): { pickup: ItineraryHotelTransferStop | null; dropoff: ItineraryHotelTransferStop | null } {
+  const first = displayItems[0]
+  const last = displayItems[displayItems.length - 1]
+  if (!first || !last) return { pickup: null, dropoff: null }
+
+  const pickupStart = normalizeMinutesToYmd(
+    windowDisplay.pickupEndMinutes - HOTEL_TRANSFER_STOP_MINUTES,
+    windowDisplay.pickupEndYmd
+  )
+  const pickupTime = formatTimeRange(
+    minutesToScheduleTime(pickupStart.minutesInDay),
+    minutesToScheduleTime(windowDisplay.pickupEndMinutes)
+  )
+
+  const pickup =
+    isHotelPickupTitle(first.title) || !pickupTime
+      ? null
+      : {
+          id: 'hotel-pickup' as const,
+          dayNumber: first.schedule.day_number,
+          timeRangeLabel: pickupTime,
+          durationMinutes: HOTEL_TRANSFER_STOP_MINUTES,
+          startsDayBeforeTour: tourYmd != null && pickupStart.ymd < tourYmd,
+        }
+
+  const lastEnd = resolveDisplayItemEnd(last)
+  if (!lastEnd || isHotelDropTitle(last.title)) return { pickup, dropoff: null }
+
+  const dropEnd = normalizeMinutesToYmd(
+    lastEnd.minutes + HOTEL_TRANSFER_STOP_MINUTES,
+    lastEnd.ymd
+  )
+  const dropTime = formatTimeRange(
+    minutesToScheduleTime(lastEnd.minutes),
+    minutesToScheduleTime(dropEnd.minutesInDay)
+  )
+
+  return {
+    pickup,
+    dropoff: dropTime
+      ? {
+          id: 'hotel-dropoff',
+          dayNumber: last.schedule.day_number,
+          timeRangeLabel: dropTime,
+          durationMinutes: HOTEL_TRANSFER_STOP_MINUTES,
+        }
+      : null,
   }
 }
 

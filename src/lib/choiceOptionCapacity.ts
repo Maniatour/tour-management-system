@@ -504,16 +504,130 @@ export function getMaxPeopleQuantityForOption(
   const coverageWithout =
     getPeopleCoverage(options, quantities) - getOptionPeopleContribution(option, currentQty)
   const remaining = partySize - coverageWithout
+  const available = remaining + stealablePeopleFromOthers(option.option_id, options, quantities)
 
-  if (remaining <= 0) return currentQty
+  if (available <= 0) return currentQty
 
   if (isPassCoverQuantityOption(option)) {
     const maxPasses = Math.max(1, Math.ceil(partySize / 4))
-    const additionalPasses = Math.ceil(remaining / 4)
+    const additionalPasses = Math.ceil(available / 4)
     return Math.min(maxPasses, currentQty + additionalPasses)
   }
 
-  return Math.min(partySize, currentQty + remaining)
+  return Math.min(partySize, currentQty + available)
+}
+
+type PeopleQuantityOption = {
+  option_id: string
+  option_name?: string | null
+  option_name_ko?: string | null
+  option_name_en?: string | null
+}
+
+function stealablePeopleFromOthers(
+  optionId: string,
+  options: PeopleQuantityOption[],
+  quantities: Record<string, number>
+): number {
+  return options.reduce((sum, option) => {
+    if (option.option_id === optionId) return sum
+    return sum + getOptionPeopleContribution(option, quantities[option.option_id] ?? 0)
+  }, 0)
+}
+
+/** 늘리는 옵션이 아니면, 미국 거주자 → 그 외 1명 옵션 → 패스 순으로 뺀다. */
+function peopleDonorOptions(
+  options: PeopleQuantityOption[],
+  targetId: string
+): PeopleQuantityOption[] {
+  const residentsId = findResidentsOptionId(options)
+  return options
+    .filter((option) => option.option_id !== targetId)
+    .sort((a, b) => donorRank(a, residentsId) - donorRank(b, residentsId))
+}
+
+function donorRank(option: PeopleQuantityOption, residentsId: string | null): number {
+  if (residentsId && option.option_id === residentsId) return 0
+  if (isPassCoverQuantityOption(option)) return 2
+  return 1
+}
+
+function receiverOptionId(
+  options: PeopleQuantityOption[],
+  exceptId: string
+): string | null {
+  const residentsId = findResidentsOptionId(options)
+  if (residentsId && residentsId !== exceptId) return residentsId
+  const fallback = options.find(
+    (option) => option.option_id !== exceptId && !isPassCoverQuantityOption(option)
+  )
+  return fallback?.option_id ?? null
+}
+
+/**
+ * 같은 초이스 안에서 한 옵션을 늘리면 다른 옵션에서 같은 인원만큼 뺀다.
+ * 줄이면 빈 자리는 미국 거주자(없으면 다른 1명 옵션)로 채운다.
+ */
+export function adjustPeopleQuantityFromResidents(
+  options: PeopleQuantityOption[],
+  quantities: Record<string, number>,
+  optionId: string,
+  requestedQuantity: number,
+  partySize: number
+): Record<string, number> {
+  const currentQty = Math.max(0, quantities[optionId] ?? 0)
+  const requested = Math.max(0, Math.floor(requestedQuantity))
+  const option = options.find((item) => item.option_id === optionId)
+
+  if (!option || partySize <= 0) {
+    return { ...quantities, [optionId]: requested }
+  }
+
+  const next: Record<string, number> = { ...quantities, [optionId]: requested }
+  const increasing = requested > currentQty
+
+  if (increasing && getPeopleCoverage(options, next) > partySize) {
+    let guard = 0
+    let reducedDonor = false
+    while (getPeopleCoverage(options, next) > partySize && guard++ < 50) {
+      const donor = peopleDonorOptions(options, optionId).find(
+        (item) => (next[item.option_id] ?? 0) > 0
+      )
+      if (!donor) break
+      next[donor.option_id] = (next[donor.option_id] ?? 0) - 1
+      reducedDonor = true
+    }
+
+    if (
+      reducedDonor &&
+      !isPassCoverQuantityOption(option) &&
+      getPeopleCoverage(options, next) < partySize
+    ) {
+      next[optionId] =
+        (next[optionId] ?? 0) + (partySize - getPeopleCoverage(options, next))
+    }
+
+    while (
+      isPeopleCoverageOver(options, next, partySize) &&
+      (next[optionId] ?? 0) > currentQty
+    ) {
+      next[optionId] = (next[optionId] ?? 0) - 1
+    }
+  } else if (!increasing && requested < currentQty) {
+    const deficit = partySize - getPeopleCoverage(options, next)
+    if (deficit > 0) {
+      const residentsId = findResidentsOptionId(options)
+      const receiverId =
+        residentsId && residentsId !== optionId
+          ? residentsId
+          : residentsId
+            ? null
+            : receiverOptionId(options, optionId)
+      if (receiverId) next[receiverId] = (next[receiverId] ?? 0) + deficit
+    }
+  }
+
+  return next
 }
 
 export function isPeopleCoverageOver(
@@ -527,7 +641,20 @@ export function isPeopleCoverageOver(
   partySize: number
 ): boolean {
   if (partySize <= 0) return false
-  return getPeopleCoverage(options, quantities) > partySize
+  if (getPeopleCoverage(options, quantities) <= partySize) return false
+
+  let persons = 0
+  let passQty = 0
+  for (const option of options) {
+    const qty = quantities[option.option_id] ?? 0
+    if (qty <= 0) continue
+    if (isPassCoverQuantityOption(option)) passQty += qty
+    else persons += qty
+  }
+
+  if (persons > partySize) return true
+  if (persons > 0) return true
+  return passQty > Math.ceil(partySize / 4)
 }
 
 /** 인원 초과 시 수량을 예약 인원 이하로 줄임 */
@@ -542,9 +669,7 @@ export function clampPeopleQuantitiesForPartySize(
   partySize: number
 ): Record<string, number> {
   if (partySize <= 0) return {}
-
-  let coverage = getPeopleCoverage(options, quantities)
-  if (coverage <= partySize) return quantities
+  if (!isPeopleCoverageOver(options, quantities, partySize)) return quantities
 
   const next = { ...quantities }
   const sortedOptionIds = options
@@ -552,14 +677,9 @@ export function clampPeopleQuantitiesForPartySize(
     .sort((a, b) => (next[b] ?? 0) - (next[a] ?? 0))
 
   for (const optionId of sortedOptionIds) {
-    if (coverage <= partySize) break
-    const option = options.find((item) => item.option_id === optionId)
-    if (!option) continue
-
-    const step = isPassCoverQuantityOption(option) ? 4 : 1
-    while ((next[optionId] ?? 0) > 0 && coverage > partySize) {
+    if (!isPeopleCoverageOver(options, next, partySize)) break
+    while ((next[optionId] ?? 0) > 0 && isPeopleCoverageOver(options, next, partySize)) {
       next[optionId] = (next[optionId] ?? 0) - 1
-      coverage -= step
     }
   }
 

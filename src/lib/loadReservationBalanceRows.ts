@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import { fetchReservationOptionLinesBatch } from '@/lib/reservationOptionsForEmail'
 import { reservationExcludedFromTourBatchPrint } from '@/utils/tourUtils'
@@ -35,37 +36,40 @@ type RezRow = {
 }
 
 async function fetchPricingByReservationIds(
+  db: SupabaseClient,
   ids: string[]
 ): Promise<Map<string, Record<string, unknown> | null>> {
   const pricingByResId = new Map<string, Record<string, unknown> | null>()
   if (ids.length === 0) return pricingByResId
 
-  const { data: sessionData } = await supabase.auth.getSession()
-  const token = sessionData?.session?.access_token?.trim()
-  if (token && typeof window !== 'undefined') {
-    try {
-      const res = await fetch(
-        `/api/reservation-pricing?reservation_ids=${encodeURIComponent(ids.join(','))}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-      if (res.ok) {
-        const json = (await res.json()) as {
-          items?: Array<{ reservation_id: string; pricing: Record<string, unknown> | null }>
-        }
-        if (Array.isArray(json.items)) {
-          for (const { reservation_id, pricing } of json.items) {
-            pricingByResId.set(reservation_id, pricing && typeof pricing === 'object' ? pricing : null)
+  if (typeof window !== 'undefined') {
+    const { data: sessionData } = await supabase.auth.getSession()
+    const token = sessionData?.session?.access_token?.trim()
+    if (token) {
+      try {
+        const res = await fetch(
+          `/api/reservation-pricing?reservation_ids=${encodeURIComponent(ids.join(','))}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
+        if (res.ok) {
+          const json = (await res.json()) as {
+            items?: Array<{ reservation_id: string; pricing: Record<string, unknown> | null }>
+          }
+          if (Array.isArray(json.items)) {
+            for (const { reservation_id, pricing } of json.items) {
+              pricingByResId.set(reservation_id, pricing && typeof pricing === 'object' ? pricing : null)
+            }
           }
         }
+      } catch (e) {
+        console.warn('[loadReservationBalanceRows] reservation-pricing API', e)
       }
-    } catch (e) {
-      console.warn('[loadReservationBalanceRows] reservation-pricing API', e)
     }
   }
 
   const missing = ids.filter((id) => !pricingByResId.has(id))
   if (missing.length > 0) {
-    const { data: pricingList } = await supabase
+    const { data: pricingList } = await db
       .from('reservation_pricing')
       .select('*')
       .in('reservation_id', missing)
@@ -82,12 +86,13 @@ async function fetchPricingByReservationIds(
 
 /** Balance 봉투와 같은 잔액. 취소·삭제 예약은 빼니다. */
 export async function loadReservationBalanceRows(
-  reservationIds: string[]
+  reservationIds: string[],
+  db: SupabaseClient = supabase
 ): Promise<ReservationBalancePrintRow[]> {
   const ids = [...new Set(reservationIds.map((id) => id.trim()).filter(Boolean))]
   if (ids.length === 0) return []
 
-  const { data: rezList, error: rezErr } = await supabase
+  const { data: rezList, error: rezErr } = await db
     .from('reservations')
     .select('id, customer_id, adults, child, infant, status, product_id, pickup_hotel')
     .in('id', ids)
@@ -109,15 +114,15 @@ export async function loadReservationBalanceRows(
   const [customersRes, hotelsRes, pricingByResId, optionLinesByResId, payResult, rcResult] =
     await Promise.all([
       customerIds.length
-        ? supabase.from('customers').select('id, name').in('id', customerIds)
+        ? db.from('customers').select('id, name').in('id', customerIds)
         : Promise.resolve({ data: [], error: null }),
       hotelIds.length
-        ? supabase.from('pickup_hotels').select('id, hotel').in('id', hotelIds)
+        ? db.from('pickup_hotels').select('id, hotel').in('id', hotelIds)
         : Promise.resolve({ data: [], error: null }),
-      fetchPricingByReservationIds(activeIds),
-      fetchReservationOptionLinesBatch(supabase, activeIds),
-      supabase.from('payment_records').select('reservation_id, amount, payment_status').in('reservation_id', activeIds),
-      supabase
+      fetchPricingByReservationIds(db, activeIds),
+      fetchReservationOptionLinesBatch(db, activeIds),
+      db.from('payment_records').select('reservation_id, amount, payment_status').in('reservation_id', activeIds),
+      db
         .from('reservation_customers')
         .select('reservation_id, resident_status')
         .in('reservation_id', activeIds),
@@ -170,7 +175,7 @@ export async function loadReservationBalanceRows(
     active.map(async (rez) => {
       if (!rez.product_id) return
       try {
-        const amounts = await loadResidentStatusAmountsForReservation(supabase, rez.id, String(rez.product_id))
+        const amounts = await loadResidentStatusAmountsForReservation(db, rez.id, String(rez.product_id))
         residentAmountsByResId.set(rez.id, amounts)
       } catch {
         /* 상품 거주자 단가가 없으면 choices JSON으로 계산 */

@@ -28,6 +28,7 @@ import {
   isResidentsOnlyOption,
 } from '@/lib/bookingFlowQuantityChoices'
 import {
+  adjustPeopleQuantityFromResidents,
   clampPeopleQuantitiesForPartySize,
   filterOptionsByPartySize,
   filterVehicleOptionsByPartySize,
@@ -2867,6 +2868,42 @@ export default function BookingFlow({
             partySize
           )
           safeQuantity = Math.min(safeQuantity, maxQty)
+          const nextMap = adjustPeopleQuantityFromResidents(
+            group.options,
+            currentMap,
+            optionId,
+            safeQuantity,
+            partySize
+          )
+          setSelectedChoiceQuantities((prev) => ({
+            ...prev,
+            [groupId]: nextMap,
+          }))
+
+          const keptQty = nextMap[optionId] ?? 0
+          if (keptQty <= 0) {
+            setBookingData((prev) => {
+              const nextOptions = { ...prev.selectedOptions }
+              if (nextOptions[groupId] === optionId) {
+                const other = group.options.find(
+                  (item) => item.option_id !== optionId && (nextMap[item.option_id] ?? 0) > 0
+                )
+                if (other) nextOptions[groupId] = other.option_id
+                else delete nextOptions[groupId]
+              }
+              return { ...prev, selectedOptions: nextOptions }
+            })
+            return
+          }
+
+          setBookingData((prev) => ({
+            ...prev,
+            selectedOptions: {
+              ...prev.selectedOptions,
+              [groupId]: optionId,
+            },
+          }))
+          return
         }
       }
 

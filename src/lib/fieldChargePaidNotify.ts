@@ -125,6 +125,8 @@ export async function notifyFieldChargePaid(
     tipUsd?: number
     items: unknown
     notes: string | null | undefined
+    /** 같은 청구서에서 잔금과 팁을 나눠 낼 때 결제마다 알림이 가도록 하는 키 */
+    notifyKey?: string | null
   }
 ): Promise<void> {
   try {
@@ -205,7 +207,7 @@ export async function notifyFieldChargePaid(
       .filter(Boolean)
       .join('\n')
 
-    const paymentIntentId = fieldChargePaymentIntentId(invoiceId)
+    const paymentIntentId = (args.notifyKey || '').trim() || fieldChargePaymentIntentId(invoiceId)
     const rows = [...recipients].map((recipientEmail) => ({
       reservation_id: reservationId,
       payment_record_id: null,
@@ -252,7 +254,7 @@ export async function notifyFieldChargePaid(
             : tipUsd != null && tipUsd > 0
               ? `${guestName} · ${amountLabel} · tip ${formatUsd(tipUsd)}`
               : `${guestName} · ${amountLabel}`,
-          tag: `field-charge-paid-${invoiceId}`,
+          tag: `field-charge-paid-${paymentIntentId}`,
           url: isCreator ? guidePath : officePath,
           extraData: {
             type: 'field_charge_paid',

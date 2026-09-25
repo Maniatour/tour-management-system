@@ -906,8 +906,8 @@ export default function TourEnvelopeModal({
                       ? '카드 결제 QR을 만드는 중입니다.'
                       : 'Creating card payment QR codes.'
                     : locale === 'ko'
-                      ? '카드 결제 QR은 봉투 오른쪽 아래, 회사 로고는 오른쪽 위에 인쇄됩니다.'
-                      : 'The card QR prints at the bottom right. The company logo prints at the top right.'}
+                      ? '카드 결제 QR은 봉투 오른쪽 아래, 회사 로고는 오른쪽 위에 인쇄됩니다. 손님이 찍으면 잔금, 팁, 또는 둘 다를 고릅니다. 잔금이 없으면 팁만 나옵니다.'
+                      : 'The card QR prints at the bottom right. The company logo prints at the top right. The guest chooses balance, a tip, or both. If the balance is already paid, only the tip is offered.'}
                 </p>
               ) : null}
               {qrError ? (

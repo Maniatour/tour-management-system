@@ -5,6 +5,7 @@ import type { CustomerScheduleItem } from '@/components/product/TourScheduleCust
 import {
   buildCustomerScheduleDisplayItems,
   buildHotelPickupWindowDisplay,
+  buildItineraryHotelTransferStops,
   getSunrisePickupWindowSummary,
   resolveGrandCanyonSunrisePickupForDate,
 } from '@/lib/productDetailTourScheduleTiming'
@@ -105,10 +106,16 @@ export function useProductDetailTourScheduleTiming(
     [gcSunrise, isEnglish, hotelPickupWindow]
   )
 
+  const hotelTransferStops = useMemo(() => {
+    if (!isSunriseTour || !hotelPickupWindow) return null
+    return buildItineraryHotelTransferStops(hotelPickupWindow, displayItems, selectedDate)
+  }, [displayItems, hotelPickupWindow, isSunriseTour, selectedDate])
+
   return {
     displayItems,
     sunriseSummary,
     hotelPickupWindow,
+    hotelTransferStops,
     loadingSunrise,
     isSunriseTour,
     hasValidDate,
