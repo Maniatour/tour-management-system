@@ -23,6 +23,7 @@ import { getPickupHotelNameById } from '@/lib/effectivePickupHotel'
 import { getPickupHotelPrimaryName } from '@/utils/pickupHotelUtils'
 import { SearchablePickupHotelSelect } from '@/components/SearchablePickupHotelSelect'
 import TourLanguageBadge from '@/components/reservation/TourLanguageBadge'
+import { readReservationEventNote, ReservationEventNoteIcon } from '@/components/tour/ReservationEventNoteIcon'
 import { getTourLanguageFlagCountryCode } from '@/lib/tourHighlightLanguages'
 import { isJapaneseLanguage, isKoreanLanguage } from '@/lib/reservationTourLanguage'
 import type { PickupHotel as PickupHotelUtil } from '@/utils/pickupHotelUtils'
@@ -680,8 +681,8 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
               const tourLanguage = reservation.tour_language ?? reservation.tourLanguage
               
               return (
-                <div key={reservation.id} className="flex items-center justify-between p-2 border border-gray-200 rounded bg-white hover:border-gray-300 transition-colors">
-                  <div className="flex items-center space-x-1 text-xs min-w-0">
+                <div key={reservation.id} className="flex items-center justify-between gap-2 p-2 border border-gray-200 rounded bg-white hover:border-gray-300 transition-colors">
+                  <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-xs">
                     <span 
                       className="flex-shrink-0" 
                       style={{ 
@@ -712,14 +713,15 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                         }}
                       />
                     )}
-                    <span className="text-gray-700 font-medium truncate">{getCustomerName(reservation.customer_id || '')}</span>
+                    <span className="min-w-0 truncate font-medium text-gray-700">{getCustomerName(reservation.customer_id || '')}</span>
+                    <ReservationEventNoteIcon note={readReservationEventNote(reservation)} compact />
                     {isPickupRedirected(
                         reservation.pickup_hotel,
                         pickupHotelsForResolve,
                         pickupContext
                       ) && (
                         <span
-                          className="text-gray-400 font-normal"
+                          className="min-w-0 truncate font-normal text-gray-400"
                           title={t('requestedPickupHotel')}
                         >
                           ({t('requestedHotelShort')}:{' '}

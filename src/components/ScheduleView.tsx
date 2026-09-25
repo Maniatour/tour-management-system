@@ -63,6 +63,7 @@ import {
 } from '@/lib/scheduleVehicleOilMaintenance'
 import ReactCountryFlag from 'react-country-flag'
 import TourLanguageBadge from '@/components/reservation/TourLanguageBadge'
+import { ReservationEventNoteIcon } from '@/components/tour/ReservationEventNoteIcon'
 import dynamic from 'next/dynamic'
 import {
   Dialog,
@@ -1124,6 +1125,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
     return localStorage.getItem(SCHEDULE_HEALTH_UI_MODE_KEY) === 'fab_only' ? 'fab_only' : 'auto_modal'
   })
   const [showGuideModal, setShowGuideModal] = useState(false)
+  const [guideModalEventNotes, setGuideModalEventNotes] = useState<Record<string, string>>({})
   const [guideModalContent, setGuideModalContent] = useState({ title: '', content: '', tourId: '' })
   const [showGuideModalAutoAssign, setShowGuideModalAutoAssign] = useState(false)
   const [tourDetailModal, setTourDetailModal] = useState<{
@@ -5666,6 +5668,36 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
         return nameA.localeCompare(nameB, locale === 'ko' ? 'ko' : 'en')
       })
   }, [guideModalTour, reservations, customers, locale])
+
+  const guideModalReservationIdsKey = useMemo(
+    () => guideModalSelectedTourReservations.map((r) => String(r.id)).filter(Boolean).join(','),
+    [guideModalSelectedTourReservations],
+  )
+
+  useEffect(() => {
+    if (!showGuideModal || !guideModalReservationIdsKey) {
+      setGuideModalEventNotes({})
+      return
+    }
+    const ids = guideModalReservationIdsKey.split(',')
+    let cancelled = false
+    void (async () => {
+      const { data, error } = await supabase
+        .from('reservations')
+        .select('id, event_note')
+        .in('id', ids)
+      if (cancelled || error) return
+      const next: Record<string, string> = {}
+      for (const row of data || []) {
+        const note = typeof row.event_note === 'string' ? row.event_note.trim() : ''
+        if (note && row.id) next[String(row.id)] = note
+      }
+      if (!cancelled) setGuideModalEventNotes(next)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [showGuideModal, guideModalReservationIdsKey])
 
   /** 선택한 투어 + 같은 날·같은 상품의 다른 투어 카드 */
   const guideModalRelatedTourCards = useMemo(() => {
@@ -11256,11 +11288,18 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                           ['X', 'L', 'U'].indexOf(a) - ['X', 'L', 'U'].indexOf(b),
                       )
                       return (
-                        <button
+                        <div
                           key={res.id}
-                          type="button"
+                          role="button"
+                          tabIndex={0}
                           className="w-full rounded-lg border border-gray-200 px-2.5 py-2 text-left transition-colors hover:bg-gray-50"
                           onClick={() => {
+                            setShowGuideModal(false)
+                            setReservationIdForScheduleEdit(String(res.id))
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key !== 'Enter' && event.key !== ' ') return
+                            event.preventDefault()
                             setShowGuideModal(false)
                             setReservationIdForScheduleEdit(String(res.id))
                           }}
@@ -11292,6 +11331,16 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                                   String(res.customer_id || ''),
                                   customers as Customer[],
                                 )}
+                              </span>
+                              <span
+                                className="shrink-0"
+                                onClick={(event) => event.stopPropagation()}
+                                onKeyDown={(event) => event.stopPropagation()}
+                              >
+                                <ReservationEventNoteIcon
+                                  note={guideModalEventNotes[String(res.id)]}
+                                  compact
+                                />
                               </span>
                               {antelopeChoiceKeys.map((key) => (
                                 <span
@@ -11336,7 +11385,7 @@ export default function ScheduleView(props: ScheduleViewProps = {}) {
                               showLabel
                             />
                           </div>
-                        </button>
+                        </div>
                       )
                     })}
                   </div>

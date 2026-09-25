@@ -56,6 +56,7 @@ import { hydrateChoiceDisplayNames } from '@/lib/canyonChoice'
 import { choiceOptionIdsForSupabaseIn } from '@/utils/usResidentChoiceSync'
 import type { PickupHotelAssignmentOption } from '@/utils/pickupHotelUtils'
 import { CustomerCommunicationChannelPicker } from '@/components/reservation/CustomerCommunicationChannelPicker'
+import { readReservationEventNote, ReservationEventNoteIcon } from '@/components/tour/ReservationEventNoteIcon'
 import type { CustomerCommunicationChannel } from '@/lib/customerCommunicationChannel'
 import { useTourDetailSectionChrome } from './TourDetailModalChromeContext'
 import { QuickPaymentRequestModal } from '@/components/customer/QuickPaymentRequestForm'
@@ -1975,8 +1976,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
        }`}
      >
       {/* 메인 정보 섹션 */}
-      <div className="flex items-center justify-between">
-        <div className={`flex items-center ${cardCompact ? 'space-x-1.5' : 'space-x-2'}`}>
+      <div className="flex items-center justify-between gap-2">
+        <div className={`flex min-w-0 flex-1 flex-wrap items-center ${cardCompact ? 'gap-1.5' : 'gap-2'}`}>
           {/* 국가 플래그 - 이름 왼쪽에 배치 */}
           <ReactCountryFlag
             countryCode={flagCode || 'US'}
@@ -1999,9 +2000,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             />
           ) : null}
           
-          {/* 고객 이름 */}
+          {/* 고객 이름 + 이벤트 노트 */}
+          <div className="inline-flex max-w-full min-w-0 items-center gap-1">
           <p
-            className={`font-medium ${cardCompact ? 'text-xs' : 'text-sm'} ${isReservationCancelled ? 'text-gray-400' : 'text-gray-900'} ${onEdit && isStaff ? 'cursor-pointer hover:text-primary' : ''}`}
+            className={`min-w-0 truncate font-medium ${cardCompact ? 'text-xs' : 'text-sm'} ${isReservationCancelled ? 'text-gray-400' : 'text-gray-900'} ${onEdit && isStaff ? 'cursor-pointer hover:text-primary' : ''}`}
             onClick={
               onEdit && isStaff
                 ? (e) => {
@@ -2025,6 +2027,11 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           >
             {customerName}
           </p>
+          <ReservationEventNoteIcon
+            note={readReservationEventNote(reservation)}
+            compact={cardCompact}
+          />
+          </div>
 
           {onCommunicationChannelChange ? (
             <CustomerCommunicationChannelPicker
@@ -2094,7 +2101,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         </div>
 
         {/* 오른쪽 상단 - 상태 뱃지 */}
-        <div className="flex items-center space-x-2">
+        <div className="flex shrink-0 items-center space-x-2">
           {showStatus && reservation.status && (
             <div className="relative">
               <button

@@ -5,7 +5,7 @@
 export const PAY_INVOICE_VIEWPORT_INLINE_SCRIPT = `
 (function () {
   try {
-    if (!/\/pay\/invoice\//.test(location.pathname || '')) return;
+    if ((location.pathname || '').indexOf('/pay/invoice/') === -1) return;
     document.documentElement.classList.add('pay-invoice-standalone');
     var ua = navigator.userAgent || '';
     if (!/Android|iPhone|iPod|iPad/i.test(ua)) return;
